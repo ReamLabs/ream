@@ -1,0 +1,16 @@
+[workspace]
+members = ["bin/ream"]
+default-members = ["bin/ream"]
+resolver = "2"
+
+[workspace.package]
+authors = ["https://github.com/ReamLabs/ream/graphs/contributors"]
+edition = "2021"
+keywords = ["ethereum", "beam-chain", "blockchain", "consensus", "protocol", "ream"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/ReamLabs/ream"
+rust-version = "1.81.0"
+version = "0.1.0"
+
+[workspace.dependencies]
