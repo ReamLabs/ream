@@ -1,5 +1,14 @@
 [workspace]
-members = ["bin/ream"]
+members = [
+    "bin/ream", 
+    "crates/common", 
+    "crates/networking/discv5", 
+    "crates/networking/p2p", 
+    "crates/rpc", 
+    "crates/runtime", 
+    "crates/storage", 
+]
+
 default-members = ["bin/ream"]
 resolver = "2"
 

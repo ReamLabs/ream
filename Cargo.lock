@@ -5,3 +5,27 @@ version = 3
 [[package]]
 name = "ream"
 version = "0.1.0"
+
+[[package]]
+name = "ream-common"
+version = "0.1.0"
+
+[[package]]
+name = "ream-discv5"
+version = "0.1.0"
+
+[[package]]
+name = "ream-p2p"
+version = "0.1.0"
+
+[[package]]
+name = "ream-rpc"
+version = "0.1.0"
+
+[[package]]
+name = "ream-runtime"
+version = "0.1.0"
+
+[[package]]
+name = "ream-storage"
+version = "0.1.0"
