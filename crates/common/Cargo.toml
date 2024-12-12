@@ -10,3 +10,4 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+alloy-primitives = {workspace = true}

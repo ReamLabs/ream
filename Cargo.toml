@@ -24,3 +24,4 @@ version = "0.1.0"
 
 [workspace.dependencies]
 clap = "4"
+alloy-primitives = "0.8.15"
