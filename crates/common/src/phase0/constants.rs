@@ -1,4 +1,4 @@
-use alloy_primitives::{aliases::B32,FixedBytes};
+use alloy_primitives::{FixedBytes, aliases::B32};
 
 pub const NODE_ID_BITS: u16 = 256;
 pub const GOSSIP_MAX_SIZE: u32 = 10_485_760;
@@ -11,11 +11,8 @@ pub const ATTESTATION_PROPAGATION_SLOT_RANGE: u8 = 32;
 pub const MAXIMUM_GOSSIP_CLOCK_DISPARITY: u16 = 500;
 pub const MESSAGE_DOMAIN_INVALID_SNAPPY: B32 = FixedBytes([0x00, 0x00, 0x00, 0x00]);
 pub const MESSAGE_DOMAIN_VALID_SNAPPY: B32 = FixedBytes([0x10, 0x00, 0x00, 0x00]);
-pub const SUBNETS_PER_NODE:u8=2;
-pub const ATTESTATION_SUBNET_COUNT:u8=64;
-pub const ATTESTATION_SUBNET_EXTRA_BITS:u8=0;
-// ATTESTATION_SUBNET_PREFIX_BITS 
-pub const MAX_CONCURRENT_REQUESTS:u8=2;
-
-
-
+pub const SUBNETS_PER_NODE: u8 = 2;
+pub const ATTESTATION_SUBNET_COUNT: u8 = 64;
+pub const ATTESTATION_SUBNET_EXTRA_BITS: u8 = 0;
+// ATTESTATION_SUBNET_PREFIX_BITS
+pub const MAX_CONCURRENT_REQUESTS: u8 = 2;

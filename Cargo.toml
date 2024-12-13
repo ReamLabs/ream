@@ -24,4 +24,5 @@ version = "0.1.0"
 
 [workspace.dependencies]
 clap = "4"
-alloy-primitives = "0.8.15"
+alloy-primitives ={version = "0.8.15", features = ['serde']}
+serde = { version = '1.0.216', features = ['derive'] }
