@@ -1,4 +1,4 @@
-use alloy_primitives::{FixedBytes, aliases::B32};
+use alloy_primitives::{aliases::B32, FixedBytes};
 
 pub const NODE_ID_BITS: u16 = 256;
 pub const GOSSIP_MAX_SIZE: u32 = 10_485_760;

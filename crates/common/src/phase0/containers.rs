@@ -18,6 +18,6 @@ pub struct ForkData {
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Deserialize, Serialize)]
 pub struct Checkpoint {
-    pub epock: Epoch,
+    pub epoch: Epoch,
     pub root: B256,
 }
