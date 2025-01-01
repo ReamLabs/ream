@@ -1,8 +1,7 @@
 use clap::Parser;
+use ream::cli::{Cli, Commands};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
-
-use ream::cli::{Cli, Commands};
 
 fn main() {
     // Set the default log level to `info` if not set

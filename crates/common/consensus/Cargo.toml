@@ -1,0 +1,20 @@
+[package]
+name = "ream-consensus"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-primitives.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
+rstest.workspace = true
+serde.workspace = true
+snap.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
