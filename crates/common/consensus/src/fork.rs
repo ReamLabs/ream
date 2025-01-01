@@ -14,7 +14,7 @@ pub struct Fork {
 mod tests {
     use std::str::FromStr;
 
-    use alloy_primitives::hex;
+    use alloy_primitives::{hex, B256};
     use snap::raw::Decoder;
     use ssz::{Decode, Encode};
     use tree_hash::TreeHash;
