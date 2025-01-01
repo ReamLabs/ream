@@ -1,7 +1,11 @@
 pub mod attestation_data;
+pub mod beacon_block_header;
 pub mod checkpoint;
+pub mod deposit_data;
+pub mod eth_1_data;
 pub mod fork;
 pub mod fork_data;
+pub mod historical_batch;
 pub mod indexed_attestation;
 pub mod pubkey;
 pub mod signature;
