@@ -43,6 +43,8 @@ mod tests {
         #[case] current_version: &str,
         #[case] epoch: u64,
     ) {
+        use alloy_primitives::B256;
+
         let hash_root = B256::from_str(hash_root).unwrap();
         let previous_version = B32::from_str(previous_version).unwrap();
         let current_version = B32::from_str(current_version).unwrap();
