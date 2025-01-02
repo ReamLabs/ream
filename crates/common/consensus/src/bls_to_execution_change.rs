@@ -1,21 +1,19 @@
-use alloy_primitives::B256;
+use alloy_primitives::Address;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
-use crate::signature::BlsSignature;
+use crate::{pubkey::PubKey, signature::BlsSignature};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct SignedBeaconBlockHeader {
-    pub message: BeaconBlockHeader,
+pub struct SignedBLSToExecutionChange {
+    pub message: BLSToExecutionChange,
     pub signature: BlsSignature,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct BeaconBlockHeader {
-    pub slot: u64,
-    pub proposer_index: u64,
-    pub parent_root: B256,
-    pub state_root: B256,
-    pub body_root: B256,
+pub struct BLSToExecutionChange {
+    pub validator_index: u64,
+    pub from_bls_pubkey: PubKey,
+    pub to_execution_address: Address,
 }

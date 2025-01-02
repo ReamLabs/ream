@@ -1,11 +1,11 @@
-use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
+use crate::beacon_block_header::SignedBeaconBlockHeader;
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct Eth1Data {
-    pub deposit_root: B256,
-    pub deposit_count: u64,
-    pub block_hash: B256,
+pub struct ProposerSlashing {
+    pub signed_header_1: SignedBeaconBlockHeader,
+    pub signed_header_2: SignedBeaconBlockHeader,
 }

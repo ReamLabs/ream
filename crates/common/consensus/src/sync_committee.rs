@@ -1,11 +1,12 @@
-use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
+use ssz_types::{typenum::U512, FixedVector};
 use tree_hash_derive::TreeHash;
 
+use crate::pubkey::PubKey;
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct Eth1Data {
-    pub deposit_root: B256,
-    pub deposit_count: u64,
-    pub block_hash: B256,
+pub struct SyncCommittee {
+    pub pubkeys: FixedVector<PubKey, U512>,
+    pub aggregate_pubkey: PubKey,
 }
