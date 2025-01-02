@@ -6,7 +6,8 @@ members = [
     "crates/networking/p2p", 
     "crates/rpc", 
     "crates/runtime", 
-    "crates/storage", 
+    "crates/storage",
+    "crates/common/phase0" 
 ]
 
 default-members = ["bin/ream"]
