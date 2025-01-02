@@ -3,7 +3,7 @@
 
 Run Tests this will automatically download test data
 ```bash
-cargo test --features ef-tests
+make test
 ```
 
 Clean test files
