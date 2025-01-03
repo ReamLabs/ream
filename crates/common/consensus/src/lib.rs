@@ -11,6 +11,7 @@ pub mod eth_1_data;
 pub mod fork;
 pub mod fork_choice;
 pub mod fork_data;
+pub mod helpers;
 pub mod historical_batch;
 pub mod historical_summary;
 pub mod indexed_attestation;
