@@ -4,8 +4,7 @@ use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct Eth1Data {
-    pub deposit_root: B256,
-    pub deposit_count: u64,
-    pub block_hash: B256,
+pub struct LatestMessage {
+    pub epoch: u64,
+    pub root: B256,
 }

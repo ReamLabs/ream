@@ -1,5 +1,5 @@
 [package]
-name = "ream-consensus"
+name = "ef-tests"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -11,11 +11,11 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
-c-kzg.workspace = true
 ethereum_hashing = "0.7.0"
 ethereum_serde_utils.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
+paste = "1.0.15"
 rstest.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
@@ -23,3 +23,9 @@ snap.workspace = true
 ssz_types.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
+
+# ream
+ream-consensus = { path = "../../crates/common/consensus" }
+
+[features]
+ef-tests = []

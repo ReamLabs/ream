@@ -1,16 +1,13 @@
-use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
+use ssz_types::{typenum, BitList};
 use tree_hash_derive::TreeHash;
 
-use crate::{pubkey::PubKey, signature::BlsSignature};
+use crate::{attestation_data::AttestationData, signature::BlsSignature};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct DepositData {
-    pub pubkey: PubKey,
-    pub withdrawal_credentials: B256,
-    pub amount: u64,
-
-    /// BLS aggregate signature
+pub struct Attestation {
+    pub aggregation_bits: BitList<typenum::U2048>,
+    pub data: AttestationData,
     pub signature: BlsSignature,
 }
