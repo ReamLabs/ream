@@ -3,6 +3,9 @@ use ream::cli::{Cli, Commands};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+struct ReamContext {}
+impl ReamContext {}
+
 fn main() {
     // Set the default log level to `info` if not set
     if std::env::var("RUST_LOG").is_err() {
