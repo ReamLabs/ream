@@ -10,9 +10,14 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-discv5 = "0.9.0"
-tokio = "1.42.0"
-log = "0.4.22"
+discv5 = {workspace = true}
+tokio = {workspace = true}
+log = {workspace = true}
+futures = {workspace = true}
+tiny-keccak = {workspace = true}
+hex = {workspace = true}
+
+
 
 [dependencies.libp2p]
 version = "0.54.1"

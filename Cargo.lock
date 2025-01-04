@@ -3425,8 +3425,11 @@ name = "ream-p2p"
 version = "0.1.0"
 dependencies = [
  "discv5",
+ "futures",
+ "hex",
  "libp2p",
  "log",
+ "tiny-keccak",
  "tokio",
 ]
 
