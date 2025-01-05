@@ -1,12 +1,18 @@
-use std::{future::Future, pin::Pin, sync::mpsc, time::Instant};
+use std::{collections::HashMap, future::Future, pin::Pin, sync::mpsc, time::Instant};
 
-use discv5::{Discv5, Enr};
-use discv5::enr::CombinedKey;
-use futures::stream::FuturesUnordered;
-use futures::TryFutureExt;
+use discv5::{
+    enr::{CombinedKey, NodeId},
+    Discv5, Enr,
+};
+use futures::{stream::FuturesUnordered, TryFutureExt};
 use libp2p::identity::Keypair;
-use log::error;
+
 use crate::config::NetworkConfig;
+
+#[derive(Debug)]
+pub struct DiscoveredPeers {
+    pub peers: HashMap<Enr, Option<Instant>>,
+}
 
 enum EventStream {
     Awaiting(
@@ -14,12 +20,6 @@ enum EventStream {
     ),
     Present(mpsc::Receiver<discv5::Event>),
     Inactive,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct SubnetQuery {
-    min_ttl: Option<Instant>,
-    retries: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,19 +38,13 @@ pub struct Discovery {
     discovery_queries: FuturesUnordered<Pin<Box<dyn Future<Output = QueryResult> + Send>>>,
     find_peer_active: bool,
     pub started: bool,
-
 }
 
 impl Discovery {
-
-    pub async fn new(
-        &mut self,
-        local_key: Keypair
-        config: &NetworkConfig
-    ) -> Result<Self,String>{
-        let enr_local = self.convert_to_enr(local_key)?;
+    pub async fn new(local_key: Keypair, config: &NetworkConfig) -> Result<Self, String> {
+        let enr_local = convert_to_enr(local_key)?;
         let enr = discv5::enr::Enr::builder().build(&enr_local).unwrap();
-        let node_local_id = enr.node_id()
+        let node_local_id = enr.node_id();
 
         let mut discv5 = Discv5::new(enr, enr_local, config.discv5_config.clone())
             .map_err(|e| format!("Discv5 service failed. Error: {:?}", e))?;
@@ -71,30 +65,69 @@ impl Discovery {
         // init ports
         let event_stream = if !config.disable_discovery {
             discv5.start().map_err(|e| e.to_string()).await?;
-                println!("Started discovery");
+            println!("Started discovery");
             EventStream::Awaiting(Box::pin(discv5.event_stream()))
         } else {
             EventStream::Inactive
         };
 
-        Ok(Self{
-            discv5
+        Ok(Self {
+            discv5,
             event_stream,
-            discovery_queries
-            find_peer_active: false
+            discovery_queries,
+            find_peer_active: false,
             started: true,
         })
-
-
-    }
-    fn convert_to_enr(&self, key: Keypair)->Result<CombinedKey, &'static str> {
-        let key = key.try_into_secp256k1().expect("right key type");
-        let secret =
-            discv5::enr::k256::ecdsa::SigningKey::from_slice(&key.secret().to_bytes())
-                .expect("libp2p key must be valid");
-        Ok(CombinedKey::Secp256k1(secret))
     }
 
+    pub fn discover_peers(&mut self, target_peers: usize) {
+        // If the discv5 service isn't running or we are in the process of a query, don't bother
+        // queuing a new one.
+        if !self.started || self.find_peer_active {
+            return;
+        }
+        // Immediately start a FindNode query
 
+        self.find_peer_active = true;
+        self.start_query(QueryType::FindPeers, target_peers);
+    }
 
+    fn process_queries(&mut self) -> bool {
+        let mut processed = false;
+
+        while &self.discovery_queries.is_empty() {
+            // TODO: add query types and push them to mesh
+        }
+        processed
+    }
+
+    fn start_query(&mut self, query: QueryType, total_peers: usize) {
+        let enr_fork_id = match self.local_enr().eth2() {
+            Ok(v) => v,
+            Err(e) => {
+                println!(self.log, "Local ENR has no fork id"; "error" => e);
+                return;
+            }
+        };
+
+        let predicate = Box::new(|enr: &Enr| enr.ip().is_some());
+
+        let query_future = self
+            .discv5
+            // Generate a random target node id.
+            .find_node_predicate(NodeId::random(), total_peers, predicate)
+            .map(|v| QueryResult {
+                query_type: query,
+                result: v,
+            });
+
+        self.discovery_queries.push(Box::pin(query_future));
+    }
+}
+
+fn convert_to_enr(key: Keypair) -> Result<CombinedKey, &'static str> {
+    let key = key.try_into_secp256k1().expect("right key type");
+    let secret = discv5::enr::k256::ecdsa::SigningKey::from_slice(&key.secret().to_bytes())
+        .expect("libp2p key must be valid");
+    Ok(CombinedKey::Secp256k1(secret))
 }

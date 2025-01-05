@@ -10,13 +10,16 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-discv5 = {workspace = true}
-tokio = {workspace = true}
-log = {workspace = true}
-futures = {workspace = true}
-tiny-keccak = {workspace = true}
-hex = {workspace = true}
+discv5 = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+futures = { workspace = true }
+tiny-keccak = { workspace = true }
+task_executor = { workspace = true }
+hex = { workspace = true }
+serde = { version = "1.0.217", features = ["derive"] }
 
+libp2p-mplex = "0.42"
 
 
 [dependencies.libp2p]
