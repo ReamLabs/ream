@@ -1,102 +1,146 @@
-use std::sync::Weak;
+use std::future::Future;
+use tokio::runtime::Runtime;
+use tokio::sync::broadcast;
+use tokio::task::JoinHandle;
 
-use async_channel;
-use futures::{channel::mpsc::Sender, prelude::*};
-use tokio::runtime::{Handle, Runtime};
-pub use tokio::task::JoinHandle;
 
-#[derive(Clone)]
-pub enum HandleProvider {
-    Runtime(Weak<Runtime>),
-    Handle(Handle),
-}
-
-impl From<Handle> for HandleProvider {
-    fn from(handle: Handle) -> Self {
-        HandleProvider::Handle(handle)
-    }
-}
-
-impl From<Weak<Runtime>> for HandleProvider {
-    fn from(weak_runtime: Weak<Runtime>) -> Self {
-        HandleProvider::Runtime(weak_runtime)
-    }
-}
-
-impl HandleProvider {
-    pub fn handle(&self) -> Option<Handle> {
-        match self {
-            HandleProvider::Runtime(weak_runtime) => weak_runtime
-                .upgrade()
-                .map(|runtime| runtime.handle().clone()),
-            HandleProvider::Handle(handle) => Some(handle.clone()),
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct TaskExecutor {
-    handle_provider: HandleProvider,
-    exit: async_channel::Receiver<()>,
+    runtime: Runtime,
+    shutdown: broadcast::Sender<()>,
 }
 
 impl TaskExecutor {
-    pub fn new<T: Into<HandleProvider>>(handle: T, exit: async_channel::Receiver<()>) -> Self {
-        Self {
-            handle_provider: handle.into(),
-            exit,
-        }
+
+    pub fn new() -> std::io::Result<Self> {
+        let runtime = Runtime::new()?;
+        let (shutdown, _) = broadcast::channel(1);
+        Ok(Self { runtime, shutdown })
     }
 
-    pub fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {
-        if let Some(handle) = self.handle() {
-            let exit = self.exit();
-            handle.spawn(async move {
-                futures::pin_mut!(exit);
-                match future::select(Box::pin(task), exit).await {
-                    future::Either::Left(_) => (),
-                    future::Either::Right(_) => (),
-                }
-            });
-        }
+    /// Creates a new TaskExecutor with an existing runtime
+    pub fn with_runtime(runtime: Runtime) -> Self {
+        let (shutdown, _) = broadcast::channel(1);
+        Self { runtime, shutdown }
     }
 
-    pub fn spawn_blocking<F>(&self, task: F)
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
     where
-        F: FnOnce() -> () + Send + 'static,
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
     {
-        if let Some(handle) = self.handle() {
-            handle.spawn_blocking(task);
-        }
+        let mut shutdown = self.shutdown.subscribe();
+        self.runtime.spawn(async move {
+            tokio::select! {
+                result = future => result,
+                _ = shutdown.recv() => panic!("Task cancelled due to shutdown"),
+            }
+        })
     }
 
-    pub fn spawn_handle<R: Send + 'static>(
+
+    pub fn spawn_cancellable<F, Fut, T>(&self, future_fn: F) -> JoinHandle<Option<T>>
+    where
+        F: FnOnce(broadcast::Receiver<()>) -> Fut + Send + 'static,
+        Fut: Future<Output = T> + Send,
+        T: Send + 'static,
+    {
+        let shutdown = self.shutdown.subscribe();
+        self.runtime.spawn(async move {
+            let future = future_fn(shutdown);
+            tokio::select! {
+                result = future => Some(result),
+                _ = tokio::signal::ctrl_c() => None,
+            }
+        })
+    }
+
+    /// Spawns a blocking task in a dedicated thread pool
+    pub fn spawn_blocking<F, R>(&self, task: F) -> JoinHandle<R>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        self.runtime.spawn_blocking(task)
+    }
+
+    /// Spawns multiple tasks and returns a handle that resolves when all tasks complete
+    pub fn spawn_many<F, Fut, T>(
         &self,
-        task: impl Future<Output = R> + Send + 'static,
-    ) -> Option<JoinHandle<Option<R>>> {
-        let exit = self.exit();
+        futures: impl IntoIterator<Item = F>,
+    ) -> JoinHandle<Vec<T>>
+    where
+        F: FnOnce(broadcast::Receiver<()>) -> Fut + Send + 'static,
+        Fut: Future<Output = T> + Send,
+        T: Send + 'static,
+    {
+        let futures: Vec<_> = futures
+            .into_iter()
+            .map(|f| self.spawn_cancellable(f))
+            .collect();
 
-        if let Some(handle) = self.handle() {
-            Some(handle.spawn(async move {
-                futures::pin_mut!(exit);
-                match future::select(Box::pin(task), exit).await {
-                    future::Either::Left((value, _)) => Some(value),
-                    future::Either::Right(_) => None,
-                }
-            }))
-        } else {
-            None
-        }
+        self.runtime.spawn(async move {
+            let results = futures::future::join_all(futures).await;
+            results.into_iter().filter_map(|r| r.ok().flatten()).collect()
+        })
     }
 
-    pub fn handle(&self) -> Option<Handle> {
-        self.handle_provider.handle()
+    /// Triggers a shutdown signal to all spawned tasks
+    pub fn shutdown(&self) {
+        let _ = self.shutdown.send(());
     }
 
-    pub fn exit(&self) -> impl Future<Output = ()> {
-        let exit = self.exit.clone();
-        async move {
-            let _ = exit.recv().await;
-        }
+    /// Get a reference to the underlying runtime
+    pub fn runtime(&self) -> &Runtime {
+        &self.runtime
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::time::sleep;
+
+    #[test]
+    fn test_basic_task() {
+        let executor = TaskExecutor::new().unwrap();
+
+        let handle = executor.spawn(async {
+            sleep(Duration::from_millis(100)).await;
+            42
+        });
+
+        assert_eq!(executor.runtime.block_on(handle).unwrap(), 42);
+    }
+
+    #[test]
+    fn test_cancellable_task() {
+        let executor = TaskExecutor::new().unwrap();
+
+        let handle = executor.spawn_cancellable(|mut shutdown| async move {
+            tokio::select! {
+                _ = sleep(Duration::from_secs(1)) => "completed",
+                _ = shutdown.recv() => "cancelled",
+            }
+        });
+
+        executor.shutdown();
+        assert_eq!(executor.runtime.block_on(handle).unwrap(), Some("cancelled"));
+    }
+
+    #[test]
+    fn test_spawn_many() {
+        let executor = TaskExecutor::new().unwrap();
+
+        let tasks = (0..3).map(|i| {
+            move |_shutdown| async move {
+                sleep(Duration::from_millis(50 * (i + 1) as u64)).await;
+                i
+            }
+        });
+
+        let handle = executor.spawn_many(tasks);
+        let results = executor.runtime.block_on(handle).unwrap();
+        assert_eq!(results, vec![0, 1, 2]);
     }
 }
