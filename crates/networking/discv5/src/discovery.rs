@@ -17,8 +17,7 @@ use libp2p::{
     },
     Multiaddr, PeerId,
 };
-
-use crate::config::NetworkConfig;
+use ream_network_types::NetworkConfig;
 
 #[derive(Debug)]
 pub struct DiscoveredPeers {

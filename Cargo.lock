@@ -3426,6 +3426,7 @@ dependencies = [
  "clap",
  "discv5",
  "ream-executor",
+ "ream-network-types",
  "ream-p2p",
  "tokio",
  "tracing",
@@ -3454,6 +3455,14 @@ dependencies = [
 [[package]]
 name = "ream-discv5"
 version = "0.1.0"
+dependencies = [
+ "discv5",
+ "futures",
+ "libp2p",
+ "libp2p-identity",
+ "libp2p-mplex",
+ "ream-network-types",
+]
 
 [[package]]
 name = "ream-executor"
@@ -3462,6 +3471,13 @@ dependencies = [
  "async-channel",
  "futures",
  "tokio",
+]
+
+[[package]]
+name = "ream-network-types"
+version = "0.1.0"
+dependencies = [
+ "discv5",
 ]
 
 [[package]]
@@ -3474,7 +3490,9 @@ dependencies = [
  "libp2p",
  "libp2p-identity",
  "libp2p-mplex",
+ "ream-discv5",
  "ream-executor",
+ "ream-network-types",
  "serde",
  "tokio",
 ]
