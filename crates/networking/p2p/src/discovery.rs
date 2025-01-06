@@ -1,17 +1,27 @@
-use std::{collections::HashMap, future::Future, pin::Pin, time::Instant};
-use std::task::{Context, Poll};
+use std::{
+    collections::HashMap,
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+    time::Instant,
+};
+
 use discv5::{
     enr::{CombinedKey, NodeId},
     Discv5, Enr,
 };
 use futures::{stream::FuturesUnordered, TryFutureExt};
-use libp2p::identity::Keypair;
-use libp2p::{Multiaddr, PeerId};
-use libp2p::core::Endpoint;
-use libp2p::core::transport::PortUse;
-use libp2p::swarm::{ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm};
-use libp2p::swarm::dummy::ConnectionHandler;
+use libp2p::{
+    core::{transport::PortUse, Endpoint},
+    identity::Keypair,
+    swarm::{
+        dummy::ConnectionHandler, ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour,
+        THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
+    },
+    Multiaddr, PeerId,
+};
 use tokio::sync::mpsc;
+
 use crate::config::NetworkConfig;
 
 #[derive(Debug)]
@@ -47,7 +57,6 @@ pub struct Discovery {
 
 impl Discovery {
     pub async fn new(local_key: Keypair, config: &NetworkConfig) -> Result<Self, String> {
-
         // generate new keypair
         // create a new ENR with keypair
 
@@ -80,7 +89,6 @@ impl Discovery {
             EventStream::Inactive
         };
 
-
         Ok(Self {
             discv5,
             event_stream,
@@ -96,7 +104,6 @@ impl Discovery {
         if !self.started || self.find_peer_active {
             return;
         }
-
 
         self.find_peer_active = true;
         self.start_query(QueryType::FindPeers, target_peers);
@@ -124,19 +131,43 @@ impl NetworkBehaviour for Discovery {
     type ConnectionHandler = ConnectionHandler;
     type ToSwarm = DiscoveredPeers;
 
-    fn handle_pending_inbound_connection(&mut self, _connection_id: ConnectionId, _local_addr: &Multiaddr, _remote_addr: &Multiaddr) -> Result<(), ConnectionDenied> {
+    fn handle_pending_inbound_connection(
+        &mut self,
+        _connection_id: ConnectionId,
+        _local_addr: &Multiaddr,
+        _remote_addr: &Multiaddr,
+    ) -> Result<(), ConnectionDenied> {
         Ok(())
     }
 
-    fn handle_established_inbound_connection(&mut self, _connection_id: ConnectionId, peer: PeerId, local_addr: &Multiaddr, remote_addr: &Multiaddr) -> Result<THandler<Self>, ConnectionDenied> {
+    fn handle_established_inbound_connection(
+        &mut self,
+        _connection_id: ConnectionId,
+        peer: PeerId,
+        local_addr: &Multiaddr,
+        remote_addr: &Multiaddr,
+    ) -> Result<THandler<Self>, ConnectionDenied> {
         Ok(ConnectionHandler)
     }
 
-    fn handle_pending_outbound_connection(&mut self, _connection_id: ConnectionId, _maybe_peer: Option<PeerId>, _addresses: &[Multiaddr], _effective_role: Endpoint) -> Result<Vec<Multiaddr>, ConnectionDenied> {
+    fn handle_pending_outbound_connection(
+        &mut self,
+        _connection_id: ConnectionId,
+        _maybe_peer: Option<PeerId>,
+        _addresses: &[Multiaddr],
+        _effective_role: Endpoint,
+    ) -> Result<Vec<Multiaddr>, ConnectionDenied> {
         Ok(Vec::new())
     }
 
-    fn handle_established_outbound_connection(&mut self, _connection_id: ConnectionId, peer: PeerId, addr: &Multiaddr, role_override: Endpoint, port_use: PortUse) -> Result<THandler<Self>, ConnectionDenied> {
+    fn handle_established_outbound_connection(
+        &mut self,
+        _connection_id: ConnectionId,
+        peer: PeerId,
+        addr: &Multiaddr,
+        role_override: Endpoint,
+        port_use: PortUse,
+    ) -> Result<THandler<Self>, ConnectionDenied> {
         Ok(ConnectionHandler)
     }
 
@@ -144,11 +175,19 @@ impl NetworkBehaviour for Discovery {
         println!("Swarm event: {:?}", event);
     }
 
-    fn on_connection_handler_event(&mut self, _peer_id: PeerId, _connection_id: ConnectionId, _event: THandlerOutEvent<Self>) {
+    fn on_connection_handler_event(
+        &mut self,
+        _peer_id: PeerId,
+        _connection_id: ConnectionId,
+        _event: THandlerOutEvent<Self>,
+    ) {
         println!("ConnectionHandlerOutEvent");
     }
 
-    fn poll(&mut self, cx: &mut Context<'_>) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+    fn poll(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
         Poll::Pending
     }
 }

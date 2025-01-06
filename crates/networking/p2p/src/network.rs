@@ -1,20 +1,27 @@
-use std::{num::{NonZeroU8, NonZeroUsize}, pin::Pin, time::Duration};
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    num::{NonZeroU8, NonZeroUsize},
+    pin::Pin,
+    time::Duration,
+};
+
 use discv5::enr::CombinedKey;
-use libp2p::{core::{
-    muxing::StreamMuxerBox,
-    transport::Boxed,
-}, futures::StreamExt, identify, noise, swarm::{NetworkBehaviour, SwarmEvent}, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder, Transport};
-use libp2p::multiaddr::Protocol;
+use libp2p::{
+    core::{muxing::StreamMuxerBox, transport::Boxed},
+    futures::StreamExt,
+    identify,
+    multiaddr::Protocol,
+    noise,
+    swarm::{NetworkBehaviour, SwarmEvent},
+    yamux, Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
+};
 use libp2p_identity::{secp256k1, Keypair, PublicKey};
 use task_executor::TaskExecutor;
 
 use crate::{config::NetworkConfig, discovery::Discovery};
 
-
 #[derive(NetworkBehaviour)]
-pub(crate) struct ReamBehaviour
-{
+pub(crate) struct ReamBehaviour {
     pub identify: identify::Behaviour,
 
     pub discovery: Discovery,
@@ -41,24 +48,17 @@ pub struct Network {
 }
 
 impl Network {
-    pub async fn init(
-        executor: TaskExecutor,
-        config: &NetworkConfig,
-    ) -> Result<(Self), String> {
+    pub async fn init(executor: TaskExecutor, config: &NetworkConfig) -> Result<(Self), String> {
         let local_key = secp256k1::Keypair::generate();
 
-
-        let secret = discv5::enr::k256::ecdsa::SigningKey::from_slice(&local_key.secret().to_bytes())
-            .expect("libp2p key must be valid");
+        let secret =
+            discv5::enr::k256::ecdsa::SigningKey::from_slice(&local_key.secret().to_bytes())
+                .expect("libp2p key must be valid");
         let enr_local = CombinedKey::Secp256k1(secret);
         let enr = discv5::enr::Enr::builder().build(&enr_local).unwrap();
 
-
         let discovery = {
-            let mut discovery = Discovery::new(
-                Keypair::from(local_key.clone()),
-                config,
-            ).await?;
+            let mut discovery = Discovery::new(Keypair::from(local_key.clone()), config).await?;
             discovery.discover_peers(16);
             discovery
         };
@@ -74,14 +74,15 @@ impl Network {
 
         let identify = {
             let local_public_key = local_key.public();
-            let identify_config =
-                identify::Config::new("eth2/1.0.0".into(), PublicKey::from(local_public_key.clone()))
-                    .with_agent_version("0.0.1".to_string())
-                    .with_cache_size(0);
+            let identify_config = identify::Config::new(
+                "eth2/1.0.0".into(),
+                PublicKey::from(local_public_key.clone()),
+            )
+            .with_agent_version("0.0.1".to_string())
+            .with_cache_size(0);
 
             identify::Behaviour::new(identify_config)
         };
-
 
         let behaviour = {
             ReamBehaviour {
@@ -93,7 +94,7 @@ impl Network {
 
         struct Executor(TaskExecutor);
         impl libp2p::swarm::Executor for Executor {
-            fn exec(&self, f: Pin<Box<dyn futures::Future<Output=()> + Send>>) {
+            fn exec(&self, f: Pin<Box<dyn futures::Future<Output = ()> + Send>>) {
                 self.0.spawn(f);
             }
         }
@@ -118,14 +119,12 @@ impl Network {
                 .build()
         };
 
-
         let mut network = Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
         };
 
         network.start_network_worker(&config).await?;
-
 
         Ok(network)
     }
@@ -140,26 +139,20 @@ impl Network {
     //     }
     // }
 
-
     async fn start_network_worker(&mut self, config: &NetworkConfig) -> Result<(), String> {
         println!("Libp2p starting .... ");
 
         let mut multi_addr: Multiaddr = "/ip4/127.0.0.1".parse().unwrap();
         multi_addr.push(Protocol::Tcp(10000));
 
-
         match self.swarm.listen_on(multi_addr.clone()) {
             Ok(_) => {
                 println!("Listening on {:?}", multi_addr);
             }
             Err(_) => {
-                println!(
-                    "Failed to start libp2p peer listen on {:?}",
-                    multi_addr
-                );
+                println!("Failed to start libp2p peer listen on {:?}", multi_addr);
             }
         }
-
 
         Ok(())
     }
@@ -177,7 +170,10 @@ impl Network {
         }
     }
 
-    fn parse_swarm_event(&mut self, event: SwarmEvent<ReamBehaviourEvent>) -> Option<ReamNetworkEvent> {
+    fn parse_swarm_event(
+        &mut self,
+        event: SwarmEvent<ReamBehaviourEvent>,
+    ) -> Option<ReamNetworkEvent> {
         // currently no-op for any network events
         match event {
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -191,9 +187,7 @@ impl Network {
 }
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
-pub fn build_transport(
-    local_private_key: Keypair,
-) -> std::io::Result<BoxedTransport> {
+pub fn build_transport(local_private_key: Keypair) -> std::io::Result<BoxedTransport> {
     // mplex config
     let mut mplex_config = libp2p_mplex::MplexConfig::new();
     mplex_config.set_max_buffer_size(256);
@@ -203,18 +197,13 @@ pub fn build_transport(
 
     let tcp = libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::default().nodelay(true))
         .upgrade(libp2p::core::upgrade::Version::V1)
-        .authenticate(
-            noise::Config::new(&local_private_key)
-                .expect("Noise disabled"),
-        )
+        .authenticate(noise::Config::new(&local_private_key).expect("Noise disabled"))
         .multiplex(libp2p::core::upgrade::SelectUpgrade::new(
             yamux_config,
             mplex_config,
         ))
         .timeout(Duration::from_secs(10));
-    let transport =
-        tcp.boxed();
-
+    let transport = tcp.boxed();
 
     let transport = libp2p::dns::tokio::Transport::system(transport)?.boxed();
 

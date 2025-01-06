@@ -1,10 +1,11 @@
 use std::net::{IpAddr, Ipv4Addr};
+
 use clap::Parser;
 use ream::cli::{Cli, Commands};
-use tracing::info;
-use tracing_subscriber::EnvFilter;
 use ream_p2p::{Network, NetworkConfig};
 use task_executor::TaskExecutor;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
@@ -23,7 +24,11 @@ async fn main() {
 
     let main_executor = TaskExecutor::new().unwrap();
 
-    let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(Ipv4Addr::UNSPECIFIED.into(), 8080)).build();
+    let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
+        Ipv4Addr::UNSPECIFIED.into(),
+        8080,
+    ))
+    .build();
     let binding = NetworkConfig {
         discv5_config,
         boot_nodes_enr: vec![],
@@ -33,13 +38,11 @@ async fn main() {
 
     match Network::init(async_executor, &binding).await {
         Ok(mut network) => {
-            main_executor.spawn(
-                async move {
-                    loop {
-                        network.polling_events().await;
-                    }
+            main_executor.spawn(async move {
+                loop {
+                    network.polling_events().await;
                 }
-            );
+            });
 
             tokio::signal::ctrl_c().await.unwrap();
         }
@@ -49,7 +52,6 @@ async fn main() {
         }
     }
 
-    //
     // match cli.command {
     //     Commands::Node(_cmd) => {
     //         info!("Starting node");

@@ -1,8 +1,6 @@
 use std::future::Future;
-use tokio::runtime::Runtime;
-use tokio::sync::broadcast;
-use tokio::task::JoinHandle;
 
+use tokio::{runtime::Runtime, sync::broadcast, task::JoinHandle};
 
 pub struct TaskExecutor {
     runtime: Runtime,
@@ -10,7 +8,6 @@ pub struct TaskExecutor {
 }
 
 impl TaskExecutor {
-
     pub fn new() -> std::io::Result<Self> {
         let runtime = Runtime::new()?;
         let (shutdown, _) = broadcast::channel(1);
@@ -36,7 +33,6 @@ impl TaskExecutor {
             }
         })
     }
-
 
     pub fn spawn_cancellable<F, Fut, T>(&self, future_fn: F) -> JoinHandle<Option<T>>
     where
@@ -64,10 +60,7 @@ impl TaskExecutor {
     }
 
     /// Spawns multiple tasks and returns a handle that resolves when all tasks complete
-    pub fn spawn_many<F, Fut, T>(
-        &self,
-        futures: impl IntoIterator<Item = F>,
-    ) -> JoinHandle<Vec<T>>
+    pub fn spawn_many<F, Fut, T>(&self, futures: impl IntoIterator<Item = F>) -> JoinHandle<Vec<T>>
     where
         F: FnOnce(broadcast::Receiver<()>) -> Fut + Send + 'static,
         Fut: Future<Output = T> + Send,
@@ -80,7 +73,10 @@ impl TaskExecutor {
 
         self.runtime.spawn(async move {
             let results = futures::future::join_all(futures).await;
-            results.into_iter().filter_map(|r| r.ok().flatten()).collect()
+            results
+                .into_iter()
+                .filter_map(|r| r.ok().flatten())
+                .collect()
         })
     }
 
@@ -97,9 +93,11 @@ impl TaskExecutor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::Duration;
+
     use tokio::time::sleep;
+
+    use super::*;
 
     #[test]
     fn test_basic_task() {
@@ -125,7 +123,10 @@ mod tests {
         });
 
         executor.shutdown();
-        assert_eq!(executor.runtime.block_on(handle).unwrap(), Some("cancelled"));
+        assert_eq!(
+            executor.runtime.block_on(handle).unwrap(),
+            Some("cancelled")
+        );
     }
 
     #[test]
