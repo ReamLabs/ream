@@ -2,12 +2,12 @@ use std::future::Future;
 
 use tokio::{runtime::Runtime, sync::broadcast, task::JoinHandle};
 
-pub struct TaskExecutor {
+pub struct ReamExecutor {
     runtime: Runtime,
     shutdown: broadcast::Sender<()>,
 }
 
-impl TaskExecutor {
+impl ReamExecutor {
     pub fn new() -> std::io::Result<Self> {
         let runtime = Runtime::new()?;
         let (shutdown, _) = broadcast::channel(1);
@@ -101,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_basic_task() {
-        let executor = TaskExecutor::new().unwrap();
+        let executor = ReamExecutor::new().unwrap();
 
         let handle = executor.spawn(async {
             sleep(Duration::from_millis(100)).await;
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_cancellable_task() {
-        let executor = TaskExecutor::new().unwrap();
+        let executor = ReamExecutor::new().unwrap();
 
         let handle = executor.spawn_cancellable(|mut shutdown| async move {
             tokio::select! {
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn test_spawn_many() {
-        let executor = TaskExecutor::new().unwrap();
+        let executor = ReamExecutor::new().unwrap();
 
         let tasks = (0..3).map(|i| {
             move |_shutdown| async move {

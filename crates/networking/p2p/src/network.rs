@@ -5,7 +5,6 @@ use std::{
     time::Duration,
 };
 
-use discv5::enr::CombinedKey;
 use libp2p::{
     core::{muxing::StreamMuxerBox, transport::Boxed},
     futures::StreamExt,
@@ -16,7 +15,7 @@ use libp2p::{
     yamux, Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
 };
 use libp2p_identity::{secp256k1, Keypair, PublicKey};
-use task_executor::TaskExecutor;
+use ream_executor::ReamExecutor;
 
 use crate::{config::NetworkConfig, discovery::Discovery};
 
@@ -48,14 +47,8 @@ pub struct Network {
 }
 
 impl Network {
-    pub async fn init(executor: TaskExecutor, config: &NetworkConfig) -> Result<(Self), String> {
+    pub async fn init(executor: ReamExecutor, config: &NetworkConfig) -> Result<Self, String> {
         let local_key = secp256k1::Keypair::generate();
-
-        let secret =
-            discv5::enr::k256::ecdsa::SigningKey::from_slice(&local_key.secret().to_bytes())
-                .expect("libp2p key must be valid");
-        let enr_local = CombinedKey::Secp256k1(secret);
-        let enr = discv5::enr::Enr::builder().build(&enr_local).unwrap();
 
         let discovery = {
             let mut discovery = Discovery::new(Keypair::from(local_key.clone()), config).await?;
@@ -92,7 +85,7 @@ impl Network {
             }
         };
 
-        struct Executor(TaskExecutor);
+        struct Executor(ReamExecutor);
         impl libp2p::swarm::Executor for Executor {
             fn exec(&self, f: Pin<Box<dyn futures::Future<Output = ()> + Send>>) {
                 self.0.spawn(f);
@@ -124,22 +117,12 @@ impl Network {
             swarm,
         };
 
-        network.start_network_worker(&config).await?;
+        network.start_network_worker(config).await?;
 
         Ok(network)
     }
 
-    // pub async fn run(mut self) {
-    //     loop {
-    //         tokio::select! {
-    //             message = self.swarm.select_next_some() => {
-    //
-    //             }
-    //         }
-    //     }
-    // }
-
-    async fn start_network_worker(&mut self, config: &NetworkConfig) -> Result<(), String> {
+    async fn start_network_worker(&mut self, _config: &NetworkConfig) -> Result<(), String> {
         println!("Libp2p starting .... ");
 
         let mut multi_addr: Multiaddr = "/ip4/127.0.0.1".parse().unwrap();
@@ -147,7 +130,10 @@ impl Network {
 
         match self.swarm.listen_on(multi_addr.clone()) {
             Ok(_) => {
-                println!("Listening on {:?}", multi_addr);
+                println!(
+                    "Listening on {:?} with peer_id {:?}",
+                    multi_addr, self.peer_id
+                );
             }
             Err(_) => {
                 println!("Failed to start libp2p peer listen on {:?}", multi_addr);

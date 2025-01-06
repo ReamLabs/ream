@@ -6,11 +6,8 @@ use std::{
     time::Instant,
 };
 
-use discv5::{
-    enr::{CombinedKey, NodeId},
-    Discv5, Enr,
-};
-use futures::{stream::FuturesUnordered, TryFutureExt};
+use discv5::{enr::CombinedKey, Discv5, Enr};
+use futures::{stream::FuturesUnordered, StreamExt, TryFutureExt};
 use libp2p::{
     core::{transport::PortUse, Endpoint},
     identity::Keypair,
@@ -20,20 +17,15 @@ use libp2p::{
     },
     Multiaddr, PeerId,
 };
-use tokio::sync::mpsc;
 
 use crate::config::NetworkConfig;
 
 #[derive(Debug)]
 pub struct DiscoveredPeers {
-    pub peers: HashMap<Enr, Option<Instant>>,
+    pub _peers: HashMap<Enr, Option<Instant>>,
 }
 
 enum EventStream {
-    Awaiting(
-        Pin<Box<dyn Future<Output = Result<mpsc::Receiver<discv5::Event>, discv5::Error>> + Send>>,
-    ),
-    Present(mpsc::Receiver<discv5::Event>),
     Inactive,
 }
 
@@ -61,7 +53,7 @@ impl Discovery {
         // create a new ENR with keypair
 
         let enr_local = convert_to_enr(local_key)?;
-        let enr = discv5::enr::Enr::builder().build(&enr_local).unwrap();
+        let enr = Enr::builder().build(&enr_local).unwrap();
         let node_local_id = enr.node_id();
 
         let mut discv5 = Discv5::new(enr, enr_local, config.discv5_config.clone())
@@ -74,7 +66,6 @@ impl Discovery {
                 continue;
             }
 
-            let repr = bootnode_enr.to_string();
             let _ = discv5.add_enr(bootnode_enr).map_err(|e| {
                 println!("Discv5 service failed. Error: {:?}", e);
             });
@@ -84,7 +75,8 @@ impl Discovery {
         let event_stream = if !config.disable_discovery {
             discv5.start().map_err(|e| e.to_string()).await?;
             println!("Started discovery");
-            EventStream::Awaiting(Box::pin(discv5.event_stream()))
+            // EventStream::Awaiting(Box::pin(discv5.event_stream()))
+            EventStream::Inactive
         } else {
             EventStream::Inactive
         };
@@ -101,6 +93,8 @@ impl Discovery {
     pub fn discover_peers(&mut self, target_peers: usize) {
         // If the discv5 service isn't running or we are in the process of a query, don't bother
         // queuing a new one.
+        println!("Discovering peers {:?}", self.discv5.local_enr());
+
         if !self.started || self.find_peer_active {
             return;
         }
@@ -109,21 +103,19 @@ impl Discovery {
         self.start_query(QueryType::FindPeers, target_peers);
     }
 
-    fn process_queries(&mut self) -> bool {
+    fn process_queries(&mut self, cx: &mut Context) -> bool {
         let mut processed = false;
 
-        while self.discovery_queries.is_empty() {
+        while let Poll::Ready(Some(query)) = self.discovery_queries.poll_next_unpin(cx) {
+            println!("query{:?} {:?}", query.result, query.query_type);
+            processed = true;
             // TODO: add query types and push them to mesh
         }
         processed
     }
 
-    pub fn local_enr(&self) -> Enr {
-        self.discv5.local_enr()
-    }
-
-    fn start_query(&mut self, query: QueryType, total_peers: usize) {
-        println!("Query!")
+    fn start_query(&mut self, query: QueryType, _total_peers: usize) {
+        println!("Query! queryType={:?}", query);
     }
 }
 
@@ -143,9 +135,9 @@ impl NetworkBehaviour for Discovery {
     fn handle_established_inbound_connection(
         &mut self,
         _connection_id: ConnectionId,
-        peer: PeerId,
-        local_addr: &Multiaddr,
-        remote_addr: &Multiaddr,
+        _peer: PeerId,
+        _local_addr: &Multiaddr,
+        _remote_addr: &Multiaddr,
     ) -> Result<THandler<Self>, ConnectionDenied> {
         Ok(ConnectionHandler)
     }
@@ -163,10 +155,10 @@ impl NetworkBehaviour for Discovery {
     fn handle_established_outbound_connection(
         &mut self,
         _connection_id: ConnectionId,
-        peer: PeerId,
-        addr: &Multiaddr,
-        role_override: Endpoint,
-        port_use: PortUse,
+        _peer: PeerId,
+        _addr: &Multiaddr,
+        _role_override: Endpoint,
+        _port_use: PortUse,
     ) -> Result<THandler<Self>, ConnectionDenied> {
         Ok(ConnectionHandler)
     }
@@ -188,6 +180,12 @@ impl NetworkBehaviour for Discovery {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+        self.process_queries(cx);
+
+        match self.event_stream {
+            EventStream::Inactive => println!("inactive"),
+        };
+
         Poll::Pending
     }
 }

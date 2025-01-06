@@ -3425,8 +3425,8 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "discv5",
+ "ream-executor",
  "ream-p2p",
- "task_executor",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -3456,6 +3456,15 @@ name = "ream-discv5"
 version = "0.1.0"
 
 [[package]]
+name = "ream-executor"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "futures",
+ "tokio",
+]
+
+[[package]]
 name = "ream-p2p"
 version = "0.1.0"
 dependencies = [
@@ -3465,9 +3474,8 @@ dependencies = [
  "libp2p",
  "libp2p-identity",
  "libp2p-mplex",
- "log",
+ "ream-executor",
  "serde",
- "task_executor",
  "tokio",
 ]
 
@@ -4149,15 +4157,6 @@ name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
-
-[[package]]
-name = "task_executor"
-version = "0.1.0"
-dependencies = [
- "async-channel",
- "futures",
- "tokio",
-]
 
 [[package]]
 name = "tempfile"

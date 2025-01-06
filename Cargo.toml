@@ -1,12 +1,12 @@
 [workspace]
 members = [
-    "bin/ream", 
+    "bin/ream",
     "crates/common/consensus",
-    "crates/common/task_executor",
-    "crates/networking/discv5", 
-    "crates/networking/p2p", 
-    "crates/rpc", 
-    "crates/runtime", 
+    "crates/common/ream-executor",
+    "crates/networking/discv5",
+    "crates/networking/p2p",
+    "crates/rpc",
+    "crates/runtime",
     "crates/storage",
     "testing/ef-tests",
 ]
@@ -25,30 +25,29 @@ rust-version = "1.81.0"
 version = "0.1.0"
 
 [workspace.dependencies]
+async-channel = "2.3.1"
 alloy-primitives = { version = "0.8.15", features = ['serde'] }
 c-kzg = "2.0.0"
 clap = "4"
+discv5 = "0.9.0"
 ethereum_serde_utils = "0.7.0"
 ethereum_ssz = "0.8.1"
 ethereum_ssz_derive = "0.8.1"
+futures = "0.3.30"
+hex = "0.4.3"
 rstest = "0.23.0"
 serde = { version = '1.0.216', features = ['derive', "rc"] }
 serde_yaml = "0.9.34"
 snap = "1.1.1"
 ssz_types = "0.10.0"
+tokio = { version = "1.42.0", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 tree_hash = "0.9.0"
 tree_hash_derive = "0.9.0"
-discv5 = "0.9.0"
-tokio = { version = "1.42.0", features = ["rt", "rt-multi-thread", "sync", "signal", "time","macros"] }
-log = "0.4.2"
-futures = "0.3.30"
-#tiny-keccak = { version = "2.0.2", features = ["keccak"] }
-hex = "0.4.3"
-async-channel = "2.3.1"
+
 
 # local dependencies
-task_executor = { path = "crates/common/task_executor" }
-ream-p2p = { path = "crates/networking/p2p"}
+ream-executor = { path = "crates/common/ream-executor" }
+ream-p2p = { path = "crates/networking/p2p" }
 

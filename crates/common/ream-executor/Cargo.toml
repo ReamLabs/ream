@@ -1,5 +1,5 @@
 [package]
-name = "task_executor"
+name = "ream-executor"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -10,6 +10,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-tokio = { workspace = true}
-futures = {workspace = true}
-async-channel = {workspace = true}
+async-channel = { workspace = true }
+futures = { workspace = true }
+tokio = { workspace = true }
