@@ -46,6 +46,14 @@ pub struct Network {
     swarm: Swarm<ReamBehaviour>,
 }
 
+struct Executor(ReamExecutor);
+
+impl libp2p::swarm::Executor for Executor {
+    fn exec(&self, f: Pin<Box<dyn futures::Future<Output = ()> + Send>>) {
+        self.0.spawn(f);
+    }
+}
+
 impl Network {
     pub async fn init(executor: ReamExecutor, config: &NetworkConfig) -> Result<Self, String> {
         let local_key = secp256k1::Keypair::generate();
@@ -85,12 +93,6 @@ impl Network {
             }
         };
 
-        struct Executor(ReamExecutor);
-        impl libp2p::swarm::Executor for Executor {
-            fn exec(&self, f: Pin<Box<dyn futures::Future<Output = ()> + Send>>) {
-                self.0.spawn(f);
-            }
-        }
         let transport = build_transport(Keypair::from(local_key.clone()))
             .map_err(|e| format!("Failed to build transport: {:?}", e))?;
 

@@ -48,9 +48,6 @@ pub struct Discovery {
 
 impl Discovery {
     pub async fn new(local_key: Keypair, config: &NetworkConfig) -> Result<Self, String> {
-        // generate new keypair
-        // create a new ENR with keypair
-
         let enr_local = convert_to_enr(local_key)?;
         let enr = Enr::builder().build(&enr_local).unwrap();
         let node_local_id = enr.node_id();
@@ -61,7 +58,7 @@ impl Discovery {
         // adding bootnode to DHT
         for bootnode_enr in config.boot_nodes_enr.clone() {
             if bootnode_enr.node_id() == node_local_id {
-                // If we are a boot node, ignore adding it to the routing table
+                // Skip adding ourselves to the routing table if we are a bootnode
                 continue;
             }
 

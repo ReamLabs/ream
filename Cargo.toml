@@ -3,7 +3,8 @@ members = [
     "bin/ream",
     "crates/common/consensus",
     "crates/common/executor",
-    "crates/networking/discv5", "crates/networking/network-types",
+    "crates/networking/discv5",
+    "crates/networking/network-types",
     "crates/networking/p2p",
     "crates/rpc",
     "crates/runtime",
@@ -25,7 +26,6 @@ rust-version = "1.81.0"
 version = "0.1.0"
 
 [workspace.dependencies]
-async-channel = "2.3.1"
 alloy-primitives = { version = "0.8.15", features = ['serde'] }
 c-kzg = "2.0.0"
 clap = "4"

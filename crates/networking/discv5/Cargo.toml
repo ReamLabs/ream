@@ -17,4 +17,4 @@ discv5 = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }
 libp2p-mplex = { workspace = true }
-libp2p = { version = "0.54.1", default-features = false, features = ["identify", "yamux", "noise", "dns", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
+libp2p = { workspace = true }
