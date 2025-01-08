@@ -54,8 +54,10 @@ test_consensus_type!(ProposerSlashing);
 test_consensus_type!(SignedBeaconBlock);
 test_consensus_type!(SignedBLSToExecutionChange);
 test_consensus_type!(SignedVoluntaryExit);
+test_consensus_type!(SigningData);
 test_consensus_type!(SyncAggregate);
 test_consensus_type!(SyncCommittee);
 test_consensus_type!(Validator);
 test_consensus_type!(VoluntaryExit);
 test_consensus_type!(Withdrawal);
+
