@@ -24,6 +24,7 @@ use ream_consensus::{
     historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
     proposer_slashing::ProposerSlashing,
+    signing_data::SigningData,
     sync_aggregate::SyncAggregate,
     sync_committee::SyncCommittee,
     validator::Validator,
