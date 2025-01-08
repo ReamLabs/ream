@@ -60,4 +60,3 @@ test_consensus_type!(SyncCommittee);
 test_consensus_type!(Validator);
 test_consensus_type!(VoluntaryExit);
 test_consensus_type!(Withdrawal);
-
