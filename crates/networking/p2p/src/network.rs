@@ -15,9 +15,8 @@ use libp2p::{
     yamux, Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
 };
 use libp2p_identity::{secp256k1, Keypair, PublicKey};
-use ream_discv5::discovery::Discovery;
+use ream_discv5::{config::NetworkConfig, discovery::Discovery};
 use ream_executor::ReamExecutor;
-use ream_network_types::NetworkConfig;
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {

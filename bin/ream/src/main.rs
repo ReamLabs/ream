@@ -2,8 +2,8 @@ use std::net::Ipv4Addr;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
+use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
-use ream_network_types::NetworkConfig;
 use ream_p2p::Network;
 use tracing::info;
 use tracing_subscriber::EnvFilter;

@@ -4,7 +4,6 @@ members = [
     "crates/common/consensus",
     "crates/common/executor",
     "crates/networking/discv5",
-    "crates/networking/network-types",
     "crates/networking/p2p",
     "crates/rpc",
     "crates/runtime",
@@ -51,9 +50,8 @@ tree_hash_derive = "0.9.0"
 
 
 # ream dependencies
-ream-executor = { path = "crates/common/executor" }
-ream-network-types = { path = "crates/networking/network-types"}
 ream-discv5 = { path = "crates/networking/discv5"}
+ream-executor = { path = "crates/common/executor" }
 ream-p2p = { path = "crates/networking/p2p" }
 
 

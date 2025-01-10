@@ -12,7 +12,6 @@ version.workspace = true
 [dependencies]
 # ream dependencies
 ream-executor = { workspace = true }
-ream-network-types = { workspace = true }
 ream-discv5 = { workspace = true }
 
 # misc

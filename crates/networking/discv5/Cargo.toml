@@ -10,8 +10,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-# ream dependencies
-ream-network-types = { workspace = true }
 
 discv5 = { workspace = true }
 futures = { workspace = true }
