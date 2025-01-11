@@ -17,21 +17,6 @@ pub fn is_active_validator(validator: &Validator, epoch: u64) -> bool {
     validator.activation_eligibility_epoch <= epoch && epoch < validator.exit_epoch
 }
 
-pub fn get_active_validator_indices(state: &BeaconState, epoch: u64) -> Vec<u64> {
-    state
-        .validators
-        .iter()
-        .enumerate()
-        .filter_map(|(i, v)| {
-            if is_active_validator(v, epoch) {
-                Some(i as u64)
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
 pub fn get_total_balance(state: &BeaconState, indices: Vec<u64>) -> u64 {
     let sum = indices
         .iter()
@@ -49,7 +34,7 @@ pub fn get_total_balance(state: &BeaconState, indices: Vec<u64>) -> u64 {
 pub fn get_total_active_balance(state: BeaconState) -> u64 {
     get_total_balance(
         &state,
-        get_active_validator_indices(&state, state.get_current_epoch()),
+        state.get_active_validator_indices(state.get_current_epoch()),
     )
 }
 
@@ -71,11 +56,11 @@ pub fn get_proposer_score(store: Store) -> u64 {
 pub fn get_weight(store: Store, root: B256) -> u64 {
     let state = &store.checkpoint_states[&store.justified_checkpoint];
 
-    let unslashed_and_active_indices: Vec<u64> =
-        get_active_validator_indices(state, state.get_current_epoch())
-            .into_iter()
-            .filter(|&i| !state.validators[i as usize].slashed)
-            .collect();
+    let unslashed_and_active_indices: Vec<u64> = state
+        .get_active_validator_indices(state.get_current_epoch())
+        .into_iter()
+        .filter(|&i| !state.validators[i as usize].slashed)
+        .collect();
 
     let attestation_score: u64 = unslashed_and_active_indices
         .iter()

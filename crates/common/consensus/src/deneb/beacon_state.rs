@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::max, sync::Arc};
 
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
@@ -11,9 +11,19 @@ use tree_hash_derive::TreeHash;
 
 use super::execution_payload_header::ExecutionPayloadHeader;
 use crate::{
-    beacon_block_header::BeaconBlockHeader, checkpoint::Checkpoint, eth_1_data::Eth1Data,
-    fork::Fork, historical_summary::HistoricalSummary, misc::compute_epoch_at_slot,
-    sync_committee::SyncCommittee, validator::Validator,
+    beacon_block_header::BeaconBlockHeader,
+    checkpoint::Checkpoint,
+    eth_1_data::Eth1Data,
+    fork::Fork,
+    fork_choice::helpers::constants::{
+        CHURN_LIMIT_QUOTIENT, EPOCHS_PER_HISTORICAL_VECTOR, GENESIS_EPOCH,
+        MIN_PER_EPOCH_CHURN_LIMIT, SLOTS_PER_HISTORICAL_ROOT,
+    },
+    helpers::is_active_validator,
+    historical_summary::HistoricalSummary,
+    misc::{compute_epoch_at_slot, compute_start_slot_at_epoch},
+    sync_committee::SyncCommittee,
+    validator::Validator,
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
@@ -78,7 +88,58 @@ pub struct BeaconState {
 }
 
 impl BeaconState {
+    /// Return the current epoch.
     pub fn get_current_epoch(&self) -> u64 {
         compute_epoch_at_slot(self.slot)
+    }
+
+    /// Return the previous epoch (unless the current epoch is ``GENESIS_EPOCH``).
+    pub fn get_previous_epoch(&self) -> u64 {
+        let current_epoch = self.get_current_epoch();
+        if current_epoch == GENESIS_EPOCH {
+            GENESIS_EPOCH
+        } else {
+            current_epoch - 1
+        }
+    }
+
+    /// Return the block root at the start of a recent ``epoch``.
+    pub fn get_block_root(&self, epoch: u64) -> B256 {
+        self.get_block_root_at_slot(compute_start_slot_at_epoch(epoch))
+    }
+
+    /// Return the block root at a recent ``slot``.
+    pub fn get_block_root_at_slot(&self, slot: u64) -> B256 {
+        assert!(slot < self.slot && self.slot <= slot + SLOTS_PER_HISTORICAL_ROOT);
+        self.block_roots[(slot % SLOTS_PER_HISTORICAL_ROOT) as usize]
+    }
+
+    /// Return the randao mix at a recent ``epoch``.
+    pub fn get_randao_mix(&self, epoch: u64) -> B256 {
+        self.randao_mixes[(epoch % EPOCHS_PER_HISTORICAL_VECTOR) as usize]
+    }
+
+    /// Return the sequence of active validator indices at ``epoch``.
+    pub fn get_active_validator_indices(&self, epoch: u64) -> Vec<u64> {
+        self.validators
+            .iter()
+            .enumerate()
+            .filter_map(|(i, v)| {
+                if is_active_validator(v, epoch) {
+                    Some(i as u64)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Return the validator churn limit for the current epoch.
+    pub fn get_validator_churn_limit(&self) -> u64 {
+        let active_validator_indices = self.get_active_validator_indices(self.get_current_epoch());
+        max(
+            MIN_PER_EPOCH_CHURN_LIMIT,
+            active_validator_indices.len() as u64 / CHURN_LIMIT_QUOTIENT,
+        )
     }
 }
