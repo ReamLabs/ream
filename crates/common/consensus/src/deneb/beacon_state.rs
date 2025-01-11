@@ -1,6 +1,7 @@
 use std::{cmp::max, sync::Arc};
 
 use alloy_primitives::B256;
+use anyhow::ensure;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -104,14 +105,17 @@ impl BeaconState {
     }
 
     /// Return the block root at the start of a recent ``epoch``.
-    pub fn get_block_root(&self, epoch: u64) -> B256 {
+    pub fn get_block_root(&self, epoch: u64) -> anyhow::Result<B256> {
         self.get_block_root_at_slot(compute_start_slot_at_epoch(epoch))
     }
 
     /// Return the block root at a recent ``slot``.
-    pub fn get_block_root_at_slot(&self, slot: u64) -> B256 {
-        assert!(slot < self.slot && self.slot <= slot + SLOTS_PER_HISTORICAL_ROOT);
-        self.block_roots[(slot % SLOTS_PER_HISTORICAL_ROOT) as usize]
+    pub fn get_block_root_at_slot(&self, slot: u64) -> anyhow::Result<B256> {
+        ensure!(
+            slot < self.slot && self.slot <= slot + SLOTS_PER_HISTORICAL_ROOT,
+            "slot given was outside of block_roots range"
+        );
+        Ok(self.block_roots[(slot % SLOTS_PER_HISTORICAL_ROOT) as usize])
     }
 
     /// Return the randao mix at a recent ``epoch``.
