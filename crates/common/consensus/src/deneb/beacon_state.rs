@@ -271,17 +271,19 @@ impl BeaconState {
     /// Return the set of attesting indices corresponding to ``data`` and ``bits``.
     pub fn get_attesting_indices(&self, attestation: Attestation) -> anyhow::Result<Vec<u64>> {
         let committee = self.get_beacon_committee(attestation.data.slot, attestation.data.index)?;
-        let mut indices = vec![];
-        for (i, index) in committee.into_iter().enumerate() {
-            if attestation
-                .aggregation_bits
-                .get(i)
-                .map_err(|err| anyhow::anyhow!("Failed to get bit from bit list {:?}", err))?
-            {
-                indices.push(index);
-            }
-        }
-        let indices = indices.into_iter().unique().collect();
+        let indices: Vec<u64> = committee
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, index)| {
+                attestation
+                    .aggregation_bits
+                    .get(i)
+                    .ok()
+                    .filter(|&bit| bit)
+                    .map(|_| index)
+            })
+            .unique()
+            .collect();
         Ok(indices)
     }
 
