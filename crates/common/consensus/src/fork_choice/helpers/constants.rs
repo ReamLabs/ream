@@ -1,3 +1,5 @@
+use alloy_primitives::{aliases::B32, fixed_bytes};
+
 pub const CHURN_LIMIT_QUOTIENT: u64 = 65536;
 pub const EFFECTIVE_BALANCE_INCREMENT: u64 = 1_000_000_000;
 pub const EPOCHS_PER_HISTORICAL_VECTOR: u64 = 65536;
@@ -16,3 +18,7 @@ pub const SECONDS_PER_SLOT: u64 = 12;
 pub const SHUFFLE_ROUND_COUNT: u8 = 90;
 pub const SLOTS_PER_EPOCH: u64 = 32;
 pub const SLOTS_PER_HISTORICAL_ROOT: u64 = 8192;
+pub const MIN_SEED_LOOKAHEAD: u64 = 1;
+pub const MAX_COMMITTEES_PER_SLOT: u64 = 64;
+pub const TARGET_COMMITTEE_SIZE: u64 = 128;
+pub const DOMAIN_BEACON_PROPOSER: B32 = fixed_bytes!("00000000");

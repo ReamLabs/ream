@@ -1,7 +1,8 @@
 use std::{cmp::max, sync::Arc};
 
-use alloy_primitives::B256;
+use alloy_primitives::{aliases::B32, B256};
 use anyhow::ensure;
+use ethereum_hashing::{hash, hash_fixed};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -17,12 +18,13 @@ use crate::{
     eth_1_data::Eth1Data,
     fork::Fork,
     fork_choice::helpers::constants::{
-        CHURN_LIMIT_QUOTIENT, EPOCHS_PER_HISTORICAL_VECTOR, GENESIS_EPOCH,
-        MIN_PER_EPOCH_CHURN_LIMIT, SLOTS_PER_HISTORICAL_ROOT,
+        CHURN_LIMIT_QUOTIENT, DOMAIN_BEACON_PROPOSER, EPOCHS_PER_HISTORICAL_VECTOR, GENESIS_EPOCH,
+        MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE, MAX_RANDOM_BYTE, MIN_PER_EPOCH_CHURN_LIMIT,
+        MIN_SEED_LOOKAHEAD, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, TARGET_COMMITTEE_SIZE,
     },
     helpers::is_active_validator,
     historical_summary::HistoricalSummary,
-    misc::{compute_epoch_at_slot, compute_start_slot_at_epoch},
+    misc::{compute_epoch_at_slot, compute_shuffled_index, compute_start_slot_at_epoch},
     sync_committee::SyncCommittee,
     validator::Validator,
 };
@@ -145,5 +147,61 @@ impl BeaconState {
             MIN_PER_EPOCH_CHURN_LIMIT,
             active_validator_indices.len() as u64 / CHURN_LIMIT_QUOTIENT,
         )
+    }
+
+    /// Return the seed at ``epoch``.
+    pub fn get_seed(&self, epoch: u64, domain_type: B32) -> B256 {
+        let mix =
+            self.get_randao_mix(epoch + EPOCHS_PER_HISTORICAL_VECTOR - MIN_SEED_LOOKAHEAD - 1);
+        let epoch_with_index =
+            [domain_type.as_slice(), &epoch.to_le_bytes(), mix.as_slice()].concat();
+        B256::from(hash_fixed(&epoch_with_index))
+    }
+
+    /// Return the number of committees in each slot for the given ``epoch``.
+    pub fn get_committee_count_per_slot(&self, epoch: u64) -> u64 {
+        (self.get_active_validator_indices(epoch).len() as u64
+            / SLOTS_PER_EPOCH
+            / TARGET_COMMITTEE_SIZE)
+            .clamp(1, MAX_COMMITTEES_PER_SLOT)
+    }
+
+    /// Return from ``indices`` a random index sampled by effective balance
+    pub fn compute_proposer_index(&self, indices: &[u64], seed: B256) -> anyhow::Result<u64> {
+        ensure!(!indices.is_empty(), "Index must be less than index_count");
+
+        let mut i: usize = 0;
+        let total = indices.len();
+
+        loop {
+            let candidate_index = indices[compute_shuffled_index(i % total, total, seed)?];
+
+            let seed_with_index = [seed.as_slice(), &(i / 32).to_le_bytes()].concat();
+            let hash = hash(&seed_with_index);
+            let random_byte = hash[i % 32];
+
+            let effective_balance = self.validators[candidate_index as usize].effective_balance;
+
+            if (effective_balance * MAX_RANDOM_BYTE) >= (MAX_EFFECTIVE_BALANCE * random_byte as u64)
+            {
+                return Ok(candidate_index);
+            }
+
+            i += 1;
+        }
+    }
+
+    /// Return the beacon proposer index at the current slot.
+    pub fn get_beacon_proposer_index(&self) -> Result<u64, anyhow::Error> {
+        let epoch = self.get_current_epoch();
+        let seed = B256::from(hash_fixed(
+            &[
+                self.get_seed(epoch, DOMAIN_BEACON_PROPOSER).as_slice(),
+                &self.slot.to_le_bytes(),
+            ]
+            .concat(),
+        ));
+        let indices = self.get_active_validator_indices(epoch);
+        self.compute_proposer_index(&indices, seed)
     }
 }

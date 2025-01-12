@@ -6,11 +6,7 @@ use ethereum_hashing::hash;
 use tree_hash::TreeHash;
 
 use crate::{
-    deneb::beacon_state::BeaconState,
-    fork_choice::helpers::constants::{
-        MAX_EFFECTIVE_BALANCE, MAX_RANDOM_BYTE, MAX_SEED_LOOKAHEAD, SHUFFLE_ROUND_COUNT,
-        SLOTS_PER_EPOCH,
-    },
+    fork_choice::helpers::constants::{MAX_SEED_LOOKAHEAD, SHUFFLE_ROUND_COUNT, SLOTS_PER_EPOCH},
     fork_data::ForkData,
     signing_data::SigningData,
 };
@@ -51,34 +47,6 @@ fn bytes_to_int64(slice: &[u8]) -> u64 {
     let mut bytes = [0; 8];
     bytes.copy_from_slice(&slice[0..8]);
     u64::from_le_bytes(bytes)
-}
-
-/// Return from ``indices`` a random index sampled by effective balance
-pub fn compute_proposer_index(
-    state: BeaconState,
-    indices: &[u64],
-    seed: B256,
-) -> anyhow::Result<u64> {
-    ensure!(!indices.is_empty(), "Index must be less than index_count");
-
-    let mut i: usize = 0;
-    let total = indices.len();
-
-    loop {
-        let candidate_index = indices[compute_shuffled_index(i % total, total, seed)?];
-
-        let seed_with_index = [seed.as_slice(), &(i / 32).to_le_bytes()].concat();
-        let hash = hash(&seed_with_index);
-        let random_byte = hash[i % 32];
-
-        let effective_balance = state.validators[candidate_index as usize].effective_balance;
-
-        if (effective_balance * MAX_RANDOM_BYTE) >= (MAX_EFFECTIVE_BALANCE * random_byte as u64) {
-            return Ok(candidate_index);
-        }
-
-        i += 1;
-    }
 }
 
 /// Return the committee corresponding to ``indices``, ``seed``, ``index``, and committee ``count``.
