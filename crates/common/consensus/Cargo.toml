@@ -17,6 +17,7 @@ ethereum_hashing = "0.7.0"
 ethereum_serde_utils.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
+itertools = "0.14.0"
 rstest.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true

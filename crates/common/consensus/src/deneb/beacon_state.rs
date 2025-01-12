@@ -3,6 +3,7 @@ use std::{cmp::max, sync::Arc};
 use alloy_primitives::{aliases::B32, B256};
 use anyhow::ensure;
 use ethereum_hashing::{hash, hash_fixed};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -13,18 +14,24 @@ use tree_hash_derive::TreeHash;
 
 use super::execution_payload_header::ExecutionPayloadHeader;
 use crate::{
+    attestation::Attestation,
     beacon_block_header::BeaconBlockHeader,
     checkpoint::Checkpoint,
     eth_1_data::Eth1Data,
     fork::Fork,
     fork_choice::helpers::constants::{
-        CHURN_LIMIT_QUOTIENT, DOMAIN_BEACON_PROPOSER, EPOCHS_PER_HISTORICAL_VECTOR, GENESIS_EPOCH,
+        CHURN_LIMIT_QUOTIENT, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
+        EFFECTIVE_BALANCE_INCREMENT, EPOCHS_PER_HISTORICAL_VECTOR, GENESIS_EPOCH,
         MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE, MAX_RANDOM_BYTE, MIN_PER_EPOCH_CHURN_LIMIT,
         MIN_SEED_LOOKAHEAD, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, TARGET_COMMITTEE_SIZE,
     },
     helpers::is_active_validator,
     historical_summary::HistoricalSummary,
-    misc::{compute_epoch_at_slot, compute_shuffled_index, compute_start_slot_at_epoch},
+    indexed_attestation::IndexedAttestation,
+    misc::{
+        compute_committee, compute_domain, compute_epoch_at_slot, compute_shuffled_index,
+        compute_start_slot_at_epoch,
+    },
     sync_committee::SyncCommittee,
     validator::Validator,
 };
@@ -203,5 +210,92 @@ impl BeaconState {
         ));
         let indices = self.get_active_validator_indices(epoch);
         self.compute_proposer_index(&indices, seed)
+    }
+
+    /// Return the combined effective balance of the ``indices``.
+    /// ``EFFECTIVE_BALANCE_INCREMENT`` Gwei minimum to avoid divisions by zero.
+    /// Math safe up to ~10B ETH, after which this overflows uint64.
+    pub fn get_total_balance(&self, indices: &[u64]) -> u64 {
+        max(
+            EFFECTIVE_BALANCE_INCREMENT,
+            indices
+                .iter()
+                .map(|index| self.validators[*index as usize].effective_balance)
+                .sum(),
+        )
+    }
+
+    /// Return the combined effective balance of the active validators.
+    /// Note: ``get_total_balance`` returns ``EFFECTIVE_BALANCE_INCREMENT`` Gwei minimum to avoid
+    /// divisions by zero.
+    pub fn get_total_active_balance(&self) -> u64 {
+        self.get_total_balance(
+            &self
+                .get_active_validator_indices(self.get_current_epoch())
+                .into_iter()
+                .unique()
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Return the signature domain (fork version concatenated with domain type) of a message.
+    pub fn get_domain(&self, domain_type: B32, epoch: Option<u64>) -> anyhow::Result<B256> {
+        let epoch = match epoch {
+            Some(epoch) => epoch,
+            None => self.get_current_epoch(),
+        };
+        let fork_version = if epoch < self.fork.epoch {
+            self.fork.previous_version
+        } else {
+            self.fork.current_version
+        };
+        compute_domain(
+            domain_type,
+            Some(fork_version),
+            Some(self.genesis_validators_root),
+        )
+    }
+
+    /// Return the beacon committee at ``slot`` for ``index``.
+    pub fn get_beacon_committee(&self, slot: u64, index: u64) -> anyhow::Result<Vec<u64>> {
+        let epoch = compute_epoch_at_slot(slot);
+        let committees_per_slot = self.get_committee_count_per_slot(epoch);
+        compute_committee(
+            &self.get_active_validator_indices(epoch),
+            self.get_seed(epoch, DOMAIN_BEACON_ATTESTER),
+            (slot % SLOTS_PER_EPOCH) * committees_per_slot + index,
+            committees_per_slot * SLOTS_PER_EPOCH,
+        )
+    }
+
+    /// Return the set of attesting indices corresponding to ``data`` and ``bits``.
+    pub fn get_attesting_indices(&self, attestation: Attestation) -> anyhow::Result<Vec<u64>> {
+        let committee = self.get_beacon_committee(attestation.data.slot, attestation.data.index)?;
+        let mut indices = vec![];
+        for (i, index) in committee.into_iter().enumerate() {
+            if attestation
+                .aggregation_bits
+                .get(i)
+                .map_err(|err| anyhow::anyhow!("Failed to get bit from bit list {:?}", err))?
+            {
+                indices.push(index);
+            }
+        }
+        let indices = indices.into_iter().unique().collect();
+        Ok(indices)
+    }
+
+    /// Return the indexed attestation corresponding to ``attestation``.
+    pub fn get_indexed_attestation(
+        &self,
+        attestation: Attestation,
+    ) -> anyhow::Result<IndexedAttestation> {
+        let mut attesting_indices = self.get_attesting_indices(attestation.clone())?;
+        attesting_indices.sort();
+        Ok(IndexedAttestation {
+            attesting_indices: attesting_indices.into(),
+            data: attestation.data,
+            signature: attestation.signature,
+        })
     }
 }

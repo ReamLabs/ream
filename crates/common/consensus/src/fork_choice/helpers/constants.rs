@@ -22,3 +22,4 @@ pub const MIN_SEED_LOOKAHEAD: u64 = 1;
 pub const MAX_COMMITTEES_PER_SLOT: u64 = 64;
 pub const TARGET_COMMITTEE_SIZE: u64 = 128;
 pub const DOMAIN_BEACON_PROPOSER: B32 = fixed_bytes!("00000000");
+pub const DOMAIN_BEACON_ATTESTER: B32 = fixed_bytes!("01000000");
