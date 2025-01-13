@@ -11,15 +11,19 @@ version.workspace = true
 
 [dependencies]
 # ream dependencies
-ream-executor = { workspace = true }
-ream-discv5 = { workspace = true }
+ream-executor.workspace = true
+ream-discv5.workspace = true
 
 # misc
-discv5 = { workspace = true }
-futures = { workspace = true }
-hex = { workspace = true }
-libp2p-identity = { workspace = true }
-libp2p-mplex = { workspace = true }
-libp2p = { workspace = true, default-features = false, features = ["identify", "yamux", "noise", "dns", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
-serde = { workspace = true }
-tokio = { workspace = true }
+anyhow.workspace = true
+enr.workspace = true
+discv5.workspace = true
+futures.workspace = true
+hex.workspace = true
+libp2p-identity.workspace = true
+libp2p-mplex.workspace = true
+libp2p.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+tokio.workspace = true
+tracing.workspace = true

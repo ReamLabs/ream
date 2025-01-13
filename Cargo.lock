@@ -1037,8 +1037,10 @@ dependencies = [
  "hex",
  "hkdf",
  "lazy_static",
+ "libp2p-identity",
  "lru",
  "more-asserts",
+ "multiaddr",
  "parking_lot",
  "rand",
  "smallvec",
@@ -3441,11 +3443,14 @@ dependencies = [
 name = "ream-discv5"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "discv5",
  "futures",
  "libp2p",
  "libp2p-identity",
  "libp2p-mplex",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3460,7 +3465,9 @@ dependencies = [
 name = "ream-p2p"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "discv5",
+ "enr",
  "futures",
  "hex",
  "libp2p",
@@ -3469,7 +3476,9 @@ dependencies = [
  "ream-discv5",
  "ream-executor",
  "serde",
+ "serde_yaml",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -6,8 +6,12 @@ use std::{
     time::Instant,
 };
 
-use discv5::{enr::CombinedKey, Discv5, Enr};
-use futures::{stream::FuturesUnordered, StreamExt, TryFutureExt};
+use anyhow::anyhow;
+use discv5::{
+    enr::{k256::ecdsa::SigningKey, CombinedKey, NodeId},
+    Discv5, Enr,
+};
+use futures::{stream::FuturesUnordered, FutureExt, StreamExt, TryFutureExt};
 use libp2p::{
     core::{transport::PortUse, Endpoint},
     identity::Keypair,
@@ -17,16 +21,22 @@ use libp2p::{
     },
     Multiaddr, PeerId,
 };
+use tokio::sync::mpsc;
+use tracing::{error, info, warn};
 
 use crate::config::NetworkConfig;
 
 #[derive(Debug)]
 pub struct DiscoveredPeers {
-    pub _peers: HashMap<Enr, Option<Instant>>,
+    pub peers: HashMap<Enr, Option<Instant>>,
 }
 
 enum EventStream {
     Inactive,
+    Awaiting(
+        Pin<Box<dyn Future<Output = Result<mpsc::Receiver<discv5::Event>, discv5::Error>> + Send>>,
+    ),
+    Present(mpsc::Receiver<discv5::Event>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,13 +58,13 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    pub async fn new(local_key: Keypair, config: &NetworkConfig) -> Result<Self, String> {
+    pub async fn new(local_key: Keypair, config: &NetworkConfig) -> anyhow::Result<Self> {
         let enr_local = convert_to_enr(local_key)?;
         let enr = Enr::builder().build(&enr_local).unwrap();
         let node_local_id = enr.node_id();
 
         let mut discv5 = Discv5::new(enr, enr_local, config.discv5_config.clone())
-            .map_err(|e| format!("Discv5 service failed. Error: {:?}", e))?;
+            .map_err(|e| anyhow!("Discv5 service failed. Error: {:?}", e))?;
 
         // adding bootnode to DHT
         for bootnode_enr in config.boot_nodes_enr.clone() {
@@ -64,16 +74,18 @@ impl Discovery {
             }
 
             let _ = discv5.add_enr(bootnode_enr).map_err(|e| {
-                println!("Discv5 service failed. Error: {:?}", e);
+                info!("Discv5 service failed. Error: {:?}", e);
             });
         }
 
         // init ports
         let event_stream = if !config.disable_discovery {
-            discv5.start().map_err(|e| e.to_string()).await?;
-            println!("Started discovery");
-            // EventStream::Awaiting(Box::pin(discv5.event_stream()))
-            EventStream::Inactive
+            discv5
+                .start()
+                .map_err(|err| anyhow!("Failed to start discv5 {err:?}"))
+                .await?;
+            info!("Started discovery");
+            EventStream::Awaiting(Box::pin(discv5.event_stream()))
         } else {
             EventStream::Inactive
         };
@@ -90,7 +102,7 @@ impl Discovery {
     pub fn discover_peers(&mut self, target_peers: usize) {
         // If the discv5 service isn't running or we are in the process of a query, don't bother
         // queuing a new one.
-        println!("Discovering peers {:?}", self.discv5.local_enr());
+        info!("Discovering peers {:?}", self.discv5.local_enr());
 
         if !self.started || self.find_peer_active {
             return;
@@ -100,19 +112,46 @@ impl Discovery {
         self.start_query(QueryType::FindPeers, target_peers);
     }
 
-    fn process_queries(&mut self, cx: &mut Context) -> bool {
-        let mut processed = false;
-
+    fn process_queries(&mut self, cx: &mut Context) -> Option<HashMap<Enr, Option<Instant>>> {
         while let Poll::Ready(Some(query)) = self.discovery_queries.poll_next_unpin(cx) {
-            println!("query{:?} {:?}", query.result, query.query_type);
-            processed = true;
-            // TODO: add query types and push them to mesh
+            let result = match query.query_type {
+                QueryType::FindPeers => {
+                    self.find_peer_active = false;
+                    match query.result {
+                        Ok(peers) => {
+                            info!("Found {} peers", peers.len());
+                            let mut peer_map = HashMap::new();
+                            for peer in peers {
+                                peer_map.insert(peer, None);
+                            }
+                            Some(peer_map)
+                        }
+                        Err(e) => {
+                            warn!("Failed to find peers: {:?}", e);
+                            None
+                        }
+                    }
+                }
+            };
+
+            if result.is_some() {
+                return result;
+            }
         }
-        processed
+        None
     }
 
     fn start_query(&mut self, query: QueryType, _total_peers: usize) {
-        println!("Query! queryType={:?}", query);
+        info!("Query! queryType={:?}", query);
+        let query_future = self
+            .discv5
+            .find_node(NodeId::random())
+            .map(|result| QueryResult {
+                query_type: query,
+                result,
+            });
+
+        self.discovery_queries.push(Box::pin(query_future));
     }
 }
 
@@ -139,16 +178,6 @@ impl NetworkBehaviour for Discovery {
         Ok(ConnectionHandler)
     }
 
-    fn handle_pending_outbound_connection(
-        &mut self,
-        _connection_id: ConnectionId,
-        _maybe_peer: Option<PeerId>,
-        _addresses: &[Multiaddr],
-        _effective_role: Endpoint,
-    ) -> Result<Vec<Multiaddr>, ConnectionDenied> {
-        Ok(Vec::new())
-    }
-
     fn handle_established_outbound_connection(
         &mut self,
         _connection_id: ConnectionId,
@@ -161,7 +190,7 @@ impl NetworkBehaviour for Discovery {
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {
-        println!("Swarm event: {:?}", event);
+        info!("Discv5 on swarm event gotten: {:?}", event);
     }
 
     fn on_connection_handler_event(
@@ -170,26 +199,47 @@ impl NetworkBehaviour for Discovery {
         _connection_id: ConnectionId,
         _event: THandlerOutEvent<Self>,
     ) {
-        println!("ConnectionHandlerOutEvent");
     }
 
     fn poll(
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-        self.process_queries(cx);
+        if !self.started {
+            return Poll::Pending;
+        }
 
-        match self.event_stream {
-            EventStream::Inactive => println!("inactive"),
+        if let Some(peers) = self.process_queries(cx) {
+            return Poll::Ready(ToSwarm::GenerateEvent(DiscoveredPeers { peers }));
+        }
+
+        match &mut self.event_stream {
+            EventStream::Inactive => {}
+            EventStream::Awaiting(fut) => {
+                if let Poll::Ready(event_stream) = fut.poll_unpin(cx) {
+                    match event_stream {
+                        Ok(stream) => {
+                            self.event_stream = EventStream::Present(stream);
+                        }
+                        Err(e) => {
+                            error!("Failed to start discovery event stream: {:?}", e);
+                            self.event_stream = EventStream::Inactive;
+                        }
+                    }
+                }
+            }
+            EventStream::Present(_receiver) => {}
         };
 
         Poll::Pending
     }
 }
 
-fn convert_to_enr(key: Keypair) -> Result<CombinedKey, &'static str> {
-    let key = key.try_into_secp256k1().expect("right key type");
-    let secret = discv5::enr::k256::ecdsa::SigningKey::from_slice(&key.secret().to_bytes())
-        .expect("libp2p key must be valid");
+fn convert_to_enr(key: Keypair) -> anyhow::Result<CombinedKey> {
+    let key = key
+        .try_into_secp256k1()
+        .map_err(|err| anyhow!("Failed to get secp256k1 keypair: {err:?}"))?;
+    let secret = SigningKey::from_slice(&key.secret().to_bytes())
+        .map_err(|err| anyhow!("Failed to convert keypair to SigningKey: {err:?}"))?;
     Ok(CombinedKey::Secp256k1(secret))
 }

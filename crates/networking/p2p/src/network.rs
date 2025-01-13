@@ -1,10 +1,14 @@
 use std::{
+    collections::HashMap,
     fmt::Debug,
+    net::Ipv4Addr,
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
+use anyhow::anyhow;
+use discv5::Enr;
 use libp2p::{
     core::{muxing::StreamMuxerBox, transport::Boxed},
     futures::StreamExt,
@@ -15,13 +19,20 @@ use libp2p::{
     yamux, Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
 };
 use libp2p_identity::{secp256k1, Keypair, PublicKey};
-use ream_discv5::{config::NetworkConfig, discovery::Discovery};
+use ream_discv5::{
+    config::NetworkConfig,
+    discovery::{DiscoveredPeers, Discovery},
+};
 use ream_executor::ReamExecutor;
+use tracing::{error, info, warn};
+
+use crate::bootnodes::Bootnodes;
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
     pub identify: identify::Behaviour,
 
+    /// The discovery domain: discv5
     pub discovery: Discovery,
 
     pub connection_registry: libp2p::connection_limits::Behaviour,
@@ -54,7 +65,7 @@ impl libp2p::swarm::Executor for Executor {
 }
 
 impl Network {
-    pub async fn init(executor: ReamExecutor, config: &NetworkConfig) -> Result<Self, String> {
+    pub async fn init(executor: ReamExecutor, config: &NetworkConfig) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
         let discovery = {
@@ -93,7 +104,7 @@ impl Network {
         };
 
         let transport = build_transport(Keypair::from(local_key.clone()))
-            .map_err(|e| format!("Failed to build transport: {:?}", e))?;
+            .map_err(|err| anyhow!("Failed to build transport: {err:?}"))?;
 
         let swarm = {
             let config = libp2p::swarm::Config::with_executor(Executor(executor))
@@ -123,21 +134,34 @@ impl Network {
         Ok(network)
     }
 
-    async fn start_network_worker(&mut self, _config: &NetworkConfig) -> Result<(), String> {
-        println!("Libp2p starting .... ");
+    async fn start_network_worker(&mut self, _config: &NetworkConfig) -> anyhow::Result<()> {
+        info!("Libp2p starting .... ");
 
-        let mut multi_addr: Multiaddr = "/ip4/127.0.0.1".parse().unwrap();
-        multi_addr.push(Protocol::Tcp(10000));
+        let mut multi_addr: Multiaddr = Ipv4Addr::UNSPECIFIED.into();
+        multi_addr.push(Protocol::Tcp(9000));
 
         match self.swarm.listen_on(multi_addr.clone()) {
-            Ok(_) => {
-                println!(
-                    "Listening on {:?} with peer_id {:?}",
+            Ok(listener_id) => {
+                info!(
+                    "Listening on {:?} with peer_id {:?} {listener_id:?}",
                     multi_addr, self.peer_id
                 );
             }
-            Err(_) => {
-                println!("Failed to start libp2p peer listen on {:?}", multi_addr);
+            Err(err) => {
+                error!("Failed to start libp2p peer listen on {multi_addr:?}, error: {err:?}",);
+            }
+        }
+
+        let bootnodes = Bootnodes::new();
+
+        for bootnode in bootnodes.bootnodes {
+            if let Some(ipv4) = bootnode.ip4() {
+                let mut multi_addr = Multiaddr::empty();
+                if let Some(tcp_port) = bootnode.tcp4() {
+                    multi_addr.push(ipv4.into());
+                    multi_addr.push(Protocol::Tcp(tcp_port));
+                }
+                self.swarm.dial(multi_addr).unwrap();
             }
         }
 
@@ -162,13 +186,49 @@ impl Network {
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {
         // currently no-op for any network events
+        info!("Event: {:?}", event);
         match event {
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
                 ReamBehaviourEvent::Identify(_) => None,
-                ReamBehaviourEvent::Discovery(_) => None,
-                _ => None,
+                ReamBehaviourEvent::Discovery(DiscoveredPeers { peers }) => {
+                    self.handle_discovered_peers(peers);
+                    None
+                }
+                ream_behavior_event => {
+                    info!("Unhandled behaviour event: {ream_behavior_event:?}");
+                    None
+                }
             },
-            _ => None,
+            swarm_event => {
+                info!("Unhandled swarm event: {swarm_event:?}");
+                None
+            }
+        }
+    }
+
+    fn handle_discovered_peers(&mut self, peers: HashMap<Enr, Option<Instant>>) {
+        info!("Discovered peers: {:?}", peers);
+        for (enr, _) in peers {
+            let mut multiaddrs: Vec<Multiaddr> = Vec::new();
+            if let Some(ip) = enr.ip4() {
+                if let Some(tcp) = enr.tcp4() {
+                    let mut multiaddr: Multiaddr = ip.into();
+                    multiaddr.push(Protocol::Tcp(tcp));
+                    multiaddrs.push(multiaddr);
+                }
+            }
+            if let Some(ip6) = enr.ip6() {
+                if let Some(tcp6) = enr.tcp6() {
+                    let mut multiaddr: Multiaddr = ip6.into();
+                    multiaddr.push(Protocol::Tcp(tcp6));
+                    multiaddrs.push(multiaddr);
+                }
+            }
+            for multiaddr in multiaddrs {
+                if let Err(err) = self.swarm.dial(multiaddr) {
+                    warn!("Failed to dial peer: {err:?}");
+                }
+            }
         }
     }
 }
