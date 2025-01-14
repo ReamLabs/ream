@@ -1,4 +1,8 @@
-use std::{cmp::max, sync::Arc};
+use std::{
+    cmp::{max, min},
+    collections::HashSet,
+    sync::Arc,
+};
 
 use alloy_primitives::{aliases::B32, B256};
 use anyhow::{bail, ensure};
@@ -15,18 +19,22 @@ use tree_hash_derive::TreeHash;
 use super::execution_payload_header::ExecutionPayloadHeader;
 use crate::{
     attestation::Attestation,
+    attestation_data::AttestationData,
     beacon_block_header::BeaconBlockHeader,
     checkpoint::Checkpoint,
     eth_1_data::Eth1Data,
     fork::Fork,
     fork_choice::helpers::constants::{
-        CHURN_LIMIT_QUOTIENT, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
+        BASE_REWARD_FACTOR, CHURN_LIMIT_QUOTIENT, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
         EFFECTIVE_BALANCE_INCREMENT, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
-        FAR_FUTURE_EPOCH, GENESIS_EPOCH, MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE,
-        MAX_RANDOM_BYTE, MIN_PER_EPOCH_CHURN_LIMIT, MIN_SEED_LOOKAHEAD,
-        MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY, PROPOSER_WEIGHT,
-        SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, TARGET_COMMITTEE_SIZE, WEIGHT_DENOMINATOR,
-        WHISTLEBLOWER_REWARD_QUOTIENT,
+        FAR_FUTURE_EPOCH, GENESIS_EPOCH, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
+        INACTIVITY_SCORE_RECOVERY_RATE, MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE,
+        MAX_RANDOM_BYTE, MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
+        MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
+        MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
+        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT,
+        TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
+        TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     helpers::is_active_validator,
     historical_summary::HistoricalSummary,
@@ -218,7 +226,7 @@ impl BeaconState {
     /// Return the combined effective balance of the ``indices``.
     /// ``EFFECTIVE_BALANCE_INCREMENT`` Gwei minimum to avoid divisions by zero.
     /// Math safe up to ~10B ETH, after which this overflows uint64.
-    pub fn get_total_balance(&self, indices: &[u64]) -> u64 {
+    pub fn get_total_balance(&self, indices: HashSet<u64>) -> u64 {
         max(
             EFFECTIVE_BALANCE_INCREMENT,
             indices
@@ -233,11 +241,9 @@ impl BeaconState {
     /// divisions by zero.
     pub fn get_total_active_balance(&self) -> u64 {
         self.get_total_balance(
-            &self
-                .get_active_validator_indices(self.get_current_epoch())
+            self.get_active_validator_indices(self.get_current_epoch())
                 .into_iter()
-                .unique()
-                .collect::<Vec<_>>(),
+                .collect::<HashSet<_>>(),
         )
     }
 
@@ -401,5 +407,178 @@ impl BeaconState {
         self.increase_balance(whistleblower_index, whistleblower_reward - proposer_reward);
 
         Ok(())
+    }
+    pub fn is_valid_genesis_state(&self) -> bool {
+        if self.genesis_time < MIN_GENESIS_TIME {
+            return false;
+        }
+        if self.get_active_validator_indices(GENESIS_EPOCH).len()
+            < MIN_GENESIS_ACTIVE_VALIDATOR_COUNT as usize
+        {
+            return false;
+        }
+        true
+    }
+
+    pub fn add_flag(flags: u8, flag_index: u8) -> u8 {
+        let flag = 2 << flag_index;
+        flags | flag
+    }
+
+    pub fn has_flag(flags: u8, flag_index: u8) -> bool {
+        let flag = 2 << flag_index;
+        flags & flag == flag
+    }
+
+    pub fn get_unslashed_participating_indices(
+        &self,
+        flag_index: u8,
+        epoch: u64,
+    ) -> anyhow::Result<HashSet<u64>> {
+        ensure!(
+            epoch == self.get_previous_epoch() || epoch == self.get_current_epoch(),
+            "Epoch must be either the previous or current epoch"
+        );
+        let epoch_participation = if epoch == self.get_current_epoch() {
+            &self.current_epoch_participation
+        } else {
+            &self.previous_epoch_participation
+        };
+        let active_validator_indices = self.get_active_validator_indices(epoch);
+        let mut participating_indices = vec![];
+        for i in active_validator_indices {
+            if Self::has_flag(epoch_participation[i as usize], flag_index) {
+                participating_indices.push(i);
+            }
+        }
+        let filtered_indices: HashSet<u64> = participating_indices
+            .into_iter()
+            .filter(|&index| self.validators[index as usize].slashed)
+            .collect();
+        Ok(filtered_indices)
+    }
+
+    pub fn process_inactivity_updates(&mut self) -> anyhow::Result<()> {
+        // Skip the genesis epoch as score updates are based on the previous epoch participation
+        if self.get_current_epoch() == GENESIS_EPOCH {
+            return Ok(());
+        }
+        for index in self.get_eligible_validator_indices()? {
+            // Increase the inactivity score of inactive validators
+            if self
+                .get_unslashed_participating_indices(
+                    TIMELY_TARGET_FLAG_INDEX,
+                    self.get_previous_epoch(),
+                )?
+                .contains(&index)
+            {
+                self.inactivity_scores[index as usize] -=
+                    min(1, self.inactivity_scores[index as usize])
+            } else {
+                self.inactivity_scores[index as usize] += INACTIVITY_SCORE_BIAS
+            }
+
+            // Decrease the inactivity score of all eligible validators during a leak-free epoch
+            if !self.is_in_inactivity_leak() {
+                self.inactivity_scores[index as usize] -= min(
+                    INACTIVITY_SCORE_RECOVERY_RATE,
+                    self.inactivity_scores[index as usize],
+                )
+            }
+        }
+        Ok(())
+    }
+
+    pub fn get_base_reward_per_increment(&self) -> u64 {
+        EFFECTIVE_BALANCE_INCREMENT * BASE_REWARD_FACTOR
+            / (self.get_total_active_balance() as f64).sqrt() as u64
+    }
+
+    /// Return the base reward for the validator defined by ``index`` with respect to the current
+    /// ``state``.
+    pub fn get_base_reward(&self, index: u64) -> u64 {
+        let increments =
+            self.validators[index as usize].effective_balance / EFFECTIVE_BALANCE_INCREMENT;
+        increments * self.get_base_reward_per_increment()
+    }
+
+    pub fn get_proposer_reward(&self, attesting_index: u64) -> u64 {
+        self.get_base_reward(attesting_index) / PROPOSER_REWARD_QUOTIENT
+    }
+
+    pub fn get_finality_delay(&self) -> u64 {
+        self.get_previous_epoch() - self.finalized_checkpoint.epoch
+    }
+
+    pub fn is_in_inactivity_leak(&self) -> bool {
+        self.get_finality_delay() > MIN_EPOCHS_TO_INACTIVITY_PENALTY
+    }
+
+    pub fn get_eligible_validator_indices(&self) -> anyhow::Result<Vec<u64>> {
+        let previous_epoch = self.get_previous_epoch();
+        let mut validator_indices = vec![];
+        for (index, v) in self.validators.iter().enumerate() {
+            if is_active_validator(v, previous_epoch)
+                || v.slashed && previous_epoch + 1 < v.withdrawable_epoch
+            {
+                validator_indices.push(index as u64)
+            }
+        }
+        Ok(validator_indices)
+    }
+
+    pub fn get_index_for_new_validator(&self) -> u64 {
+        self.validators.len() as u64
+    }
+
+    /// Return the flag indices that are satisfied by an attestation.
+    pub fn get_attestation_participation_flag_indices(
+        &self,
+        data: AttestationData,
+        inclusion_delay: u64,
+    ) -> anyhow::Result<Vec<u8>> {
+        let justified_checkpoint = if data.target.epoch == self.get_current_epoch() {
+            self.current_justified_checkpoint
+        } else {
+            self.previous_justified_checkpoint
+        };
+        let is_matching_source = data.source == justified_checkpoint;
+        let is_matching_target =
+            is_matching_source && data.target.root == self.get_block_root(data.target.epoch)?;
+        let is_matching_head = is_matching_target
+            && data.beacon_block_root == self.get_block_root_at_slot(data.slot)?;
+        ensure!(is_matching_source);
+
+        let mut participation_flag_indices = vec![];
+
+        if is_matching_source && inclusion_delay <= (SLOTS_PER_EPOCH as f64).sqrt() as u64 {
+            participation_flag_indices.push(TIMELY_SOURCE_FLAG_INDEX);
+        }
+        if is_matching_target && inclusion_delay <= SLOTS_PER_EPOCH {
+            participation_flag_indices.push(TIMELY_TARGET_FLAG_INDEX);
+        }
+        if is_matching_head && inclusion_delay == MIN_ATTESTATION_INCLUSION_DELAY {
+            participation_flag_indices.push(TIMELY_HEAD_FLAG_INDEX);
+        }
+
+        Ok(participation_flag_indices)
+    }
+
+    pub fn get_inactivity_penalty_deltas(&self) -> anyhow::Result<(Vec<u64>, Vec<u64>)> {
+        let rewards = vec![0; self.validators.len()];
+        let mut penalties = vec![0; self.validators.len()];
+        let previous_epoch = self.get_previous_epoch();
+        let matching_target_indices =
+            self.get_unslashed_participating_indices(TIMELY_TARGET_FLAG_INDEX, previous_epoch)?;
+        for index in self.get_eligible_validator_indices()? {
+            if !matching_target_indices.contains(&index) {
+                let penalty_numerator = self.validators[index as usize].effective_balance
+                    * self.inactivity_scores[index as usize];
+                let penalty_denominator =
+                    INACTIVITY_SCORE_BIAS * INACTIVITY_PENALTY_QUOTIENT_ALTAIR;
+                penalties[index as usize] += penalty_numerator / penalty_denominator
+            }
+        }
+        Ok((rewards, penalties))
     }
 }

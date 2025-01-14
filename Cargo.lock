@@ -3436,6 +3436,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "blst",
  "c-kzg",
  "ethereum_hashing",
  "ethereum_serde_utils",

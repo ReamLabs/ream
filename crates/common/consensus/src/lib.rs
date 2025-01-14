@@ -17,6 +17,7 @@ pub mod historical_summary;
 pub mod indexed_attestation;
 pub mod kzg_commitment;
 pub mod misc;
+pub mod pending_attestation;
 pub mod predicates;
 pub mod proposer_slashing;
 pub mod pubkey;

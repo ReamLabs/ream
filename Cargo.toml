@@ -27,6 +27,7 @@ version = "0.1.0"
 [workspace.dependencies]
 alloy-primitives = { version = "0.8.15", features = ['serde'] }
 anyhow = "1.0.95"
+blst = "0.3.13"
 c-kzg = "2.0.0"
 clap = "4"
 discv5 = "0.9.0"
