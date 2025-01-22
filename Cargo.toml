@@ -25,31 +25,31 @@ rust-version = "1.81.0"
 version = "0.1.0"
 
 [workspace.dependencies]
-alloy-primitives = { version = "0.8.15", features = ['serde'] }
-anyhow = "1.0.95"
-blst = "0.3.13"
-c-kzg = "2.0.0"
+alloy-primitives = { version = "0.8", features = ['serde'] }
+anyhow = "1.0"
+blst = "0.3"
+c-kzg = "2.0"
 clap = "4"
-discv5 = "0.9.0"
-ethereum_serde_utils = "0.7.0"
-ethereum_ssz = "0.8.1"
-ethereum_ssz_derive = "0.8.1"
-futures = "0.3.30"
-hex = "0.4.3"
-itertools = "0.14.0"
-libp2p-identity = "0.2.10"
-libp2p-mplex = "0.42.0"
-libp2p = { version = "0.54.1", default-features = false, features = ["identify", "yamux", "noise", "dns", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
-rstest = "0.23.0"
-serde = { version = '1.0.216', features = ['derive', "rc"] }
-serde_yaml = "0.9.34"
-snap = "1.1.1"
-ssz_types = "0.10.0"
-tokio = { version = "1.42.0", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
+discv5 = "0.9"
+ethereum_serde_utils = "0.7"
+ethereum_ssz = "0.8"
+ethereum_ssz_derive = "0.8"
+futures = "0.3"
+hex = "0.4"
+itertools = "0.14"
+libp2p-identity = "0.2"
+libp2p-mplex = "0.42"
+libp2p = { version = "0.54", default-features = false, features = ["identify", "yamux", "noise", "dns", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
+rstest = "0.23"
+serde = { version = '1.0', features = ['derive', "rc"] }
+serde_yaml = "0.9"
+snap = "1.1"
+ssz_types = "0.10"
+tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-tree_hash = "0.9.0"
-tree_hash_derive = "0.9.0"
+tree_hash = "0.9"
+tree_hash_derive = "0.9"
 
 
 # ream dependencies
