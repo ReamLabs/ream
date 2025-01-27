@@ -28,7 +28,7 @@ version = "0.1.0"
 alloy-primitives = { version = "0.8", features = ['serde'] }
 anyhow = "1.0"
 blst = "0.3"
-c-kzg = "2.0"
+kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 clap = "4"
 discv5 = "0.9"
 ethereum_serde_utils = "0.7"
