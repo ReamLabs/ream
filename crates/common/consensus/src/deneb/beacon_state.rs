@@ -6,7 +6,8 @@ use std::{
 };
 
 use alloy_primitives::{aliases::B32, Address, B256};
-use anyhow::{bail, ensure};
+use anyhow::{anyhow, bail, ensure};
+use blst::min_pk::PublicKey;
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -27,10 +28,13 @@ use crate::{
     attestation_data::AttestationData,
     beacon_block_header::BeaconBlockHeader,
     checkpoint::Checkpoint,
+    deposit::Deposit,
+    deposit_message::DepositMessage,
     eth_1_data::Eth1Data,
     fork::Fork,
     fork_choice::helpers::constants::{
-        BASE_REWARD_FACTOR, CHURN_LIMIT_QUOTIENT, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
+        BASE_REWARD_FACTOR, CHURN_LIMIT_QUOTIENT, DEPOSIT_CONTRACT_TREE_DEPTH,
+        DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER, DOMAIN_DEPOSIT,
         EFFECTIVE_BALANCE_INCREMENT, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
         FAR_FUTURE_EPOCH, GENESIS_EPOCH, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
         INACTIVITY_SCORE_RECOVERY_RATE, MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE,
@@ -47,12 +51,16 @@ use crate::{
     indexed_attestation::IndexedAttestation,
     misc::{
         compute_activation_exit_epoch, compute_committee, compute_domain, compute_epoch_at_slot,
-        compute_shuffled_index, compute_start_slot_at_epoch,
+        compute_shuffled_index, compute_signing_root, compute_start_slot_at_epoch,
     },
+    pubkey::PubKey,
+    signature::BlsSignature,
     sync_committee::SyncCommittee,
     validator::Validator,
     withdrawal::Withdrawal,
 };
+
+pub const DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_ROPOP";
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BeaconState {
@@ -695,5 +703,128 @@ impl BeaconState {
         }
 
         Ok(())
+    }
+    pub fn add_validator_to_registry(
+        &mut self,
+        pubkey: PubKey,
+        withdrawal_credentials: B256,
+        amount: u64,
+    ) -> anyhow::Result<()> {
+        self.validators
+            .push(get_validator_from_deposit(
+                pubkey,
+                withdrawal_credentials,
+                amount,
+            ))
+            .map_err(|err| anyhow!("Not satisfied {:?}", err))?;
+        self.balances
+            .push(amount)
+            .map_err(|err| anyhow!("Not satisfied {:?}", err))?;
+        Ok(())
+    }
+
+    pub fn apply_deposit(
+        &mut self,
+        pubkey: PubKey,
+        withdrawal_credentials: B256,
+        amount: u64,
+        signature: BlsSignature,
+    ) -> anyhow::Result<()> {
+        let mut validator_pubkeys = vec![];
+        for validator in &self.validators {
+            validator_pubkeys.push(validator.pubkey.clone());
+        }
+        if validator_pubkeys.contains(&pubkey) {
+            // Verify the deposit signature (proof of possession) which is not checked by the
+            // deposit contract
+            let deposit_message = DepositMessage {
+                pubkey: pubkey.clone(),
+                withdrawal_credentials,
+                amount,
+            };
+            let domain = compute_domain(DOMAIN_DEPOSIT, None, None)?; // # Fork-agnostic domain since deposits are valid across forks
+            let signing_root = compute_signing_root(deposit_message, domain);
+            let sig = blst::min_pk::Signature::from_bytes(&signature.signature).unwrap();
+            let public_key =
+                PublicKey::from_bytes(&pubkey.inner).expect("Cold not convert PublicKey");
+            let verification_result =
+                sig.fast_aggregate_verify(true, signing_root.as_ref(), DST, &[&public_key]);
+            if verification_result == blst::BLST_ERROR::BLST_SUCCESS {
+                self.add_validator_to_registry(pubkey, withdrawal_credentials, amount)?;
+            }
+        } else {
+            // Increase balance by deposit amount
+            let index = validator_pubkeys
+                .iter()
+                .position(|r| *r == pubkey)
+                .ok_or(anyhow!("Can't convert option usize to u64"))?;
+            self.increase_balance(index as u64, amount);
+        }
+        Ok(())
+    }
+
+    pub fn process_deposit(&mut self, deposit: Deposit) -> anyhow::Result<()> {
+        // Verify the Merkle branch
+        ensure!(is_valid_merkle_branch(
+            deposit.data.tree_hash_root(),
+            &deposit.proof,
+            DEPOSIT_CONTRACT_TREE_DEPTH + 1, // Add 1 for the List length mix-in
+            self.eth1_deposit_index,
+            self.eth1_data.deposit_root,
+        ));
+
+        // Deposits must be processed in order
+        self.eth1_deposit_index += 1;
+
+        self.apply_deposit(
+            deposit.data.pubkey,
+            deposit.data.withdrawal_credentials,
+            deposit.data.amount,
+            deposit.data.signature,
+        )?;
+
+        Ok(())
+    }
+}
+
+/// Check if ``leaf`` at ``index`` verifies against the Merkle ``root`` and ``branch``.
+pub fn is_valid_merkle_branch(
+    leaf: B256,
+    branch: &[B256],
+    depth: u64,
+    index: u64,
+    root: B256,
+) -> bool {
+    let mut value = leaf;
+    for i in 0..depth {
+        if (index / (2u64.pow(i as u32)) % 2) == 1 {
+            let branch_value = [branch[i as usize], value].concat();
+            value = B256::from_slice(&hash(&branch_value));
+        } else {
+            let branch_value = [value, branch[i as usize]].concat();
+            value = B256::from_slice(&hash(&branch_value));
+        }
+    }
+    value == root
+}
+
+pub fn get_validator_from_deposit(
+    pubkey: PubKey,
+    withdrawal_credentials: B256,
+    amount: u64,
+) -> Validator {
+    let effective_balance = min(
+        amount - amount % EFFECTIVE_BALANCE_INCREMENT,
+        MAX_EFFECTIVE_BALANCE,
+    );
+    Validator {
+        pubkey,
+        withdrawal_credentials,
+        effective_balance,
+        slashed: false,
+        activation_eligibility_epoch: FAR_FUTURE_EPOCH,
+        activation_epoch: FAR_FUTURE_EPOCH,
+        exit_epoch: FAR_FUTURE_EPOCH,
+        withdrawable_epoch: FAR_FUTURE_EPOCH,
     }
 }
