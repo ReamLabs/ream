@@ -41,9 +41,8 @@ impl Validator {
 
     /// Check if ``validator`` is partially withdrawable.
     pub fn is_partially_withdrawable_validator(&self, balance: u64) -> bool {
-        let has_max_effective_balance = self.effective_balance == MAX_EFFECTIVE_BALANCE;
-        let has_excess_balance = balance > MAX_EFFECTIVE_BALANCE;
-
-        self.has_eth1_withdrawal_credential() && has_max_effective_balance && has_excess_balance
+        self.has_eth1_withdrawal_credential()
+            && self.effective_balance == MAX_EFFECTIVE_BALANCE
+            && balance > MAX_EFFECTIVE_BALANCE
     }
 }
