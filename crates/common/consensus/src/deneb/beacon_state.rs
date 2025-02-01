@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use alloy_primitives::{aliases::B32, B256};
+use alloy_primitives::{aliases::B32, Address, B256};
 use anyhow::{bail, ensure};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
@@ -30,7 +30,8 @@ use crate::{
         EFFECTIVE_BALANCE_INCREMENT, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
         FAR_FUTURE_EPOCH, GENESIS_EPOCH, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
         INACTIVITY_SCORE_RECOVERY_RATE, MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE,
-        MAX_RANDOM_BYTE, MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
+        MAX_RANDOM_BYTE, MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
+        MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
         MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
         PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT,
@@ -46,6 +47,7 @@ use crate::{
     },
     sync_committee::SyncCommittee,
     validator::Validator,
+    withdrawal::Withdrawal,
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
@@ -619,5 +621,39 @@ impl BeaconState {
         ensure!(!proposer.slashed, "Block proposer must not be slashed");
 
         Ok(())
+    }
+
+    pub fn get_expected_withdrawals(&self) -> Vec<Withdrawal> {
+        let epoch = self.get_current_epoch();
+        let mut withdrawal_index = self.next_withdrawal_index;
+        let mut validator_index = self.next_withdrawal_validator_index;
+        let mut withdrawals: Vec<Withdrawal> = vec![];
+        let bound = min(self.validators.len(), MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP);
+        for _ in 0..bound {
+            let validator = &self.validators[validator_index as usize];
+            let balance = self.balances[validator_index as usize];
+            if validator.is_fully_withdrawable_validator(balance, epoch) {
+                withdrawals.push(Withdrawal {
+                    index: withdrawal_index,
+                    validator_index,
+                    address: Address::from_slice(&validator.withdrawal_credentials[..12]),
+                    amount: balance,
+                });
+                withdrawal_index += 1
+            } else if validator.is_partially_withdrawable_validator(balance) {
+                withdrawals.push(Withdrawal {
+                    index: withdrawal_index,
+                    validator_index,
+                    address: Address::from_slice(&validator.withdrawal_credentials[..12]),
+                    amount: balance - MAX_EFFECTIVE_BALANCE,
+                });
+                withdrawal_index += 1
+            }
+            if withdrawals.len() == MAX_WITHDRAWALS_PER_PAYLOAD as usize {
+                break;
+            }
+            validator_index = (validator_index + 1) % self.validators.len() as u64
+        }
+        withdrawals
     }
 }

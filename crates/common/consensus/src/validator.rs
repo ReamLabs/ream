@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
-use crate::pubkey::PubKey;
+use crate::{
+    fork_choice::helpers::constants::{ETH1_ADDRESS_WITHDRAWAL_PREFIX, MAX_EFFECTIVE_BALANCE},
+    pubkey::PubKey,
+};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Validator {
@@ -23,4 +26,24 @@ pub struct Validator {
 
     /// When validator can withdraw funds
     pub withdrawable_epoch: u64,
+}
+
+impl Validator {
+    /// Check if ``validator`` has an 0x01 prefixed "eth1" withdrawal credential.
+    pub fn has_eth1_withdrawal_credential(&self) -> bool {
+        self.withdrawal_credentials[0..1] == ETH1_ADDRESS_WITHDRAWAL_PREFIX
+    }
+
+    /// Check if ``validator`` is fully withdrawable.
+    pub fn is_fully_withdrawable_validator(&self, balance: u64, epoch: u64) -> bool {
+        self.has_eth1_withdrawal_credential() && self.withdrawable_epoch <= epoch && balance > 0
+    }
+
+    /// Check if ``validator`` is partially withdrawable.
+    pub fn is_partially_withdrawable_validator(&self, balance: u64) -> bool {
+        let has_max_effective_balance = self.effective_balance == MAX_EFFECTIVE_BALANCE;
+        let has_excess_balance = balance > MAX_EFFECTIVE_BALANCE;
+
+        self.has_eth1_withdrawal_credential() && has_max_effective_balance && has_excess_balance
+    }
 }
