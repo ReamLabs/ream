@@ -1,7 +1,5 @@
 use std::{
-    cmp::{max, min},
-    collections::HashSet,
-    sync::Arc,
+    cmp::{max, min}, collections::HashSet, ops::Deref, sync::Arc
 };
 
 use alloy_primitives::{aliases::B32, Address, B256};
@@ -663,7 +661,7 @@ impl BeaconState {
     pub fn process_withdrawals(&mut self, payload: ExecutionPayload) -> anyhow::Result<()> {
         let expected_withdrawals = self.get_expected_withdrawals();
         ensure!(
-            payload.withdrawals == expected_withdrawals.clone().into(),
+            payload.withdrawals.deref() == &expected_withdrawals,
             "Can't compare"
         );
 
