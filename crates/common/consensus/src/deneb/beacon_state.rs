@@ -17,7 +17,10 @@ use ssz_types::{
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use super::{beacon_block::BeaconBlock, execution_payload_header::ExecutionPayloadHeader};
+use super::{
+    beacon_block::BeaconBlock, execution_payload::ExecutionPayload,
+    execution_payload_header::ExecutionPayloadHeader,
+};
 use crate::{
     attestation::Attestation,
     attestation_data::AttestationData,
@@ -655,5 +658,41 @@ impl BeaconState {
             validator_index = (validator_index + 1) % self.validators.len() as u64
         }
         withdrawals
+    }
+
+    pub fn process_withdrawals(&mut self, payload: ExecutionPayload) -> anyhow::Result<()> {
+        let expected_withdrawals = self.get_expected_withdrawals();
+        ensure!(
+            payload.withdrawals == expected_withdrawals.clone().into(),
+            "Can't compare"
+        );
+
+        for withdrawal in &expected_withdrawals {
+            self.decrease_balance(withdrawal.validator_index, withdrawal.amount);
+        }
+
+        // Update the next withdrawal index if this block contained withdrawals
+        if expected_withdrawals.is_empty() {
+            let latest_withdrawal = &expected_withdrawals[expected_withdrawals.len() - 1];
+            self.next_withdrawal_index = latest_withdrawal.index + 1
+        }
+
+        // Update the next validator index to start the next withdrawal sweep
+        if expected_withdrawals.len() == MAX_WITHDRAWALS_PER_PAYLOAD as usize {
+            // Next sweep starts after the latest withdrawal's validator index
+            let next_validator_index = expected_withdrawals[expected_withdrawals.len() - 1]
+                .validator_index
+                + 1 % self.validators.len() as u64;
+            self.next_withdrawal_validator_index = next_validator_index
+        } else {
+            // Advance sweep by the max length of the sweep if there was not a full set of
+            // withdrawals
+            let next_index =
+                self.next_withdrawal_validator_index + MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP as u64;
+            let next_validator_index = next_index % self.validators.len() as u64;
+            self.next_withdrawal_validator_index = next_validator_index
+        }
+
+        Ok(())
     }
 }
