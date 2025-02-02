@@ -91,6 +91,7 @@ dependencies = [
  "const-hex",
  "derive_more",
  "foldhash",
+ "getrandom",
  "hashbrown 0.15.2",
  "indexmap",
  "itoa",
@@ -112,8 +113,20 @@ version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d6c1d995bff8d011f7cd6c81820d51825e6e06d6db73914c1630ecf544d83d6"
 dependencies = [
+ "alloy-rlp-derive",
  "arrayvec",
  "bytes",
+]
+
+[[package]]
+name = "alloy-rlp-derive"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a40e1ef334153322fd878d07e86af7a529bcb86b2439525920a88eba87bcf943"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
 ]
 
 [[package]]
@@ -1201,6 +1214,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "eth_trie"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7ffb0d2fa42ad87f02c0683c04b31cb41bf3853f2327d037738345bc5b56671"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "hashbrown 0.14.5",
+ "keccak-hash",
+ "log",
+ "parking_lot",
+]
+
+[[package]]
 name = "ethereum_hashing"
 version = "0.7.0"
 source = "git+https://github.com/ReamLabs/ethereum_hashing.git#e2566c68f13020afaea1176da3d93f6a0b930d5f"
@@ -1573,6 +1600,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 dependencies = [
  "ahash",
+ "allocator-api2",
 ]
 
 [[package]]
@@ -2127,6 +2155,16 @@ checksum = "505d1856a39b200489082f90d897c3f07c455563880bc5952e38eabf731c83b6"
 dependencies = [
  "digest 0.10.7",
  "sha3-asm",
+]
+
+[[package]]
+name = "keccak-hash"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b286e6b663fb926e1eeb68528e69cb70ed46c6d65871a21b2215ae8154c6d3c"
+dependencies = [
+ "primitive-types",
+ "tiny-keccak",
 ]
 
 [[package]]
@@ -3422,8 +3460,10 @@ name = "ream-consensus"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "alloy-rlp",
  "anyhow",
  "blst",
+ "eth_trie",
  "ethereum_hashing",
  "ethereum_serde_utils",
  "ethereum_ssz",
