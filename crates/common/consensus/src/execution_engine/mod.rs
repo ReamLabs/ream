@@ -1,19 +1,59 @@
 pub mod new_payload_request;
+mod rpc_types;
 
-use alloy_primitives::{Address, Bytes, B256, U256, U64};
+use alloy_primitives::{hex, Address, Bytes, B256, U256, U64};
 use alloy_rlp::{bytes, Buf, Decodable, Encodable, RlpDecodable, RlpEncodable, EMPTY_STRING_CODE};
 use anyhow::anyhow;
+use jsonwebtoken::{encode, get_current_timestamp, EncodingKey, Header};
 use new_payload_request::NewPayloadRequest;
+use reqwest::Client;
+use rpc_types::eth_syncing::EthSyncing;
 use serde::{Deserialize, Serialize};
-use ssz_derive::{Decode, Encode};
-use tree_hash_derive::TreeHash;
 
 use crate::deneb::execution_payload::ExecutionPayload;
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct ExecutionEngine {}
+// Define a wrapper struct to extract "result" without cloning
+#[derive(Deserialize)]
+struct JsonRpcResponse<T> {
+    result: T,
+}
+
+pub struct ExecutionEngine {
+    http_client: Client,
+    jwt_encoding_key: EncodingKey,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct Claims {
+    /// issued-at claim. Represented as seconds passed since UNIX_EPOCH.
+    iat: u64,
+    /// Optional unique identifier for the CL node.
+    id: Option<String>,
+    /// Optional client version for the CL node.
+    clv: Option<String>,
+}
 
 impl ExecutionEngine {
+    pub fn new(jwt_path: &str) -> anyhow::Result<ExecutionEngine> {
+        let jwt_file = std::fs::read_to_string(jwt_path)?;
+        let jwt_private_key = hex::decode(strip_prefix(jwt_file.trim_end()))?;
+        Ok(ExecutionEngine {
+            http_client: Client::new(),
+            jwt_encoding_key: EncodingKey::from_secret(jwt_private_key.as_slice()),
+        })
+    }
+
+    pub fn create_jwt_token(&self) -> anyhow::Result<String> {
+        let header = Header::default();
+        let claims = Claims {
+            iat: get_current_timestamp(),
+            id: None,
+            clv: None,
+        };
+        encode(&header, &claims, &self.jwt_encoding_key)
+            .map_err(|err| anyhow!("Could not encode jwt key {err:?}"))
+    }
+
     /// Return ``True`` if and only if ``execution_payload.block_hash`` is computed correctly.
     pub fn is_valid_block_hash(
         &self,
@@ -41,6 +81,28 @@ impl ExecutionEngine {
         }
 
         Ok(blob_versioned_hashes == new_payload_request.versioned_hashes)
+    }
+
+    pub async fn eth_syncing(&self) -> anyhow::Result<EthSyncing> {
+        let request_body = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".to_string(),
+            method: "eth_syncing".to_string(),
+            params: vec![],
+        };
+        let http_post_request = self
+            .http_client
+            .post("http://127.0.0.1:8551")
+            .json(&request_body)
+            .bearer_auth(self.create_jwt_token()?)
+            .build();
+        Ok(self
+            .http_client
+            .execute(http_post_request?)
+            .await?
+            .json::<JsonRpcResponse<EthSyncing>>()
+            .await
+            .map(|result| result.result)?)
     }
 }
 
@@ -151,4 +213,20 @@ impl TryFrom<&[u8]> for TransactionType {
             _ => Ok(TransactionType::LegacyTransaction),
         }
     }
+}
+
+pub fn strip_prefix(s: &str) -> &str {
+    if let Some(stripped) = s.strip_prefix("0x") {
+        stripped
+    } else {
+        s
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct JsonRpcRequest {
+    id: i32,
+    jsonrpc: String,
+    method: String,
+    params: Vec<serde_json::Value>,
 }
