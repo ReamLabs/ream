@@ -704,6 +704,7 @@ impl BeaconState {
 
         Ok(())
     }
+
     pub fn add_validator_to_registry(
         &mut self,
         pubkey: PubKey,
@@ -716,10 +717,10 @@ impl BeaconState {
                 withdrawal_credentials,
                 amount,
             ))
-            .map_err(|err| anyhow!("Not satisfied {:?}", err))?;
+            .map_err(|err| anyhow!("Couldn't push to validators {:?}", err))?;
         self.balances
             .push(amount)
-            .map_err(|err| anyhow!("Not satisfied {:?}", err))?;
+            .map_err(|err| anyhow!("Couldn't push to balances {:?}", err))?;
         Ok(())
     }
 
@@ -734,7 +735,7 @@ impl BeaconState {
         for validator in &self.validators {
             validator_pubkeys.push(validator.pubkey.clone());
         }
-        if validator_pubkeys.contains(&pubkey) {
+        if !validator_pubkeys.contains(&pubkey) {
             // Verify the deposit signature (proof of possession) which is not checked by the
             // deposit contract
             let deposit_message = DepositMessage {
@@ -757,7 +758,7 @@ impl BeaconState {
             let index = validator_pubkeys
                 .iter()
                 .position(|r| *r == pubkey)
-                .ok_or(anyhow!("Can't convert option usize to u64"))?;
+                .ok_or(anyhow!("Can't find pubkey in validator_pubkeys"))?;
             self.increase_balance(index as u64, amount);
         }
         Ok(())
@@ -797,7 +798,7 @@ pub fn is_valid_merkle_branch(
 ) -> bool {
     let mut value = leaf;
     for i in 0..depth {
-        if (index / (2u64.pow(i as u32)) % 2) == 1 {
+        if (index / 2u64.pow(i as u32) % 2) == 1 {
             let branch_value = [branch[i as usize], value].concat();
             value = B256::from_slice(&hash(&branch_value));
         } else {
