@@ -27,15 +27,17 @@ use crate::{
     attestation::Attestation,
     attestation_data::AttestationData,
     beacon_block_header::BeaconBlockHeader,
+    bls_to_execution_change::SignedBLSToExecutionChange,
     checkpoint::Checkpoint,
     deposit::Deposit,
     deposit_message::DepositMessage,
     eth_1_data::Eth1Data,
     fork::Fork,
     fork_choice::helpers::constants::{
-        BASE_REWARD_FACTOR, CHURN_LIMIT_QUOTIENT, DEPOSIT_CONTRACT_TREE_DEPTH,
-        DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER, DOMAIN_DEPOSIT,
-        EFFECTIVE_BALANCE_INCREMENT, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
+        BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CHURN_LIMIT_QUOTIENT,
+        DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
+        DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, EFFECTIVE_BALANCE_INCREMENT,
+        EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR, ETH1_ADDRESS_WITHDRAWAL_PREFIX,
         FAR_FUTURE_EPOCH, GENESIS_EPOCH, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
         INACTIVITY_SCORE_RECOVERY_RATE, MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE,
         MAX_RANDOM_BYTE, MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
@@ -790,6 +792,53 @@ impl BeaconState {
             deposit.data.amount,
             deposit.data.signature,
         )
+    }
+
+    pub fn process_bls_to_execution_change(
+        &mut self,
+        signed_address_change: SignedBLSToExecutionChange,
+    ) -> anyhow::Result<()> {
+        let address_change = signed_address_change.message;
+
+        ensure!(address_change.validator_index < self.validators.len() as u64);
+
+        let validator: &Validator = &self.validators[address_change.validator_index as usize];
+
+        ensure!(&validator.withdrawal_credentials[..1] == BLS_WITHDRAWAL_PREFIX);
+        ensure!(
+            validator.withdrawal_credentials[1..]
+                == hash(&address_change.from_bls_pubkey.inner)[1..]
+        );
+
+        // Fork-agnostic domain since address changes are valid across forks
+        let domain = compute_domain(
+            DOMAIN_BLS_TO_EXECUTION_CHANGE,
+            None,
+            Some(self.genesis_validators_root),
+        )?;
+
+        let signing_root = compute_signing_root(&address_change, domain);
+        let sig = blst::min_pk::Signature::from_bytes(&signed_address_change.signature.signature)
+            .map_err(|err| anyhow!("Failed to convert signiture type {err:?}"))?;
+        let public_key = PublicKey::from_bytes(&address_change.from_bls_pubkey.inner)
+            .map_err(|err| anyhow!("Failed to convert pubkey type {err:?}"))?;
+        let verification_result =
+            sig.fast_aggregate_verify(true, signing_root.as_ref(), DST, &[&public_key]);
+        ensure!(
+            verification_result == blst::BLST_ERROR::BLST_SUCCESS,
+            "BLS Signature verification failed!"
+        );
+
+        let withdrawal_credentials = [
+            ETH1_ADDRESS_WITHDRAWAL_PREFIX.as_slice(),
+            vec![0x00; 11].as_slice(),
+            address_change.to_execution_address.as_slice(),
+        ]
+        .concat();
+        self.validators[address_change.validator_index as usize].withdrawal_credentials =
+            B256::from_slice(&withdrawal_credentials);
+
+        Ok(())
     }
 }
 

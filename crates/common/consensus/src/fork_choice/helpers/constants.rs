@@ -1,10 +1,12 @@
 use alloy_primitives::{aliases::B32, fixed_bytes};
 
 pub const BASE_REWARD_FACTOR: u64 = 64;
+pub const BLS_WITHDRAWAL_PREFIX: &[u8] = &[0];
 pub const CHURN_LIMIT_QUOTIENT: u64 = 65536;
 pub const DEPOSIT_CONTRACT_TREE_DEPTH: u64 = 32;
 pub const DOMAIN_BEACON_ATTESTER: B32 = fixed_bytes!("01000000");
 pub const DOMAIN_BEACON_PROPOSER: B32 = fixed_bytes!("00000000");
+pub const DOMAIN_BLS_TO_EXECUTION_CHANGE: B32 = fixed_bytes!("0A000000");
 pub const DOMAIN_DEPOSIT: B32 = fixed_bytes!("03000000");
 pub const EFFECTIVE_BALANCE_INCREMENT: u64 = 1_000_000_000;
 pub const EPOCHS_PER_HISTORICAL_VECTOR: u64 = 65536;
