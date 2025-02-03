@@ -1,3 +1,5 @@
+#![warn(clippy::unwrap_used)]
+
 pub mod attestation;
 pub mod attestation_data;
 pub mod attester_slashing;

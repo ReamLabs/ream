@@ -344,7 +344,13 @@ impl BeaconState {
         if index as usize >= self.validators.len() {
             return;
         }
-        if self.validators.get(index as usize).unwrap().exit_epoch != FAR_FUTURE_EPOCH {
+        if self
+            .validators
+            .get(index as usize)
+            .expect("Can't find index in validators")
+            .exit_epoch
+            != FAR_FUTURE_EPOCH
+        {
             return;
         }
 
@@ -745,9 +751,10 @@ impl BeaconState {
             };
             let domain = compute_domain(DOMAIN_DEPOSIT, None, None)?; // # Fork-agnostic domain since deposits are valid across forks
             let signing_root = compute_signing_root(deposit_message, domain);
-            let sig = blst::min_pk::Signature::from_bytes(&signature.signature).unwrap();
-            let public_key =
-                PublicKey::from_bytes(&pubkey.inner).expect("Cold not convert PublicKey");
+            let sig = blst::min_pk::Signature::from_bytes(&signature.signature)
+                .map_err(|err| anyhow!("Failed to convert signiture type {err:?}"))?;
+            let public_key = PublicKey::from_bytes(&pubkey.inner)
+                .map_err(|err| anyhow!("Failed to convert pubkey type {err:?}"))?;
             let verification_result =
                 sig.fast_aggregate_verify(true, signing_root.as_ref(), DST, &[&public_key]);
             if verification_result == blst::BLST_ERROR::BLST_SUCCESS {
@@ -782,9 +789,7 @@ impl BeaconState {
             deposit.data.withdrawal_credentials,
             deposit.data.amount,
             deposit.data.signature,
-        )?;
-
-        Ok(())
+        )
     }
 }
 

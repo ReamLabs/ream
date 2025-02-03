@@ -24,7 +24,7 @@ pub fn get_total_balance(state: &BeaconState, indices: Vec<u64>) -> u64 {
             state
                 .validators
                 .get(index as usize)
-                .unwrap()
+                .expect("Couldn't find index invalidators")
                 .effective_balance
         })
         .sum();
@@ -47,7 +47,7 @@ pub fn get_proposer_score(store: Store) -> u64 {
     let justified_checkpoint_state = store
         .checkpoint_states
         .get(&store.justified_checkpoint)
-        .unwrap();
+        .expect("Failed to find checkpoint in checkpoint states");
     let committee_weight =
         get_total_active_balance(justified_checkpoint_state.clone()) / SLOTS_PER_EPOCH;
     (committee_weight * PROPOSER_SCORE_BOOST) / 100

@@ -51,7 +51,10 @@ impl Store {
     }
 
     pub fn get_ancestor(&self, root: B256, slot: u64) -> B256 {
-        let block = self.blocks.get(&root).unwrap();
+        let block = self
+            .blocks
+            .get(&root)
+            .expect("Failed to find root in blocks");
         if block.slot > slot {
             self.get_ancestor(block.parent_root, slot)
         } else {
