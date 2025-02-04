@@ -1001,6 +1001,21 @@ impl BeaconState {
         // Slash the validator
         self.slash_validator(proposer_index, None)
     }
+
+    pub fn process_historical_summaries_update(&mut self) -> anyhow::Result<()> {
+        // Set historical block root accumulator.
+        let next_epoch = self.get_current_epoch() + 1;
+        if next_epoch % SLOTS_PER_HISTORICAL_ROOT / SLOTS_PER_EPOCH == 0 {
+            let historical_summary = HistoricalSummary {
+                block_summary_root: self.block_roots.tree_hash_root(),
+                state_summary_root: self.state_roots.tree_hash_root(),
+            };
+            self.historical_summaries
+                .push(historical_summary)
+                .map_err(|err| anyhow!("Failed to push historical summory {err:?}"))?;
+        }
+        Ok(())
+    }
 }
 
 /// Check if ``leaf`` at ``index`` verifies against the Merkle ``root`` and ``branch``.
