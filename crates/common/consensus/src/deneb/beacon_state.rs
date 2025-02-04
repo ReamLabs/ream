@@ -33,18 +33,20 @@ use crate::{
     eth_1_data::Eth1Data,
     fork::Fork,
     fork_choice::helpers::constants::{
-        BASE_REWARD_FACTOR, CHURN_LIMIT_QUOTIENT, DEPOSIT_CONTRACT_TREE_DEPTH,
-        DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER, DOMAIN_DEPOSIT,
-        EFFECTIVE_BALANCE_INCREMENT, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
-        FAR_FUTURE_EPOCH, GENESIS_EPOCH, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
-        INACTIVITY_SCORE_RECOVERY_RATE, MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE,
-        MAX_RANDOM_BYTE, MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
+        BASE_REWARD_FACTOR, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
+        DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
+        DOMAIN_DEPOSIT, DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT,
+        EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR, FAR_FUTURE_EPOCH, GENESIS_EPOCH,
+        INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS, INACTIVITY_SCORE_RECOVERY_RATE,
+        MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE, MAX_RANDOM_BYTE,
+        MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
         MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
         MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
-        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT,
-        TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
-        TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
+        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SHARD_COMMITTEE_PERIOD, SLOTS_PER_EPOCH,
+        SLOTS_PER_HISTORICAL_ROOT, TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX,
+        TIMELY_SOURCE_FLAG_INDEX, TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR,
+        WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     helpers::is_active_validator,
     historical_summary::HistoricalSummary,
@@ -57,6 +59,7 @@ use crate::{
     signature::BlsSignature,
     sync_committee::SyncCommittee,
     validator::Validator,
+    voluntary_exit::SignedVoluntaryExit,
     withdrawal::Withdrawal,
 };
 
@@ -790,6 +793,43 @@ impl BeaconState {
             deposit.data.amount,
             deposit.data.signature,
         )
+    }
+
+    pub fn process_voluntary_exit(
+        &mut self,
+        signed_voluntary_exit: SignedVoluntaryExit,
+    ) -> anyhow::Result<()> {
+        let voluntary_exit = &signed_voluntary_exit.message;
+        let validator = &self.validators[voluntary_exit.validator_index as usize];
+        // Verify the validator is active
+        ensure!(is_active_validator(validator, self.get_current_epoch()));
+        // Verify exit has not been initiated
+        ensure!(validator.exit_epoch == FAR_FUTURE_EPOCH);
+        // Exits must specify an epoch when they become valid; they are not valid before then
+        ensure!(self.get_current_epoch() >= voluntary_exit.epoch);
+        // Verify the validator has been active long enough
+        ensure!(self.get_current_epoch() >= validator.activation_epoch + SHARD_COMMITTEE_PERIOD);
+        // Verify signature
+        // [Modified in Deneb:EIP7044]
+        let domain = compute_domain(
+            DOMAIN_VOLUNTARY_EXIT,
+            Some(CAPELLA_FORK_VERSION),
+            Some(self.genesis_validators_root),
+        )?;
+        let signing_root = compute_signing_root(voluntary_exit, domain);
+        let sig = blst::min_pk::Signature::from_bytes(&signed_voluntary_exit.signature.signature)
+            .map_err(|err| anyhow!("Failed to convert signiture type {err:?}"))?;
+        let public_key = PublicKey::from_bytes(&validator.pubkey.inner)
+            .map_err(|err| anyhow!("Failed to convert pubkey type {err:?}"))?;
+        let verification_result =
+            sig.fast_aggregate_verify(true, signing_root.as_ref(), DST, &[&public_key]);
+        ensure!(
+            verification_result == blst::BLST_ERROR::BLST_SUCCESS,
+            "BLS Signature verification failed!"
+        );
+        // Initiate exit
+        self.initiate_validator_exit(voluntary_exit.validator_index);
+        Ok(())
     }
 }
 
