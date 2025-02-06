@@ -41,16 +41,16 @@ use crate::{
         DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EPOCHS_PER_HISTORICAL_VECTOR,
         EPOCHS_PER_SLASHINGS_VECTOR, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH,
         G2_POINT_AT_INFINITY, GENESIS_EPOCH, GENESIS_SLOT, INACTIVITY_PENALTY_QUOTIENT_ALTAIR,
-        INACTIVITY_SCORE_BIAS, INACTIVITY_SCORE_RECOVERY_RATE, MAX_COMMITTEES_PER_SLOT,
-        MAX_EFFECTIVE_BALANCE, MAX_RANDOM_BYTE, MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP,
-        MAX_WITHDRAWALS_PER_PAYLOAD, MIN_ATTESTATION_INCLUSION_DELAY,
-        MIN_EPOCHS_TO_INACTIVITY_PENALTY, MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME,
-        MIN_PER_EPOCH_CHURN_LIMIT, MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT,
-        MIN_VALIDATOR_WITHDRAWABILITY_DELAY, PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT,
-        SECONDS_PER_SLOT, SHARD_COMMITTEE_PERIOD, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT,
-        SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT, TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX,
-        TIMELY_SOURCE_FLAG_INDEX, TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR,
-        WHISTLEBLOWER_REWARD_QUOTIENT,
+        INACTIVITY_SCORE_BIAS, INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH,
+        MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE, MAX_RANDOM_BYTE,
+        MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
+        MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
+        MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
+        MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
+        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SECONDS_PER_SLOT, SHARD_COMMITTEE_PERIOD,
+        SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT,
+        TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
+        TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     helpers::is_active_validator,
     historical_summary::HistoricalSummary,
@@ -1180,6 +1180,108 @@ impl BeaconState {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn process_justification_and_finalization(&mut self) -> anyhow::Result<()> {
+        // Initial FFG checkpoint values have a `0x00` stub for `root`.
+        // Skip FFG updates in the first two epochs to avoid corner cases that might result in
+        // modifying this stub.
+        if self.get_current_epoch() <= GENESIS_EPOCH + 1 {
+            return Ok(());
+        }
+        let previous_indices = self.get_unslashed_participating_indices(
+            TIMELY_TARGET_FLAG_INDEX,
+            self.get_previous_epoch(),
+        )?;
+        let current_indices = self.get_unslashed_participating_indices(
+            TIMELY_TARGET_FLAG_INDEX,
+            self.get_current_epoch(),
+        )?;
+        let total_active_balance = self.get_total_active_balance();
+        let previous_target_balance = self.get_total_balance(previous_indices);
+        let current_target_balance = self.get_total_balance(current_indices);
+        self.weigh_justification_and_finalization(
+            total_active_balance,
+            previous_target_balance,
+            current_target_balance,
+        )?;
+        Ok(())
+    }
+
+    pub fn weigh_justification_and_finalization(
+        &mut self,
+        total_active_balance: u64,
+        previous_epoch_target_balance: u64,
+        current_epoch_target_balance: u64,
+    ) -> anyhow::Result<(), anyhow::Error> {
+        let previous_epoch = self.get_previous_epoch();
+        let current_epoch = self.get_current_epoch();
+        let old_previous_justified_checkpoint = self.previous_justified_checkpoint;
+        let old_current_justified_checkpoint = self.current_justified_checkpoint;
+
+        // Process justifications
+        self.previous_justified_checkpoint = self.current_justified_checkpoint;
+        for i in (1..JUSTIFICATION_BITS_LENGTH as usize).rev() {
+            let bit = self
+                .justification_bits
+                .get(
+                    i - 1,
+                )
+                .unwrap_or(false);
+            self.justification_bits
+                .set(i, bit)
+                .map_err(|err| anyhow!("Failed to set justification bits {err:?}"))?;
+        }
+        self.justification_bits
+            .set(0, false)
+            .map_err(|err| anyhow!("Failed to set justification bitx {err:?}"))?;
+
+        if previous_epoch_target_balance * 3 >= total_active_balance * 2 {
+            self.current_justified_checkpoint = Checkpoint {
+                epoch: previous_epoch,
+                root: self.get_block_root(previous_epoch)?,
+            };
+            self.justification_bits
+                .set(1, true)
+                .map_err(|err| anyhow!("Failed to set justification {err:?}"))?;
+        }
+
+        if current_epoch_target_balance * 3 >= total_active_balance * 2 {
+            self.current_justified_checkpoint = Checkpoint {
+                epoch: current_epoch,
+                root: self.get_block_root(current_epoch)?,
+            };
+            self.justification_bits
+                .set(0, true)
+                .map_err(|err| anyhow!("Failed to set justification bit {err:?}"))?;
+        }
+
+        let bits = &self.justification_bits;
+        let bits: Vec<bool> = bits.iter().collect();
+        if bits[1..4].iter().all(|&b| b)
+            && old_previous_justified_checkpoint.epoch + 3 == current_epoch
+        {
+            self.finalized_checkpoint = old_previous_justified_checkpoint;
+        }
+
+        if bits[1..3].iter().all(|&b| b)
+            && old_previous_justified_checkpoint.epoch + 2 == current_epoch
+        {
+            self.finalized_checkpoint = old_previous_justified_checkpoint;
+        }
+
+        if bits[0..3].iter().all(|&b| b)
+            && old_current_justified_checkpoint.epoch + 2 == current_epoch
+        {
+            self.finalized_checkpoint = old_current_justified_checkpoint;
+        }
+
+        if bits[0..2].iter().all(|&b| b)
+            && old_current_justified_checkpoint.epoch + 1 == current_epoch
+        {
+            self.finalized_checkpoint = old_current_justified_checkpoint;
+        }
         Ok(())
     }
 }
