@@ -1135,11 +1135,14 @@ impl BeaconState {
         )?;
         let signing_root =
             compute_signing_root(self.get_block_root_at_slot(previous_slot)?, domain);
-        ensure!(eth_fast_aggregate_verify(
+
+        let is_valid = eth_fast_aggregate_verify(
             &participant_pubkeys,
             signing_root,
-            sync_aggregate.sync_committee_signature
-        ));
+            sync_aggregate.sync_committee_signature,
+        )?;
+
+        ensure!(is_valid, "Sync aggregate signature verification failed.");
 
         // Compute participant and proposer rewards
         let total_active_increments = self.get_total_active_balance() / EFFECTIVE_BALANCE_INCREMENT;
@@ -1161,7 +1164,7 @@ impl BeaconState {
             let index = all_pubkeys
                 .iter()
                 .position(|r| r == pubkey)
-                .ok_or(anyhow!("Pubkey not found in all_pubkeys."))?;
+                .ok_or_else(|| anyhow!("Pubkey not found in all_pubkeys."))?;
             committee_indices.push(index);
         }
 
@@ -1176,6 +1179,7 @@ impl BeaconState {
                 self.decrease_balance(*participant_index as u64, participant_reward);
             }
         }
+
         Ok(())
     }
 }
@@ -1228,22 +1232,26 @@ pub fn eth_fast_aggregate_verify(
     pubkeys: &[PubKey],
     message: B256,
     signature: BlsSignature,
-) -> bool {
+) -> Result<bool, anyhow::Error> {
     if pubkeys.is_empty() && signature == G2_POINT_AT_INFINITY {
-        return true;
+        return Ok(true);
     }
 
     let public_keys: Vec<blst::min_pk::PublicKey> = pubkeys
         .iter()
         .map(|key| {
-            blst::min_pk::PublicKey::from_bytes(&key.inner).expect("Could not parse public key")
+            blst::min_pk::PublicKey::from_bytes(&key.inner)
+                .map_err(|err| anyhow!("Could not parse public key: {err:?}"))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     let sig = blst::min_pk::Signature::from_bytes(&signature.signature)
-        .expect("Could not find signature");
+        .map_err(|err| anyhow!("Could not parse signature: {err:?}"))?;
+
     let message = message.as_ref();
 
-    sig.fast_aggregate_verify(true, message, DST, &public_keys.iter().collect::<Vec<_>>())
-        == blst::BLST_ERROR::BLST_SUCCESS
+    Ok(
+        sig.fast_aggregate_verify(true, message, DST, &public_keys.iter().collect::<Vec<_>>())
+            == blst::BLST_ERROR::BLST_SUCCESS,
+    )
 }
