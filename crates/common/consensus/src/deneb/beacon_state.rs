@@ -1161,7 +1161,7 @@ impl BeaconState {
             let index = all_pubkeys
                 .iter()
                 .position(|r| r == pubkey)
-                .expect("Pubkey not found in all_pubkeys");
+                .ok_or(anyhow!("Pubkey not found in all_pubkeys."))?;
             committee_indices.push(index);
         }
 
@@ -1233,11 +1233,17 @@ pub fn eth_fast_aggregate_verify(
         return true;
     }
 
-    let public_key =
-        blst::min_pk::PublicKey::from_bytes(&pubkeys[0].inner).expect("Could not find public key");
+    let public_keys: Vec<blst::min_pk::PublicKey> = pubkeys
+        .iter()
+        .map(|key| {
+            blst::min_pk::PublicKey::from_bytes(&key.inner).expect("Could not parse public key")
+        })
+        .collect();
+
     let sig = blst::min_pk::Signature::from_bytes(&signature.signature)
         .expect("Could not find signature");
     let message = message.as_ref();
 
-    sig.fast_aggregate_verify(true, message, DST, &[&public_key]) == blst::BLST_ERROR::BLST_SUCCESS
+    sig.fast_aggregate_verify(true, message, DST, &public_keys.iter().collect::<Vec<_>>())
+        == blst::BLST_ERROR::BLST_SUCCESS
 }
