@@ -38,11 +38,12 @@ use crate::{
         BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
         DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
         DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_SYNC_COMMITTEE,
-        DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EPOCHS_PER_HISTORICAL_VECTOR,
-        EPOCHS_PER_SLASHINGS_VECTOR, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH,
-        G2_POINT_AT_INFINITY, GENESIS_EPOCH, GENESIS_SLOT, INACTIVITY_PENALTY_QUOTIENT_ALTAIR,
-        INACTIVITY_SCORE_BIAS, INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH,
-        MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE, MAX_RANDOM_BYTE,
+        DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EPOCHS_PER_ETH1_VOTING_PERIOD,
+        EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR, ETH1_ADDRESS_WITHDRAWAL_PREFIX,
+        FAR_FUTURE_EPOCH, G2_POINT_AT_INFINITY, GENESIS_EPOCH, GENESIS_SLOT,
+        HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT, HYSTERESIS_UPWARD_MULTIPLIER,
+        INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS, INACTIVITY_SCORE_RECOVERY_RATE,
+        JUSTIFICATION_BITS_LENGTH, MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE, MAX_RANDOM_BYTE,
         MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
         MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
@@ -53,6 +54,7 @@ use crate::{
         TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     helpers::is_active_validator,
+    historical_batch::HistoricalBatch,
     historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
     misc::{
@@ -1279,6 +1281,50 @@ impl BeaconState {
             && old_current_justified_checkpoint.epoch + 1 == current_epoch
         {
             self.finalized_checkpoint = old_current_justified_checkpoint;
+        }
+        Ok(())
+    }
+
+    pub fn process_eth1_data_reset(&mut self) -> anyhow::Result<()> {
+        let next_epoch = self.get_current_epoch() + 1;
+
+        // Reset eth1 data votes
+        if next_epoch % EPOCHS_PER_ETH1_VOTING_PERIOD == 0 {
+            self.eth1_data_votes = VariableList::default();
+        }
+
+        Ok(())
+    }
+
+    pub fn process_effective_balance_updates(&mut self) -> anyhow::Result<()> {
+        // Update effective balances with hysteresis
+        for (index, validator) in self.validators.iter_mut().enumerate() {
+            let balance = self.balances[index];
+            let hysteresis_increment = EFFECTIVE_BALANCE_INCREMENT / HYSTERESIS_QUOTIENT;
+            let downward_threshold = hysteresis_increment * HYSTERESIS_DOWNWARD_MULTIPLIER;
+            let upward_threshold = hysteresis_increment * HYSTERESIS_UPWARD_MULTIPLIER;
+
+            if balance + downward_threshold < validator.effective_balance
+                || validator.effective_balance + upward_threshold < balance
+            {
+                validator.effective_balance =
+                    (balance - balance % EFFECTIVE_BALANCE_INCREMENT).min(MAX_EFFECTIVE_BALANCE);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn process_historical_roots_update(&mut self) -> anyhow::Result<()> {
+        // Set historical root accumulator
+        let next_epoch = self.get_current_epoch() + 1;
+        if next_epoch % (SLOTS_PER_HISTORICAL_ROOT / SLOTS_PER_EPOCH) == 0 {
+            let historical_batch = HistoricalBatch {
+                block_roots: self.block_roots.clone(),
+                state_roots: self.state_roots.clone(),
+            };
+            self.historical_roots
+                .push(historical_batch.tree_hash_root())
+                .map_err(|err| anyhow!("Failed to get historical_roots {err:?}"))?;
         }
         Ok(())
     }
