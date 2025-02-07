@@ -1226,14 +1226,14 @@ impl BeaconState {
             let bit = self
                 .justification_bits
                 .get(i - 1)
-                .map_err(|err| anyhow!("Failed to set justification bits {err:?}"))?;
+                .map_err(|err| anyhow!("Failed to get justification bit {err:?}"))?;
             self.justification_bits
                 .set(i, bit)
                 .map_err(|err| anyhow!("Failed to set justification bits {err:?}"))?;
         }
         self.justification_bits
             .set(0, false)
-            .map_err(|err| anyhow!("Failed to set justification bitx {err:?}"))?;
+            .map_err(|err| anyhow!("Failed to set justification bit 0 {err:?}"))?;
 
         if previous_epoch_target_balance * 3 >= total_active_balance * 2 {
             self.current_justified_checkpoint = Checkpoint {
