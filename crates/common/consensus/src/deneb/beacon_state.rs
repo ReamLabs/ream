@@ -1222,8 +1222,11 @@ impl BeaconState {
 
         // Process justifications
         self.previous_justified_checkpoint = self.current_justified_checkpoint;
-        for i in (1..JUSTIFICATION_BITS_LENGTH as usize).rev() {
-            let bit = self.justification_bits.get(i - 1).unwrap_or(false);
+        for i in 1..JUSTIFICATION_BITS_LENGTH as usize {
+            let bit = self
+                .justification_bits
+                .get(i - 1)
+                .map_err(|err| anyhow!("Failed to set justification bits {err:?}"))?;
             self.justification_bits
                 .set(i, bit)
                 .map_err(|err| anyhow!("Failed to set justification bits {err:?}"))?;
