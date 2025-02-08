@@ -54,7 +54,6 @@ use crate::{
         TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     helpers::is_active_validator,
-    historical_batch::HistoricalBatch,
     historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
     misc::{
@@ -1310,21 +1309,6 @@ impl BeaconState {
                 validator.effective_balance =
                     (balance - balance % EFFECTIVE_BALANCE_INCREMENT).min(MAX_EFFECTIVE_BALANCE);
             }
-        }
-        Ok(())
-    }
-
-    pub fn process_historical_roots_update(&mut self) -> anyhow::Result<()> {
-        // Set historical root accumulator
-        let next_epoch = self.get_current_epoch() + 1;
-        if next_epoch % (SLOTS_PER_HISTORICAL_ROOT / SLOTS_PER_EPOCH) == 0 {
-            let historical_batch = HistoricalBatch {
-                block_roots: self.block_roots.clone(),
-                state_roots: self.state_roots.clone(),
-            };
-            self.historical_roots
-                .push(historical_batch.tree_hash_root())
-                .map_err(|err| anyhow!("Failed to get historical_roots {err:?}"))?;
         }
         Ok(())
     }
