@@ -43,8 +43,8 @@ use crate::{
         FAR_FUTURE_EPOCH, G2_POINT_AT_INFINITY, GENESIS_EPOCH, GENESIS_SLOT,
         HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT, HYSTERESIS_UPWARD_MULTIPLIER,
         INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS, INACTIVITY_SCORE_RECOVERY_RATE,
-        JUSTIFICATION_BITS_LENGTH, MAX_COMMITTEES_PER_SLOT, MAX_EFFECTIVE_BALANCE, MAX_RANDOM_BYTE,
-        MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
+        JUSTIFICATION_BITS_LENGTH, MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE,
+        MAX_RANDOM_BYTE, MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
         MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
         MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
@@ -1493,6 +1493,38 @@ impl BeaconState {
         // Cache block root
         let previous_block_root = self.latest_block_header.tree_hash_root();
         self.block_roots[(self.slot % SLOTS_PER_HISTORICAL_ROOT) as usize] = previous_block_root;
+        Ok(())
+    }
+
+    pub fn process_operations(&mut self, body: BeaconBlockBody) -> anyhow::Result<()> {
+        // Verify that outstanding deposits are processed up to the maximum number of deposits
+        ensure!(
+            body.deposits.len()
+                == min(
+                    MAX_DEPOSITS as usize,
+                    (self.eth1_data.deposit_count - self.eth1_deposit_index) as usize
+                )
+        );
+
+        for operation in body.proposer_slashings {
+            self.process_proposer_slashing(&operation)?;
+        }
+        for operation in body.attester_slashings {
+            self.process_attester_slashing(operation)?;
+        }
+        for operation in body.attestations {
+            self.process_attestation(&operation)?;
+        }
+        for operation in body.deposits {
+            self.process_deposit(operation)?;
+        }
+        for operation in body.voluntary_exits {
+            self.process_voluntary_exit(operation)?;
+        }
+        for operation in body.bls_to_execution_changes {
+            self.process_bls_to_execution_change(operation)?;
+        }
+
         Ok(())
     }
 }
