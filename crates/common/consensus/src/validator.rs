@@ -4,7 +4,9 @@ use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    fork_choice::helpers::constants::{ETH1_ADDRESS_WITHDRAWAL_PREFIX, MAX_EFFECTIVE_BALANCE},
+    fork_choice::helpers::constants::{
+        ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH, MAX_EFFECTIVE_BALANCE,
+    },
     pubkey::PubKey,
 };
 
@@ -45,9 +47,18 @@ impl Validator {
             && self.effective_balance == MAX_EFFECTIVE_BALANCE
             && balance > MAX_EFFECTIVE_BALANCE
     }
-}
-impl Validator {
+
     pub fn is_slashable_validator(&self, epoch: u64) -> bool {
         !self.slashed && self.activation_epoch <= epoch && epoch < self.withdrawable_epoch
+    }
+
+    pub fn is_active_validator(&self, epoch: u64) -> bool {
+        self.activation_eligibility_epoch <= epoch && epoch < self.exit_epoch
+    }
+
+    /// Check if ``validator`` is eligible to be placed into the activation queue.
+    pub fn is_eligible_for_activation_queue(&self) -> bool {
+        self.activation_eligibility_epoch == FAR_FUTURE_EPOCH
+            && self.effective_balance == MAX_EFFECTIVE_BALANCE
     }
 }

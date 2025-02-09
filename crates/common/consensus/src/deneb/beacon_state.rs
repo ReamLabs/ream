@@ -57,7 +57,7 @@ use crate::{
         TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
         TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
-    helpers::{is_active_validator, xor},
+    helpers::xor,
     historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
     misc::{
@@ -180,7 +180,7 @@ impl BeaconState {
             .iter()
             .enumerate()
             .filter_map(|(i, v)| {
-                if is_active_validator(v, epoch) {
+                if v.is_active_validator(epoch) {
                     Some(i as u64)
                 } else {
                     None
@@ -609,7 +609,7 @@ impl BeaconState {
         let previous_epoch = self.get_previous_epoch();
         let mut validator_indices = vec![];
         for (index, v) in self.validators.iter().enumerate() {
-            if is_active_validator(v, previous_epoch)
+            if v.is_active_validator(previous_epoch)
                 || v.slashed && previous_epoch + 1 < v.withdrawable_epoch
             {
                 validator_indices.push(index as u64)
@@ -928,7 +928,7 @@ impl BeaconState {
 
         // Verify the validator is active
         ensure!(
-            is_active_validator(validator, self.get_current_epoch()),
+            validator.is_active_validator(self.get_current_epoch()),
             "Validator is not active"
         );
 
@@ -1550,7 +1550,7 @@ impl BeaconState {
     }
 
     /// Check if ``validator`` is eligible for activation.
-    pub fn is_eligible_for_activation(&self, validator: Validator) -> bool {
+    pub fn is_eligible_for_activation(&self, validator: &Validator) -> bool {
         // Placement in queue is finalized
         validator.activation_eligibility_epoch <= self.finalized_checkpoint.epoch
             && validator.activation_epoch == FAR_FUTURE_EPOCH
@@ -1570,11 +1570,11 @@ impl BeaconState {
 
         // Process activation eligibility and ejections
         for (index, validator) in self.validators.iter_mut().enumerate() {
-            if is_eligible_for_activation_queue(validator.clone()) {
+            if validator.is_eligible_for_activation_queue() {
                 validator.activation_eligibility_epoch = current_epoch + 1;
             }
 
-            if is_active_validator(validator, current_epoch)
+            if validator.is_active_validator(current_epoch)
                 && validator.effective_balance <= EJECTION_BALANCE
             {
                 initiate_validator.push(index as u64);
@@ -1588,7 +1588,7 @@ impl BeaconState {
         // Queue validators eligible for activation and not yet dequeued for activation
         let mut activation_queue: Vec<usize> = (0..self.validators.len())
             // Order by the sequence of activation_eligibility_epoch setting and then index
-            .filter(|&index| self.is_eligible_for_activation(self.validators[index].clone()))
+            .filter(|&index| self.is_eligible_for_activation(&self.validators[index]))
             .collect();
 
         activation_queue
@@ -1677,10 +1677,4 @@ pub fn eth_fast_aggregate_verify(
         sig.fast_aggregate_verify(true, message, DST, &public_keys.iter().collect::<Vec<_>>())
             == blst::BLST_ERROR::BLST_SUCCESS,
     )
-}
-
-/// Check if ``validator`` is eligible to be placed into the activation queue.
-pub fn is_eligible_for_activation_queue(validator: Validator) -> bool {
-    validator.activation_eligibility_epoch == FAR_FUTURE_EPOCH
-        && validator.effective_balance == MAX_EFFECTIVE_BALANCE
 }
