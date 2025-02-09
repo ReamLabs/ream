@@ -1465,14 +1465,13 @@ impl BeaconState {
             * PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX)
             .min(total_balance);
 
-        for index in 0..self.validators.len() {
-            if self.validators[index].slashed
-                && epoch + EPOCHS_PER_SLASHINGS_VECTOR / 2
-                    == self.validators[index].withdrawable_epoch
+        for (index, validator) in self.validators.clone().iter().enumerate() {
+            if validator.slashed
+                && epoch + EPOCHS_PER_SLASHINGS_VECTOR / 2 == validator.withdrawable_epoch
             {
-                let increment = EFFECTIVE_BALANCE_INCREMENT;
-                let penalty_numerator = self.validators[index].effective_balance / increment
-                    * adjusted_total_slashing_balance;
+                let increment = EFFECTIVE_BALANCE_INCREMENT; // Factored out from penalty numerator to avoid uint64 overflow
+                let penalty_numerator =
+                    validator.effective_balance / increment * adjusted_total_slashing_balance;
                 let penalty = penalty_numerator / total_balance * increment;
 
                 self.decrease_balance(index as u64, penalty);
