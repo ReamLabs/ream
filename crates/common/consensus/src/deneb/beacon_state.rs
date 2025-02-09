@@ -20,8 +20,10 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use super::{
-    beacon_block::BeaconBlock, beacon_block_body::BeaconBlockBody,
-    execution_payload::ExecutionPayload, execution_payload_header::ExecutionPayloadHeader,
+    beacon_block::{BeaconBlock, SignedBeaconBlock},
+    beacon_block_body::BeaconBlockBody,
+    execution_payload::ExecutionPayload,
+    execution_payload_header::ExecutionPayloadHeader,
 };
 use crate::{
     attestation::Attestation,
@@ -38,13 +40,14 @@ use crate::{
         BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
         DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
         DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
-        DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EPOCHS_PER_ETH1_VOTING_PERIOD,
-        EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR, ETH1_ADDRESS_WITHDRAWAL_PREFIX,
-        FAR_FUTURE_EPOCH, G2_POINT_AT_INFINITY, GENESIS_EPOCH, GENESIS_SLOT,
-        HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT, HYSTERESIS_UPWARD_MULTIPLIER,
-        INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS, INACTIVITY_SCORE_RECOVERY_RATE,
-        JUSTIFICATION_BITS_LENGTH, MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE,
-        MAX_RANDOM_BYTE, MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
+        DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EJECTION_BALANCE,
+        EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
+        ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH, G2_POINT_AT_INFINITY, GENESIS_EPOCH,
+        GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT,
+        HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
+        INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_COMMITTEES_PER_SLOT,
+        MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE, MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE,
+        MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
         MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
         MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
@@ -1527,6 +1530,81 @@ impl BeaconState {
 
         Ok(())
     }
+
+    pub fn verify_block_signature(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<bool> {
+        let proposer = &self.validators[signed_block.message.proposer_index as usize];
+        let signing_root = compute_signing_root(
+            signed_block.message,
+            self.get_domain(DOMAIN_BEACON_PROPOSER, None)?,
+        );
+        let sig = blst::min_pk::Signature::from_bytes(&signed_block.signature.signature)
+            .map_err(|err| anyhow!("Unable to retrieve BLS Signature from byets, {:?}", err))?;
+        let public_key = PublicKey::from_bytes(&proposer.pubkey.inner)
+            .map_err(|err| anyhow!("Unable to convert PublicKey, {:?}", err))?;
+        let verification_result =
+            sig.fast_aggregate_verify(true, signing_root.as_ref(), DST, &[&public_key]);
+        Ok(matches!(
+            verification_result,
+            blst::BLST_ERROR::BLST_SUCCESS
+        ))
+    }
+
+    /// Check if ``validator`` is eligible for activation.
+    pub fn is_eligible_for_activation(&self, validator: Validator) -> bool {
+        // Placement in queue is finalized
+        validator.activation_eligibility_epoch <= self.finalized_checkpoint.epoch
+            && validator.activation_epoch == FAR_FUTURE_EPOCH
+    }
+
+    /// Return the validator activation churn limit for the current epoch.
+    pub fn get_validator_activation_churn_limit(&self) -> u64 {
+        min(
+            MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT,
+            self.get_validator_churn_limit(),
+        )
+    }
+
+    pub fn process_registry_updates(&mut self) -> anyhow::Result<()> {
+        let current_epoch = self.get_current_epoch();
+        let mut initiate_validator = vec![];
+
+        // Process activation eligibility and ejections
+        for (index, validator) in self.validators.iter_mut().enumerate() {
+            if is_eligible_for_activation_queue(validator.clone()) {
+                validator.activation_eligibility_epoch = current_epoch + 1;
+            }
+
+            if is_active_validator(validator, current_epoch)
+                && validator.effective_balance <= EJECTION_BALANCE
+            {
+                initiate_validator.push(index as u64);
+            }
+        }
+
+        for index in initiate_validator {
+            self.initiate_validator_exit(index);
+        }
+
+        // Queue validators eligible for activation and not yet dequeued for activation
+        let mut activation_queue: Vec<usize> = (0..self.validators.len())
+            // Order by the sequence of activation_eligibility_epoch setting and then index
+            .filter(|&index| self.is_eligible_for_activation(self.validators[index].clone()))
+            .collect();
+
+        activation_queue
+            .sort_by_key(|&index| (self.validators[index].activation_eligibility_epoch, index));
+
+        // Dequeued validators for activation up to activation churn limit
+        // [Modified in Deneb:EIP7514]
+        let churn_limit = self.get_validator_activation_churn_limit();
+        for i in 0..churn_limit.min(activation_queue.len() as u64) {
+            let index = activation_queue[i as usize];
+            let validator = &mut self.validators[index];
+            validator.activation_epoch = compute_activation_exit_epoch(current_epoch);
+        }
+
+        Ok(())
+    }
 }
 
 /// Check if ``leaf`` at ``index`` verifies against the Merkle ``root`` and ``branch``.
@@ -1599,4 +1677,10 @@ pub fn eth_fast_aggregate_verify(
         sig.fast_aggregate_verify(true, message, DST, &public_keys.iter().collect::<Vec<_>>())
             == blst::BLST_ERROR::BLST_SUCCESS,
     )
+}
+
+/// Check if ``validator`` is eligible to be placed into the activation queue.
+pub fn is_eligible_for_activation_queue(validator: Validator) -> bool {
+    validator.activation_eligibility_epoch == FAR_FUTURE_EPOCH
+        && validator.effective_balance == MAX_EFFECTIVE_BALANCE
 }
