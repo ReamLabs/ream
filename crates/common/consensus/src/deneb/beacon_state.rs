@@ -48,11 +48,11 @@ use crate::{
         MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
         MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
-        PARTICIPATION_FLAG_WEIGHTS, PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SECONDS_PER_SLOT,
-        SHARD_COMMITTEE_PERIOD, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE,
-        SYNC_REWARD_WEIGHT, TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX,
-        TIMELY_SOURCE_FLAG_INDEX, TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR,
-        WHISTLEBLOWER_REWARD_QUOTIENT,
+        PARTICIPATION_FLAG_WEIGHTS, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
+        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SECONDS_PER_SLOT, SHARD_COMMITTEE_PERIOD,
+        SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT,
+        TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
+        TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     helpers::{is_active_validator, xor},
     historical_summary::HistoricalSummary,
@@ -1345,6 +1345,24 @@ impl BeaconState {
         Ok(())
     }
 
+    pub fn process_eth1_data(&mut self, body: BeaconBlockBody) -> anyhow::Result<()> {
+        self.eth1_data_votes
+            .push(body.eth1_data.clone())
+            .map_err(|err| anyhow!("Can't push eth1_data {err:?}"))?;
+
+        let count = self
+            .eth1_data_votes
+            .iter()
+            .filter(|data| **data == body.eth1_data)
+            .count() as u64;
+
+        if count * 2 > (EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH) {
+            self.eth1_data = body.eth1_data;
+        }
+
+        Ok(())
+    }
+
     pub fn process_attestation(&mut self, attestation: &Attestation) -> anyhow::Result<()> {
         ensure!(
             attestation.data.target.epoch == self.get_previous_epoch()
@@ -1421,6 +1439,60 @@ impl BeaconState {
             (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT) * WEIGHT_DENOMINATOR / PROPOSER_WEIGHT;
         let proposer_reward = proposer_reward_numerator / proposer_reward_denominator;
         self.increase_balance(self.get_beacon_proposer_index()?, proposer_reward);
+        Ok(())
+    }
+
+    pub fn process_randao_mixes_reset(&mut self) -> anyhow::Result<()> {
+        let current_epoch = self.get_current_epoch();
+        let next_epoch = current_epoch + 1;
+        // Set randao mix
+        self.randao_mixes[(next_epoch % EPOCHS_PER_HISTORICAL_VECTOR) as usize] =
+            self.get_randao_mix(current_epoch);
+        Ok(())
+    }
+
+    pub fn process_slashings_reset(&mut self) -> anyhow::Result<()> {
+        let next_epoch = self.get_current_epoch() + 1;
+        // Reset slashings
+        self.slashings[(next_epoch % EPOCHS_PER_SLASHINGS_VECTOR) as usize] = 0;
+        Ok(())
+    }
+
+    pub fn process_slashings(&mut self) -> anyhow::Result<()> {
+        let epoch = self.get_current_epoch();
+        let total_balance = self.get_total_active_balance();
+        let adjusted_total_slashing_balance = (self.slashings.iter().sum::<u64>()
+            * PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX)
+            .min(total_balance);
+
+        for index in 0..self.validators.len() {
+            if self.validators[index].slashed
+                && epoch + EPOCHS_PER_SLASHINGS_VECTOR / 2
+                    == self.validators[index].withdrawable_epoch
+            {
+                let increment = EFFECTIVE_BALANCE_INCREMENT;
+                let penalty_numerator = self.validators[index].effective_balance / increment
+                    * adjusted_total_slashing_balance;
+                let penalty = penalty_numerator / total_balance * increment;
+
+                self.decrease_balance(index as u64, penalty);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn process_slot(&mut self) -> anyhow::Result<()> {
+        // Cache state root
+        let previous_state_root = self.tree_hash_root();
+        self.state_roots[(self.slot % SLOTS_PER_HISTORICAL_ROOT) as usize] = previous_state_root;
+        // Cache latest block header state root
+        if self.latest_block_header.state_root == B256::default() {
+            self.latest_block_header.state_root = previous_state_root;
+        }
+        // Cache block root
+        let previous_block_root = self.latest_block_header.tree_hash_root();
+        self.block_roots[(self.slot % SLOTS_PER_HISTORICAL_ROOT) as usize] = previous_block_root;
         Ok(())
     }
 }
