@@ -1465,7 +1465,8 @@ impl BeaconState {
             * PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX)
             .min(total_balance);
 
-        for (index, validator) in self.validators.clone().iter().enumerate() {
+        for index in 0..self.validators.len() {
+            let validator = &self.validators[index];
             if validator.slashed
                 && epoch + EPOCHS_PER_SLASHINGS_VECTOR / 2 == validator.withdrawable_epoch
             {
