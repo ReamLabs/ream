@@ -1537,10 +1537,16 @@ impl BeaconState {
             signed_block.message,
             self.get_domain(DOMAIN_BEACON_PROPOSER, None)?,
         );
-        let sig = blst::min_pk::Signature::from_bytes(&signed_block.signature.signature)
-            .map_err(|err| anyhow!("Unable to retrieve BLS Signature from byets, {:?}", err))?;
+        let sig = blst::min_pk::Signature::from_bytes(&signed_block.signature.signature).map_err(
+            |err| {
+                anyhow!(
+                    "Failed to convert signature to BLS Signature type, {:?}",
+                    err
+                )
+            },
+        )?;
         let public_key = PublicKey::from_bytes(&proposer.pubkey.inner)
-            .map_err(|err| anyhow!("Unable to convert PublicKey, {:?}", err))?;
+            .map_err(|err| anyhow!("Failed to convert pubkey to BLS PublicKey type, {:?}", err))?;
         let verification_result =
             sig.fast_aggregate_verify(true, signing_root.as_ref(), DST, &[&public_key]);
         Ok(matches!(
@@ -1596,11 +1602,9 @@ impl BeaconState {
 
         // Dequeued validators for activation up to activation churn limit
         // [Modified in Deneb:EIP7514]
-        let churn_limit = self.get_validator_activation_churn_limit();
-        for i in 0..churn_limit.min(activation_queue.len() as u64) {
-            let index = activation_queue[i as usize];
-            let validator = &mut self.validators[index];
-            validator.activation_epoch = compute_activation_exit_epoch(current_epoch);
+        for index in activation_queue[..self.get_validator_activation_churn_limit() as usize].iter()
+        {
+            self.validators[*index].activation_epoch = compute_activation_exit_epoch(current_epoch);
         }
 
         Ok(())
