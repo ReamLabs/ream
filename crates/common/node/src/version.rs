@@ -27,6 +27,6 @@ pub const fn get_ream_version_short_commit() -> &'static str {
 /// example: ream/v0.0.1-892ad575/linux-x86_64/rustc1.85.0
 pub fn ream_node_version() -> String {
     format!(
-        "{APP_NAME}/{REAM_VERSION}-{REAM_SHORT_COMMIT}/{BUILD_OPERATING_SYSTEM}-{BUILD_ARCHITECTURE}/rustc{PROGRAMMING_LANGUAGE_VERSION}",
+        "{APP_NAME}/{REAM_VERSION}-{REAM_SHORT_COMMIT}/{BUILD_OPERATING_SYSTEM}-{BUILD_ARCHITECTURE}/rustc{PROGRAMMING_LANGUAGE_VERSION}"
     )
 }
