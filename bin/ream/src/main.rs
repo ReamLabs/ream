@@ -4,7 +4,7 @@ use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
-use ream_p2p::Network;
+use ream_p2p::network::Network;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 

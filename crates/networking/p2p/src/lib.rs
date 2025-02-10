@@ -1,3 +1,3 @@
-mod network;
-
-pub use network::Network;
+pub mod bootnodes;
+pub mod network;
+pub mod req_resp;
