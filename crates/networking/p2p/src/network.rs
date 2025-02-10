@@ -10,6 +10,7 @@ use std::{
 use anyhow::anyhow;
 use discv5::Enr;
 use libp2p::{
+    connection_limits,
     core::{muxing::StreamMuxerBox, transport::Boxed},
     futures::StreamExt,
     identify,
@@ -35,7 +36,7 @@ pub(crate) struct ReamBehaviour {
     /// The discovery domain: discv5
     pub discovery: Discovery,
 
-    pub connection_registry: libp2p::connection_limits::Behaviour,
+    pub connection_registry: connection_limits::Behaviour,
 }
 
 // TODO: these are stub events which needs to be replaced

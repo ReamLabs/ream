@@ -64,7 +64,7 @@ impl Discovery {
         let node_local_id = enr.node_id();
 
         let mut discv5 = Discv5::new(enr, enr_local, config.discv5_config.clone())
-            .map_err(|e| anyhow!("Discv5 service failed. Error: {:?}", e))?;
+            .map_err(|err| anyhow!("Failed to create discv5: {err:?}"))?;
 
         // adding bootnode to DHT
         for bootnode_enr in config.boot_nodes_enr.clone() {
@@ -73,8 +73,8 @@ impl Discovery {
                 continue;
             }
 
-            let _ = discv5.add_enr(bootnode_enr).map_err(|e| {
-                info!("Discv5 service failed. Error: {:?}", e);
+            let _ = discv5.add_enr(bootnode_enr).map_err(|err| {
+                error!("Failed to add bootnode to DHT {err:?}");
             });
         }
 
