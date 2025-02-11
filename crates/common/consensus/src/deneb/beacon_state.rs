@@ -1642,6 +1642,35 @@ impl BeaconState {
 
         Ok((rewards, penalties))
     }
+
+    pub fn process_rewards_and_penalties(&mut self) -> anyhow::Result<()> {
+        // No rewards are applied at the end of `GENESIS_EPOCH` because rewards are for work done in
+        // the previous epoch
+        if self.get_current_epoch() == GENESIS_EPOCH {
+            return Ok(());
+        }
+
+        let mut flag_deltas = vec![];
+
+        for flag_index in 0..PARTICIPATION_FLAG_WEIGHTS.len() {
+            let delta = self.get_flag_index_deltas(flag_index as u8)?;
+            flag_deltas.push(delta);
+        }
+
+        let (penalties_rewards, penalties) = self.get_inactivity_penalty_deltas()?;
+
+        let mut deltas = flag_deltas;
+        deltas.push((penalties_rewards, penalties));
+
+        for (rewards, penalties) in deltas {
+            for index in 0..self.validators.len() {
+                self.increase_balance(index as u64, rewards[index]);
+                self.decrease_balance(index as u64, penalties[index]);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Check if ``leaf`` at ``index`` verifies against the Merkle ``root`` and ``branch``.
