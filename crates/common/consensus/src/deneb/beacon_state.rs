@@ -1650,17 +1650,12 @@ impl BeaconState {
             return Ok(());
         }
 
-        let mut flag_deltas = vec![];
-
+        let mut deltas = vec![];
         for flag_index in 0..PARTICIPATION_FLAG_WEIGHTS.len() {
-            let delta = self.get_flag_index_deltas(flag_index as u8)?;
-            flag_deltas.push(delta);
+            deltas.push(self.get_flag_index_deltas(flag_index as u8)?);
         }
 
-        let (penalties_rewards, penalties) = self.get_inactivity_penalty_deltas()?;
-
-        let mut deltas = flag_deltas;
-        deltas.push((penalties_rewards, penalties));
+        deltas.push(self.get_inactivity_penalty_deltas()?);
 
         for (rewards, penalties) in deltas {
             for index in 0..self.validators.len() {
