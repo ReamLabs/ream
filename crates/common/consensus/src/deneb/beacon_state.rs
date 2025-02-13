@@ -1777,25 +1777,15 @@ pub fn eth_fast_aggregate_verify(
 pub fn eth_aggregate_pubkeys(pubkeys: &[&PubKey]) -> anyhow::Result<PublicKey> {
     ensure!(!pubkeys.is_empty(), "Public keys list cannot be empty");
 
-    ensure!(
-        pubkeys
-            .iter()
-            .all(|key| PublicKey::from_bytes(&key.inner).is_ok()),
-        "Invalid public key found"
-    );
-
-    let mut result = AggregatePublicKey::from_public_key(
-        &PublicKey::from_bytes(&pubkeys[0].inner)
-            .map_err(|err| anyhow!("Failed to decode the first public key {err:?}"))?,
-    );
-
-    for pubkey in pubkeys[1..].iter() {
-        let pubkey = PublicKey::from_bytes(&pubkey.inner)
-            .map_err(|err| anyhow!("Failed to decode public key {err:?}"))?;
-        result
-            .add_public_key(&pubkey, true)
-            .map_err(|err| anyhow!("Failed to get result {err:?}"))?;
-    }
-
-    Ok(result.to_public_key())
+    let pubkeys = pubkeys
+        .iter()
+        .map(|public_key| {
+            PublicKey::from_bytes(&public_key.inner)
+                .map_err(|err| anyhow!("Failed to decode public key {err:?}"))
+        })
+        .collect::<anyhow::Result<Vec<PublicKey>>>()?;
+    let aggregate_public_key =
+        AggregatePublicKey::aggregate(&pubkeys.iter().collect::<Vec<_>>(), true)
+            .map_err(|err| anyhow!("Failed to aggregate and validate public keys {err:?}"))?;
+    Ok(aggregate_public_key.to_public_key())
 }
