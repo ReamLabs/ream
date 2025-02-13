@@ -5,7 +5,7 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::{typenum, FixedVector};
 use tree_hash_derive::TreeHash;
 
-#[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default)]
 pub struct PubKey {
     pub inner: FixedVector<u8, typenum::U48>,
 }

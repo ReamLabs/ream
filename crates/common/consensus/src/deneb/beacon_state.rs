@@ -7,10 +7,11 @@ use std::{
 
 use alloy_primitives::{aliases::B32, Address, B256};
 use anyhow::{anyhow, bail, ensure};
-use blst::min_pk::PublicKey;
+use blst::min_pk::{AggregatePublicKey, PublicKey};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use ssz::Decode;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     typenum::{U1099511627776, U16777216, U2048, U4, U65536, U8192},
@@ -42,11 +43,12 @@ use crate::{
         DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
         DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EJECTION_BALANCE,
         EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
-        ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH, G2_POINT_AT_INFINITY, GENESIS_EPOCH,
-        GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT,
-        HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
-        INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_COMMITTEES_PER_SLOT,
-        MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE, MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE,
+        EPOCHS_PER_SYNC_COMMITTEE_PERIOD, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH,
+        G2_POINT_AT_INFINITY, GENESIS_EPOCH, GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER,
+        HYSTERESIS_QUOTIENT, HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_ALTAIR,
+        INACTIVITY_SCORE_BIAS, INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH,
+        MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE,
+        MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE,
         MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
         MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
@@ -1666,7 +1668,36 @@ impl BeaconState {
                 self.decrease_balance(index as u64, penalties[index]);
             }
         }
+        Ok(())
+    }
 
+    /// Return the next sync committee, with possible pubkey duplicates.
+    pub fn get_next_sync_committee(&self) -> anyhow::Result<SyncCommittee> {
+        let indices = self.get_next_sync_committee_indices()?;
+        let mut pubkeys = vec![];
+
+        for index in indices {
+            let pubkey = self.validators[index as usize].pubkey.clone();
+            pubkeys.push(pubkey);
+        }
+
+        let aggregate_pubkey = PubKey::from_ssz_bytes(
+            &eth_aggregate_pubkeys(&pubkeys.iter().collect::<Vec<_>>())?.to_bytes(),
+        )
+        .map_err(|err| anyhow!("Could not parse public key: {err:?}"))?;
+
+        Ok(SyncCommittee {
+            pubkeys: FixedVector::from(pubkeys),
+            aggregate_pubkey,
+        })
+    }
+
+    pub fn process_sync_committee_updates(&mut self) -> anyhow::Result<()> {
+        let next_epoch = self.get_current_epoch() + 1;
+        if next_epoch % EPOCHS_PER_SYNC_COMMITTEE_PERIOD == 0 {
+            self.current_sync_committee = self.next_sync_committee.clone();
+            self.next_sync_committee = Arc::new(self.get_next_sync_committee()?);
+        }
         Ok(())
     }
 }
@@ -1741,4 +1772,35 @@ pub fn eth_fast_aggregate_verify(
         sig.fast_aggregate_verify(true, message, DST, &public_keys.iter().collect::<Vec<_>>())
             == blst::BLST_ERROR::BLST_SUCCESS,
     )
+}
+
+/// Return the aggregate public key for the public keys in ``pubkeys``.
+/// NOTE: the ``+`` operation should be interpreted as elliptic curve point addition, which takes as
+/// input elliptic curve points that must be decoded from the input ``BLSPubkey``s.
+/// This implementation is for demonstrative purposes only and ignores encoding/decoding concerns.
+/// Refer to the BLS signature draft standard for more information.
+pub fn eth_aggregate_pubkeys(pubkeys: &[&PubKey]) -> anyhow::Result<PublicKey> {
+    ensure!(!pubkeys.is_empty(), "Public keys list cannot be empty");
+
+    ensure!(
+        pubkeys
+            .iter()
+            .all(|key| PublicKey::from_bytes(&key.inner).is_ok()),
+        "Invalid public key found"
+    );
+
+    let mut result = AggregatePublicKey::from_public_key(
+        &PublicKey::from_bytes(&pubkeys[0].inner)
+            .map_err(|err| anyhow!("Failed to decode the first public key {err:?}"))?,
+    );
+
+    for pubkey in pubkeys[1..].iter() {
+        let pubkey = PublicKey::from_bytes(&pubkey.inner)
+            .map_err(|err| anyhow!("Failed to decode public key {err:?}"))?;
+        result
+            .add_public_key(&pubkey, true)
+            .map_err(|err| anyhow!("Failed to get result {err:?}"))?;
+    }
+
+    Ok(result.to_public_key())
 }
