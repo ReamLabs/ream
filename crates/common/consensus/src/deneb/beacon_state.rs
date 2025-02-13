@@ -11,7 +11,6 @@ use blst::min_pk::{AggregatePublicKey, PublicKey};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use ssz::Decode;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     typenum::{U1099511627776, U16777216, U2048, U4, U65536, U8192},
@@ -1677,18 +1676,14 @@ impl BeaconState {
         let mut pubkeys = vec![];
 
         for index in indices {
-            let pubkey = self.validators[index as usize].pubkey.clone();
-            pubkeys.push(pubkey);
+            pubkeys.push(self.validators[index as usize].pubkey.clone());
         }
 
-        let aggregate_pubkey = PubKey::from_ssz_bytes(
-            &eth_aggregate_pubkeys(&pubkeys.iter().collect::<Vec<_>>())?.to_bytes(),
-        )
-        .map_err(|err| anyhow!("Could not parse public key: {err:?}"))?;
+        let aggregate_pubkey = eth_aggregate_pubkeys(&pubkeys.iter().collect::<Vec<_>>())?;
 
         Ok(SyncCommittee {
             pubkeys: FixedVector::from(pubkeys),
-            aggregate_pubkey,
+            aggregate_pubkey: aggregate_pubkey.into(),
         })
     }
 

@@ -1,4 +1,5 @@
 use alloy_primitives::hex;
+use blst::min_pk::PublicKey;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz::Encode;
 use ssz_derive::{Decode, Encode};
@@ -8,6 +9,14 @@ use tree_hash_derive::TreeHash;
 #[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default)]
 pub struct PubKey {
     pub inner: FixedVector<u8, typenum::U48>,
+}
+
+impl From<PublicKey> for PubKey {
+    fn from(value: PublicKey) -> Self {
+        PubKey {
+            inner: FixedVector::from(value.to_bytes().to_vec()),
+        }
+    }
 }
 
 impl Serialize for PubKey {
