@@ -673,7 +673,7 @@ impl BeaconState {
         Ok((rewards, penalties))
     }
 
-    pub fn process_block_header(&mut self, block: BeaconBlock) -> anyhow::Result<()> {
+    pub fn process_block_header(&mut self, block: &BeaconBlock) -> anyhow::Result<()> {
         // Verify that the slots match
         ensure!(
             self.slot == block.slot,

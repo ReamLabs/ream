@@ -64,4 +64,37 @@ test_consensus_type!(VoluntaryExit);
 test_consensus_type!(Withdrawal);
 
 // Testing operations for block processing
+// TODO: add process_execution_payload
+test_operation!(attestation, Attestation, "attestation", process_attestation);
+test_operation!(
+    attester_slashing,
+    AttesterSlashing,
+    "attester_slashing",
+    process_attester_slashing
+);
+test_operation!(block_header, BeaconBlock, "block", process_block_header);
 test_operation!(deposit, Deposit, "deposit", process_deposit);
+test_operation!(
+    proposer_slashing,
+    ProposerSlashing,
+    "proposer_slashing",
+    process_proposer_slashing
+);
+test_operation!(
+    voluntary_exit,
+    SignedVoluntaryExit,
+    "voluntary_exit",
+    process_voluntary_exit
+);
+test_operation!(
+    sync_aggregate,
+    SyncAggregate,
+    "sync_aggregate",
+    process_sync_aggregate
+);
+test_operation!(
+    bls_to_execution_change,
+    SignedBLSToExecutionChange,
+    "address_change",
+    process_bls_to_execution_change
+);

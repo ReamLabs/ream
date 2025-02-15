@@ -94,9 +94,10 @@ macro_rules! test_operation {
                                 .expect("Failed to parse meta.yaml");
 
                             // Skip test if bls_setting is 1
-                            // TODO: When BLS is implemented, remove this
+                            // TODO: When BLS is fully implemented, remove this
                             if let Some(bls_setting) = meta.get("bls_setting") {
                                 if bls_setting.as_i64() == Some(1) {
+                                    println!("Skipping test case {} because bls_setting is 1", case_name);
                                     continue;
                                 }
                             }
@@ -115,12 +116,19 @@ macro_rules! test_operation {
 
                         match (result, expected_post) {
                             (Ok(_), Some(expected)) => {
+                                // Compare balances and print differences
+                                for (i, (actual, expected)) in state.balances.iter().zip(expected.balances.iter()).enumerate() {
+                                    if actual != expected {
+                                        println!("Balance mismatch at index {}: actual={}, expected={}", i, actual, expected);
+                                    }
+                                }
                                 assert_eq!(state, expected, "Post state mismatch in case {}", case_name);
                             }
                             (Ok(_), None) => {
                                 panic!("Test case {} should have failed but succeeded", case_name);
                             }
-                            (Err(_), Some(_)) => {
+                            (Err(e), Some(_)) => {
+                                println!("Error: {:?}", e);
                                 panic!("Test case {} should have succeeded but failed", case_name);
                             }
                             (Err(_), None) => {
