@@ -65,3 +65,9 @@ test_consensus_type!(Withdrawal);
 
 // Testing operations for block processing
 test_operation!(deposit, Deposit, "deposit", process_deposit);
+test_operation!(
+    withdrawals,
+    ExecutionPayload,
+    "execution_payload",
+    process_withdrawals
+);

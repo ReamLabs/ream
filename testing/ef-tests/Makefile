@@ -18,8 +18,8 @@ $(EXTRACT_DIR): $(TARGET)
 	fi
 
 $(TARGET):
-	@if [ -f $(TARGET) ]; then \
-		echo "$(TARGET) already downloaded. Skipping download."; \
+	@if [ -d $(EXTRACT_DIR) ]; then \
+		echo "$(EXTRACT_DIR) already downloaded. Skipping download."; \
 	else \
 		echo "Fetching the latest release URL for $(TARGET)..."; \
 		curl -s $(LATEST_RELEASE_URL) \

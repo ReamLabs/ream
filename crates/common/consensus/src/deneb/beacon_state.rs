@@ -724,7 +724,7 @@ impl BeaconState {
                 withdrawals.push(Withdrawal {
                     index: withdrawal_index,
                     validator_index,
-                    address: Address::from_slice(&validator.withdrawal_credentials[..12]),
+                    address: Address::from_slice(&validator.withdrawal_credentials[12..]),
                     amount: balance,
                 });
                 withdrawal_index += 1
@@ -732,7 +732,7 @@ impl BeaconState {
                 withdrawals.push(Withdrawal {
                     index: withdrawal_index,
                     validator_index,
-                    address: Address::from_slice(&validator.withdrawal_credentials[..12]),
+                    address: Address::from_slice(&validator.withdrawal_credentials[12..]),
                     amount: balance - MAX_EFFECTIVE_BALANCE,
                 });
                 withdrawal_index += 1
@@ -745,7 +745,7 @@ impl BeaconState {
         withdrawals
     }
 
-    pub fn process_withdrawals(&mut self, payload: ExecutionPayload) -> anyhow::Result<()> {
+    pub fn process_withdrawals(&mut self, payload: &ExecutionPayload) -> anyhow::Result<()> {
         let expected_withdrawals = self.get_expected_withdrawals();
         ensure!(
             payload.withdrawals.deref() == expected_withdrawals,
@@ -757,7 +757,7 @@ impl BeaconState {
         }
 
         // Update the next withdrawal index if this block contained withdrawals
-        if expected_withdrawals.is_empty() {
+        if !expected_withdrawals.is_empty() {
             let latest_withdrawal = &expected_withdrawals[expected_withdrawals.len() - 1];
             self.next_withdrawal_index = latest_withdrawal.index + 1
         }
