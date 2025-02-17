@@ -11,6 +11,7 @@ pub mod deposit;
 pub mod deposit_data;
 pub mod deposit_message;
 pub mod eth_1_data;
+pub mod execution_engine;
 pub mod fork;
 pub mod fork_choice;
 pub mod fork_data;
