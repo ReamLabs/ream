@@ -25,6 +25,7 @@ rust-version = "1.81.0"
 version = "0.1.0"
 
 [workspace.dependencies]
+alloy-consensus = { version = "0.11.1", default-features = false }
 alloy-primitives = { version = "0.8", features = ['serde'] }
 alloy-rlp = { version = "0.3.8", default-features = false, features = ["derive"] }
 anyhow = "1.0"
@@ -33,7 +34,6 @@ kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 clap = "4"
 discv5 = { version = "0.9.0", features = ["libp2p"] }
 enr = "0.13.0"
-alloy-consensus = { version = "0.11.1", default-features = false }
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }
 ethereum_serde_utils = "0.7"
 ethereum_ssz = "0.8"

@@ -127,6 +127,7 @@ where
 {
     ordered_trie_root_with_encoder(transactions, |tx: &T, buf| tx.encode(buf))
 }
+
 /// Calculates the root hash of the withdrawals.
 pub fn calculate_withdrawals_root(withdrawals: &[Withdrawal]) -> B256 {
     ordered_trie_root(withdrawals)
