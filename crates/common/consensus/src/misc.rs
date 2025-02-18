@@ -34,8 +34,11 @@ pub fn compute_shuffled_index(
 
         let flip = (pivot as usize + (index_count - index)) % index_count;
         let position = max(index, flip);
-        let seed_with_position =
-            [seed_with_round.as_slice(), &(position / 256).to_le_bytes()].concat();
+        let seed_with_position = [
+            seed_with_round.as_slice(),
+            &(position / 256).to_le_bytes()[0..4],
+        ]
+        .concat();
         let source = hash(&seed_with_position);
         let byte = source[(position % 256) / 8];
         let bit = (byte >> (position % 8)) % 2;
