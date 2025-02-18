@@ -22,12 +22,11 @@ pub fn compute_signing_root<SSZObject: TreeHash>(ssz_object: SSZObject, domain: 
 }
 
 pub fn compute_shuffled_index(
-    index: usize,
+    mut index: usize,
     index_count: usize,
     seed: B256,
 ) -> anyhow::Result<usize> {
     ensure!(index < index_count, "Index must be less than index_count");
-    let mut index = index;
     for round in 0..SHUFFLE_ROUND_COUNT {
         let seed_with_round = [seed.as_slice(), &round.to_le_bytes()].concat();
         let pivot = bytes_to_int64(&hash(&seed_with_round)[..]) % index_count as u64;
