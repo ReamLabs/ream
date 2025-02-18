@@ -32,7 +32,7 @@ $(TARGET):
 
 test: $(EXTRACT_DIR)
 	@echo "Running tests..."
-	@cargo test --features ef-tests
+	@cargo test --release --features ef-tests
 	@echo "Tests complete."
 
 clean:
