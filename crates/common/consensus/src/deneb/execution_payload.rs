@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
+use alloy_consensus::proofs::{ordered_trie_root, ordered_trie_root_with_encoder};
 use alloy_primitives::{b256, bytes, keccak256, Address, Bytes, B256, B64, U256};
 use alloy_rlp::Encodable;
-use anyhow::anyhow;
-use eth_trie::{EthTrie, MemoryDB, Trie};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -59,8 +56,8 @@ impl ExecutionPayload {
             .into_iter()
             .map(|transaction| Bytes::from(transaction.to_vec()))
             .collect::<Vec<_>>();
-        let transactions_root = calculate_merkle_patricia_root(transactions.iter()).expect("");
-        let withdrawals_root = calculate_merkle_patricia_root(self.withdrawals.iter()).expect("");
+        let transactions_root = calculate_transactions_root(&transactions);
+        let withdrawals_root = calculate_withdrawals_root(&self.withdrawals);
         alloy_rlp::Header {
             list: true,
             payload_length: self.rlp_payload_length(
@@ -100,20 +97,20 @@ impl ExecutionPayload {
         withdrawals_root: B256,
     ) -> usize {
         self.parent_hash.length()
-            + EMPTY_UNCLE_ROOT_HASH.length()
+            + EMPTY_UNCLE_ROOT_HASH.length() // ommers_hash
             + self.fee_recipient.length()
             + self.state_root.length()
             + transactions_root.length()
             + self.receipts_root.length()
             + self.logs_bloom.length()
-            + U256::ZERO.length()
+            + U256::ZERO.length() // difficulty
             + self.block_number.length()
             + self.gas_limit.length()
             + self.gas_used.length()
             + self.timestamp.length()
             + self.extra_data.to_vec().as_slice().length()
             + self.prev_randao.length()
-            + B64::ZERO.length()
+            + B64::ZERO.length() // nonce
             + self.base_fee_per_gas.length()
             + withdrawals_root.length()
             + self.blob_gas_used.length()
@@ -122,20 +119,15 @@ impl ExecutionPayload {
     }
 }
 
-pub fn calculate_merkle_patricia_root<'a, T: Encodable + 'a>(
-    items: impl IntoIterator<Item = &'a T>,
-) -> anyhow::Result<B256> {
-    let memdb = Arc::new(MemoryDB::new(true));
-    let mut trie = EthTrie::new(memdb);
-
-    // Insert items into merkle patricia trie
-    for (index, tx) in items.into_iter().enumerate() {
-        let path = alloy_rlp::encode(index);
-        let encoded_tx = alloy_rlp::encode(tx);
-        trie.insert(&path, &encoded_tx)
-            .map_err(|err| anyhow!("Error inserting into merkle patricia trie: {err:?}"))?;
-    }
-
-    trie.root_hash()
-        .map_err(|err| anyhow!("Error calculating merkle patricia trie root: {err:?}"))
+/// Calculate the Merkle Patricia Trie root hash from a list of items
+/// `(rlp(index), encoded(item))` pairs.
+pub fn calculate_transactions_root<T>(transactions: &[T]) -> B256
+where
+    T: Encodable,
+{
+    ordered_trie_root_with_encoder(transactions, |tx: &T, buf| tx.encode(buf))
+}
+/// Calculates the root hash of the withdrawals.
+pub fn calculate_withdrawals_root(withdrawals: &[Withdrawal]) -> B256 {
+    ordered_trie_root(withdrawals)
 }

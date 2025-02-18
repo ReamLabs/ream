@@ -26,12 +26,13 @@ impl ExecutionEngine {
     /// Return ``True`` if and only if the version hashes computed by the blob transactions of
     /// ``new_payload_request.execution_payload`` matches ``new_payload_request.versioned_hashes``.
     pub fn is_valid_versioned_hashes(
-        self: ExecutionEngine,
+        &self,
         new_payload_request: NewPayloadRequest,
     ) -> anyhow::Result<bool> {
         let mut blob_versioned_hashes = vec![];
         for transaction in new_payload_request.execution_payload.transactions {
-            if TransactionType::find_transaction_type(&transaction)?
+            if TransactionType::try_from(&transaction[..])
+                .map_err(|err| anyhow!("Failed to detect transaction type: {err:?}"))?
                 == TransactionType::BlobTransaction
             {
                 let blob_transaction = BlobTransaction::decode(&mut &transaction[1..])?;
@@ -129,12 +130,21 @@ pub enum TransactionType {
     AccessListTransaction,
 }
 
-impl TransactionType {
-    pub fn find_transaction_type(transaction: &[u8]) -> anyhow::Result<TransactionType> {
-        match transaction
+#[derive(Debug)]
+pub enum TransactionTypeError {
+    InvalidType(u8),
+    EmptyTransaction,
+}
+
+impl TryFrom<&[u8]> for TransactionType {
+    type Error = TransactionTypeError;
+
+    fn try_from(transaction: &[u8]) -> Result<Self, TransactionTypeError> {
+        let first_byte = transaction
             .first()
-            .ok_or(anyhow!("Transaction shouldn't be empty."))?
-        {
+            .ok_or(TransactionTypeError::EmptyTransaction)?;
+
+        match first_byte {
             3 => Ok(TransactionType::BlobTransaction),
             2 => Ok(TransactionType::FeeMarketTransaction),
             1 => Ok(TransactionType::AccessListTransaction),

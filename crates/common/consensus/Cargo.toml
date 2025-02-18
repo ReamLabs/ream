@@ -11,12 +11,12 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
-alloy-rlp = { version = "0.3.8", default-features = false, features = ["derive"] }
+alloy-rlp.workspace = true
 anyhow.workspace = true
 blst.workspace = true
 kzg.workspace = true
 ethereum_hashing.workspace = true
-eth_trie = "0.5.0"
+alloy-consensus.workspace = true
 ethereum_serde_utils.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
