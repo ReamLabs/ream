@@ -1804,10 +1804,7 @@ pub fn eth_aggregate_pubkeys(pubkeys: &[&PubKey]) -> anyhow::Result<PublicKey> {
 }
 
 pub fn kzg_commitment_to_versioned_hash(kzg_commitment: &KZGCommitment) -> B256 {
-    let commitment_bytes: &[u8] = &kzg_commitment.bytes;
-    let hash = hash(commitment_bytes);
-    let mut versioned_hash = [0u8; 32];
+    let mut versioned_hash = hash(&kzg_commitment.bytes);
     versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
-    versioned_hash[1..].copy_from_slice(&hash[1..]);
-    B256::from(versioned_hash)
+    B256::from_slice(&versioned_hash)
 }
