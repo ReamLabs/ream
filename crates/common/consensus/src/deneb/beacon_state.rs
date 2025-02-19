@@ -10,6 +10,7 @@ use anyhow::{anyhow, bail, ensure};
 use blst::min_pk::{AggregatePublicKey, PublicKey};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
+use kzg::eth::c_bindings::KZGCommitment;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -61,6 +62,7 @@ use crate::{
     helpers::xor,
     historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
+    kzg_commitment::VERSIONED_HASH_VERSION_KZG,
     misc::{
         compute_activation_exit_epoch, compute_committee, compute_domain, compute_epoch_at_slot,
         compute_shuffled_index, compute_signing_root, compute_start_slot_at_epoch,
@@ -1799,4 +1801,13 @@ pub fn eth_aggregate_pubkeys(pubkeys: &[&PubKey]) -> anyhow::Result<PublicKey> {
         AggregatePublicKey::aggregate(&pubkeys.iter().collect::<Vec<_>>(), true)
             .map_err(|err| anyhow!("Failed to aggregate and validate public keys {err:?}"))?;
     Ok(aggregate_public_key.to_public_key())
+}
+
+pub fn kzg_commitment_to_versioned_hash(kzg_commitment: &KZGCommitment) -> B256 {
+    let commitment_bytes: &[u8] = &kzg_commitment.bytes;
+    let hash = hash(commitment_bytes);
+    let mut versioned_hash = [0u8; 32];
+    versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
+    versioned_hash[1..].copy_from_slice(&hash[1..]);
+    B256::from(versioned_hash)
 }
