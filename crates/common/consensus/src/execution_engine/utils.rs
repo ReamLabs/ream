@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-pub fn strip_prefix(s: &str) -> &str {
-    if let Some(stripped) = s.strip_prefix("0x") {
+pub fn strip_prefix(string: &str) -> &str {
+    if let Some(stripped) = string.strip_prefix("0x") {
         stripped
     } else {
-        s
+        string
     }
 }
 
