@@ -1,9 +1,8 @@
 use alloy_primitives::Address;
+use ream_bls::{BlsSignature, PubKey};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
-
-use crate::{pubkey::PubKey, signature::BlsSignature};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedBLSToExecutionChange {

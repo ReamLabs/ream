@@ -40,3 +40,10 @@ impl<'de> Deserialize<'de> for PubKey {
         Ok(Self { inner: key })
     }
 }
+
+impl PubKey {
+    pub fn to_blst_pubkey(&self) -> anyhow::Result<PublicKey> {
+        PublicKey::from_bytes(&self.inner)
+            .map_err(|err| anyhow::anyhow!("Failed to decode public key {err:?}"))
+    }
+}

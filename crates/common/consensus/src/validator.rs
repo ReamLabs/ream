@@ -1,13 +1,11 @@
 use alloy_primitives::B256;
+use ream_bls::PubKey;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
-use crate::{
-    fork_choice::helpers::constants::{
-        ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH, MAX_EFFECTIVE_BALANCE,
-    },
-    pubkey::PubKey,
+use crate::fork_choice::helpers::constants::{
+    ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH, MAX_EFFECTIVE_BALANCE,
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]

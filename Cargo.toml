@@ -3,6 +3,7 @@ members = [
     "bin/ream",
     "crates/common/consensus",
     "crates/common/executor",
+    "crates/crypto/bls",
     "crates/networking/discv5",
     "crates/networking/p2p",
     "crates/rpc",
@@ -57,6 +58,7 @@ tree_hash_derive = "0.9"
 
 
 # ream dependencies
+ream-bls = { path = "crates/crypto/bls" }
 ream-discv5 = { path = "crates/networking/discv5"}
 ream-executor = { path = "crates/common/executor" }
 ream-p2p = { path = "crates/networking/p2p" }
