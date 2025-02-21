@@ -18,6 +18,7 @@ const EMPTY_UNCLE_ROOT_HASH: B256 =
     b256!("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347");
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[serde(rename_all = "camelCase")]
 pub struct ExecutionPayload {
     // Execution block header fields
     pub parent_hash: B256,
@@ -27,21 +28,30 @@ pub struct ExecutionPayload {
     #[serde(with = "hex_fixed_vec")]
     pub logs_bloom: FixedVector<u8, typenum::U256>,
     pub prev_randao: B256,
+    #[serde(with = "serde_utils::u64_hex_be")]
     pub block_number: u64,
+    #[serde(with = "serde_utils::u64_hex_be")]
     pub gas_limit: u64,
+    #[serde(with = "serde_utils::u64_hex_be")]
     pub gas_used: u64,
+    #[serde(with = "serde_utils::u64_hex_be")]
     pub timestamp: u64,
     #[serde(with = "hex_var_list")]
     pub extra_data: VariableList<u8, typenum::U32>,
-    #[serde(with = "serde_utils::quoted_u256")]
+    #[serde(with = "serde_utils::u256_hex_be")]
     pub base_fee_per_gas: U256,
 
     // Extra payload fields
     pub block_hash: B256,
     #[serde(with = "list_of_hex_var_list")]
     pub transactions: VariableList<VariableList<u8, typenum::U1073741824>, typenum::U1048576>,
+    #[serde(skip_serializing)]
     pub withdrawals: VariableList<Withdrawal, typenum::U16>,
+    #[serde(with = "serde_utils::u64_hex_be")]
+    #[serde(skip_serializing)]
     pub blob_gas_used: u64,
+    #[serde(with = "serde_utils::u64_hex_be")]
+    #[serde(skip_serializing)]
     pub excess_blob_gas: u64,
 }
 

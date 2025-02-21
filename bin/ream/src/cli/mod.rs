@@ -12,6 +12,8 @@ pub enum Commands {
     /// Start the node
     #[command(name = "node")]
     Node(NodeCommand),
+
+
 }
 
 #[derive(Debug, Parser)]
