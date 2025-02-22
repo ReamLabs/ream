@@ -93,4 +93,27 @@ impl ExecutionEngine {
             .await
             .map(|result| result.result)?)
     }
+
+    pub async fn engine_exchange_capabilities(&self) -> anyhow::Result<Vec<String>> {
+        let capabilities: Vec<String> = vec![];
+        let request_body = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".to_string(),
+            method: "engine_exchangeCapabilities".to_string(),
+            params: vec![serde_json::json!(capabilities)],
+        };
+        let http_post_request = self
+            .http_client
+            .post(&self.engine_api_url)
+            .json(&request_body)
+            .bearer_auth(self.create_jwt_token()?)
+            .build();
+        Ok(self
+            .http_client
+            .execute(http_post_request?)
+            .await?
+            .json::<JsonRpcResponse<Vec<String>>>()
+            .await
+            .map(|result| result.result)?)
+    }
 }
