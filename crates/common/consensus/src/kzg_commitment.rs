@@ -18,9 +18,9 @@ pub const VERSIONED_HASH_VERSION_KZG: u8 = 0x01;
 
 #[derive(Clone, Copy, Encode, Decode, PartialEq, Eq, Hash)]
 #[ssz(struct_behaviour = "transparent")]
-pub struct KzgCommitment(pub [u8; BYTES_PER_COMMITMENT]);
+pub struct KZGCommitment(pub [u8; BYTES_PER_COMMITMENT]);
 
-impl KzgCommitment {
+impl KZGCommitment {
     pub fn calculate_versioned_hash(&self) -> Hash256 {
         let mut versioned_hash = hash_fixed(&self.0);
         versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
@@ -28,17 +28,17 @@ impl KzgCommitment {
     }
 
     pub fn empty_for_testing() -> Self {
-        KzgCommitment([0; BYTES_PER_COMMITMENT])
+        KZGCommitment([0; BYTES_PER_COMMITMENT])
     }
 }
 
-impl From<KzgCommitment> for kzg::eth::c_bindings::Bytes48 {
-    fn from(value: KzgCommitment) -> Self {
+impl From<KZGCommitment> for kzg::eth::c_bindings::Bytes48 {
+    fn from(value: KZGCommitment) -> Self {
         kzg::eth::c_bindings::Bytes48 { bytes: value.0 }
     }
 }
 
-impl Display for KzgCommitment {
+impl Display for KZGCommitment {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "0x")?;
         for i in &self.0[0..2] {
@@ -52,7 +52,7 @@ impl Display for KzgCommitment {
     }
 }
 
-impl TreeHash for KzgCommitment {
+impl TreeHash for KZGCommitment {
     fn tree_hash_type() -> tree_hash::TreeHashType {
         <[u8; BYTES_PER_COMMITMENT] as TreeHash>::tree_hash_type()
     }
@@ -70,7 +70,7 @@ impl TreeHash for KzgCommitment {
     }
 }
 
-impl Serialize for KzgCommitment {
+impl Serialize for KZGCommitment {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -79,7 +79,7 @@ impl Serialize for KzgCommitment {
     }
 }
 
-impl<'de> Deserialize<'de> for KzgCommitment {
+impl<'de> Deserialize<'de> for KZGCommitment {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -89,7 +89,7 @@ impl<'de> Deserialize<'de> for KzgCommitment {
     }
 }
 
-impl FromStr for KzgCommitment {
+impl FromStr for KZGCommitment {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -108,7 +108,7 @@ impl FromStr for KzgCommitment {
     }
 }
 
-impl Debug for KzgCommitment {
+impl Debug for KZGCommitment {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", hex::encode(self.0))
     }
@@ -124,7 +124,7 @@ mod test {
     #[test]
     fn kzg_commitment_display() {
         let display_commitment_str = "0x53fa…adac";
-        let display_commitment = KzgCommitment::from_str(COMMITMENT_STR).unwrap().to_string();
+        let display_commitment = KZGCommitment::from_str(COMMITMENT_STR).unwrap().to_string();
 
         assert_eq!(display_commitment, display_commitment_str);
     }
@@ -132,14 +132,14 @@ mod test {
     #[test]
     fn kzg_commitment_debug() {
         let debug_commitment_str = COMMITMENT_STR;
-        let debug_commitment = KzgCommitment::from_str(debug_commitment_str).unwrap();
+        let debug_commitment = KZGCommitment::from_str(debug_commitment_str).unwrap();
 
         assert_eq!(format!("0x{debug_commitment:?}"), debug_commitment_str);
     }
 
     #[test]
     fn kzg_commitment_tree_hash_root() {
-        let commitment = KzgCommitment::from_str(COMMITMENT_STR).unwrap();
+        let commitment = KZGCommitment::from_str(COMMITMENT_STR).unwrap();
         let root = commitment.tree_hash_root();
         let expected_root = commitment.0.tree_hash_root();
 

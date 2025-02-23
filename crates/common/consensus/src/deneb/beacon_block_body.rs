@@ -12,7 +12,7 @@ use super::execution_payload::ExecutionPayload;
 use crate::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     bls_to_execution_change::SignedBLSToExecutionChange, deposit::Deposit, eth_1_data::Eth1Data,
-    kzg_commitment::KzgCommitment, proposer_slashing::ProposerSlashing,
+    kzg_commitment::KZGCommitment, proposer_slashing::ProposerSlashing,
     sync_aggregate::SyncAggregate, voluntary_exit::SignedVoluntaryExit,
 };
 
@@ -35,5 +35,5 @@ pub struct BeaconBlockBody {
     pub sync_aggregate: SyncAggregate,
     pub execution_payload: ExecutionPayload,
     pub bls_to_execution_changes: VariableList<SignedBLSToExecutionChange, U16>,
-    pub blob_kzg_commitments: VariableList<KzgCommitment, U4096>,
+    pub blob_kzg_commitments: VariableList<KZGCommitment, U4096>,
 }

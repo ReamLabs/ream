@@ -1,4 +1,6 @@
+use anyhow::bail;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub fn strip_prefix(string: &str) -> &str {
     if let Some(stripped) = string.strip_prefix("0x") {
@@ -18,8 +20,19 @@ pub struct JsonRpcRequest {
 
 // Define a wrapper struct to extract "result" without cloning
 #[derive(Deserialize)]
-pub struct JsonRpcResponse<T> {
-    pub result: T,
+#[serde(untagged)]
+pub enum JsonRpcResponse<T> {
+    Result { result: T },
+    Error(Value),
+}
+
+impl<T> JsonRpcResponse<T> {
+    pub fn to_result(self) -> anyhow::Result<T> {
+        match self {
+            JsonRpcResponse::Result { result } => Ok(result),
+            JsonRpcResponse::Error(err) => bail!("Failed to desirilze json {err:?}"),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
