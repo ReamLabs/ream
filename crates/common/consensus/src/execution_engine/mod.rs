@@ -8,7 +8,7 @@ use alloy_rlp::Decodable;
 use anyhow::anyhow;
 use jsonwebtoken::{encode, get_current_timestamp, EncodingKey, Header};
 use new_payload_request::NewPayloadRequest;
-use reqwest::Client;
+use reqwest::{Client, Request};
 use rpc_types::{engine_get_payloadv1::PayloadV3, eth_syncing::EthSyncing};
 use transaction::{BlobTransaction, TransactionType};
 use utils::{strip_prefix, Claims, JsonRpcRequest, JsonRpcResponse};
@@ -72,6 +72,15 @@ impl ExecutionEngine {
         Ok(blob_versioned_hashes == new_payload_request.versioned_hashes)
     }
 
+    pub fn build_request(&self, rpc_request: JsonRpcRequest) -> anyhow::Result<Request> {
+        Ok(self
+            .http_client
+            .post(&self.engine_api_url)
+            .json(&rpc_request)
+            .bearer_auth(self.create_jwt_token()?)
+            .build()?)
+    }
+
     pub async fn eth_syncing(&self) -> anyhow::Result<EthSyncing> {
         let request_body = JsonRpcRequest {
             id: 1,
@@ -79,14 +88,11 @@ impl ExecutionEngine {
             method: "eth_syncing".to_string(),
             params: vec![],
         };
-        let http_post_request = self
-            .http_client
-            .post(&self.engine_api_url)
-            .json(&request_body)
-            .bearer_auth(self.create_jwt_token()?)
-            .build();
+
+        let http_post_request = self.build_request(request_body)?;
+
         self.http_client
-            .execute(http_post_request?)
+            .execute(http_post_request)
             .await?
             .json::<JsonRpcResponse<EthSyncing>>()
             .await?
@@ -101,14 +107,11 @@ impl ExecutionEngine {
             method: "engine_exchangeCapabilities".to_string(),
             params: vec![serde_json::json!(capabilities)],
         };
-        let http_post_request = self
-            .http_client
-            .post(&self.engine_api_url)
-            .json(&request_body)
-            .bearer_auth(self.create_jwt_token()?)
-            .build();
+
+        let http_post_request = self.build_request(request_body)?;
+
         self.http_client
-            .execute(http_post_request?)
+            .execute(http_post_request)
             .await?
             .json::<JsonRpcResponse<Vec<String>>>()
             .await?
@@ -122,15 +125,11 @@ impl ExecutionEngine {
             method: "engine_getPayloadV3".to_string(),
             params: vec![serde_json::json!(payload_id)],
         };
-        let http_post_request = self
-            .http_client
-            .post(&self.engine_api_url)
-            .json(&request_body)
-            .bearer_auth(self.create_jwt_token()?)
-            .build();
+
+        let http_post_request = self.build_request(request_body)?;
 
         self.http_client
-            .execute(http_post_request?)
+            .execute(http_post_request)
             .await?
             .json::<JsonRpcResponse<PayloadV3>>()
             .await?
