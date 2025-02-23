@@ -9,7 +9,11 @@ use anyhow::anyhow;
 use jsonwebtoken::{encode, get_current_timestamp, EncodingKey, Header};
 use new_payload_request::NewPayloadRequest;
 use reqwest::{Client, Request};
-use rpc_types::{engine_get_payloadv1::PayloadV3, eth_syncing::EthSyncing};
+use rpc_types::{
+    engine_get_payloadv3::PayloadV3,
+    engine_new_payloadv3::{ExecutionPayloadV3, PayloadStatusV1},
+    eth_syncing::EthSyncing,
+};
 use transaction::{BlobTransaction, TransactionType};
 use utils::{strip_prefix, Claims, JsonRpcRequest, JsonRpcResponse};
 
@@ -132,6 +136,33 @@ impl ExecutionEngine {
             .execute(http_post_request)
             .await?
             .json::<JsonRpcResponse<PayloadV3>>()
+            .await?
+            .to_result()
+    }
+
+    pub async fn engine_new_payloadv3(
+        &self,
+        execution_payload: ExecutionPayloadV3,
+        expected_blob_versioned_hashes: Vec<B256>,
+        parent_beacon_block_root: B256,
+    ) -> anyhow::Result<PayloadStatusV1> {
+        let request_body = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".to_string(),
+            method: "engine_newPayloadV3".to_string(),
+            params: vec![
+                serde_json::json!(execution_payload),
+                serde_json::json!(expected_blob_versioned_hashes),
+                serde_json::json!(parent_beacon_block_root),
+            ],
+        };
+
+        let http_post_request = self.build_request(request_body)?;
+
+        self.http_client
+            .execute(http_post_request)
+            .await?
+            .json::<JsonRpcResponse<PayloadStatusV1>>()
             .await?
             .to_result()
     }
