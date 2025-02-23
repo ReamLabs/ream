@@ -10,9 +10,8 @@ use jsonwebtoken::{encode, get_current_timestamp, EncodingKey, Header};
 use new_payload_request::NewPayloadRequest;
 use reqwest::{Client, Request};
 use rpc_types::{
-    engine_get_payloadv3::PayloadV3,
-    engine_new_payloadv3::{ExecutionPayloadV3, PayloadStatusV1},
-    eth_syncing::EthSyncing,
+    eth_syncing::EthSyncing, execution_payload::ExecutionPayloadV3, get_payload::PayloadV3,
+    payload_status::PayloadStatusV1,
 };
 use transaction::{BlobTransaction, TransactionType};
 use utils::{strip_prefix, Claims, JsonRpcRequest, JsonRpcResponse};
