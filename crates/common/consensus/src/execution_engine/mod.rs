@@ -13,6 +13,7 @@ use rpc_types::{
     eth_syncing::EthSyncing,
     execution_payload::ExecutionPayloadV3,
     forkchoice_update::{ForkchoiceStateV1, ForkchoiceUpdateResult, PayloadAttributesV3},
+    get_blobs::BlobsAndProofV1,
     get_payload::PayloadV3,
     payload_status::PayloadStatusV1,
 };
@@ -192,6 +193,27 @@ impl ExecutionEngine {
             .execute(http_post_request)
             .await?
             .json::<JsonRpcResponse<ForkchoiceUpdateResult>>()
+            .await?
+            .to_result()
+    }
+
+    pub async fn engine_get_blobs_v1(
+        &self,
+        blob_version_hashes: Vec<B256>,
+    ) -> anyhow::Result<Vec<Option<BlobsAndProofV1>>> {
+        let request_body = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".to_string(),
+            method: "engine_getBlobsV1".to_string(),
+            params: vec![json!(blob_version_hashes)],
+        };
+
+        let http_post_request = self.build_request(request_body)?;
+
+        self.http_client
+            .execute(http_post_request)
+            .await?
+            .json::<JsonRpcResponse<Vec<Option<BlobsAndProofV1>>>>()
             .await?
             .to_result()
     }
