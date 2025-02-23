@@ -13,6 +13,7 @@ use rpc_types::{
     eth_syncing::EthSyncing, execution_payload::ExecutionPayloadV3, get_payload::PayloadV3,
     payload_status::PayloadStatusV1,
 };
+use serde_json::json;
 use transaction::{BlobTransaction, TransactionType};
 use utils::{strip_prefix, Claims, JsonRpcRequest, JsonRpcResponse};
 
@@ -108,7 +109,7 @@ impl ExecutionEngine {
             id: 1,
             jsonrpc: "2.0".to_string(),
             method: "engine_exchangeCapabilities".to_string(),
-            params: vec![serde_json::json!(capabilities)],
+            params: vec![json!(capabilities)],
         };
 
         let http_post_request = self.build_request(request_body)?;
@@ -126,7 +127,7 @@ impl ExecutionEngine {
             id: 1,
             jsonrpc: "2.0".to_string(),
             method: "engine_getPayloadV3".to_string(),
-            params: vec![serde_json::json!(payload_id)],
+            params: vec![json!(payload_id)],
         };
 
         let http_post_request = self.build_request(request_body)?;
@@ -150,9 +151,9 @@ impl ExecutionEngine {
             jsonrpc: "2.0".to_string(),
             method: "engine_newPayloadV3".to_string(),
             params: vec![
-                serde_json::json!(execution_payload),
-                serde_json::json!(expected_blob_versioned_hashes),
-                serde_json::json!(parent_beacon_block_root),
+                json!(execution_payload),
+                json!(expected_blob_versioned_hashes),
+                json!(parent_beacon_block_root),
             ],
         };
 

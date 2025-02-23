@@ -11,10 +11,8 @@ use crate::kzg_commitment::KZGCommitment;
 #[serde(rename_all = "camelCase")]
 pub struct BlobsBundleV1 {
     pub blobs: VariableList<KZGCommitment, typenum::U1048576>,
-
     #[serde(with = "list_of_hex_var_list")]
     pub commitments: VariableList<VariableList<u8, typenum::U96>, typenum::U1024>,
-
     #[serde(with = "list_of_hex_var_list")]
     pub proofs: VariableList<VariableList<u8, typenum::U96>, typenum::U1024>,
 }
