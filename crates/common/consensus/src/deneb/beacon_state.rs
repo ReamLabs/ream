@@ -1654,6 +1654,12 @@ impl BeaconState {
         }
         Ok(())
     }
+
+    pub fn process_participation_flag_updates(&mut self) -> anyhow::Result<()> {
+        self.previous_epoch_participation = self.current_epoch_participation.clone();
+        self.current_epoch_participation = vec![0; self.validators.len()].into();
+        Ok(())
+    }
 }
 
 /// Check if ``leaf`` at ``index`` verifies against the Merkle ``root`` and ``branch``.
