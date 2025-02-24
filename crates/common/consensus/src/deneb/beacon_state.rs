@@ -30,7 +30,7 @@ use super::{
     execution_payload_header::ExecutionPayloadHeader,
 };
 use crate::{
-    attestation::Attestation,
+    attestation::{self, Attestation},
     attestation_data::AttestationData,
     attester_slashing::AttesterSlashing,
     beacon_block_header::BeaconBlockHeader,
@@ -1653,6 +1653,50 @@ impl BeaconState {
             self.next_sync_committee = Arc::new(self.get_next_sync_committee()?);
         }
         Ok(())
+    }
+
+    pub fn get_unslashed_attesting_indices(&self, attestations: &[Attestation]) -> HashSet<u64> {
+        let mut output: HashSet<u64> = HashSet::new();
+
+        for attestation in attestations {
+            if let Ok(indices) = self.get_attesting_indices(attestation) {
+                output.extend(indices);
+            }
+        }
+
+        output.retain(|&index| !self.validators[index as usize].slashed);
+        output
+    }
+
+    /// Helper with shared logic for use by get source, target, and head deltas functions
+    pub fn get_attestation_component_delta(
+        &mut self,
+        attestations: &[Attestation],
+    ) -> (Vec<u64>, Vec<u64>) {
+        let mut rewards = vec![0u64, self.validators.len() as u64];
+        let mut penalties = vec![0u64, self.validators.len() as u64];
+
+        let total_balance = self.get_total_active_balance();
+        let unslashed_attesting_indices = self.get_unslashed_attesting_indices(attestations);
+        let attesting_balance = self.get_total_balance(unslashed_attesting_indices.clone());
+
+        if let Ok(eligible_validators) = self.get_eligible_validator_indices() {
+            for index in eligible_validators {
+                let base_reward = self.get_base_reward(index);
+                let increment = EFFECTIVE_BALANCE_INCREMENT;
+                if unslashed_attesting_indices.contains(&index) {
+                    if self.is_in_inactivity_leak() {
+                        rewards[index as usize] += base_reward;
+                    } else {
+                        let reward_numerator = base_reward * (attesting_balance / increment);
+                        rewards[index as usize] += reward_numerator / (total_balance / increment);
+                    }
+                } else {
+                    penalties[index as usize] += base_reward;
+                }
+            }
+        }
+        (rewards, penalties)
     }
 }
 
