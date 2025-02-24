@@ -109,10 +109,10 @@ impl ExecutionEngine {
 
     pub async fn engine_exchange_capabilities(&self) -> anyhow::Result<Vec<String>> {
         let capabilities: Vec<String> = vec![
-            "engine_getPayloadV3".to_string(),
-            "engine_newPayloadV3".to_string(),
             "engine_forkchoiceUpdatedV3".to_string(),
             "engine_getBlobsV1".to_string(),
+            "engine_getPayloadV3".to_string(),
+            "engine_newPayloadV3".to_string(),
         ];
         let request_body = JsonRpcRequest {
             id: 1,
