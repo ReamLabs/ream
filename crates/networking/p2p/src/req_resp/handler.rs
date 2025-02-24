@@ -1,52 +1,86 @@
-use libp2p::swarm::ConnectionHandler;
+use libp2p::swarm::{
+    handler::{ConnectionEvent, FullyNegotiatedInbound, FullyNegotiatedOutbound},
+    ConnectionHandler, ConnectionHandlerEvent, SubstreamProtocol,
+};
+use tracing::warn;
 
-pub struct ReqRespHandler {}
+use super::{inbound_protocol::ReqRespInboundProtocol, outbound_protocol::ReqRespOutboundProtocol};
 
-impl ConnectionHandler for ReqRespHandler {
-    type FromBehaviour = ();
+#[derive(Debug)]
+pub struct OutboundReqRespMessage {}
 
-    type ToBehaviour = ();
+#[derive(Debug)]
+pub struct InboundReqRespMessage {}
 
-    type InboundProtocol = ();
+pub struct ReqRespConnectionHandler {
+    listen_protocol: SubstreamProtocol<ReqRespInboundProtocol, ()>,
+}
 
-    type OutboundProtocol = ();
+impl ReqRespConnectionHandler {
+    pub fn new(listen_protocol: SubstreamProtocol<ReqRespInboundProtocol, ()>) -> Self {
+        ReqRespConnectionHandler { listen_protocol }
+    }
+}
+
+impl ConnectionHandler for ReqRespConnectionHandler {
+    type FromBehaviour = OutboundReqRespMessage;
+
+    type ToBehaviour = InboundReqRespMessage;
+
+    type InboundProtocol = ReqRespInboundProtocol;
+
+    type OutboundProtocol = ReqRespOutboundProtocol;
 
     type InboundOpenInfo = ();
 
     type OutboundOpenInfo = ();
 
-    fn listen_protocol(
-        &self,
-    ) -> libp2p::swarm::SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
-        todo!()
+    fn listen_protocol(&self) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
+        self.listen_protocol.clone()
     }
 
     fn poll(
         &mut self,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<
-        libp2p::swarm::ConnectionHandlerEvent<
-            Self::OutboundProtocol,
-            Self::OutboundOpenInfo,
-            Self::ToBehaviour,
-        >,
+        ConnectionHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::ToBehaviour>,
     > {
-        todo!()
+        warn!("ReqRespConnectionHandler poll");
+        std::task::Poll::Pending
     }
 
     fn on_behaviour_event(&mut self, _event: Self::FromBehaviour) {
-        todo!()
+        warn!("Unexpected behaviour event: {:?}", _event);
     }
 
     fn on_connection_event(
         &mut self,
-        event: libp2p::swarm::handler::ConnectionEvent<
+        event: ConnectionEvent<
             Self::InboundProtocol,
             Self::OutboundProtocol,
             Self::InboundOpenInfo,
             Self::OutboundOpenInfo,
         >,
     ) {
-        todo!()
+        warn!("Unexpected connection event: {:?}", event);
+        match event {
+            ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound { .. }) => todo!(),
+            ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound { .. }) => todo!(),
+            ConnectionEvent::DialUpgradeError(_) => todo!(),
+            _ => {
+                // ConnectionEvent is not exhaustive so we have to account for the default case
+            }
+        }
+    }
+
+    fn connection_keep_alive(&self) -> bool {
+        false
+    }
+
+    fn poll_close(
+        &mut self,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::ToBehaviour>> {
+        std::task::Poll::Ready(None)
     }
 }

@@ -1,26 +1,41 @@
+pub mod error;
 pub mod handler;
+pub mod inbound_protocol;
+pub mod outbound_protocol;
+pub mod protocol_id;
 
 use std::task::{Context, Poll};
 
-use handler::ReqRespHandler;
+use handler::ReqRespConnectionHandler;
+use inbound_protocol::ReqRespInboundProtocol;
 use libp2p::{
     core::{transport::PortUse, Endpoint},
     swarm::{
-        ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
-        THandlerOutEvent, ToSwarm,
+        ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, SubstreamProtocol, THandler,
+        THandlerInEvent, THandlerOutEvent, ToSwarm,
     },
     Multiaddr, PeerId,
 };
 
-const PROTOCOL_PREFIX: &str = "/eth2/beacon_chain/req";
-
 /// Maximum number of concurrent requests per protocol ID that a client may issue.
-const MAX_CONCURRENT_REQUESTS: usize = 2;
+pub const MAX_CONCURRENT_REQUESTS: usize = 2;
 
-struct ReqResp {}
+pub struct ReqResp {}
+
+impl ReqResp {
+    pub fn new() -> Self {
+        ReqResp {}
+    }
+}
+
+impl Default for ReqResp {
+    fn default() -> Self {
+        ReqResp::new()
+    }
+}
 
 impl NetworkBehaviour for ReqResp {
-    type ConnectionHandler = ReqRespHandler;
+    type ConnectionHandler = ReqRespConnectionHandler;
 
     type ToSwarm = ();
 
@@ -31,7 +46,9 @@ impl NetworkBehaviour for ReqResp {
         _local_addr: &Multiaddr,
         _remote_addr: &Multiaddr,
     ) -> Result<THandler<Self>, ConnectionDenied> {
-        Ok(ReqRespHandler {})
+        let listen_protocol = SubstreamProtocol::new(ReqRespInboundProtocol {}, ());
+
+        Ok(ReqRespConnectionHandler::new(listen_protocol))
     }
 
     fn handle_established_outbound_connection(
@@ -42,11 +59,13 @@ impl NetworkBehaviour for ReqResp {
         _role_override: Endpoint,
         _port_use: PortUse,
     ) -> Result<THandler<Self>, ConnectionDenied> {
-        Ok(ReqRespHandler {})
+        let listen_protocol = SubstreamProtocol::new(ReqRespInboundProtocol {}, ());
+
+        Ok(ReqRespConnectionHandler::new(listen_protocol))
     }
 
     fn on_swarm_event(&mut self, _event: FromSwarm) {
-        todo!()
+        // Nothing that is relevant to us currently.
     }
 
     fn on_connection_handler_event(
@@ -55,14 +74,14 @@ impl NetworkBehaviour for ReqResp {
         _connection_id: ConnectionId,
         _event: THandlerOutEvent<Self>,
     ) {
-        todo!()
     }
 
     fn poll(
         &mut self,
-        cx: &mut Context<'_>,
+        _cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-        todo!()
+        tracing::error!("ReqResp poll");
+        Poll::Pending
     }
 
     fn handle_pending_inbound_connection(
