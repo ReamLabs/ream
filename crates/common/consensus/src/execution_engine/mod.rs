@@ -112,6 +112,7 @@ impl ExecutionEngine {
             "engine_getPayloadV3".to_string(),
             "engine_newPayloadV3".to_string(),
             "engine_forkchoiceUpdatedV3".to_string(),
+            "engine_getBlobsV1".to_string(),
         ];
         let request_body = JsonRpcRequest {
             id: 1,
