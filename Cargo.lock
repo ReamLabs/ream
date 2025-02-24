@@ -3792,6 +3792,7 @@ dependencies = [
  "discv5",
  "ream-discv5",
  "ream-executor",
+ "ream-network-spec",
  "ream-p2p",
  "tokio",
  "tracing",
@@ -3865,6 +3866,10 @@ dependencies = [
  "futures",
  "tokio",
 ]
+
+[[package]]
+name = "ream-network-spec"
+version = "0.1.0"
 
 [[package]]
 name = "ream-p2p"

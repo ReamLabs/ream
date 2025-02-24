@@ -1,4 +1,9 @@
+use std::sync::Arc;
+
 use clap::{Parser, Subcommand};
+use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
+
+const DEFAULT_NETWORK: &str = "mainnet";
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
@@ -19,6 +24,14 @@ pub struct NodeCommand {
     /// Verbosity level
     #[arg(short, long, default_value_t = 3)]
     pub verbosity: u8,
+
+    #[arg(
+        long,
+        help = "Choose mainnet, holesky, or sepolia",
+        default_value = DEFAULT_NETWORK,
+        value_parser = network_parser
+    )]
+    pub network: Arc<NetworkSpec>,
 }
 
 #[cfg(test)]

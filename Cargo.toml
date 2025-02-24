@@ -2,7 +2,8 @@
 members = [
     "bin/ream",
     "crates/common/consensus",
-    "crates/common/executor",
+    "crates/common/executor", 
+    "crates/common/network_spec",
     "crates/crypto/bls",
     "crates/networking/discv5",
     "crates/networking/p2p",
@@ -64,6 +65,7 @@ tree_hash_derive = "0.9"
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
 ream-discv5 = { path = "crates/networking/discv5"}
 ream-executor = { path = "crates/common/executor" }
+ream-network-spec = { path = "crates/common/network_spec" }
 ream-p2p = { path = "crates/networking/p2p" }
 
 [patch.crates-io]
