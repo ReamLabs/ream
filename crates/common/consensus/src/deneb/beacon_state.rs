@@ -1660,6 +1660,35 @@ impl BeaconState {
         self.current_epoch_participation = vec![0; self.validators.len()].into();
         Ok(())
     }
+
+    pub fn process_epoch(&mut self) -> anyhow::Result<()> {
+        self.process_justification_and_finalization()?;
+        self.process_inactivity_updates()?;
+        self.process_rewards_and_penalties()?;
+        self.process_registry_updates()?;
+        self.process_slashings()?;
+        self.process_eth1_data_reset()?;
+        self.process_effective_balance_updates()?;
+        self.process_slashings_reset()?;
+        self.process_randao_mixes_reset()?;
+        self.process_historical_summaries_update()?;
+        self.process_participation_flag_updates()?;
+        self.process_sync_committee_updates()?;
+        Ok(())
+    }
+
+    pub fn process_slots(&mut self, slot: u64) -> anyhow::Result<()> {
+        ensure!(self.slot < slot);
+        while self.slot < slot {
+            self.process_slot()?;
+            // Process epoch on the start slot of the next epoch
+            if (self.slot + 1) % SLOTS_PER_EPOCH == 0 {
+                self.process_epoch()?;
+            }
+            self.slot += 1
+        }
+        Ok(())
+    }
 }
 
 /// Check if ``leaf`` at ``index`` verifies against the Merkle ``root`` and ``branch``.
