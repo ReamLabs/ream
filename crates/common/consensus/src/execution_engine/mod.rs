@@ -107,7 +107,11 @@ impl ExecutionEngine {
     }
 
     pub async fn engine_exchange_capabilities(&self) -> anyhow::Result<Vec<String>> {
-        let capabilities: Vec<String> = vec![];
+        let capabilities: Vec<String> = vec![
+            "engine_getPayloadV3".to_string(),
+            "engine_newPayloadV3".to_string(),
+            "engine_forkchoiceUpdatedV3".to_string(),
+        ];
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
@@ -125,7 +129,7 @@ impl ExecutionEngine {
             .to_result()
     }
 
-    pub async fn engine_get_payloadv3(&self, payload_id: B64) -> anyhow::Result<PayloadV3> {
+    pub async fn engine_get_payload_v3(&self, payload_id: B64) -> anyhow::Result<PayloadV3> {
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
@@ -143,7 +147,7 @@ impl ExecutionEngine {
             .to_result()
     }
 
-    pub async fn engine_new_payloadv3(
+    pub async fn engine_new_payload_v3(
         &self,
         execution_payload: ExecutionPayloadV3,
         expected_blob_versioned_hashes: Vec<B256>,
@@ -170,10 +174,10 @@ impl ExecutionEngine {
             .to_result()
     }
 
-    pub async fn engine_forkchoice_updatedv3(
+    pub async fn engine_forkchoice_updated_v3(
         &self,
         forkchoice_state: ForkchoiceStateV1,
-        payload_attributes: PayloadAttributesV3,
+        payload_attributes: Option<PayloadAttributesV3>,
     ) -> anyhow::Result<ForkchoiceUpdateResult> {
         let request_body = JsonRpcRequest {
             id: 1,
