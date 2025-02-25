@@ -1296,7 +1296,7 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn process_randao(&mut self, body: BeaconBlockBody) -> anyhow::Result<()> {
+    pub fn process_randao(&mut self, body: &BeaconBlockBody) -> anyhow::Result<()> {
         let epoch = self.get_current_epoch();
 
         // Verify RANDAO reveal
@@ -1323,7 +1323,7 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn process_eth1_data(&mut self, body: BeaconBlockBody) -> anyhow::Result<()> {
+    pub fn process_eth1_data(&mut self, body: &BeaconBlockBody) -> anyhow::Result<()> {
         self.eth1_data_votes
             .push(body.eth1_data.clone())
             .map_err(|err| anyhow!("Can't push eth1_data {err:?}"))?;
@@ -1335,7 +1335,7 @@ impl BeaconState {
             .count() as u64;
 
         if count * 2 > (EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH) {
-            self.eth1_data = body.eth1_data;
+            self.eth1_data = body.eth1_data.clone();
         }
 
         Ok(())
@@ -1474,7 +1474,7 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn process_operations(&mut self, body: BeaconBlockBody) -> anyhow::Result<()> {
+    pub fn process_operations(&mut self, body: &BeaconBlockBody) -> anyhow::Result<()> {
         // Verify that outstanding deposits are processed up to the maximum number of deposits
         ensure!(
             body.deposits.len()
@@ -1484,32 +1484,32 @@ impl BeaconState {
                 )
         );
 
-        for proposer_slashing in body.proposer_slashings {
+        for proposer_slashing in body.proposer_slashings.clone() {
             self.process_proposer_slashing(&proposer_slashing)?;
         }
-        for attester_slashing in body.attester_slashings {
+        for attester_slashing in body.attester_slashings.clone() {
             self.process_attester_slashing(&attester_slashing)?;
         }
-        for attestation in body.attestations {
+        for attestation in body.attestations.clone() {
             self.process_attestation(&attestation)?;
         }
-        for deposit in body.deposits {
+        for deposit in body.deposits.clone() {
             self.process_deposit(&deposit)?;
         }
-        for voluntary_exit in body.voluntary_exits {
+        for voluntary_exit in body.voluntary_exits.clone() {
             self.process_voluntary_exit(&voluntary_exit)?;
         }
-        for bls_to_execution_change in body.bls_to_execution_changes {
+        for bls_to_execution_change in body.bls_to_execution_changes.clone() {
             self.process_bls_to_execution_change(&bls_to_execution_change)?;
         }
 
         Ok(())
     }
 
-    pub fn verify_block_signature(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<bool> {
+    pub fn verify_block_signature(&self, signed_block: &SignedBeaconBlock) -> anyhow::Result<bool> {
         let proposer = &self.validators[signed_block.message.proposer_index as usize];
         let signing_root = compute_signing_root(
-            signed_block.message,
+            signed_block.message.clone(),
             self.get_domain(DOMAIN_BEACON_PROPOSER, None),
         );
 
@@ -1693,10 +1693,10 @@ impl BeaconState {
 
     pub async fn process_execution_payload(
         &mut self,
-        body: BeaconBlockBody,
-        execution_engine: ExecutionEngine,
+        body: &BeaconBlockBody,
+        execution_engine: &ExecutionEngine,
     ) -> anyhow::Result<()> {
-        let payload = body.execution_payload;
+        let payload = &body.execution_payload;
 
         // Verify consistency of the parent hash with respect to the previous execution payload
         // header
@@ -1710,8 +1710,8 @@ impl BeaconState {
 
         // Verify the execution payload is valid
         let mut versioned_hashes = vec![];
-        for commitment in body.blob_kzg_commitments {
-            versioned_hashes.push(kzg_commitment_to_versioned_hash(&commitment));
+        for commitment in body.blob_kzg_commitments.iter() {
+            versioned_hashes.push(kzg_commitment_to_versioned_hash(commitment));
         }
         ensure!(
             execution_engine
@@ -1729,13 +1729,13 @@ impl BeaconState {
             fee_recipient: payload.fee_recipient,
             state_root: payload.state_root,
             receipts_root: payload.receipts_root,
-            logs_bloom: payload.logs_bloom,
+            logs_bloom: payload.logs_bloom.clone(),
             prev_randao: payload.prev_randao,
             block_number: payload.block_number,
             gas_limit: payload.gas_limit,
             gas_used: payload.gas_used,
             timestamp: payload.timestamp,
-            extra_data: payload.extra_data,
+            extra_data: payload.extra_data.clone(),
             base_fee_per_gas: payload.base_fee_per_gas,
             block_hash: payload.block_hash,
             transactions_root: payload.transactions.tree_hash_root(),
@@ -1744,6 +1744,48 @@ impl BeaconState {
             excess_blob_gas: payload.excess_blob_gas,
         };
 
+        Ok(())
+    }
+
+    pub async fn process_block(
+        &mut self,
+        block: &BeaconBlock,
+        execution_engine: &ExecutionEngine,
+    ) -> anyhow::Result<()> {
+        self.process_block_header(block)?;
+        self.process_withdrawals(&block.body.execution_payload)?;
+        self.process_execution_payload(&block.body, execution_engine)
+            .await?;
+        self.process_randao(&block.body)?;
+        self.process_eth1_data(&block.body)?;
+        self.process_operations(&block.body)?;
+        self.process_sync_aggregate(&block.body.sync_aggregate)?;
+        Ok(())
+    }
+
+    pub async fn state_transition(
+        &mut self,
+        signed_block: SignedBeaconBlock,
+        validate_result: bool,
+        execution_engine: &ExecutionEngine,
+    ) -> anyhow::Result<()> {
+        let block = &signed_block.message;
+
+        // Process slots (including those with no blocks) since block
+        self.process_slots(block.slot)?;
+
+        // Verify signature
+        if validate_result {
+            ensure!(self.verify_block_signature(&signed_block)?)
+        }
+
+        // Process block
+        self.process_block(block, execution_engine).await?;
+
+        // Verify state root
+        if validate_result {
+            ensure!(block.state_root == self.tree_hash_root())
+        }
         Ok(())
     }
 }
