@@ -1707,9 +1707,8 @@ impl BeaconState {
         ensure!(payload.timestamp == self.compute_timestamp_at_slot(self.slot));
         // Verify commitments are under limit
         ensure!(body.blob_kzg_commitments.len() <= MAX_BLOBS_PER_BLOCK as usize);
+
         // Verify the execution payload is valid
-        // Pass `versioned_hashes` to Execution Engine
-        // Pass `parent_beacon_block_root` to Execution Engine
         let mut versioned_hashes = vec![];
         for commitment in body.blob_kzg_commitments {
             versioned_hashes.push(kzg_commitment_to_versioned_hash(&commitment));
