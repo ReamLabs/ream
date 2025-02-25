@@ -1484,23 +1484,23 @@ impl BeaconState {
                 )
         );
 
-        for proposer_slashing in body.proposer_slashings.clone() {
-            self.process_proposer_slashing(&proposer_slashing)?;
+        for proposer_slashing in body.proposer_slashings.iter() {
+            self.process_proposer_slashing(proposer_slashing)?;
         }
-        for attester_slashing in body.attester_slashings.clone() {
-            self.process_attester_slashing(&attester_slashing)?;
+        for attester_slashing in body.attester_slashings.iter() {
+            self.process_attester_slashing(attester_slashing)?;
         }
-        for attestation in body.attestations.clone() {
-            self.process_attestation(&attestation)?;
+        for attestation in body.attestations.iter() {
+            self.process_attestation(attestation)?;
         }
-        for deposit in body.deposits.clone() {
-            self.process_deposit(&deposit)?;
+        for deposit in body.deposits.iter() {
+            self.process_deposit(deposit)?;
         }
-        for voluntary_exit in body.voluntary_exits.clone() {
-            self.process_voluntary_exit(&voluntary_exit)?;
+        for voluntary_exit in body.voluntary_exits.iter() {
+            self.process_voluntary_exit(voluntary_exit)?;
         }
-        for bls_to_execution_change in body.bls_to_execution_changes.clone() {
-            self.process_bls_to_execution_change(&bls_to_execution_change)?;
+        for bls_to_execution_change in body.bls_to_execution_changes.iter() {
+            self.process_bls_to_execution_change(bls_to_execution_change)?;
         }
 
         Ok(())
