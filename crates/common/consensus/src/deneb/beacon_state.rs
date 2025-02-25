@@ -9,7 +9,6 @@ use alloy_primitives::{aliases::B32, Address, B256};
 use anyhow::{anyhow, bail, ensure};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
-use kzg::eth::c_bindings::KZGCommitment;
 use ream_bls::{
     traits::{Aggregatable, Verifiable},
     AggregatePubKey, BLSSignature, PubKey,
@@ -39,6 +38,7 @@ use crate::{
     deposit::Deposit,
     deposit_message::DepositMessage,
     eth_1_data::Eth1Data,
+    execution_engine::{new_payload_request::NewPayloadRequest, ExecutionEngine},
     fork::Fork,
     fork_choice::helpers::constants::{
         BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
@@ -49,8 +49,9 @@ use crate::{
         EPOCHS_PER_SYNC_COMMITTEE_PERIOD, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH,
         GENESIS_EPOCH, GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT,
         HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
-        INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_COMMITTEES_PER_SLOT,
-        MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE, MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE,
+        INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_BLOBS_PER_BLOCK,
+        MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE,
+        MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE,
         MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
         MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
@@ -64,7 +65,7 @@ use crate::{
     helpers::xor,
     historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
-    kzg_commitment::VERSIONED_HASH_VERSION_KZG,
+    kzg_commitment::{KZGCommitment, VERSIONED_HASH_VERSION_KZG},
     misc::{
         compute_activation_exit_epoch, compute_committee, compute_domain, compute_epoch_at_slot,
         compute_shuffled_index, compute_signing_root, compute_start_slot_at_epoch,
@@ -1689,6 +1690,63 @@ impl BeaconState {
         }
         Ok(())
     }
+
+    pub async fn process_execution_payload(
+        &mut self,
+        body: BeaconBlockBody,
+        execution_engine: ExecutionEngine,
+    ) -> anyhow::Result<()> {
+        let payload = body.execution_payload;
+
+        // Verify consistency of the parent hash with respect to the previous execution payload
+        // header
+        ensure!(payload.parent_hash == self.latest_execution_payload_header.block_hash);
+        // Verify prev_randao
+        ensure!(payload.prev_randao == self.get_randao_mix(self.get_current_epoch()));
+        // Verify timestamp
+        ensure!(payload.timestamp == self.compute_timestamp_at_slot(self.slot));
+        // Verify commitments are under limit
+        ensure!(body.blob_kzg_commitments.len() <= MAX_BLOBS_PER_BLOCK as usize);
+        // Verify the execution payload is valid
+        // Pass `versioned_hashes` to Execution Engine
+        // Pass `parent_beacon_block_root` to Execution Engine
+        let mut versioned_hashes = vec![];
+        for commitment in body.blob_kzg_commitments {
+            versioned_hashes.push(kzg_commitment_to_versioned_hash(&commitment));
+        }
+        ensure!(
+            execution_engine
+                .verify_and_notify_new_payload(NewPayloadRequest {
+                    execution_payload: payload.clone(),
+                    versioned_hashes,
+                    parent_beacon_block_root: self.latest_block_header.parent_root,
+                })
+                .await?
+        );
+
+        // Cache execution payload header
+        self.latest_execution_payload_header = ExecutionPayloadHeader {
+            parent_hash: payload.parent_hash,
+            fee_recipient: payload.fee_recipient,
+            state_root: payload.state_root,
+            receipts_root: payload.receipts_root,
+            logs_bloom: payload.logs_bloom,
+            prev_randao: payload.prev_randao,
+            block_number: payload.block_number,
+            gas_limit: payload.gas_limit,
+            gas_used: payload.gas_used,
+            timestamp: payload.timestamp,
+            extra_data: payload.extra_data,
+            base_fee_per_gas: payload.base_fee_per_gas,
+            block_hash: payload.block_hash,
+            transactions_root: payload.transactions.tree_hash_root(),
+            withdrawals_root: payload.withdrawals.tree_hash_root(),
+            blob_gas_used: payload.blob_gas_used,
+            excess_blob_gas: payload.excess_blob_gas,
+        };
+
+        Ok(())
+    }
 }
 
 /// Check if ``leaf`` at ``index`` verifies against the Merkle ``root`` and ``branch``.
@@ -1762,7 +1820,7 @@ pub fn eth_aggregate_pubkeys(pubkeys: &[&PubKey]) -> anyhow::Result<PubKey> {
 }
 
 pub fn kzg_commitment_to_versioned_hash(kzg_commitment: &KZGCommitment) -> B256 {
-    let mut versioned_hash = hash(&kzg_commitment.bytes);
+    let mut versioned_hash = hash(&kzg_commitment.0);
     versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
     B256::from_slice(&versioned_hash)
 }

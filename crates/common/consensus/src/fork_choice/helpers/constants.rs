@@ -31,6 +31,7 @@ pub const INTERVALS_PER_SLOT: u64 = 3;
 pub const INACTIVITY_SCORE_BIAS: u64 = 4;
 pub const INACTIVITY_SCORE_RECOVERY_RATE: u64 = 16;
 pub const JUSTIFICATION_BITS_LENGTH: u64 = 4;
+pub const MAX_BLOBS_PER_BLOCK: u64 = 6;
 pub const MAX_COMMITTEES_PER_SLOT: u64 = 64;
 pub const MAX_DEPOSITS: u64 = 16;
 pub const MAX_SEED_LOOKAHEAD: u64 = 4;

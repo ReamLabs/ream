@@ -15,9 +15,10 @@ use rpc_types::{
     forkchoice_update::{ForkchoiceStateV1, ForkchoiceUpdateResult, PayloadAttributesV3},
     get_blobs::BlobsAndProofV1,
     get_payload::PayloadV3,
-    payload_status::PayloadStatusV1,
+    payload_status::{PayloadStatus, PayloadStatusV1},
 };
 use serde_json::json;
+use ssz_types::VariableList;
 use transaction::{BlobTransaction, TransactionType};
 use utils::{strip_prefix, Claims, JsonRpcRequest, JsonRpcResponse};
 
@@ -54,20 +55,18 @@ impl ExecutionEngine {
     /// Return ``True`` if and only if ``execution_payload.block_hash`` is computed correctly.
     pub fn is_valid_block_hash(
         &self,
-        execution_payload: ExecutionPayload,
+        execution_payload: &ExecutionPayload,
         parent_beacon_block_root: B256,
     ) -> bool {
         execution_payload.block_hash == execution_payload.header_hash(parent_beacon_block_root)
     }
 
-    /// Return ``True`` if and only if the version hashes computed by the blob transactions of
-    /// ``new_payload_request.execution_payload`` matches ``new_payload_request.versioned_hashes``.
-    pub fn is_valid_versioned_hashes(
+    pub fn blob_versioned_hashes(
         &self,
-        new_payload_request: NewPayloadRequest,
-    ) -> anyhow::Result<bool> {
+        execution_payload: &ExecutionPayload,
+    ) -> anyhow::Result<Vec<B256>> {
         let mut blob_versioned_hashes = vec![];
-        for transaction in new_payload_request.execution_payload.transactions {
+        for transaction in execution_payload.transactions.iter() {
             if TransactionType::try_from(&transaction[..])
                 .map_err(|err| anyhow!("Failed to detect transaction type: {err:?}"))?
                 == TransactionType::BlobTransaction
@@ -77,7 +76,67 @@ impl ExecutionEngine {
             }
         }
 
-        Ok(blob_versioned_hashes == new_payload_request.versioned_hashes)
+        Ok(blob_versioned_hashes)
+    }
+
+    /// Return ``True`` if and only if the version hashes computed by the blob transactions of
+    /// ``new_payload_request.execution_payload`` matches ``new_payload_request.versioned_hashes``.
+    pub fn is_valid_versioned_hashes(
+        &self,
+        new_payload_request: &NewPayloadRequest,
+    ) -> anyhow::Result<bool> {
+        Ok(
+            self.blob_versioned_hashes(&new_payload_request.execution_payload)?
+                == new_payload_request.versioned_hashes,
+        )
+    }
+
+    /// Return ``PayloadStatus`` of execution payload``.
+    pub async fn notify_new_payload(
+        &self,
+        new_payload_request: NewPayloadRequest,
+    ) -> anyhow::Result<PayloadStatus> {
+        let NewPayloadRequest {
+            execution_payload,
+            versioned_hashes,
+            parent_beacon_block_root,
+        } = new_payload_request;
+        let payload_status = self
+            .engine_new_payload_v3(
+                execution_payload.into(),
+                versioned_hashes,
+                parent_beacon_block_root,
+            )
+            .await?;
+        Ok(payload_status.status)
+    }
+
+    /// Return ``True`` if and only if ``new_payload_request`` is valid with respect to
+    /// ``self.execution_state``.
+    pub async fn verify_and_notify_new_payload(
+        &self,
+        new_payload_request: NewPayloadRequest,
+    ) -> anyhow::Result<bool> {
+        if new_payload_request
+            .execution_payload
+            .transactions
+            .contains(&VariableList::empty())
+        {
+            return Ok(false);
+        }
+
+        if !self.is_valid_block_hash(
+            &new_payload_request.execution_payload,
+            new_payload_request.parent_beacon_block_root,
+        ) {
+            return Ok(false);
+        }
+
+        if !self.is_valid_versioned_hashes(&new_payload_request)? {
+            return Ok(false);
+        }
+
+        return Ok(self.notify_new_payload(new_payload_request).await? == PayloadStatus::Valid);
     }
 
     pub fn build_request(&self, rpc_request: JsonRpcRequest) -> anyhow::Result<Request> {

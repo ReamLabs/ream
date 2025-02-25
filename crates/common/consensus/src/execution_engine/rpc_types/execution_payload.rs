@@ -7,7 +7,7 @@ use ssz_types::{
 };
 use tree_hash_derive::TreeHash;
 
-use crate::withdrawal::Withdrawal;
+use crate::{deneb::execution_payload::ExecutionPayload, withdrawal::Withdrawal};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 #[serde(rename_all = "camelCase")]
@@ -40,4 +40,28 @@ pub struct ExecutionPayloadV3 {
     pub blob_gas_used: u64,
     #[serde(with = "serde_utils::u64_hex_be")]
     pub excess_blob_gas: u64,
+}
+
+impl From<ExecutionPayload> for ExecutionPayloadV3 {
+    fn from(value: ExecutionPayload) -> Self {
+        ExecutionPayloadV3 {
+            parent_hash: value.parent_hash,
+            fee_recipient: value.fee_recipient,
+            state_root: value.state_root,
+            receipts_root: value.receipts_root,
+            logs_bloom: value.logs_bloom,
+            prev_randao: value.prev_randao,
+            block_number: value.block_number,
+            gas_limit: value.gas_limit,
+            gas_used: value.gas_used,
+            timestamp: value.timestamp,
+            extra_data: value.extra_data,
+            base_fee_per_gas: value.base_fee_per_gas,
+            block_hash: value.block_hash,
+            transactions: value.transactions,
+            withdrawals: value.withdrawals,
+            blob_gas_used: value.blob_gas_used,
+            excess_blob_gas: value.excess_blob_gas,
+        }
+    }
 }
