@@ -339,8 +339,13 @@ impl BeaconState {
             .fast_aggregate_verify(
                 indices
                     .iter()
-                    .filter_map(|&i| self.validators.get(i).map(|v| &v.pubkey))
-                    .collect::<Vec<_>>(),
+                    .map(|&index| {
+                        self.validators
+                            .get(index)
+                            .map(|validator| &validator.pubkey)
+                            .ok_or(anyhow!("Invalid index"))
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?,
                 signing_root.as_ref(),
             )
             .map_err(|e| anyhow!("Invalid indexed attestation: {:?}", e))
