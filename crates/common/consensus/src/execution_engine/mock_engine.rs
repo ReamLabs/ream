@@ -12,8 +12,8 @@ pub struct MockExecutionEngine {
 
 impl MockExecutionEngine {
     pub fn new(execution_yaml_path: &Path) -> anyhow::Result<MockExecutionEngine> {
-        let yaml_open = std::fs::File::open(execution_yaml_path)?;
-        Ok(serde_yaml::from_reader(yaml_open)?)
+        let file = std::fs::File::open(execution_yaml_path)?;
+        Ok(serde_yaml::from_reader(file)?)
     }
 }
 
