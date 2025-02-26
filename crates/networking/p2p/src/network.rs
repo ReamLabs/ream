@@ -27,7 +27,7 @@ use ream_discv5::{
 use ream_executor::ReamExecutor;
 use tracing::{error, info, warn};
 
-use crate::bootnodes::Bootnodes;
+use crate::{bootnodes::Bootnodes, gossipsub::Gossipsub};
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
@@ -35,6 +35,9 @@ pub(crate) struct ReamBehaviour {
 
     /// The discovery domain: discv5
     pub discovery: Discovery,
+
+    /// The gossip domain: gossipsub
+    pub gossipsub: Gossipsub,
 
     pub connection_registry: connection_limits::Behaviour,
 }
@@ -75,6 +78,11 @@ impl Network {
             discovery
         };
 
+        let gossipsub = {
+            let gossipsub = Gossipsub::new();
+            gossipsub
+        };
+
         let connection_limits = {
             let limits = libp2p::connection_limits::ConnectionLimits::default()
                 .with_max_pending_incoming(Some(5))
@@ -99,6 +107,7 @@ impl Network {
         let behaviour = {
             ReamBehaviour {
                 discovery,
+                gossipsub,
                 identify,
                 connection_registry: connection_limits,
             }
