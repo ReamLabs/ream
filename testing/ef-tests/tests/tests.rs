@@ -80,6 +80,7 @@ test_operation!(
     process_bls_to_execution_change
 );
 test_operation!(deposit, Deposit, "deposit", process_deposit);
+test_operation!(execution_payload, BeaconBlockBody, "body");
 test_operation!(
     proposer_slashing,
     ProposerSlashing,
@@ -98,7 +99,6 @@ test_operation!(
     "execution_payload",
     process_withdrawals
 );
-test_operation!(execution_payload, BeaconBlockBody, "body");
 
 // Testing shuffling
 test_shuffling!();
