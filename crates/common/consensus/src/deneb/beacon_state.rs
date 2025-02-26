@@ -38,7 +38,9 @@ use crate::{
     deposit::Deposit,
     deposit_message::DepositMessage,
     eth_1_data::Eth1Data,
-    execution_engine::{new_payload_request::NewPayloadRequest, ExecutionEngine},
+    execution_engine::{
+        engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest, ExecutionEngine,
+    },
     fork::Fork,
     fork_choice::helpers::constants::{
         BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
@@ -1694,7 +1696,7 @@ impl BeaconState {
     pub async fn process_execution_payload(
         &mut self,
         body: &BeaconBlockBody,
-        execution_engine: &ExecutionEngine,
+        execution_engine: &impl ExecutionApi,
     ) -> anyhow::Result<()> {
         let payload = &body.execution_payload;
 

@@ -98,6 +98,7 @@ test_operation!(
     "execution_payload",
     process_withdrawals
 );
+test_operation!(execution_payload, BeaconBlockBody, "body");
 
 // Testing shuffling
 test_shuffling!();

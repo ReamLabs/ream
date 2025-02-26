@@ -14,6 +14,7 @@ alloy-consensus.workspace = true
 alloy-primitives.workspace = true
 alloy-rlp.workspace = true
 anyhow.workspace = true
+async-trait.workspace = true
 kzg.workspace = true
 ethereum_hashing.workspace = true
 ethereum_serde_utils.workspace = true

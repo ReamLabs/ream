@@ -1,3 +1,5 @@
+pub mod engine_trait;
+pub mod mock_engine;
 pub mod new_payload_request;
 mod rpc_types;
 pub mod transaction;
@@ -6,6 +8,8 @@ pub mod utils;
 use alloy_primitives::{hex, B256, B64};
 use alloy_rlp::Decodable;
 use anyhow::anyhow;
+use async_trait::async_trait;
+use engine_trait::ExecutionApi;
 use jsonwebtoken::{encode, get_current_timestamp, EncodingKey, Header};
 use new_payload_request::NewPayloadRequest;
 use reqwest::{Client, Request};
@@ -109,34 +113,6 @@ impl ExecutionEngine {
             )
             .await?;
         Ok(payload_status.status)
-    }
-
-    /// Return ``True`` if and only if ``new_payload_request`` is valid with respect to
-    /// ``self.execution_state``.
-    pub async fn verify_and_notify_new_payload(
-        &self,
-        new_payload_request: NewPayloadRequest,
-    ) -> anyhow::Result<bool> {
-        if new_payload_request
-            .execution_payload
-            .transactions
-            .contains(&VariableList::empty())
-        {
-            return Ok(false);
-        }
-
-        if !self.is_valid_block_hash(
-            &new_payload_request.execution_payload,
-            new_payload_request.parent_beacon_block_root,
-        ) {
-            return Ok(false);
-        }
-
-        if !self.is_valid_versioned_hashes(&new_payload_request)? {
-            return Ok(false);
-        }
-
-        return Ok(self.notify_new_payload(new_payload_request).await? == PayloadStatus::Valid);
     }
 
     pub fn build_request(&self, rpc_request: JsonRpcRequest) -> anyhow::Result<Request> {
@@ -276,5 +252,34 @@ impl ExecutionEngine {
             .json::<JsonRpcResponse<Vec<Option<BlobsAndProofV1>>>>()
             .await?
             .to_result()
+    }
+}
+
+#[async_trait]
+impl ExecutionApi for ExecutionEngine {
+    async fn verify_and_notify_new_payload(
+        &self,
+        new_payload_request: NewPayloadRequest,
+    ) -> anyhow::Result<bool> {
+        if new_payload_request
+            .execution_payload
+            .transactions
+            .contains(&VariableList::empty())
+        {
+            return Ok(false);
+        }
+
+        if !self.is_valid_block_hash(
+            &new_payload_request.execution_payload,
+            new_payload_request.parent_beacon_block_root,
+        ) {
+            return Ok(false);
+        }
+
+        if !self.is_valid_versioned_hashes(&new_payload_request)? {
+            return Ok(false);
+        }
+
+        return Ok(self.notify_new_payload(new_payload_request).await? == PayloadStatus::Valid);
     }
 }

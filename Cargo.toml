@@ -31,6 +31,7 @@ alloy-consensus = { version = "0.11.1", default-features = false }
 alloy-primitives = { version = "0.8", features = ['serde'] }
 alloy-rlp = { version = "0.3.8", default-features = false, features = ["derive"] }
 anyhow = "1.0"
+async-trait = "0.1.86"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 clap = "4"
 discv5 = { version = "0.9.0", features = ["libp2p"] }
