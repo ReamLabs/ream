@@ -104,14 +104,12 @@ pub struct BeaconState {
 
     // Registry
     pub validators: VariableList<Validator, U1099511627776>,
-    #[serde(deserialize_with = "ssz_types::serde_utils::quoted_u64_var_list::deserialize")]
     pub balances: VariableList<u64, U1099511627776>,
 
     // Randomness
     pub randao_mixes: FixedVector<B256, U65536>,
 
     // Slashings
-    #[serde(deserialize_with = "ssz_types::serde_utils::quoted_u64_fixed_vec::deserialize")]
     pub slashings: FixedVector<u64, U8192>,
 
     // Participation
@@ -125,7 +123,6 @@ pub struct BeaconState {
     pub finalized_checkpoint: Checkpoint,
 
     // Inactivity
-    #[serde(deserialize_with = "ssz_types::serde_utils::quoted_u64_var_list::deserialize")]
     pub inactivity_scores: VariableList<u64, U1099511627776>,
 
     // Sync
