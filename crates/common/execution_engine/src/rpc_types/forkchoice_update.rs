@@ -1,9 +1,9 @@
 use alloy_primitives::{Address, B256, B64};
+use ream_consensus::withdrawal::Withdrawal;
 use serde::{Deserialize, Serialize};
 use ssz_types::{typenum, VariableList};
 
 use super::payload_status::PayloadStatusV1;
-use crate::withdrawal::Withdrawal;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

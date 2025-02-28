@@ -1,11 +1,11 @@
 use alloy_primitives::B256;
+use ream_consensus::kzg_commitment::KZGCommitment;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{serde_utils::list_of_hex_var_list, typenum, VariableList};
 use tree_hash_derive::TreeHash;
 
 use super::execution_payload::ExecutionPayloadV3;
-use crate::kzg_commitment::KZGCommitment;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 #[serde(rename_all = "camelCase")]

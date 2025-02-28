@@ -3862,6 +3862,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-execution-engine"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
+ "alloy-rlp",
+ "anyhow",
+ "async-trait",
+ "ethereum_hashing",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "itertools 0.14.0",
+ "jsonwebtoken",
+ "kzg",
+ "ream-bls",
+ "ream-consensus",
+ "reqwest",
+ "rstest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "snap",
+ "ssz_types",
+ "tokio",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
 name = "ream-executor"
 version = "0.1.0"
 dependencies = [

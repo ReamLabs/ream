@@ -1,4 +1,5 @@
 use alloy_primitives::{Address, B256, U256};
+use ream_consensus::{deneb::execution_payload::ExecutionPayload, withdrawal::Withdrawal};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -6,8 +7,6 @@ use ssz_types::{
     typenum, FixedVector, VariableList,
 };
 use tree_hash_derive::TreeHash;
-
-use crate::{deneb::execution_payload::ExecutionPayload, withdrawal::Withdrawal};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 #[serde(rename_all = "camelCase")]

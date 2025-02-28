@@ -2,6 +2,7 @@
 members = [
     "bin/ream",
     "crates/common/consensus",
+    "crates/common/execution_engine",
     "crates/common/executor", 
     "crates/common/network_spec",
     "crates/crypto/bls",
@@ -63,8 +64,10 @@ tree_hash_derive = "0.9"
 
 
 # ream dependencies
+ream-consensus = { path = "crates/common/consensus" }
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
 ream-discv5 = { path = "crates/networking/discv5"}
+ream-execution-engine = { path = "crates/common/execution_engine"}
 ream-executor = { path = "crates/common/executor" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-p2p = { path = "crates/networking/p2p" }
