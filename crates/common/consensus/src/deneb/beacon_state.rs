@@ -1790,6 +1790,99 @@ impl BeaconState {
         }
         Ok(())
     }
+
+    // START: This is for prototyping snarkifying the state transition function
+    // TODO: remove this after we are done with the prototyping
+
+    /// This is a non-async version of the state transition function, which assuming that the engine
+    /// api always returns valid valid for the signed block.
+    pub fn blocking_state_transition(
+        &mut self,
+        signed_block: SignedBeaconBlock,
+        validate_result: bool,
+    ) -> anyhow::Result<()> {
+        let block = &signed_block.message;
+
+        // Process slots (including those with no blocks) since block
+        self.process_slots(block.slot)?;
+
+        // Verify signature
+        if validate_result {
+            ensure!(self.verify_block_signature(&signed_block)?)
+        }
+
+        // Process block
+        self.blocking_process_block(block)?;
+
+        // Verify state root
+        if validate_result {
+            ensure!(block.state_root == self.tree_hash_root())
+        }
+        Ok(())
+    }
+
+    /// This is a non-async version of blocking_process_block, which assuming that the engine api
+    /// always returns valid valid for the signed block.
+    pub fn blocking_process_block(&mut self, block: &BeaconBlock) -> anyhow::Result<()> {
+        self.process_block_header(block)?;
+        self.process_withdrawals(&block.body.execution_payload)?;
+        self.blocking_process_execution_payload(&block.body)?;
+        self.process_randao(&block.body)?;
+        self.process_eth1_data(&block.body)?;
+        self.process_operations(&block.body)?;
+        self.process_sync_aggregate(&block.body.sync_aggregate)?;
+        Ok(())
+    }
+
+    /// This is a non-async version of blocking_process_execution_payload, which assuming that the
+    /// engine api always returns valid valid for the signed block.
+    pub fn blocking_process_execution_payload(
+        &mut self,
+        body: &BeaconBlockBody,
+    ) -> anyhow::Result<()> {
+        let payload = &body.execution_payload;
+
+        // Verify consistency of the parent hash with respect to the previous execution payload
+        // header
+        ensure!(payload.parent_hash == self.latest_execution_payload_header.block_hash);
+        // Verify prev_randao
+        ensure!(payload.prev_randao == self.get_randao_mix(self.get_current_epoch()));
+        // Verify timestamp
+        ensure!(payload.timestamp == self.compute_timestamp_at_slot(self.slot));
+        // Verify commitments are under limit
+        ensure!(body.blob_kzg_commitments.len() <= MAX_BLOBS_PER_BLOCK as usize);
+
+        // Verify the execution payload is valid
+        let mut versioned_hashes = vec![];
+        for commitment in body.blob_kzg_commitments.iter() {
+            versioned_hashes.push(kzg_commitment_to_versioned_hash(commitment));
+        }
+
+        // Cache execution payload header
+        self.latest_execution_payload_header = ExecutionPayloadHeader {
+            parent_hash: payload.parent_hash,
+            fee_recipient: payload.fee_recipient,
+            state_root: payload.state_root,
+            receipts_root: payload.receipts_root,
+            logs_bloom: payload.logs_bloom.clone(),
+            prev_randao: payload.prev_randao,
+            block_number: payload.block_number,
+            gas_limit: payload.gas_limit,
+            gas_used: payload.gas_used,
+            timestamp: payload.timestamp,
+            extra_data: payload.extra_data.clone(),
+            base_fee_per_gas: payload.base_fee_per_gas,
+            block_hash: payload.block_hash,
+            transactions_root: payload.transactions.tree_hash_root(),
+            withdrawals_root: payload.withdrawals.tree_hash_root(),
+            blob_gas_used: payload.blob_gas_used,
+            excess_blob_gas: payload.excess_blob_gas,
+        };
+
+        Ok(())
+    }
+
+    // END: This is for prototyping snarkifying the state transition function
 }
 
 /// Check if ``leaf`` at ``index`` verifies against the Merkle ``root`` and ``branch``.
