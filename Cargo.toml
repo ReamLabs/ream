@@ -64,8 +64,8 @@ tree_hash_derive = "0.9"
 
 
 # ream dependencies
-ream-consensus = { path = "crates/common/consensus" }
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
+ream-consensus = { path = "crates/common/consensus" }
 ream-discv5 = { path = "crates/networking/discv5"}
 ream-execution-engine = { path = "crates/common/execution_engine"}
 ream-executor = { path = "crates/common/executor" }

@@ -117,13 +117,13 @@ dependencies = [
 
 [[package]]
 name = "alloy-eip7702"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cabf647eb4650c91a9d38cb6f972bb320009e7e9d61765fb688a86f1563b33e8"
+checksum = "9b15b13d38b366d01e818fe8e710d4d702ef7499eacd44926a06171dd9585d0c"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
- "derive_more",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -3832,17 +3832,11 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "itertools 0.14.0",
- "jsonwebtoken",
  "kzg",
  "ream-bls",
- "reqwest",
- "rstest",
  "serde",
- "serde_json",
  "serde_yaml",
- "snap",
  "ssz_types",
- "tokio",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -3865,28 +3859,21 @@ dependencies = [
 name = "ream-execution-engine"
 version = "0.1.0"
 dependencies = [
- "alloy-consensus",
  "alloy-primitives",
  "alloy-rlp",
  "anyhow",
  "async-trait",
- "ethereum_hashing",
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
- "itertools 0.14.0",
  "jsonwebtoken",
- "kzg",
  "ream-bls",
  "ream-consensus",
  "reqwest",
- "rstest",
  "serde",
  "serde_json",
  "serde_yaml",
- "snap",
  "ssz_types",
- "tokio",
  "tree_hash",
  "tree_hash_derive",
 ]
