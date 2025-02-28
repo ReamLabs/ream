@@ -3908,6 +3908,7 @@ dependencies = [
  "serde_yaml",
  "tokio",
  "tracing",
+ "void",
 ]
 
 [[package]]
