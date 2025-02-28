@@ -10,6 +10,23 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  build-risc0:
+    runs-on: ubuntu-latest
+    needs: [cargo-fmt, cargo-clippy]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install toolchain
+      run: |
+        curl -L https://risczero.com/install | bash
+        /home/runner/.risc0/bin/rzup install
+        cargo risczero install
+        rustup default risc0
+        
+    - name: Build Risc0
+      run: cargo build --target=riscv32im-risc0-zkvm-elf -p ream-consensus -p ream-bls
+ 
   cargo-fmt:
     runs-on: ubuntu-latest
 
