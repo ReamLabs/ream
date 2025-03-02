@@ -27,3 +27,4 @@ serde.workspace = true
 serde_yaml.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+void.workspace = true
