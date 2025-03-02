@@ -18,17 +18,10 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y curl git
-
     - name: Install toolchain
       run: |
         curl -L https://sp1up.succinct.xyz | bash
-        source ~/.bashrc 
-        export PATH=$PATH:~/.sp1/bin
-        sp1up
+        /home/runner/.sp1/bin/sp1up
         rustup default succinct
 
     - name: Build SP1
