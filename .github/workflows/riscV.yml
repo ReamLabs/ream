@@ -1,4 +1,4 @@
-name: RiscV
+name: Riscv
 
 on:
   push:
