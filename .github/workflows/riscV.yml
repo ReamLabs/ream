@@ -1,4 +1,4 @@
-name: Riscv
+name: RISC-V
 
 on:
   push:
@@ -43,4 +43,3 @@ jobs:
         
     - name: Build Risc0
       run: cargo build --target=riscv32im-risc0-zkvm-elf -p ream-consensus -p ream-bls
- 
