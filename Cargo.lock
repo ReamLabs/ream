@@ -3794,7 +3794,6 @@ dependencies = [
  "ream-executor",
  "ream-network-spec",
  "ream-p2p",
- "ream-storage",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -3905,7 +3904,10 @@ name = "ream-storage"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "parking_lot",
  "redb",
+ "thiserror 2.0.11",
+ "tracing",
 ]
 
 [[package]]
