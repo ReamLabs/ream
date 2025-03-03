@@ -28,7 +28,6 @@ jobs:
 
   build-risc0:
     runs-on: ubuntu-latest
-    needs: [cargo-fmt, cargo-clippy]
 
     steps:
     - uses: actions/checkout@v4
