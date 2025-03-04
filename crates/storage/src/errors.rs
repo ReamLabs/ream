@@ -2,18 +2,18 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum StoreError {
-    #[error("Write transaction failure")]
+    #[error("Database error {0}")]
     Database(#[from] redb::Error),
 
-    #[error("Transaction error")]
+    #[error("Transaction error {0}")]
     TransactionError(#[from] redb::TransactionError),
 
-    #[error("Commit error")]
+    #[error("Commit error {0}")]
     CommitError(#[from] redb::CommitError),
 
-    #[error("Storage error")]
+    #[error("Storage error {0}")]
     StorageError(#[from] redb::StorageError),
 
-    #[error("Table error")]
+    #[error("Table error {0}")]
     TableError(#[from] redb::TableError),
 }
