@@ -40,7 +40,7 @@ async fn main() {
 
     let ream_db = Database::new().unwrap();
 
-    info!("ream database initialised {:?}",ream_db.version);
+    info!("ream database initialised {:?}", ream_db.version);
     match cli.command {
         Commands::Node(_cmd) => {
             info!("starting up...");

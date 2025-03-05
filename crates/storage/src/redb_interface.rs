@@ -15,6 +15,7 @@ struct Connection<'a> {
     table: String,
 }
 
+#[allow(clippy::needless_lifetimes)] //TODO: (hopinheimer) - remove after further implementation
 impl<'a> Connection<'a> {
     fn put(&self, key: &[u8], value: &[u8]) -> Result<(), StoreError> {
         let table_def: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(&self.table);
@@ -37,6 +38,7 @@ impl<'a> Connection<'a> {
     }
 }
 
+#[allow(clippy::needless_lifetimes)] //TODO: (hopinheimer) - remove after further implementation
 impl ReamDB {
     pub(crate) fn new() -> Result<Self, StoreError> {
         let ream_dir = dir::create_ream_dir().map_err(StoreError::Io)?;
