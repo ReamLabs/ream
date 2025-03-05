@@ -6,17 +6,17 @@ use redb::{Builder, Database, Durability, TableDefinition};
 
 use crate::{config, errors::StoreError};
 
+#[derive(Clone, Debug)]
 pub struct ReamDB {
     db: Arc<Database>,
 }
 
-struct Connection<'a> {
-    backend: &'a ReamDB,
+struct Connection {
+    backend: Arc<ReamDB>,
     table: String,
 }
 
-#[allow(clippy::needless_lifetimes)] //TODO: (hopinheimer) - remove after further implementation
-impl<'a> Connection<'a> {
+impl Connection {
     fn put(&self, key: &[u8], value: &[u8]) -> Result<(), StoreError> {
         let table_def: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(&self.table);
         let mut write_txn = self.backend.db.begin_write()?;
@@ -38,7 +38,6 @@ impl<'a> Connection<'a> {
     }
 }
 
-#[allow(clippy::needless_lifetimes)] //TODO: (hopinheimer) - remove after further implementation
 impl ReamDB {
     pub(crate) fn new() -> Result<Self, StoreError> {
         let ream_dir = dir::create_ream_dir().map_err(StoreError::Io)?;
@@ -62,9 +61,9 @@ impl ReamDB {
         Ok(())
     }
 
-    fn acquire_connection<'a>(&'a mut self, table: String) -> Result<Connection<'a>, StoreError> {
+    fn acquire_connection(&mut self, table: String) -> Result<Connection, StoreError> {
         Ok(Connection {
-            backend: self,
+            backend: Arc::new(self.clone()),
             table,
         })
     }
