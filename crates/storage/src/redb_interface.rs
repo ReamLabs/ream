@@ -11,33 +11,6 @@ pub struct ReamDB {
     db: Arc<Database>,
 }
 
-struct Connection {
-    backend: Arc<ReamDB>,
-    table: String,
-}
-
-impl Connection {
-    fn put(&self, key: &[u8], value: &[u8]) -> Result<(), StoreError> {
-        let table_def: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(&self.table);
-        let mut write_txn = self.backend.db.begin_write()?;
-
-        write_txn.set_durability(Durability::Immediate);
-        let mut table = write_txn.open_table(table_def)?;
-        table.insert(key, value)?;
-        drop(table);
-        write_txn.commit()?;
-        Ok(())
-    }
-
-    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError> {
-        let table_def: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(&self.table);
-        let read_txn = self.backend.db.begin_read()?;
-        let table = read_txn.open_table(table_def)?;
-        let result = table.get(key)?;
-        Ok(result.map(|res| res.value().to_vec()))
-    }
-}
-
 impl ReamDB {
     pub(crate) fn new() -> Result<Self, StoreError> {
         let ream_dir = dir::create_ream_dir().map_err(StoreError::Io)?;
@@ -66,6 +39,33 @@ impl ReamDB {
             backend: Arc::new(self.clone()),
             table,
         })
+    }
+}
+
+struct Connection {
+    backend: Arc<ReamDB>,
+    table: String,
+}
+
+impl Connection {
+    fn put(&self, key: &[u8], value: &[u8]) -> Result<(), StoreError> {
+        let table_def: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(&self.table);
+        let mut write_txn = self.backend.db.begin_write()?;
+
+        write_txn.set_durability(Durability::Immediate);
+        let mut table = write_txn.open_table(table_def)?;
+        table.insert(key, value)?;
+        drop(table);
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError> {
+        let table_def: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(&self.table);
+        let read_txn = self.backend.db.begin_read()?;
+        let table = read_txn.open_table(table_def)?;
+        let result = table.get(key)?;
+        Ok(result.map(|res| res.value().to_vec()))
     }
 }
 
