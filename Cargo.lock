@@ -3942,17 +3942,10 @@ name = "ream-storage"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ream-utils",
+ "directories",
  "redb",
  "thiserror 2.0.11",
  "tracing",
-]
-
-[[package]]
-name = "ream-utils"
-version = "0.1.0"
-dependencies = [
- "directories",
 ]
 
 [[package]]

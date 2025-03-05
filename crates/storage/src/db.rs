@@ -8,7 +8,7 @@ pub struct Database {
     /// can be set behind feature flags
     ///
     /// `redb::Database` wrapper around with async security features
-    db: ReamDB,
+    pub db: ReamDB,
 
     pub version: String,
 }

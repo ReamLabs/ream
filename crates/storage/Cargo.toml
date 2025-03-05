@@ -10,11 +10,8 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-# ream dependencies
-ream-utils.workspace = true
-
-# other dependencies
 anyhow.workspace = true
+directories.workspace = true
 redb.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

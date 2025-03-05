@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use ream_utils::dir;
 use redb::{Builder, Database, Durability, TableDefinition};
 
-use crate::{config, errors::StoreError};
+use crate::{config, dir, errors::StoreError};
 
 #[derive(Clone, Debug)]
 pub struct ReamDB {
@@ -34,23 +33,23 @@ impl ReamDB {
         Ok(())
     }
 
-    fn acquire_connection(&mut self, table: String) -> Result<Connection, StoreError> {
+    fn acquire_connection(&self, table: String) -> Result<Connection, StoreError> {
         Ok(Connection {
-            backend: Arc::new(self.clone()),
+            backend: self.db.clone(),
             table,
         })
     }
 }
 
 struct Connection {
-    backend: Arc<ReamDB>,
+    backend: Arc<Database>,
     table: String,
 }
 
 impl Connection {
     fn put(&self, key: &[u8], value: &[u8]) -> Result<(), StoreError> {
         let table_def: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(&self.table);
-        let mut write_txn = self.backend.db.begin_write()?;
+        let mut write_txn = self.backend.begin_write()?;
 
         write_txn.set_durability(Durability::Immediate);
         let mut table = write_txn.open_table(table_def)?;
@@ -62,7 +61,7 @@ impl Connection {
 
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError> {
         let table_def: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(&self.table);
-        let read_txn = self.backend.db.begin_read()?;
+        let read_txn = self.backend.begin_read()?;
         let table = read_txn.open_table(table_def)?;
         let result = table.get(key)?;
         Ok(result.map(|res| res.value().to_vec()))
@@ -74,8 +73,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_transactions() -> Result<(), StoreError> {
-        let mut test_store = ReamDB::new()?;
+    fn test_transaction() -> Result<(), StoreError> {
+        let test_store = ReamDB::new()?;
         test_store.create_table("TEST")?;
         let connection = test_store.acquire_connection(String::from("TEST"))?;
         let key = b"0xc424dae5e964dab6d1970424a0f3fba767762e58c59070affdc2af25e0fd6dcd";

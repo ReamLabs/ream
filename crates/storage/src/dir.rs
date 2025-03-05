@@ -2,7 +2,7 @@ use std::{fs, io, path::PathBuf};
 
 use directories::BaseDirs;
 
-/// Creates a `.ream` directory in the system's data directory if it doesn't exist.
+/// Creates a `ream` directory in the system's data directory if it doesn't exist.
 ///
 /// # Returns
 ///
