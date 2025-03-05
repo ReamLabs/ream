@@ -3942,7 +3942,6 @@ name = "ream-storage"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "parking_lot",
  "ream-utils",
  "redb",
  "thiserror 2.0.11",
