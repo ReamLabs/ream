@@ -1,4 +1,4 @@
-use crate::{errors::StoreError, redb_interface::ReamDB};
+use crate::{errors::StoreError, redb_impl::ReamDB};
 
 pub struct Database {
     /// Database for the ream client
@@ -16,9 +16,8 @@ pub struct Database {
 /// This implemenation houses all the client<>db interaction logic
 impl Database {
     pub fn new() -> Result<Self, StoreError> {
-        let db_instance = ReamDB::new()?;
         Ok(Self {
-            db: db_instance,
+            db: ReamDB::new()?,
             version: String::from("0.0.1"),
         })
     }

@@ -22,9 +22,9 @@ async fn main() {
 
     let cli = Cli::parse();
 
-    let async_executor = ReamExecutor::new().unwrap();
+    let async_executor = ReamExecutor::new().expect("unable to create executor");
 
-    let main_executor = ReamExecutor::new().unwrap();
+    let main_executor = ReamExecutor::new().expect("unable to create executor");
 
     let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
         Ipv4Addr::UNSPECIFIED.into(),
@@ -38,7 +38,7 @@ async fn main() {
         total_peers: 0,
     };
 
-    let ream_db = Database::new().unwrap();
+    let ream_db = Database::new().expect("unable to init Ream Database");
 
     info!("ream database initialised {:?}", ream_db.version);
     match cli.command {

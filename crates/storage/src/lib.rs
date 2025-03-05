@@ -3,4 +3,4 @@ mod config;
 pub mod db;
 mod dir;
 mod errors;
-mod redb_interface;
+mod redb_impl;
