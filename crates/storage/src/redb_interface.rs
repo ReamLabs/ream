@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use ream_utils::dir;
 use redb::{Builder, Database, Durability, TableDefinition};
-use ream_utils;
 
 use crate::{config, errors::StoreError};
 
-pub(crate) struct ReamDB {
+pub struct ReamDB {
     db: Arc<Database>,
 }
 
@@ -38,12 +38,11 @@ impl<'a> Connection<'a> {
 }
 
 impl ReamDB {
-    fn new() -> Result<Self, StoreError> { 
-        let ream_dir = ream_utils::dir::create_ream_dir()
-            .map_err(StoreError::Io)?;
+    pub(crate) fn new() -> Result<Self, StoreError> {
+        let ream_dir = dir::create_ream_dir().map_err(StoreError::Io)?;
 
         let ream_file = ream_dir.join(config::REDB_FILE);
-        
+
         let db = Builder::new()
             .set_cache_size(config::REDB_CACHE_SIZE)
             .create(&ream_file)

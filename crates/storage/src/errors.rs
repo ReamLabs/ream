@@ -18,5 +18,5 @@ pub enum StoreError {
     TableError(#[from] redb::TableError),
 
     #[error("Io error in creating DB file {0}")]
-    Io(#[from] std::io::Error)
+    Io(#[from] std::io::Error),
 }

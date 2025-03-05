@@ -5,6 +5,7 @@ use ream::cli::{Cli, Commands};
 use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
 use ream_p2p::network::Network;
+use ream_storage::db::Database;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -37,6 +38,9 @@ async fn main() {
         total_peers: 0,
     };
 
+    let ream_db = Database::new().unwrap();
+
+    info!("ream database initialised {:?}",ream_db.version);
     match cli.command {
         Commands::Node(_cmd) => {
             info!("starting up...");

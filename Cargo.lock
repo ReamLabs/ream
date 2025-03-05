@@ -3831,6 +3831,7 @@ dependencies = [
  "ream-executor",
  "ream-network-spec",
  "ream-p2p",
+ "ream-storage",
  "tokio",
  "tracing",
  "tracing-subscriber",
