@@ -1,5 +1,5 @@
 [package]
-name = "ream-storage"
+name = "ream-utils"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -10,14 +10,4 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-# ream dependencies
-ream-utils.workspace = true
-
-# other dependencies
-anyhow.workspace = true
-parking_lot.workspace = true
-redb.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
-
-
+directories.workspace = true
