@@ -21,10 +21,9 @@ jobs:
       run: |
         curl -L https://sp1up.succinct.xyz | bash
         /home/runner/.sp1/bin/sp1up
-        rustup default succinct
 
     - name: Build SP1
-      run: cargo build --target=riscv32im-succinct-zkvm-elf -p ream-consensus -p ream-bls
+      run: cargo +succinct build --target=riscv32im-succinct-zkvm-elf -p ream-consensus -p ream-bls
 
   build-risc0:
     runs-on: ubuntu-latest
@@ -37,8 +36,6 @@ jobs:
         curl -L https://risczero.com/install | bash
         /home/runner/.risc0/bin/rzup install
         cargo risczero install
-        rustup default risc0
         
     - name: Build Risc0
-      run: cargo build --target=riscv32im-risc0-zkvm-elf -p ream-consensus -p ream-bls
-
+      run: cargo +risc0 build --target=riscv32im-risc0-zkvm-elf -p ream-consensus -p ream-bls
