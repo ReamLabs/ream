@@ -2,11 +2,11 @@ mod rpc_types;
 pub mod transaction;
 pub mod utils;
 
-use alloy_primitives::{hex, B256, B64};
+use alloy_primitives::{B64, B256, hex};
 use alloy_rlp::Decodable;
 use anyhow::anyhow;
 use async_trait::async_trait;
-use jsonwebtoken::{encode, get_current_timestamp, EncodingKey, Header};
+use jsonwebtoken::{EncodingKey, Header, encode, get_current_timestamp};
 use ream_consensus::{
     deneb::execution_payload::ExecutionPayload,
     execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
@@ -23,7 +23,7 @@ use rpc_types::{
 use serde_json::json;
 use ssz_types::VariableList;
 use transaction::{BlobTransaction, TransactionType};
-use utils::{strip_prefix, Claims, JsonRpcRequest, JsonRpcResponse};
+use utils::{Claims, JsonRpcRequest, JsonRpcResponse, strip_prefix};
 
 pub struct ExecutionEngine {
     http_client: Client,
