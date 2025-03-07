@@ -1,4 +1,4 @@
-use blst::{min_pk::Signature as BlstSignature, BLST_ERROR};
+use blst::{BLST_ERROR, min_pk::Signature as BlstSignature};
 
 use crate::{
     constants::DST,

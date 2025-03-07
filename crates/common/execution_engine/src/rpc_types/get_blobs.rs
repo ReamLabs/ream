@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use ssz_types::{serde_utils::list_of_hex_var_list, typenum, VariableList};
+use ssz_types::{VariableList, serde_utils::list_of_hex_var_list, typenum};
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

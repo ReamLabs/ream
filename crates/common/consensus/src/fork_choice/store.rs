@@ -1,4 +1,4 @@
-use alloy_primitives::{map::HashMap, B256};
+use alloy_primitives::{B256, map::HashMap};
 use serde::{Deserialize, Serialize};
 
 use super::{

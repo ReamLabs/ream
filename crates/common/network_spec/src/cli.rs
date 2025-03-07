@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::networks::{NetworkSpec, HOLESKY, MAINNET, SEPOLIA};
+use crate::networks::{HOLESKY, MAINNET, NetworkSpec, SEPOLIA};
 
 pub fn network_parser(network_string: &str) -> Result<Arc<NetworkSpec>, String> {
     match network_string {
