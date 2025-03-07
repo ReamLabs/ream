@@ -1,11 +1,12 @@
 use alloy_consensus::proofs::{ordered_trie_root, ordered_trie_root_with_encoder};
-use alloy_primitives::{b256, bytes, keccak256, Address, Bytes, B256, B64, U256};
+use alloy_primitives::{Address, B64, B256, Bytes, U256, b256, bytes, keccak256};
 use alloy_rlp::Encodable;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
+    FixedVector, VariableList,
     serde_utils::{hex_fixed_vec, hex_var_list, list_of_hex_var_list},
-    typenum, FixedVector, VariableList,
+    typenum,
 };
 use tree_hash_derive::TreeHash;
 

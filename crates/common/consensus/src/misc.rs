@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use alloy_primitives::{aliases::B32, B256};
+use alloy_primitives::{B256, aliases::B32};
 use anyhow::ensure;
 use ethereum_hashing::hash;
 use tree_hash::TreeHash;

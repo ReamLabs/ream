@@ -1,9 +1,9 @@
 use bls12_381::{G1Affine, G1Projective};
 
 use crate::{
+    AggregatePubKey, PubKey,
     errors::BLSError,
     traits::{Aggregatable, ZkcryptoAggregatable},
-    AggregatePubKey, PubKey,
 };
 
 impl Aggregatable for AggregatePubKey {

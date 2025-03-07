@@ -8,18 +8,18 @@ use std::{
 
 use anyhow::anyhow;
 use discv5::{
-    enr::{k256::ecdsa::SigningKey, CombinedKey, NodeId},
     Discv5, Enr,
+    enr::{CombinedKey, NodeId, k256::ecdsa::SigningKey},
 };
-use futures::{stream::FuturesUnordered, FutureExt, StreamExt, TryFutureExt};
+use futures::{FutureExt, StreamExt, TryFutureExt, stream::FuturesUnordered};
 use libp2p::{
-    core::{transport::PortUse, Endpoint},
+    Multiaddr, PeerId,
+    core::{Endpoint, transport::PortUse},
     identity::Keypair,
     swarm::{
-        dummy::ConnectionHandler, ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour,
-        THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
+        ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
+        THandlerOutEvent, ToSwarm, dummy::ConnectionHandler,
     },
-    Multiaddr, PeerId,
 };
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};

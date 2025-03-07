@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use ssz_types::{typenum::U8192, FixedVector};
+use ssz_types::{FixedVector, typenum::U8192};
 use tree_hash_derive::TreeHash;
 
 // todo: add tests
