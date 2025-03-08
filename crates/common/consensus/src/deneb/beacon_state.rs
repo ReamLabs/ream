@@ -1539,42 +1539,49 @@ impl BeaconState {
     pub fn process_registry_updates(&mut self) -> anyhow::Result<()> {
         let current_epoch = self.get_current_epoch();
         let mut initiate_validator = vec![];
-
+    
         // Process activation eligibility and ejections
         for (index, validator) in self.validators.iter_mut().enumerate() {
             if validator.is_eligible_for_activation_queue() {
-                validator.activation_eligibility_epoch = current_epoch + 1;
+                // Ensure no overflow when adding 1 to the current_epoch
+                let activation_eligibility_epoch = current_epoch.checked_add(1)
+                    .ok_or_else(|| anyhow::anyhow!("Epoch overflow when setting activation eligibility epoch"))?;
+                validator.activation_eligibility_epoch = activation_eligibility_epoch;
             }
-
+    
             if validator.is_active_validator(current_epoch)
                 && validator.effective_balance <= EJECTION_BALANCE
             {
                 initiate_validator.push(index as u64);
             }
         }
-
+    
+        // Process initiated validator exit
         for index in initiate_validator {
             self.initiate_validator_exit(index);
         }
-
+    
         // Queue validators eligible for activation and not yet dequeued for activation
         let mut activation_queue: Vec<usize> = (0..self.validators.len())
-            // Order by the sequence of activation_eligibility_epoch setting and then index
+            // Order by the sequence of activation_eligibility_epoch setting and then in
             .filter(|&index| self.is_eligible_for_activation(&self.validators[index]))
             .collect();
-
-        activation_queue
-            .sort_by_key(|&index| (self.validators[index].activation_eligibility_epoch, index));
-
-        // Dequeued validators for activation up to activation churn limit
-        // [Modified in Deneb:EIP7514]
-        for index in activation_queue[..self.get_validator_activation_churn_limit() as usize].iter()
-        {
-            self.validators[*index].activation_epoch = compute_activation_exit_epoch(current_epoch);
+    
+        // Sort activation queue by eligibility epoch and then by index
+        activation_queue.sort_by_key(|&index| (self.validators[index].activation_eligibility_epoch, index));
+    
+        // Process up to the churn limit and safely assign activation epochs
+        for index in activation_queue.iter().take(self.get_validator_activation_churn_limit() as usize) {
+            // Ensure no overflow when computing the activation epoch
+            let new_activation_epoch = compute_activation_exit_epoch(current_epoch);
+            let activation_epoch = new_activation_epoch.checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("Overflow while calculating activation epoch"))?;
+            self.validators[*index].activation_epoch = activation_epoch;
         }
-
+    
         Ok(())
     }
+    
 
     /// Return the deltas for a given ``flag_index`` by scanning through the participation flags.
     pub fn get_flag_index_deltas(&self, flag_index: u8) -> anyhow::Result<(Vec<u64>, Vec<u64>)> {

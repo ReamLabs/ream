@@ -1,6 +1,6 @@
-#![cfg(feature = "ef-tests")]
+// #![cfg(feature = "ef-tests")]
 
-use ef_tests::{test_consensus_type, test_operation, test_shuffling, utils};
+use ef_tests::{test_consensus_type, test_epoch_processing, test_operation, test_shuffling, utils};
 use ream_consensus::{
     attestation::Attestation,
     attestation_data::AttestationData,
@@ -102,3 +102,21 @@ test_operation!(
 
 // Testing shuffling
 test_shuffling!();
+
+// test_epoch_processing!(effective_balance_updates, process_effective_balance_updates);
+// test_epoch_processing!(eth1_data_reset, process_eth1_data_reset);
+
+
+
+test_epoch_processing!(historical_summaries_update, process_historical_summaries_update);
+// test_epoch_processing!(inactivity_updates, process_inactivity_updates);
+// test_epoch_processing!(justification_and_finalization, process_justification_and_finalization);
+
+// test_epoch_processing!(rewards_and_penalties, process_rewards_and_penalties);
+
+
+
+// test_epoch_processing!(participation_flag_updates, process_participation_flag_updates);
+// test_epoch_processing!(randao_mixes_reset, process_randao_mixes_reset);
+// test_epoch_processing!(slashings_reset, process_slashings_reset); 
+// test_epoch_processing!(slashings, process_slashings);
