@@ -24,7 +24,7 @@ use libp2p::{
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
-use crate::config::NetworkConfig;
+use crate::config::DiscoveryConfig;
 
 #[derive(Debug)]
 pub struct DiscoveredPeers {
@@ -58,7 +58,7 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    pub async fn new(local_key: Keypair, config: &NetworkConfig) -> anyhow::Result<Self> {
+    pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<Self> {
         let enr_local = convert_to_enr(local_key)?;
         let enr = Enr::builder().build(&enr_local).unwrap();
         let node_local_id = enr.node_id();

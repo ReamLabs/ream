@@ -1,15 +1,29 @@
+pub mod config;
 pub mod handler;
 pub mod protocol;
 pub mod snappy;
+pub mod topics;
 
+use config::GossipsubConfig;
 use handler::GossipsubConnectionHandler;
 use libp2p::swarm::NetworkBehaviour;
+use topics::GossipTopic;
 
-pub struct Gossipsub {}
+pub struct Gossipsub {
+    pub config: GossipsubConfig,
+}
 
 impl Gossipsub {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(config: GossipsubConfig) -> Self {
+        Self { config }
+    }
+
+    pub fn subscribe(&mut self, _topic: GossipTopic) -> anyhow::Result<bool> {
+        todo!()
+    }
+
+    pub fn unsubscribe(&mut self, _topic: GossipTopic) -> anyhow::Result<bool> {
+        todo!()
     }
 }
 
