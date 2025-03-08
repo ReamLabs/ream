@@ -1,9 +1,10 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     net::Ipv4Addr,
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -20,14 +21,13 @@ use libp2p::{
     yamux, Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
 };
 use libp2p_identity::{secp256k1, Keypair, PublicKey};
-use ream_discv5::{
-    config::NetworkConfig,
-    discovery::{DiscoveredPeers, Discovery},
-};
+use parking_lot::Mutex;
+use ream_discv5::discovery::{DiscoveredPeers, Discovery};
 use ream_executor::ReamExecutor;
+use ream_gossipsub::{topics::GossipTopic, Gossipsub};
 use tracing::{error, info, warn};
 
-use crate::bootnodes::Bootnodes;
+use crate::{bootnodes::Bootnodes, config::NetworkConfig};
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
@@ -35,6 +35,9 @@ pub(crate) struct ReamBehaviour {
 
     /// The discovery domain: discv5
     pub discovery: Discovery,
+
+    /// The gossip domain: gossipsub
+    pub gossipsub: Gossipsub,
 
     pub connection_registry: connection_limits::Behaviour,
 }
@@ -55,6 +58,7 @@ pub enum ReamNetworkEvent {
 pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
+    subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
 }
 
 struct Executor(ReamExecutor);
@@ -70,10 +74,13 @@ impl Network {
         let local_key = secp256k1::Keypair::generate();
 
         let discovery = {
-            let mut discovery = Discovery::new(Keypair::from(local_key.clone()), config).await?;
+            let mut discovery =
+                Discovery::new(Keypair::from(local_key.clone()), &config.disc_config).await?;
             discovery.discover_peers(16);
             discovery
         };
+
+        let gossipsub = Gossipsub::new(config.gossipsub_config.clone());
 
         let connection_limits = {
             let limits = libp2p::connection_limits::ConnectionLimits::default()
@@ -99,6 +106,7 @@ impl Network {
         let behaviour = {
             ReamBehaviour {
                 discovery,
+                gossipsub,
                 identify,
                 connection_registry: connection_limits,
             }
@@ -128,6 +136,7 @@ impl Network {
         let mut network = Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
+            subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
         };
 
         network.start_network_worker(config).await?;
@@ -135,7 +144,7 @@ impl Network {
         Ok(network)
     }
 
-    async fn start_network_worker(&mut self, _config: &NetworkConfig) -> anyhow::Result<()> {
+    async fn start_network_worker(&mut self, config: &NetworkConfig) -> anyhow::Result<()> {
         info!("Libp2p starting .... ");
 
         let mut multi_addr: Multiaddr = Ipv4Addr::UNSPECIFIED.into();
@@ -163,6 +172,14 @@ impl Network {
                     multi_addr.push(Protocol::Tcp(tcp_port));
                 }
                 self.swarm.dial(multi_addr).unwrap();
+            }
+        }
+
+        for topic in &config.topics {
+            if self.subscribe_to_topic(*topic) {
+                info!("Subscribed to topic: {:?}", topic);
+            } else {
+                error!("Failed to subscribe to topic: {:?}", topic);
             }
         }
 
@@ -231,6 +248,25 @@ impl Network {
                 }
             }
         }
+    }
+
+    fn subscribe_to_topic(&mut self, topic: GossipTopic) -> bool {
+        self.subscribed_topics.lock().insert(topic);
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .subscribe(topic)
+            .is_ok()
+    }
+
+    #[allow(dead_code)]
+    fn unsubscribe_from_topic(&mut self, topic: GossipTopic) -> bool {
+        self.subscribed_topics.lock().remove(&topic);
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .unsubscribe(topic)
+            .is_ok()
     }
 }
 
