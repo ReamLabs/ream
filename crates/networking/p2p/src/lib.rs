@@ -1,3 +1,3 @@
 pub mod bootnodes;
-pub mod gossipsub;
+pub mod config;
 pub mod network;
