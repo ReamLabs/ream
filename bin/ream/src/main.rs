@@ -37,7 +37,9 @@ async fn main() {
         disable_discovery: false,
         total_peers: 0,
     };
-    let gossipsub_config = GossipsubConfig {};
+    let gossipsub_config = GossipsubConfig {
+        max_size_per_message: 1023 * 1024, /* https://ethereum.github.io/consensus-specs/specs/phase0/p2p-interface/#max_message_size */
+    };
     let network_config = NetworkConfig {
         disc_config,
         gossipsub_config,

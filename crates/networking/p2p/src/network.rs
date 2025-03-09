@@ -24,7 +24,7 @@ use libp2p_identity::{secp256k1, Keypair, PublicKey};
 use parking_lot::Mutex;
 use ream_discv5::discovery::{DiscoveredPeers, Discovery};
 use ream_executor::ReamExecutor;
-use ream_gossipsub::{topics::GossipTopic, Gossipsub};
+use ream_gossipsub::{snappy::SnappyTransform, topics::GossipTopic, Gossipsub};
 use tracing::{error, info, warn};
 
 use crate::{bootnodes::Bootnodes, config::NetworkConfig};
@@ -80,7 +80,11 @@ impl Network {
             discovery
         };
 
-        let gossipsub = Gossipsub::new(config.gossipsub_config.clone());
+        let gossipsub = {
+            let snappy_transform =
+                SnappyTransform::new(config.gossipsub_config.max_size_per_message);
+            Gossipsub::new(config.gossipsub_config.clone(), snappy_transform)
+        };
 
         let connection_limits = {
             let limits = libp2p::connection_limits::ConnectionLimits::default()
