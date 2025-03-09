@@ -1,5 +1,6 @@
 use alloy_primitives::{aliases::B32, fixed_bytes};
 
+pub const BASE_REWARDS_PER_EPOCH: u64 = 4;
 pub const BASE_REWARD_FACTOR: u64 = 64;
 pub const BLS_WITHDRAWAL_PREFIX: &[u8] = &[0];
 pub const CAPELLA_FORK_VERSION: B32 = fixed_bytes!("0x03000000");
@@ -70,6 +71,8 @@ pub const TIMELY_TARGET_FLAG_INDEX: u8 = 1;
 pub const TIMELY_SOURCE_WEIGHT: u64 = 14;
 pub const TIMELY_TARGET_WEIGHT: u64 = 26;
 pub const TIMELY_HEAD_WEIGHT: u64 = 14;
+pub const UINT64_MAX: u64 = u64::MAX;
+pub const UINT64_MAX_SQRT: u64 = 4294967295;
 pub const WEIGHT_DENOMINATOR: u64 = 64;
 pub const WHISTLEBLOWER_REWARD_QUOTIENT: u64 = 512;
 
