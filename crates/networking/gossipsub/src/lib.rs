@@ -3,16 +3,26 @@ pub mod handler;
 pub mod protocol;
 pub mod snappy;
 pub mod topics;
+pub mod types;
+
+use std::collections::{HashMap, HashSet};
 
 use config::GossipsubConfig;
 use handler::GossipsubConnectionHandler;
-use libp2p::swarm::NetworkBehaviour;
+use libp2p::{
+    gossipsub::{Message, MessageId},
+    swarm::NetworkBehaviour,
+    PeerId,
+};
 use snappy::SnappyTransform;
-use topics::GossipTopic;
+use topics::{GossipTopic, TopicName};
+use types::ConnectionInfo;
 
 pub struct Gossipsub {
     pub config: GossipsubConfig,
     pub snappy_transform: SnappyTransform,
+    pub connected_peers: HashMap<PeerId, ConnectionInfo>,
+    pub peers_by_topic: HashMap<TopicName, HashSet<PeerId>>,
 }
 
 impl Gossipsub {
@@ -20,6 +30,8 @@ impl Gossipsub {
         Self {
             config,
             snappy_transform,
+            connected_peers: HashMap::new(),
+            peers_by_topic: HashMap::new(),
         }
     }
 
@@ -30,11 +42,32 @@ impl Gossipsub {
     pub fn unsubscribe(&mut self, _topic: GossipTopic) -> anyhow::Result<bool> {
         todo!()
     }
+
+    pub fn publish(&mut self, _topic: GossipTopic, _data: Vec<u8>) -> anyhow::Result<MessageId> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+pub enum GossipsubEvent {
+    Message {
+        peer_id: PeerId,
+        message_id: MessageId,
+        message: Message,
+    },
+    Subscribed {
+        peer_id: PeerId,
+        topic: TopicName,
+    },
+    Unsubscribed {
+        peer_id: PeerId,
+        topic: TopicName,
+    },
 }
 
 impl NetworkBehaviour for Gossipsub {
     type ConnectionHandler = GossipsubConnectionHandler;
-    type ToSwarm = ();
+    type ToSwarm = GossipsubEvent;
 
     fn handle_established_inbound_connection(
         &mut self,
