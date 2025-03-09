@@ -14,3 +14,8 @@ pub enum GossipTopic {
     ProposerSlashing,
     AttesterSlashing,
 }
+
+#[derive(Debug)]
+pub struct TopicName {
+    pub name: String,
+}
