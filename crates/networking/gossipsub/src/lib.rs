@@ -7,15 +7,20 @@ pub mod topics;
 use config::GossipsubConfig;
 use handler::GossipsubConnectionHandler;
 use libp2p::swarm::NetworkBehaviour;
+use snappy::SnappyTransform;
 use topics::GossipTopic;
 
 pub struct Gossipsub {
     pub config: GossipsubConfig,
+    pub snappy_transform: SnappyTransform,
 }
 
 impl Gossipsub {
-    pub fn new(config: GossipsubConfig) -> Self {
-        Self { config }
+    pub fn new(config: GossipsubConfig, snappy_transform: SnappyTransform) -> Self {
+        Self {
+            config,
+            snappy_transform,
+        }
     }
 
     pub fn subscribe(&mut self, _topic: GossipTopic) -> anyhow::Result<bool> {
