@@ -3793,6 +3793,7 @@ dependencies = [
  "discv5",
  "ream-discv5",
  "ream-executor",
+ "ream-gossipsub",
  "ream-network-spec",
  "ream-p2p",
  "tokio",
@@ -3887,6 +3888,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-gossipsub"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libp2p",
+ "snap",
+ "void",
+]
+
+[[package]]
 name = "ream-network-spec"
 version = "0.1.0"
 
@@ -3902,12 +3913,15 @@ dependencies = [
  "libp2p",
  "libp2p-identity",
  "libp2p-mplex",
+ "parking_lot",
  "ream-discv5",
  "ream-executor",
+ "ream-gossipsub",
  "serde",
  "serde_yaml",
  "tokio",
  "tracing",
+ "void",
 ]
 
 [[package]]

@@ -2,9 +2,10 @@ use std::net::Ipv4Addr;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
-use ream_discv5::config::NetworkConfig;
+use ream_discv5::config::DiscoveryConfig;
 use ream_executor::ReamExecutor;
-use ream_p2p::network::Network;
+use ream_gossipsub::config::GossipsubConfig;
+use ream_p2p::{config::NetworkConfig, network::Network};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -30,17 +31,25 @@ async fn main() {
         8080,
     ))
     .build();
-    let binding = NetworkConfig {
+    let disc_config = DiscoveryConfig {
         discv5_config,
         boot_nodes_enr: vec![],
         disable_discovery: false,
         total_peers: 0,
     };
+    let gossipsub_config = GossipsubConfig {
+        max_size_per_message: 1023 * 1024, /* https://ethereum.github.io/consensus-specs/specs/phase0/p2p-interface/#max_message_size */
+    };
+    let network_config = NetworkConfig {
+        disc_config,
+        gossipsub_config,
+        topics: vec![],
+    };
 
     match cli.command {
         Commands::Node(_cmd) => {
             info!("starting up...");
-            match Network::init(async_executor, &binding).await {
+            match Network::init(async_executor, &network_config).await {
                 Ok(mut network) => {
                     main_executor.spawn(async move {
                         network.polling_events().await;
