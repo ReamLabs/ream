@@ -41,26 +41,7 @@ use crate::{
     execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
     fork::Fork,
     fork_choice::helpers::constants::{
-        BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
-        DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
-        DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
-        DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EJECTION_BALANCE,
-        EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
-        EPOCHS_PER_SYNC_COMMITTEE_PERIOD, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH,
-        GENESIS_EPOCH, GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT,
-        HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
-        INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_BLOBS_PER_BLOCK,
-        MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE,
-        MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE,
-        MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
-        MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
-        MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
-        MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
-        PARTICIPATION_FLAG_WEIGHTS, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
-        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SECONDS_PER_SLOT, SHARD_COMMITTEE_PERIOD,
-        SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT,
-        TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
-        TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
+        BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT, DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER, DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE, DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EJECTION_BALANCE, EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR, EPOCHS_PER_SYNC_COMMITTEE_PERIOD, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH, GENESIS_EPOCH, GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT, HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS, INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_BLOBS_PER_BLOCK, MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE, MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE, MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD, MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY, MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT, MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY, PARTICIPATION_FLAG_WEIGHTS, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX, PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SECONDS_PER_SLOT, SHARD_COMMITTEE_PERIOD, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT, TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX, TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT
     },
     helpers::xor,
     historical_summary::HistoricalSummary,
@@ -380,16 +361,22 @@ impl BeaconState {
     }
 
     /// Increase the validator balance at index ``index`` by ``delta``.
-    pub fn increase_balance(&mut self, index: u64, delta: u64) {
+    pub fn increase_balance(&mut self, index: u64, delta: u64) -> anyhow::Result<()> {
         if let Some(balance) = self.balances.get_mut(index as usize) {
             *balance += delta;
+            Ok(())
+        } else {
+            Err(anyhow!("failed to increase balance"))
         }
     }
 
     /// Decrease the validator balance at index ``index`` by ``delta`` with underflow protection.
-    pub fn decrease_balance(&mut self, index: u64, delta: u64) {
+    pub fn decrease_balance(&mut self, index: u64, delta: u64) -> anyhow::Result<()> {
         if let Some(balance) = self.balances.get_mut(index as usize) {
             *balance = balance.saturating_sub(delta);
+            Ok(())
+        } else {
+            Err(anyhow!("failed to decrease balance"))
         }
     }
 
@@ -470,7 +457,7 @@ impl BeaconState {
         self.decrease_balance(
             slashed_index,
             validator_effective_balance / MIN_SLASHING_PENALTY_QUOTIENT,
-        );
+        )?;
 
         // Apply proposer and whistleblower rewards
         let proposer_index = self.get_beacon_proposer_index()?;
@@ -478,8 +465,8 @@ impl BeaconState {
 
         let whistleblower_reward = validator_effective_balance / WHISTLEBLOWER_REWARD_QUOTIENT;
         let proposer_reward = whistleblower_reward * PROPOSER_WEIGHT / WEIGHT_DENOMINATOR;
-        self.increase_balance(proposer_index, proposer_reward);
-        self.increase_balance(whistleblower_index, whistleblower_reward - proposer_reward);
+        self.increase_balance(proposer_index, proposer_reward)?;
+        self.increase_balance(whistleblower_index, whistleblower_reward - proposer_reward)?;
 
         Ok(())
     }
@@ -505,6 +492,7 @@ impl BeaconState {
         flags & flag == flag
     }
 
+    /// Return the set of validator indices that are both active and unslashed for the given ``flag_index`` and ``epoch``.
     pub fn get_unslashed_participating_indices(
         &self,
         flag_index: u8,
@@ -528,7 +516,7 @@ impl BeaconState {
         }
         let filtered_indices: HashSet<u64> = participating_indices
             .into_iter()
-            .filter(|&index| self.validators[index as usize].slashed)
+            .filter(|&index| !self.validators[index as usize].slashed)
             .collect();
         Ok(filtered_indices)
     }
@@ -565,8 +553,7 @@ impl BeaconState {
     }
 
     pub fn get_base_reward_per_increment(&self) -> u64 {
-        EFFECTIVE_BALANCE_INCREMENT * BASE_REWARD_FACTOR
-            / (self.get_total_active_balance() as f64).sqrt() as u64
+        EFFECTIVE_BALANCE_INCREMENT * BASE_REWARD_FACTOR / integer_squareroot(self.get_total_active_balance())
     }
 
     /// Return the base reward for the validator defined by ``index`` with respect to the current
@@ -594,7 +581,7 @@ impl BeaconState {
         let mut validator_indices = vec![];
         for (index, v) in self.validators.iter().enumerate() {
             if v.is_active_validator(previous_epoch)
-                || v.slashed && previous_epoch + 1 < v.withdrawable_epoch
+                || (v.slashed && previous_epoch + 1 < v.withdrawable_epoch)
             {
                 validator_indices.push(index as u64)
             }
@@ -626,7 +613,7 @@ impl BeaconState {
 
         let mut participation_flag_indices = vec![];
 
-        if is_matching_source && inclusion_delay <= (SLOTS_PER_EPOCH as f64).sqrt() as u64 {
+        if is_matching_source && inclusion_delay <= integer_squareroot(SLOTS_PER_EPOCH) {
             participation_flag_indices.push(TIMELY_SOURCE_FLAG_INDEX);
         }
         if is_matching_target {
@@ -651,7 +638,7 @@ impl BeaconState {
                     * self.inactivity_scores[index as usize];
                 let penalty_denominator =
                     INACTIVITY_SCORE_BIAS * INACTIVITY_PENALTY_QUOTIENT_ALTAIR;
-                penalties[index as usize] += penalty_numerator / penalty_denominator
+                penalties[index as usize] += penalty_numerator / penalty_denominator;
             }
         }
         Ok((rewards, penalties))
@@ -737,7 +724,7 @@ impl BeaconState {
         );
 
         for withdrawal in &expected_withdrawals {
-            self.decrease_balance(withdrawal.validator_index, withdrawal.amount);
+            self.decrease_balance(withdrawal.validator_index, withdrawal.amount)?;
         }
 
         // Update the next withdrawal index if this block contained withdrawals
@@ -828,7 +815,7 @@ impl BeaconState {
                 .iter()
                 .position(|r| *r == pubkey)
                 .ok_or(anyhow!("Can't find pubkey in validator_pubkeys"))?;
-            self.increase_balance(index as u64, amount);
+            self.increase_balance(index as u64, amount)?;
         }
         Ok(())
     }
@@ -1046,14 +1033,14 @@ impl BeaconState {
     pub fn process_historical_summaries_update(&mut self) -> anyhow::Result<()> {
         // Set historical block root accumulator.
         let next_epoch = self.get_current_epoch() + 1;
-        if next_epoch % SLOTS_PER_HISTORICAL_ROOT / SLOTS_PER_EPOCH == 0 {
+        if next_epoch % (SLOTS_PER_HISTORICAL_ROOT / SLOTS_PER_EPOCH) == 0 {
             let historical_summary = HistoricalSummary {
                 block_summary_root: self.block_roots.tree_hash_root(),
                 state_summary_root: self.state_roots.tree_hash_root(),
             };
             self.historical_summaries
                 .push(historical_summary)
-                .map_err(|err| anyhow!("Failed to push historical summory {err:?}"))?;
+                .map_err(|err| anyhow!("Failed to push historical summary: {err:?}"))?;
         }
         Ok(())
     }
@@ -1159,10 +1146,10 @@ impl BeaconState {
             .zip(sync_aggregate.sync_committee_bits.iter())
         {
             if participation_bit {
-                self.increase_balance(*participant_index as u64, participant_reward);
-                self.increase_balance(self.get_beacon_proposer_index()?, proposer_reward);
+                self.increase_balance(*participant_index as u64, participant_reward)?;
+                self.increase_balance(self.get_beacon_proposer_index()?, proposer_reward)?;
             } else {
-                self.decrease_balance(*participant_index as u64, participant_reward);
+                self.decrease_balance(*participant_index as u64, participant_reward)?;
             }
         }
 
@@ -1418,7 +1405,7 @@ impl BeaconState {
         let proposer_reward_denominator =
             (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT) * WEIGHT_DENOMINATOR / PROPOSER_WEIGHT;
         let proposer_reward = proposer_reward_numerator / proposer_reward_denominator;
-        self.increase_balance(self.get_beacon_proposer_index()?, proposer_reward);
+        self.increase_balance(self.get_beacon_proposer_index()?, proposer_reward)?;
         Ok(())
     }
 
@@ -1455,7 +1442,7 @@ impl BeaconState {
                     validator.effective_balance / increment * adjusted_total_slashing_balance;
                 let penalty = penalty_numerator / total_balance * increment;
 
-                self.decrease_balance(index as u64, penalty);
+                self.decrease_balance(index as u64, penalty)?;
             }
         }
 
@@ -1617,27 +1604,35 @@ impl BeaconState {
     }
 
     pub fn process_rewards_and_penalties(&mut self) -> anyhow::Result<()> {
-        // No rewards are applied at the end of `GENESIS_EPOCH` because rewards are for work done in
-        // the previous epoch
+        // No rewards are applied at the end of `GENESIS_EPOCH` because rewards are for work done in the previous epoch
         if self.get_current_epoch() == GENESIS_EPOCH {
             return Ok(());
         }
-
+    
+        // Get deltas for each flag index and inactivity penalties
         let mut deltas = vec![];
+    
+        // Collect the flag deltas for each participation flag index
         for flag_index in 0..PARTICIPATION_FLAG_WEIGHTS.len() {
             deltas.push(self.get_flag_index_deltas(flag_index as u8)?);
         }
-
+    
+        // Add the inactivity penalties
         deltas.push(self.get_inactivity_penalty_deltas()?);
-
+    
+        // Iterate over rewards and penalties for each delta
         for (rewards, penalties) in deltas {
-            for index in 0..self.validators.len() {
-                self.increase_balance(index as u64, rewards[index]);
-                self.decrease_balance(index as u64, penalties[index]);
+            for (index, reward) in rewards.iter().enumerate() {
+                // Increase balance for the validator based on rewards
+                self.increase_balance(index as u64, *reward)?;
+    
+                // Decrease balance for the validator based on penalties
+                self.decrease_balance(index as u64, penalties[index])?;
             }
         }
         Ok(())
     }
+    
 
     /// Return the next sync committee, with possible pubkey duplicates.
     pub fn get_next_sync_committee(&self) -> anyhow::Result<SyncCommittee> {
@@ -1873,4 +1868,19 @@ pub fn kzg_commitment_to_versioned_hash(kzg_commitment: &KZGCommitment) -> B256 
     let mut versioned_hash = hash(&kzg_commitment.0);
     versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
     B256::from_slice(&versioned_hash)
+}
+
+/// Return the largest integer ``x`` such that ``x**2 <= n``.
+pub fn integer_squareroot(n: u64) -> u64 {
+    if n == UINT64_MAX {
+        return UINT64_MAX_SQRT;
+    }
+
+    let mut x = n;
+    let mut y = (x + 1) / 2;
+    while y < x {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+    return x;
 }

@@ -106,13 +106,14 @@ test_shuffling!();
 // test_epoch_processing!(effective_balance_updates, process_effective_balance_updates);
 // test_epoch_processing!(eth1_data_reset, process_eth1_data_reset);
 
+// test_epoch_processing!(historical_summaries_update, process_historical_summaries_update);
 
 
-test_epoch_processing!(historical_summaries_update, process_historical_summaries_update);
-// test_epoch_processing!(inactivity_updates, process_inactivity_updates);
-// test_epoch_processing!(justification_and_finalization, process_justification_and_finalization);
+test_epoch_processing!(inactivity_updates, process_inactivity_updates);
 
-// test_epoch_processing!(rewards_and_penalties, process_rewards_and_penalties);
+
+test_epoch_processing!(justification_and_finalization, process_justification_and_finalization);
+test_epoch_processing!(rewards_and_penalties, process_rewards_and_penalties);
 
 
 

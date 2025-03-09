@@ -51,7 +51,7 @@ impl Validator {
     }
 
     pub fn is_active_validator(&self, epoch: u64) -> bool {
-        self.activation_eligibility_epoch <= epoch && epoch < self.exit_epoch
+        self.activation_epoch <= epoch && epoch < self.exit_epoch
     }
 
     /// Check if ``validator`` is eligible to be placed into the activation queue.
