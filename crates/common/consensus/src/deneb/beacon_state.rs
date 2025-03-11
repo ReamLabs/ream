@@ -41,7 +41,27 @@ use crate::{
     execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
     fork::Fork,
     fork_choice::helpers::constants::{
-        BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT, DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER, DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE, DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EJECTION_BALANCE, EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR, EPOCHS_PER_SYNC_COMMITTEE_PERIOD, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH, GENESIS_EPOCH, GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT, HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS, INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_BLOBS_PER_BLOCK, MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE, MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE, MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD, MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY, MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT, MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY, PARTICIPATION_FLAG_WEIGHTS, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX, PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SECONDS_PER_SLOT, SHARD_COMMITTEE_PERIOD, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT, TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX, TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT
+        BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
+        DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
+        DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
+        DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EJECTION_BALANCE,
+        EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
+        EPOCHS_PER_SYNC_COMMITTEE_PERIOD, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH,
+        GENESIS_EPOCH, GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT,
+        HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
+        INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_BLOBS_PER_BLOCK,
+        MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE,
+        MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE,
+        MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
+        MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
+        MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
+        MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
+        PARTICIPATION_FLAG_WEIGHTS, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
+        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SECONDS_PER_SLOT, SHARD_COMMITTEE_PERIOD,
+        SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT,
+        TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
+        TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT, WEIGHT_DENOMINATOR,
+        WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     helpers::xor,
     historical_summary::HistoricalSummary,
@@ -492,7 +512,8 @@ impl BeaconState {
         flags & flag == flag
     }
 
-    /// Return the set of validator indices that are both active and unslashed for the given ``flag_index`` and ``epoch``.
+    /// Return the set of validator indices that are both active and unslashed for the given
+    /// ``flag_index`` and ``epoch``.
     pub fn get_unslashed_participating_indices(
         &self,
         flag_index: u8,
@@ -553,7 +574,8 @@ impl BeaconState {
     }
 
     pub fn get_base_reward_per_increment(&self) -> u64 {
-        EFFECTIVE_BALANCE_INCREMENT * BASE_REWARD_FACTOR / integer_squareroot(self.get_total_active_balance())
+        EFFECTIVE_BALANCE_INCREMENT * BASE_REWARD_FACTOR
+            / integer_squareroot(self.get_total_active_balance())
     }
 
     /// Return the base reward for the validator defined by ``index`` with respect to the current
@@ -1526,49 +1548,55 @@ impl BeaconState {
     pub fn process_registry_updates(&mut self) -> anyhow::Result<()> {
         let current_epoch = self.get_current_epoch();
         let mut initiate_validator = vec![];
-    
+
         // Process activation eligibility and ejections
         for (index, validator) in self.validators.iter_mut().enumerate() {
             if validator.is_eligible_for_activation_queue() {
                 // Ensure no overflow when adding 1 to the current_epoch
-                let activation_eligibility_epoch = current_epoch.checked_add(1)
-                    .ok_or_else(|| anyhow::anyhow!("Epoch overflow when setting activation eligibility epoch"))?;
+                let activation_eligibility_epoch =
+                    current_epoch.checked_add(1).ok_or_else(|| {
+                        anyhow::anyhow!("Epoch overflow when setting activation eligibility epoch")
+                    })?;
                 validator.activation_eligibility_epoch = activation_eligibility_epoch;
             }
-    
+
             if validator.is_active_validator(current_epoch)
                 && validator.effective_balance <= EJECTION_BALANCE
             {
                 initiate_validator.push(index as u64);
             }
         }
-    
+
         // Process initiated validator exit
         for index in initiate_validator {
             self.initiate_validator_exit(index);
         }
-    
+
         // Queue validators eligible for activation and not yet dequeued for activation
         let mut activation_queue: Vec<usize> = (0..self.validators.len())
             // Order by the sequence of activation_eligibility_epoch setting and then in
             .filter(|&index| self.is_eligible_for_activation(&self.validators[index]))
             .collect();
-    
+
         // Sort activation queue by eligibility epoch and then by index
-        activation_queue.sort_by_key(|&index| (self.validators[index].activation_eligibility_epoch, index));
-    
+        activation_queue
+            .sort_by_key(|&index| (self.validators[index].activation_eligibility_epoch, index));
+
         // Process up to the churn limit and safely assign activation epochs
-        for index in activation_queue.iter().take(self.get_validator_activation_churn_limit() as usize) {
+        for index in activation_queue
+            .iter()
+            .take(self.get_validator_activation_churn_limit() as usize)
+        {
             // Ensure no overflow when computing the activation epoch
             let new_activation_epoch = compute_activation_exit_epoch(current_epoch);
-            let activation_epoch = new_activation_epoch.checked_add(1)
+            let activation_epoch = new_activation_epoch
+                .checked_add(1)
                 .ok_or_else(|| anyhow::anyhow!("Overflow while calculating activation epoch"))?;
             self.validators[*index].activation_epoch = activation_epoch;
         }
-    
+
         Ok(())
     }
-    
 
     /// Return the deltas for a given ``flag_index`` by scanning through the participation flags.
     pub fn get_flag_index_deltas(&self, flag_index: u8) -> anyhow::Result<(Vec<u64>, Vec<u64>)> {
@@ -1604,35 +1632,35 @@ impl BeaconState {
     }
 
     pub fn process_rewards_and_penalties(&mut self) -> anyhow::Result<()> {
-        // No rewards are applied at the end of `GENESIS_EPOCH` because rewards are for work done in the previous epoch
+        // No rewards are applied at the end of `GENESIS_EPOCH` because rewards are for work done in
+        // the previous epoch
         if self.get_current_epoch() == GENESIS_EPOCH {
             return Ok(());
         }
-    
+
         // Get deltas for each flag index and inactivity penalties
         let mut deltas = vec![];
-    
+
         // Collect the flag deltas for each participation flag index
         for flag_index in 0..PARTICIPATION_FLAG_WEIGHTS.len() {
             deltas.push(self.get_flag_index_deltas(flag_index as u8)?);
         }
-    
+
         // Add the inactivity penalties
         deltas.push(self.get_inactivity_penalty_deltas()?);
-    
+
         // Iterate over rewards and penalties for each delta
         for (rewards, penalties) in deltas {
             for (index, reward) in rewards.iter().enumerate() {
                 // Increase balance for the validator based on rewards
                 self.increase_balance(index as u64, *reward)?;
-    
+
                 // Decrease balance for the validator based on penalties
                 self.decrease_balance(index as u64, penalties[index])?;
             }
         }
         Ok(())
     }
-    
 
     /// Return the next sync committee, with possible pubkey duplicates.
     pub fn get_next_sync_committee(&self) -> anyhow::Result<SyncCommittee> {
@@ -1882,5 +1910,5 @@ pub fn integer_squareroot(n: u64) -> u64 {
         x = y;
         y = (x + n / x) / 2;
     }
-    return x;
+    x
 }
