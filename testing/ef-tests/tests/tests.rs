@@ -1,4 +1,4 @@
-// #![cfg(feature = "ef-tests")]
+#![cfg(feature = "ef-tests")]
 
 use ef_tests::{test_consensus_type, test_epoch_processing, test_operation, test_shuffling, utils};
 use ream_consensus::{
