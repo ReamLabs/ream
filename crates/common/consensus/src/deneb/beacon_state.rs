@@ -1651,12 +1651,9 @@ impl BeaconState {
 
         // Iterate over rewards and penalties for each delta
         for (rewards, penalties) in deltas {
-            for (index, reward) in rewards.iter().enumerate() {
-                // Increase balance for the validator based on rewards
-                self.increase_balance(index as u64, *reward)?;
-
-                // Decrease balance for the validator based on penalties
-                self.decrease_balance(index as u64, penalties[index])?;
+            for index in 0..self.validators.len() {
+                self.increase_balance(index as u64, rewards[index]);
+                self.decrease_balance(index as u64, penalties[index]);
             }
         }
         Ok(())
