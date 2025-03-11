@@ -1574,7 +1574,7 @@ impl BeaconState {
 
         // Queue validators eligible for activation and not yet dequeued for activation
         let mut activation_queue: Vec<usize> = (0..self.validators.len())
-            // Order by the sequence of activation_eligibility_epoch setting and then in
+            // Order by the sequence of activation_eligibility_epoch setting and then index
             .filter(|&index| self.is_eligible_for_activation(&self.validators[index]))
             .collect();
 
@@ -1652,8 +1652,8 @@ impl BeaconState {
         // Iterate over rewards and penalties for each delta
         for (rewards, penalties) in deltas {
             for index in 0..self.validators.len() {
-                self.increase_balance(index as u64, rewards[index]);
-                self.decrease_balance(index as u64, penalties[index]);
+                self.increase_balance(index as u64, rewards[index])?;
+                self.decrease_balance(index as u64, penalties[index])?;
             }
         }
         Ok(())
