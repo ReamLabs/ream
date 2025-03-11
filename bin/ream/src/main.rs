@@ -5,7 +5,7 @@ use ream::cli::{Cli, Commands};
 use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
 use ream_p2p::network::Network;
-use tracing::info;
+use tracing::{info, error};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -49,7 +49,7 @@ async fn main() {
                     tokio::signal::ctrl_c().await.unwrap();
                 }
                 Err(e) => {
-                    info!("Failed to initialize network: {}", e);
+                    error!("Failed to initialize network: {}", e);
                     return;
                 }
             }
