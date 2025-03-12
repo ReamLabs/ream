@@ -1,7 +1,7 @@
 use ream_bls::BLSSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use ssz_types::{typenum, VariableList};
+use ssz_types::{VariableList, typenum};
 use tree_hash_derive::TreeHash;
 
 use crate::attestation_data::AttestationData;

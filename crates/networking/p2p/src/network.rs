@@ -10,16 +10,16 @@ use std::{
 use anyhow::anyhow;
 use discv5::Enr;
 use libp2p::{
-    connection_limits,
+    Multiaddr, PeerId, Swarm, SwarmBuilder, Transport, connection_limits,
     core::{muxing::StreamMuxerBox, transport::Boxed},
     futures::StreamExt,
     identify,
     multiaddr::Protocol,
     noise,
     swarm::{NetworkBehaviour, SwarmEvent},
-    yamux, Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
+    yamux,
 };
-use libp2p_identity::{secp256k1, Keypair, PublicKey};
+use libp2p_identity::{Keypair, PublicKey, secp256k1};
 use ream_discv5::{
     config::NetworkConfig,
     discovery::{DiscoveredPeers, Discovery},

@@ -1,4 +1,4 @@
-use alloy_primitives::{aliases::B32, B256};
+use alloy_primitives::{B256, aliases::B32};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash::TreeHash;

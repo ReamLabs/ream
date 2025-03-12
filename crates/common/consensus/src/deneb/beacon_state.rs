@@ -5,19 +5,19 @@ use std::{
     sync::Arc,
 };
 
-use alloy_primitives::{aliases::B32, Address, B256};
+use alloy_primitives::{Address, B256, aliases::B32};
 use anyhow::{anyhow, bail, ensure};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
 use ream_bls::{
-    traits::{Aggregatable, Verifiable},
     AggregatePubKey, BLSSignature, PubKey,
+    traits::{Aggregatable, Verifiable},
 };
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
-    typenum::{U1099511627776, U16777216, U2048, U4, U65536, U8192},
     BitVector, FixedVector, VariableList,
+    typenum::{U4, U2048, U8192, U65536, U16777216, U1099511627776},
 };
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
