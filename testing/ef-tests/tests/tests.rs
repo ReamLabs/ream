@@ -1,6 +1,8 @@
-#![cfg(feature = "ef-tests")]
+// #![cfg(feature = "ef-tests")]
 
-use ef_tests::{test_consensus_type, test_epoch_processing, test_operation, test_shuffling, utils};
+use ef_tests::{
+    test_consensus_type, test_epoch_processing, test_operation, test_rewards, test_shuffling, utils,
+};
 use ream_consensus::{
     attestation::Attestation,
     attestation_data::AttestationData,
@@ -116,5 +118,10 @@ test_epoch_processing!(
     process_participation_flag_updates
 );
 test_epoch_processing!(randao_mixes_reset, process_randao_mixes_reset);
-test_epoch_processing!(slashings_reset, process_slashings_reset);
 test_epoch_processing!(slashings, process_slashings);
+test_epoch_processing!(slashings_reset, process_slashings_reset);
+
+// Testing rewards
+test_rewards!(basic, get_inactivity_penalty_deltas);
+test_rewards!(leak, get_inactivity_penalty_deltas);
+test_rewards!(random, get_inactivity_penalty_deltas);

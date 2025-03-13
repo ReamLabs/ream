@@ -48,7 +48,7 @@ use crate::{
         EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
         EPOCHS_PER_SYNC_COMMITTEE_PERIOD, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH,
         GENESIS_EPOCH, GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT,
-        HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_ALTAIR, INACTIVITY_SCORE_BIAS,
+        HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX, INACTIVITY_SCORE_BIAS,
         INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_BLOBS_PER_BLOCK,
         MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE,
         MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE,
@@ -648,6 +648,8 @@ impl BeaconState {
         Ok(participation_flag_indices)
     }
 
+    /// Return the inactivity penalty deltas by considering timely target participation flags and
+    /// inactivity scores.
     pub fn get_inactivity_penalty_deltas(&self) -> anyhow::Result<(Vec<u64>, Vec<u64>)> {
         let rewards = vec![0; self.validators.len()];
         let mut penalties = vec![0; self.validators.len()];
@@ -659,7 +661,7 @@ impl BeaconState {
                 let penalty_numerator = self.validators[index as usize].effective_balance
                     * self.inactivity_scores[index as usize];
                 let penalty_denominator =
-                    INACTIVITY_SCORE_BIAS * INACTIVITY_PENALTY_QUOTIENT_ALTAIR;
+                    INACTIVITY_SCORE_BIAS * INACTIVITY_PENALTY_QUOTIENT_BELLATRIX;
                 penalties[index as usize] += penalty_numerator / penalty_denominator;
             }
         }
