@@ -1,4 +1,4 @@
-#![cfg(feature = "ef-tests")]
+// #![cfg(feature = "ef-tests")]
 
 use ef_tests::{
     test_consensus_type, test_epoch_processing, test_operation, test_rewards, test_shuffling, utils,
@@ -118,6 +118,7 @@ test_epoch_processing!(
     process_participation_flag_updates
 );
 test_epoch_processing!(randao_mixes_reset, process_randao_mixes_reset);
+test_epoch_processing!(registry_updates, process_registry_updates);
 test_epoch_processing!(rewards_and_penalties, process_rewards_and_penalties);
 test_epoch_processing!(slashings, process_slashings);
 test_epoch_processing!(slashings_reset, process_slashings_reset);

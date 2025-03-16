@@ -401,21 +401,14 @@ impl BeaconState {
     }
 
     /// Initiate if validator already initiated exit.
-    pub fn initiate_validator_exit(&mut self, index: u64) {
+    pub fn initiate_validator_exit(&mut self, index: u64) -> anyhow::Result<()> {
+        // Return if validator already initiated exit
         if index as usize >= self.validators.len() {
-            return;
-        }
-        if self
-            .validators
-            .get(index as usize)
-            .expect("Can't find index in validators")
-            .exit_epoch
-            != FAR_FUTURE_EPOCH
-        {
-            return;
+            return Ok(());
         }
 
-        let mut exit_epochs: Vec<u64> = self
+        // Compute exit queue epoch
+        let exit_epochs: Vec<u64> = self
             .validators
             .iter()
             .filter_map(|v| {
@@ -427,8 +420,12 @@ impl BeaconState {
             })
             .collect();
 
-        exit_epochs.push(compute_activation_exit_epoch(self.get_current_epoch()));
-        let mut exit_queue_epoch = *exit_epochs.iter().max().unwrap_or(&0);
+        let mut exit_queue_epoch = exit_epochs
+            .iter()
+            .max()
+            .copied()
+            .unwrap_or(0)
+            .max(compute_activation_exit_epoch(self.get_current_epoch()));
 
         let exit_queue_churn = self
             .validators
@@ -440,12 +437,23 @@ impl BeaconState {
             exit_queue_epoch += 1;
         }
 
-        // Set validator exit epoch and withdrawable epoch
-        if let Some(validator) = self.validators.get_mut(index as usize) {
-            validator.exit_epoch = exit_queue_epoch;
-            validator.withdrawable_epoch =
-                validator.exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY;
+        let validator = self
+            .validators
+            .get_mut(index as usize)
+            .expect("could not get validator");
+
+        if validator.exit_epoch != FAR_FUTURE_EPOCH {
+            return Ok(());
         }
+
+        // Set validator exit epoch and withdrawable epoch
+        validator.exit_epoch = exit_queue_epoch;
+        validator.withdrawable_epoch = validator
+            .exit_epoch
+            .checked_add(MIN_VALIDATOR_WITHDRAWABILITY_DELAY)
+            .ok_or(anyhow!("Failed to set withdrawable epoch"))?;
+
+        Ok(())
     }
 
     /// Slash the validator with index ``slashed_index``
@@ -457,7 +465,7 @@ impl BeaconState {
         let epoch = self.get_current_epoch();
 
         // Initiate validator exit
-        self.initiate_validator_exit(slashed_index);
+        self.initiate_validator_exit(slashed_index)?;
 
         let validator_effective_balance =
             if let Some(validator) = self.validators.get_mut(slashed_index as usize) {
@@ -490,6 +498,7 @@ impl BeaconState {
 
         Ok(())
     }
+
     pub fn is_valid_genesis_state(&self) -> bool {
         if self.genesis_time < MIN_GENESIS_TIME {
             return false;
@@ -969,7 +978,7 @@ impl BeaconState {
         );
 
         // Initiate exit
-        self.initiate_validator_exit(validator_index as u64);
+        self.initiate_validator_exit(validator_index as u64)?;
 
         Ok(())
     }
@@ -1554,12 +1563,10 @@ impl BeaconState {
         // Process activation eligibility and ejections
         for (index, validator) in self.validators.iter_mut().enumerate() {
             if validator.is_eligible_for_activation_queue() {
-                // Ensure no overflow when adding 1 to the current_epoch
-                let activation_eligibility_epoch =
+                validator.activation_eligibility_epoch =
                     current_epoch.checked_add(1).ok_or_else(|| {
                         anyhow::anyhow!("Epoch overflow when setting activation eligibility epoch")
                     })?;
-                validator.activation_eligibility_epoch = activation_eligibility_epoch;
             }
 
             if validator.is_active_validator(current_epoch)
@@ -1569,32 +1576,36 @@ impl BeaconState {
             }
         }
 
-        // Process initiated validator exit
         for index in initiate_validator {
-            self.initiate_validator_exit(index);
+            self.initiate_validator_exit(index)?;
         }
 
         // Queue validators eligible for activation and not yet dequeued for activation
-        let mut activation_queue: Vec<usize> = (0..self.validators.len())
-            // Order by the sequence of activation_eligibility_epoch setting and then index
-            .filter(|&index| self.is_eligible_for_activation(&self.validators[index]))
+        let mut activation_queue: Vec<usize> = self
+            .validators
+            .iter()
+            .enumerate()
+            .filter_map(|(index, validator)| {
+                if self.is_eligible_for_activation(validator) {
+                    Some(index)
+                } else {
+                    None
+                }
+            })
             .collect();
 
-        // Sort activation queue by eligibility epoch and then by index
+        // Order by the sequence of activation_eligibility_epoch setting and then index
         activation_queue
             .sort_by_key(|&index| (self.validators[index].activation_eligibility_epoch, index));
 
-        // Process up to the churn limit and safely assign activation epochs
-        for index in activation_queue
+        // Dequeued validators for activation up to activation churn limit
+        for &index in activation_queue
             .iter()
             .take(self.get_validator_activation_churn_limit() as usize)
         {
-            // Ensure no overflow when computing the activation epoch
-            let new_activation_epoch = compute_activation_exit_epoch(current_epoch);
-            let activation_epoch = new_activation_epoch
-                .checked_add(1)
-                .ok_or_else(|| anyhow::anyhow!("Overflow while calculating activation epoch"))?;
-            self.validators[*index].activation_epoch = activation_epoch;
+            let activation_epoch = compute_activation_exit_epoch(current_epoch);
+
+            self.validators[index].activation_epoch = activation_epoch;
         }
 
         Ok(())
