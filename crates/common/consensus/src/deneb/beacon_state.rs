@@ -437,10 +437,9 @@ impl BeaconState {
             exit_queue_epoch += 1;
         }
 
-        let validator = self
-            .validators
-            .get_mut(index as usize)
-            .expect("could not get validator");
+        let Some(validator) = self.validators.get_mut(index as usize) else {
+            bail!("could not get validator")
+        };
 
         if validator.exit_epoch != FAR_FUTURE_EPOCH {
             return Ok(());
