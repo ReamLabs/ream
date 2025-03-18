@@ -1,7 +1,8 @@
 #![cfg(feature = "ef-tests")]
 
 use ef_tests::{
-    test_consensus_type, test_epoch_processing, test_operation, test_rewards, test_shuffling, utils,
+    test_consensus_type, test_epoch_processing, test_operation, test_rewards, test_sanity_slots,
+    test_shuffling, utils,
 };
 use ream_consensus::{
     attestation::Attestation,
@@ -131,3 +132,6 @@ test_epoch_processing!(slashings_reset, process_slashings_reset);
 test_rewards!(basic, get_inactivity_penalty_deltas);
 test_rewards!(leak, get_inactivity_penalty_deltas);
 test_rewards!(random, get_inactivity_penalty_deltas);
+
+// Testing sanity_slots
+test_sanity_slots!(process_slots);

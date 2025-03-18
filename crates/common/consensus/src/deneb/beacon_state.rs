@@ -1492,20 +1492,6 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn process_slot(&mut self) -> anyhow::Result<()> {
-        // Cache state root
-        let previous_state_root = self.tree_hash_root();
-        self.state_roots[(self.slot % SLOTS_PER_HISTORICAL_ROOT) as usize] = previous_state_root;
-        // Cache latest block header state root
-        if self.latest_block_header.state_root == B256::default() {
-            self.latest_block_header.state_root = previous_state_root;
-        }
-        // Cache block root
-        let previous_block_root = self.latest_block_header.tree_hash_root();
-        self.block_roots[(self.slot % SLOTS_PER_HISTORICAL_ROOT) as usize] = previous_block_root;
-        Ok(())
-    }
-
     pub fn process_operations(&mut self, body: &BeaconBlockBody) -> anyhow::Result<()> {
         // Verify that outstanding deposits are processed up to the maximum number of deposits
         ensure!(
@@ -1732,6 +1718,7 @@ impl BeaconState {
 
     pub fn process_slots(&mut self, slot: u64) -> anyhow::Result<()> {
         ensure!(self.slot < slot);
+
         while self.slot < slot {
             self.process_slot()?;
             // Process epoch on the start slot of the next epoch
@@ -1740,6 +1727,20 @@ impl BeaconState {
             }
             self.slot += 1
         }
+        Ok(())
+    }
+
+    pub fn process_slot(&mut self) -> anyhow::Result<()> {
+        // Cache state root
+        let previous_state_root = self.tree_hash_root();
+        self.state_roots[(self.slot % SLOTS_PER_HISTORICAL_ROOT) as usize] = previous_state_root;
+        // Cache latest block header state root
+        if self.latest_block_header.state_root == B256::default() {
+            self.latest_block_header.state_root = previous_state_root;
+        }
+        // Cache block root
+        let previous_block_root = self.latest_block_header.tree_hash_root();
+        self.block_roots[(self.slot % SLOTS_PER_HISTORICAL_ROOT) as usize] = previous_block_root;
         Ok(())
     }
 
