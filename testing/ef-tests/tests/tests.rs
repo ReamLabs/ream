@@ -114,6 +114,10 @@ test_epoch_processing!(
 );
 test_epoch_processing!(inactivity_updates, process_inactivity_updates);
 test_epoch_processing!(
+    justification_and_finalization,
+    process_justification_and_finalization
+);
+test_epoch_processing!(
     participation_flag_updates,
     process_participation_flag_updates
 );

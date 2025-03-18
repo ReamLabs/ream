@@ -1195,6 +1195,7 @@ impl BeaconState {
         if self.get_current_epoch() <= GENESIS_EPOCH + 1 {
             return Ok(());
         }
+
         let previous_indices = self.get_unslashed_participating_indices(
             TIMELY_TARGET_FLAG_INDEX,
             self.get_previous_epoch(),
@@ -1203,14 +1204,17 @@ impl BeaconState {
             TIMELY_TARGET_FLAG_INDEX,
             self.get_current_epoch(),
         )?;
+
         let total_active_balance = self.get_total_active_balance();
         let previous_target_balance = self.get_total_balance(previous_indices);
         let current_target_balance = self.get_total_balance(current_indices);
+
         self.weigh_justification_and_finalization(
             total_active_balance,
             previous_target_balance,
             current_target_balance,
         )?;
+
         Ok(())
     }
 
@@ -1225,20 +1229,21 @@ impl BeaconState {
         let old_previous_justified_checkpoint = self.previous_justified_checkpoint;
         let old_current_justified_checkpoint = self.current_justified_checkpoint;
 
-        // Process justifications
         self.previous_justified_checkpoint = self.current_justified_checkpoint;
-        for i in 1..JUSTIFICATION_BITS_LENGTH as usize {
+
+        for i in (1..JUSTIFICATION_BITS_LENGTH).rev() {
             let bit = self
                 .justification_bits
-                .get(i - 1)
+                .get(i as usize - 1)
                 .map_err(|err| anyhow!("Failed to get justification bit {err:?}"))?;
             self.justification_bits
-                .set(i, bit)
-                .map_err(|err| anyhow!("Failed to set justification bits {err:?}"))?;
+                .set(i as usize, bit)
+                .map_err(|err| anyhow!("Failed to set justification bit {err:?}"))?;
         }
+
         self.justification_bits
             .set(0, false)
-            .map_err(|err| anyhow!("Failed to set justification bit 0 {err:?}"))?;
+            .map_err(|err| anyhow!("Failed to set justification bit 0: {err:?}"))?;
 
         if previous_epoch_target_balance * 3 >= total_active_balance * 2 {
             self.current_justified_checkpoint = Checkpoint {
@@ -1247,7 +1252,7 @@ impl BeaconState {
             };
             self.justification_bits
                 .set(1, true)
-                .map_err(|err| anyhow!("Failed to set justification {err:?}"))?;
+                .map_err(|err| anyhow!("Failed to set justification bit 1: {err:?}"))?;
         }
 
         if current_epoch_target_balance * 3 >= total_active_balance * 2 {
@@ -1257,34 +1262,40 @@ impl BeaconState {
             };
             self.justification_bits
                 .set(0, true)
-                .map_err(|err| anyhow!("Failed to set justification bit {err:?}"))?;
+                .map_err(|err| anyhow!("Failed to set justification bit 0: {err:?}"))?;
         }
 
-        let bits = &self.justification_bits;
-        let bits: Vec<bool> = bits.iter().collect();
+        // Process finalizations
+        let bits: Vec<bool> = self.justification_bits.iter().collect();
+
+        // The 2nd/3rd/4th most recent epochs are justified, the 2nd using the 4th as source
         if bits[1..4].iter().all(|&b| b)
             && old_previous_justified_checkpoint.epoch + 3 == current_epoch
         {
             self.finalized_checkpoint = old_previous_justified_checkpoint;
         }
 
+        // The 2nd/3rd most recent epochs are justified, the 2nd using the 3rd as source
         if bits[1..3].iter().all(|&b| b)
             && old_previous_justified_checkpoint.epoch + 2 == current_epoch
         {
             self.finalized_checkpoint = old_previous_justified_checkpoint;
         }
 
+        // The 1st/2nd/3rd most recent epochs are justified, the 1st using the 3rd as source
         if bits[0..3].iter().all(|&b| b)
             && old_current_justified_checkpoint.epoch + 2 == current_epoch
         {
             self.finalized_checkpoint = old_current_justified_checkpoint;
         }
 
+        // The 1st/2nd most recent epochs are justified, the 1st using the 2nd as source
         if bits[0..2].iter().all(|&b| b)
             && old_current_justified_checkpoint.epoch + 1 == current_epoch
         {
             self.finalized_checkpoint = old_current_justified_checkpoint;
         }
+
         Ok(())
     }
 
