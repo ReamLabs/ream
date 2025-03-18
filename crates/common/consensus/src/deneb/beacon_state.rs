@@ -1234,10 +1234,10 @@ impl BeaconState {
         for i in (1..JUSTIFICATION_BITS_LENGTH).rev() {
             let bit = self
                 .justification_bits
-                .get(i as usize - 1)
+                .get(i - 1)
                 .map_err(|err| anyhow!("Failed to get justification bit {err:?}"))?;
             self.justification_bits
-                .set(i as usize, bit)
+                .set(i, bit)
                 .map_err(|err| anyhow!("Failed to set justification bit {err:?}"))?;
         }
 
