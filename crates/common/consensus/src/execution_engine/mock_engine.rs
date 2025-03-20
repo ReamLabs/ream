@@ -7,7 +7,7 @@ use super::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest};
 
 #[derive(Deserialize, Debug)]
 pub struct MockExecutionEngine {
-    execution_valid: bool,
+    pub execution_valid: bool,
 }
 
 impl MockExecutionEngine {
