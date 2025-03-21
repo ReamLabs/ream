@@ -22,6 +22,10 @@ macro_rules! test_sanity_blocks {
                     let base_path = std::env::current_dir().unwrap().join("mainnet/tests/mainnet/deneb/sanity/blocks/pyspec_tests");
                     println!("Base path: {:?}", base_path);
 
+                    let mock_engine = MockExecutionEngine {
+                        execution_valid: true,
+                    };
+
                     for entry in std::fs::read_dir(&base_path).unwrap() {
                         let entry = entry.unwrap();
                         let case_dir = entry.path();
@@ -30,7 +34,6 @@ macro_rules! test_sanity_blocks {
                         }
 
                         let case_name = case_dir.file_name().unwrap().to_str().unwrap();
-                        println!("Testing case: {}", case_name);
 
                         let meta: MetaData = {
                             let meta_path = case_dir.join("meta.yaml");
@@ -38,13 +41,8 @@ macro_rules! test_sanity_blocks {
                                 .expect("Failed to read meta.yaml");
                             serde_yaml::from_str(&content).expect("Failed to parse meta.yaml")
                         };
-                        println!("Blocks count: {}, BLS setting: {:?}", meta.blocks_count, meta.bls_setting);
 
                         let pre_state: BeaconState = utils::read_ssz_snappy(&case_dir.join("pre.ssz_snappy")).expect("cannot find test asset (pre.ssz_snappy)");
-
-                        let mock_engine = MockExecutionEngine {
-                            execution_valid: true,
-                        };
 
                         let validate_result = true;
 
@@ -55,28 +53,20 @@ macro_rules! test_sanity_blocks {
                             let block_path = case_dir.join(format!("blocks_{}.ssz_snappy", i));
                             if !block_path.exists() {
                                 panic!("Test asset not found: {:?}", block_path);
-                            } else {
-                                println!("Found test asset: {:?}", block_path);
                             }
 
                             let signed_block: SignedBeaconBlock = utils::read_ssz_snappy(&block_path)
-                                .expect(&format!("cannot find test asset (blocks_{}.ssz_snappy)", i));
-
-                            println!("block: {:?}", signed_block);
+                                .expect(&format!("cannot find test asset (blocks_{i}.ssz_snappy)"));
 
                             let result = state.$processing_fn(signed_block, validate_result, &mock_engine).await;
                         }
 
-                        let expected_post = if case_dir.join("post.ssz_snappy").exists() {
-                            Some(utils::read_ssz_snappy::<BeaconState>(&case_dir.join("post.ssz_snappy")))
-                        } else {
-                            None
-                        };
+                        let expected_post = utils::read_ssz_snappy::<BeaconState>(&case_dir.join("post.ssz_snappy"));
 
                         match (result, expected_post) {
                             (Ok(_), Some(expected)) => {
                                 let locked_state = state;
-                                assert_eq!(locked_state, expected.unwrap(), "Post state mismatch in case {}", case_name);
+                                assert_eq!(locked_state, expected, "Post state mismatch in case {}", case_name);
                             }
                             (Ok(_), None) => {
                                 println!("No post.ssz_snappy for case {}. Test passed.", case_name);
