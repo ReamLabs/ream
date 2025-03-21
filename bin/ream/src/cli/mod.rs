@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 
 const DEFAULT_NETWORK: &str = "mainnet";
@@ -10,6 +10,7 @@ const DEFAULT_NETWORK: &str = "mainnet";
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
+
 }
 
 #[derive(Debug, Subcommand)]
@@ -32,6 +33,26 @@ pub struct NodeConfig {
         value_parser = network_parser
     )]
     pub network: Arc<NetworkSpec>,
+
+    /// HTTP port number
+    #[arg(long, default_value_t = 5052)]
+    pub http_port: usize,
+
+    /// HTTP bind address
+    #[arg(long,default_value_t = String::from("127.0.0.1"))]
+    pub http_address: String,
+
+    /// Allow CORS
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub http_allow_origin: bool,
+
+    /// discv5 listening port
+    #[arg(long, default_value_t = 8080)]
+    pub discv_listen_port: u16,
+
+    /// disable discovery
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub disable_discovery: bool,
 
     #[arg(
         long,
