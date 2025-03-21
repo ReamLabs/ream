@@ -20,7 +20,6 @@ macro_rules! test_sanity_blocks {
                 #[tokio::test]
                 async fn test_sanity_blocks() {
                     let base_path = std::env::current_dir().unwrap().join("mainnet/tests/mainnet/deneb/sanity/blocks/pyspec_tests");
-                    println!("Base path: {:?}", base_path);
 
                     let mock_engine = MockExecutionEngine {
                         execution_valid: true,
