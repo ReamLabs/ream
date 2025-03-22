@@ -4,10 +4,12 @@ macro_rules! test_sanity_blocks {
         #[cfg(test)]
         #[allow(non_snake_case)]
         mod test_sanity_blocks {
-            use super::*;
             use std::{fs, path::Path};
+
             use ream_consensus::execution_engine::mock_engine::MockExecutionEngine;
             use serde_yaml;
+
+            use super::*;
 
             #[derive(Debug, serde::Deserialize)]
             struct MetaData {
