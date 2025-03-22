@@ -20,6 +20,8 @@ ream-discv5 = { workspace = true }
 ream-executor = { workspace = true }
 ream-network-spec = { workspace = true }
 ream-p2p = { workspace = true }
+ream-beacon-api={workspace = true}
+ream-config={workspace = true}
 
 
 # other dependencies
