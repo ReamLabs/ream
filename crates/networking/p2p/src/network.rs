@@ -26,7 +26,7 @@ use parking_lot::Mutex;
 use ream_discv5::discovery::{DiscoveredPeers, Discovery};
 use ream_executor::ReamExecutor;
 use ream_gossipsub::{snappy::SnappyTransform, topics::GossipTopic};
-use tracing::{error, info, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::{bootnodes::Bootnodes, config::NetworkConfig};
 
@@ -190,9 +190,9 @@ impl Network {
 
         for topic in &config.gossipsub_config.topics {
             if self.subscribe_to_topic(*topic) {
-                info!("Subscribed to topic: {:?}", topic);
+                info!("Subscribed to topic: {}", topic);
             } else {
-                error!("Failed to subscribe to topic: {:?}", topic);
+                error!("Failed to subscribe to topic: {}", topic);
             }
         }
 
@@ -223,6 +223,10 @@ impl Network {
                 ReamBehaviourEvent::Identify(_) => None,
                 ReamBehaviourEvent::Discovery(DiscoveredPeers { peers }) => {
                     self.handle_discovered_peers(peers);
+                    None
+                }
+                ReamBehaviourEvent::Gossipsub(event) => {
+                    self.handle_gossipsub_event(event);
                     None
                 }
                 ream_behavior_event => {
@@ -260,6 +264,26 @@ impl Network {
                     warn!("Failed to dial peer: {err:?}");
                 }
             }
+        }
+    }
+
+    fn handle_gossipsub_event(&mut self, event: gossipsub::Event) {
+        info!("Gossipsub event: {:?}", event);
+        match event {
+            gossipsub::Event::Message {
+                propagation_source,
+                message_id: _,
+                message,
+            } => {
+                trace!("Peer {} sent message: {:?}", propagation_source, message);
+            }
+            gossipsub::Event::Subscribed { peer_id, topic } => {
+                trace!("Peer {} subscribed to topic: {:?}", peer_id, topic);
+            }
+            gossipsub::Event::Unsubscribed { peer_id, topic } => {
+                trace!("Peer {} unsubscribed from topic: {:?}", peer_id, topic);
+            }
+            _ => {}
         }
     }
 

@@ -22,8 +22,8 @@ impl std::fmt::Display for GossipTopic {
             "/{}/{}/{}/{}",
             TOPIC_PREFIX,
             hex::encode(self.fork),
-            ENCODING_POSTFIX,
-            self.kind
+            self.kind,
+            ENCODING_POSTFIX
         )
     }
 }

@@ -16,7 +16,7 @@ impl GossipsubConfig {
         let seconds_per_slot = 12;
         let slots_per_epoch = 32;
         let config = gossipsub::ConfigBuilder::default()
-            .max_transmit_size(1023 * 1024)
+            .max_transmit_size(65536)
             .heartbeat_interval(Duration::from_millis(700))
             .fanout_ttl(Duration::from_secs(60))
             .mesh_n(8)
