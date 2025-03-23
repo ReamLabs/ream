@@ -152,12 +152,10 @@ impl Network {
         }
 
         for bootnode in config.boot_nodes_enr.clone() {
-            if let Some(ipv4) = bootnode.ip4() {
+            if let (Some(ipv4), Some(tcp_port)) = (bootnode.ip4(), bootnode.tcp4()) {
                 let mut multi_addr = Multiaddr::empty();
-                if let Some(tcp_port) = bootnode.tcp4() {
-                    multi_addr.push(ipv4.into());
-                    multi_addr.push(Protocol::Tcp(tcp_port));
-                }
+                multi_addr.push(ipv4.into());
+                multi_addr.push(Protocol::Tcp(tcp_port));
                 self.swarm.dial(multi_addr).unwrap();
             }
         }
