@@ -34,7 +34,7 @@ async fn main() {
     .build();
     let binding = NetworkConfig {
         discv5_config,
-        boot_nodes_enr: bootnodes.bootnodes,
+        bootnodes: bootnodes.bootnodes,
         disable_discovery: false,
         total_peers: 0,
     };

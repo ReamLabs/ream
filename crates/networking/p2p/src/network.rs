@@ -151,7 +151,7 @@ impl Network {
             }
         }
 
-        for bootnode in config.boot_nodes_enr.clone() {
+        for bootnode in &config.bootnodes {
             if let (Some(ipv4), Some(tcp_port)) = (bootnode.ip4(), bootnode.tcp4()) {
                 let mut multi_addr = Multiaddr::empty();
                 multi_addr.push(ipv4.into());

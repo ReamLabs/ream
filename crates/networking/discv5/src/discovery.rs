@@ -66,16 +66,16 @@ impl Discovery {
         let mut discv5 = Discv5::new(enr, enr_local, config.discv5_config.clone())
             .map_err(|err| anyhow!("Failed to create discv5: {err:?}"))?;
 
-        // adding bootnode to DHT
-        for bootnode_enr in config.boot_nodes_enr.clone() {
-            if bootnode_enr.node_id() == node_local_id {
-                // Skip adding ourselves to the routing table if we are a bootnode
+        // adding bootnodes to discv5
+        for enr in config.bootnodes.clone() {
+            // Skip adding ourselves to the routing table if we are a bootnode
+            if enr.node_id() == node_local_id {
                 continue;
             }
 
-            let _ = discv5.add_enr(bootnode_enr).map_err(|err| {
-                error!("Failed to add bootnode to DHT {err:?}");
-            });
+            if let Err(err) = discv5.add_enr(enr) {
+                error!("Failed to add bootnode to Discv5 {err:?}");
+            };
         }
 
         // init ports
