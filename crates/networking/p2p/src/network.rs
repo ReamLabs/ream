@@ -10,10 +10,11 @@ use std::{
 
 use anyhow::anyhow;
 use discv5::Enr;
+use futures::StreamExt;
 use libp2p::{
     connection_limits,
     core::{muxing::StreamMuxerBox, transport::Boxed},
-    futures::StreamExt,
+    gossipsub::{self, AllowAllSubscriptionFilter, IdentTopic as Topic},
     identify,
     multiaddr::Protocol,
     noise,
@@ -24,10 +25,12 @@ use libp2p_identity::{secp256k1, Keypair, PublicKey};
 use parking_lot::Mutex;
 use ream_discv5::discovery::{DiscoveredPeers, Discovery};
 use ream_executor::ReamExecutor;
-use ream_gossipsub::{snappy::SnappyTransform, topics::GossipTopic, Gossipsub};
+use ream_gossipsub::{snappy::SnappyTransform, topics::GossipTopic};
 use tracing::{error, info, warn};
 
 use crate::{bootnodes::Bootnodes, config::NetworkConfig};
+
+pub type GossipsubBehaviour = gossipsub::Behaviour<SnappyTransform, AllowAllSubscriptionFilter>;
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
@@ -37,7 +40,7 @@ pub(crate) struct ReamBehaviour {
     pub discovery: Discovery,
 
     /// The gossip domain: gossipsub
-    pub gossipsub: Gossipsub,
+    pub gossipsub: GossipsubBehaviour,
 
     pub connection_registry: connection_limits::Behaviour,
 }
@@ -82,8 +85,14 @@ impl Network {
 
         let gossipsub = {
             let snappy_transform =
-                SnappyTransform::new(config.gossipsub_config.max_size_per_message);
-            Gossipsub::new(config.gossipsub_config.clone(), snappy_transform)
+                SnappyTransform::new(config.gossipsub_config.config.max_transmit_size());
+            gossipsub::Behaviour::new_with_transform(
+                gossipsub::MessageAuthenticity::Anonymous,
+                config.gossipsub_config.config.clone(),
+                None,
+                snappy_transform,
+            )
+            .map_err(|err| anyhow!("Failed to create gossipsub behaviour: {err:?}"))?
         };
 
         let connection_limits = {
@@ -179,7 +188,7 @@ impl Network {
             }
         }
 
-        for topic in &config.topics {
+        for topic in &config.gossipsub_config.topics {
             if self.subscribe_to_topic(*topic) {
                 info!("Subscribed to topic: {:?}", topic);
             } else {
@@ -256,20 +265,26 @@ impl Network {
 
     fn subscribe_to_topic(&mut self, topic: GossipTopic) -> bool {
         self.subscribed_topics.lock().insert(topic);
+
+        let topic: Topic = topic.into();
+
         self.swarm
             .behaviour_mut()
             .gossipsub
-            .subscribe(topic)
+            .subscribe(&topic)
             .is_ok()
     }
 
     #[allow(dead_code)]
     fn unsubscribe_from_topic(&mut self, topic: GossipTopic) -> bool {
         self.subscribed_topics.lock().remove(&topic);
+
+        let topic: Topic = topic.into();
+
         self.swarm
             .behaviour_mut()
             .gossipsub
-            .unsubscribe(topic)
+            .unsubscribe(&topic)
             .is_ok()
     }
 }

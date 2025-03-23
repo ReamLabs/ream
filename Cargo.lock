@@ -3891,10 +3891,9 @@ dependencies = [
 name = "ream-gossipsub"
 version = "0.1.0"
 dependencies = [
- "anyhow",
+ "hex",
  "libp2p",
  "snap",
- "void",
 ]
 
 [[package]]

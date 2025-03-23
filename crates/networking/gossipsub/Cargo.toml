@@ -10,7 +10,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-anyhow.workspace = true
+hex.workspace = true
 libp2p.workspace = true
 snap.workspace = true
-void.workspace = true
