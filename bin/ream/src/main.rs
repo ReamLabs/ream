@@ -4,7 +4,7 @@ use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
-use ream_p2p::network::Network;
+use ream_p2p::{bootnodes::Bootnodes, network::Network};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -25,6 +25,8 @@ async fn main() {
 
     let main_executor = ReamExecutor::new().unwrap();
 
+    let bootnodes = Bootnodes::new();
+
     let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
         Ipv4Addr::UNSPECIFIED.into(),
         8080,
@@ -32,7 +34,7 @@ async fn main() {
     .build();
     let binding = NetworkConfig {
         discv5_config,
-        boot_nodes_enr: vec![],
+        boot_nodes_enr: bootnodes.bootnodes,
         disable_discovery: false,
         total_peers: 0,
     };
