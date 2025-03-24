@@ -3,6 +3,7 @@ const PROTOCOL_PREFIX: &str = "/eth2/beacon_chain/req";
 #[derive(Debug, Clone)]
 pub struct ProtocolId {
     pub protocol_id: String,
+    pub protocol: SupportedProtocol,
 }
 
 impl ProtocolId {
@@ -14,7 +15,10 @@ impl ProtocolId {
             protocol.message_name(),
             protocol.schema_version()
         );
-        ProtocolId { protocol_id }
+        ProtocolId {
+            protocol_id,
+            protocol,
+        }
     }
 }
 
@@ -25,7 +29,7 @@ impl AsRef<str> for ProtocolId {
 }
 
 /// All valid protocol name and version combinations.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SupportedProtocol {
     BeaconBlocksByRangeV2,
     BeaconBlocksByRootV2,
@@ -65,18 +69,9 @@ impl SupportedProtocol {
     }
 
     pub fn supported_protocols() -> Vec<ProtocolId> {
-        vec![
-            SupportedProtocol::BeaconBlocksByRangeV2,
-            SupportedProtocol::BeaconBlocksByRootV2,
-            SupportedProtocol::BlobSidecarsByRangeV1,
-            SupportedProtocol::BlobSidecarsByRootV1,
-            SupportedProtocol::GetMetaDataV2,
-            SupportedProtocol::GoodbyeV1,
-            SupportedProtocol::PingV1,
-            SupportedProtocol::StatusV1,
-        ]
-        .into_iter()
-        .map(ProtocolId::new)
-        .collect()
+        vec![SupportedProtocol::GetMetaDataV2]
+            .into_iter()
+            .map(ProtocolId::new)
+            .collect()
     }
 }
