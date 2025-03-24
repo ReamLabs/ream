@@ -1,38 +1,46 @@
+use std::task::{Context, Poll};
+
 use libp2p::swarm::{
     handler::{ConnectionEvent, FullyNegotiatedInbound, FullyNegotiatedOutbound},
     ConnectionHandler, ConnectionHandlerEvent, SubstreamProtocol,
 };
 use tracing::warn;
 
-use super::{inbound_protocol::ReqRespInboundProtocol, outbound_protocol::ReqRespOutboundProtocol};
+use super::{
+    error::ReqRespError, inbound_protocol::InboundReqRespProtocol,
+    outbound_protocol::OutboundReqRespProtocol,
+};
 
 #[derive(Debug)]
-pub struct OutboundReqRespMessage {}
+pub enum ConnectionRequest {
+    Request(()),
+    Response(()),
+    Shutdown,
+}
 
 #[derive(Debug)]
-pub struct InboundReqRespMessage {}
+pub enum HandlerEvent {
+    Ok(()),
+    Err(ReqRespError),
+    Close,
+}
 
 pub struct ReqRespConnectionHandler {
-    listen_protocol: SubstreamProtocol<ReqRespInboundProtocol, ()>,
+    listen_protocol: SubstreamProtocol<InboundReqRespProtocol, ()>,
 }
 
 impl ReqRespConnectionHandler {
-    pub fn new(listen_protocol: SubstreamProtocol<ReqRespInboundProtocol, ()>) -> Self {
+    pub fn new(listen_protocol: SubstreamProtocol<InboundReqRespProtocol, ()>) -> Self {
         ReqRespConnectionHandler { listen_protocol }
     }
 }
 
 impl ConnectionHandler for ReqRespConnectionHandler {
-    type FromBehaviour = OutboundReqRespMessage;
-
-    type ToBehaviour = InboundReqRespMessage;
-
-    type InboundProtocol = ReqRespInboundProtocol;
-
-    type OutboundProtocol = ReqRespOutboundProtocol;
-
+    type FromBehaviour = ConnectionRequest;
+    type ToBehaviour = HandlerEvent;
+    type InboundProtocol = InboundReqRespProtocol;
+    type OutboundProtocol = OutboundReqRespProtocol;
     type InboundOpenInfo = ();
-
     type OutboundOpenInfo = ();
 
     fn listen_protocol(&self) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
@@ -41,16 +49,21 @@ impl ConnectionHandler for ReqRespConnectionHandler {
 
     fn poll(
         &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<
+        _cx: &mut Context<'_>,
+    ) -> Poll<
         ConnectionHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::ToBehaviour>,
     > {
         warn!("ReqRespConnectionHandler poll");
-        std::task::Poll::Pending
+        Poll::Pending
     }
 
-    fn on_behaviour_event(&mut self, _event: Self::FromBehaviour) {
-        warn!("Unexpected behaviour event: {:?}", _event);
+    fn on_behaviour_event(&mut self, event: ConnectionRequest) {
+        warn!("Unexpected behaviour event: {:?}", event);
+        match event {
+            ConnectionRequest::Request(_) => todo!(),
+            ConnectionRequest::Response(_) => todo!(),
+            ConnectionRequest::Shutdown => todo!(),
+        }
     }
 
     fn on_connection_event(
