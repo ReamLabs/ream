@@ -80,7 +80,7 @@ macro_rules! test_sanity_blocks {
                             );
                         }
                         (Ok(_), None) => {
-                            println!("No post.ssz_snappy for case {}. Test passed.", case_name);
+                            panic!("Test case {} should have failed but succeeded", case_name);
                         }
                         (Err(err), Some(_)) => {
                             panic!(
@@ -90,10 +90,6 @@ macro_rules! test_sanity_blocks {
                         }
                         (Err(_), None) => {
                             // Expected: invalid operations result in an error and no post state.
-                            println!(
-                                "Test case {} failed as expected, no post state available.",
-                                case_name
-                            );
                         }
                     }
                 }

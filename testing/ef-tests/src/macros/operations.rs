@@ -12,7 +12,6 @@ macro_rules! test_operation_impl {
                 continue;
             }
             let case_name = case_dir.file_name().unwrap().to_str().unwrap();
-            println!("Testing case: {}", case_name);
 
             let pre_state: Arc<Mutex<BeaconState>> = Arc::new(Mutex::new(
                 utils::read_ssz_snappy(&case_dir.join("pre.ssz_snappy"))
