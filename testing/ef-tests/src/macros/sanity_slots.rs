@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! test_sanity_slots {
-    ($processing_fn:path) => {
+    ($process_slots_fn:ident) => {
         #[cfg(test)]
         #[allow(non_snake_case)]
         mod tests_sanity {
@@ -30,6 +30,7 @@ macro_rules! test_sanity_slots {
                     }
 
                     let case_name = case_dir.file_name().unwrap().to_str().unwrap();
+                    println!("Testing case: {}", case_name);
 
                     let slot: u64 = {
                         let slot_path = case_dir.join("slots.yaml");
@@ -40,16 +41,14 @@ macro_rules! test_sanity_slots {
                             .expect("Failed to parse slot number from slots.yaml")
                     };
 
-                    let pre_state: BeaconState =
+                    let mut state: BeaconState =
                         utils::read_ssz_snappy(&case_dir.join("pre.ssz_snappy"))
                             .expect("cannot find test asset (pre.ssz_snappy)");
-
-                    let mut state = pre_state.clone();
 
                     let expected_post =
                         utils::read_ssz_snappy::<BeaconState>(&case_dir.join("post.ssz_snappy"));
 
-                    let result = state.process_slots(state.slot + slot);
+                    let result = state.$process_slots_fn(state.slot + slot);
 
                     match (result, expected_post) {
                         (Ok(_), Some(expected)) => {

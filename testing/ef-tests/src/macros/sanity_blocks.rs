@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! test_sanity_blocks {
-    ($processing_fn:path) => {
+    ($state_transition_fn:ident) => {
         #[cfg(test)]
         #[allow(non_snake_case)]
         mod test_sanity_blocks {
@@ -35,6 +35,7 @@ macro_rules! test_sanity_blocks {
                     }
 
                     let case_name = case_dir.file_name().unwrap().to_str().unwrap();
+                    println!("Testing case: {}", case_name);
 
                     let meta: MetaData = {
                         let meta_path = case_dir.join("meta.yaml");
@@ -43,13 +44,12 @@ macro_rules! test_sanity_blocks {
                         serde_yaml::from_str(&content).expect("Failed to parse meta.yaml")
                     };
 
-                    let pre_state: BeaconState =
+                    let mut state: BeaconState =
                         utils::read_ssz_snappy(&case_dir.join("pre.ssz_snappy"))
                             .expect("cannot find test asset (pre.ssz_snappy)");
 
                     let validate_result = true;
 
-                    let mut state = pre_state.clone();
                     let mut result: Result<(), String> = Ok(());
 
                     for i in 0..meta.blocks_count {
@@ -62,7 +62,7 @@ macro_rules! test_sanity_blocks {
                             .expect(&format!("cannot find test asset (blocks_{i}.ssz_snappy)"));
 
                         result = state
-                            .state_transition(signed_block, validate_result, &mock_engine)
+                            .$state_transition_fn(signed_block, validate_result, &mock_engine)
                             .await
                             .map_err(|err| err.to_string());
                     }
@@ -90,6 +90,10 @@ macro_rules! test_sanity_blocks {
                         }
                         (Err(_), None) => {
                             // Expected: invalid operations result in an error and no post state.
+                            println!(
+                                "Test case {} failed as expected, no post state available.",
+                                case_name
+                            );
                         }
                     }
                 }
