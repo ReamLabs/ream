@@ -26,10 +26,10 @@ async fn main() {
     let main_executor = ReamExecutor::new().unwrap();
 
     match cli.command {
-        Commands::Node(cmd) => {
+        Commands::Node(config) => {
             info!("starting up...");
 
-            let bootnodes = Bootnodes::new(cmd.network.network);
+            let bootnodes = Bootnodes::new(config.network.network);
 
             let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
                 Ipv4Addr::UNSPECIFIED.into(),

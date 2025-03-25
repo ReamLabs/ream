@@ -16,11 +16,11 @@ pub struct Cli {
 pub enum Commands {
     /// Start the node
     #[command(name = "node")]
-    Node(NodeCommand),
+    Node(NodeConfig),
 }
 
 #[derive(Debug, Parser)]
-pub struct NodeCommand {
+pub struct NodeConfig {
     /// Verbosity level
     #[arg(short, long, default_value_t = 3)]
     pub verbosity: u8,
@@ -43,8 +43,8 @@ mod tests {
         let cli = Cli::parse_from(["program", "node", "--verbosity", "2"]);
 
         match cli.command {
-            Commands::Node(cmd) => {
-                assert_eq!(cmd.verbosity, 2);
+            Commands::Node(config) => {
+                assert_eq!(config.verbosity, 2);
             }
         }
     }
