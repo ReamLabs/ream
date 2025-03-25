@@ -38,10 +38,10 @@ macro_rules! test_epoch_processing {
                                 assert_eq!(state, expected, "Post state mismatch in case {case_name}");
                             }
                             (Ok(_), None) => {
-                                panic!("Test case {case_name} should have failed but succeeded");
+                                panic!("Test case {} should have failed but succeeded", case_name);
                             }
                             (Err(err), Some(_)) => {
-                                panic!("Test case {case_name} should have succeeded but failed, err={err:?}");
+                                panic!("Test case {} should have succeeded but failed, err={:?}", case_name, err);
                             }
                             (Err(_), None) => {
                                 // Test should fail and there should be no post state
