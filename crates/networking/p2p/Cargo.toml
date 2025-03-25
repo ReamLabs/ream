@@ -13,6 +13,7 @@ version.workspace = true
 # ream dependencies
 ream-executor.workspace = true
 ream-discv5.workspace = true
+ream-network-spec.workspace = true
 
 # misc
 anyhow.workspace = true

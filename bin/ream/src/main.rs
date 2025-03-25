@@ -25,23 +25,24 @@ async fn main() {
 
     let main_executor = ReamExecutor::new().unwrap();
 
-    let bootnodes = Bootnodes::new();
-
-    let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
-        Ipv4Addr::UNSPECIFIED.into(),
-        8080,
-    ))
-    .build();
-    let binding = NetworkConfig {
-        discv5_config,
-        bootnodes: bootnodes.bootnodes,
-        disable_discovery: false,
-        total_peers: 0,
-    };
-
     match cli.command {
-        Commands::Node(_cmd) => {
+        Commands::Node(cmd) => {
             info!("starting up...");
+
+            let bootnodes = Bootnodes::new(cmd.network.network);
+
+            let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
+                Ipv4Addr::UNSPECIFIED.into(),
+                8080,
+            ))
+            .build();
+            let binding = NetworkConfig {
+                discv5_config,
+                bootnodes: bootnodes.bootnodes,
+                disable_discovery: false,
+                total_peers: 0,
+            };
+
             match Network::init(async_executor, &binding).await {
                 Ok(mut network) => {
                     main_executor.spawn(async move {

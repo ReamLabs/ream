@@ -5,11 +5,13 @@ pub enum Network {
     Mainnet,
     Holesky,
     Sepolia,
+    Hoodi,
+    Dev,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NetworkSpec {
-    network: Network,
+    pub network: Network,
 }
 
 pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
@@ -29,6 +31,20 @@ pub static HOLESKY: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
 pub static SEPOLIA: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
     NetworkSpec {
         network: Network::Sepolia,
+    }
+    .into()
+});
+
+pub static HOODI: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
+    NetworkSpec {
+        network: Network::Hoodi,
+    }
+    .into()
+});
+
+pub static DEV: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
+    NetworkSpec {
+        network: Network::Dev,
     }
     .into()
 });

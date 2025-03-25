@@ -3904,6 +3904,7 @@ dependencies = [
  "libp2p-mplex",
  "ream-discv5",
  "ream-executor",
+ "ream-network-spec",
  "serde",
  "serde_yaml",
  "tokio",
