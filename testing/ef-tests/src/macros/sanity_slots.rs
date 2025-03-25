@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! test_sanity_slots {
-    ($process_slots_fn:ident) => {
+    () => {
         #[cfg(test)]
         #[allow(non_snake_case)]
         mod tests_sanity {
@@ -48,7 +48,7 @@ macro_rules! test_sanity_slots {
                     let expected_post =
                         utils::read_ssz_snappy::<BeaconState>(&case_dir.join("post.ssz_snappy"));
 
-                    let result = state.$process_slots_fn(state.slot + slot);
+                    let result = state.process_slots(state.slot + slot);
 
                     match (result, expected_post) {
                         (Ok(_), Some(expected)) => {

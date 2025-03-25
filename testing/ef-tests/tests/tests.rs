@@ -1,4 +1,4 @@
-// #![cfg(feature = "ef-tests")]
+#![cfg(feature = "ef-tests")]
 
 use ef_tests::{
     test_consensus_type, test_epoch_processing, test_operation, test_rewards, test_sanity_blocks,
@@ -134,7 +134,7 @@ test_rewards!(leak, get_inactivity_penalty_deltas);
 test_rewards!(random, get_inactivity_penalty_deltas);
 
 // Testing sanity_blocks
-test_sanity_blocks!(state_transition);
+test_sanity_blocks!();
 
 // Testing sanity_slots
-test_sanity_slots!(process_slots);
+test_sanity_slots!();

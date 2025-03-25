@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! test_sanity_blocks {
-    ($state_transition_fn:ident) => {
+    () => {
         #[cfg(test)]
         #[allow(non_snake_case)]
         mod test_sanity_blocks {
@@ -62,7 +62,7 @@ macro_rules! test_sanity_blocks {
                             .expect(&format!("cannot find test asset (blocks_{i}.ssz_snappy)"));
 
                         result = state
-                            .$state_transition_fn(signed_block, validate_result, &mock_engine)
+                            .state_transition(signed_block, validate_result, &mock_engine)
                             .await
                             .map_err(|err| err.to_string());
                     }
