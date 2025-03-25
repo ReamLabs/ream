@@ -26,12 +26,11 @@ macro_rules! test_epoch_processing {
                         let case_name = case_dir.file_name().unwrap().to_str().unwrap();
                         println!("Testing case: {}", case_name);
 
-                        let pre_state: BeaconState =
+                        let mut state: BeaconState =
                             utils::read_ssz_snappy(&case_dir.join("pre.ssz_snappy")).expect("cannot find test asset(pre.ssz_snappy)");
 
                         let expected_post = utils::read_ssz_snappy::<BeaconState>(&case_dir.join("post.ssz_snappy"));
 
-                        let mut state = pre_state.clone();
                         let result = state.$processing_fn();
 
                         match (result, expected_post) {
