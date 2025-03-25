@@ -40,7 +40,7 @@ use crate::{
     eth_1_data::Eth1Data,
     execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
     fork::Fork,
-    fork_choice::helpers::constants::{
+    fork_choice::constants::{
         BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
         DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
         DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,

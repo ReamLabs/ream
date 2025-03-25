@@ -1,7 +1,7 @@
 use blst::min_pk::PublicKey as BlstPublicKey;
 use ssz_types::FixedVector;
 
-use crate::{errors::BLSError, pubkey::PubKey};
+use crate::{errors::BLSError, pubkey::PubKey, traits::Validate};
 
 impl From<BlstPublicKey> for PubKey {
     fn from(value: BlstPublicKey) -> Self {
@@ -14,5 +14,13 @@ impl From<BlstPublicKey> for PubKey {
 impl PubKey {
     pub fn to_blst_pubkey(&self) -> Result<BlstPublicKey, BLSError> {
         BlstPublicKey::from_bytes(&self.inner).map_err(|err| BLSError::BlstError(err.into()))
+    }
+}
+
+impl Validate for Pubkey {
+    type Error = BLSError;
+
+    fn validate(&self) -> Result<(), BLSError> {
+        self.to_blst_pubkey().validate()
     }
 }

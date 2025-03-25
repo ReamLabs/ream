@@ -6,7 +6,7 @@ use crate::{
     checkpoint::Checkpoint,
     deneb::beacon_state::BeaconState,
     fork_choice::{
-        helpers::constants::{EFFECTIVE_BALANCE_INCREMENT, PROPOSER_SCORE_BOOST, SLOTS_PER_EPOCH},
+        constants::{EFFECTIVE_BALANCE_INCREMENT, PROPOSER_SCORE_BOOST, SLOTS_PER_EPOCH},
         store::Store,
     },
     misc::compute_epoch_at_slot,

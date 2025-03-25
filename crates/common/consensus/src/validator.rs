@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
-use crate::fork_choice::helpers::constants::{
+use crate::fork_choice::constants::{
     ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH, MAX_EFFECTIVE_BALANCE,
 };
 

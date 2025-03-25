@@ -1,6 +1,6 @@
 use bls12_381::{G1Affine, G1Projective};
 
-use crate::{PubKey, errors::BLSError};
+use crate::{PubKey, errors::BLSError, traits::Validate};
 
 impl From<G1Projective> for PubKey {
     fn from(value: G1Projective) -> Self {
@@ -25,5 +25,13 @@ impl TryFrom<&PubKey> for G1Affine {
             Some(point) => Ok(point),
             None => Err(BLSError::InvalidPublicKey),
         }
+    }
+}
+
+impl Validate for PubKey {
+    type Error = BLSError;
+
+    fn validate(&self) -> Result<(), BLSError> {
+        Ok(())
     }
 }

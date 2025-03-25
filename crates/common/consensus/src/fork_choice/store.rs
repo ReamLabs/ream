@@ -2,7 +2,7 @@ use alloy_primitives::{B256, map::HashMap};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    helpers::constants::{
+    constants::{
         GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, REORG_HEAD_WEIGHT_THRESHOLD,
         REORG_MAX_EPOCHS_SINCE_FINALIZATION, REORG_PARENT_WEIGHT_THRESHOLD, SECONDS_PER_SLOT,
     },

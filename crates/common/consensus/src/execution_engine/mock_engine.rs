@@ -1,9 +1,14 @@
 use std::path::Path;
 
+use alloy_primitives::B256;
+use anyhow::Ok;
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use super::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest};
+use super::{
+    engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest,
+    rpc_types::get_blobs::BlobsAndProofV1,
+};
 
 #[derive(Deserialize, Debug)]
 pub struct MockExecutionEngine {
@@ -24,5 +29,16 @@ impl ExecutionApi for MockExecutionEngine {
         _new_payload_request: NewPayloadRequest,
     ) -> anyhow::Result<bool> {
         Ok(self.execution_valid)
+    }
+
+    async fn engine_get_blobs_v1(
+        &self,
+        blob_version_hashes: Vec<B256>,
+    ) -> anyhow::Result<Vec<Option<BlobsAndProofV1>>> {
+        let mut result = Vec::with_capacity(blob_version_hashes.len());
+        for _i in 0..blob_version_hashes.len() {
+            result.push(None);
+        }
+        Ok(result)
     }
 }

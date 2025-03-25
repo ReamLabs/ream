@@ -23,6 +23,7 @@ pub mod indexed_attestation;
 pub mod kzg_commitment;
 pub mod misc;
 pub mod pending_attestation;
+pub mod polynomial_commitments;
 pub mod predicates;
 pub mod proposer_slashing;
 pub mod signing_data;
