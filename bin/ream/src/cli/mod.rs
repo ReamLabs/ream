@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use clap::{Parser, Subcommand};
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
@@ -32,6 +32,19 @@ pub struct NodeConfig {
         value_parser = network_parser
     )]
     pub network: Arc<NetworkSpec>,
+
+    #[arg(
+        long,
+        help = "The directory for storing application data. If used together with --ephemeral, new child directory will be created."
+    )]
+    pub data_dir: Option<PathBuf>,
+
+    #[arg(
+        long,
+        short,
+        help = "Use new data directory, located in OS temporary directory. If used together with --data-dir, new directory will be created there instead."
+    )]
+    pub ephemeral: bool,
 }
 
 #[cfg(test)]

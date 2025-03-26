@@ -5,6 +5,7 @@ use ream::cli::{Cli, Commands};
 use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
 use ream_p2p::{bootnodes::Bootnodes, network::Network};
+use ream_storage::db::ReamDB;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -21,9 +22,9 @@ async fn main() {
 
     let cli = Cli::parse();
 
-    let async_executor = ReamExecutor::new().unwrap();
+    let async_executor = ReamExecutor::new().expect("unable to create executor");
 
-    let main_executor = ReamExecutor::new().unwrap();
+    let main_executor = ReamExecutor::new().expect("unable to create executor");
 
     match cli.command {
         Commands::Node(config) => {
@@ -42,6 +43,11 @@ async fn main() {
                 disable_discovery: false,
                 total_peers: 0,
             };
+
+            let _ream_db = ReamDB::new(config.data_dir, config.ephemeral)
+                .expect("unable to init Ream Database");
+
+            info!("ream database initialized ");
 
             match Network::init(async_executor, &binding).await {
                 Ok(mut network) => {

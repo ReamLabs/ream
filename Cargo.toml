@@ -35,6 +35,7 @@ anyhow = "1.0"
 async-trait = "0.1.86"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 clap = "4"
+directories = { version = "6.0.0" } 
 discv5 = { version = "0.9.0", features = ["libp2p"] }
 enr = "0.13.0"
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }
@@ -48,6 +49,7 @@ jsonwebtoken = "9.3.1"
 libp2p-identity = "0.2"
 libp2p-mplex = "0.42"
 libp2p = { version = "0.54", default-features = false, features = ["identify", "yamux", "noise", "dns", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
+redb = { version = "2.4.0" }
 reqwest = { version = "0.12", features = ["json"] }
 rstest = "0.23"
 serde = { version = '1.0', features = ['derive', "rc"] }
@@ -55,6 +57,7 @@ serde_json = "1.0.139"
 serde_yaml = "0.9"
 snap = "1.1"
 ssz_types = "0.10"
+tempfile = "3.19"
 thiserror = "2.0.11"
 tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
 tracing = "0.1"
@@ -71,6 +74,7 @@ ream-execution-engine = { path = "crates/common/execution_engine"}
 ream-executor = { path = "crates/common/executor" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-p2p = { path = "crates/networking/p2p" }
+ream-storage = { path = "crates/storage"}
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }
