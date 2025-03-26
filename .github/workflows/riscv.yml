@@ -36,7 +36,6 @@ jobs:
       run: |
         curl -L https://risczero.com/install | bash
         /home/runner/.risc0/bin/rzup install
-        cargo risczero install
         rustup default risc0
         
     - name: Build Risc0
