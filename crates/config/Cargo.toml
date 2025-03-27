@@ -10,21 +10,3 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-alloy-consensus.workspace = true
-alloy-primitives.workspace = true
-alloy-rlp.workspace = true
-anyhow.workspace = true
-enr.workspace = true
-discv5.workspace = true
-futures.workspace = true
-hex.workspace = true
-libp2p-identity.workspace = true
-libp2p-mplex.workspace = true
-libp2p.workspace = true
-serde.workspace = true
-serde_yaml.workspace = true
-tokio.workspace = true
-tracing.workspace = true
-warp.workspace=true
-clap.workspace=true
-thiserror.workspace=true

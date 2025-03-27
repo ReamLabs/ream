@@ -21,7 +21,7 @@ ream-executor.workspace = true
 ream-network-spec.workspace = true 
 ream-p2p.workspace = true 
 ream-storage.workspace = true
-ream-beacon-api={workspace = true}
+ream-rpc={workspace = true}
 ream-config={workspace = true}
 
 

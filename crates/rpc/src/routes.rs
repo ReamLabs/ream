@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use ream_config::chain::BeaconChain;
+use utils::chain::BeaconChain;
 use warp::{reply::Reply, Filter};
 
-use crate::handlers::genesis::get_genesis;
+use crate::{handlers::genesis::get_genesis, utils};
 
+/// Creates and returns all possible routes.
 pub fn get_routes(
     ctx: Arc<BeaconChain>,
 ) -> impl Filter<Extract = impl Reply, Error = warp::Rejection> + Clone {
