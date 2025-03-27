@@ -1,14 +1,9 @@
+use std::{net::SocketAddr, sync::Arc};
+
 use config::ServerConfig;
-use utils::chain::BeaconChain;
 use routes::get_routes;
-use std::sync::Arc;
-use std::{env, net::SocketAddr};
-use tokio::fs;
-use utils::error::handle_rejection;
-use warp::http::header::ACCESS_CONTROL_ALLOW_ORIGIN;
-use warp::hyper::Server;
+use utils::{chain::BeaconChain, error::handle_rejection};
 use warp::Filter;
-use warp::TlsServer;
 
 pub mod config;
 pub mod handlers;
@@ -30,9 +25,10 @@ pub async fn start_server(ctx: Arc<BeaconChain>, server_config: ServerConfig) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::to_string_pretty;
     use warp::test::request;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_health_route() {

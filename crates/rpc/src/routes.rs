@@ -20,6 +20,7 @@ pub fn get_routes(
         .and_then(move || get_genesis(beacon_clone.clone()))
         .with(warp::log("genesis"));
 
+    #[allow(clippy::let_and_return)]
     let routes = genesis;
     routes
 }

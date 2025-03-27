@@ -10,7 +10,6 @@ const DEFAULT_NETWORK: &str = "mainnet";
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
-
 }
 
 #[derive(Debug, Subcommand)]

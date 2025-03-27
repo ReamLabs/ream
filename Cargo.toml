@@ -11,7 +11,6 @@ members = [
     "crates/rpc",
     "crates/runtime",
     "crates/storage",
-    "crates/config",
     "testing/ef-tests",
 ]
 
@@ -76,7 +75,6 @@ ream-execution-engine = { path = "crates/common/execution_engine"}
 ream-executor = { path = "crates/common/executor" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-p2p = { path = "crates/networking/p2p" }
-ream-config = { path = "crates/config" }
 ream-rpc = { path = "crates/rpc" }
 ream-storage = { path = "crates/storage"}
 
