@@ -1,0 +1,4 @@
+testing/ef_tests/
+target/
+*.data
+*.tar.gz
