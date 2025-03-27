@@ -3910,7 +3910,6 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "discv5",
- "ream-config",
  "ream-discv5",
  "ream-executor",
  "ream-network-spec",
@@ -3939,10 +3938,6 @@ dependencies = [
  "tree_hash",
  "tree_hash_derive",
 ]
-
-[[package]]
-name = "ream-config"
-version = "0.1.0"
 
 [[package]]
 name = "ream-consensus"
