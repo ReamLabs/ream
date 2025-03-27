@@ -23,9 +23,7 @@ macro_rules! test_sanity_blocks {
                     .unwrap()
                     .join("mainnet/tests/mainnet/deneb/sanity/blocks/pyspec_tests");
 
-                let mock_engine = MockExecutionEngine {
-                    execution_valid: true,
-                };
+                let mock_engine = MockExecutionEngine { execution_valid: true };
 
                 for entry in std::fs::read_dir(&base_path).unwrap() {
                     let entry = entry.unwrap();

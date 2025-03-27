@@ -15,10 +15,7 @@ impl TryFrom<&BLSSignature> for G2Affine {
 
     fn try_from(value: &BLSSignature) -> Result<Self, Self::Error> {
         match G2Affine::from_compressed(
-            &value
-                .to_bytes()
-                .try_into()
-                .map_err(|_| BLSError::InvalidByteLength)?,
+            &value.to_bytes().try_into().map_err(|_| BLSError::InvalidByteLength)?,
         )
         .into_option()
         {
@@ -53,10 +50,7 @@ impl Verifiable for BLSSignature {
             DST,
         );
 
-        let gt1 = pairing(
-            &G1Affine::try_from(&aggregate_pubkey.to_pubkey())?,
-            &G2Affine::from(h),
-        );
+        let gt1 = pairing(&G1Affine::try_from(&aggregate_pubkey.to_pubkey())?, &G2Affine::from(h));
         let gt2 = pairing(&G1Affine::generator(), &G2Affine::try_from(self)?);
 
         Ok(gt1 == gt2)

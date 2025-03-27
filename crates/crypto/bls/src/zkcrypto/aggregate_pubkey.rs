@@ -10,15 +10,11 @@ impl Aggregatable for AggregatePubKey {
     type Error = BLSError;
 
     fn aggregate(pubkeys: &[&PubKey]) -> Result<Self, Self::Error> {
-        let agg_point = pubkeys
-            .iter()
-            .try_fold(G1Projective::identity(), |acc, pubkey| {
-                Ok(acc.add(&G1Projective::from(G1Affine::try_from(*pubkey)?)))
-            })?;
+        let agg_point = pubkeys.iter().try_fold(G1Projective::identity(), |acc, pubkey| {
+            Ok(acc.add(&G1Projective::from(G1Affine::try_from(*pubkey)?)))
+        })?;
 
-        Ok(Self {
-            inner: PubKey::from(agg_point),
-        })
+        Ok(Self { inner: PubKey::from(agg_point) })
     }
 }
 

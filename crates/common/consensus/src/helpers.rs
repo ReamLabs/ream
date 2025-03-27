@@ -27,10 +27,7 @@ pub fn get_total_balance(state: &BeaconState, indices: Vec<u64>) -> u64 {
 }
 
 pub fn get_total_active_balance(state: BeaconState) -> u64 {
-    get_total_balance(
-        &state,
-        state.get_active_validator_indices(state.get_current_epoch()),
-    )
+    get_total_balance(&state, state.get_active_validator_indices(state.get_current_epoch()))
 }
 
 pub fn calculate_committee_fraction(state: BeaconState, committee_percent: u64) -> u64 {
@@ -60,10 +57,10 @@ pub fn get_weight(store: Store, root: B256) -> u64 {
     let attestation_score: u64 = unslashed_and_active_indices
         .iter()
         .filter(|&&i| {
-            store.latest_messages.contains_key(&i)
-                && !store.equivocating_indices.contains(&i)
-                && store.get_ancestor(store.latest_messages[&i].root, store.blocks[&root].slot)
-                    == root
+            store.latest_messages.contains_key(&i) &&
+                !store.equivocating_indices.contains(&i) &&
+                store.get_ancestor(store.latest_messages[&i].root, store.blocks[&root].slot) ==
+                    root
         })
         .map(|&i| state.validators[i as usize].effective_balance)
         .sum::<u64>();

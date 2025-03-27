@@ -66,17 +66,11 @@ impl ReamExecutor {
         Fut: Future<Output = T> + Send,
         T: Send + 'static,
     {
-        let futures: Vec<_> = futures
-            .into_iter()
-            .map(|f| self.spawn_cancellable(f))
-            .collect();
+        let futures: Vec<_> = futures.into_iter().map(|f| self.spawn_cancellable(f)).collect();
 
         self.runtime.spawn(async move {
             let results = futures::future::join_all(futures).await;
-            results
-                .into_iter()
-                .filter_map(|r| r.ok().flatten())
-                .collect()
+            results.into_iter().filter_map(|r| r.ok().flatten()).collect()
         })
     }
 
@@ -123,10 +117,7 @@ mod tests {
         });
 
         executor.shutdown();
-        assert_eq!(
-            executor.runtime.block_on(handle).unwrap(),
-            Some("cancelled")
-        );
+        assert_eq!(executor.runtime.block_on(handle).unwrap(), Some("cancelled"));
     }
 
     #[test]
