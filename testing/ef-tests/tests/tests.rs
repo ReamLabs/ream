@@ -90,8 +90,18 @@ test_operation!(
     "proposer_slashing",
     process_proposer_slashing
 );
-test_operation!(voluntary_exit, SignedVoluntaryExit, "voluntary_exit", process_voluntary_exit);
-test_operation!(withdrawals, ExecutionPayload, "execution_payload", process_withdrawals);
+test_operation!(
+    voluntary_exit,
+    SignedVoluntaryExit,
+    "voluntary_exit",
+    process_voluntary_exit
+);
+test_operation!(
+    withdrawals,
+    ExecutionPayload,
+    "execution_payload",
+    process_withdrawals
+);
 
 // Testing shuffling
 test_shuffling!();
@@ -99,10 +109,19 @@ test_shuffling!();
 // Testing epoch_processing
 test_epoch_processing!(effective_balance_updates, process_effective_balance_updates);
 test_epoch_processing!(eth1_data_reset, process_eth1_data_reset);
-test_epoch_processing!(historical_summaries_update, process_historical_summaries_update);
+test_epoch_processing!(
+    historical_summaries_update,
+    process_historical_summaries_update
+);
 test_epoch_processing!(inactivity_updates, process_inactivity_updates);
-test_epoch_processing!(justification_and_finalization, process_justification_and_finalization);
-test_epoch_processing!(participation_flag_updates, process_participation_flag_updates);
+test_epoch_processing!(
+    justification_and_finalization,
+    process_justification_and_finalization
+);
+test_epoch_processing!(
+    participation_flag_updates,
+    process_participation_flag_updates
+);
 test_epoch_processing!(randao_mixes_reset, process_randao_mixes_reset);
 test_epoch_processing!(registry_updates, process_registry_updates);
 test_epoch_processing!(rewards_and_penalties, process_rewards_and_penalties);

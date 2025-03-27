@@ -27,7 +27,10 @@ pub fn get_total_balance(state: &BeaconState, indices: Vec<u64>) -> u64 {
 }
 
 pub fn get_total_active_balance(state: BeaconState) -> u64 {
-    get_total_balance(&state, state.get_active_validator_indices(state.get_current_epoch()))
+    get_total_balance(
+        &state,
+        state.get_active_validator_indices(state.get_current_epoch()),
+    )
 }
 
 pub fn calculate_committee_fraction(state: BeaconState, committee_percent: u64) -> u64 {

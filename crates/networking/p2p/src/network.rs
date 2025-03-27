@@ -94,8 +94,13 @@ impl Network {
             identify::Behaviour::new(identify_config)
         };
 
-        let behaviour =
-            { ReamBehaviour { discovery, identify, connection_registry: connection_limits } };
+        let behaviour = {
+            ReamBehaviour {
+                discovery,
+                identify,
+                connection_registry: connection_limits,
+            }
+        };
 
         let transport = build_transport(Keypair::from(local_key.clone()))
             .map_err(|err| anyhow!("Failed to build transport: {err:?}"))?;
@@ -235,7 +240,10 @@ pub fn build_transport(local_private_key: Keypair) -> std::io::Result<BoxedTrans
     let tcp = libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::default().nodelay(true))
         .upgrade(libp2p::core::upgrade::Version::V1)
         .authenticate(noise::Config::new(&local_private_key).expect("Noise disabled"))
-        .multiplex(libp2p::core::upgrade::SelectUpgrade::new(yamux_config, mplex_config))
+        .multiplex(libp2p::core::upgrade::SelectUpgrade::new(
+            yamux_config,
+            mplex_config,
+        ))
         .timeout(Duration::from_secs(10));
     let transport = tcp.boxed();
 

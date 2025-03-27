@@ -179,14 +179,23 @@ impl BeaconState {
         self.validators
             .iter()
             .enumerate()
-            .filter_map(|(i, v)| if v.is_active_validator(epoch) { Some(i as u64) } else { None })
+            .filter_map(|(i, v)| {
+                if v.is_active_validator(epoch) {
+                    Some(i as u64)
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 
     /// Return the validator churn limit for the current epoch.
     pub fn get_validator_churn_limit(&self) -> u64 {
         let active_validator_indices = self.get_active_validator_indices(self.get_current_epoch());
-        max(MIN_PER_EPOCH_CHURN_LIMIT, active_validator_indices.len() as u64 / CHURN_LIMIT_QUOTIENT)
+        max(
+            MIN_PER_EPOCH_CHURN_LIMIT,
+            active_validator_indices.len() as u64 / CHURN_LIMIT_QUOTIENT,
+        )
     }
 
     /// Return the seed at ``epoch``.
@@ -235,8 +244,11 @@ impl BeaconState {
     pub fn get_beacon_proposer_index(&self) -> anyhow::Result<u64> {
         let epoch = self.get_current_epoch();
         let seed = B256::from(hash_fixed(
-            &[self.get_seed(epoch, DOMAIN_BEACON_PROPOSER).as_slice(), &self.slot.to_le_bytes()]
-                .concat(),
+            &[
+                self.get_seed(epoch, DOMAIN_BEACON_PROPOSER).as_slice(),
+                &self.slot.to_le_bytes(),
+            ]
+            .concat(),
         ));
         let indices = self.get_active_validator_indices(epoch);
         self.compute_proposer_index(&indices, seed)
@@ -248,7 +260,10 @@ impl BeaconState {
     pub fn get_total_balance(&self, indices: HashSet<u64>) -> u64 {
         max(
             EFFECTIVE_BALANCE_INCREMENT,
-            indices.iter().map(|index| self.validators[*index as usize].effective_balance).sum(),
+            indices
+                .iter()
+                .map(|index| self.validators[*index as usize].effective_balance)
+                .sum(),
         )
     }
 
@@ -274,7 +289,11 @@ impl BeaconState {
         } else {
             self.fork.current_version
         };
-        compute_domain(domain_type, Some(fork_version), Some(self.genesis_validators_root))
+        compute_domain(
+            domain_type,
+            Some(fork_version),
+            Some(self.genesis_validators_root),
+        )
     }
 
     /// Return the beacon committee at ``slot`` for ``index``.
@@ -295,15 +314,20 @@ impl BeaconState {
         &self,
         indexed_attestation: &IndexedAttestation,
     ) -> anyhow::Result<bool> {
-        let indices: Vec<usize> =
-            indexed_attestation.attesting_indices.iter().map(|&i| i as usize).collect();
+        let indices: Vec<usize> = indexed_attestation
+            .attesting_indices
+            .iter()
+            .map(|&i| i as usize)
+            .collect();
         // Verify indices are sorted and unique
         if indices.is_empty() || !is_sorted_and_unique(&indices) {
             return Ok(false);
         }
 
-        let domain =
-            self.get_domain(DOMAIN_BEACON_ATTESTER, Some(indexed_attestation.data.target.epoch));
+        let domain = self.get_domain(
+            DOMAIN_BEACON_ATTESTER,
+            Some(indexed_attestation.data.target.epoch),
+        );
         let signing_root = compute_signing_root(&indexed_attestation.data, domain);
 
         indexed_attestation
@@ -330,7 +354,12 @@ impl BeaconState {
             .into_iter()
             .enumerate()
             .filter_map(|(i, index)| {
-                attestation.aggregation_bits.get(i).ok().filter(|&bit| bit).map(|_| index)
+                attestation
+                    .aggregation_bits
+                    .get(i)
+                    .ok()
+                    .filter(|&bit| bit)
+                    .map(|_| index)
             })
             .unique()
             .collect();
@@ -379,17 +408,17 @@ impl BeaconState {
         }
 
         // Compute exit queue epoch
-        let exit_epochs: Vec<u64> =
-            self.validators
-                .iter()
-                .filter_map(|v| {
-                    if v.exit_epoch != FAR_FUTURE_EPOCH {
-                        Some(v.exit_epoch)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+        let exit_epochs: Vec<u64> = self
+            .validators
+            .iter()
+            .filter_map(|v| {
+                if v.exit_epoch != FAR_FUTURE_EPOCH {
+                    Some(v.exit_epoch)
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         let mut exit_queue_epoch = exit_epochs
             .iter()
@@ -398,8 +427,11 @@ impl BeaconState {
             .unwrap_or(0)
             .max(compute_activation_exit_epoch(self.get_current_epoch()));
 
-        let exit_queue_churn =
-            self.validators.iter().filter(|v| v.exit_epoch == exit_queue_epoch).count();
+        let exit_queue_churn = self
+            .validators
+            .iter()
+            .filter(|v| v.exit_epoch == exit_queue_epoch)
+            .count();
 
         if exit_queue_churn >= self.get_validator_churn_limit() as usize {
             exit_queue_epoch += 1;
@@ -434,16 +466,17 @@ impl BeaconState {
         // Initiate validator exit
         self.initiate_validator_exit(slashed_index)?;
 
-        let validator_effective_balance = if let Some(validator) =
-            self.validators.get_mut(slashed_index as usize)
-        {
-            validator.slashed = true;
-            validator.withdrawable_epoch =
-                std::cmp::max(validator.withdrawable_epoch, epoch + EPOCHS_PER_SLASHINGS_VECTOR);
-            validator.effective_balance
-        } else {
-            bail!("Validator at index {slashed_index} not found")
-        };
+        let validator_effective_balance =
+            if let Some(validator) = self.validators.get_mut(slashed_index as usize) {
+                validator.slashed = true;
+                validator.withdrawable_epoch = std::cmp::max(
+                    validator.withdrawable_epoch,
+                    epoch + EPOCHS_PER_SLASHINGS_VECTOR,
+                );
+                validator.effective_balance
+            } else {
+                bail!("Validator at index {slashed_index} not found")
+            };
         // Add slashed effective balance to the slashings vector
         self.slashings[(epoch % EPOCHS_PER_SLASHINGS_VECTOR) as usize] +=
             validator_effective_balance;
@@ -539,8 +572,10 @@ impl BeaconState {
 
             // Decrease the inactivity score of all eligible validators during a leak-free epoch
             if !self.is_in_inactivity_leak() {
-                self.inactivity_scores[index as usize] -=
-                    min(INACTIVITY_SCORE_RECOVERY_RATE, self.inactivity_scores[index as usize])
+                self.inactivity_scores[index as usize] -= min(
+                    INACTIVITY_SCORE_RECOVERY_RATE,
+                    self.inactivity_scores[index as usize],
+                )
             }
         }
         Ok(())
@@ -643,7 +678,10 @@ impl BeaconState {
 
     pub fn process_block_header(&mut self, block: &BeaconBlock) -> anyhow::Result<()> {
         // Verify that the slots match
-        ensure!(self.slot == block.slot, "State slot must be equal to block slot");
+        ensure!(
+            self.slot == block.slot,
+            "State slot must be equal to block slot"
+        );
         // Verify that the block is newer than latest block header
         ensure!(
             block.slot > self.latest_block_header.slot,
@@ -712,7 +750,10 @@ impl BeaconState {
 
     pub fn process_withdrawals(&mut self, payload: &ExecutionPayload) -> anyhow::Result<()> {
         let expected_withdrawals = self.get_expected_withdrawals();
-        ensure!(payload.withdrawals.deref() == expected_withdrawals, "Can't compare");
+        ensure!(
+            payload.withdrawals.deref() == expected_withdrawals,
+            "Can't compare"
+        );
 
         for withdrawal in &expected_withdrawals {
             self.decrease_balance(withdrawal.validator_index, withdrawal.amount)?;
@@ -750,9 +791,15 @@ impl BeaconState {
         amount: u64,
     ) -> anyhow::Result<()> {
         self.validators
-            .push(get_validator_from_deposit(pubkey, withdrawal_credentials, amount))
+            .push(get_validator_from_deposit(
+                pubkey,
+                withdrawal_credentials,
+                amount,
+            ))
             .map_err(|err| anyhow!("Couldn't push to validators {:?}", err))?;
-        self.balances.push(amount).map_err(|err| anyhow!("Couldn't push to balances {:?}", err))?;
+        self.balances
+            .push(amount)
+            .map_err(|err| anyhow!("Couldn't push to balances {:?}", err))?;
         self.previous_epoch_participation
             .push(0)
             .map_err(|err| anyhow!("Couldn't push to previous_epoch_participation {:?}", err))?;
@@ -779,8 +826,11 @@ impl BeaconState {
         if !validator_pubkeys.contains(&pubkey) {
             // Verify the deposit signature (proof of possession) which is not checked by the
             // deposit contract
-            let deposit_message =
-                DepositMessage { pubkey: pubkey.clone(), withdrawal_credentials, amount };
+            let deposit_message = DepositMessage {
+                pubkey: pubkey.clone(),
+                withdrawal_credentials,
+                amount,
+            };
             let domain = compute_domain(DOMAIN_DEPOSIT, None, None); // # Fork-agnostic domain since deposits are valid across forks
             let signing_root = compute_signing_root(deposit_message, domain);
 
@@ -878,17 +928,28 @@ impl BeaconState {
         let voluntary_exit = &signed_voluntary_exit.message;
         let validator_index = voluntary_exit.validator_index as usize;
 
-        let validator =
-            self.validators.get(validator_index).ok_or(anyhow!("Invalid validator index"))?;
+        let validator = self
+            .validators
+            .get(validator_index)
+            .ok_or(anyhow!("Invalid validator index"))?;
 
         // Verify the validator is active
-        ensure!(validator.is_active_validator(self.get_current_epoch()), "Validator is not active");
+        ensure!(
+            validator.is_active_validator(self.get_current_epoch()),
+            "Validator is not active"
+        );
 
         // Verify exit has not been initiated
-        ensure!(validator.exit_epoch == FAR_FUTURE_EPOCH, "Exit has already been initiated");
+        ensure!(
+            validator.exit_epoch == FAR_FUTURE_EPOCH,
+            "Exit has already been initiated"
+        );
 
         // Exits must specify an epoch when they become valid; they are not valid before then
-        ensure!(self.get_current_epoch() >= voluntary_exit.epoch, "Exit is not yet valid");
+        ensure!(
+            self.get_current_epoch() >= voluntary_exit.epoch,
+            "Exit is not yet valid"
+        );
 
         // Verify the validator has been active long enough
         let earlist_exit_epoch = validator
@@ -909,7 +970,9 @@ impl BeaconState {
         let signing_root = compute_signing_root(voluntary_exit, domain);
 
         ensure!(
-            signed_voluntary_exit.signature.verify(&validator.pubkey, signing_root.as_ref())?,
+            signed_voluntary_exit
+                .signature
+                .verify(&validator.pubkey, signing_root.as_ref())?,
             "BLS Signature verification failed!"
         );
 
@@ -955,7 +1018,10 @@ impl BeaconState {
         ensure!(header_1.slot == header_2.slot, "Header slots must match");
 
         // Verify header proposer indices match
-        ensure!(header_1.proposer_index == header_2.proposer_index, "Proposer indices must match");
+        ensure!(
+            header_1.proposer_index == header_2.proposer_index,
+            "Proposer indices must match"
+        );
 
         // Verify the headers are different
         ensure!(header_1 != header_2, "Headers must be different");
@@ -973,9 +1039,10 @@ impl BeaconState {
         );
 
         // Verify signatures
-        for signed_header in
-            [&proposer_slashing.signed_header_1, &proposer_slashing.signed_header_2]
-        {
+        for signed_header in [
+            &proposer_slashing.signed_header_1,
+            &proposer_slashing.signed_header_2,
+        ] {
             let domain = self.get_domain(
                 DOMAIN_BEACON_PROPOSER,
                 Some(compute_epoch_at_slot(signed_header.message.slot)),
@@ -984,7 +1051,9 @@ impl BeaconState {
             let signing_root = compute_signing_root(&signed_header.message, domain);
 
             ensure!(
-                signed_header.signature.verify(&proposer.pubkey, signing_root.as_ref())?,
+                signed_header
+                    .signature
+                    .verify(&proposer.pubkey, signing_root.as_ref())?,
                 "BLS Signature verification failed!"
             );
         }
@@ -1022,8 +1091,14 @@ impl BeaconState {
         );
 
         // Validate both attestations
-        ensure!(self.is_valid_indexed_attestation(attestation_1)?, "First attestation is invalid");
-        ensure!(self.is_valid_indexed_attestation(attestation_2)?, "Second attestation is invalid");
+        ensure!(
+            self.is_valid_indexed_attestation(attestation_1)?,
+            "First attestation is invalid"
+        );
+        ensure!(
+            self.is_valid_indexed_attestation(attestation_2)?,
+            "Second attestation is invalid"
+        );
 
         let current_epoch = self.get_current_epoch();
         let indices_1: HashSet<_> = attestation_1.attesting_indices.iter().cloned().collect();
@@ -1048,7 +1123,9 @@ impl BeaconState {
         let committee_pubkeys = &self.current_sync_committee.pubkeys;
         let mut participant_pubkeys = vec![];
 
-        for (pubkey, bit) in committee_pubkeys.iter().zip(sync_aggregate.sync_committee_bits.iter())
+        for (pubkey, bit) in committee_pubkeys
+            .iter()
+            .zip(sync_aggregate.sync_committee_bits.iter())
         {
             if bit {
                 participant_pubkeys.push(pubkey);
@@ -1056,8 +1133,10 @@ impl BeaconState {
         }
 
         let previous_slot = max(self.slot, 1) - 1;
-        let domain =
-            self.get_domain(DOMAIN_SYNC_COMMITTEE, Some(compute_epoch_at_slot(previous_slot)));
+        let domain = self.get_domain(
+            DOMAIN_SYNC_COMMITTEE,
+            Some(compute_epoch_at_slot(previous_slot)),
+        );
         let signing_root =
             compute_signing_root(self.get_block_root_at_slot(previous_slot)?, domain);
 
@@ -1094,8 +1173,9 @@ impl BeaconState {
             committee_indices.push(index);
         }
 
-        for (participant_index, participation_bit) in
-            committee_indices.iter().zip(sync_aggregate.sync_committee_bits.iter())
+        for (participant_index, participation_bit) in committee_indices
+            .iter()
+            .zip(sync_aggregate.sync_committee_bits.iter())
         {
             if participation_bit {
                 self.increase_balance(*participant_index as u64, participant_reward)?;
@@ -1166,16 +1246,20 @@ impl BeaconState {
             .map_err(|err| anyhow!("Failed to set justification bit 0: {err:?}"))?;
 
         if previous_epoch_target_balance * 3 >= total_active_balance * 2 {
-            self.current_justified_checkpoint =
-                Checkpoint { epoch: previous_epoch, root: self.get_block_root(previous_epoch)? };
+            self.current_justified_checkpoint = Checkpoint {
+                epoch: previous_epoch,
+                root: self.get_block_root(previous_epoch)?,
+            };
             self.justification_bits
                 .set(1, true)
                 .map_err(|err| anyhow!("Failed to set justification bit 1: {err:?}"))?;
         }
 
         if current_epoch_target_balance * 3 >= total_active_balance * 2 {
-            self.current_justified_checkpoint =
-                Checkpoint { epoch: current_epoch, root: self.get_block_root(current_epoch)? };
+            self.current_justified_checkpoint = Checkpoint {
+                epoch: current_epoch,
+                root: self.get_block_root(current_epoch)?,
+            };
             self.justification_bits
                 .set(0, true)
                 .map_err(|err| anyhow!("Failed to set justification bit 0: {err:?}"))?;
@@ -1248,11 +1332,15 @@ impl BeaconState {
         let epoch = self.get_current_epoch();
 
         // Verify RANDAO reveal
-        if let Some(proposer) = self.validators.get(self.get_beacon_proposer_index()? as usize) {
+        if let Some(proposer) = self
+            .validators
+            .get(self.get_beacon_proposer_index()? as usize)
+        {
             let signing_root =
                 compute_signing_root(epoch, self.get_domain(DOMAIN_RANDAO, Some(epoch)));
             ensure!(
-                body.randao_reveal.verify(&proposer.pubkey, signing_root.as_ref())?,
+                body.randao_reveal
+                    .verify(&proposer.pubkey, signing_root.as_ref())?,
                 "BLS Signature verification failed!"
             );
 
@@ -1272,8 +1360,11 @@ impl BeaconState {
             .push(body.eth1_data.clone())
             .map_err(|err| anyhow!("Can't push eth1_data {err:?}"))?;
 
-        let count =
-            self.eth1_data_votes.iter().filter(|data| **data == body.eth1_data).count() as u64;
+        let count = self
+            .eth1_data_votes
+            .iter()
+            .filter(|data| **data == body.eth1_data)
+            .count() as u64;
 
         if count * 2 > (EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH) {
             self.eth1_data = body.eth1_data.clone();
@@ -1322,8 +1413,10 @@ impl BeaconState {
         );
 
         let attesting_indices = self.get_attesting_indices(attestation)?;
-        let base_rewards: Vec<_> =
-            attesting_indices.iter().map(|&index| (index, self.get_base_reward(index))).collect();
+        let base_rewards: Vec<_> = attesting_indices
+            .iter()
+            .map(|&index| (index, self.get_base_reward(index)))
+            .collect();
 
         // Update epoch participation flags
         let epoch_participation = if attestation.data.target.epoch == self.get_current_epoch() {
@@ -1453,7 +1546,10 @@ impl BeaconState {
 
     /// Return the validator activation churn limit for the current epoch.
     pub fn get_validator_activation_churn_limit(&self) -> u64 {
-        min(MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, self.get_validator_churn_limit())
+        min(
+            MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT,
+            self.get_validator_churn_limit(),
+        )
     }
 
     pub fn process_registry_updates(&mut self) -> anyhow::Result<()> {
@@ -1481,26 +1577,27 @@ impl BeaconState {
         }
 
         // Queue validators eligible for activation and not yet dequeued for activation
-        let mut activation_queue: Vec<usize> =
-            self.validators
-                .iter()
-                .enumerate()
-                .filter_map(|(index, validator)| {
-                    if self.is_eligible_for_activation(validator) {
-                        Some(index)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+        let mut activation_queue: Vec<usize> = self
+            .validators
+            .iter()
+            .enumerate()
+            .filter_map(|(index, validator)| {
+                if self.is_eligible_for_activation(validator) {
+                    Some(index)
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         // Order by the sequence of activation_eligibility_epoch setting and then index
         activation_queue
             .sort_by_key(|&index| (self.validators[index].activation_eligibility_epoch, index));
 
         // Dequeued validators for activation up to activation churn limit
-        for &index in
-            activation_queue.iter().take(self.get_validator_activation_churn_limit() as usize)
+        for &index in activation_queue
+            .iter()
+            .take(self.get_validator_activation_churn_limit() as usize)
         {
             let activation_epoch = compute_activation_exit_epoch(current_epoch);
 
@@ -1582,7 +1679,10 @@ impl BeaconState {
 
         let aggregate_pubkey = eth_aggregate_pubkeys(&pubkeys.iter().collect::<Vec<_>>())?;
 
-        Ok(SyncCommittee { pubkeys: FixedVector::from(pubkeys), aggregate_pubkey })
+        Ok(SyncCommittee {
+            pubkeys: FixedVector::from(pubkeys),
+            aggregate_pubkey,
+        })
     }
 
     pub fn process_sync_committee_updates(&mut self) -> anyhow::Result<()> {
@@ -1707,7 +1807,8 @@ impl BeaconState {
     ) -> anyhow::Result<()> {
         self.process_block_header(block)?;
         self.process_withdrawals(&block.body.execution_payload)?;
-        self.process_execution_payload(&block.body, execution_engine).await?;
+        self.process_execution_payload(&block.body, execution_engine)
+            .await?;
         self.process_randao(&block.body)?;
         self.process_eth1_data(&block.body)?;
         self.process_operations(&block.body)?;
@@ -1768,8 +1869,10 @@ pub fn get_validator_from_deposit(
     withdrawal_credentials: B256,
     amount: u64,
 ) -> Validator {
-    let effective_balance =
-        min(amount - amount % EFFECTIVE_BALANCE_INCREMENT, MAX_EFFECTIVE_BALANCE);
+    let effective_balance = min(
+        amount - amount % EFFECTIVE_BALANCE_INCREMENT,
+        MAX_EFFECTIVE_BALANCE,
+    );
     Validator {
         pubkey,
         withdrawal_credentials,

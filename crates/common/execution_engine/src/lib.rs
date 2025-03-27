@@ -44,7 +44,11 @@ impl ExecutionEngine {
 
     pub fn create_jwt_token(&self) -> anyhow::Result<String> {
         let header = Header::default();
-        let claims = Claims { iat: get_current_timestamp(), id: None, clv: None };
+        let claims = Claims {
+            iat: get_current_timestamp(),
+            id: None,
+            clv: None,
+        };
         encode(&header, &claims, &self.jwt_encoding_key)
             .map_err(|err| anyhow!("Could not encode jwt key {err:?}"))
     }
@@ -82,8 +86,10 @@ impl ExecutionEngine {
         &self,
         new_payload_request: &NewPayloadRequest,
     ) -> anyhow::Result<bool> {
-        Ok(self.blob_versioned_hashes(&new_payload_request.execution_payload)?
-            == new_payload_request.versioned_hashes)
+        Ok(
+            self.blob_versioned_hashes(&new_payload_request.execution_payload)?
+                == new_payload_request.versioned_hashes,
+        )
     }
 
     /// Return ``PayloadStatus`` of execution payload``.
@@ -91,8 +97,11 @@ impl ExecutionEngine {
         &self,
         new_payload_request: NewPayloadRequest,
     ) -> anyhow::Result<PayloadStatus> {
-        let NewPayloadRequest { execution_payload, versioned_hashes, parent_beacon_block_root } =
-            new_payload_request;
+        let NewPayloadRequest {
+            execution_payload,
+            versioned_hashes,
+            parent_beacon_block_root,
+        } = new_payload_request;
         let payload_status = self
             .engine_new_payload_v3(
                 execution_payload.into(),
@@ -249,7 +258,11 @@ impl ExecutionApi for ExecutionEngine {
         &self,
         new_payload_request: NewPayloadRequest,
     ) -> anyhow::Result<bool> {
-        if new_payload_request.execution_payload.transactions.contains(&VariableList::empty()) {
+        if new_payload_request
+            .execution_payload
+            .transactions
+            .contains(&VariableList::empty())
+        {
             return Ok(false);
         }
 

@@ -14,7 +14,11 @@ use crate::{
 };
 
 pub fn compute_signing_root<SSZObject: TreeHash>(ssz_object: SSZObject, domain: B256) -> B256 {
-    SigningData { object_root: ssz_object.tree_hash_root(), domain }.tree_hash_root()
+    SigningData {
+        object_root: ssz_object.tree_hash_root(),
+        domain,
+    }
+    .tree_hash_root()
 }
 
 pub fn compute_shuffled_index(
@@ -29,8 +33,11 @@ pub fn compute_shuffled_index(
 
         let flip = (pivot as usize + (index_count - index)) % index_count;
         let position = max(index, flip);
-        let seed_with_position =
-            [seed_with_round.as_slice(), &(position / 256).to_le_bytes()[0..4]].concat();
+        let seed_with_position = [
+            seed_with_round.as_slice(),
+            &(position / 256).to_le_bytes()[0..4],
+        ]
+        .concat();
         let source = hash(&seed_with_position);
         let byte = source[(position % 256) / 8];
         let bit = (byte >> (position % 8)) % 2;

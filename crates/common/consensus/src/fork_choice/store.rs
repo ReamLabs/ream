@@ -51,7 +51,10 @@ impl Store {
     }
 
     pub fn get_ancestor(&self, root: B256, slot: u64) -> B256 {
-        let block = self.blocks.get(&root).expect("Failed to find root in blocks");
+        let block = self
+            .blocks
+            .get(&root)
+            .expect("Failed to find root in blocks");
         if block.slot > slot {
             self.get_ancestor(block.parent_root, slot)
         } else {
@@ -79,8 +82,10 @@ impl Store {
             .collect();
 
         if !children.is_empty() {
-            let filter_results: Vec<bool> =
-                children.iter().map(|child| self.filter_block_tree(*child, blocks)).collect();
+            let filter_results: Vec<bool> = children
+                .iter()
+                .map(|child| self.filter_block_tree(*child, blocks))
+                .collect();
 
             if filter_results.iter().any(|&result| result) {
                 blocks.insert(block_root, block.clone());
@@ -190,7 +195,10 @@ impl Store {
     pub fn get_proposer_head(&self, head_root: B256, slot: u64) -> B256 {
         let head_block = self.blocks.get(&head_root).expect("Head block must exist");
         let parent_root = head_block.parent_root;
-        let parent_block = self.blocks.get(&parent_root).expect("Parent block must exist");
+        let parent_block = self
+            .blocks
+            .get(&parent_root)
+            .expect("Parent block must exist");
 
         let head_late = self.is_head_late(head_root);
 

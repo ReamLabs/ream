@@ -80,7 +80,10 @@ impl Discovery {
 
         // init ports
         let event_stream = if !config.disable_discovery {
-            discv5.start().map_err(|err| anyhow!("Failed to start discv5 {err:?}")).await?;
+            discv5
+                .start()
+                .map_err(|err| anyhow!("Failed to start discv5 {err:?}"))
+                .await?;
             info!("Started discovery");
             EventStream::Awaiting(Box::pin(discv5.event_stream()))
         } else {
@@ -143,7 +146,10 @@ impl Discovery {
         let query_future = self
             .discv5
             .find_node(NodeId::random())
-            .map(|result| QueryResult { query_type: query, result });
+            .map(|result| QueryResult {
+                query_type: query,
+                result,
+            });
 
         self.discovery_queries.push(Box::pin(query_future));
     }

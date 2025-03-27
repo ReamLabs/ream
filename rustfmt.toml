@@ -6,5 +6,4 @@ group_imports = "StdExternalCrate"
 imports_granularity = "Crate"
 normalize_comments = true
 reorder_imports  = true
-use_small_heuristics = "Max"
 wrap_comments = true

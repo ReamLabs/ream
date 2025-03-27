@@ -35,6 +35,8 @@ impl ReamDB {
     }
 
     pub fn beacon_state_provider(&self) -> BeaconStateTable {
-        BeaconStateTable { db: self.db.clone() }
+        BeaconStateTable {
+            db: self.db.clone(),
+        }
     }
 }

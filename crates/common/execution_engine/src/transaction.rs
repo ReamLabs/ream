@@ -98,7 +98,9 @@ impl TryFrom<&[u8]> for TransactionType {
     type Error = TransactionTypeError;
 
     fn try_from(transaction: &[u8]) -> Result<Self, TransactionTypeError> {
-        let first_byte = transaction.first().ok_or(TransactionTypeError::EmptyTransaction)?;
+        let first_byte = transaction
+            .first()
+            .ok_or(TransactionTypeError::EmptyTransaction)?;
 
         match first_byte {
             3 => Ok(TransactionType::BlobTransaction),

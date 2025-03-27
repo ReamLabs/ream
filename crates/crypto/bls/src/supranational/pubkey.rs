@@ -5,7 +5,9 @@ use crate::{errors::BLSError, pubkey::PubKey};
 
 impl From<BlstPublicKey> for PubKey {
     fn from(value: BlstPublicKey) -> Self {
-        PubKey { inner: FixedVector::from(value.to_bytes().to_vec()) }
+        PubKey {
+            inner: FixedVector::from(value.to_bytes().to_vec()),
+        }
     }
 }
 
