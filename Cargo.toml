@@ -1,7 +1,19 @@
 [workspace]
 
 default-members = ["bin/ream"]
-members = ["bin/ream", "crates/common/consensus", "crates/common/execution_engine", "crates/common/executor", "crates/common/network_spec", "crates/crypto/bls", "crates/networking/discv5", "crates/networking/p2p", "crates/rpc", "crates/runtime", "crates/storage", "testing/ef-tests",
+members = [
+    "bin/ream", 
+    "crates/common/consensus", 
+    "crates/common/execution_engine", 
+    "crates/common/executor", 
+    "crates/common/network_spec", 
+    "crates/crypto/bls", 
+    "crates/networking/discv5", 
+    "crates/networking/p2p", 
+    "crates/rpc", 
+    "crates/runtime", 
+    "crates/storage", 
+    "testing/ef-tests",
 ]
 resolver = "2"
 
