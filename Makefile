@@ -39,3 +39,6 @@ lint: # Run `clippy` and `rustfmt`.
 
 	# clippy for bls with supranational feature
 	cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings
+
+	# cargo sort
+	cargo sort

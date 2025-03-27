@@ -1,1 +1,4 @@
+# cargo-sort configuration
+## https://github.com/DevinR528/cargo-sort
+
 key_value_newlines = true
