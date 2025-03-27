@@ -57,10 +57,10 @@ pub fn get_weight(store: Store, root: B256) -> u64 {
     let attestation_score: u64 = unslashed_and_active_indices
         .iter()
         .filter(|&&i| {
-            store.latest_messages.contains_key(&i) &&
-                !store.equivocating_indices.contains(&i) &&
-                store.get_ancestor(store.latest_messages[&i].root, store.blocks[&root].slot) ==
-                    root
+            store.latest_messages.contains_key(&i)
+                && !store.equivocating_indices.contains(&i)
+                && store.get_ancestor(store.latest_messages[&i].root, store.blocks[&root].slot)
+                    == root
         })
         .map(|&i| state.validators[i as usize].effective_balance)
         .sum::<u64>();

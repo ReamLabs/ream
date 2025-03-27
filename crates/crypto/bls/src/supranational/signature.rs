@@ -21,8 +21,8 @@ impl Verifiable for BLSSignature {
         let signature = self.to_blst_signature()?;
         let public_key = pubkey.to_blst_pubkey()?;
 
-        Ok(signature.verify(true, message, DST, &[], &public_key, false) ==
-            BLST_ERROR::BLST_SUCCESS)
+        Ok(signature.verify(true, message, DST, &[], &public_key, false)
+            == BLST_ERROR::BLST_SUCCESS)
     }
 
     fn fast_aggregate_verify<'a, P>(&self, pubkeys: P, message: &[u8]) -> Result<bool, BLSError>

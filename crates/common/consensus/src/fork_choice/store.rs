@@ -93,15 +93,15 @@ impl Store {
         let voting_source = get_voting_source(self, block_root);
 
         let correct_justified = self.justified_checkpoint.epoch == GENESIS_EPOCH || {
-            voting_source.epoch == self.justified_checkpoint.epoch ||
-                voting_source.epoch + 2 >= current_epoch
+            voting_source.epoch == self.justified_checkpoint.epoch
+                || voting_source.epoch + 2 >= current_epoch
         };
 
         let finalized_checkpoint_block =
             self.get_checkpoint_block(block_root, self.finalized_checkpoint.epoch);
 
-        let correct_finalized = self.finalized_checkpoint.epoch == GENESIS_EPOCH ||
-            self.finalized_checkpoint.root == finalized_checkpoint_block;
+        let correct_finalized = self.finalized_checkpoint.epoch == GENESIS_EPOCH
+            || self.finalized_checkpoint.root == finalized_checkpoint_block;
 
         if correct_justified && correct_finalized {
             blocks.insert(block_root, block.clone());
@@ -145,8 +145,8 @@ impl Store {
     }
 
     pub fn is_ffg_competitive(&self, head_root: B256, parent_root: B256) -> bool {
-        self.unrealized_justifications.get(&head_root) ==
-            self.unrealized_justifications.get(&parent_root)
+        self.unrealized_justifications.get(&head_root)
+            == self.unrealized_justifications.get(&parent_root)
     }
 
     pub fn is_proposing_on_time(&self) -> bool {
@@ -211,14 +211,14 @@ impl Store {
 
         let parent_strong = self.is_parent_strong(parent_root);
 
-        if head_late &&
-            shuffling_stable &&
-            ffg_competitive &&
-            finalization_ok &&
-            proposing_on_time &&
-            single_slot_reorg &&
-            head_weak &&
-            parent_strong
+        if head_late
+            && shuffling_stable
+            && ffg_competitive
+            && finalization_ok
+            && proposing_on_time
+            && single_slot_reorg
+            && head_weak
+            && parent_strong
         {
             parent_root
         } else {

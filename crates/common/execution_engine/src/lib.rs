@@ -65,8 +65,8 @@ impl ExecutionEngine {
         let mut blob_versioned_hashes = vec![];
         for transaction in execution_payload.transactions.iter() {
             if TransactionType::try_from(&transaction[..])
-                .map_err(|err| anyhow!("Failed to detect transaction type: {err:?}"))? ==
-                TransactionType::BlobTransaction
+                .map_err(|err| anyhow!("Failed to detect transaction type: {err:?}"))?
+                == TransactionType::BlobTransaction
             {
                 let blob_transaction = BlobTransaction::decode(&mut &transaction[1..])?;
                 blob_versioned_hashes.extend(blob_transaction.blob_versioned_hashes);
@@ -82,8 +82,8 @@ impl ExecutionEngine {
         &self,
         new_payload_request: &NewPayloadRequest,
     ) -> anyhow::Result<bool> {
-        Ok(self.blob_versioned_hashes(&new_payload_request.execution_payload)? ==
-            new_payload_request.versioned_hashes)
+        Ok(self.blob_versioned_hashes(&new_payload_request.execution_payload)?
+            == new_payload_request.versioned_hashes)
     }
 
     /// Return ``PayloadStatus`` of execution payload``.

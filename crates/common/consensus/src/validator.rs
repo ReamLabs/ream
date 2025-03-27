@@ -41,9 +41,9 @@ impl Validator {
 
     /// Check if ``validator`` is partially withdrawable.
     pub fn is_partially_withdrawable_validator(&self, balance: u64) -> bool {
-        self.has_eth1_withdrawal_credential() &&
-            self.effective_balance == MAX_EFFECTIVE_BALANCE &&
-            balance > MAX_EFFECTIVE_BALANCE
+        self.has_eth1_withdrawal_credential()
+            && self.effective_balance == MAX_EFFECTIVE_BALANCE
+            && balance > MAX_EFFECTIVE_BALANCE
     }
 
     pub fn is_slashable_validator(&self, epoch: u64) -> bool {
@@ -56,7 +56,7 @@ impl Validator {
 
     /// Check if ``validator`` is eligible to be placed into the activation queue.
     pub fn is_eligible_for_activation_queue(&self) -> bool {
-        self.activation_eligibility_epoch == FAR_FUTURE_EPOCH &&
-            self.effective_balance == MAX_EFFECTIVE_BALANCE
+        self.activation_eligibility_epoch == FAR_FUTURE_EPOCH
+            && self.effective_balance == MAX_EFFECTIVE_BALANCE
     }
 }

@@ -200,9 +200,9 @@ impl BeaconState {
 
     /// Return the number of committees in each slot for the given ``epoch``.
     pub fn get_committee_count_per_slot(&self, epoch: u64) -> u64 {
-        (self.get_active_validator_indices(epoch).len() as u64 /
-            SLOTS_PER_EPOCH /
-            TARGET_COMMITTEE_SIZE)
+        (self.get_active_validator_indices(epoch).len() as u64
+            / SLOTS_PER_EPOCH
+            / TARGET_COMMITTEE_SIZE)
             .clamp(1, MAX_COMMITTEES_PER_SLOT)
     }
 
@@ -469,8 +469,8 @@ impl BeaconState {
         if self.genesis_time < MIN_GENESIS_TIME {
             return false;
         }
-        if self.get_active_validator_indices(GENESIS_EPOCH).len() <
-            MIN_GENESIS_ACTIVE_VALIDATOR_COUNT as usize
+        if self.get_active_validator_indices(GENESIS_EPOCH).len()
+            < MIN_GENESIS_ACTIVE_VALIDATOR_COUNT as usize
         {
             return false;
         }
@@ -547,8 +547,8 @@ impl BeaconState {
     }
 
     pub fn get_base_reward_per_increment(&self) -> u64 {
-        EFFECTIVE_BALANCE_INCREMENT * BASE_REWARD_FACTOR /
-            integer_squareroot(self.get_total_active_balance())
+        EFFECTIVE_BALANCE_INCREMENT * BASE_REWARD_FACTOR
+            / integer_squareroot(self.get_total_active_balance())
     }
 
     /// Return the base reward for the validator defined by ``index`` with respect to the current
@@ -575,8 +575,8 @@ impl BeaconState {
         let previous_epoch = self.get_previous_epoch();
         let mut validator_indices = vec![];
         for (index, v) in self.validators.iter().enumerate() {
-            if v.is_active_validator(previous_epoch) ||
-                (v.slashed && previous_epoch + 1 < v.withdrawable_epoch)
+            if v.is_active_validator(previous_epoch)
+                || (v.slashed && previous_epoch + 1 < v.withdrawable_epoch)
             {
                 validator_indices.push(index as u64)
             }
@@ -602,8 +602,8 @@ impl BeaconState {
         let is_matching_source = data.source == justified_checkpoint;
         let is_matching_target =
             is_matching_source && data.target.root == self.get_block_root(data.target.epoch)?;
-        let is_matching_head = is_matching_target &&
-            data.beacon_block_root == self.get_block_root_at_slot(data.slot)?;
+        let is_matching_head = is_matching_target
+            && data.beacon_block_root == self.get_block_root_at_slot(data.slot)?;
         ensure!(is_matching_source);
 
         let mut participation_flag_indices = vec![];
@@ -631,8 +631,8 @@ impl BeaconState {
             self.get_unslashed_participating_indices(TIMELY_TARGET_FLAG_INDEX, previous_epoch)?;
         for index in self.get_eligible_validator_indices()? {
             if !matching_target_indices.contains(&index) {
-                let penalty_numerator = self.validators[index as usize].effective_balance *
-                    self.inactivity_scores[index as usize];
+                let penalty_numerator = self.validators[index as usize].effective_balance
+                    * self.inactivity_scores[index as usize];
                 let penalty_denominator =
                     INACTIVITY_SCORE_BIAS * INACTIVITY_PENALTY_QUOTIENT_BELLATRIX;
                 penalties[index as usize] += penalty_numerator / penalty_denominator;
@@ -728,8 +728,8 @@ impl BeaconState {
         if expected_withdrawals.len() == MAX_WITHDRAWALS_PER_PAYLOAD as usize {
             // Next sweep starts after the latest withdrawal's validator index
             let next_validator_index = expected_withdrawals[expected_withdrawals.len() - 1]
-                .validator_index +
-                1 % self.validators.len() as u64;
+                .validator_index
+                + 1 % self.validators.len() as u64;
             self.next_withdrawal_validator_index = next_validator_index
         } else {
             // Advance sweep by the max length of the sweep if there was not a full set of
@@ -835,8 +835,8 @@ impl BeaconState {
 
         ensure!(&validator.withdrawal_credentials[..1] == BLS_WITHDRAWAL_PREFIX);
         ensure!(
-            validator.withdrawal_credentials[1..] ==
-                hash(address_change.from_bls_pubkey.to_bytes())[1..]
+            validator.withdrawal_credentials[1..]
+                == hash(address_change.from_bls_pubkey.to_bytes())[1..]
         );
 
         // Fork-agnostic domain since address changes are valid across forks
@@ -1185,29 +1185,29 @@ impl BeaconState {
         let bits: Vec<bool> = self.justification_bits.iter().collect();
 
         // The 2nd/3rd/4th most recent epochs are justified, the 2nd using the 4th as source
-        if bits[1..4].iter().all(|&b| b) &&
-            old_previous_justified_checkpoint.epoch + 3 == current_epoch
+        if bits[1..4].iter().all(|&b| b)
+            && old_previous_justified_checkpoint.epoch + 3 == current_epoch
         {
             self.finalized_checkpoint = old_previous_justified_checkpoint;
         }
 
         // The 2nd/3rd most recent epochs are justified, the 2nd using the 3rd as source
-        if bits[1..3].iter().all(|&b| b) &&
-            old_previous_justified_checkpoint.epoch + 2 == current_epoch
+        if bits[1..3].iter().all(|&b| b)
+            && old_previous_justified_checkpoint.epoch + 2 == current_epoch
         {
             self.finalized_checkpoint = old_previous_justified_checkpoint;
         }
 
         // The 1st/2nd/3rd most recent epochs are justified, the 1st using the 3rd as source
-        if bits[0..3].iter().all(|&b| b) &&
-            old_current_justified_checkpoint.epoch + 2 == current_epoch
+        if bits[0..3].iter().all(|&b| b)
+            && old_current_justified_checkpoint.epoch + 2 == current_epoch
         {
             self.finalized_checkpoint = old_current_justified_checkpoint;
         }
 
         // The 1st/2nd most recent epochs are justified, the 1st using the 2nd as source
-        if bits[0..2].iter().all(|&b| b) &&
-            old_current_justified_checkpoint.epoch + 1 == current_epoch
+        if bits[0..2].iter().all(|&b| b)
+            && old_current_justified_checkpoint.epoch + 1 == current_epoch
         {
             self.finalized_checkpoint = old_current_justified_checkpoint;
         }
@@ -1234,8 +1234,8 @@ impl BeaconState {
             let downward_threshold = hysteresis_increment * HYSTERESIS_DOWNWARD_MULTIPLIER;
             let upward_threshold = hysteresis_increment * HYSTERESIS_UPWARD_MULTIPLIER;
 
-            if balance + downward_threshold < validator.effective_balance ||
-                validator.effective_balance + upward_threshold < balance
+            if balance + downward_threshold < validator.effective_balance
+                || validator.effective_balance + upward_threshold < balance
             {
                 validator.effective_balance =
                     (balance - balance % EFFECTIVE_BALANCE_INCREMENT).min(MAX_EFFECTIVE_BALANCE);
@@ -1284,8 +1284,8 @@ impl BeaconState {
 
     pub fn process_attestation(&mut self, attestation: &Attestation) -> anyhow::Result<()> {
         ensure!(
-            attestation.data.target.epoch == self.get_previous_epoch() ||
-                attestation.data.target.epoch == self.get_current_epoch(),
+            attestation.data.target.epoch == self.get_previous_epoch()
+                || attestation.data.target.epoch == self.get_current_epoch(),
             "Target epoch must be the previous or current epoch"
         );
 
@@ -1300,8 +1300,8 @@ impl BeaconState {
         );
 
         ensure!(
-            attestation.data.index <
-                self.get_committee_count_per_slot(attestation.data.target.epoch),
+            attestation.data.index
+                < self.get_committee_count_per_slot(attestation.data.target.epoch),
             "Committee index must be within bounds"
         );
 
@@ -1378,14 +1378,14 @@ impl BeaconState {
     pub fn process_slashings(&mut self) -> anyhow::Result<()> {
         let epoch = self.get_current_epoch();
         let total_balance = self.get_total_active_balance();
-        let adjusted_total_slashing_balance = (self.slashings.iter().sum::<u64>() *
-            PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX)
+        let adjusted_total_slashing_balance = (self.slashings.iter().sum::<u64>()
+            * PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX)
             .min(total_balance);
 
         for index in 0..self.validators.len() {
             let validator = &self.validators[index];
-            if validator.slashed &&
-                epoch + EPOCHS_PER_SLASHINGS_VECTOR / 2 == validator.withdrawable_epoch
+            if validator.slashed
+                && epoch + EPOCHS_PER_SLASHINGS_VECTOR / 2 == validator.withdrawable_epoch
             {
                 let increment = EFFECTIVE_BALANCE_INCREMENT; // Factored out from penalty numerator to avoid uint64 overflow
                 let penalty_numerator =
@@ -1402,8 +1402,8 @@ impl BeaconState {
     pub fn process_operations(&mut self, body: &BeaconBlockBody) -> anyhow::Result<()> {
         // Verify that outstanding deposits are processed up to the maximum number of deposits
         ensure!(
-            body.deposits.len() ==
-                min(
+            body.deposits.len()
+                == min(
                     MAX_DEPOSITS as usize,
                     (self.eth1_data.deposit_count - self.eth1_deposit_index) as usize
                 )
@@ -1447,8 +1447,8 @@ impl BeaconState {
     /// Check if ``validator`` is eligible for activation.
     pub fn is_eligible_for_activation(&self, validator: &Validator) -> bool {
         // Placement in queue is finalized
-        validator.activation_eligibility_epoch <= self.finalized_checkpoint.epoch &&
-            validator.activation_epoch == FAR_FUTURE_EPOCH
+        validator.activation_eligibility_epoch <= self.finalized_checkpoint.epoch
+            && validator.activation_epoch == FAR_FUTURE_EPOCH
     }
 
     /// Return the validator activation churn limit for the current epoch.
@@ -1469,8 +1469,8 @@ impl BeaconState {
                     })?;
             }
 
-            if validator.is_active_validator(current_epoch) &&
-                validator.effective_balance <= EJECTION_BALANCE
+            if validator.is_active_validator(current_epoch)
+                && validator.effective_balance <= EJECTION_BALANCE
             {
                 initiate_validator.push(index as u64);
             }
