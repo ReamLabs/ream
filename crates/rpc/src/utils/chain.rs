@@ -1,6 +1,9 @@
 use alloy_primitives::{aliases::B32, b256, B256};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+
+/// Config for Beacon Chain.
+#[derive(Debug, Clone,Serialize,Deserialize)]
 pub struct BeaconChain {
     pub genesis_time: u64,
     pub genesis_validator_root: B256,
@@ -8,6 +11,8 @@ pub struct BeaconChain {
 }
 
 impl BeaconChain {
+
+    /// Mock the `/genesis` call for testing purposes.
     pub fn mock_init() -> Self {
         Self {
             genesis_time: 15908232934,

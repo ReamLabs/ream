@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use ream_config::chain::BeaconChain;
+use utils::chain::BeaconChain;
 
-use crate::types::genesis::GenesisData;
+use crate::{types::genesis::GenesisData, utils};
 
+/// Called by `/genesis` to get the Genesis Config of Beacon Chain.
 pub async fn get_genesis(ctx: Arc<BeaconChain>) -> Result<impl warp::Reply, warp::Rejection> {
     let genesis_data = GenesisData {
         genesis_time: ctx.genesis_time.to_string(),

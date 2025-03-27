@@ -2,13 +2,12 @@ use std::{env, net::Ipv4Addr};
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
-use ream_beacon_api::{config::ServerConfig, start_server};
-use ream_config::chain::BeaconChain;
 use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
-use std::sync::Arc;
 use ream_p2p::{bootnodes::Bootnodes, network::Network};
 use ream_storage::db::ReamDB;
+use ream_rpc::{config::ServerConfig, start_server, utils::chain::BeaconChain};
+use std::sync::Arc;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -35,15 +34,12 @@ async fn main() {
 
             let bootnodes = Bootnodes::new(config.network.network);
 
-            let beacon_chain=Arc::new(BeaconChain::mock_init());
-            let server_config = ServerConfig::from_args(
-                _cmd.http_port,
-                _cmd.http_address,
-                _cmd.http_allow_origin,
-            );
+            let beacon_chain = Arc::new(BeaconChain::mock_init());
+            let server_config =
+                ServerConfig::from_args(_cmd.http_port, _cmd.http_address, _cmd.http_allow_origin);
             println!("check");
-            
-            let http_future = start_server(beacon_chain,server_config);
+
+            let http_future = start_server(beacon_chain, server_config);
 
                     let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
                         Ipv4Addr::UNSPECIFIED.into(),

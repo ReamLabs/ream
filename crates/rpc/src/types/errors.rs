@@ -12,5 +12,4 @@ pub enum ApiError {
     BadRequest(String),
 }
 
-
-impl warp::reject::Reject for ApiError{}
+impl warp::reject::Reject for ApiError {}
