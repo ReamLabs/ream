@@ -31,8 +31,6 @@ async fn main() {
         Commands::Node(config) => {
             info!("starting up...");
 
-            let bootnodes = Bootnodes::new(config.network.network);
-
             let beacon_chain = Arc::new(BeaconChain::mock_init());
             let server_config = ServerConfig::from_args(
                 config.http_port,
@@ -47,6 +45,8 @@ async fn main() {
                 config.discv_listen_port,
             ))
             .build();
+
+            let bootnodes = Bootnodes::new(config.network.network);
             let binding = NetworkConfig {
                 discv5_config,
                 bootnodes: bootnodes.bootnodes,

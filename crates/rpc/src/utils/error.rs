@@ -1,24 +1,27 @@
-use warp::{reject::Rejection, reply::Reply};
+use warp::{
+    http::StatusCode,
+    reject::Rejection,
+    reply::{with_status, Reply},
+};
 
 use crate::types::errors::ApiError;
 
 pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
-    let (code, message) = if err.is_not_found() {
-        (warp::http::StatusCode::NOT_FOUND, "NOT FOUND".to_string())
-    } else if let Some(api_error) = err.find::<ApiError>() {
-        match api_error {
-            ApiError::Unauthorized => (
-                warp::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized".to_string(),
-            ),
-            ApiError::NotFound(msg) => (warp::http::StatusCode::NOT_FOUND, msg.clone()),
-            ApiError::BadRequest(bd) => (warp::http::StatusCode::BAD_REQUEST, bd.to_string()),
-        }
-    } else {
-        (
-            warp::http::StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL SERVER ERROR".to_string(),
-        )
-    };
-    Ok(warp::reply::with_status(message, code))
+    if err.is_not_found() {
+        return Ok(with_status("NOT FOUND".to_string(), StatusCode::NOT_FOUND));
+    }
+
+    if let Some(api_error) = err.find::<ApiError>() {
+        let (message, code) = match api_error {
+            ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
+            ApiError::NotFound(message) => (StatusCode::NOT_FOUND, message.to_string()),
+            ApiError::BadRequest(message) => (StatusCode::BAD_REQUEST, message.to_string()),
+        };
+        return Ok(with_status(code, message));
+    }
+
+    Ok(with_status(
+        "INTERNAL SERVER ERROR".to_string(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+    ))
 }
