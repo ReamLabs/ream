@@ -28,4 +28,8 @@ impl Bootnodes {
         };
         Self { bootnodes }
     }
+
+    pub fn extend(&mut self, bootnodes: Vec<Enr>) {
+        self.bootnodes.extend(bootnodes);
+    }
 }

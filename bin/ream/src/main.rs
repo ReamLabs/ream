@@ -1,6 +1,10 @@
-use std::net::Ipv4Addr;
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    str::FromStr,
+};
 
 use clap::Parser;
+use discv5::Enr;
 use ream::cli::{Cli, Commands};
 use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
@@ -30,16 +34,26 @@ async fn main() {
         Commands::Node(config) => {
             info!("starting up...");
 
-            let bootnodes = Bootnodes::new(config.network.network);
+            let mut bootnodes = Bootnodes::new(config.network.network);
+            if !config.bootnodes.is_empty() {
+                let enr_bootnodes = config
+                    .bootnodes
+                    .iter()
+                    .filter_map(|enr_str| Enr::from_str(enr_str).ok())
+                    .collect::<Vec<_>>();
+                bootnodes.extend(enr_bootnodes);
+            }
 
             let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
-                Ipv4Addr::UNSPECIFIED.into(),
-                8080,
+                Ipv4Addr::from_str(&config.addr).unwrap().into(),
+                config.discovery_port,
             ))
             .build();
             let binding = NetworkConfig {
                 discv5_config,
                 bootnodes: bootnodes.bootnodes,
+                addr: IpAddr::from_str(&config.addr).unwrap(),
+                port: config.port,
                 disable_discovery: false,
                 total_peers: 0,
             };
