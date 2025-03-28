@@ -15,7 +15,7 @@ pub mod utils;
 pub async fn start_server(ctx: Arc<BeaconChain>, server_config: ServerConfig) {
     let addr: SocketAddr = format!("{}:{}", server_config.http_address, server_config.http_port)
         .parse()
-        .unwrap();
+        .expect("Unable to read ServerConfig");
 
     let routes = get_routes(ctx).recover(handle_rejection);
 
