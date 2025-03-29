@@ -25,7 +25,7 @@ Building the first Beam Chain client which is
 
 ## Getting Help
 
-- Join the [Telegram](tg-url) to get help, or
+- Join the [Telegram][tg-url] to get help, or
 - Open an issue with [a bug](https://github.com/ReamLabs/ream/issues/new)
 
 [tg-url]: https://t.me/ReamLabs
