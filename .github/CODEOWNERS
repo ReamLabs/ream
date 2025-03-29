@@ -4,5 +4,5 @@
 crates/common/consensus/        @KolbyML @Kayden-ML @varun-doshi
 crates/common/execution_engine/ @KolbyML @Kayden-ML
 crates/crypto/                  @KolbyML @syjn99
-crates/rpc/                     @KolbyML @varun-doshi @varun-doshi
+crates/rpc/                     @KolbyML @varun-doshi
 crates/testing/                 @KolbyML @Kayden-ML @syjn99
