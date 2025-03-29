@@ -146,6 +146,31 @@ changes that are split across multiple commits.
 That said, if you have a number of commits that are "checkpoints" and don't represent a single logical change, please
 squash those together.
 
+##### Conventional Commits
+
+Conventional Commits is a standardized format for writing commit messages that helps communicate the nature of changes clearly and consistently across a project. This format makes it easier to understand the history of changes, automate changelogs, and integrate with CI/CD workflows.
+
+**Examples:**
+- `feat: implemented Execution Engine`
+- `feat(auth): add JWT-based login`
+- `fix(ui): correct button alignment in mobile view`
+- `refactor: improve performance of query parser`
+- `docs(readme): update installation instructions`
+
+**Common types:**
+- `feat`: a new feature  
+- `fix`: a bug fix  
+- `docs`: documentation only changes  
+- `style`: changes that do not affect meaning (white-space, formatting, etc.)  
+- `refactor`: code changes that neither fix a bug nor add a feature  
+- `test`: adding or updating tests  
+- `chore`: maintenance tasks like tooling or build updates  
+
+For more details and examples, refer to:
+- [Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
+- [Conventional Commit Messages (cheat sheet)](https://gist.github.com/qoomon/5dfcdf8eec66a051ecd85625518cfd13)
+
+
 #### Opening the pull request
 
 From within GitHub, opening a new pull request will present you with a template that should be filled out. Please try
