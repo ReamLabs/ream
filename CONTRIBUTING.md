@@ -20,7 +20,7 @@ The Ream project adheres to the [Rust Code of Conduct][rust-coc]. This code of c
 expected from all contributors.
 
 Instances of violations of the Code of Conduct can be reported by contacting the team
-at [kolby@reamlabs.com](mailto:kolby@reamlabs.com).
+at [contact@reamlabs.com](mailto:contact@reamlabs.com).
 
 ### Ways to contribute
 
@@ -44,11 +44,6 @@ At this time, we will not be accepting contributions that only fix spelling or g
 elsewhere.
 
 ### Asking for help
-
-<!-- If you have reviewed existing documentation and still have questions, or you are having problems, you can get help in the following ways: -->
-
-<!-- -   **Asking in the support Telegram:** The [Foundry Support Telegram][support-tg] is a fast and easy way to ask questions. -->
-<!-- -   **Opening a discussion:** This repository comes with a discussions board where you can also ask for help. Click the "Discussions" tab at the top. -->
 
 If you have reviewed existing documentation and still have questions, or you are having problems, you can get help by *
 *opening a discussion**. This repository comes with a discussions board where you can also ask for help. Click the "
