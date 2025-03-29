@@ -10,13 +10,13 @@ pub mod utils;
 use std::task::{Context, Poll};
 
 use error::ReqRespError;
-use handler::{ConnectionRequest, HandlerEvent, ReqRespConnectionHandler};
+use handler::{HandlerEvent, ReqRespConnectionHandler};
 use inbound_protocol::InboundReqRespProtocol;
 use libp2p::{
     core::{transport::PortUse, Endpoint},
     swarm::{
-        ConnectionDenied, ConnectionHandler, ConnectionId, FromSwarm, NetworkBehaviour,
-        SubstreamProtocol, THandler, THandlerInEvent, ToSwarm,
+        CloseConnection, ConnectionDenied, ConnectionHandler, ConnectionId, FromSwarm,
+        NetworkBehaviour, NotifyHandler, SubstreamProtocol, THandler, THandlerInEvent, ToSwarm,
     },
     Multiaddr, PeerId,
 };
@@ -31,6 +31,13 @@ pub struct ReqRespMessage {
     pub message: Result<(), ReqRespError>,
 }
 
+#[derive(Debug)]
+pub enum ConnectionRequest {
+    Request(()),
+    Response(()),
+    Shutdown,
+}
+
 pub struct ReqResp {
     pub events: Vec<ToSwarm<ReqRespMessage, ConnectionRequest>>,
 }
@@ -38,6 +45,14 @@ pub struct ReqResp {
 impl ReqResp {
     pub fn new() -> Self {
         ReqResp { events: vec![] }
+    }
+
+    pub fn send_request(&mut self, peer_id: PeerId, connection_id: ConnectionId) {
+        self.events.push(ToSwarm::NotifyHandler {
+            peer_id: peer_id,
+            handler: NotifyHandler::Any,
+            event: ConnectionRequest::Request(()),
+        });
     }
 }
 
@@ -73,7 +88,6 @@ impl NetworkBehaviour for ReqResp {
         _port_use: PortUse,
     ) -> Result<THandler<Self>, ConnectionDenied> {
         let listen_protocol = SubstreamProtocol::new(InboundReqRespProtocol {}, ());
-
         Ok(ReqRespConnectionHandler::new(listen_protocol))
     }
 
@@ -88,13 +102,20 @@ impl NetworkBehaviour for ReqResp {
         event: <Self::ConnectionHandler as ConnectionHandler>::ToBehaviour,
     ) {
         match event {
-            HandlerEvent::Ok(_) => todo!(),
+            HandlerEvent::Ok(message) => self.events.push(ToSwarm::GenerateEvent(ReqRespMessage {
+                peer_id,
+                connection_id,
+                message: Ok(message),
+            })),
             HandlerEvent::Err(err) => self.events.push(ToSwarm::GenerateEvent(ReqRespMessage {
                 peer_id,
                 connection_id,
                 message: Err(err),
             })),
-            HandlerEvent::Close => todo!(),
+            HandlerEvent::Close => self.events.push(ToSwarm::CloseConnection {
+                peer_id,
+                connection: CloseConnection::All,
+            }),
         }
     }
 
@@ -107,24 +128,5 @@ impl NetworkBehaviour for ReqResp {
         }
 
         Poll::Pending
-    }
-
-    fn handle_pending_inbound_connection(
-        &mut self,
-        _connection_id: ConnectionId,
-        _local_addr: &Multiaddr,
-        _remote_addr: &Multiaddr,
-    ) -> Result<(), ConnectionDenied> {
-        Ok(())
-    }
-
-    fn handle_pending_outbound_connection(
-        &mut self,
-        _connection_id: ConnectionId,
-        _maybe_peer: Option<PeerId>,
-        _addresses: &[Multiaddr],
-        _effective_role: Endpoint,
-    ) -> Result<Vec<Multiaddr>, ConnectionDenied> {
-        Ok(std::vec![])
     }
 }
