@@ -1,13 +1,14 @@
 use bls12_381::{
+    G1Affine, G2Affine, G2Projective,
     hash_to_curve::{ExpandMsgXmd, HashToCurve},
-    pairing, G1Affine, G2Affine, G2Projective,
+    pairing,
 };
 
 use crate::{
+    AggregatePubKey, BLSSignature, PubKey,
     constants::DST,
     errors::BLSError,
     traits::{Aggregatable, Verifiable, ZkcryptoVerifiable},
-    AggregatePubKey, BLSSignature, PubKey,
 };
 
 impl TryFrom<&BLSSignature> for G2Affine {

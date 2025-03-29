@@ -1,7 +1,7 @@
-use alloy_primitives::{Address, B256, B64};
+use alloy_primitives::{Address, B64, B256};
 use ream_consensus::withdrawal::Withdrawal;
 use serde::{Deserialize, Serialize};
-use ssz_types::{typenum, VariableList};
+use ssz_types::{VariableList, typenum};
 
 use super::payload_status::PayloadStatusV1;
 

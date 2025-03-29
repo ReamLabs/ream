@@ -1,7 +1,7 @@
 use ream_bls::BLSSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use ssz_types::{typenum, BitVector};
+use ssz_types::{BitVector, typenum};
 use tree_hash_derive::TreeHash;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
