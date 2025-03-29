@@ -4010,6 +4010,12 @@ dependencies = [
 [[package]]
 name = "ream-network-spec"
 version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "hex",
+ "ream-rpc",
+ "serde",
+]
 
 [[package]]
 name = "ream-p2p"

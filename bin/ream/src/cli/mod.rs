@@ -1,9 +1,14 @@
 use std::{path::PathBuf, sync::Arc};
 
-use clap::{ArgAction, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 
 const DEFAULT_NETWORK: &str = "mainnet";
+const DEFAULT_HTTP_PORT: usize = 5052;
+const DEFAULT_HTTP_ADDRESS: &str = "127.0.0.1";
+const DEFAULT_HTTP_ALLOW_ORIGIN: bool = false;
+const DEFAULT_DISABLE_DISCOVERY: bool = false;
+const DEFAULT_DISCOVERY_PORT: u16 = 8000;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
@@ -34,23 +39,23 @@ pub struct NodeConfig {
     pub network: Arc<NetworkSpec>,
 
     /// HTTP port number
-    #[arg(long, default_value_t = 5052)]
+    #[arg(long, default_value_t = DEFAULT_HTTP_PORT)]
     pub http_port: usize,
 
     /// HTTP bind address
-    #[arg(long,default_value_t = String::from("127.0.0.1"))]
+    #[arg(long,default_value_t = DEFAULT_HTTP_ADDRESS.to_string())]
     pub http_address: String,
 
     /// Allow CORS
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, default_value_t=DEFAULT_HTTP_ALLOW_ORIGIN)]
     pub http_allow_origin: bool,
 
     /// discv5 listening port
-    #[arg(long, default_value_t = 8080)]
-    pub discv_listen_port: u16,
+    #[arg(long, default_value_t = DEFAULT_DISCOVERY_PORT)]
+    pub discovery_port: u16,
 
     /// disable discovery
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, default_value_t=DEFAULT_DISABLE_DISCOVERY)]
     pub disable_discovery: bool,
 
     #[arg(
