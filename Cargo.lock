@@ -3957,8 +3957,11 @@ name = "ream-p2p"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "asynchronous-codec",
  "discv5",
  "enr",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "futures",
  "hex",
  "libp2p",
@@ -3969,8 +3972,14 @@ dependencies = [
  "ream-network-spec",
  "serde",
  "serde_yaml",
+ "snap",
+ "ssz_types",
+ "thiserror 2.0.11",
  "tokio",
+ "tokio-io-timeout",
+ "tokio-util",
  "tracing",
+ "unsigned-varint 0.8.0",
 ]
 
 [[package]]
@@ -4982,6 +4991,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-io-timeout"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30b74022ada614a1b4834de765f9bb43877f910cc8ce4be40e89042c9223a8bf"
+dependencies = [
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-macros"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5020,6 +5039,7 @@ checksum = "d7fcaa8d55a2bdd6b83ace262b016eca0d79ee02818c5c1bcdf0305114081078"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "pin-project-lite",
  "slab",
@@ -5247,6 +5267,7 @@ checksum = "eb066959b24b5196ae73cb057f45598450d2c5f71460e98c49b738086eff9c06"
 dependencies = [
  "asynchronous-codec",
  "bytes",
+ "tokio-util",
 ]
 
 [[package]]
