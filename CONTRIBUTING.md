@@ -20,7 +20,7 @@ The Ream project adheres to the [Rust Code of Conduct][rust-coc]. This code of c
 expected from all contributors.
 
 Instances of violations of the Code of Conduct can be reported by contacting the team
-at [contact@reamlabs.com](mailto:contact@reamlabs.com).
+at [kolby@reamlabs.com](mailto:kolby@reamlabs.com).
 
 ### Ways to contribute
 
