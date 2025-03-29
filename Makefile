@@ -43,3 +43,7 @@ lint: # Run `clippy` and `rustfmt`.
 .PHONY: test
 test: # Run all tests.
 	cargo test --workspace -- --nocapture
+
+pr:
+	make lint && \
+	make test
