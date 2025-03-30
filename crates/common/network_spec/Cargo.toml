@@ -13,4 +13,4 @@ version.workspace = true
 alloy-primitives.workspace = true
 serde.workspace = true
 hex.workspace = true
-ream-rpc.workspace = true
+ream-execution-engine.workspace = true

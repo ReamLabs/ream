@@ -1,4 +1,7 @@
-use std::{env, net::Ipv4Addr};
+use std::{
+    {env, net::{IpAddr, Ipv4Addr},
+    str::FromStr,
+}};
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
@@ -31,13 +34,11 @@ async fn main() {
         Commands::Node(config) => {
             info!("starting up...");
 
-            let server_config = ServerConfig::from_args(
+            let server_config = ServerConfig::new(
+                IpAddr::from_str(&config.http_address).expect("Unable to convert to IpAddr"),
                 config.http_port,
-                config.http_address,
                 config.http_allow_origin,
             );
-
-            let http_future = start_server(config.network.genesis.clone().into(), server_config);
 
             let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
                 Ipv4Addr::UNSPECIFIED.into(),
@@ -58,14 +59,17 @@ async fn main() {
 
             info!("ream database initialized ");
 
+            let http_future = start_server(config.network.clone(), server_config);
+
             let network_future = async {
                 match Network::init(async_executor, &binding).await {
                     Ok(mut network) => {
                         main_executor.spawn(async move {
                             network.polling_events().await;
                         });
-
-                        tokio::signal::ctrl_c().await.unwrap();
+                        tokio::signal::ctrl_c()
+                            .await
+                            .expect("Unable to terminate future");
                     }
                     Err(e) => {
                         error!("Failed to initialize network: {}", e);
@@ -74,10 +78,13 @@ async fn main() {
             };
 
             tokio::select! {
-                _ = http_future => {},
-                _ = network_future => {},
+                _ = http_future => {
+                    info!("HTTP server stopped!");
+                },
+                _ = network_future => {
+                    info!("Network future completed!");
+                },
             }
-            tokio::signal::ctrl_c().await.unwrap();
         }
     }
 }

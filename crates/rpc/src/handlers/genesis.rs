@@ -1,15 +1,16 @@
-use std::sync::Arc;
-
+use ream_execution_engine::rpc_types::genesis::Genesis;
 use serde_json::json;
-
-use crate::types::genesis::Genesis;
+use warp::{
+    http::status::StatusCode,
+    reply::{json, with_status},
+};
 
 /// Called by `/genesis` to get the Genesis Config of Beacon Chain.
-pub async fn get_genesis(ctx: Arc<Genesis>) -> Result<impl warp::Reply, warp::Rejection> {
-    Ok(warp::reply::with_status(
-        warp::reply::json(
-            &json!({"genesis_time":ctx.genesis_time.to_string(),"genesis_validator_root":ctx.genesis_validator_root.to_string(),"genesis_fork_version":ctx.genesis_fork_version.to_string()}),
+pub async fn get_genesis(context: Genesis) -> Result<impl warp::Reply, warp::Rejection> {
+    Ok(with_status(
+        json(
+            &json!({"genesis_time":context.genesis_time.to_string(),"genesis_validator_root":context.genesis_validator_root.to_string(),"genesis_fork_version":context.genesis_fork_version.to_string()}),
         ),
-        warp::http::status::StatusCode::OK,
+        StatusCode::OK,
     ))
 }
