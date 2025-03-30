@@ -1,4 +1,4 @@
-use ream_execution_engine::rpc_types::genesis::Genesis;
+use ream_consensus::genesis::Genesis;
 use serde_json::json;
 use warp::{
     http::status::StatusCode,
@@ -6,10 +6,10 @@ use warp::{
 };
 
 /// Called by `/genesis` to get the Genesis Config of Beacon Chain.
-pub async fn get_genesis(context: Genesis) -> Result<impl warp::Reply, warp::Rejection> {
+pub async fn get_genesis(genesis: Genesis) -> Result<impl warp::Reply, warp::Rejection> {
     Ok(with_status(
         json(
-            &json!({"genesis_time":context.genesis_time.to_string(),"genesis_validator_root":context.genesis_validator_root.to_string(),"genesis_fork_version":context.genesis_fork_version.to_string()}),
+            &json!({"genesis_time":genesis.genesis_time.to_string(),"genesis_validator_root":genesis.genesis_validator_root.to_string(),"genesis_fork_version":genesis.genesis_fork_version.to_string()}),
         ),
         StatusCode::OK,
     ))

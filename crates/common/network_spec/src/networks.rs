@@ -1,6 +1,7 @@
-use alloy_primitives::{aliases::B32, b256, fixed_bytes};
-use ream_execution_engine::rpc_types::genesis::Genesis;
 use std::sync::{Arc, LazyLock};
+
+use alloy_primitives::{b256, fixed_bytes};
+use ream_consensus::genesis::Genesis;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Network {
@@ -25,7 +26,7 @@ pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_validator_root: b256!(
                 "0x4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95"
             ),
-            genesis_fork_version:  fixed_bytes!("0x00000000"),
+            genesis_fork_version: fixed_bytes!("0x00000000"),
         },
     }
     .into()

@@ -1,7 +1,7 @@
 use warp::{
     http::StatusCode,
     reject::Rejection,
-    reply::{with_status, Reply},
+    reply::{Reply, with_status},
 };
 
 use crate::types::errors::ApiError;

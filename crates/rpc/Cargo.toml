@@ -10,6 +10,11 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+#ream-dependencies
+ream-consensus.workspace = true
+ream-network-spec.workspace = true
+
+#misc
 alloy-primitives.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -17,6 +22,3 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 warp.workspace = true
-#ream
-ream-execution-engine.workspace = true
-ream-network-spec.workspace = true

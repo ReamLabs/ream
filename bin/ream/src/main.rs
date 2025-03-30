@@ -1,7 +1,4 @@
-use std::{
-    {env, net::{IpAddr, Ipv4Addr},
-    str::FromStr,
-}};
+use std::{env, net::Ipv4Addr};
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
@@ -35,7 +32,7 @@ async fn main() {
             info!("starting up...");
 
             let server_config = ServerConfig::new(
-                IpAddr::from_str(&config.http_address).expect("Unable to convert to IpAddr"),
+                config.http_address,
                 config.http_port,
                 config.http_allow_origin,
             );

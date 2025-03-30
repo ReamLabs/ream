@@ -1,11 +1,11 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
 use config::ServerConfig;
 use ream_network_spec::networks::NetworkSpec;
 use routes::get_routes;
 use tracing::info;
 use utils::error::handle_rejection;
-use warp::{filters::log::Info, Filter};
+use warp::Filter;
 
 pub mod config;
 pub mod handlers;
@@ -18,5 +18,7 @@ pub async fn start_server(network_spec: Arc<NetworkSpec>, server_config: ServerC
     let routes = get_routes(network_spec).recover(handle_rejection);
 
     info!("Starting server on {:?}", server_config.http_socket_address);
-    warp::serve(routes).run(server_config.http_socket_address).await;
+    warp::serve(routes)
+        .run(server_config.http_socket_address)
+        .await;
 }

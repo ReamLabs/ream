@@ -15,6 +15,7 @@ pub mod execution_engine;
 pub mod fork;
 pub mod fork_choice;
 pub mod fork_data;
+pub mod genesis;
 pub mod helpers;
 pub mod historical_batch;
 pub mod historical_summary;
