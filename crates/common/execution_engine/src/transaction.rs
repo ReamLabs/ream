@@ -1,5 +1,5 @@
-use alloy_primitives::{Address, Bytes, B256, U256, U64};
-use alloy_rlp::{bytes, Buf, Decodable, Encodable, RlpDecodable, RlpEncodable, EMPTY_STRING_CODE};
+use alloy_primitives::{Address, B256, Bytes, U64, U256};
+use alloy_rlp::{Buf, Decodable, EMPTY_STRING_CODE, Encodable, RlpDecodable, RlpEncodable, bytes};
 use serde::Deserialize;
 
 #[derive(Default, Eq, Debug, Clone, PartialEq)]

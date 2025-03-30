@@ -1,4 +1,4 @@
-use crate::{errors::BLSError, AggregatePubKey, PubKey};
+use crate::{AggregatePubKey, PubKey, errors::BLSError};
 
 /// Trait for aggregating BLS public keys.
 ///

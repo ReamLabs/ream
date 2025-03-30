@@ -42,3 +42,13 @@ lint: # Run `clippy` and `rustfmt`.
 
 	# cargo sort
 	cargo sort -g
+
+.PHONY: test
+test: # Run all tests.
+	cargo test --workspace -- --nocapture
+
+pr:
+	make lint && \
+	make test
+  # cargo sort
+	cargo sort -g

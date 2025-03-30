@@ -3,8 +3,8 @@ use ream_bls::BLSSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
-    typenum::{U128, U16, U2, U4096},
     VariableList,
+    typenum::{U2, U16, U128, U4096},
 };
 use tree_hash_derive::TreeHash;
 

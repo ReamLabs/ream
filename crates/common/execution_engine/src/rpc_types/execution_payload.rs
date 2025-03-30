@@ -3,8 +3,9 @@ use ream_consensus::{deneb::execution_payload::ExecutionPayload, withdrawal::Wit
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
+    FixedVector, VariableList,
     serde_utils::{hex_fixed_vec, hex_var_list, list_of_hex_var_list},
-    typenum, FixedVector, VariableList,
+    typenum,
 };
 use tree_hash_derive::TreeHash;
 

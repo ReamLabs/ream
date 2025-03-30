@@ -2,7 +2,7 @@ use alloy_primitives::hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz::Encode;
 use ssz_derive::{Decode, Encode};
-use ssz_types::{typenum, FixedVector};
+use ssz_types::{FixedVector, typenum};
 use tree_hash_derive::TreeHash;
 
 #[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default)]

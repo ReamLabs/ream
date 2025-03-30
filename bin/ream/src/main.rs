@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::{env, net::Ipv4Addr};
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
@@ -12,13 +12,13 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() {
     // Set the default log level to `info` if not set
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
-    }
+    let rust_log = env::var(EnvFilter::DEFAULT_ENV).unwrap_or_default();
+    let env_filter = match rust_log.is_empty() {
+        true => EnvFilter::builder().parse_lossy("info"),
+        false => EnvFilter::builder().parse_lossy(rust_log),
+    };
 
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     let cli = Cli::parse();
 
