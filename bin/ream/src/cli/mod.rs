@@ -42,11 +42,11 @@ pub struct NodeConfig {
     )]
     pub network: Arc<NetworkSpec>,
 
+    #[arg(long, help = "Set HTTP address", default_value_t = DEFAULT_HTTP_ADDRESS)]
+    pub http_address: IpAddr,
+
     #[arg(long, help = "Set HTTP Port", default_value_t = DEFAULT_HTTP_PORT)]
     pub http_port: u16,
-
-    #[arg(long, help = "Set the HTTP address", default_value_t = DEFAULT_HTTP_ADDRESS)]
-    pub http_address: IpAddr,
 
     #[arg(long, default_value_t = DEFAULT_HTTP_ALLOW_ORIGIN)]
     pub http_allow_origin: bool,
