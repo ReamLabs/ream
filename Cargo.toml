@@ -6,12 +6,13 @@ members = [
     "crates/common/execution_engine", 
     "crates/common/executor", 
     "crates/common/network_spec", 
-    "crates/crypto/bls", 
-    "crates/networking/discv5", 
-    "crates/networking/p2p", 
-    "crates/rpc", 
-    "crates/runtime", 
-    "crates/storage", 
+    "crates/common/node",
+    "crates/crypto/bls",
+    "crates/networking/discv5",
+    "crates/networking/p2p",
+    "crates/rpc",
+    "crates/runtime",
+    "crates/storage",
     "testing/ef-tests",
 ]
 resolver = "2"
@@ -63,6 +64,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 tree_hash = "0.9"
 tree_hash_derive = "0.9"
+warp = { version = "0.3.7", features = ["tls"] }
 
 # ream dependencies
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
@@ -71,8 +73,10 @@ ream-discv5 = { path = "crates/networking/discv5" }
 ream-execution-engine = { path = "crates/common/execution_engine" }
 ream-executor = { path = "crates/common/executor" }
 ream-network-spec = { path = "crates/common/network_spec" }
+ream-node = { path = "crates/common/node" }
 ream-p2p = { path = "crates/networking/p2p" }
-ream-storage = { path = "crates/storage" }
+ream-rpc = { path = "crates/rpc" }
+ream-storage = { path = "crates/storage"}
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }

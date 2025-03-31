@@ -1,4 +1,4 @@
-mod rpc_types;
+pub mod rpc_types;
 pub mod transaction;
 pub mod utils;
 

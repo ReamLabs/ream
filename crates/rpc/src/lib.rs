@@ -1,14 +1,22 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+use std::sync::Arc;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+use config::ServerConfig;
+use ream_network_spec::networks::NetworkSpec;
+use routes::get_routes;
+use tracing::info;
+use utils::error::handle_rejection;
+use warp::{Filter, serve};
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub mod config;
+pub mod handlers;
+pub mod routes;
+pub mod types;
+pub mod utils;
+
+/// Start the Beacon API server.
+pub async fn start_server(network_spec: Arc<NetworkSpec>, server_config: ServerConfig) {
+    let routes = get_routes(network_spec).recover(handle_rejection);
+
+    info!("Starting server on {:?}", server_config.http_socket_address);
+    serve(routes).run(server_config.http_socket_address).await;
 }

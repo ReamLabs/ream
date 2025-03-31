@@ -1,5 +1,5 @@
 [package]
-name = "ream-network-spec"
+name = "ream-node"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -10,8 +10,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-alloy-primitives.workspace = true
-serde.workspace = true
 
-# ream-dependencies
-ream-consensus.workspace = true
+[build-dependencies]
+vergen = { version = "8.0.0", features = ["build", "cargo", "git", "gitcl", "rustc"] }
