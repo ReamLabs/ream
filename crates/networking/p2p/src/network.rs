@@ -27,12 +27,17 @@ use ream_discv5::{
 use ream_executor::ReamExecutor;
 use tracing::{error, info, warn};
 
+use crate::req_resp::ReqResp;
+
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
     pub identify: identify::Behaviour,
 
     /// The discovery domain: discv5
     pub discovery: Discovery,
+
+    /// The request-response domain
+    pub req_resp: ReqResp,
 
     pub connection_registry: connection_limits::Behaviour,
 }
@@ -73,6 +78,8 @@ impl Network {
             discovery
         };
 
+        let req_resp = ReqResp::new();
+
         let connection_limits = {
             let limits = libp2p::connection_limits::ConnectionLimits::default()
                 .with_max_pending_incoming(Some(5))
@@ -97,6 +104,7 @@ impl Network {
         let behaviour = {
             ReamBehaviour {
                 discovery,
+                req_resp,
                 identify,
                 connection_registry: connection_limits,
             }
@@ -187,6 +195,10 @@ impl Network {
                 ReamBehaviourEvent::Identify(_) => None,
                 ReamBehaviourEvent::Discovery(DiscoveredPeers { peers }) => {
                     self.handle_discovered_peers(peers);
+                    None
+                }
+                ReamBehaviourEvent::ReqResp(message) => {
+                    info!("Unhandled reqresp event {message:?}");
                     None
                 }
                 ream_behavior_event => {
