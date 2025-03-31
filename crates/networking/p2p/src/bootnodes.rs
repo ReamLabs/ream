@@ -1,12 +1,36 @@
+use std::str::FromStr;
+
+use anyhow::anyhow;
 use discv5::Enr;
 use ream_network_spec::networks::Network;
 
-pub struct Bootnodes {
-    pub bootnodes: Vec<Enr>,
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum Bootnodes {
+    #[default]
+    Default,
+    None,
+    Custom(Vec<Enr>),
+}
+
+impl FromStr for Bootnodes {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "default" => Ok(Bootnodes::Default),
+            "none" => Ok(Bootnodes::None),
+            _ => s
+                .split(',')
+                .map(Enr::from_str)
+                .collect::<Result<Vec<_>, String>>()
+                .map(Bootnodes::Custom)
+                .map_err(|err| anyhow!("Failed to parse bootnodes: {err:?}")),
+        }
+    }
 }
 
 impl Bootnodes {
-    pub fn new(network: Network) -> Self {
+    pub fn to_enrs(self, network: Network) -> Vec<Enr> {
         let bootnodes: Vec<Enr> = match network {
             Network::Mainnet => {
                 serde_yaml::from_str(include_str!("../resources/bootnodes_mainnet.yaml"))
@@ -26,6 +50,11 @@ impl Bootnodes {
             }
             Network::Dev => vec![],
         };
-        Self { bootnodes }
+
+        match self {
+            Bootnodes::Default => bootnodes,
+            Bootnodes::None => vec![],
+            Bootnodes::Custom(bootnodes) => bootnodes,
+        }
     }
 }

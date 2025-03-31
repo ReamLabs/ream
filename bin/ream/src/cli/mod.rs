@@ -7,6 +7,7 @@ use std::{
 use clap::{Parser, Subcommand};
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use ream_node::version::FULL_VERSION;
+use ream_p2p::bootnodes::Bootnodes;
 
 const DEFAULT_DISABLE_DISCOVERY: bool = false;
 const DEFAULT_DISCOVERY_PORT: u16 = 8000;
@@ -70,6 +71,13 @@ pub struct NodeConfig {
         help = "Use new data directory, located in OS temporary directory. If used together with --data-dir, new directory will be created there instead."
     )]
     pub ephemeral: bool,
+
+    #[arg(
+        default_value = "default",
+        long = "bootnodes",
+        help = "One or more comma-delimited base64-encoded ENR's of peers to initially connect to. Use 'default' to use the default bootnodes for the network. Use 'none' to disable bootnodes."
+    )]
+    pub bootnodes: Bootnodes,
 }
 
 #[cfg(test)]

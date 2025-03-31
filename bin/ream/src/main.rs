@@ -4,7 +4,7 @@ use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
-use ream_p2p::{bootnodes::Bootnodes, network::Network};
+use ream_p2p::network::Network;
 use ream_rpc::{config::ServerConfig, start_server};
 use ream_storage::db::ReamDB;
 use tracing::{error, info};
@@ -43,10 +43,10 @@ async fn main() {
             ))
             .build();
 
-            let bootnodes = Bootnodes::new(config.network.network);
+            let bootnodes = config.bootnodes.to_enrs(config.network.network);
             let binding = NetworkConfig {
                 discv5_config,
-                bootnodes: bootnodes.bootnodes,
+                bootnodes,
                 disable_discovery: config.disable_discovery,
                 total_peers: 0,
             };
