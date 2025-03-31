@@ -76,7 +76,7 @@ ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }
 ream-p2p = { path = "crates/networking/p2p" }
 ream-rpc = { path = "crates/rpc" }
-ream-storage = { path = "crates/storage"}
+ream-storage = { path = "crates/storage" }
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }
