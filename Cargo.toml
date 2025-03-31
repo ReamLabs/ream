@@ -4,7 +4,8 @@ members = [
     "crates/common/consensus",
     "crates/common/execution_engine",
     "crates/common/executor", 
-    "crates/common/network_spec",
+    "crates/common/network_spec", 
+    "crates/common/node",
     "crates/crypto/bls",
     "crates/networking/discv5",
     "crates/networking/p2p",
@@ -74,6 +75,7 @@ ream-discv5 = { path = "crates/networking/discv5"}
 ream-execution-engine = { path = "crates/common/execution_engine"}
 ream-executor = { path = "crates/common/executor" }
 ream-network-spec = { path = "crates/common/network_spec" }
+ream-node = { path = "crates/common/node" }
 ream-p2p = { path = "crates/networking/p2p" }
 ream-rpc = { path = "crates/rpc" }
 ream-storage = { path = "crates/storage"}
