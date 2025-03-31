@@ -50,5 +50,3 @@ test: # Run all tests.
 pr:
 	make lint && \
 	make test
-  # cargo sort
-	cargo sort -g

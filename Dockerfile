@@ -30,7 +30,7 @@ ENV RUSTFLAGS="$RUSTFLAGS"
 ARG FEATURES=""
 ENV FEATURES=$FEATURES
 
-# Builds dependencies
+# Build dependencies
 RUN cargo chef cook --profile $BUILD_PROFILE --features "$FEATURES" --recipe-path recipe.json
 
 # Build application
@@ -49,7 +49,7 @@ WORKDIR /app
 COPY --from=builder /app/ream /usr/local/bin
 
 # Copy licenses
-COPY LICENSE-* ./
+COPY LICENSE ./
 
 EXPOSE 8545 8546
 ENTRYPOINT ["/usr/local/bin/ream"]

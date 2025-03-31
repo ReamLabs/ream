@@ -14,7 +14,11 @@ There are some other dependencies you need to install based on your operating sy
 
 - **Ubuntu/Debian**: `apt-get install libclang-dev pkg-config libssl-dev build-essential`
 
+Install cargo-sort tool.
 
+```bash
+cargo install cargo-sort
+```
 
 ## Build Ream
 
@@ -25,14 +29,8 @@ git clone git@github.com:reamlabs/ream.git
 cd ream
 ```
 
-There are also some other rust tools that you need to install.
-
-```bash
-cargo install cargo-sort
-```
-
 After everything is setup, you can start the build:
 
 ```bash
-make build // cargo build --release
+make build
 ```
