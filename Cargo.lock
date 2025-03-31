@@ -3954,6 +3954,7 @@ dependencies = [
  "ream-discv5",
  "ream-executor",
  "ream-network-spec",
+ "ream-node",
  "ream-p2p",
  "ream-rpc",
  "ream-storage",

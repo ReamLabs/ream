@@ -6,6 +6,7 @@ use std::{
 
 use clap::{Parser, Subcommand};
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
+use ream_node::version::REAM_VERSION;
 
 const DEFAULT_DISABLE_DISCOVERY: bool = false;
 const DEFAULT_DISCOVERY_PORT: u16 = 8000;
@@ -15,7 +16,7 @@ const DEFAULT_HTTP_PORT: u16 = 5052;
 const DEFAULT_NETWORK: &str = "mainnet";
 
 #[derive(Debug, Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version = REAM_VERSION, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
