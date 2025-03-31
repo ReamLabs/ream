@@ -1919,6 +1919,7 @@ pub fn kzg_commitment_to_versioned_hash(kzg_commitment: &KZGCommitment) -> B256 
     B256::from_slice(&versioned_hash)
 }
 
+#[allow(clippy::manual_div_ceil)]
 /// Return the largest integer ``x`` such that ``x**2 <= n``.
 pub fn integer_squareroot(n: u64) -> u64 {
     if n == UINT64_MAX {

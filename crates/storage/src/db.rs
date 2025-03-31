@@ -19,6 +19,7 @@ pub struct ReamDB {
     pub db: Arc<Database>,
 }
 
+#[allow(clippy::result_large_err)]
 impl ReamDB {
     pub fn new(data_dir: Option<PathBuf>, ephemeral: bool) -> Result<Self, StoreError> {
         let ream_dir =

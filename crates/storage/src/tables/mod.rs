@@ -7,6 +7,7 @@ use ssz::{Decode, Encode};
 
 use crate::errors::StoreError;
 
+#[allow(clippy::result_large_err)]
 pub trait Table {
     type Key: Value;
 
