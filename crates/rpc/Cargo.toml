@@ -13,6 +13,7 @@ version.workspace = true
 #ream-dependencies
 ream-consensus.workspace = true
 ream-network-spec.workspace = true
+ream-node.workspace = true
 
 #misc
 alloy-primitives.workspace = true
