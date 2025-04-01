@@ -1,4 +1,4 @@
-use std::{env, net::Ipv4Addr};
+use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
@@ -38,7 +38,7 @@ async fn main() {
             );
 
             let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
-                Ipv4Addr::UNSPECIFIED.into(),
+                config.socket_address,
                 config.discovery_port,
             ))
             .build();
@@ -47,6 +47,8 @@ async fn main() {
             let binding = NetworkConfig {
                 discv5_config,
                 bootnodes,
+                socket_address: config.socket_address,
+                socket_port: config.socket_port,
                 disable_discovery: config.disable_discovery,
                 total_peers: 0,
             };
