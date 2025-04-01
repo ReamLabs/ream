@@ -41,7 +41,7 @@ lint: # Run `clippy` and `rustfmt`.
 	cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings
 
 	# cargo sort
-	cargo sort -g
+	cargo sort --grouped
 
 .PHONY: test
 test: # Run all tests.

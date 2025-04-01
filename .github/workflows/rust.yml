@@ -36,6 +36,18 @@ jobs:
         cargo clippy --all --all-targets --no-deps -- --deny warnings # clippy for ream, default features
         cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings # clippy for ream-bls, supranational feature
 
+  cargo-sort:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install cargo sort
+      run: cargo install cargo-sort
+
+    - name: Run cargo sort
+      run: cargo sort --grouped --check
+
   build:
     runs-on: ubuntu-latest
     needs: [cargo-fmt, cargo-clippy]
