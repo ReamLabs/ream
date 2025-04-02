@@ -4052,7 +4052,6 @@ dependencies = [
  "itertools 0.14.0",
  "kzg",
  "ream-bls",
- "rust-kzg-blst",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -4070,6 +4069,7 @@ dependencies = [
  "discv5",
  "futures",
  "libp2p",
+ "libp2p-identity",
  "tokio",
  "tracing",
 ]

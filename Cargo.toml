@@ -75,7 +75,7 @@ ream-consensus = { path = "crates/common/consensus" }
 ream-discv5 = { path = "crates/networking/discv5" }
 ream-execution-engine = { path = "crates/common/execution_engine" }
 ream-executor = { path = "crates/common/executor" }
-ream-fork-choice = { path = "crates/common/fork_choice"}
+ream-fork-choice = { path = "crates/common/fork_choice" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
