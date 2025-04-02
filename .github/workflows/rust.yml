@@ -58,7 +58,7 @@ jobs:
       run: cargo install cargo-udeps
 
     - name: Run cargo udeps
-      run: cargo udeps --workspace --tests --all-targets --release --exclude ef-tests
+      run: cargo +nightly udeps --workspace --tests --all-targets --release --exclude ef-tests
 
   build:
     runs-on: ubuntu-latest
