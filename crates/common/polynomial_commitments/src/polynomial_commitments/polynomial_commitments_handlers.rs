@@ -1,11 +1,11 @@
 use kzg::{eip_4844::verify_blob_kzg_proof_batch_raw, eth::c_bindings::Bytes48};
-
-use super::{
-    error::KzgError,
-    kzg_proof::{Bytes48 as OtherBytes48, KZGProof},
-    trusted_setup,
+use ream_consensus::{
+    execution_engine::rpc_types::get_blobs::Blob,
+    kzg_commitment::KZGCommitment,
+    polynomial_commitments::kzg_proof::{Bytes48 as OtherBytes48, KZGProof},
 };
-use crate::{execution_engine::rpc_types::get_blobs::Blob, kzg_commitment::KZGCommitment};
+
+use super::{error::KzgError, trusted_setup};
 
 /// Given a list of blobs and blob KZG proofs, verify that they correspond to the provided
 /// commitments. Will return True if there are zero blobs/commitments/proofs.

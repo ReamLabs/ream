@@ -4104,6 +4104,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-fork-choice"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
+ "alloy-rlp",
+ "anyhow",
+ "async-trait",
+ "ethereum_hashing",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "itertools 0.14.0",
+ "kzg",
+ "ream-bls",
+ "ream-consensus",
+ "ream-polynomial-commitments",
+ "rust-kzg-blst",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "ssz_types",
+ "thiserror 2.0.12",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
 name = "ream-network-spec"
 version = "0.1.0"
 dependencies = [
@@ -4136,6 +4164,33 @@ dependencies = [
  "serde_yaml",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "ream-polynomial-commitments"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
+ "alloy-rlp",
+ "anyhow",
+ "async-trait",
+ "ethereum_hashing",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "itertools 0.14.0",
+ "kzg",
+ "ream-bls",
+ "ream-consensus",
+ "rust-kzg-blst",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "ssz_types",
+ "thiserror 2.0.12",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]

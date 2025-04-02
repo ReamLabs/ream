@@ -1,17 +1,18 @@
 use alloy_primitives::B256;
 use anyhow::{bail, ensure};
-use tree_hash::TreeHash;
-
-use super::store::Store;
-use crate::{
+use ream_consensus::{
     checkpoint::Checkpoint,
     deneb::beacon_block::SignedBeaconBlock,
     execution_engine::{blob_versioned_hashes::blob_versioned_hashes, engine_trait::ExecutionApi},
-    fork_choice::constants::{INTERVALS_PER_SLOT, SECONDS_PER_SLOT},
+    fork_choice::{
+        constants::{INTERVALS_PER_SLOT, SECONDS_PER_SLOT},
+        store::Store,
+    },
     kzg_commitment::KZGCommitment,
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch},
-    polynomial_commitments::polynomial_commitments_handlers::verify_blob_kzg_proof_batch,
 };
+use ream_polynomial_commitments::polynomial_commitments::polynomial_commitments_handlers::verify_blob_kzg_proof_batch;
+use tree_hash::TreeHash;
 
 pub async fn is_data_available(
     beacon_block_root: B256,

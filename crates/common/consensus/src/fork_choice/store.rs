@@ -14,6 +14,7 @@ use crate::{
     helpers::{calculate_committee_fraction, get_voting_source, get_weight},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
 };
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Store {
     pub time: u64,
