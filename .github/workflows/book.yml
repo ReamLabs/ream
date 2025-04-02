@@ -79,15 +79,16 @@ jobs:
       - name: Build book
         run: mdbook build
 
-      - name: Build docs
-        run: cargo docs --exclude "example-*"
-        env:
-          # Keep in sync with ./ci.yml:jobs.docs
-          RUSTDOCFLAGS: --cfg docsrs --show-type-layout --generate-link-to-definition --enable-index-page -Zunstable-options
+      # todo: add these steps back in when we support docs.rs
+      # - name: Build docs
+      #   run: cargo docs --exclude "example-*"
+      #   env:
+      #     # Keep in sync with ./ci.yml:jobs.docs
+      #     RUSTDOCFLAGS: --cfg docsrs --show-type-layout --generate-link-to-definition --enable-index-page -Zunstable-options
 
-      - name: Move docs to book folder
-        run: |
-          mv target/doc target/book/docs
+      # - name: Move docs to book folder
+      #   run: |
+      #     mv target/doc target/book/docs
 
       - name: Archive artifact
         shell: sh
