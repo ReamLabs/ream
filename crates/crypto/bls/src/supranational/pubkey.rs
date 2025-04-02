@@ -1,5 +1,6 @@
 use blst::min_pk::PublicKey as BlstPublicKey;
 use ssz_types::FixedVector;
+use crate::errors;
 
 use crate::{errors::BLSError, pubkey::PubKey, traits::Validate};
 
@@ -17,10 +18,12 @@ impl PubKey {
     }
 }
 
-impl Validate for Pubkey {
+impl Validate for PubKey {
     type Error = BLSError;
 
-    fn validate(&self) -> Result<(), BLSError> {
-        self.to_blst_pubkey().validate()
+    fn validate(&self) -> std::result::Result<(), errors::BLSError> {
+        self.to_blst_pubkey()?
+            .validate()
+            .map_err(|err| BLSError::BlstError(err.into())) // Convert `BLST_ERROR` to `BLSError`
     }
 }

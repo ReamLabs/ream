@@ -1,5 +1,10 @@
 use crate::{AggregatePubKey, PubKey, errors::BLSError};
 
+pub trait Validate {
+    type Error;
+    fn validate(&self) -> Result<(), Self::Error>;
+}
+
 /// Trait for aggregating BLS public keys.
 ///
 /// This trait provides functionality to combine multiple BLS public keys into a single
