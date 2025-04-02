@@ -14,10 +14,10 @@ There are some other dependencies you need to install based on your operating sy
 
 - **Ubuntu/Debian**: `apt-get install libclang-dev pkg-config libssl-dev build-essential`
 
-Install cargo-sort tool.
+Install cargo-sort and cargo-udeps tools.
 
 ```bash
-cargo install cargo-sort
+cargo install cargo-sort cargo-udeps
 ```
 
 ## Build Ream

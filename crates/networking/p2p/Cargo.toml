@@ -20,7 +20,6 @@ anyhow.workspace = true
 enr.workspace = true
 discv5.workspace = true
 futures.workspace = true
-hex.workspace = true
 libp2p-identity.workspace = true
 libp2p-mplex.workspace = true
 libp2p.workspace = true

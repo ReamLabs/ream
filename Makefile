@@ -47,6 +47,9 @@ lint: # Run `clippy` and `rustfmt`.
 test: # Run all tests.
 	cargo test --workspace -- --nocapture
 
+clean-deps:
+	cargo +nightly udeps --workspace --tests --all-targets --release --exclude ef-tests
+
 pr:
 	make lint && \
 	make test

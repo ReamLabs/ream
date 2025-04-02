@@ -1309,8 +1309,6 @@ name = "ef-tests"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
- "ethereum_hashing",
- "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "paste",
@@ -1322,7 +1320,6 @@ dependencies = [
  "ssz_types",
  "tokio",
  "tree_hash",
- "tree_hash_derive",
 ]
 
 [[package]]
@@ -4054,8 +4051,6 @@ dependencies = [
  "discv5",
  "futures",
  "libp2p",
- "libp2p-identity",
- "libp2p-mplex",
  "tokio",
  "tracing",
 ]
@@ -4072,12 +4067,10 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "jsonwebtoken",
- "ream-bls",
  "ream-consensus",
  "reqwest",
  "serde",
  "serde_json",
- "serde_yaml",
  "ssz_types",
  "tree_hash",
  "tree_hash_derive",
@@ -4097,7 +4090,6 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "ream-consensus",
- "serde",
 ]
 
 [[package]]
@@ -4115,7 +4107,6 @@ dependencies = [
  "discv5",
  "enr",
  "futures",
- "hex",
  "libp2p",
  "libp2p-identity",
  "libp2p-mplex",
@@ -4132,14 +4123,12 @@ dependencies = [
 name = "ream-rpc"
 version = "0.1.0"
 dependencies = [
- "alloy-primitives",
  "ream-consensus",
  "ream-network-spec",
  "ream-node",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
- "tokio",
  "tracing",
  "warp",
 ]
@@ -4154,9 +4143,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "directories",
- "ethereum_serde_utils",
  "ethereum_ssz",
- "ethereum_ssz_derive",
  "ream-consensus",
  "redb",
  "tempfile",
