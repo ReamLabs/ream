@@ -16,6 +16,7 @@ members = [
     "testing/ef-tests",
 ]
 resolver = "2"
+exclude = ["book/cli", "book/sources"]
 
 [workspace.package]
 authors = ["https://github.com/ReamLabs/ream/graphs/contributors"]

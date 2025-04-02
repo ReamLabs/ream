@@ -45,7 +45,7 @@ RUN cp /app/target/$BUILD_PROFILE/ream /app/ream
 FROM ubuntu AS runtime
 WORKDIR /app
 
-# Copy reth over from the build stage
+# Copy ream over from the build stage
 COPY --from=builder /app/ream /usr/local/bin
 
 # Copy licenses

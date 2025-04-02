@@ -5,12 +5,22 @@ multilingual = false
 src = "book"
 title = "ream Book"
 
-[build]
-build-dir = "target/book"
-
 [output.html]
+theme = "book/theme"
+git-repository-url = "https://github.com/ReamLabs/ream"
+default-theme = "ayu"
 no-section-label = true
 
 [output.html.fold]
 enable = true
 level = 1
+
+[build]
+build-dir = "target/book"
+
+[preprocessor.template]
+before = ["links"]
+
+[preprocessor.index]
+
+[preprocessor.links]
