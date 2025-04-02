@@ -84,7 +84,7 @@ fn write_file(file_path: &Path, content: &str) -> io::Result<()> {
     } else {
         content.to_string()
     };
-    fs::write(file_path, content)
+    fs::write(file_path, format!("{content}\n"))
 }
 
 fn main() -> io::Result<()> {
