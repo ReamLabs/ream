@@ -3,6 +3,7 @@ pub mod beacon_state;
 pub mod block_timeliness;
 pub mod checkpoint_states;
 pub mod finalized_checkpoint;
+pub mod genesis_time;
 pub mod justified_checkpoint;
 pub mod latest_messages;
 pub mod proposer_boost_root;
