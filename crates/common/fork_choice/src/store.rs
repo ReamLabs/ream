@@ -1,21 +1,24 @@
 use alloy_primitives::{B256, map::HashMap};
+use ream_consensus::{
+    checkpoint::Checkpoint,
+    constants::{
+        GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SECONDS_PER_SLOT, SLOTS_PER_EPOCH,
+    },
+    deneb::{beacon_block::BeaconBlock, beacon_state::BeaconState},
+    helpers::{calculate_committee_fraction, get_total_active_balance},
+    misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
+};
 use serde::{Deserialize, Serialize};
 
-use super::{
+use crate::{
     constants::{
-        GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, REORG_HEAD_WEIGHT_THRESHOLD,
-        REORG_MAX_EPOCHS_SINCE_FINALIZATION, REORG_PARENT_WEIGHT_THRESHOLD, SECONDS_PER_SLOT,
+        PROPOSER_SCORE_BOOST, REORG_HEAD_WEIGHT_THRESHOLD, REORG_MAX_EPOCHS_SINCE_FINALIZATION,
+        REORG_PARENT_WEIGHT_THRESHOLD,
     },
     latest_message::LatestMessage,
 };
-use crate::{
-    checkpoint::Checkpoint,
-    deneb::{beacon_block::BeaconBlock, beacon_state::BeaconState},
-    helpers::{calculate_committee_fraction, get_voting_source, get_weight},
-    misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
-};
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Store {
     pub time: u64,
     pub genesis_time: u64,
@@ -96,7 +99,7 @@ impl Store {
         }
 
         let current_epoch = compute_epoch_at_slot(self.get_current_slot());
-        let voting_source = get_voting_source(self, block_root);
+        let voting_source = self.get_voting_source(block_root);
 
         let correct_justified = self.justified_checkpoint.epoch == GENESIS_EPOCH || {
             voting_source.epoch == self.justified_checkpoint.epoch
@@ -167,6 +170,62 @@ impl Store {
         epochs_since_finalization <= REORG_MAX_EPOCHS_SINCE_FINALIZATION
     }
 
+    pub fn get_proposer_score(&self) -> u64 {
+        let justified_checkpoint_state = self
+            .checkpoint_states
+            .get(&self.justified_checkpoint)
+            .expect("Failed to find checkpoint in checkpoint states");
+        let committee_weight =
+            get_total_active_balance(justified_checkpoint_state.clone()) / SLOTS_PER_EPOCH;
+        (committee_weight * PROPOSER_SCORE_BOOST) / 100
+    }
+
+    pub fn get_weight(&self, root: B256) -> u64 {
+        let state = &self.checkpoint_states[&self.justified_checkpoint];
+
+        let unslashed_and_active_indices: Vec<u64> = state
+            .get_active_validator_indices(state.get_current_epoch())
+            .into_iter()
+            .filter(|&i| !state.validators[i as usize].slashed)
+            .collect();
+
+        let attestation_score: u64 = unslashed_and_active_indices
+            .iter()
+            .filter(|&&i| {
+                self.latest_messages.contains_key(&i)
+                    && !self.equivocating_indices.contains(&i)
+                    && self.get_ancestor(self.latest_messages[&i].root, self.blocks[&root].slot)
+                        == root
+            })
+            .map(|&i| state.validators[i as usize].effective_balance)
+            .sum::<u64>();
+
+        if self.proposer_boost_root == B256::ZERO {
+            return attestation_score;
+        }
+
+        let mut proposer_score: u64 = 0;
+        if self.get_ancestor(self.proposer_boost_root, self.blocks[&root].slot) == root {
+            proposer_score = self.get_proposer_score();
+        }
+
+        attestation_score + proposer_score
+    }
+
+    pub fn get_voting_source(&self, block_root: B256) -> Checkpoint {
+        let block = &self.blocks[&block_root];
+
+        let current_epoch = self.get_current_slot();
+        let block_epoch = compute_epoch_at_slot(block.slot);
+
+        if current_epoch > block_epoch {
+            self.unrealized_justifications[&block_root]
+        } else {
+            let head_state = &self.block_states[&block_root];
+            head_state.current_justified_checkpoint
+        }
+    }
+
     pub fn is_head_weak(&self, head_root: B256) -> bool {
         let justified_state = self
             .checkpoint_states
@@ -175,7 +234,7 @@ impl Store {
 
         let reorg_threshold =
             calculate_committee_fraction(justified_state.clone(), REORG_HEAD_WEIGHT_THRESHOLD);
-        let head_weight = get_weight(self.clone(), head_root);
+        let head_weight = self.get_weight(head_root);
 
         head_weight < reorg_threshold
     }
@@ -188,7 +247,7 @@ impl Store {
 
         let parent_threshold =
             calculate_committee_fraction(justified_state.clone(), REORG_PARENT_WEIGHT_THRESHOLD);
-        let parent_weight = get_weight(self.clone(), parent_root);
+        let parent_weight = self.get_weight(parent_root);
 
         parent_weight > parent_threshold
     }

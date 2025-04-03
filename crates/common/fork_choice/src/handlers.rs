@@ -2,21 +2,20 @@ use alloy_primitives::B256;
 use anyhow::{bail, ensure};
 use ream_consensus::{
     checkpoint::Checkpoint,
+    constants::{INTERVALS_PER_SLOT, SECONDS_PER_SLOT},
     deneb::beacon_block::SignedBeaconBlock,
     execution_engine::{blob_versioned_hashes::blob_versioned_hashes, engine_trait::ExecutionApi},
-    fork_choice::{
-        constants::{INTERVALS_PER_SLOT, SECONDS_PER_SLOT},
-        store::Store,
-    },
     kzg_commitment::KZGCommitment,
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch},
 };
-use ream_polynomial_commitments::polynomial_commitments_handlers::verify_blob_kzg_proof_batch;
+use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use tree_hash::TreeHash;
+
+use crate::store::Store;
 
 pub async fn is_data_available(
     beacon_block_root: B256,
-    store: Store,
+    store: &Store,
     blob_kzg_commitments: Vec<KZGCommitment>,
     execution_engine: &impl ExecutionApi,
 ) -> anyhow::Result<bool> {
@@ -57,9 +56,9 @@ pub fn get_ancestor(store: &Store, root: B256, slot: u64) -> B256 {
 }
 
 /// Compute the checkpoint block for epoch ``epoch`` in the chain of block ``root``
-pub fn get_checkpoint_block(store: Store, root: B256, epoch: u64) -> B256 {
+pub fn get_checkpoint_block(store: &Store, root: B256, epoch: u64) -> B256 {
     let epoch_first_slot = compute_start_slot_at_epoch(epoch);
-    get_ancestor(&store, root, epoch_first_slot)
+    get_ancestor(store, root, epoch_first_slot)
 }
 
 /// Update checkpoints in store if necessary
@@ -82,7 +81,7 @@ pub fn update_checkpoints(
 
 /// Update unrealized checkpoints in store if necessary
 pub fn update_unrealized_checkpoints(
-    mut store: Store,
+    store: &mut Store,
     unrealized_justified_checkpoint: Checkpoint,
     unrealized_finalized_checkpoint: Checkpoint,
 ) -> anyhow::Result<()> {
@@ -99,7 +98,7 @@ pub fn update_unrealized_checkpoints(
     Ok(())
 }
 
-pub fn get_current_store_epoch(store: Store) -> u64 {
+pub fn get_current_store_epoch(store: &Store) -> u64 {
     compute_epoch_at_slot(store.get_current_slot())
 }
 
@@ -112,14 +111,14 @@ pub fn compute_pulled_up_tip(store: &mut Store, block_root: B256) -> anyhow::Res
         .unrealized_justifications
         .insert(block_root, state.current_justified_checkpoint);
     update_unrealized_checkpoints(
-        store.clone(),
+        store,
         state.current_justified_checkpoint,
         state.finalized_checkpoint,
     )?;
 
     // If the block is from a prior epoch, apply the realized values
     let block_epoch = compute_epoch_at_slot(store.blocks[&block_root].slot);
-    let current_epoch = get_current_store_epoch(store.clone());
+    let current_epoch = get_current_store_epoch(store);
     if block_epoch < current_epoch {
         store.update_checkpoints(
             state.current_justified_checkpoint,
@@ -150,11 +149,8 @@ pub async fn on_block(
     ensure!(block.slot > finalized_slot);
 
     // Check block is a descendant of the finalized block at the checkpoint finalized slot
-    let finalized_checkpoint_block = get_checkpoint_block(
-        store.clone(),
-        block.parent_root,
-        store.finalized_checkpoint.epoch,
-    );
+    let finalized_checkpoint_block =
+        get_checkpoint_block(store, block.parent_root, store.finalized_checkpoint.epoch);
 
     ensure!(store.finalized_checkpoint.root == finalized_checkpoint_block);
 
@@ -166,7 +162,7 @@ pub async fn on_block(
     ensure!(
         is_data_available(
             block.tree_hash_root(),
-            store.clone(),
+            store,
             block.body.blob_kzg_commitments.to_vec(),
             execution_engine
         )

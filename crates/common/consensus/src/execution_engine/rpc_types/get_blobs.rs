@@ -1,7 +1,7 @@
 use alloy_primitives::FixedBytes;
 use serde::Deserialize;
 
-use crate::{fork_choice::constants::BYTES_PER_BLOB, polynomial_commitments::kzg_proof::KZGProof};
+use crate::{constants::BYTES_PER_BLOB, polynomial_commitments::kzg_proof::KZGProof};
 
 pub type Blob = FixedBytes<BYTES_PER_BLOB>;
 
