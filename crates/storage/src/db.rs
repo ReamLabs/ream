@@ -9,6 +9,7 @@ use crate::{
     tables::{
         beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
         block_timeliness::BlockTimelinessTable, checkpoint_states::CheckpointStatesTable,
+        equivocating_indices::EquivocatingIndicesField,
         finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
         justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
         proposer_boost_root::ProposerBoostRootField, time::TimeField,
@@ -122,6 +123,12 @@ impl ReamDB {
 
     pub fn time_provider(&self) -> TimeField {
         TimeField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn equivocating_indices_provider(&self) -> EquivocatingIndicesField {
+        EquivocatingIndicesField {
             db: self.db.clone(),
         }
     }
