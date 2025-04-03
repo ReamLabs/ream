@@ -9,7 +9,7 @@ use crate::{
     tables::{
         beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
         block_timeliness::BlockTimelinessTable, checkpoint_states::CheckpointStatesTable,
-        latest_messages::LatestMessagesTable,
+        latest_messages::LatestMessagesTable, proposer_boost_root::ProposerBoostRootField,
         unrealized_justifications::UnrealizedJustificationsTable,
     },
 };
@@ -76,6 +76,12 @@ impl ReamDB {
 
     pub fn unrealized_justifications_provider(&self) -> UnrealizedJustificationsTable {
         UnrealizedJustificationsTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn proposer_boost_root_provider(&self) -> ProposerBoostRootField {
+        ProposerBoostRootField {
             db: self.db.clone(),
         }
     }

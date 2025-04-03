@@ -3,6 +3,7 @@ pub mod beacon_state;
 pub mod block_timeliness;
 pub mod checkpoint_states;
 pub mod latest_messages;
+pub mod proposer_boost_root;
 pub mod unrealized_justifications;
 
 use std::{any::type_name, fmt::Debug};
@@ -21,6 +22,15 @@ pub trait Table {
     fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError>;
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError>;
+}
+
+#[allow(clippy::result_large_err)]
+pub trait Field {
+    type Value;
+
+    fn get(&self) -> Result<Option<Self::Value>, StoreError>;
+
+    fn insert(&self, value: Self::Value) -> Result<(), StoreError>;
 }
 
 /// Wrapper type to handle keys and values using SSZ encoding
