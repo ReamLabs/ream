@@ -1,4 +1,5 @@
 pub mod beacon_state;
+pub mod beacon_block;
 
 use std::{any::type_name, fmt::Debug};
 

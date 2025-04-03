@@ -3,7 +3,7 @@ use std::{path::PathBuf, sync::Arc};
 use anyhow::Result;
 use redb::{Builder, Database};
 
-use crate::{dir, errors::StoreError, tables::beacon_state::BeaconStateTable};
+use crate::{dir, errors::StoreError, tables::{beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable}};
 
 pub const APP_NAME: &str = "ream";
 
@@ -37,6 +37,12 @@ impl ReamDB {
 
     pub fn beacon_state_provider(&self) -> BeaconStateTable {
         BeaconStateTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn beacon_block_provider(&self) -> BeaconBlockTable {
+        BeaconBlockTable {
             db: self.db.clone(),
         }
     }
