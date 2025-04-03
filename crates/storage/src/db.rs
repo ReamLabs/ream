@@ -11,7 +11,8 @@ use crate::{
         block_timeliness::BlockTimelinessTable, checkpoint_states::CheckpointStatesTable,
         latest_messages::LatestMessagesTable, proposer_boost_root::ProposerBoostRootField,
         unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
-        unrealized_justifications::UnrealizedJustificationsTable, unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
+        unrealized_justifications::UnrealizedJustificationsTable,
+        unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
     },
 };
 
