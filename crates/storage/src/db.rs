@@ -9,7 +9,8 @@ use crate::{
     tables::{
         beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
         block_timeliness::BlockTimelinessTable, checkpoint_states::CheckpointStatesTable,
-        finalized_checkpoint::FinalizedCheckpointField, latest_messages::LatestMessagesTable,
+        finalized_checkpoint::FinalizedCheckpointField,
+        justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
         proposer_boost_root::ProposerBoostRootField,
         unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
         unrealized_justifications::UnrealizedJustificationsTable,
@@ -103,6 +104,12 @@ impl ReamDB {
 
     pub fn finalized_checkpoint_provider(&self) -> FinalizedCheckpointField {
         FinalizedCheckpointField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn justified_checkpoint_provider(&self) -> JustifiedCheckpointField {
+        JustifiedCheckpointField {
             db: self.db.clone(),
         }
     }
