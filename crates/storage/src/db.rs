@@ -11,7 +11,7 @@ use crate::{
         block_timeliness::BlockTimelinessTable, checkpoint_states::CheckpointStatesTable,
         finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
         justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
-        proposer_boost_root::ProposerBoostRootField,
+        proposer_boost_root::ProposerBoostRootField, time::TimeField,
         unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
         unrealized_justifications::UnrealizedJustificationsTable,
         unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
@@ -116,6 +116,12 @@ impl ReamDB {
 
     pub fn genesis_time_provider(&self) -> GenesisTimeField {
         GenesisTimeField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn time_provider(&self) -> TimeField {
+        TimeField {
             db: self.db.clone(),
         }
     }
