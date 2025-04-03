@@ -6,7 +6,10 @@ use redb::{Builder, Database};
 use crate::{
     dir,
     errors::StoreError,
-    tables::{beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable},
+    tables::{
+        beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
+        checkpoint_states::CheckpointStatesTable,
+    },
 };
 
 pub const APP_NAME: &str = "ream";
@@ -47,6 +50,12 @@ impl ReamDB {
 
     pub fn beacon_block_provider(&self) -> BeaconBlockTable {
         BeaconBlockTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn checkpoint_states_provider(&self) -> CheckpointStatesTable {
+        CheckpointStatesTable {
             db: self.db.clone(),
         }
     }
