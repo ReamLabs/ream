@@ -9,6 +9,7 @@ use crate::{
     tables::{
         beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
         checkpoint_states::CheckpointStatesTable, latest_messages::LatestMessagesTable,
+        unrealized_justifications::UnrealizedJustificationsTable,
     },
 };
 
@@ -62,6 +63,12 @@ impl ReamDB {
 
     pub fn latest_messages_provider(&self) -> LatestMessagesTable {
         LatestMessagesTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn unrealized_justifications_provider(&self) -> UnrealizedJustificationsTable {
+        UnrealizedJustificationsTable {
             db: self.db.clone(),
         }
     }

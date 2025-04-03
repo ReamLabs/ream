@@ -2,6 +2,7 @@ pub mod beacon_block;
 pub mod beacon_state;
 pub mod checkpoint_states;
 pub mod latest_messages;
+pub mod unrealized_justifications;
 
 use std::{any::type_name, fmt::Debug};
 
