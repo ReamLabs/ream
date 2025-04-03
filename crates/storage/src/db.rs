@@ -8,7 +8,7 @@ use crate::{
     errors::StoreError,
     tables::{
         beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
-        checkpoint_states::CheckpointStatesTable,
+        checkpoint_states::CheckpointStatesTable, latest_messages::LatestMessagesTable,
     },
 };
 
@@ -56,6 +56,12 @@ impl ReamDB {
 
     pub fn checkpoint_states_provider(&self) -> CheckpointStatesTable {
         CheckpointStatesTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn latest_messages_provider(&self) -> LatestMessagesTable {
+        LatestMessagesTable {
             db: self.db.clone(),
         }
     }

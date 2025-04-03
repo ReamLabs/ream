@@ -1,6 +1,7 @@
 pub mod beacon_block;
 pub mod beacon_state;
 pub mod checkpoint_states;
+pub mod latest_messages;
 
 use std::{any::type_name, fmt::Debug};
 
