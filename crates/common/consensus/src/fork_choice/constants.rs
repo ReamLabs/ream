@@ -1,4 +1,4 @@
-use alloy_primitives::{B256, aliases::B32, fixed_bytes};
+use alloy_primitives::{aliases::B32, fixed_bytes};
 
 pub const BASE_REWARDS_PER_EPOCH: u64 = 4;
 pub const BASE_REWARD_FACTOR: u64 = 64;
@@ -6,7 +6,6 @@ pub const BLS_WITHDRAWAL_PREFIX: &[u8] = &[0];
 pub const BYTES_PER_BLOB: usize = BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB;
 pub const BYTES_PER_COMMITMENT: u64 = 48;
 pub const BYTES_PER_FIELD_ELEMENT: usize = 32;
-pub const BYTES_PER_PROOF: usize = 48;
 pub const CAPELLA_FORK_VERSION: B32 = fixed_bytes!("0x03000000");
 pub const CHURN_LIMIT_QUOTIENT: u64 = 65536;
 pub const DEPOSIT_CONTRACT_TREE_DEPTH: u64 = 32;
@@ -70,9 +69,6 @@ pub const SLOTS_PER_HISTORICAL_ROOT: u64 = 8192;
 pub const SYNC_COMMITTEE_SIZE: u64 = 512;
 pub const SYNC_REWARD_WEIGHT: u64 = 2;
 pub const TARGET_COMMITTEE_SIZE: u64 = 128;
-pub const TERMINAL_BLOCK_HASH: B256 = B256::ZERO;
-pub const TERMINAL_BLOCK_HASH_ACTIVATION_EPOCH: u64 = FAR_FUTURE_EPOCH;
-pub const TERMINAL_TOTAL_DIFFICULTY: u128 = 58750000000000000000000;
 pub const TIMELY_HEAD_FLAG_INDEX: u8 = 2;
 pub const TIMELY_SOURCE_FLAG_INDEX: u8 = 0;
 pub const TIMELY_TARGET_FLAG_INDEX: u8 = 1;

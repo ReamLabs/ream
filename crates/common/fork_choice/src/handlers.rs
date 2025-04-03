@@ -11,7 +11,7 @@ use ream_consensus::{
     kzg_commitment::KZGCommitment,
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch},
 };
-use ream_polynomial_commitments::polynomial_commitments::polynomial_commitments_handlers::verify_blob_kzg_proof_batch;
+use ream_polynomial_commitments::polynomial_commitments_handlers::verify_blob_kzg_proof_batch;
 use tree_hash::TreeHash;
 
 pub async fn is_data_available(
@@ -47,9 +47,8 @@ pub async fn is_data_available(
     Ok(true)
 }
 
-pub fn get_ancestor(store: Store, root: B256, slot: u64) -> B256 {
-    let binding = store.blocks.clone();
-    if let Some(block) = binding.get(&root) {
+pub fn get_ancestor(store: &Store, root: B256, slot: u64) -> B256 {
+    if let Some(block) = store.blocks.get(&root) {
         if block.slot > slot {
             return get_ancestor(store, block.parent_root, slot);
         }
@@ -60,7 +59,7 @@ pub fn get_ancestor(store: Store, root: B256, slot: u64) -> B256 {
 /// Compute the checkpoint block for epoch ``epoch`` in the chain of block ``root``
 pub fn get_checkpoint_block(store: Store, root: B256, epoch: u64) -> B256 {
     let epoch_first_slot = compute_start_slot_at_epoch(epoch);
-    get_ancestor(store, root, epoch_first_slot)
+    get_ancestor(&store, root, epoch_first_slot)
 }
 
 /// Update checkpoints in store if necessary
@@ -104,14 +103,14 @@ pub fn get_current_store_epoch(store: Store) -> u64 {
     compute_epoch_at_slot(store.get_current_slot())
 }
 
-pub fn compute_pulled_up_tip(mut store: Store, block_root: B256) -> anyhow::Result<()> {
+pub fn compute_pulled_up_tip(store: &mut Store, block_root: B256) -> anyhow::Result<()> {
     let mut state = store.block_states[&block_root].clone();
     // Pull up the post-state of the block to the next epoch boundary
     state.process_justification_and_finalization()?;
 
-    if let Some(justification) = store.unrealized_justifications.get_mut(&block_root) {
-        *justification = state.current_justified_checkpoint;
-    }
+    store
+        .unrealized_justifications
+        .insert(block_root, state.current_justified_checkpoint);
     update_unrealized_checkpoints(
         store.clone(),
         state.current_justified_checkpoint,
@@ -134,10 +133,10 @@ pub fn compute_pulled_up_tip(mut store: Store, block_root: B256) -> anyhow::Resu
 /// Run ``on_block`` upon receiving a new block.
 pub async fn on_block(
     store: &mut Store,
-    signed_block: SignedBeaconBlock,
+    signed_block: &SignedBeaconBlock,
     execution_engine: &impl ExecutionApi,
 ) -> anyhow::Result<()> {
-    let block = signed_block.message.clone();
+    let block = &signed_block.message;
 
     // Parent block must be known
     ensure!(store.block_states.contains_key(&block.parent_root));
@@ -183,20 +182,17 @@ pub async fn on_block(
         .await?;
 
     // Add new block to the store
-    if let Some(existing_block) = store.blocks.get_mut(&block_root) {
-        *existing_block = block.clone();
-    } // Add new state for this block to the store
-    if let Some(existing_state) = store.block_states.get_mut(&block_root) {
-        *existing_state = state.clone();
-    }
+    store.blocks.insert(block_root, block.clone());
+    // Add new state for this block to the store
+    store.block_states.insert(block_root, state.clone());
 
     // Add block timeliness to the store
     let time_into_slot = (store.time - store.genesis_time) % SECONDS_PER_SLOT;
     let is_before_attesting_interval = time_into_slot < SECONDS_PER_SLOT / INTERVALS_PER_SLOT;
     let is_timely = store.get_current_slot() == block.slot && is_before_attesting_interval;
-    if let Some(existing_timeliness) = store.block_timeliness.get_mut(&block.tree_hash_root()) {
-        *existing_timeliness = is_timely;
-    }
+    store
+        .block_timeliness
+        .insert(block.tree_hash_root(), is_timely);
 
     // Add proposer score boost if the block is timely and not conflicting with an existing block
     let is_first_block = store.proposer_boost_root == block_root;
@@ -212,6 +208,7 @@ pub async fn on_block(
     )?;
 
     // Eagerly compute unrealized justification and finality.
+    compute_pulled_up_tip(store, block_root)?;
 
     Ok(())
 }

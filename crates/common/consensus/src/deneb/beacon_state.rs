@@ -1818,7 +1818,7 @@ impl BeaconState {
 
     pub async fn state_transition(
         &mut self,
-        signed_block: SignedBeaconBlock,
+        signed_block: &SignedBeaconBlock,
         validate_result: bool,
         execution_engine: &impl ExecutionApi,
     ) -> anyhow::Result<()> {
@@ -1829,7 +1829,7 @@ impl BeaconState {
 
         // Verify signature
         if validate_result {
-            ensure!(self.verify_block_signature(&signed_block)?)
+            ensure!(self.verify_block_signature(signed_block)?)
         }
 
         // Process block

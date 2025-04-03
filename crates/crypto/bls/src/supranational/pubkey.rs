@@ -23,6 +23,7 @@ impl Validate for PubKey {
     fn validate(&self) -> std::result::Result<(), errors::BLSError> {
         self.to_blst_pubkey()?
             .validate()
-            .map_err(|err| BLSError::BlstError(err.into())) // Convert `BLST_ERROR` to `BLSError`
+            // Convert `BLST_ERROR` to `BLSError`
+            .map_err(|err| BLSError::BlstError(err.into()))
     }
 }

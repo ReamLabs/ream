@@ -4069,7 +4069,6 @@ dependencies = [
  "discv5",
  "futures",
  "libp2p",
- "libp2p-identity",
  "tokio",
  "tracing",
 ]
