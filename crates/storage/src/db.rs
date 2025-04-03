@@ -11,7 +11,7 @@ use crate::{
         block_timeliness::BlockTimelinessTable, checkpoint_states::CheckpointStatesTable,
         latest_messages::LatestMessagesTable, proposer_boost_root::ProposerBoostRootField,
         unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
-        unrealized_justifications::UnrealizedJustificationsTable,
+        unrealized_justifications::UnrealizedJustificationsTable, unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
     },
 };
 
@@ -89,6 +89,12 @@ impl ReamDB {
 
     pub fn unrealized_finalized_checkpoint_provider(&self) -> UnrealizedFinalizedCheckpointField {
         UnrealizedFinalizedCheckpointField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn unrealized_justified_checkpoint_provider(&self) -> UnrealizedJustifiedCheckpointField {
+        UnrealizedJustifiedCheckpointField {
             db: self.db.clone(),
         }
     }

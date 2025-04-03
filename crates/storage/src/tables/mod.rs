@@ -6,6 +6,7 @@ pub mod latest_messages;
 pub mod proposer_boost_root;
 pub mod unrealized_finalized_checkpoint;
 pub mod unrealized_justifications;
+pub mod unrealized_justified_checkpoint;
 
 use std::{any::type_name, fmt::Debug};
 
