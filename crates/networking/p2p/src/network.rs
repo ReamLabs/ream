@@ -54,7 +54,7 @@ pub struct Network {
     swarm: Swarm<ReamBehaviour>,
 }
 impl Network {
-    pub fn get_config(&self) -> String {
+    pub fn get_peer_id(&self) -> String {
         self.peer_id.to_base58()
     }
     pub fn get_local_enr(&self) -> Enr {

@@ -66,7 +66,7 @@ async fn main() {
                 match Network::init(async_executor, &binding).await {
                     Ok(mut network) => {
                         let _ = tx.send(Identity::new(
-                            network.get_config(),
+                            network.get_peer_id(),
                             network.get_local_enr(),
                             config.discovery_port,
                             config.socket_address.to_string(),
