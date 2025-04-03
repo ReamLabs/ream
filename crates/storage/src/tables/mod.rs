@@ -4,6 +4,7 @@ pub mod block_timeliness;
 pub mod checkpoint_states;
 pub mod latest_messages;
 pub mod proposer_boost_root;
+pub mod unrealized_finalized_checkpoint;
 pub mod unrealized_justifications;
 
 use std::{any::type_name, fmt::Debug};
