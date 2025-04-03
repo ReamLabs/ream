@@ -4089,7 +4089,11 @@ name = "ream-network-spec"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "discv5",
+ "enr",
+ "libp2p-identity",
  "ream-consensus",
+ "serde",
 ]
 
 [[package]]
@@ -4123,9 +4127,11 @@ dependencies = [
 name = "ream-rpc"
 version = "0.1.0"
 dependencies = [
+ "libp2p-identity",
  "ream-consensus",
  "ream-network-spec",
  "ream-node",
+ "ream-p2p",
  "serde",
  "serde_json",
  "thiserror 2.0.12",

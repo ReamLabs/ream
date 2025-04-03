@@ -4,9 +4,11 @@ use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
+use ream_network_spec::identity::Identity;
 use ream_p2p::network::Network;
 use ream_rpc::{config::ServerConfig, start_server};
 use ream_storage::db::ReamDB;
+use tokio::sync::oneshot;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -30,6 +32,8 @@ async fn main() {
     match cli.command {
         Commands::Node(config) => {
             info!("starting up...");
+
+            let (tx, rx) = oneshot::channel();
 
             let server_config = ServerConfig::new(
                 config.http_address,
@@ -58,11 +62,17 @@ async fn main() {
 
             info!("ream database initialized ");
 
-            let http_future = start_server(config.network.clone(), server_config);
-
             let network_future = async {
                 match Network::init(async_executor, &binding).await {
                     Ok(mut network) => {
+                        let _ = tx.send(Identity::new(
+                            network.get_config(),
+                            network.get_local_enr(),
+                            config.discovery_port,
+                            config.socket_address.to_string(),
+                            config.socket_port,
+                        ));
+
                         main_executor.spawn(async move {
                             network.polling_events().await;
                         });
@@ -73,6 +83,15 @@ async fn main() {
                     Err(e) => {
                         error!("Failed to initialize network: {}", e);
                     }
+                }
+            };
+
+            let http_future = async {
+                match rx.await {
+                    Ok(p2p_config) => {
+                        start_server(config.network.clone(), server_config.into(), p2p_config).await
+                    }
+                    Err(_) => error!("Failed to receive network configuration"),
                 }
             };
 

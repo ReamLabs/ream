@@ -11,6 +11,10 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
+enr.workspace = true
+discv5.workspace = true
+libp2p-identity.workspace = true
+serde.workspace = true
 
 # ream-dependencies
 ream-consensus.workspace = true

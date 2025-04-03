@@ -153,6 +153,11 @@ impl Discovery {
 
         self.discovery_queries.push(Box::pin(query_future));
     }
+
+    /// fetch the local ENR of running node.
+    pub fn local_enr(&self) -> Enr {
+        self.discv5.local_enr()
+    }
 }
 
 impl NetworkBehaviour for Discovery {

@@ -14,8 +14,10 @@ version.workspace = true
 ream-consensus.workspace = true
 ream-network-spec.workspace = true
 ream-node.workspace = true
+ream-p2p.workspace = true
 
 #misc
+libp2p-identity.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

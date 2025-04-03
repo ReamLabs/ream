@@ -53,6 +53,14 @@ pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
 }
+impl Network {
+    pub fn get_config(&self) -> String {
+        self.peer_id.to_base58()
+    }
+    pub fn get_local_enr(&self) -> Enr {
+        self.swarm.behaviour().discovery.local_enr()
+    }
+}
 
 struct Executor(ReamExecutor);
 
