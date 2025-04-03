@@ -8,7 +8,8 @@ use crate::{
     errors::StoreError,
     tables::{
         beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
-        checkpoint_states::CheckpointStatesTable, latest_messages::LatestMessagesTable,
+        block_timeliness::BlockTimelinessTable, checkpoint_states::CheckpointStatesTable,
+        latest_messages::LatestMessagesTable,
         unrealized_justifications::UnrealizedJustificationsTable,
     },
 };
@@ -43,14 +44,20 @@ impl ReamDB {
         Ok(Self { db: Arc::new(db) })
     }
 
+    pub fn beacon_block_provider(&self) -> BeaconBlockTable {
+        BeaconBlockTable {
+            db: self.db.clone(),
+        }
+    }
+
     pub fn beacon_state_provider(&self) -> BeaconStateTable {
         BeaconStateTable {
             db: self.db.clone(),
         }
     }
 
-    pub fn beacon_block_provider(&self) -> BeaconBlockTable {
-        BeaconBlockTable {
+    pub fn block_timeliness_provider(&self) -> BlockTimelinessTable {
+        BlockTimelinessTable {
             db: self.db.clone(),
         }
     }
