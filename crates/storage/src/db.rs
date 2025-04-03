@@ -3,7 +3,11 @@ use std::{path::PathBuf, sync::Arc};
 use anyhow::Result;
 use redb::{Builder, Database};
 
-use crate::{dir, errors::StoreError, tables::{beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable}};
+use crate::{
+    dir,
+    errors::StoreError,
+    tables::{beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable},
+};
 
 pub const APP_NAME: &str = "ream";
 
