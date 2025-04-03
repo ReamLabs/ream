@@ -4141,6 +4141,7 @@ version = "0.1.0"
 name = "ream-storage"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
  "directories",
  "ethereum_ssz",

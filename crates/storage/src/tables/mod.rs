@@ -2,14 +2,14 @@ pub mod beacon_state;
 
 use std::{any::type_name, fmt::Debug};
 
-use redb::{TypeName, Value};
+use redb::{Key, TypeName, Value};
 use ssz::{Decode, Encode};
 
 use crate::errors::StoreError;
 
 #[allow(clippy::result_large_err)]
 pub trait Table {
-    type Key: Value;
+    type Key;
 
     type Value;
 
@@ -21,6 +21,15 @@ pub trait Table {
 /// Wrapper type to handle keys and values using SSZ encoding
 #[derive(Debug)]
 pub struct SSZEncoding<T>(pub T);
+
+impl<T> Key for SSZEncoding<T>
+where
+    T: Debug + Encode + Decode + Ord,
+{
+    fn compare(data1: &[u8], data2: &[u8]) -> std::cmp::Ordering {
+        Self::from_bytes(data1).cmp(&Self::from_bytes(data2))
+    }
+}
 
 impl<T> Value for SSZEncoding<T>
 where
