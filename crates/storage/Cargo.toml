@@ -18,6 +18,7 @@ redb.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+tree_hash.workspace = true
 
 # Ream dependencies
 ream-consensus.workspace = true

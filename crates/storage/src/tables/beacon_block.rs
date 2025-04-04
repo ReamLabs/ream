@@ -3,8 +3,11 @@ use std::sync::Arc;
 use alloy_primitives::B256;
 use ream_consensus::deneb::beacon_block::BeaconBlock;
 use redb::{Database, Durability, TableDefinition};
+use tree_hash::TreeHash;
 
-use super::{SSZEncoding, Table};
+use super::{
+    SSZEncoding, Table, slot_index::SlotIndexTable, state_root_index::StateRootIndexTable,
+};
 use crate::errors::StoreError;
 
 /// Table definition for the Beacon Block table
@@ -35,9 +38,23 @@ impl Table for BeaconBlockTable {
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate);
         let mut table = write_txn.open_table(BEACON_BLOCK_TABLE)?;
-        table.insert(key, value)?;
+        table.insert(key, value.clone())?;
         drop(table);
         write_txn.commit()?;
+
+        // insert entry to slot_index table
+        let block_root = value.tree_hash_root();
+        let slot_index_table = SlotIndexTable {
+            db: self.db.clone(),
+        };
+        slot_index_table.insert(value.slot, block_root)?;
+
+        // insert entry to state root index table
+        let state_root_index_table = StateRootIndexTable {
+            db: self.db.clone(),
+        };
+        state_root_index_table.insert(value.state_root, block_root)?;
+
         Ok(())
     }
 }

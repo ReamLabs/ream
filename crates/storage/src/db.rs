@@ -12,7 +12,8 @@ use crate::{
         equivocating_indices::EquivocatingIndicesField,
         finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
         justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
-        proposer_boost_root::ProposerBoostRootField, time::TimeField,
+        proposer_boost_root::ProposerBoostRootField, slot_index::SlotIndexTable,
+        state_root_index::StateRootIndexTable, time::TimeField,
         unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
         unrealized_justifications::UnrealizedJustificationsTable,
         unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
@@ -129,6 +130,18 @@ impl ReamDB {
 
     pub fn equivocating_indices_provider(&self) -> EquivocatingIndicesField {
         EquivocatingIndicesField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn slot_index_provider(&self) -> SlotIndexTable {
+        SlotIndexTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn state_root_index_provider(&self) -> StateRootIndexTable {
+        StateRootIndexTable {
             db: self.db.clone(),
         }
     }

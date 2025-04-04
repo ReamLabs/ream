@@ -8,6 +8,8 @@ pub mod genesis_time;
 pub mod justified_checkpoint;
 pub mod latest_messages;
 pub mod proposer_boost_root;
+pub mod slot_index;
+pub mod state_root_index;
 pub mod time;
 pub mod unrealized_finalized_checkpoint;
 pub mod unrealized_justifications;
