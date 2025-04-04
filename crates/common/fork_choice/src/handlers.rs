@@ -42,7 +42,7 @@ pub async fn is_data_available(
         proofs.push(block_and_proof.proof);
     }
 
-    verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?;
+    verify_blob_kzg_proof_batch(&blobs, &blob_kzg_commitments, &proofs)?;
     Ok(true)
 }
 
