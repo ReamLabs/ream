@@ -236,10 +236,8 @@ pub fn on_attester_slashing(
     Ok(())
 }
 
-pub fn compute_slots_since_epoch_start(slot: u64) -> u8 {
-    (slot - compute_start_slot_at_epoch(compute_epoch_at_slot(slot)))
-        .try_into()
-        .unwrap()
+pub fn compute_slots_since_epoch_start(slot: u64) -> u64 {
+    slot - compute_start_slot_at_epoch(compute_epoch_at_slot(slot))
 }
 
 pub fn on_tick_per_slot(store: &mut Store, time: u64) -> anyhow::Result<()> {
@@ -252,7 +250,7 @@ pub fn on_tick_per_slot(store: &mut Store, time: u64) -> anyhow::Result<()> {
 
     // If this is a new slot, reset store.proposer_boost_root
     if current_slot > previous_slot {
-        let _ = store.proposer_boost_root == B256::ZERO;
+        store.proposer_boost_root = B256::ZERO;
     }
 
     // If a new epoch, pull-up justification and finalization from previous epoch
