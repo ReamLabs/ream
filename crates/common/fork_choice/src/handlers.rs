@@ -66,17 +66,15 @@ pub fn update_checkpoints(
     store: &mut Store,
     justified_checkpoint: Checkpoint,
     finalized_checkpoint: Checkpoint,
-) -> anyhow::Result<()> {
+) {
     // Update justified checkpoint
     if justified_checkpoint.epoch > store.justified_checkpoint.epoch {
         store.justified_checkpoint = justified_checkpoint
     }
-
     // Update finalized checkpoint
     if finalized_checkpoint.epoch > store.finalized_checkpoint.epoch {
         store.finalized_checkpoint = finalized_checkpoint
     }
-    Ok(())
 }
 
 /// Update unrealized checkpoints in store if necessary
@@ -84,18 +82,15 @@ pub fn update_unrealized_checkpoints(
     store: &mut Store,
     unrealized_justified_checkpoint: Checkpoint,
     unrealized_finalized_checkpoint: Checkpoint,
-) -> anyhow::Result<()> {
+) {
     // Update unrealized justified checkpoint
     if unrealized_justified_checkpoint.epoch > store.unrealized_justified_checkpoint.epoch {
         store.unrealized_justified_checkpoint = unrealized_justified_checkpoint
     }
-
     // Update unrealized finalized checkpoint
     if unrealized_finalized_checkpoint.epoch > store.unrealized_finalized_checkpoint.epoch {
         store.unrealized_finalized_checkpoint = unrealized_finalized_checkpoint
     }
-
-    Ok(())
 }
 
 pub fn get_current_store_epoch(store: &Store) -> u64 {
@@ -114,7 +109,7 @@ pub fn compute_pulled_up_tip(store: &mut Store, block_root: B256) -> anyhow::Res
         store,
         state.current_justified_checkpoint,
         state.finalized_checkpoint,
-    )?;
+    );
 
     // If the block is from a prior epoch, apply the realized values
     let block_epoch = compute_epoch_at_slot(store.blocks[&block_root].slot);
@@ -201,7 +196,7 @@ pub async fn on_block(
         store,
         state.current_justified_checkpoint,
         state.finalized_checkpoint,
-    )?;
+    );
 
     // Eagerly compute unrealized justification and finality.
     compute_pulled_up_tip(store, block_root)?;

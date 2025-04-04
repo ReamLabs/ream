@@ -35,10 +35,6 @@ impl ExecutionApi for MockExecutionEngine {
         &self,
         blob_version_hashes: Vec<B256>,
     ) -> anyhow::Result<Vec<Option<BlobsAndProofV1>>> {
-        let mut result = Vec::with_capacity(blob_version_hashes.len());
-        for _i in 0..blob_version_hashes.len() {
-            result.push(None);
-        }
-        Ok(result)
+        Ok(blob_version_hashes.into_iter().map(|_| None).collect())
     }
 }
