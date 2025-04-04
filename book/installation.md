@@ -17,7 +17,7 @@ There are some other dependencies you need to install based on your operating sy
 Install cargo-sort and cargo-udeps tools.
 
 ```bash
-cargo install cargo-sort cargo-udeps
+cargo install cargo-sort cargo-udeps --locked
 ```
 
 ## Build Ream
