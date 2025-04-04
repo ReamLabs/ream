@@ -16,6 +16,10 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
             ApiError::NotFound(message) => (StatusCode::NOT_FOUND, message.to_string()),
             ApiError::BadRequest(message) => (StatusCode::BAD_REQUEST, message.to_string()),
+            ApiError::InternalError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal Server Error".to_string(),
+            ),
         };
         return Ok(with_status(code, message));
     }

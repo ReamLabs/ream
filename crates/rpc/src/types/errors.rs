@@ -11,6 +11,9 @@ pub enum ApiError {
 
     #[error("Bad Request: {0}")]
     BadRequest(String),
+
+    #[error("Internal Server Error")]
+    InternalError,
 }
 
 impl Reject for ApiError {}
