@@ -16,7 +16,7 @@ use crate::store::Store;
 pub async fn is_data_available(
     beacon_block_root: B256,
     store: &Store,
-    blob_kzg_commitments: Vec<KZGCommitment>,
+    blob_kzg_commitments: &[KZGCommitment],
     execution_engine: &impl ExecutionApi,
 ) -> anyhow::Result<bool> {
     // `retrieve_blobs_and_proofs` is implementation and context dependent
@@ -42,7 +42,7 @@ pub async fn is_data_available(
         proofs.push(block_and_proof.proof);
     }
 
-    verify_blob_kzg_proof_batch(&blobs, &blob_kzg_commitments, &proofs)?;
+    verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?;
     Ok(true)
 }
 
@@ -158,7 +158,7 @@ pub async fn on_block(
         is_data_available(
             block.tree_hash_root(),
             store,
-            block.body.blob_kzg_commitments.to_vec(),
+            &block.body.blob_kzg_commitments,
             execution_engine
         )
         .await?

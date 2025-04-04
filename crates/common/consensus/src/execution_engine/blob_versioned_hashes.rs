@@ -2,10 +2,7 @@ use alloy_primitives::B256;
 use alloy_rlp::Decodable;
 use anyhow::anyhow;
 
-use super::{
-    new_payload_request::NewPayloadRequest,
-    rpc_types::transaction::{BlobTransaction, TransactionType},
-};
+use super::rpc_types::transaction::{BlobTransaction, TransactionType};
 use crate::deneb::execution_payload::ExecutionPayload;
 
 pub fn blob_versioned_hashes(execution_payload: &ExecutionPayload) -> anyhow::Result<Vec<B256>> {
@@ -21,13 +18,4 @@ pub fn blob_versioned_hashes(execution_payload: &ExecutionPayload) -> anyhow::Re
     }
 
     Ok(blob_versioned_hashes)
-}
-
-/// Return ``True`` if and only if the version hashes computed by the blob transactions of
-/// ``new_payload_request.execution_payload`` matches ``new_payload_request.versioned_hashes``.
-pub fn is_valid_versioned_hashes(new_payload_request: &NewPayloadRequest) -> anyhow::Result<bool> {
-    Ok(
-        blob_versioned_hashes(&new_payload_request.execution_payload)?
-            == new_payload_request.versioned_hashes,
-    )
 }
