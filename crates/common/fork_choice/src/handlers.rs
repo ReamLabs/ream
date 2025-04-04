@@ -1,5 +1,7 @@
+use std::collections::hash_map::Entry;
+
 use alloy_primitives::{B256, map::HashSet};
-use anyhow::{bail, ensure};
+use anyhow::{anyhow, bail, ensure};
 use ream_consensus::{
     attestation::Attestation,
     attester_slashing::AttesterSlashing,
@@ -331,13 +333,13 @@ pub fn validate_on_attestation(
 
 pub fn store_target_checkpoint_state(store: &mut Store, target: Checkpoint) -> anyhow::Result<()> {
     // Store target checkpoint state if not yet seen
-    if let std::collections::hash_map::Entry::Vacant(e) = store.checkpoint_states.entry(target) {
+    if let Entry::Vacant(entry) = store.checkpoint_states.entry(target) {
         let mut base_state = store.block_states[&target.root].clone();
         let target_slot = compute_start_slot_at_epoch(target.epoch);
         if base_state.slot < target_slot {
             base_state.process_slots(target_slot)?;
         }
-        e.insert(base_state);
+        entry.insert(base_state);
     }
 
     Ok(())
@@ -366,16 +368,23 @@ pub fn update_latest_messages(
     let beacon_block_root = attestation.data.beacon_block_root;
     let mut non_equivocating_attesting_indices = vec![];
 
-    for &i in &attesting_indices {
-        if !store.equivocating_indices.contains(&i) {
-            non_equivocating_attesting_indices.push(i);
+    for &index in &attesting_indices {
+        if !store.equivocating_indices.contains(&index) {
+            non_equivocating_attesting_indices.push(index);
         }
     }
 
-    for i in &non_equivocating_attesting_indices {
-        if !store.latest_messages.contains_key(i) || target.epoch > store.latest_messages[i].epoch {
+    for index in &non_equivocating_attesting_indices {
+        if !store.latest_messages.contains_key(index)
+            || target.epoch
+                > store
+                    .latest_messages
+                    .get(index)
+                    .ok_or(anyhow!("Could not get expected result"))?
+                    .epoch
+        {
             store.latest_messages.insert(
-                *i,
+                *index,
                 LatestMessage {
                     epoch: target.epoch,
                     root: beacon_block_root,
