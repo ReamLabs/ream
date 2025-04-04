@@ -1,12 +1,14 @@
 use alloy_primitives::B256;
 use anyhow::{bail, ensure};
 use ream_consensus::{
+    attester_slashing::AttesterSlashing,
     checkpoint::Checkpoint,
     constants::{INTERVALS_PER_SLOT, SECONDS_PER_SLOT},
     deneb::beacon_block::SignedBeaconBlock,
     execution_engine::{blob_versioned_hashes::blob_versioned_hashes, engine_trait::ExecutionApi},
     kzg_commitment::KZGCommitment,
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch},
+    predicates::is_slashable_attestation_data,
 };
 use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use tree_hash::TreeHash;
@@ -201,5 +203,35 @@ pub async fn on_block(
     // Eagerly compute unrealized justification and finality.
     compute_pulled_up_tip(store, block_root)?;
 
+    Ok(())
+}
+
+/// Run ``on_attester_slashing`` immediately upon receiving a new ``AttesterSlashing``
+/// from either within a block or directly on the wire.
+pub fn on_attester_slashing(
+    mut store: Store,
+    attester_slashing: AttesterSlashing,
+) -> anyhow::Result<()> {
+    let attestation_1 = attester_slashing.attestation_1;
+    let attestation_2 = attester_slashing.attestation_2;
+    ensure!(is_slashable_attestation_data(
+        &attestation_1.data,
+        &attestation_2.data
+    ));
+    let state = &store.block_states[&store.justified_checkpoint.root];
+    ensure!(state.is_valid_indexed_attestation(&attestation_1)?);
+    ensure!(state.is_valid_indexed_attestation(&attestation_2)?);
+
+    let mut indices = vec![];
+
+    for i in &attestation_1.attesting_indices {
+        if attestation_2.attesting_indices.contains(i) {
+            indices.push(*i);
+        }
+    }
+
+    for index in indices {
+        store.equivocating_indices.push(index);
+    }
     Ok(())
 }
