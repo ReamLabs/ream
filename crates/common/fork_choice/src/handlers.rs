@@ -235,3 +235,47 @@ pub fn on_attester_slashing(
     }
     Ok(())
 }
+
+pub fn compute_slots_since_epoch_start(slot: u64) -> u8 {
+    (slot - compute_start_slot_at_epoch(compute_epoch_at_slot(slot)))
+        .try_into()
+        .unwrap()
+}
+
+pub fn on_tick_per_slot(store: &mut Store, time: u64) -> anyhow::Result<()> {
+    let previous_slot = store.get_current_slot();
+
+    // Update store time
+    store.time = time;
+
+    let current_slot = store.get_current_slot();
+
+    // If this is a new slot, reset store.proposer_boost_root
+    if current_slot > previous_slot {
+        let _ = store.proposer_boost_root == B256::ZERO;
+    }
+
+    // If a new epoch, pull-up justification and finalization from previous epoch
+    if current_slot > previous_slot && compute_slots_since_epoch_start(current_slot) == 0 {
+        store.update_checkpoints(
+            store.unrealized_justified_checkpoint,
+            store.unrealized_finalized_checkpoint,
+        );
+    }
+
+    Ok(())
+}
+
+pub fn on_tick(store: &mut Store, time: u64) -> anyhow::Result<()> {
+    // If the ``store.time`` falls behind, while loop catches up slot by slot
+    // to ensure that every previous slot is processed with ``on_tick_per_slot``
+    let tick_slot = (time - store.genesis_time) / SECONDS_PER_SLOT;
+    while store.get_current_slot() < tick_slot {
+        let previous_time = store.genesis_time + (store.get_current_slot() + 1) * SECONDS_PER_SLOT;
+        on_tick_per_slot(store, previous_time)?;
+    }
+
+    on_tick_per_slot(store, time)?;
+
+    Ok(())
+}
