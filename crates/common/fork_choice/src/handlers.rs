@@ -380,7 +380,9 @@ pub fn update_latest_messages(
                 > store
                     .latest_messages
                     .get(index)
-                    .ok_or(anyhow!("Could not get expected result"))?
+                    .ok_or(anyhow!(
+                        "Could not get expected latest message at index: {index}"
+                    ))?
                     .epoch
         {
             store.latest_messages.insert(
