@@ -38,10 +38,11 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
         return Ok(with_status(json(&body), status));
     }
 
-    let body = ErrorMessage {
-        code: 500,
-        message: "Internal Server Error".to_string(),
-    };
-
-    Ok(with_status(json(&body), StatusCode::INTERNAL_SERVER_ERROR))
+    Ok(with_status(
+        json(&ErrorMessage {
+            code: 500,
+            message: "Internal Server Error".to_string(),
+        }),
+        StatusCode::INTERNAL_SERVER_ERROR,
+    ))
 }

@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 #[serde(untagged)]
 pub enum ID {
     Slot(u64),
-    Root(B256), // expected to be a 0x-prefixed hex string
+    /// expected to be a 0x-prefixed hex string.
+    Root(B256),
 }
 
 impl FromStr for ID {
@@ -41,7 +42,8 @@ impl fmt::Display for ID {
 #[serde(untagged)]
 pub enum ValidatorID {
     Index(u64),
-    Address(PubKey), // expected to be a 0x-prefixed hex string
+    /// expected to be a 0x-prefixed hex string.
+    Address(PubKey),
 }
 
 impl FromStr for ValidatorID {

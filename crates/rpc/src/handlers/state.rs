@@ -5,7 +5,7 @@ use crate::types::{errors::ApiError, id::ID};
 
 pub async fn get_state_from_id(state_id: ID, db: ReamDB) -> Result<BeaconState, ApiError> {
     let state_root_result = match state_id {
-        ID::Slot(s) => db.slot_index_provider().get(s),
+        ID::Slot(slot) => db.slot_index_provider().get(slot),
         ID::Root(root) => db.state_root_index_provider().get(root),
     };
     match state_root_result {
