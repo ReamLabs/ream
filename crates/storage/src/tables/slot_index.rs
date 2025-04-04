@@ -10,7 +10,7 @@ use crate::errors::StoreError;
 ///
 /// Key: slot number
 /// Value: block_root
-pub const SLOT_INDEX_TABLE: TableDefinition<SSZEncoding<u64>, SSZEncoding<B256>> =
+pub const SLOT_INDEX_TABLE: TableDefinition<u64, SSZEncoding<B256>> =
     TableDefinition::new("slot_index");
 
 pub struct SlotIndexTable {

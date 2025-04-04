@@ -35,13 +35,6 @@ impl Table for BeaconBlockTable {
     }
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
-        let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
-        let mut table = write_txn.open_table(BEACON_BLOCK_TABLE)?;
-        table.insert(key, value.clone())?;
-        drop(table);
-        write_txn.commit()?;
-
         // insert entry to slot_index table
         let block_root = value.tree_hash_root();
         let slot_index_table = SlotIndexTable {
@@ -55,6 +48,12 @@ impl Table for BeaconBlockTable {
         };
         state_root_index_table.insert(value.state_root, block_root)?;
 
+        let mut write_txn = self.db.begin_write()?;
+        write_txn.set_durability(Durability::Immediate);
+        let mut table = write_txn.open_table(BEACON_BLOCK_TABLE)?;
+        table.insert(key, value)?;
+        drop(table);
+        write_txn.commit()?;
         Ok(())
     }
 }
