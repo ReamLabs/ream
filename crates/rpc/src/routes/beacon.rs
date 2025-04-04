@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
@@ -6,16 +6,12 @@ use warp::{
     Filter, Rejection,
     filters::path::{end, param},
     get, log, path,
-    reject::custom,
     reply::Reply,
 };
 
 use crate::{
     handlers::{genesis::get_genesis, validator::get_validator_from_state},
-    types::{
-        errors::ApiError,
-        id::{ID, ValidatorID},
-    },
+    types::id::{ID, ValidatorID},
 };
 
 /// Creates and returns all `/beacon` routes.
@@ -35,25 +31,13 @@ pub fn get_beacon_routes(
     let validator = {
         beacon_base
             .and(path("states"))
-            .and(param::<String>())
+            .and(param::<ID>())
             .and(path("validator"))
-            .and(param::<String>())
-            .and_then(
-                |state_id_str: String, validator_id_str: String| async move {
-                    let state_id = ID::from_str(&state_id_str)
-                        .map_err(|_| custom(ApiError::InvalidParameter(state_id_str.clone())))?;
-
-                    let validator_id = ValidatorID::from_str(&validator_id_str).map_err(|_| {
-                        custom(ApiError::InvalidParameter(validator_id_str.clone()))
-                    })?;
-
-                    Ok::<_, Rejection>((state_id, validator_id))
-                },
-            )
+            .and(param::<ValidatorID>())
             .and(end())
             .and(get())
             .and_then({
-                move |(state_id, validator_id): (ID, ValidatorID)| {
+                move |state_id: ID, validator_id: ValidatorID| {
                     get_validator_from_state(state_id, validator_id, db.clone())
                 }
             })

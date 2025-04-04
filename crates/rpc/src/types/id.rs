@@ -2,7 +2,7 @@ use core::fmt;
 use std::{fmt::Display, str::FromStr};
 
 use alloy_primitives::{B256, hex};
-use ream_bls::{PubKey, pubkey::pubkey_from_str};
+use ream_bls::PubKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,11 +20,11 @@ impl FromStr for ID {
         if s.starts_with("0x") {
             B256::from_str(s)
                 .map(ID::Root)
-                .map_err(|e| format!("Invalid hex root: {}", e))
+                .map_err(|err| format!("Invalid hex root: {err}"))
         } else {
             s.parse::<u64>()
                 .map(ID::Slot)
-                .map_err(|e| format!("Invalid slot: {}", e))
+                .map_err(|err| format!("Invalid slot: {err}"))
         }
     }
 }
@@ -51,13 +51,13 @@ impl FromStr for ValidatorID {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.starts_with("0x") {
-            pubkey_from_str(s)
+            PubKey::from_str(s)
                 .map(ValidatorID::Address)
-                .map_err(|e| format!("Invalid hex root: {}", e))
+                .map_err(|err| format!("Invalid hex root: {err}"))
         } else {
             s.parse::<u64>()
                 .map(ValidatorID::Index)
-                .map_err(|e| format!("Invalid slot: {}", e))
+                .map_err(|err| format!("Invalid slot: {err}"))
         }
     }
 }

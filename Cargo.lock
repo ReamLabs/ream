@@ -4124,6 +4124,7 @@ name = "ream-rpc"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "ethereum_serde_utils",
  "ream-bls",
  "ream-consensus",
  "ream-network-spec",

@@ -1,4 +1,6 @@
-use alloy_primitives::hex::{self, decode};
+use std::str::FromStr;
+
+use alloy_primitives::hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz::Encode;
 use ssz_derive::{Decode, Encode};
@@ -40,18 +42,18 @@ impl PubKey {
     }
 }
 
-pub fn pubkey_from_str(key_str: &str) -> Result<PubKey, BLSError> {
-    let clean_str = key_str.strip_prefix("0x").unwrap_or(key_str);
+impl FromStr for PubKey {
+    type Err = BLSError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let clean_str = s.strip_prefix("0x").unwrap_or(s);
+        let bytes = hex::decode(clean_str).map_err(|_| BLSError::InvalidHexString)?;
 
-    let bytes = match decode(clean_str) {
-        Ok(b) => b,
-        Err(_) => return Err(BLSError::InvalidHexString),
-    };
+        if bytes.len() != 48 {
+            return Err(BLSError::InvalidByteLength);
+        }
 
-    if bytes.len() != 48 {
-        return Err(BLSError::InvalidByteLength);
+        Ok(PubKey {
+            inner: FixedVector::from(bytes),
+        })
     }
-
-    let inner = FixedVector::from(bytes);
-    Ok(PubKey { inner })
 }

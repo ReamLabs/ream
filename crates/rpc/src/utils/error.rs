@@ -7,11 +7,13 @@ use warp::{
 use crate::types::errors::{ApiError, ErrorMessage};
 pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
     if err.is_not_found() {
-        let body = ErrorMessage {
-            code: 404,
-            message: "Not Found".to_string(),
-        };
-        return Ok(with_status(json(&body), StatusCode::NOT_FOUND));
+        return Ok(with_status(
+            json(&ErrorMessage {
+                code: 404,
+                message: "Not Found".to_string(),
+            }),
+            StatusCode::NOT_FOUND,
+        ));
     }
 
     if let Some(api_error) = err.find::<ApiError>() {
@@ -30,12 +32,13 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
             ApiError::ValidatorNotFound(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
         };
 
-        let body = ErrorMessage {
-            code: status.as_u16(),
-            message,
-        };
-
-        return Ok(with_status(json(&body), status));
+        return Ok(with_status(
+            json(&ErrorMessage {
+                code: status.as_u16(),
+                message,
+            }),
+            status,
+        ));
     }
 
     Ok(with_status(

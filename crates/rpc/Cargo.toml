@@ -19,6 +19,7 @@ ream-storage.workspace = true
 
 #misc
 alloy-primitives.workspace = true
+ethereum_serde_utils.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ssz_types.workspace = true

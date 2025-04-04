@@ -15,14 +15,16 @@ use crate::types::{
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ValidatorData {
-    index: usize,
+    #[serde(with = "serde_utils::quoted_u64")]
+    index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     balance: u64,
     status: String,
     validator: Validator,
 }
 
 impl ValidatorData {
-    pub fn new(index: usize, balance: u64, status: String, validator: Validator) -> Self {
+    pub fn new(index: u64, balance: u64, status: String, validator: Validator) -> Self {
         Self {
             index,
             balance,
@@ -37,23 +39,18 @@ pub async fn get_validator_from_state(
     validator_id: ValidatorID,
     db: ReamDB,
 ) -> Result<impl Reply, Rejection> {
-    let state = get_state_from_id(state_id, db).await?;
+    let state = get_state_from_id(state_id, &db).await?;
 
     let (index, validator) = {
         match &validator_id {
-            ValidatorID::Index(i) => {
-                // (*i as usize, state.validators.get(*i as usize)),
-
-                match state.validators.get(*i as usize) {
-                    Some(validator) => (*i as usize, validator.to_owned()),
-                    None => {
-                        return Err(ApiError::ValidatorNotFound(format!(
-                            "Validator not found for index: {:?}",
-                            i
-                        )))?;
-                    }
+            ValidatorID::Index(i) => match state.validators.get(*i as usize) {
+                Some(validator) => (*i as usize, validator.to_owned()),
+                None => {
+                    return Err(ApiError::ValidatorNotFound(format!(
+                        "Validator not found for index: {i}"
+                    )))?;
                 }
-            }
+            },
             ValidatorID::Address(pubkey) => {
                 match state
                     .validators
@@ -64,8 +61,7 @@ pub async fn get_validator_from_state(
                     Some((i, validator)) => (i, validator.to_owned()),
                     None => {
                         return Err(ApiError::ValidatorNotFound(format!(
-                            "Validator not found for pubkey: {:?}",
-                            pubkey
+                            "Validator not found for pubkey: {pubkey:?}"
                         )))?;
                     }
                 }
@@ -73,18 +69,36 @@ pub async fn get_validator_from_state(
         }
     };
 
-    let balance = state
-        .balances
-        .get(index)
-        .expect("Unable to fetch validator balance");
+    let balance = state.balances.get(index).ok_or(ApiError::NotFound(format!(
+        "Validator not found for index: {index}"
+    )))?;
+
+    let status = validator_status(&validator, &db).await?;
 
     Ok(with_status(
         BeaconResponse::json(ValidatorData::new(
-            index,
+            index as u64,
             *balance,
-            "active_ongoing".to_string(),
+            status,
             validator,
         )),
         StatusCode::OK,
     ))
+}
+
+pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<String, ApiError> {
+    let highest_slot = db
+        .slot_index_provider()
+        .get_highest_slot()
+        .map_err(|_| ApiError::InternalError)?
+        .ok_or(ApiError::NotFound(
+            "Failed to find highest slot".to_string(),
+        ))?;
+    let state = get_state_from_id(ID::Slot(highest_slot), db).await?;
+
+    if validator.exit_epoch < state.get_current_epoch() {
+        Ok("offline".to_string())
+    } else {
+        Ok("active_ongoing".to_string())
+    }
 }

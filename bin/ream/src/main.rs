@@ -58,7 +58,7 @@ async fn main() {
 
             info!("ream database initialized ");
 
-            let http_future = start_server(config.network.clone(), server_config, ream_db.clone());
+            let http_future = start_server(config.network.clone(), server_config, ream_db);
 
             let network_future = async {
                 match Network::init(async_executor, &binding).await {
