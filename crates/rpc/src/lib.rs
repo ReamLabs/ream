@@ -15,11 +15,7 @@ pub mod types;
 pub mod utils;
 
 /// Start the Beacon API server.
-pub async fn start_server(
-    network_spec: Arc<NetworkSpec>,
-    server_config: ServerConfig,
-    db: Arc<ReamDB>,
-) {
+pub async fn start_server(network_spec: Arc<NetworkSpec>, server_config: ServerConfig, db: ReamDB) {
     let routes = get_routes(network_spec, db).recover(handle_rejection);
 
     info!("Starting server on {:?}", server_config.http_socket_address);

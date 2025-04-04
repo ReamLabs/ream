@@ -12,7 +12,7 @@ pub mod node;
 /// Creates and returns all possible routes.
 pub fn get_routes(
     network_spec: Arc<NetworkSpec>,
-    db: Arc<ReamDB>,
+    db: ReamDB,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     let eth_base = path("eth").and(path("v1"));
 

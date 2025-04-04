@@ -28,12 +28,16 @@ impl<T: Serialize> Data<T> {
     }
 }
 
-/// A generic data struct that can be used to wrap any data type
+/// A BeaconResponse data struct that can be used to wrap data type
 /// used for json rpc responses
 ///
 /// # Example
 /// {
-///  "data": json!(T)
+///  "data": json!({
+///     "execution_optimistic" : bool,
+///     "finalized" : bool,
+///     "data" : T
+/// })
 /// }
 #[derive(Debug, Serialize)]
 pub struct BeaconResponse<T> {
@@ -41,6 +45,7 @@ pub struct BeaconResponse<T> {
     pub finalized: bool,
     pub data: T,
 }
+
 impl<T: Serialize> BeaconResponse<T> {
     pub fn json(data: T) -> Json {
         json(&json!(Self {

@@ -1,4 +1,4 @@
-use std::{env, sync::Arc};
+use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
@@ -53,15 +53,12 @@ async fn main() {
                 total_peers: 0,
             };
 
-            let ream_db = Arc::new(
-                ReamDB::new(config.data_dir, config.ephemeral)
-                    .expect("unable to init Ream Database"),
-            );
+            let ream_db = ReamDB::new(config.data_dir, config.ephemeral)
+                .expect("unable to init Ream Database");
 
             info!("ream database initialized ");
 
-            let http_future =
-                start_server(config.network.clone(), server_config, Arc::clone(&ream_db));
+            let http_future = start_server(config.network.clone(), server_config, ream_db.clone());
 
             let network_future = async {
                 match Network::init(async_executor, &binding).await {
