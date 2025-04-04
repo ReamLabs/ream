@@ -1,4 +1,4 @@
-use alloy_primitives::B256;
+use alloy_primitives::{B256, map::HashSet};
 use anyhow::{bail, ensure};
 use ream_consensus::{
     attester_slashing::AttesterSlashing,
@@ -209,7 +209,7 @@ pub async fn on_block(
 /// Run ``on_attester_slashing`` immediately upon receiving a new ``AttesterSlashing``
 /// from either within a block or directly on the wire.
 pub fn on_attester_slashing(
-    mut store: Store,
+    store: &mut Store,
     attester_slashing: AttesterSlashing,
 ) -> anyhow::Result<()> {
     let attestation_1 = attester_slashing.attestation_1;
@@ -222,16 +222,16 @@ pub fn on_attester_slashing(
     ensure!(state.is_valid_indexed_attestation(&attestation_1)?);
     ensure!(state.is_valid_indexed_attestation(&attestation_2)?);
 
-    let mut indices = vec![];
-
-    for i in &attestation_1.attesting_indices {
-        if attestation_2.attesting_indices.contains(i) {
-            indices.push(*i);
-        }
-    }
-
-    for index in indices {
-        store.equivocating_indices.push(index);
+    let attestation_1_indices = attestation_1
+        .attesting_indices
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let attestation_2_indices = attestation_2
+        .attesting_indices
+        .into_iter()
+        .collect::<HashSet<_>>();
+    for index in attestation_1_indices.intersection(&attestation_2_indices) {
+        store.equivocating_indices.push(*index);
     }
     Ok(())
 }
