@@ -1,11 +1,13 @@
 use alloy_primitives::{B256, map::HashSet};
 use anyhow::{bail, ensure};
 use ream_consensus::{
+    attestation::Attestation,
     attester_slashing::AttesterSlashing,
     checkpoint::Checkpoint,
-    constants::{INTERVALS_PER_SLOT, SECONDS_PER_SLOT},
+    constants::{GENESIS_EPOCH, INTERVALS_PER_SLOT, SECONDS_PER_SLOT},
     deneb::beacon_block::SignedBeaconBlock,
     execution_engine::{blob_versioned_hashes::blob_versioned_hashes, engine_trait::ExecutionApi},
+    fork_choice::latest_message::LatestMessage,
     kzg_commitment::KZGCommitment,
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch},
     predicates::is_slashable_attestation_data,
@@ -264,6 +266,83 @@ pub fn on_tick_per_slot(store: &mut Store, time: u64) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn validate_target_epoch_against_current_time(
+    store: &Store,
+    attestation: &Attestation,
+) -> anyhow::Result<()> {
+    let target = attestation.data.target;
+
+    // Attestations must be from the current or previous epoch
+    let current_epoch = get_current_store_epoch(store);
+    // Use GENESIS_EPOCH for previous when genesis to avoid underflow
+    let previous_epoch = if current_epoch > GENESIS_EPOCH {
+        current_epoch - 1
+    } else {
+        GENESIS_EPOCH
+    };
+    // If attestation target is from a future epoch, delay consideration until the epoch arrives
+    ensure!([current_epoch, previous_epoch].contains(&target.epoch));
+    Ok(())
+}
+
+pub fn validate_on_attestation(
+    store: &Store,
+    attestation: &Attestation,
+    is_from_block: bool,
+) -> anyhow::Result<()> {
+    let target = attestation.data.target;
+
+    // If the given attestation is not from a beacon block message, we have to check the target
+    // epoch scope.
+    if !is_from_block {
+        validate_target_epoch_against_current_time(store, attestation)?;
+    }
+
+    // Check that the epoch number and slot number are matching
+    ensure!(target.epoch == compute_epoch_at_slot(attestation.data.slot));
+
+    // Attestation target must be for a known block. If target block is unknown, delay consideration
+    // until block is found
+    ensure!(store.blocks.contains_key(&target.root));
+
+    // Attestations must be for a known block. If block is unknown, delay consideration until the
+    // block is found
+    ensure!(
+        store
+            .blocks
+            .contains_key(&attestation.data.beacon_block_root)
+    );
+    // Attestations must not be for blocks in the future. If not, the attestation should not be
+    // considered
+    ensure!(store.blocks[&attestation.data.beacon_block_root].slot <= attestation.data.slot);
+
+    // LMD vote must be consistent with FFG vote target
+    ensure!(
+        target.root
+            == get_checkpoint_block(store, attestation.data.beacon_block_root, target.epoch)
+    );
+
+    // Attestations can only affect the fork choice of subsequent slots.
+    // Delay consideration in the fork choice until their slot is in the past.
+    ensure!(store.get_current_slot() >= attestation.data.slot + 1);
+
+    Ok(())
+}
+
+pub fn store_target_checkpoint_state(store: &mut Store, target: Checkpoint) -> anyhow::Result<()> {
+    // Store target checkpoint state if not yet seen
+    if let std::collections::hash_map::Entry::Vacant(e) = store.checkpoint_states.entry(target) {
+        let mut base_state = store.block_states[&target.root].clone();
+        let target_slot = compute_start_slot_at_epoch(target.epoch);
+        if base_state.slot < target_slot {
+            base_state.process_slots(target_slot)?;
+        }
+        e.insert(base_state);
+    }
+
+    Ok(())
+}
+
 pub fn on_tick(store: &mut Store, time: u64) -> anyhow::Result<()> {
     // If the ``store.time`` falls behind, while loop catches up slot by slot
     // to ensure that every previous slot is processed with ``on_tick_per_slot``
@@ -274,6 +353,65 @@ pub fn on_tick(store: &mut Store, time: u64) -> anyhow::Result<()> {
     }
 
     on_tick_per_slot(store, time)?;
+
+    Ok(())
+}
+
+pub fn update_latest_messages(
+    store: &mut Store,
+    attesting_indices: Vec<u64>,
+    attestation: Attestation,
+) -> anyhow::Result<()> {
+    let target = attestation.data.target;
+    let beacon_block_root = attestation.data.beacon_block_root;
+    let mut non_equivocating_attesting_indices = vec![];
+
+    for &i in &attesting_indices {
+        if !store.equivocating_indices.contains(&i) {
+            non_equivocating_attesting_indices.push(i);
+        }
+    }
+
+    for i in &non_equivocating_attesting_indices {
+        if !store.latest_messages.contains_key(i) || target.epoch > store.latest_messages[i].epoch {
+            store.latest_messages.insert(
+                *i,
+                LatestMessage {
+                    epoch: target.epoch,
+                    root: beacon_block_root,
+                },
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Run ``on_attestation`` upon receiving a new ``attestation`` from either within a block or
+/// directly on the wire.
+///
+/// An ``attestation`` that is asserted as invalid may be valid at a later time,
+/// consider scheduling it for later processing in such case.
+pub fn on_attestation(
+    store: &mut Store,
+    attestation: Attestation,
+    is_from_block: bool,
+) -> anyhow::Result<()> {
+    validate_on_attestation(store, &attestation, is_from_block)?;
+
+    store_target_checkpoint_state(store, attestation.data.target)?;
+
+    // Get state at the `target` to fully validate attestation
+    let target_state = &store.checkpoint_states[&attestation.data.target];
+    let indexed_attestation = target_state.get_indexed_attestation(&attestation)?;
+    ensure!(target_state.is_valid_indexed_attestation(&indexed_attestation)?);
+
+    // Update latest messages for attesting indices
+    update_latest_messages(
+        store,
+        indexed_attestation.attesting_indices.to_vec(),
+        attestation,
+    )?;
 
     Ok(())
 }
