@@ -6,17 +6,15 @@ use ream_consensus::{
         GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SECONDS_PER_SLOT, SLOTS_PER_EPOCH,
     },
     deneb::{beacon_block::BeaconBlock, beacon_state::BeaconState},
+    fork_choice::latest_message::LatestMessage,
     helpers::{calculate_committee_fraction, get_total_active_balance},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    constants::{
-        PROPOSER_SCORE_BOOST, REORG_HEAD_WEIGHT_THRESHOLD, REORG_MAX_EPOCHS_SINCE_FINALIZATION,
-        REORG_PARENT_WEIGHT_THRESHOLD,
-    },
-    latest_message::LatestMessage,
+use crate::constants::{
+    PROPOSER_SCORE_BOOST, REORG_HEAD_WEIGHT_THRESHOLD, REORG_MAX_EPOCHS_SINCE_FINALIZATION,
+    REORG_PARENT_WEIGHT_THRESHOLD,
 };
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
