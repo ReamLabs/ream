@@ -18,7 +18,6 @@ ream-node.workspace = true
 ream-storage.workspace = true
 
 #misc
-alloy-primitives.workspace = true
 ethereum_serde_utils.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -26,3 +25,4 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 warp.workspace = true
+alloy-primitives.workspace = true

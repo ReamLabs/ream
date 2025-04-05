@@ -2,6 +2,7 @@ pub mod genesis;
 pub mod state;
 pub mod validator;
 pub mod version;
+pub mod config;
 
 use serde::Serialize;
 use serde_json::json;
