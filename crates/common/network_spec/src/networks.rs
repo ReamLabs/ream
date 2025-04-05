@@ -12,6 +12,18 @@ pub enum Network {
     Dev,
 }
 
+impl Network {
+    pub fn chain_id(&self) -> u64 {
+        match self {
+            Network::Mainnet => 1,
+            Network::Holesky => 17000,
+            Network::Sepolia => 11155111,
+            Network::Hoodi => 560048,
+            Network::Dev => 1,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NetworkSpec {
     pub network: Network,
@@ -93,15 +105,3 @@ pub static DEV: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
     }
     .into()
 });
-
-impl Network {
-    pub fn chain_id(&self) -> u64 {
-        match self {
-            Network::Mainnet => 1,
-            Network::Holesky => 17000,
-            Network::Sepolia => 11155111,
-            Network::Hoodi => 560048,
-            Network::Dev => 1,
-        }
-    }
-}

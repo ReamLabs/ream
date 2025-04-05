@@ -12,20 +12,25 @@ use warp::{
 use super::Data;
 
 #[derive(Serialize, Deserialize, Default)]
-struct DepositContract {
+pub struct DepositContract {
     #[serde(with = "serde_utils::quoted_u64")]
     chain_id: u64,
     address: Address,
 }
 
+impl DepositContract {
+    pub fn new(chain_id: u64, address: Address) -> Self {
+        Self { chain_id, address }
+    }
+}
+
 /// Called by `/deposit_contract` to get the Genesis Config of Beacon Chain.
 pub async fn get_deposit_contract(network_spec: Arc<NetworkSpec>) -> Result<impl Reply, Rejection> {
-    let deposit_contract_response: DepositContract = DepositContract {
-        chain_id: network_spec.network.chain_id(),
-        address: network_spec.deposit_contract_address,
-    };
     Ok(with_status(
-        Data::json(deposit_contract_response),
+        Data::json(DepositContract::new(
+            network_spec.network.chain_id(),
+            network_spec.deposit_contract_address,
+        )),
         StatusCode::OK,
     ))
 }
