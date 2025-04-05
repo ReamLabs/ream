@@ -16,7 +16,8 @@ pub fn get_routes(
     network_spec: Arc<NetworkSpec>,
     db: ReamDB,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    let eth_base = path("eth").and(path("v1"));
+    let eth_base_v1 = path("eth").and(path("v1"));
+    let eth_base_v2 = path("eth").and(path("v2"));
 
     let beacon_routes = get_beacon_routes(network_spec.clone(), db);
 
@@ -24,7 +25,9 @@ pub fn get_routes(
 
     let config_routes = get_config_routes(network_spec.clone());
 
-    eth_base.and(beacon_routes.or(node_routes).or(config_routes))
+    let combined_routes = beacon_routes.or(node_routes).or(config_routes);
+    let versioned_base = eth_base_v1.or(eth_base_v2).and_then(|_| async { Ok::<_, Rejection>(()) });
+    versioned_base.and(combined_routes).map(|_, reply| reply)
 }
 
 /// Creates a filter for DB.
