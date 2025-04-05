@@ -13,6 +13,6 @@ pub fn get_config_routes(
         .and(path("deposit_contract"))
         .and(end())
         .and(get())
-        .and_then(move || get_deposit_contract(network_spec.chain_id, network_spec.deposit_contract_address))
+        .and_then(move || get_deposit_contract(network_spec.clone()))
         .with(log("deposit_contract"))
 }

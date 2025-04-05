@@ -1,6 +1,6 @@
 use std::sync::{Arc, LazyLock};
 
-use alloy_primitives::{address, b256, fixed_bytes, Address};
+use alloy_primitives::{Address, address, b256, fixed_bytes};
 use ream_consensus::genesis::Genesis;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,8 +16,7 @@ pub enum Network {
 pub struct NetworkSpec {
     pub network: Network,
     pub genesis: Genesis,
-    pub chain_id: u64,
-    pub deposit_contract_address: Address
+    pub deposit_contract_address: Address,
 }
 
 pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
@@ -30,8 +29,7 @@ pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             ),
             genesis_fork_version: fixed_bytes!("0x00000000"),
         },
-        chain_id: 1,
-        deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa")
+        deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
     }
     .into()
 });
@@ -46,8 +44,7 @@ pub static HOLESKY: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             ),
             genesis_fork_version: fixed_bytes!("0x01017000"),
         },
-        chain_id: 17000,
-        deposit_contract_address: address!("0x4242424242424242424242424242424242424242")
+        deposit_contract_address: address!("0x4242424242424242424242424242424242424242"),
     }
     .into()
 });
@@ -62,8 +59,7 @@ pub static SEPOLIA: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             ),
             genesis_fork_version: fixed_bytes!("0x90000069"),
         },
-        chain_id: 11155111,
-        deposit_contract_address: address!("0x7f02C3E3c98b133055B8B348B2Ac625669Ed295D")
+        deposit_contract_address: address!("0x7f02C3E3c98b133055B8B348B2Ac625669Ed295D"),
     }
     .into()
 });
@@ -78,8 +74,7 @@ pub static HOODI: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             ),
             genesis_fork_version: fixed_bytes!("0x10000910"),
         },
-        chain_id: 560048,
-        deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa")
+        deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
     }
     .into()
 });
@@ -94,8 +89,19 @@ pub static DEV: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             ),
             genesis_fork_version: fixed_bytes!("0x00000000"),
         },
-        chain_id: 1,
-        deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa")
+        deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
     }
     .into()
 });
+
+impl Network {
+    pub fn chain_id(&self) -> u64 {
+        match self {
+            Network::Mainnet => 1,
+            Network::Holesky => 17000,
+            Network::Sepolia => 11155111,
+            Network::Hoodi => 560048,
+            Network::Dev => 1,
+        }
+    }
+}
