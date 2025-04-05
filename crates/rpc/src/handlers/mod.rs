@@ -1,4 +1,5 @@
 pub mod genesis;
+pub mod randao;
 pub mod state;
 pub mod validator;
 pub mod version;
