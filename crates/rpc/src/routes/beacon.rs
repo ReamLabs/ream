@@ -14,7 +14,10 @@ use warp::{
 
 use super::with_db;
 use crate::{
-    handlers::{genesis::get_genesis, randao::get_randao_mix, validator::get_validator_from_state},
+    handlers::{
+        fork::get_fork, genesis::get_genesis, randao::get_randao_mix,
+        validator::get_validator_from_state,
+    },
     types::{
         id::{ID, ValidatorID},
         query::RandaoQuery,
@@ -35,6 +38,16 @@ pub fn get_beacon_routes(
         .and(get())
         .and_then(move || get_genesis(network_spec.genesis.clone()))
         .with(log("genesis"));
+
+    let fork = beacon_base
+        .and(path("states"))
+        .and(param::<ID>())
+        .and(path("fork"))
+        .and(end())
+        .and(get())
+        .and(db_filter.clone())
+        .and_then(move |state_id: ID, db: ReamDB| get_fork(state_id, db))
+        .with(log("fork"));
 
     let randao = beacon_base
         .and(path("states"))
@@ -64,5 +77,5 @@ pub fn get_beacon_routes(
         })
         .with(log("validator"));
 
-    genesis.or(validator).or(randao)
+    genesis.or(validator).or(randao).or(fork)
 }
