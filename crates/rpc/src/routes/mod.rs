@@ -22,3 +22,10 @@ pub fn get_routes(
 
     eth_base.and(beacon_routes.or(node_routes))
 }
+
+/// Creates a filter for DB.
+fn with_db(
+    db: ReamDB,
+) -> impl Filter<Extract = (ReamDB,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || db.clone())
+}
