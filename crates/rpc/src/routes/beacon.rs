@@ -10,7 +10,7 @@ use warp::{
 };
 
 use crate::{
-    handlers::{genesis::get_genesis, validator::get_validator_from_state},
+    handlers::{fork::get_fork, genesis::get_genesis, validator::get_validator_from_state},
     types::id::{ID, ValidatorID},
 };
 
@@ -28,7 +28,20 @@ pub fn get_beacon_routes(
         .and_then(move || get_genesis(network_spec.genesis.clone()))
         .with(log("genesis"));
 
+    let fork = {
+        let db = db.clone();
+        beacon_base
+            .and(path("states"))
+            .and(param::<ID>())
+            .and(path("fork"))
+            .and(end())
+            .and(get())
+            .and_then(move |state_id: ID| get_fork(state_id, db.clone()))
+            .with(log("fork"))
+    };
+
     let validator = {
+        let db = db.clone();
         beacon_base
             .and(path("states"))
             .and(param::<ID>())
@@ -43,5 +56,5 @@ pub fn get_beacon_routes(
             })
     };
 
-    genesis.or(validator)
+    genesis.or(validator).or(fork)
 }

@@ -1,3 +1,4 @@
+pub mod fork;
 pub mod genesis;
 pub mod state;
 pub mod validator;
