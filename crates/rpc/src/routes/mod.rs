@@ -18,7 +18,7 @@ pub fn get_routes(
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     let eth_base = path("eth").and(path("v1"));
 
-    let beacon_routes = get_beacon_routes(Arc::clone(&network_spec, db));
+    let beacon_routes = get_beacon_routes(Arc::clone(&network_spec), db);
 
     let node_routes = get_node_routes();
 
