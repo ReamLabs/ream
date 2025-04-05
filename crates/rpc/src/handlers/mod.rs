@@ -1,3 +1,4 @@
+pub mod checkpoint;
 pub mod genesis;
 pub mod state;
 pub mod validator;
