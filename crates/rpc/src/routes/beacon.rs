@@ -4,14 +4,20 @@ use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
 use warp::{
     Filter, Rejection,
-    filters::path::{end, param},
+    filters::{
+        path::{end, param},
+        query::query,
+    },
     get, log, path,
     reply::Reply,
 };
 
 use crate::{
-    handlers::{genesis::get_genesis, validator::get_validator_from_state},
-    types::id::{ID, ValidatorID},
+    handlers::{genesis::get_genesis, randao::get_randao_mix, validator::get_validator_from_state},
+    types::{
+        id::{ID, ValidatorID},
+        query::RandaoQuery,
+    },
 };
 
 /// Creates and returns all `/beacon` routes.
@@ -28,7 +34,23 @@ pub fn get_beacon_routes(
         .and_then(move || get_genesis(network_spec.genesis.clone()))
         .with(log("genesis"));
 
+    let randao = {
+        let db = db.clone();
+        beacon_base
+            .and(path("states"))
+            .and(param::<ID>())
+            .and(path("randao"))
+            .and(query::<RandaoQuery>())
+            .and(end())
+            .and(get())
+            .and_then(move |state_id: ID, query: RandaoQuery| {
+                let epoch = query.epoch;
+                get_randao_mix(state_id, epoch, db.clone())
+            })
+    };
+
     let validator = {
+        let db = db.clone();
         beacon_base
             .and(path("states"))
             .and(param::<ID>())
@@ -43,5 +65,5 @@ pub fn get_beacon_routes(
             })
     };
 
-    genesis.or(validator)
+    genesis.or(validator).or(randao)
 }
