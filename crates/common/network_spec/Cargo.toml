@@ -11,6 +11,8 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
+enr.workspace = true
+serde.workspace = true
 
 # ream-dependencies
 ream-consensus.workspace = true

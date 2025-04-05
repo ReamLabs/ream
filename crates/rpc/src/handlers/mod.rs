@@ -1,4 +1,5 @@
 pub mod genesis;
+pub mod identity;
 pub mod version;
 
 use serde::Serialize;

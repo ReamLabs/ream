@@ -4135,7 +4135,9 @@ name = "ream-network-spec"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "enr",
  "ream-consensus",
+ "serde",
 ]
 
 [[package]]
