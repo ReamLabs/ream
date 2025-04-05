@@ -1,5 +1,6 @@
 pub mod genesis;
 pub mod version;
+pub mod config;
 
 use serde::Serialize;
 use serde_json::json;

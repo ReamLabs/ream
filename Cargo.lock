@@ -4196,6 +4196,7 @@ dependencies = [
 name = "ream-rpc"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "ream-consensus",
  "ream-network-spec",
  "ream-node",
