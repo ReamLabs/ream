@@ -53,12 +53,12 @@ async fn main() {
                 total_peers: 0,
             };
 
-            let _ream_db = ReamDB::new(config.data_dir, config.ephemeral)
+            let ream_db = ReamDB::new(config.data_dir, config.ephemeral)
                 .expect("unable to init Ream Database");
 
             info!("ream database initialized ");
 
-            let http_future = start_server(config.network.clone(), server_config);
+            let http_future = start_server(config.network.clone(), server_config, ream_db);
 
             let network_future = async {
                 match Network::init(async_executor, &binding).await {

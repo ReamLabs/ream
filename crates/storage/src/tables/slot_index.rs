@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableTable, TableDefinition};
 
 use super::{SSZEncoding, Table};
 use crate::errors::StoreError;
@@ -38,5 +38,13 @@ impl Table for SlotIndexTable {
         drop(table);
         write_txn.commit()?;
         Ok(())
+    }
+}
+
+impl SlotIndexTable {
+    pub fn get_highest_slot(&self) -> Result<Option<u64>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(SLOT_INDEX_TABLE)?;
+        Ok(table.last()?.map(|result| result.0.value()))
     }
 }
