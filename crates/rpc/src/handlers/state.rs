@@ -1,7 +1,14 @@
 use ream_consensus::deneb::beacon_state::BeaconState;
 use ream_storage::{db::ReamDB, tables::Table};
+use warp::{
+    http::status::StatusCode, 
+    reject::Rejection, 
+    reply::{with_status, Reply}
+};
 
 use crate::types::{errors::ApiError, id::ID};
+
+use super::BeaconResponse;
 
 pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {
     let block_root = match state_id {
@@ -19,4 +26,10 @@ pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState,
         .ok_or(ApiError::NotFound(format!(
             "Failed to find `beacon_state` from {block_root:?}"
         )))
+}
+
+pub async fn get_state(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
+    let state = get_state_from_id(state_id, &db).await?;
+
+    Ok(with_status(BeaconResponse::json(state), StatusCode::OK))
 }

@@ -10,8 +10,8 @@ use warp::{
 };
 
 use crate::{
-    handlers::{genesis::get_genesis, validator::get_validator_from_state},
-    types::id::{ID, ValidatorID},
+    handlers::{genesis::get_genesis, state::get_state, validator::get_validator_from_state},
+    types::id::{ValidatorID, ID},
 };
 
 /// Creates and returns all `/beacon` routes.
@@ -20,7 +20,7 @@ pub fn get_beacon_routes(
     db: ReamDB,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     let beacon_base = path("beacon");
-
+    
     let genesis = beacon_base
         .and(path("genesis"))
         .and(end())
@@ -28,7 +28,24 @@ pub fn get_beacon_routes(
         .and_then(move || get_genesis(network_spec.genesis.clone()))
         .with(log("genesis"));
 
+    let state = {
+        let db = db.clone();
+
+        beacon_base
+            .and(path("states"))
+            .and(param::<ID>())
+            .and(end())
+            .and(get())
+            .and_then({
+                move |state_id: ID| {
+                    get_state(state_id, db.clone())
+                }
+            })
+    };
+
     let validator = {
+        let db = db.clone();
+
         beacon_base
             .and(path("states"))
             .and(param::<ID>())
@@ -43,5 +60,5 @@ pub fn get_beacon_routes(
             })
     };
 
-    genesis.or(validator)
+    genesis.or(validator).or(state)
 }
