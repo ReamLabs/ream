@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ID {
+    Named(String),
     Slot(u64),
     /// expected to be a 0x-prefixed hex string.
     Root(B256),
@@ -32,6 +33,7 @@ impl FromStr for ID {
 impl fmt::Display for ID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ID::Named(path) => write!(f, "{path}"),
             ID::Slot(slot) => write!(f, "{slot}"),
             ID::Root(root) => write!(f, "0x{}", hex::encode(root)),
         }
