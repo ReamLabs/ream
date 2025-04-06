@@ -16,13 +16,14 @@ use crate::{
         checkpoint::get_finality_checkpoint,
         fork::get_fork,
         genesis::get_genesis,
+        header::get_headers,
         randao::get_randao_mix,
         state::get_state_root,
         validator::get_validator_from_state,
     },
     types::{
         id::{ID, ValidatorID},
-        query::RandaoQuery,
+        query::{ParentRootQuery, RandaoQuery, SlotQuery},
     },
     utils::error::parsed_param,
 };
@@ -99,6 +100,20 @@ pub fn get_beacon_routes(
         })
         .with(log("validator"));
 
+    let headers = beacon_base
+        .and(path("headers"))
+        .and(query::<SlotQuery>())
+        .and(query::<ParentRootQuery>())
+        .and(end())
+        .and(get())
+        .and(db_filter.clone())
+        .and_then({
+            move |slot: SlotQuery, parent_root: ParentRootQuery, db: ReamDB| {
+                get_headers(slot, parent_root, db)
+            }
+        })
+        .with(log("headers"));
+
     let block_root = beacon_base
         .and(path("blocks"))
         .and(parsed_param::<ID>())
@@ -126,6 +141,7 @@ pub fn get_beacon_routes(
         .or(state_root)
         .or(block_root)
         .or(block_rewards)
+        .or(headers)
 }
 
 pub fn get_beacon_routes_v2(
