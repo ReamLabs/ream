@@ -1,5 +1,6 @@
 pub mod blob_sidecar;
 pub mod block;
+pub mod committee;
 pub mod config;
 pub mod header;
 pub mod light_client;
