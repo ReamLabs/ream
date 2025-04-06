@@ -2,16 +2,16 @@ use std::sync::Arc;
 
 use beacon::get_beacon_routes;
 use config::get_config_routes;
-use node::get_node_routes;
 use debug::get_debug_routes;
+use node::get_node_routes;
 use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
 use warp::{Filter, Rejection, path, reply::Reply};
 
 pub mod beacon;
 pub mod config;
-pub mod node;
 pub mod debug;
+pub mod node;
 
 /// Creates and returns all possible routes.
 pub fn get_routes(
@@ -29,8 +29,13 @@ pub fn get_routes(
 
     let debug_routes = get_debug_routes(db.clone());
 
-    let combined_routes = beacon_routes.or(node_routes).or(config_routes).or(debug_routes);
-    let versioned_base = eth_base_v1.or(eth_base_v2).and_then(|_| async { Ok::<_, Rejection>(()) });
+    let combined_routes = beacon_routes
+        .or(node_routes)
+        .or(config_routes)
+        .or(debug_routes);
+    let versioned_base = eth_base_v1
+        .or(eth_base_v2)
+        .and_then(|_| async { Ok::<_, Rejection>(()) });
     versioned_base.and(combined_routes).map(|_, reply| reply)
 }
 

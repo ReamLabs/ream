@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ID {
-    Named(String),
+    Finalized,
+    Genesis,
+    Head,
+    Justified,
     Slot(u64),
     /// expected to be a 0x-prefixed hex string.
     Root(B256),
@@ -18,14 +21,22 @@ impl FromStr for ID {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with("0x") {
-            B256::from_str(s)
-                .map(ID::Root)
-                .map_err(|err| format!("Invalid hex root: {err}"))
-        } else {
-            s.parse::<u64>()
-                .map(ID::Slot)
-                .map_err(|err| format!("Invalid slot: {err}"))
+        match s.to_lowercase().as_str() {
+            "finalized" => Ok(ID::Finalized),
+            "genesis" => Ok(ID::Genesis),
+            "head" => Ok(ID::Head),
+            "justified" => Ok(ID::Justified),
+            _ => {
+                if s.starts_with("0x") {
+                    B256::from_str(s)
+                        .map(ID::Root)
+                        .map_err(|err| format!("Invalid hex root: {err}"))
+                } else {
+                    s.parse::<u64>()
+                        .map(ID::Slot)
+                        .map_err(|err| format!("Invalid slot: {err}"))
+                }
+            }
         }
     }
 }
@@ -33,7 +44,10 @@ impl FromStr for ID {
 impl fmt::Display for ID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ID::Named(path) => write!(f, "{path}"),
+            ID::Finalized => write!(f, "finalized"),
+            ID::Genesis => write!(f, "genesis"),
+            ID::Head => write!(f, "head"),
+            ID::Justified => write!(f, "justified"),
             ID::Slot(slot) => write!(f, "{slot}"),
             ID::Root(root) => write!(f, "0x{}", hex::encode(root)),
         }

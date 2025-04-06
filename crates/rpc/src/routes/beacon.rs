@@ -19,7 +19,7 @@ use crate::{
         randao::get_randao_mix, validator::get_validator_from_state,
     },
     types::{
-        id::{ValidatorID, ID},
+        id::{ID, ValidatorID},
         query::RandaoQuery,
     },
 };

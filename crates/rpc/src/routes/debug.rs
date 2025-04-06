@@ -1,8 +1,13 @@
 use ream_storage::db::ReamDB;
-use warp::{filters::path::{end, param}, get, log, path, reply::Reply, Filter, Rejection};
+use warp::{
+    Filter, Rejection,
+    filters::path::{end, param},
+    get, log, path,
+    reply::Reply,
+};
 
-use crate::{handlers::state::get_state, types::id::ID};
 use super::with_db;
+use crate::{handlers::state::get_state, types::id::ID};
 
 /// Creates and returns all `/debug` routes.
 pub fn get_debug_routes(
