@@ -10,7 +10,7 @@ use super::with_db;
 use crate::{handlers::state::get_state, types::id::ID};
 
 /// Creates and returns all `/debug` routes.
-pub fn get_debug_routes(
+pub fn get_debug_routes_v2(
     db: ReamDB,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     let db_filter = with_db(db);
