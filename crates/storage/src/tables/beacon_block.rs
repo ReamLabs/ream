@@ -12,7 +12,7 @@ use crate::errors::StoreError;
 
 /// Table definition for the Beacon Block table
 ///
-/// Key: blocks
+/// Key: block_id
 /// Value: BeaconBlock
 pub const BEACON_BLOCK_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<BeaconBlock>> =
     TableDefinition::new("beacon_block");
