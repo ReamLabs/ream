@@ -8,7 +8,7 @@ use warp::{
 };
 
 use super::state::get_state_from_id;
-use crate::types::{id::ID, query::RandaoQuery, response::BeaconResponse};
+use crate::types::{id::ID, query::EpochQuery, response::BeaconResponse};
 
 #[derive(Serialize, Deserialize)]
 struct RandaoResponse {
@@ -20,7 +20,7 @@ struct RandaoResponse {
 /// else will fetch randao of the state epoch
 pub async fn get_randao_mix(
     state_id: ID,
-    query: RandaoQuery,
+    query: EpochQuery,
     db: ReamDB,
 ) -> Result<impl Reply, Rejection> {
     let state = get_state_from_id(state_id, &db).await?;

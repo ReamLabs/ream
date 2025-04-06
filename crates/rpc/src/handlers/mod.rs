@@ -1,5 +1,6 @@
 pub mod block;
 pub mod checkpoint;
+pub mod committee;
 pub mod config;
 pub mod fork;
 pub mod genesis;
