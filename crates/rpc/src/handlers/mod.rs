@@ -4,10 +4,10 @@ pub mod config;
 pub mod fork;
 pub mod genesis;
 pub mod randao;
+pub mod root;
 pub mod state;
 pub mod validator;
 pub mod version;
-pub mod root;
 
 use serde::Serialize;
 use serde_json::json;

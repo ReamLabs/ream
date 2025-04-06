@@ -15,8 +15,8 @@ use warp::{
 use super::with_db;
 use crate::{
     handlers::{
-        block::get_block_root, checkpoint::get_finality_checkpoint, fork::get_fork,
-        genesis::get_genesis, randao::get_randao_mix, validator::get_validator_from_state,
+        checkpoint::get_finality_checkpoint, fork::get_fork, genesis::get_genesis,
+        randao::get_randao_mix, root::get_root, validator::get_validator_from_state,
     },
     types::{
         id::{ID, ValidatorID},
@@ -48,6 +48,16 @@ pub fn get_beacon_routes(
         .and(db_filter.clone())
         .and_then(move |state_id: ID, db: ReamDB| get_fork(state_id, db))
         .with(log("fork"));
+
+    let root = beacon_base
+        .and(path("states"))
+        .and(param::<ID>())
+        .and(path("root"))
+        .and(end())
+        .and(get())
+        .and(db_filter.clone())
+        .and_then(move |state_id: ID, db: ReamDB| get_root(state_id, db))
+        .with(log("root"));
 
     let randao = beacon_base
         .and(path("states"))
@@ -86,20 +96,10 @@ pub fn get_beacon_routes(
         })
         .with(log("validator"));
 
-    let block_root = beacon_base
-        .and(path("blocks"))
-        .and(param::<ID>())
-        .and(path("root"))
-        .and(end())
-        .and(get())
-        .and(db_filter.clone())
-        .and_then(move |block_id: ID, db: ReamDB| get_block_root(block_id, db))
-        .with(log("block_root"));
-
     genesis
         .or(validator)
         .or(randao)
         .or(fork)
         .or(checkpoint)
-        .or(block_root)
+        .or(root)
 }

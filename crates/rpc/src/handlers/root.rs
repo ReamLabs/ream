@@ -1,4 +1,5 @@
 use ream_storage::db::ReamDB;
+use tree_hash::TreeHash;
 use warp::{
     http::status::StatusCode,
     reject::Rejection,
@@ -10,9 +11,11 @@ use crate::types::id::ID;
 
 pub async fn get_root(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
     let state = get_state_from_id(state_id, &db).await?;
+
+    let state_root = state.tree_hash_root();
+
     Ok(with_status(
-        BeaconResponse::json(state.root),
+        BeaconResponse::json(state_root),
         StatusCode::OK,
     ))
 }
-
