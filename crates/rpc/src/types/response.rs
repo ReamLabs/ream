@@ -44,3 +44,22 @@ impl<T: Serialize> BeaconResponse<T> {
         }))
     }
 }
+
+#[derive(Debug, Serialize)]
+pub struct BeaconVersionedResponse<T> {
+    pub version: String,
+    pub execution_optimistic: bool,
+    pub finalized: bool,
+    pub data: T,
+}
+
+impl<T: Serialize> BeaconVersionedResponse<T> {
+    pub fn json(data: T) -> Json {
+        json(&json!(Self {
+            version: String::from("electra"),
+            data,
+            execution_optimistic: EXECUTION_OPTIMISTIC,
+            finalized: FINALIZED
+        }))
+    }
+}
