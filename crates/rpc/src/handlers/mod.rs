@@ -7,6 +7,7 @@ pub mod randao;
 pub mod state;
 pub mod validator;
 pub mod version;
+pub mod root;
 
 use serde::Serialize;
 use serde_json::json;
