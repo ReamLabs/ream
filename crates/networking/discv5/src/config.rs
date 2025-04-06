@@ -1,6 +1,7 @@
 use std::net::IpAddr;
 
 use discv5::Enr;
+use crate::eth2::ENRForkID;
 
 pub struct NetworkConfig {
     pub discv5_config: discv5::Config,
@@ -14,4 +15,6 @@ pub struct NetworkConfig {
     pub disable_discovery: bool,
 
     pub total_peers: usize,
+
+    pub eth2_fork_id: ENRForkID,
 }
