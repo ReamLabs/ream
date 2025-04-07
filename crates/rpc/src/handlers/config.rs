@@ -18,22 +18,18 @@ pub struct DepositContract {
     address: Address,
 }
 #[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct SpecConfig {
-    #[serde(rename = "DEPOSIT_CONTRACT_ADDRESS")]
     deposit_contract_address: String,
 
-    #[serde(rename = "DEPOSIT_NETWORK_ID")]
     #[serde(with = "serde_utils::quoted_u64")]
     deposit_network_id: u64,
 
-    #[serde(rename = "DOMAIN_AGGREGATE_AND_PROOF")]
     domain_aggregate_and_proof: String,
 
-    #[serde(rename = "INACTIVITY_PENALTY_QUOTIENT")]
     #[serde(with = "serde_utils::quoted_u64")]
     inactivity_penalty_quotient: u64,
 
-    #[serde(rename = "INACTIVITY_PENALTY_QUOTIENT_ALTAIR")]
     #[serde(with = "serde_utils::quoted_u64")]
     inactivity_penalty_quotient_altair: u64,
 }
