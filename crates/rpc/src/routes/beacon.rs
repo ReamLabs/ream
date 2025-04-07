@@ -16,7 +16,7 @@ use super::with_db;
 use crate::{
     handlers::{
         checkpoint::get_finality_checkpoint, fork::get_fork, genesis::get_genesis,
-        randao::get_randao_mix, root::get_root, validator::get_validator_from_state,
+        randao::get_randao_mix, state::get_root, validator::get_validator_from_state,
     },
     types::{
         id::{ID, ValidatorID},

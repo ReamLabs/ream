@@ -1,4 +1,4 @@
-use alloy_primitives::B256;
+
 use ream_consensus::deneb::beacon_state::BeaconState;
 use ream_storage::{
     db::ReamDB,
@@ -11,8 +11,9 @@ use warp::{
     reply::{Reply, with_status},
 };
 
-use super::BeaconResponse;
+use super::{BeaconResponse, RootResponse};
 use crate::types::{errors::ApiError, id::ID};
+
 
 pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {
     let block_root = match state_id {
@@ -65,6 +66,14 @@ pub async fn get_state(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection
     Ok(with_status(BeaconResponse::json(state), StatusCode::OK))
 }
 
-pub fn get_state_root(state: &BeaconState) -> B256 {
-    state.tree_hash_root()
+
+pub async fn get_root(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
+    let state = get_state_from_id(state_id, &db).await?;
+
+    let state_root = state.tree_hash_root();
+
+     Ok(with_status(
+        BeaconResponse::json(RootResponse::new(state_root)),
+        StatusCode::OK,
+    ))
 }
