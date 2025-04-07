@@ -6,11 +6,7 @@ use warp::{
 };
 
 use super::state::get_state_from_id;
-use crate::types::{
-    id::ID,
-    response::BeaconResponse,
-};
-
+use crate::types::{id::ID, response::BeaconResponse};
 
 /// Called by `/eth/v1/beacon/states/{state_id}/fork` to get fork of state.
 pub async fn get_fork(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {

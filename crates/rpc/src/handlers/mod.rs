@@ -12,8 +12,6 @@ use serde::Serialize;
 use serde_json::json;
 use warp::reply::{Json, json};
 
-
-
 /// A generic data struct that can be used to wrap any data type
 /// used for json rpc responses
 ///
@@ -31,7 +29,3 @@ impl<T: Serialize> Data<T> {
         json(&json!(Self { data }))
     }
 }
-
-
-
-

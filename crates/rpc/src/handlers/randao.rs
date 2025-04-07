@@ -8,7 +8,7 @@ use warp::{
 };
 
 use super::state::get_state_from_id;
-use crate::types::{id::ID, query::RandaoQuery , response::BeaconResponse};
+use crate::types::{id::ID, query::RandaoQuery, response::BeaconResponse};
 
 #[derive(Serialize, Deserialize)]
 struct RandaoResponse {

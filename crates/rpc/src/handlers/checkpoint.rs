@@ -8,10 +8,7 @@ use warp::{
 };
 
 use super::state::get_state_from_id;
-use crate::types::{
-    id::ID,
-    response::BeaconResponse,
-};
+use crate::types::{id::ID, response::BeaconResponse};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct CheckpointData {
