@@ -11,8 +11,8 @@ use warp::{
     reply::{Reply, with_status},
 };
 
-use super::{BeaconResponse, RootResponse};
-use crate::types::{errors::ApiError, id::ID};
+
+use crate::types::{errors::ApiError, id::ID , response::BeaconResponse , response::RootResponse};
 
 
 pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {

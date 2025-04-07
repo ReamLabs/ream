@@ -9,8 +9,8 @@ use warp::{
     reply::{Reply, with_status},
 };
 
-use super::BeaconResponse;
-use crate::types::{errors::ApiError, id::ID, response::RootResponse};
+
+use crate::types::{errors::ApiError, id::ID, response::RootResponse , response::BeaconResponse};
 
 /// Called by `/blocks/<block_id>/root` to get the Tree hash of the Block.
 pub async fn get_block_root(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
