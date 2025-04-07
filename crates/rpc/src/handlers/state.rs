@@ -1,8 +1,10 @@
+use alloy_primitives::B256;
 use ream_consensus::deneb::beacon_state::BeaconState;
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
+use tree_hash::TreeHash;
 use warp::{
     http::status::StatusCode,
     reject::Rejection,
@@ -61,4 +63,8 @@ pub async fn get_state(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection
     let state = get_state_from_id(state_id, &db).await?;
 
     Ok(with_status(BeaconResponse::json(state), StatusCode::OK))
+}
+
+pub fn get_state_root(state: &BeaconState) -> B256 {
+    state.tree_hash_root()
 }

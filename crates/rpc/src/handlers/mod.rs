@@ -9,7 +9,8 @@ pub mod state;
 pub mod validator;
 pub mod version;
 
-use serde::Serialize;
+use alloy_primitives::B256;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use warp::reply::{Json, json};
 
@@ -59,5 +60,16 @@ impl<T: Serialize> BeaconResponse<T> {
             execution_optimistic: EXECUTION_OPTIMISTIC,
             finalized: FINALIZED
         }))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RootResponse {
+    pub root: B256,
+}
+
+impl RootResponse {
+    pub fn new(root: B256) -> Self {
+        Self { root }
     }
 }
