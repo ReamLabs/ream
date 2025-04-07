@@ -1,3 +1,4 @@
+use alloy_primitives::B256;
 use ream_consensus::deneb::beacon_block::BeaconBlock;
 use ream_storage::{
     db::ReamDB,
@@ -11,7 +12,7 @@ use warp::{
 
 use crate::types::{errors::ApiError, id::ID, response::BeaconVersionedResponse};
 
-async fn get_beacon_block_from_id(block_id: ID, db: &ReamDB) -> Result<BeaconBlock, ApiError> {
+pub async fn get_block_root(block_id: ID, db: &ReamDB) -> Result<B256, ApiError> {
     let block_root = match block_id {
         ID::Finalized => {
             let finalized_checkpoint = db
@@ -47,6 +48,12 @@ async fn get_beacon_block_from_id(block_id: ID, db: &ReamDB) -> Result<BeaconBlo
     .ok_or(ApiError::NotFound(format!(
         "Failed to find `block_root` from {block_id:?}"
     )))?;
+
+    Ok(block_root)
+}
+
+async fn get_beacon_block_from_id(block_id: ID, db: &ReamDB) -> Result<BeaconBlock, ApiError> {
+    let block_root = get_block_root(block_id, db).await?;
 
     db.beacon_block_provider()
         .get(block_root)
