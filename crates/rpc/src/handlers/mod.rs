@@ -2,6 +2,7 @@ pub mod checkpoint;
 pub mod config;
 pub mod fork;
 pub mod genesis;
+pub mod peer_count;
 pub mod randao;
 pub mod state;
 pub mod validator;

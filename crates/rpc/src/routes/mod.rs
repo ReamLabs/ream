@@ -5,6 +5,7 @@ use config::get_config_routes;
 use debug::get_debug_routes_v2;
 use node::get_node_routes;
 use ream_network_spec::networks::NetworkSpec;
+use ream_node::network_channel::NetworkChannel;
 use ream_storage::db::ReamDB;
 use warp::{Filter, Rejection, path, reply::Reply};
 
@@ -16,12 +17,13 @@ pub mod node;
 fn get_v1_routes(
     network_spec: Arc<NetworkSpec>,
     db: ReamDB,
+    network_channel: NetworkChannel,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     let eth_base_v1 = path("eth").and(path("v1"));
 
     let beacon_routes = get_beacon_routes(network_spec.clone(), db.clone());
 
-    let node_routes = get_node_routes();
+    let node_routes = get_node_routes(network_channel);
 
     let config_routes = get_config_routes(network_spec.clone());
 
@@ -40,8 +42,9 @@ fn get_v2_routes(db: ReamDB) -> impl Filter<Extract = impl Reply, Error = Reject
 pub fn get_routes(
     network_spec: Arc<NetworkSpec>,
     db: ReamDB,
+    network_channel: NetworkChannel,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    let v1_routes = get_v1_routes(network_spec.clone(), db.clone());
+    let v1_routes = get_v1_routes(network_spec.clone(), db.clone(), network_channel);
     let v2_routes = get_v2_routes(db.clone());
 
     v2_routes.or(v1_routes)

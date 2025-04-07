@@ -4142,6 +4142,8 @@ dependencies = [
 name = "ream-node"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "tokio",
  "vergen",
 ]
 
@@ -4159,6 +4161,7 @@ dependencies = [
  "ream-discv5",
  "ream-executor",
  "ream-network-spec",
+ "ream-node",
  "serde",
  "serde_yaml",
  "tokio",
