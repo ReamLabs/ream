@@ -49,7 +49,7 @@ pub fn get_beacon_routes(
         .and_then(move |state_id: ID, db: ReamDB| get_fork(state_id, db))
         .with(log("fork"));
 
-    let root = beacon_base
+    let state_root = beacon_base
         .and(path("states"))
         .and(param::<ID>())
         .and(path("root"))
@@ -57,7 +57,7 @@ pub fn get_beacon_routes(
         .and(get())
         .and(db_filter.clone())
         .and_then(move |state_id: ID, db: ReamDB| get_state_root(state_id, db))
-        .with(log("root"));
+        .with(log("state_root"));
 
     let randao = beacon_base
         .and(path("states"))
@@ -101,5 +101,5 @@ pub fn get_beacon_routes(
         .or(randao)
         .or(fork)
         .or(checkpoint)
-        .or(root)
+        .or(state_root)
 }
