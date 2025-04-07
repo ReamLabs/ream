@@ -67,7 +67,7 @@ pub async fn get_state(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection
 }
 
 
-pub async fn get_root(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
+pub async fn get_state_root(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
     let state = get_state_from_id(state_id, &db).await?;
 
     let state_root = state.tree_hash_root();
