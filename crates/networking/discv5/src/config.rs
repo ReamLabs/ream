@@ -15,6 +15,4 @@ pub struct NetworkConfig {
     pub disable_discovery: bool,
 
     pub total_peers: usize,
-
-    pub eth2_fork_id: ENRForkID,
 }
