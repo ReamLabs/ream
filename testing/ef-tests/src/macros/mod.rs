@@ -5,3 +5,4 @@ pub mod sanity_blocks;
 pub mod sanity_slots;
 pub mod shuffling;
 pub mod ssz_static;
+pub mod fork_choice;

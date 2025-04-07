@@ -1,8 +1,7 @@
-#![cfg(feature = "ef-tests")]
+// #![cfg(feature = "ef-tests")]
 
 use ef_tests::{
-    test_consensus_type, test_epoch_processing, test_operation, test_rewards, test_sanity_blocks,
-    test_sanity_slots, test_shuffling, utils,
+    test_consensus_type, test_epoch_processing, test_fork_choice, test_operation, test_rewards, test_sanity_blocks, test_sanity_slots, test_shuffling, utils
 };
 use ream_consensus::{
     attestation::Attestation,
@@ -138,3 +137,5 @@ test_sanity_blocks!();
 
 // Testing sanity_slots
 test_sanity_slots!();
+
+test_fork_choice!();
