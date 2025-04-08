@@ -34,30 +34,17 @@ impl DepositContract {
         Self { chain_id, address }
     }
 }
-impl SpecConfig {
-    pub fn new(
-        deposit_contract_address: String,
-        deposit_network_id: u64,
-        domain_aggregate_and_proof: String,
-        inactivity_penalty_quotient: u64,
-    ) -> Self {
+impl From<Arc<NetworkSpec>> for SpecConfig {
+    fn from(network_spec: Arc<NetworkSpec>) -> Self {
         Self {
-            deposit_contract_address,
-            deposit_network_id,
-            domain_aggregate_and_proof,
-            inactivity_penalty_quotient,
+            deposit_contract_address: network_spec.deposit_contract_address.to_string(),
+            deposit_network_id: network_spec.network.chain_id(),
+            domain_aggregate_and_proof: DOMAIN_AGGREGATE_AND_PROOF.to_string(),
+            inactivity_penalty_quotient: INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
         }
     }
-
-    pub fn from_network_spec(network_spec: &NetworkSpec) -> Self {
-        Self::new(
-            network_spec.deposit_contract_address.to_string(),
-            network_spec.network.chain_id(),
-            DOMAIN_AGGREGATE_AND_PROOF.to_string(),
-            INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
-        )
-    }
 }
+
 
 /// Called by `/deposit_contract` to get the Genesis Config of Beacon Chain.
 pub async fn get_deposit_contract(network_spec: Arc<NetworkSpec>) -> Result<impl Reply, Rejection> {
@@ -71,7 +58,6 @@ pub async fn get_deposit_contract(network_spec: Arc<NetworkSpec>) -> Result<impl
 }
 /// Called by `config/spec` to get specification configuration.
 pub async fn get_spec(network_spec: Arc<NetworkSpec>) -> Result<impl Reply, Rejection> {
-    let spec_config = SpecConfig::from_network_spec(&network_spec);
-
+    let spec_config: SpecConfig = Arc::clone(&network_spec).into();
     Ok(with_status(Data::json(spec_config), StatusCode::OK))
 }
