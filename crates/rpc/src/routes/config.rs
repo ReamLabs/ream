@@ -20,12 +20,11 @@ pub fn get_config_routes(
         .and_then(move || get_deposit_contract(deposit_network_spec.clone()))
         .with(log("deposit_contract"));
 
-    let spec = path("config")
+    let spec_config = path("config")
         .and(path("spec"))
         .and(end())
         .and(get())
         .and_then(move || get_spec(spec_network_spec.clone()))
-        .with(log("spec"));
-
-    deposit_contract.or(spec)
+        .with(log("spec_config"));
+    deposit_contract.or(spec_config)
 }
