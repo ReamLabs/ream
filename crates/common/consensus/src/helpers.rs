@@ -21,14 +21,14 @@ pub fn get_total_balance(state: &BeaconState, indices: Vec<u64>) -> u64 {
     cmp::max(EFFECTIVE_BALANCE_INCREMENT, sum)
 }
 
-pub fn get_total_active_balance(state: BeaconState) -> u64 {
+pub fn get_total_active_balance(state: &BeaconState) -> u64 {
     get_total_balance(
-        &state,
+        state,
         state.get_active_validator_indices(state.get_current_epoch()),
     )
 }
 
-pub fn calculate_committee_fraction(state: BeaconState, committee_percent: u64) -> u64 {
+pub fn calculate_committee_fraction(state: &BeaconState, committee_percent: u64) -> u64 {
     let committee_weight = get_total_active_balance(state) / SLOTS_PER_EPOCH;
     (committee_weight * committee_percent) / 100
 }

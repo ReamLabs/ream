@@ -1,13 +1,19 @@
 use std::collections::hash_map::Entry;
 
-use alloy_primitives::{B256, map::HashSet};
+use alloy_primitives::{
+    B256,
+    map::{HashMap, HashSet},
+};
 use anyhow::{anyhow, bail, ensure};
 use ream_consensus::{
     attestation::Attestation,
     attester_slashing::AttesterSlashing,
     checkpoint::Checkpoint,
     constants::{GENESIS_EPOCH, INTERVALS_PER_SLOT, SECONDS_PER_SLOT},
-    deneb::beacon_block::SignedBeaconBlock,
+    deneb::{
+        beacon_block::{BeaconBlock, SignedBeaconBlock},
+        beacon_state::BeaconState,
+    },
     execution_engine::{blob_versioned_hashes::blob_versioned_hashes, engine_trait::ExecutionApi},
     fork_choice::latest_message::LatestMessage,
     kzg_commitment::KZGCommitment,
@@ -425,4 +431,46 @@ pub fn on_attestation(
     )?;
 
     Ok(())
+}
+
+pub fn get_forkchoice_store(
+    anchor_state: BeaconState,
+    anchor_block: BeaconBlock,
+) -> anyhow::Result<Store> {
+    ensure!(anchor_block.state_root == anchor_state.tree_hash_root());
+    let anchor_root = anchor_block.tree_hash_root();
+    let anchor_epoch = anchor_state.get_current_epoch();
+    let justified_checkpoint = Checkpoint {
+        epoch: anchor_epoch,
+        root: anchor_root,
+    };
+    let finalized_checkpoint = Checkpoint {
+        epoch: anchor_epoch,
+        root: anchor_root,
+    };
+    let proposer_boost_root = B256::ZERO;
+    Ok(Store {
+        time: anchor_state.genesis_time + SECONDS_PER_SLOT * anchor_state.slot,
+        genesis_time: anchor_state.genesis_time,
+        justified_checkpoint,
+        finalized_checkpoint,
+        unrealized_justified_checkpoint: justified_checkpoint,
+        unrealized_finalized_checkpoint: finalized_checkpoint,
+        proposer_boost_root,
+        equivocating_indices: Vec::new(),
+        blocks: vec![(anchor_root, anchor_block.clone())]
+            .into_iter()
+            .collect(),
+        block_states: vec![(anchor_root, anchor_state.clone())]
+            .into_iter()
+            .collect(),
+        block_timeliness: HashMap::default(),
+        checkpoint_states: vec![(justified_checkpoint, anchor_state.clone())]
+            .into_iter()
+            .collect(),
+        latest_messages: HashMap::default(),
+        unrealized_justifications: vec![(anchor_root, justified_checkpoint)]
+            .into_iter()
+            .collect(),
+    })
 }

@@ -26,3 +26,4 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 warp.workspace = true
+tree_hash.workspace = true

@@ -4211,6 +4211,7 @@ dependencies = [
  "ssz_types",
  "thiserror 2.0.12",
  "tracing",
+ "tree_hash",
  "warp",
 ]
 
