@@ -21,17 +21,11 @@ pub struct DepositContract {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct SpecConfig {
     deposit_contract_address: String,
-
     #[serde(with = "serde_utils::quoted_u64")]
     deposit_network_id: u64,
-
     domain_aggregate_and_proof: String,
-
     #[serde(with = "serde_utils::quoted_u64")]
     inactivity_penalty_quotient: u64,
-
-    #[serde(with = "serde_utils::quoted_u64")]
-    inactivity_penalty_quotient_altair: u64,
 }
 
 impl DepositContract {
@@ -45,14 +39,12 @@ impl SpecConfig {
         deposit_network_id: u64,
         domain_aggregate_and_proof: String,
         inactivity_penalty_quotient: u64,
-        inactivity_penalty_quotient_altair: u64,
     ) -> Self {
         Self {
             deposit_contract_address,
             deposit_network_id,
             domain_aggregate_and_proof,
             inactivity_penalty_quotient,
-            inactivity_penalty_quotient_altair,
         }
     }
 
@@ -60,9 +52,8 @@ impl SpecConfig {
         Self::new(
             network_spec.deposit_contract_address.to_string(),
             network_spec.network.chain_id(),
-            "0x06000000".to_string(),
-            67108864,
-            50331648,
+            network_spec.domain_aggregate_and_proof.clone(),
+            network_spec.inactivity_penalty_quotient,
         )
     }
 }
