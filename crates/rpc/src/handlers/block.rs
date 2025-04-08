@@ -10,9 +10,13 @@ use warp::{
     reply::{Reply, with_status},
 };
 
-use crate::types::{errors::ApiError, id::ID, response::BeaconVersionedResponse};
+use crate::types::{
+    errors::ApiError,
+    id::ID,
+    response::{BeaconResponse, BeaconVersionedResponse, RootResponse},
+};
 
-pub async fn get_block_root(block_id: ID, db: &ReamDB) -> Result<B256, ApiError> {
+pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, ApiError> {
     let block_root = match block_id {
         ID::Finalized => {
             let finalized_checkpoint = db
@@ -53,7 +57,7 @@ pub async fn get_block_root(block_id: ID, db: &ReamDB) -> Result<B256, ApiError>
 }
 
 async fn get_beacon_block_from_id(block_id: ID, db: &ReamDB) -> Result<BeaconBlock, ApiError> {
-    let block_root = get_block_root(block_id, db).await?;
+    let block_root = get_block_root_from_id(block_id, db).await?;
 
     db.beacon_block_provider()
         .get(block_root)
@@ -69,6 +73,15 @@ pub async fn get_block_attestations(block_id: ID, db: ReamDB) -> Result<impl Rep
 
     Ok(with_status(
         BeaconVersionedResponse::json(beacon_block.body.attestations),
+        StatusCode::OK,
+    ))
+}
+
+/// Called by `/blocks/<block_id>/root` to get the Tree hash of the Block.
+pub async fn get_block_root(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
+    let block_root = get_block_root_from_id(block_id, &db).await?;
+    Ok(with_status(
+        BeaconResponse::json(RootResponse { root: block_root }),
         StatusCode::OK,
     ))
 }

@@ -15,8 +15,12 @@ use warp::{
 use super::with_db;
 use crate::{
     handlers::{
-        block::get_block_attestations, checkpoint::get_finality_checkpoint, fork::get_fork,
-        genesis::get_genesis, randao::get_randao_mix, state::get_state_root,
+        block::{get_block_attestations, get_block_root},
+        checkpoint::get_finality_checkpoint,
+        fork::get_fork,
+        genesis::get_genesis,
+        randao::get_randao_mix,
+        state::get_state_root,
         validator::get_validator_from_state,
     },
     types::{
@@ -97,12 +101,23 @@ pub fn get_beacon_routes(
         })
         .with(log("validator"));
 
+    let block_root = beacon_base
+        .and(path("blocks"))
+        .and(param::<ID>())
+        .and(path("root"))
+        .and(end())
+        .and(get())
+        .and(db_filter.clone())
+        .and_then(move |block_id: ID, db: ReamDB| get_block_root(block_id, db))
+        .with(log("block_root"));
+
     genesis
         .or(validator)
         .or(randao)
         .or(fork)
         .or(checkpoint)
         .or(state_root)
+        .or(block_root)
 }
 
 pub fn get_beacon_routes_v2(
