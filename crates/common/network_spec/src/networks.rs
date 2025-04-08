@@ -57,7 +57,6 @@ pub static HOLESKY: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x01017000"),
         },
         deposit_contract_address: address!("0x4242424242424242424242424242424242424242"),
-        
     }
     .into()
 });
@@ -88,7 +87,6 @@ pub static HOODI: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x10000910"),
         },
         deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
-        
     }
     .into()
 });
@@ -104,7 +102,6 @@ pub static DEV: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x00000000"),
         },
         deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
-       
     }
     .into()
 });
