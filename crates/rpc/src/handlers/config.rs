@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use alloy_primitives::Address;
+use ream_consensus::constants::{DOMAIN_AGGREGATE_AND_PROOF, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX};
 use ream_network_spec::networks::NetworkSpec;
 use serde::{Deserialize, Serialize};
 use warp::{
@@ -52,8 +53,8 @@ impl SpecConfig {
         Self::new(
             network_spec.deposit_contract_address.to_string(),
             network_spec.network.chain_id(),
-            network_spec.domain_aggregate_and_proof.clone(),
-            network_spec.inactivity_penalty_quotient,
+            DOMAIN_AGGREGATE_AND_PROOF.to_string(),
+            INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
         )
     }
 }

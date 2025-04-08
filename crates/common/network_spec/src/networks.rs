@@ -1,7 +1,7 @@
 use std::sync::{Arc, LazyLock};
 
 use alloy_primitives::{Address, address, b256, fixed_bytes};
-use ream_consensus::{constants::INACTIVITY_PENALTY_QUOTIENT_BELLATRIX, genesis::Genesis};
+use ream_consensus::genesis::Genesis;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Network {
@@ -29,8 +29,6 @@ pub struct NetworkSpec {
     pub network: Network,
     pub genesis: Genesis,
     pub deposit_contract_address: Address,
-    pub domain_aggregate_and_proof: String,
-    pub inactivity_penalty_quotient: u64,
 }
 
 pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
@@ -44,8 +42,6 @@ pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x00000000"),
         },
         deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
-        domain_aggregate_and_proof: "0x06000000".to_string(),
-        inactivity_penalty_quotient: INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
     }
     .into()
 });
@@ -61,8 +57,7 @@ pub static HOLESKY: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x01017000"),
         },
         deposit_contract_address: address!("0x4242424242424242424242424242424242424242"),
-        domain_aggregate_and_proof: "0x06000000".to_string(),
-        inactivity_penalty_quotient: INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
+        
     }
     .into()
 });
@@ -78,8 +73,6 @@ pub static SEPOLIA: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x90000069"),
         },
         deposit_contract_address: address!("0x7f02C3E3c98b133055B8B348B2Ac625669Ed295D"),
-        domain_aggregate_and_proof: "0x06000000".to_string(),
-        inactivity_penalty_quotient: INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
     }
     .into()
 });
@@ -95,8 +88,7 @@ pub static HOODI: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x10000910"),
         },
         deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
-        domain_aggregate_and_proof: "0x06000000".to_string(),
-        inactivity_penalty_quotient: INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
+        
     }
     .into()
 });
@@ -112,8 +104,7 @@ pub static DEV: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x00000000"),
         },
         deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
-        domain_aggregate_and_proof: "0x06000000".to_string(),
-        inactivity_penalty_quotient: INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
+       
     }
     .into()
 });
