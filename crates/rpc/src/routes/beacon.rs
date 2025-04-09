@@ -99,15 +99,6 @@ pub fn get_beacon_routes(
         })
         .with(log("validator"));
 
-    let block = beacon_base
-        .and(path("blocks"))
-        .and(parsed_param::<ID>())
-        .and(end())
-        .and(get())
-        .and(db_filter.clone())
-        .and_then(get_block_from_id)
-        .with(log("block"));
-
     let block_root = beacon_base
         .and(path("blocks"))
         .and(parsed_param::<ID>())
@@ -128,7 +119,6 @@ pub fn get_beacon_routes(
         .with(log("block_rewards"));
 
     genesis
-        .or(block)
         .or(validator)
         .or(randao)
         .or(fork)
@@ -144,7 +134,16 @@ pub fn get_beacon_routes_v2(
     let db_filter = with_db(db);
     let beacon_base = path("beacon");
 
-    beacon_base
+    let block = beacon_base
+        .and(path("blocks"))
+        .and(parsed_param::<ID>())
+        .and(end())
+        .and(get())
+        .and(db_filter.clone())
+        .and_then(get_block_from_id)
+        .with(log("block"));
+
+    let attestation = beacon_base
         .and(path("blocks"))
         .and(parsed_param::<ID>())
         .and(path("attestations"))
@@ -152,5 +151,7 @@ pub fn get_beacon_routes_v2(
         .and(get())
         .and(db_filter.clone())
         .and_then(move |block_id: ID, db: ReamDB| get_block_attestations(block_id, db))
-        .with(log("attestations"))
+        .with(log("attestations"));
+
+    block.or(attestation)
 }
