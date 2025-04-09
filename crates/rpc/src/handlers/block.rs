@@ -43,7 +43,6 @@ pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, A
                 .ok_or_else(|| {
                     ApiError::NotFound(String::from("Finalized checkpoint not found"))
                 })?;
-
             Ok(Some(finalized_checkpoint.root))
         }
         ID::Justified => {
@@ -124,4 +123,13 @@ pub async fn get_block_rewards(block_id: ID, db: ReamDB) -> Result<impl Reply, R
     };
 
     Ok(with_status(BeaconResponse::json(response), StatusCode::OK))
+}
+
+pub async fn get_block_from_id(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
+    let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
+
+    Ok(with_status(
+        BeaconVersionedResponse::json(beacon_block),
+        StatusCode::OK,
+    ))
 }

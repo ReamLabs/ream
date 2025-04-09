@@ -12,7 +12,7 @@ use warp::{
 use super::with_db;
 use crate::{
     handlers::{
-        block::{get_block_attestations, get_block_rewards, get_block_root},
+        block::{get_block_attestations, get_block_from_id, get_block_rewards, get_block_root},
         checkpoint::get_finality_checkpoint,
         fork::get_fork,
         genesis::get_genesis,
@@ -99,6 +99,15 @@ pub fn get_beacon_routes(
         })
         .with(log("validator"));
 
+    let block = beacon_base
+        .and(path("blocks"))
+        .and(parsed_param::<ID>())
+        .and(end())
+        .and(get())
+        .and(db_filter.clone())
+        .and_then(get_block_from_id)
+        .with(log("block"));
+
     let block_root = beacon_base
         .and(path("blocks"))
         .and(parsed_param::<ID>())
@@ -119,6 +128,7 @@ pub fn get_beacon_routes(
         .with(log("block_rewards"));
 
     genesis
+        .or(block)
         .or(validator)
         .or(randao)
         .or(fork)
