@@ -1,9 +1,10 @@
 use alloy_primitives::B256;
-use ream_consensus::{constants::SLOTS_PER_EPOCH, deneb::beacon_block::BeaconBlock};
+use ream_consensus::deneb::beacon_block::BeaconBlock;
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
+use serde::{Deserialize, Serialize};
 use warp::{
     http::status::StatusCode,
     reject::Rejection,
@@ -13,11 +14,19 @@ use warp::{
 use crate::types::{
     errors::ApiError,
     id::ID,
-    response::{
-        BeaconResponse, BeaconVersionedResponse, BlockRewardsData, BlockRewardsResponse,
-        RootResponse,
-    },
+    response::{BeaconResponse, BeaconVersionedResponse, RootResponse},
 };
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+
+pub struct BlockRewards {
+    pub proposer_index: u64,
+    pub total: i64,
+    pub attestations: i64,
+    pub sync_aggregate: i64,
+    pub proposer_slashings: i64,
+    pub attester_slashings: i64,
+}
 
 pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, ApiError> {
     let block_root = match block_id {
@@ -91,41 +100,22 @@ pub async fn get_block_root(block_id: ID, db: ReamDB) -> Result<impl Reply, Reje
 
 // Called by `/beacon/blocks/{block_id}/rewards` to get the block rewards response
 pub async fn get_block_rewards(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
-    let block_root = get_block_root_from_id(block_id, &db).await?;
-    let beacon_block = db
-        .beacon_block_provider()
-        .get(block_root)
-        .map_err(|_| ApiError::InternalError)?
-        .ok_or(ApiError::NotFound(format!(
-            "Failed to find `beacon block` from {block_root:?}"
-        )))?;
-
-    // Get finalized checkpoint to determine if block is finalized
-    let finalized_checkpoint = db
-        .finalized_checkpoint_provider()
-        .get()
-        .map_err(|_| ApiError::InternalError)?
-        .ok_or_else(|| ApiError::NotFound(String::from("Finalized checkpoint not found")))?;
-
-    // Check if block is finalized using epoch as the slot number
-    let finalized_epoch_start_slot = finalized_checkpoint.epoch * SLOTS_PER_EPOCH;
-    let is_finalized = beacon_block.slot <= finalized_epoch_start_slot;
-
-    let response = BlockRewardsResponse {
+    let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
+    let response = BeaconResponse {
         execution_optimistic: false,
-        finalized: is_finalized,
-        data: BlockRewardsData {
-            proposer_index: beacon_block.proposer_index.to_string(),
-            total: "0".to_string(), // Placeholder; To implement the calculate block reward logic
-            attestations: beacon_block.body.attestations.len().to_string(),
+        finalized: false, /* TODO: Add is_finalized logic using finalized_checkpoint in future if
+                           * needed */
+        data: BlockRewards {
+            proposer_index: beacon_block.proposer_index,
+            total: 0, // Placeholder; To implement the calculate block reward logic
+            attestations: beacon_block.body.attestations.len() as i64,
             sync_aggregate: beacon_block
                 .body
                 .sync_aggregate
                 .sync_committee_bits
-                .num_set_bits()
-                .to_string(),
-            proposer_slashings: beacon_block.body.proposer_slashings.len().to_string(),
-            attester_slashings: beacon_block.body.attester_slashings.len().to_string(),
+                .num_set_bits() as i64,
+            proposer_slashings: beacon_block.body.proposer_slashings.len() as i64,
+            attester_slashings: beacon_block.body.attester_slashings.len() as i64,
         },
     };
 
