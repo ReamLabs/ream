@@ -125,6 +125,7 @@ pub async fn get_block_rewards(block_id: ID, db: ReamDB) -> Result<impl Reply, R
     Ok(with_status(BeaconResponse::json(response), StatusCode::OK))
 }
 
+/// Called by `/blocks/<block_id>` to get the Beacon Block.
 pub async fn get_block_from_id(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
     let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
 
