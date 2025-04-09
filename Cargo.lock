@@ -4047,10 +4047,14 @@ dependencies = [
 name = "ream-discv5"
 version = "0.1.0"
 dependencies = [
+ "alloy-rlp",
  "anyhow",
  "discv5",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "futures",
  "libp2p",
+ "ssz_types",
  "tokio",
  "tracing",
 ]

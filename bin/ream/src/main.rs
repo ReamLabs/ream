@@ -2,7 +2,7 @@ use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
-use ream_discv5::config::NetworkConfig;
+use ream_discv5::{config::NetworkConfig, subnet::Subnets};
 use ream_executor::ReamExecutor;
 use ream_p2p::network::Network;
 use ream_rpc::{config::ServerConfig, start_server};
@@ -51,6 +51,7 @@ async fn main() {
                 socket_port: config.socket_port,
                 disable_discovery: config.disable_discovery,
                 total_peers: 0,
+                subnets: Subnets::new(),
             };
 
             let _ream_db = ReamDB::new(config.data_dir, config.ephemeral)

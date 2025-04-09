@@ -11,7 +11,7 @@ use discv5::{
     Discv5, Enr,
     enr::{CombinedKey, NodeId, k256::ecdsa::SigningKey},
 };
-use futures::{FutureExt, StreamExt, TryFutureExt, stream::FuturesUnordered};
+use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
 use libp2p::{
     Multiaddr, PeerId,
     core::{Endpoint, transport::PortUse},
@@ -24,7 +24,10 @@ use libp2p::{
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
-use crate::config::NetworkConfig;
+use crate::{
+    config::NetworkConfig,
+    subnet::{ATTESTATION_BITFIELD_ENR_KEY, Subnet, Subnets, subnet_predicate},
+};
 
 #[derive(Debug)]
 pub struct DiscoveredPeers {
@@ -42,6 +45,7 @@ enum EventStream {
 #[derive(Debug, Clone, PartialEq)]
 enum QueryType {
     FindPeers,
+    FindSubnetPeers(Vec<Subnet>),
 }
 
 struct QueryResult {
@@ -55,36 +59,45 @@ pub struct Discovery {
     discovery_queries: FuturesUnordered<Pin<Box<dyn Future<Output = QueryResult> + Send>>>,
     find_peer_active: bool,
     pub started: bool,
+    subnets: Subnets,
 }
 
 impl Discovery {
-    pub async fn new(local_key: Keypair, config: &NetworkConfig) -> anyhow::Result<Self> {
-        let enr_local = convert_to_enr(local_key)?;
-        let enr = Enr::builder().build(&enr_local).unwrap();
+    pub async fn new(
+        local_key: libp2p::identity::Keypair,
+        config: &NetworkConfig,
+    ) -> anyhow::Result<Self> {
+        let enr_key = convert_to_enr(local_key)
+            .map_err(|e| anyhow::anyhow!("Failed to convert key: {:?}", e))?;
+        let mut enr_builder = Enr::builder();
+        enr_builder.ip(config.socket_address);
+        enr_builder.udp4(config.socket_port);
+        if let Some(attestation_bytes) = config.subnets.attestation_bytes() {
+            enr_builder.add_value(ATTESTATION_BITFIELD_ENR_KEY, &attestation_bytes);
+        }
+        let enr = enr_builder
+            .build(&enr_key)
+            .map_err(|e| anyhow::anyhow!("Failed to build ENR: {:?}", e))?;
         let node_local_id = enr.node_id();
 
-        let mut discv5 = Discv5::new(enr, enr_local, config.discv5_config.clone())
-            .map_err(|err| anyhow!("Failed to create discv5: {err:?}"))?;
+        let mut discv5 = Discv5::new(enr, enr_key, config.discv5_config.clone())
+            .map_err(|e| anyhow::anyhow!("Failed to create discv5: {:?}", e))?;
 
-        // adding bootnodes to discv5
-        for enr in config.bootnodes.clone() {
-            // Skip adding ourselves to the routing table if we are a bootnode
-            if enr.node_id() == node_local_id {
+        for bootnode_enr in config.bootnodes.clone() {
+            if bootnode_enr.node_id() == node_local_id {
                 continue;
             }
-
-            if let Err(err) = discv5.add_enr(enr) {
-                error!("Failed to add bootnode to Discv5 {err:?}");
-            };
+            discv5
+                .add_enr(bootnode_enr)
+                .map_err(|e| anyhow::anyhow!("Failed to add bootnode: {:?}", e))?;
         }
 
-        // init ports
         let event_stream = if !config.disable_discovery {
             discv5
                 .start()
-                .map_err(|err| anyhow!("Failed to start discv5 {err:?}"))
-                .await?;
-            info!("Started discovery");
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to start discv5: {:?}", e))?;
+            info!("Started discovery with ENR: {:?}", discv5.local_enr());
             EventStream::Awaiting(Box::pin(discv5.event_stream()))
         } else {
             EventStream::Inactive
@@ -95,21 +108,91 @@ impl Discovery {
             event_stream,
             discovery_queries: FuturesUnordered::new(),
             find_peer_active: false,
-            started: true,
+            started: !config.disable_discovery,
+            subnets: config.subnets.clone(),
         })
     }
 
     pub fn discover_peers(&mut self, target_peers: usize) {
         // If the discv5 service isn't running or we are in the process of a query, don't bother
         // queuing a new one.
-        info!("Discovering peers {:?}", self.discv5.local_enr());
-
         if !self.started || self.find_peer_active {
             return;
         }
-
         self.find_peer_active = true;
         self.start_query(QueryType::FindPeers, target_peers);
+    }
+
+    pub fn discover_subnet_peers(&mut self, subnet_id: u8, target_peers: usize) {
+        if !self.started || self.find_peer_active {
+            return;
+        }
+        self.find_peer_active = true;
+        self.start_query(
+            QueryType::FindSubnetPeers(vec![Subnet::Attestation(subnet_id)]),
+            target_peers,
+        );
+    }
+
+    pub fn update_attestation_subnet(&mut self, subnet_id: u8, value: bool) -> Result<(), String> {
+        let mut current_subnets = self.subnets.clone();
+        match Subnet::Attestation(subnet_id) {
+            // Use Subnet enum
+            Subnet::Attestation(id) if id < 64 => {
+                if current_subnets.is_active(Subnet::Attestation(id)) == value {
+                    return Ok(()); // No change needed
+                }
+                if value {
+                    current_subnets.enable_subnet(Subnet::Attestation(id));
+                } else {
+                    current_subnets.disable_subnet(Subnet::Attestation(id));
+                }
+                if let Some(bytes) = current_subnets.attestation_bytes() {
+                    self.discv5
+                        .enr_insert(ATTESTATION_BITFIELD_ENR_KEY, &bytes)
+                        .map_err(|e| format!("Failed to update ENR attnets: {:?}", e))?;
+                }
+            }
+            Subnet::Attestation(_) => {
+                return Err(format!(
+                    "Subnet ID {} exceeds bitfield length 64",
+                    subnet_id
+                ));
+            }
+            Subnet::SyncCommittee(_) => unimplemented!("SyncCommittee support not yet implemented"),
+        }
+        self.subnets = current_subnets;
+        info!(
+            "Updated ENR attnets: {:?}",
+            self.subnets.attestation_bytes()
+        );
+        Ok(())
+    }
+
+    fn start_query(&mut self, query: QueryType, target_peers: usize) {
+        let query_future: Pin<Box<dyn Future<Output = QueryResult> + Send>> = match query {
+            QueryType::FindPeers => Box::pin({
+                let query_clone = query.clone();
+                self.discv5
+                    .find_node(NodeId::random())
+                    .map(move |result| QueryResult {
+                        query_type: query_clone,
+                        result,
+                    })
+            }),
+            QueryType::FindSubnetPeers(ref subnets) => {
+                let predicate = subnet_predicate(subnets.clone());
+                Box::pin(
+                    self.discv5
+                        .find_node_predicate(NodeId::random(), Box::new(predicate), target_peers)
+                        .map(|result| QueryResult {
+                            query_type: query,
+                            result,
+                        }),
+                )
+            }
+        };
+        self.discovery_queries.push(query_future);
     }
 
     fn process_queries(&mut self, cx: &mut Context) -> Option<HashMap<Enr, Option<Instant>>> {
@@ -132,26 +215,38 @@ impl Discovery {
                         }
                     }
                 }
+                QueryType::FindSubnetPeers(subnets) => {
+                    self.find_peer_active = false;
+                    match query.result {
+                        Ok(peers) => {
+                            let predicate = subnet_predicate(subnets.clone());
+                            let filtered_peers = peers
+                                .into_iter()
+                                .filter(|enr| predicate(enr))
+                                .collect::<Vec<_>>();
+                            info!(
+                                "Found {} peers for subnets {:?}",
+                                filtered_peers.len(),
+                                subnets
+                            );
+                            let mut peer_map = HashMap::new();
+                            for peer in filtered_peers {
+                                peer_map.insert(peer, None);
+                            }
+                            Some(peer_map)
+                        }
+                        Err(e) => {
+                            warn!("Failed to find subnet peers: {:?}", e);
+                            None
+                        }
+                    }
+                }
             };
-
             if result.is_some() {
                 return result;
             }
         }
         None
-    }
-
-    fn start_query(&mut self, query: QueryType, _total_peers: usize) {
-        info!("Query! queryType={:?}", query);
-        let query_future = self
-            .discv5
-            .find_node(NodeId::random())
-            .map(|result| QueryResult {
-                query_type: query,
-                result,
-            });
-
-        self.discovery_queries.push(Box::pin(query_future));
     }
 }
 
