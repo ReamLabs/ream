@@ -63,19 +63,3 @@ impl<T: Serialize> BeaconVersionedResponse<T> {
         }))
     }
 }
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct BlockRewardsResponse {
-    pub execution_optimistic: bool,
-    pub finalized: bool,
-    pub data: BlockRewardsData,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct BlockRewardsData {
-    pub proposer_index: String,
-    pub total: String,
-    pub attestations: String,
-    pub sync_aggregate: String,
-    pub proposer_slashings: String,
-    pub attester_slashings: String,
-}
