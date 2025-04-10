@@ -18,14 +18,13 @@ use crate::types::{
 };
 
 #[derive(Debug, Serialize, Deserialize, Default)]
-
 pub struct BlockRewards {
     pub proposer_index: u64,
     pub total: i64,
-    pub attestations: i64,
-    pub sync_aggregate: i64,
-    pub proposer_slashings: i64,
-    pub attester_slashings: i64,
+    pub attestations: u64,
+    pub sync_aggregate: u64,
+    pub proposer_slashings: u64,
+    pub attester_slashings: u64,
 }
 
 pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, ApiError> {
@@ -101,22 +100,17 @@ pub async fn get_block_root(block_id: ID, db: ReamDB) -> Result<impl Reply, Reje
 // Called by `/beacon/blocks/{block_id}/rewards` to get the block rewards response
 pub async fn get_block_rewards(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
     let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
-    let response = BeaconResponse {
-        execution_optimistic: false,
-        finalized: false, /* TODO: Add is_finalized logic using finalized_checkpoint in future if
-                           * needed */
-        data: BlockRewards {
-            proposer_index: beacon_block.proposer_index,
-            total: 0, // Placeholder; To implement the calculate block reward logic
-            attestations: beacon_block.body.attestations.len() as i64,
-            sync_aggregate: beacon_block
-                .body
-                .sync_aggregate
-                .sync_committee_bits
-                .num_set_bits() as i64,
-            proposer_slashings: beacon_block.body.proposer_slashings.len() as i64,
-            attester_slashings: beacon_block.body.attester_slashings.len() as i64,
-        },
+    let response = BlockRewards {
+        proposer_index: beacon_block.proposer_index,
+        total: 0, // Placeholder; To implement the calculate block reward logic
+        attestations: beacon_block.body.attestations.len() as u64,
+        sync_aggregate: beacon_block
+            .body
+            .sync_aggregate
+            .sync_committee_bits
+            .num_set_bits() as u64,
+        proposer_slashings: beacon_block.body.proposer_slashings.len() as u64,
+        attester_slashings: beacon_block.body.attester_slashings.len() as u64,
     };
 
     Ok(with_status(BeaconResponse::json(response), StatusCode::OK))
