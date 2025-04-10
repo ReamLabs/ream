@@ -32,7 +32,6 @@ pub struct BlockRewards {
     pub attester_slashings: u64,
 }
 
-
 pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, ApiError> {
     let block_root = match block_id {
         ID::Finalized => {
