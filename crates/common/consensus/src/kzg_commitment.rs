@@ -30,11 +30,9 @@ impl KZGCommitment {
     pub fn empty_for_testing() -> Self {
         KZGCommitment([0; BYTES_PER_COMMITMENT])
     }
-}
 
-impl From<KZGCommitment> for kzg::eth::c_bindings::Bytes48 {
-    fn from(value: KZGCommitment) -> Self {
-        kzg::eth::c_bindings::Bytes48 { bytes: value.0 }
+    pub fn to_fixed_bytes(&self) -> [u8; BYTES_PER_COMMITMENT] {
+        self.0
     }
 }
 

@@ -1,6 +1,6 @@
 use bls12_381::{G1Affine, G1Projective};
 
-use crate::{errors::BLSError, PubKey};
+use crate::{PubKey, errors::BLSError};
 
 impl From<G1Projective> for PubKey {
     fn from(value: G1Projective) -> Self {

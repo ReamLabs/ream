@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
-    net::Ipv4Addr,
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
     sync::Arc,
@@ -12,14 +11,14 @@ use anyhow::anyhow;
 use discv5::Enr;
 use futures::StreamExt;
 use libp2p::{
-    connection_limits,
+    Multiaddr, PeerId, Swarm, SwarmBuilder, Transport, connection_limits,
     core::{muxing::StreamMuxerBox, transport::Boxed},
     gossipsub::{self, AllowAllSubscriptionFilter, IdentTopic as Topic},
     identify,
     multiaddr::Protocol,
     noise,
     swarm::{NetworkBehaviour, SwarmEvent},
-    yamux, Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
+    yamux,
 };
 use libp2p_identity::{secp256k1, Keypair, PublicKey};
 use parking_lot::Mutex;
@@ -160,8 +159,8 @@ impl Network {
     async fn start_network_worker(&mut self, config: &NetworkConfig) -> anyhow::Result<()> {
         info!("Libp2p starting .... ");
 
-        let mut multi_addr: Multiaddr = Ipv4Addr::UNSPECIFIED.into();
-        multi_addr.push(Protocol::Tcp(9000));
+        let mut multi_addr: Multiaddr = config.socket_address.into();
+        multi_addr.push(Protocol::Tcp(config.socket_port));
 
         match self.swarm.listen_on(multi_addr.clone()) {
             Ok(listener_id) => {
@@ -175,15 +174,11 @@ impl Network {
             }
         }
 
-        let bootnodes = Bootnodes::new();
-
-        for bootnode in bootnodes.bootnodes {
-            if let Some(ipv4) = bootnode.ip4() {
+        for bootnode in &config.bootnodes {
+            if let (Some(ipv4), Some(tcp_port)) = (bootnode.ip4(), bootnode.tcp4()) {
                 let mut multi_addr = Multiaddr::empty();
-                if let Some(tcp_port) = bootnode.tcp4() {
-                    multi_addr.push(ipv4.into());
-                    multi_addr.push(Protocol::Tcp(tcp_port));
-                }
+                multi_addr.push(ipv4.into());
+                multi_addr.push(Protocol::Tcp(tcp_port));
                 self.swarm.dial(multi_addr).unwrap();
             }
         }

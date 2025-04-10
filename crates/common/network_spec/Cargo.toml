@@ -10,3 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+alloy-primitives.workspace = true
+
+# ream-dependencies
+ream-consensus.workspace = true

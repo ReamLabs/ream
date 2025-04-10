@@ -10,6 +10,8 @@ PROFILE ?= release
 # Extra flags for Cargo.
 CARGO_INSTALL_EXTRA_FLAGS ?=
 
+CARGO_TARGET_DIR ?= target
+
 ##@ Help
 .PHONY: help
 help: # Display this help.
@@ -39,3 +41,27 @@ lint: # Run `clippy` and `rustfmt`.
 
 	# clippy for bls with supranational feature
 	cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings
+
+	# cargo sort
+	cargo sort --grouped
+
+.PHONY: build-debug
+build-debug: ## Build the ream binary into `target/debug` directory.
+	cargo build --bin ream --features "$(FEATURES)"
+
+.PHONY: update-book-cli
+update-book-cli: build-debug ## Update book cli documentation.
+	@echo "Updating book cli doc..."
+	@./book/cli/update.sh $(CARGO_TARGET_DIR)/debug/ream
+
+.PHONY: test
+test: # Run all tests.
+	cargo test --workspace -- --nocapture
+
+clean-deps:
+	cargo +nightly udeps --workspace --tests --all-targets --release --exclude ef-tests
+
+pr:
+	make lint && \
+	make update-book-cli && \
+	make test

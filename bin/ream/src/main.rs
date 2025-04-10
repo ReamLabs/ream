@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
@@ -6,58 +6,89 @@ use ream_discv5::config::DiscoveryConfig;
 use ream_executor::ReamExecutor;
 use ream_gossipsub::config::GossipsubConfig;
 use ream_p2p::{config::NetworkConfig, network::Network};
+use ream_rpc::{config::ServerConfig, start_server};
+use ream_storage::db::ReamDB;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
     // Set the default log level to `info` if not set
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
-    }
+    let rust_log = env::var(EnvFilter::DEFAULT_ENV).unwrap_or_default();
+    let env_filter = match rust_log.is_empty() {
+        true => EnvFilter::builder().parse_lossy("info"),
+        false => EnvFilter::builder().parse_lossy(rust_log),
+    };
 
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     let cli = Cli::parse();
 
-    let async_executor = ReamExecutor::new().unwrap();
+    let async_executor = ReamExecutor::new().expect("unable to create executor");
 
-    let main_executor = ReamExecutor::new().unwrap();
+    let main_executor = ReamExecutor::new().expect("unable to create executor");
 
-    let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
-        Ipv4Addr::UNSPECIFIED.into(),
-        8080,
-    ))
-    .build();
-    let disc_config = DiscoveryConfig {
-        discv5_config,
-        boot_nodes_enr: vec![],
-        disable_discovery: false,
-        total_peers: 0,
-    };
+    match cli.command {
+        Commands::Node(config) => {
+            info!("starting up...");
+
+            let server_config = ServerConfig::new(
+                config.http_address,
+                config.http_port,
+                config.http_allow_origin,
+            );
+
+            let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
+                config.socket_address,
+                config.discovery_port,
+            ))
+            .build();
+
+            let bootnodes = config.bootnodes.to_enrs(config.network.network);
+            let disc_config = DiscoveryConfig {
+                discv5_config,
+                bootnodes,
+                socket_address: config.socket_address,
+                socket_port: config.socket_port,
+                disable_discovery: config.disable_discovery,
+                total_peers: 0,
+            };
     let gossipsub_config = GossipsubConfig::default();
     let network_config = NetworkConfig {
         disc_config,
         gossipsub_config,
     };
 
-    match cli.command {
-        Commands::Node(_cmd) => {
-            info!("starting up...");
-            match Network::init(async_executor, &network_config).await {
-                Ok(mut network) => {
-                    main_executor.spawn(async move {
-                        network.polling_events().await;
-                    });
+            let ream_db = ReamDB::new(config.data_dir, config.ephemeral)
+                .expect("unable to init Ream Database");
 
-                    tokio::signal::ctrl_c().await.unwrap();
+            info!("ream database initialized ");
+
+            let http_future = start_server(config.network.clone(), server_config, ream_db);
+
+            let network_future = async {
+                match Network::init(async_executor, &network_config).await {
+                    Ok(mut network) => {
+                        main_executor.spawn(async move {
+                            network.polling_events().await;
+                        });
+                        tokio::signal::ctrl_c()
+                            .await
+                            .expect("Unable to terminate future");
+                    }
+                    Err(e) => {
+                        error!("Failed to initialize network: {}", e);
+                    }
                 }
-                Err(e) => {
-                    error!("Failed to initialize network: {}", e);
-                    return;
-                }
+            };
+
+            tokio::select! {
+                _ = http_future => {
+                    info!("HTTP server stopped!");
+                },
+                _ = network_future => {
+                    info!("Network future completed!");
+                },
             }
         }
     }

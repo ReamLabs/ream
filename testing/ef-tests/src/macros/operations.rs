@@ -14,7 +14,7 @@ macro_rules! test_operation_impl {
             let case_name = case_dir.file_name().unwrap().to_str().unwrap();
             println!("Testing case: {}", case_name);
 
-            let pre_state: Arc<Mutex<BeaconState>> = Arc::new(Mutex::new(
+            let mut state: Arc<Mutex<BeaconState>> = Arc::new(Mutex::new(
                 utils::read_ssz_snappy(&case_dir.join("pre.ssz_snappy"))
                     .expect("cannot find test asset(pre.ssz_snappy)"),
             ));
@@ -23,7 +23,6 @@ macro_rules! test_operation_impl {
                     .expect("cannot find test asset(<input>.ssz_snappy)");
             let expected_post =
                 utils::read_ssz_snappy::<BeaconState>(&case_dir.join("post.ssz_snappy"));
-            let mut state = pre_state.clone();
 
             // Call the provided closure to compute the result.
             // The closure is expected to return a Future.

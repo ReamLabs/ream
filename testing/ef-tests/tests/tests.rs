@@ -134,7 +134,7 @@ test_rewards!(leak, get_inactivity_penalty_deltas);
 test_rewards!(random, get_inactivity_penalty_deltas);
 
 // Testing sanity_blocks
-test_sanity_blocks!(state_transition);
+test_sanity_blocks!();
 
 // Testing sanity_slots
-test_sanity_slots!(process_slots);
+test_sanity_slots!();

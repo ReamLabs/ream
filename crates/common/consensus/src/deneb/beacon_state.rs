@@ -5,19 +5,19 @@ use std::{
     sync::Arc,
 };
 
-use alloy_primitives::{aliases::B32, Address, B256};
+use alloy_primitives::{Address, B256, aliases::B32};
 use anyhow::{anyhow, bail, ensure};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
 use ream_bls::{
-    traits::{Aggregatable, Verifiable},
     AggregatePubKey, BLSSignature, PubKey,
+    traits::{Aggregatable, Verifiable},
 };
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
-    typenum::{U1099511627776, U16777216, U2048, U4, U65536, U8192},
     BitVector, FixedVector, VariableList,
+    typenum::{U4, U2048, U8192, U65536, U16777216, U1099511627776},
 };
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
@@ -35,12 +35,7 @@ use crate::{
     beacon_block_header::BeaconBlockHeader,
     bls_to_execution_change::SignedBLSToExecutionChange,
     checkpoint::Checkpoint,
-    deposit::Deposit,
-    deposit_message::DepositMessage,
-    eth_1_data::Eth1Data,
-    execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
-    fork::Fork,
-    fork_choice::helpers::constants::{
+    constants::{
         BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
         DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
         DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
@@ -63,6 +58,11 @@ use crate::{
         TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT, WEIGHT_DENOMINATOR,
         WHISTLEBLOWER_REWARD_QUOTIENT,
     },
+    deposit::Deposit,
+    deposit_message::DepositMessage,
+    eth_1_data::Eth1Data,
+    execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
+    fork::Fork,
     helpers::xor,
     historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
@@ -1818,7 +1818,7 @@ impl BeaconState {
 
     pub async fn state_transition(
         &mut self,
-        signed_block: SignedBeaconBlock,
+        signed_block: &SignedBeaconBlock,
         validate_result: bool,
         execution_engine: &impl ExecutionApi,
     ) -> anyhow::Result<()> {
@@ -1829,7 +1829,7 @@ impl BeaconState {
 
         // Verify signature
         if validate_result {
-            ensure!(self.verify_block_signature(&signed_block)?)
+            ensure!(self.verify_block_signature(signed_block)?)
         }
 
         // Process block
@@ -1926,7 +1926,7 @@ pub fn integer_squareroot(n: u64) -> u64 {
     }
 
     let mut x = n;
-    let mut y = (x + 1) / 2;
+    let mut y = x.div_ceil(2);
     while y < x {
         x = y;
         y = (x + n / x) / 2;

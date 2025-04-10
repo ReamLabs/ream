@@ -1,0 +1,15 @@
+[package]
+name = "ream-node"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+
+[build-dependencies]
+vergen = { version = "8.0.0", features = ["build", "cargo", "git", "gitcl", "rustc"] }

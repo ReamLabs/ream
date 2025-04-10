@@ -21,11 +21,9 @@ jsonwebtoken.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
 ssz_types.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
 # ream dependencies
-ream-bls.workspace = true
 ream-consensus.workspace = true

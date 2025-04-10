@@ -1,0 +1,8 @@
+# Context on this file: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# The basic jist is that this file is used to automatically request reviews from the people listed in the file when a PR is opened.
+*                               @KolbyML @syjn99
+crates/common/consensus/        @KolbyML @Kayden-ML @syjn99 @varun-doshi
+crates/common/execution_engine/ @KolbyML @Kayden-ML @syjn99
+crates/crypto/                  @KolbyML @syjn99
+crates/rpc/                     @KolbyML @varun-doshi
+crates/testing/                 @KolbyML @Kayden-ML @syjn99

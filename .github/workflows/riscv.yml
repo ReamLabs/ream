@@ -5,6 +5,7 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  merge_group:
 
 env:
   CARGO_TERM_COLOR: always
@@ -36,7 +37,7 @@ jobs:
       run: |
         curl -L https://risczero.com/install | bash
         /home/runner/.risc0/bin/rzup install
-        cargo risczero install
+        /home/runner/.risc0/bin/rzup install rust 1.85.0
         rustup default risc0
         
     - name: Build Risc0

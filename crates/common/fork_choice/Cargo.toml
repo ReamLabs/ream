@@ -1,0 +1,36 @@
+[package]
+name = "ream-fork-choice"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-consensus.workspace = true
+alloy-primitives.workspace = true
+alloy-rlp.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+kzg.workspace = true
+ethereum_hashing.workspace = true
+ethereum_serde_utils.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
+itertools.workspace = true
+rust-kzg-blst.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+ssz_types.workspace = true
+thiserror.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
+
+# ream dependencies
+ream-bls.workspace = true
+ream-consensus.workspace = true
+ream-polynomial-commitments.workspace = true
