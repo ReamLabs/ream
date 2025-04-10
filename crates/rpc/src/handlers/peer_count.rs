@@ -1,18 +1,12 @@
-use ream_node::{peer::PeerCountData, network_channel::NetworkChannel};
-use serde::{Serialize};
+use ream_node::{network_channel::NetworkChannel};
 use tracing::error;
 use warp::{
+    http::StatusCode,
     reject::Rejection,
-    reply::{Reply},
+    reply::{Reply, with_status},
 };
 
-use crate::types::{errors::ApiError};
-
-// Define the response format according to the Ethereum API spec
-#[derive(Serialize)]
-struct PeerCountResponse {
-    data: PeerCountData,
-}
+use crate::{handlers::Data, types::errors::ApiError};
 
 pub async fn get_peer_count(network_channel: NetworkChannel) -> Result<impl Reply, Rejection> {
     let count = match network_channel.get_peer_count().await {
@@ -23,14 +17,5 @@ pub async fn get_peer_count(network_channel: NetworkChannel) -> Result<impl Repl
         }
     };
 
-    let response = PeerCountResponse {
-        data: PeerCountData {
-            disconnecting: count.disconnecting,
-            connected: count.connected,
-            disconnected: count.disconnected,
-            connecting: count.connecting,
-        },
-    };
-
-    Ok(warp::reply::json(&response))
+    Ok(with_status(Data::json(count), StatusCode::OK))
 }

@@ -12,6 +12,8 @@ version.workspace = true
 [dependencies]
 tokio = { workspace = true }
 anyhow.workspace = true
+ethereum_serde_utils.workspace = true
+serde.workspace = true
 
 [build-dependencies]
 vergen = { version = "8.0.0", features = ["build", "cargo", "git", "gitcl", "rustc"] }

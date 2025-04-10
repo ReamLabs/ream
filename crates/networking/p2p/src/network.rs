@@ -178,18 +178,12 @@ impl Network {
         loop {
             tokio::select! {
                  Some(request) = request_rx.recv() => {
-                match request {
-                    NetworkRequest::GetPeerCount(response_tx) => {
-                        let (connected, connecting, disconnecting, disconnected) = self.get_peer_counts();
-                        let _ = response_tx.send(PeerCountData {
-                            connected: connected.to_string(),
-                            connecting: connecting.to_string(),
-                            disconnecting: disconnecting.to_string(),
-                            disconnected: disconnected.to_string(),
-                        });
-                    },
+                    match request {
+                        NetworkRequest::GetPeerCount(response_tx) => {
+                            let _ = response_tx.send(self.get_peer_counts());
+                        },
+                    }
                 }
-            }
                 Some(event) = self.swarm.next() => {
                     if let Some(event) = self.parse_swarm_event(event){
                         return event;
@@ -302,28 +296,22 @@ impl Network {
     //     }
     // }
 
-    pub fn get_peer_counts(&self) -> (usize, usize, usize, usize) {
+    pub fn get_peer_counts(&self) -> PeerCountData {
+        let mut connected = 0;
+        let mut connecting = 0;
+        let mut disconnecting = 0;
+        let mut disconnected = 0;
         if let Ok(peers) = self.peers.read() {
-            let connected = peers
-                .values()
-                .filter(|&peer| peer.status == PeerStatus::Connected)
-                .count();
-            let connecting = peers
-                .values()
-                .filter(|&peer| peer.status == PeerStatus::Connecting)
-                .count();
-            let disconnecting = peers
-                .values()
-                .filter(|&peer| peer.status == PeerStatus::Disconnecting)
-                .count();
-            let disconnected = peers
-                .values()
-                .filter(|&peer| peer.status == PeerStatus::Disconnected)
-                .count();
-            (connected, connecting, disconnecting, disconnected)
-        } else {
-            (0, 0, 0, 0) // Default in case of lock error
+            for peer in peers.values() {
+                match peer.status {
+                    PeerStatus::Connected => connected += 1,
+                    PeerStatus::Connecting => connecting += 1,
+                    PeerStatus::Disconnecting => disconnecting += 1,
+                    PeerStatus::Disconnected => disconnected += 1,
+                }
+            }
         }
+        PeerCountData { connected, connecting, disconnecting, disconnected }
     }
 }
 
