@@ -7,16 +7,28 @@ use crate::{
     dir,
     errors::StoreError,
     tables::{
-        beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
-        block_timeliness::BlockTimelinessTable, checkpoint_states::CheckpointStatesTable,
-        equivocating_indices::EquivocatingIndicesField,
-        finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
-        justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
-        proposer_boost_root::ProposerBoostRootField, slot_index::SlotIndexTable,
-        state_root_index::StateRootIndexTable, time::TimeField,
-        unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
-        unrealized_justifications::UnrealizedJustificationsTable,
-        unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
+        beacon_block::{BEACON_BLOCK_TABLE, BeaconBlockTable},
+        beacon_state::{BEACON_STATE_TABLE, BeaconStateTable},
+        block_timeliness::{BLOCK_TIMELINESS_TABLE, BlockTimelinessTable},
+        checkpoint_states::{CHECKPOINT_STATES_TABLE, CheckpointStatesTable},
+        equivocating_indices::{EQUIVOCATING_INDICES_FIELD, EquivocatingIndicesField},
+        finalized_checkpoint::{FINALIZED_CHECKPOINT_FIELD, FinalizedCheckpointField},
+        genesis_time::{GENESIS_TIME_FIELD, GenesisTimeField},
+        justified_checkpoint::{JUSTIFIED_CHECKPOINT_FIELD, JustifiedCheckpointField},
+        latest_messages::{LATEST_MESSAGES_TABLE, LatestMessagesTable},
+        proposer_boost_root::{PROPOSER_BOOST_ROOT_FIELD, ProposerBoostRootField},
+        slot_index::{SLOT_INDEX_TABLE, SlotIndexTable},
+        state_root_index::{STATE_ROOT_INDEX_TABLE, StateRootIndexTable},
+        time::{TIME_FIELD, TimeField},
+        unrealized_finalized_checkpoint::{
+            UNREALIZED_FINALIZED_CHECKPOINT_FIELD, UnrealizedFinalizedCheckpointField,
+        },
+        unrealized_justifications::{
+            UNREALIZED_JUSTIFICATIONS_TABLE, UnrealizedJustificationsTable,
+        },
+        unrealized_justified_checkpoint::{
+            UNREALIZED_JUSTIFED_CHECKPOINT_FIELD, UnrealizedJustifiedCheckpointField,
+        },
     },
 };
 
@@ -46,6 +58,25 @@ impl ReamDB {
             .set_cache_size(REDB_CACHE_SIZE)
             .create(&ream_file)
             .map_err(|err| StoreError::Database(err.into()))?;
+
+        let write_txn = db.begin_write()?;
+        write_txn.open_table(BEACON_BLOCK_TABLE)?;
+        write_txn.open_table(BEACON_STATE_TABLE)?;
+        write_txn.open_table(BLOCK_TIMELINESS_TABLE)?;
+        write_txn.open_table(CHECKPOINT_STATES_TABLE)?;
+        write_txn.open_table(EQUIVOCATING_INDICES_FIELD)?;
+        write_txn.open_table(FINALIZED_CHECKPOINT_FIELD)?;
+        write_txn.open_table(GENESIS_TIME_FIELD)?;
+        write_txn.open_table(JUSTIFIED_CHECKPOINT_FIELD)?;
+        write_txn.open_table(LATEST_MESSAGES_TABLE)?;
+        write_txn.open_table(PROPOSER_BOOST_ROOT_FIELD)?;
+        write_txn.open_table(SLOT_INDEX_TABLE)?;
+        write_txn.open_table(STATE_ROOT_INDEX_TABLE)?;
+        write_txn.open_table(TIME_FIELD)?;
+        write_txn.open_table(UNREALIZED_FINALIZED_CHECKPOINT_FIELD)?;
+        write_txn.open_table(UNREALIZED_JUSTIFICATIONS_TABLE)?;
+        write_txn.open_table(UNREALIZED_JUSTIFED_CHECKPOINT_FIELD)?;
+        write_txn.commit()?;
 
         Ok(Self { db: Arc::new(db) })
     }
