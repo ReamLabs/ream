@@ -9,6 +9,7 @@ pub const BYTES_PER_FIELD_ELEMENT: usize = 32;
 pub const CAPELLA_FORK_VERSION: B32 = fixed_bytes!("0x03000000");
 pub const CHURN_LIMIT_QUOTIENT: u64 = 65536;
 pub const DEPOSIT_CONTRACT_TREE_DEPTH: u64 = 32;
+pub const DOMAIN_AGGREGATE_AND_PROOF: B32 = fixed_bytes!("0x06000000");
 pub const DOMAIN_BEACON_ATTESTER: B32 = fixed_bytes!("0x01000000");
 pub const DOMAIN_BEACON_PROPOSER: B32 = fixed_bytes!("0x00000000");
 pub const DOMAIN_BLS_TO_EXECUTION_CHANGE: B32 = fixed_bytes!("0x0A000000");
