@@ -1,3 +1,4 @@
+use libp2p_identity::PeerId;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -13,7 +14,7 @@ pub struct PeerCountData {
 }
 
 pub struct Peer {
-    pub id: String,
+    pub id: PeerId,
     pub status: PeerStatus,
 }
 

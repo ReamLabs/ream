@@ -4144,6 +4144,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ethereum_serde_utils",
+ "libp2p-identity",
  "serde",
  "tokio",
  "vergen",

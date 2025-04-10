@@ -276,11 +276,10 @@ impl Network {
 
     fn upsert_peer_status(&self, peer_id: PeerId, status: PeerStatus) {
         if let Ok(mut peers) = self.peers.write() {
-            // todo: PeerId and string mismatch
             peers.insert(
                 peer_id,
                 Peer {
-                    id: peer_id.to_string(),
+                    id: peer_id,
                     status,
                 },
             );
