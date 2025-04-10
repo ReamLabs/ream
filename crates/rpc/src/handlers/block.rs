@@ -108,7 +108,7 @@ pub async fn get_block_rewards(block_id: ID, db: ReamDB) -> Result<impl Reply, R
     let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
     let response = BlockRewards {
         proposer_index: beacon_block.proposer_index,
-        total: 0, // Placeholder; To implement the calculate block reward logic
+        total: 0, // todo: implement the calculate block reward logic
         attestations: beacon_block.body.attestations.len() as u64,
         sync_aggregate: beacon_block
             .body
