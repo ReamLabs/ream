@@ -19,13 +19,19 @@ use crate::types::{
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct BlockRewards {
+    #[serde(with = "serde_utils::quoted_u64")]
     pub proposer_index: u64,
     pub total: i64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub attestations: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub sync_aggregate: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub proposer_slashings: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub attester_slashings: u64,
 }
+
 
 pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, ApiError> {
     let block_root = match block_id {
