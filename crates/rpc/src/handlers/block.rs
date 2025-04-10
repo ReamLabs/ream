@@ -21,6 +21,7 @@ use crate::types::{
 pub struct BlockRewards {
     #[serde(with = "serde_utils::quoted_u64")]
     pub proposer_index: u64,
+    #[serde(with = "serde_utils::quoted_i64")]
     pub total: i64,
     #[serde(with = "serde_utils::quoted_u64")]
     pub attestations: u64,
