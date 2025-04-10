@@ -20,14 +20,14 @@ use libp2p::{
     swarm::{NetworkBehaviour, SwarmEvent},
     yamux,
 };
-use libp2p_identity::{secp256k1, Keypair, PublicKey};
+use libp2p_identity::{Keypair, PublicKey, secp256k1};
 use parking_lot::Mutex;
 use ream_discv5::discovery::{DiscoveredPeers, Discovery};
 use ream_executor::ReamExecutor;
 use ream_gossipsub::{snappy::SnappyTransform, topics::GossipTopic};
 use tracing::{error, info, trace, warn};
 
-use crate::{bootnodes::Bootnodes, config::NetworkConfig};
+use crate::config::NetworkConfig;
 
 pub type GossipsubBehaviour = gossipsub::Behaviour<SnappyTransform, AllowAllSubscriptionFilter>;
 
@@ -174,7 +174,7 @@ impl Network {
             }
         }
 
-        for bootnode in &config.bootnodes {
+        for bootnode in &config.disc_config.bootnodes {
             if let (Some(ipv4), Some(tcp_port)) = (bootnode.ip4(), bootnode.tcp4()) {
                 let mut multi_addr = Multiaddr::empty();
                 multi_addr.push(ipv4.into());

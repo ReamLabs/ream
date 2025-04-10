@@ -10,9 +10,9 @@ pub struct GossipsubConfig {
     pub topics: Vec<GossipTopic>,
 }
 
-impl GossipsubConfig {
+impl Default for GossipsubConfig {
     // https://ethereum.github.io/consensus-specs/specs/phase0/p2p-interface/#the-gossip-domain-gossipsub
-    pub fn default() -> Self {
+    fn default() -> Self {
         let seconds_per_slot = 12;
         let slots_per_epoch = 32;
         let config = gossipsub::ConfigBuilder::default()

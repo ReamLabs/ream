@@ -48,16 +48,16 @@ async fn main() {
             let disc_config = DiscoveryConfig {
                 discv5_config,
                 bootnodes,
-                socket_address: config.socket_address,
-                socket_port: config.socket_port,
                 disable_discovery: config.disable_discovery,
                 total_peers: 0,
             };
-    let gossipsub_config = GossipsubConfig::default();
-    let network_config = NetworkConfig {
-        disc_config,
-        gossipsub_config,
-    };
+            let gossipsub_config = GossipsubConfig::default();
+            let network_config = NetworkConfig {
+                socket_address: config.socket_address,
+                socket_port: config.socket_port,
+                disc_config,
+                gossipsub_config,
+            };
 
             let ream_db = ReamDB::new(config.data_dir, config.ephemeral)
                 .expect("unable to init Ream Database");

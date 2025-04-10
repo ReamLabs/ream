@@ -1,5 +1,5 @@
 use libp2p::gossipsub::DataTransform;
-use snap::raw::{decompress_len, Decoder, Encoder};
+use snap::raw::{Decoder, Encoder, decompress_len};
 
 pub struct SnappyTransform {
     max_size_per_message: usize,
