@@ -4,10 +4,7 @@ use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
 use warp::{
     Filter, Rejection,
-    filters::{
-        path::{end, param},
-        query::query,
-    },
+    filters::{path::end, query::query},
     get, log, path,
     reply::Reply,
 };
@@ -27,6 +24,7 @@ use crate::{
         id::{ID, ValidatorID},
         query::RandaoQuery,
     },
+    utils::error::parsed_param,
 };
 
 /// Creates and returns all `/beacon` routes.
@@ -46,7 +44,7 @@ pub fn get_beacon_routes(
 
     let fork = beacon_base
         .and(path("states"))
-        .and(param::<ID>())
+        .and(parsed_param::<ID>())
         .and(path("fork"))
         .and(end())
         .and(get())
@@ -56,7 +54,7 @@ pub fn get_beacon_routes(
 
     let state_root = beacon_base
         .and(path("states"))
-        .and(param::<ID>())
+        .and(parsed_param::<ID>())
         .and(path("root"))
         .and(end())
         .and(get())
@@ -66,7 +64,7 @@ pub fn get_beacon_routes(
 
     let randao = beacon_base
         .and(path("states"))
-        .and(param::<ID>())
+        .and(parsed_param::<ID>())
         .and(path("randao"))
         .and(query::<RandaoQuery>())
         .and(end())
@@ -79,7 +77,7 @@ pub fn get_beacon_routes(
 
     let checkpoint = beacon_base
         .and(path("states"))
-        .and(param::<ID>())
+        .and(parsed_param::<ID>())
         .and(path("finality_checkpoints"))
         .and(end())
         .and(get())
@@ -88,9 +86,9 @@ pub fn get_beacon_routes(
 
     let validator = beacon_base
         .and(path("states"))
-        .and(param::<ID>())
+        .and(parsed_param::<ID>())
         .and(path("validator"))
-        .and(param::<ValidatorID>())
+        .and(parsed_param::<ValidatorID>())
         .and(end())
         .and(get())
         .and(db_filter.clone())
@@ -103,7 +101,7 @@ pub fn get_beacon_routes(
 
     let block_root = beacon_base
         .and(path("blocks"))
-        .and(param::<ID>())
+        .and(parsed_param::<ID>())
         .and(path("root"))
         .and(end())
         .and(get())
@@ -112,7 +110,7 @@ pub fn get_beacon_routes(
         .with(log("block_root"));
     let block_rewards = beacon_base
         .and(path("blocks"))
-        .and(param::<ID>())
+        .and(parsed_param::<ID>())
         .and(path("rewards"))
         .and(end())
         .and(get())
@@ -138,7 +136,7 @@ pub fn get_beacon_routes_v2(
 
     beacon_base
         .and(path("blocks"))
-        .and(param::<ID>())
+        .and(parsed_param::<ID>())
         .and(path("attestations"))
         .and(end())
         .and(get())
