@@ -42,6 +42,7 @@ impl Table for SlotIndexTable {
 }
 
 impl SlotIndexTable {
+    #[allow(clippy::result_large_err)]
     pub fn get_highest_slot(&self) -> Result<Option<u64>, StoreError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(SLOT_INDEX_TABLE)?;

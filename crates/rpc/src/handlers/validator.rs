@@ -7,10 +7,11 @@ use warp::{
     reply::{Reply, with_status},
 };
 
-use super::{BeaconResponse, state::get_state_from_id};
+use super::state::get_state_from_id;
 use crate::types::{
     errors::ApiError,
     id::{ID, ValidatorID},
+    response::BeaconResponse,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
