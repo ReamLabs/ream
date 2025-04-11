@@ -8,6 +8,8 @@ pub struct NetworkConfig {
 
     pub socket_port: u16,
 
+    pub discovery_port: u16,
+
     pub disc_config: DiscoveryConfig,
 
     pub gossipsub_config: GossipsubConfig,

@@ -55,6 +55,7 @@ async fn main() {
             let network_config = NetworkConfig {
                 socket_address: config.socket_address,
                 socket_port: config.socket_port,
+                discovery_port: config.discovery_port,
                 disc_config,
                 gossipsub_config,
             };

@@ -27,7 +27,7 @@ use ream_executor::ReamExecutor;
 use ream_gossipsub::{snappy::SnappyTransform, topics::GossipTopic};
 use tracing::{error, info, trace, warn};
 
-use crate::config::NetworkConfig;
+use crate::{config::NetworkConfig, utils::convert_to_enr_key};
 
 pub type GossipsubBehaviour = gossipsub::Behaviour<SnappyTransform, AllowAllSubscriptionFilter>;
 
@@ -74,10 +74,16 @@ impl libp2p::swarm::Executor for Executor {
 impl Network {
     pub async fn init(executor: ReamExecutor, config: &NetworkConfig) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
+        let enr_key = convert_to_enr_key(local_key.clone().into())?;
+        let enr = Enr::builder()
+            .ip(config.socket_address)
+            .tcp4(config.socket_port)
+            .udp4(config.discovery_port)
+            .build(&enr_key)
+            .unwrap();
 
         let discovery = {
-            let mut discovery =
-                Discovery::new(Keypair::from(local_key.clone()), &config.disc_config).await?;
+            let mut discovery = Discovery::new(enr, enr_key, &config.disc_config).await?;
             discovery.discover_peers(16);
             discovery
         };
