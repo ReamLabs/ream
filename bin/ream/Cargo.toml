@@ -31,3 +31,5 @@ discv5 = { workspace = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tokio = { workspace = true }
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true

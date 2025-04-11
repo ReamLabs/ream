@@ -24,8 +24,10 @@ use libp2p::{
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
-use crate::config::NetworkConfig;
-use crate::eth2::{ENRForkID, are_peers_compatible, will_peers_remain_compatible};
+use crate::{
+    config::NetworkConfig,
+    eth2::{ENR_ETH2_KEY, ENRForkID},
+};
 
 #[derive(Debug)]
 pub struct DiscoveredPeers {
@@ -60,18 +62,13 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    pub async fn new(
-        local_key: Keypair,
-        config: &NetworkConfig,
-        eth2_fork_id: ENRForkID,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(local_key: Keypair, config: &NetworkConfig) -> anyhow::Result<Self> {
         let enr_local = convert_to_enr(local_key)?;
-        let mut enr = Enr::builder().build(&enr_local).unwrap();
-        
-        // Update the ENR with the eth2 fork ID
-        eth2_fork_id.update_enr(&mut enr)
-            .map_err(|err| anyhow!("Failed to update ENR with eth2 fork ID: {err:?}"))?;
-            
+        let enr = Enr::builder()
+            .add_value(ENR_ETH2_KEY, &ENRForkID::new_pectra().as_ssz_bytes())
+            .build(&enr_local)
+            .unwrap();
+
         let node_local_id = enr.node_id();
 
         let mut discv5 = Discv5::new(enr, enr_local, config.discv5_config.clone())
@@ -107,7 +104,7 @@ impl Discovery {
             discovery_queries: FuturesUnordered::new(),
             find_peer_active: false,
             started: true,
-            eth2_fork_id,
+            eth2_fork_id: ENRForkID::new_pectra(),
         })
     }
 
@@ -164,40 +161,6 @@ impl Discovery {
             });
 
         self.discovery_queries.push(Box::pin(query_future));
-    }
-
-    pub fn is_peer_compatible(&self, peer_enr: &Enr) -> bool {
-        if let Some(eth2_bytes) = peer_enr.get(b"eth2") {
-            if let Ok(remote_fork_id) = ENRForkID::deserialize(&eth2_bytes) {
-                return are_peers_compatible(&self.eth2_fork_id, &remote_fork_id);
-            }
-        }
-        false
-    }
-
-    pub fn will_peer_remain_compatible(&self, peer_enr: &Enr) -> bool {
-        if let Some(eth2_bytes) = peer_enr.get(b"eth2") {
-            if let Ok(remote_fork_id) = ENRForkID::deserialize(&eth2_bytes) {
-                return will_peers_remain_compatible(&self.eth2_fork_id, &remote_fork_id);
-            }
-        }
-        false
-    }
-
-    pub fn update_eth2_fork_id(&mut self, new_fork_id: ENRForkID) -> anyhow::Result<()> {
-        // Update the local fork ID
-        self.eth2_fork_id = new_fork_id;
-        
-        // Update the ENR with the new fork ID
-        let mut enr = self.discv5.local_enr();
-        self.eth2_fork_id.update_enr(&mut enr)
-            .map_err(|err| anyhow!("Failed to update ENR with new eth2 fork ID: {err:?}"))?;
-            
-        // Update the discv5 instance with the new ENR
-        self.discv5.update_enr()
-            .map_err(|err| anyhow!("Failed to update discv5 with new ENR: {err:?}"))?;
-            
-        Ok(())
     }
 }
 

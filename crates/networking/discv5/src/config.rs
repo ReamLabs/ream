@@ -1,7 +1,6 @@
 use std::net::IpAddr;
 
 use discv5::Enr;
-use crate::eth2::ENRForkID;
 
 pub struct NetworkConfig {
     pub discv5_config: discv5::Config,

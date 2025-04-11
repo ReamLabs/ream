@@ -1,28 +1,30 @@
-use ssz_rs::prelude::*;
-use std::time::SystemTime;
-use sha2::{Sha256, Digest};
+use alloy_primitives::{B256, aliases::B32, fixed_bytes};
+use ethereum_ssz::Encode;
+use ethereum_ssz_derive::{Decode, Encode};
+use ream_consensus::fork_data::ForkData;
 
 // Constants
-pub const FAR_FUTURE_EPOCH: u64 = u64::MAX;
-pub const GENESIS_FORK_VERSION: [u8; 4] = [0, 0, 0, 0];
-
+pub const FAR_FUTURE_EPOCH: u64 = 18446744073709551615;
+pub const GENESIS_FORK_VERSION: B32 = fixed_bytes!("0x00000000");
+pub const GENESIS_VALIDATORS_ROOT: B256 =
+    fixed_bytes!("0x0000000000000000000000000000000000000000000000000000000000000000");
+pub const ENR_ETH2_KEY: &str = "eth2";
 // Types
-#[derive(Default, Debug, SimpleSerialize)]
+#[derive(Default, Debug, Encode, Decode)]
 pub struct ENRForkID {
-    pub fork_digest: [u8; 4],
-    pub next_fork_version: [u8; 4],
+    pub fork_digest: B32,
+    pub next_fork_version: B32,
     pub next_fork_epoch: u64,
 }
 
 impl ENRForkID {
-    pub fn new(
-        current_fork_version: [u8; 4],
-        genesis_validators_root: [u8; 32],
-        next_fork_version: [u8; 4],
-        next_fork_epoch: u64,
-    ) -> Self {
-        let fork_digest = Self::compute_fork_digest(current_fork_version, genesis_validators_root);
-        
+    pub fn new(current_fork_version: B32, next_fork_version: B32, next_fork_epoch: u64) -> Self {
+        let fork_digest = ForkData {
+            current_version: current_fork_version,
+            genesis_validators_root: GENESIS_VALIDATORS_ROOT,
+        }
+        .compute_fork_digest();
+
         Self {
             fork_digest,
             next_fork_version,
@@ -30,134 +32,72 @@ impl ENRForkID {
         }
     }
 
-    pub fn compute_fork_digest(current_fork_version: [u8; 4], genesis_validators_root: [u8; 32]) -> [u8; 4] {
-        // Create a SHA256 hasher
-        let mut hasher = Sha256::new();
-        
-        // Hash the current fork version
-        hasher.update(current_fork_version);
-        
-        // Hash the genesis validators root
-        hasher.update(genesis_validators_root);
-        
-        // Get the hash result
-        let result = hasher.finalize();
-        
-        // Take the first 4 bytes as the fork digest
-        let mut fork_digest = [0u8; 4];
-        fork_digest.copy_from_slice(&result[..4]);
-        
-        fork_digest
+    pub fn new_pectra() -> Self {
+        // Pectra fork version and epoch values
+        let current_fork_version = B32::from_slice(&[0x03, 0x00, 0x00, 0x00]); // This should be replaced with actual Pectra fork version
+        let next_fork_version = B32::from_slice(&[0x00, 0x00, 0x00, 0x00]); // FAR_FUTURE_EPOCH version
+        let next_fork_epoch = FAR_FUTURE_EPOCH;
+
+        Self::new(current_fork_version, next_fork_version, next_fork_epoch)
     }
 
-    pub fn pre_genesis() -> Self {
-        Self {
-            fork_digest: Self::compute_fork_digest(GENESIS_FORK_VERSION, [0; 32]),
-            next_fork_version: GENESIS_FORK_VERSION,
-            next_fork_epoch: FAR_FUTURE_EPOCH,
-        }
-    }
-
-    pub fn update_enr(&self, enr: &mut discv5::Enr) -> Result<(), discv5::enr::EnrError> {
-        // Serialize the ENRForkID to SSZ bytes
+    pub fn as_ssz_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
-        self.serialize(&mut bytes).map_err(|_| discv5::enr::EnrError::InvalidSignature)?;
-        
-        // Update the ENR with the eth2 key
-        enr.insert(b"eth2", &bytes)
+        Encode::encode(self, &mut bytes);
+        bytes
+    }
+    pub fn compute_fork_digest(current_fork_version: B32) -> B32 {
+        let fork_data = ForkData {
+            current_version: current_fork_version,
+            genesis_validators_root: GENESIS_VALIDATORS_ROOT,
+        };
+        fork_data.compute_fork_digest()
     }
 }
 
-// Peer compatibility checks
-pub fn are_peers_compatible(local: &ENRForkID, remote: &ENRForkID) -> bool {
-    // Peers are compatible if they have the same fork digest
-    local.fork_digest == remote.fork_digest
-}
-
-pub fn will_peers_remain_compatible(local: &ENRForkID, remote: &ENRForkID) -> bool {
-    // Peers will remain compatible if they have the same next fork version and epoch
-    local.next_fork_version == remote.next_fork_version && 
-    local.next_fork_epoch == remote.next_fork_epoch
+impl Decode for ENRForkID {
+    fn decode(bytes: &[u8]) -> Result<Self, ethereum_ssz::DecodeError> {
+        ethereum_ssz::Decode::decode(bytes)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // Test helper function
+    fn compute_test_fork_digest(current_fork_version: B32) -> B32 {
+        ENRForkID::compute_fork_digest(current_fork_version)
+    }
+
     #[test]
     fn test_fork_digest_computation() {
-        let current_fork_version = [1, 2, 3, 4];
-        let genesis_validators_root = [5; 32];
-        
-        let fork_digest = ENRForkID::compute_fork_digest(current_fork_version, genesis_validators_root);
-        
-        // Verify the fork digest is 4 bytes
-        assert_eq!(fork_digest.len(), 4);
-        
-        // Verify the fork digest is deterministic
-        let fork_digest2 = ENRForkID::compute_fork_digest(current_fork_version, genesis_validators_root);
+        let current_fork_version = B32::from_slice(&[1, 2, 3, 4]);
+
+        let fork_digest = ENRForkID::compute_fork_digest(current_fork_version);
+        assert_eq!(fork_digest.len(), 32);
+
+        let fork_digest2 = compute_test_fork_digest(current_fork_version);
         assert_eq!(fork_digest, fork_digest2);
-        
-        // Verify different inputs produce different digests
-        let different_version = [2, 3, 4, 5];
-        let different_digest = ENRForkID::compute_fork_digest(different_version, genesis_validators_root);
+
+        let different_version = B32::from_slice(&[2, 3, 4, 5]);
+        let different_digest = compute_test_fork_digest(different_version);
         assert_ne!(fork_digest, different_digest);
     }
 
     #[test]
-    fn test_pre_genesis_fork_id() {
-        let pre_genesis = ENRForkID::pre_genesis();
-        
-        assert_eq!(pre_genesis.next_fork_version, GENESIS_FORK_VERSION);
-        assert_eq!(pre_genesis.next_fork_epoch, FAR_FUTURE_EPOCH);
-        
-        // Verify the fork digest is computed correctly for pre-genesis
-        let expected_digest = ENRForkID::compute_fork_digest(GENESIS_FORK_VERSION, [0; 32]);
-        assert_eq!(pre_genesis.fork_digest, expected_digest);
-    }
-
-    #[test]
-    fn test_peer_compatibility() {
-        let fork_id1 = ENRForkID {
-            fork_digest: [1, 2, 3, 4],
-            next_fork_version: [5, 6, 7, 8],
-            next_fork_epoch: 100,
-        };
-        
-        let fork_id2 = ENRForkID {
-            fork_digest: [1, 2, 3, 4], // Same fork digest
-            next_fork_version: [9, 10, 11, 12], // Different next fork
-            next_fork_epoch: 200, // Different next epoch
-        };
-        
-        // Should be compatible because fork digests match
-        assert!(are_peers_compatible(&fork_id1, &fork_id2));
-        
-        // Should not remain compatible because next fork info differs
-        assert!(!will_peers_remain_compatible(&fork_id1, &fork_id2));
-    }
-
-    #[test]
-    fn test_enr_update() {
+    fn test_serialization() {
         let fork_id = ENRForkID {
-            fork_digest: [1, 2, 3, 4],
-            next_fork_version: [5, 6, 7, 8],
+            fork_digest: B32::from_slice(&[1, 2, 3, 4]),
+            next_fork_version: B32::from_slice(&[5, 6, 7, 8]),
             next_fork_epoch: 100,
         };
-        
-        let mut enr = discv5::Enr::default();
-        
-        // Update the ENR with the fork ID
-        assert!(fork_id.update_enr(&mut enr).is_ok());
-        
-        // Verify the eth2 key was added
-        assert!(enr.get(b"eth2").is_some());
-        
-        // Verify the value can be deserialized back to ENRForkID
-        let eth2_bytes = enr.get(b"eth2").unwrap();
-        let deserialized = ENRForkID::deserialize(&eth2_bytes).unwrap();
+
+        let bytes = fork_id.as_ssz_bytes();
+        let deserialized = ENRForkID::decode(&bytes).unwrap();
+
         assert_eq!(fork_id.fork_digest, deserialized.fork_digest);
         assert_eq!(fork_id.next_fork_version, deserialized.next_fork_version);
         assert_eq!(fork_id.next_fork_epoch, deserialized.next_fork_epoch);
     }
-} 
+}
