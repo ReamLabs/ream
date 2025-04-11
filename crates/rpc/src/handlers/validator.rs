@@ -1,6 +1,9 @@
+use std::collections::HashSet;
+
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use warp::{
     http::status::StatusCode,
     reject::Rejection,
@@ -14,6 +17,7 @@ use crate::types::{
     query::{IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
     response::BeaconResponse,
+    errors::ApiError, id::{ValidatorID, ID}, query::ValidatorBalanceQuery, response::BeaconResponse
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -35,6 +39,12 @@ impl ValidatorData {
             validator,
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct ValidatorBalance {
+    index: String,
+    balance: String,
 }
 
 pub async fn get_validator_from_state(
@@ -191,4 +201,54 @@ pub async fn post_validators_from_state(
     };
 
     get_validators_from_state(state_id, id_query, status_query, db).await
+}
+pub async fn get_validator_balances_from_state(
+    state_id: ID,
+    query: ValidatorBalanceQuery, 
+    db: ReamDB,
+) -> Result<impl Reply, Rejection> {
+
+    let state = get_state_from_id(state_id, &db).await?;
+
+    let filter: Option<HashSet<String>> = match query.id {
+        Some(ref ids) if ids.is_empty() => None,
+        Some(ids) => Some(ids.into_iter().collect()),
+        None => None,
+    };
+
+    //need to decide on the limit
+    if let Some(ref ids) = filter {
+        if ids.len() > 1000 {
+            return Err(ApiError::TooManyValidatorIds("Too many validator IDs in request".to_string()))?;
+        }
+    }
+
+    let validator_balances: Vec<ValidatorBalance> = state
+        .validators
+        .iter()
+        .enumerate()
+        .filter_map(|(i, validator)| {
+            if let Some(ref ids) = filter {
+                if !ids.contains(&i.to_string()) && !ids.contains(&format!("{:?}", validator.pubkey)) {
+                    return None;
+                }
+            }
+            let balance = state.balances.get(i).unwrap_or(&0);
+            Some(ValidatorBalance {
+                index: i.to_string(),
+                balance: balance.to_string(),
+            })
+        })
+        .collect();
+
+    let response = BeaconResponse {
+        execution_optimistic: false,
+        finalized: false,
+        data: validator_balances,
+    };
+
+    Ok(warp::reply::with_status(
+        warp::reply::json(&response),
+        StatusCode::OK,
+    ))
 }
