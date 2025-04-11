@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use ream_consensus::deneb::beacon_block::BeaconBlock;
+use ream_consensus::deneb::beacon_block::SignedBeaconBlock;
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
@@ -73,7 +73,10 @@ pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, A
     Ok(block_root)
 }
 
-async fn get_beacon_block_from_id(block_id: ID, db: &ReamDB) -> Result<BeaconBlock, ApiError> {
+async fn get_beacon_block_from_id(
+    block_id: ID,
+    db: &ReamDB,
+) -> Result<SignedBeaconBlock, ApiError> {
     let block_root = get_block_root_from_id(block_id, db).await?;
 
     db.beacon_block_provider()
@@ -89,7 +92,7 @@ pub async fn get_block_attestations(block_id: ID, db: ReamDB) -> Result<impl Rep
     let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
 
     Ok(with_status(
-        BeaconVersionedResponse::json(beacon_block.body.attestations),
+        BeaconVersionedResponse::json(beacon_block.message.body.attestations),
         StatusCode::OK,
     ))
 }
@@ -107,16 +110,17 @@ pub async fn get_block_root(block_id: ID, db: ReamDB) -> Result<impl Reply, Reje
 pub async fn get_block_rewards(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
     let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
     let response = BlockRewards {
-        proposer_index: beacon_block.proposer_index,
+        proposer_index: beacon_block.message.proposer_index,
         total: 0, // todo: implement the calculate block reward logic
-        attestations: beacon_block.body.attestations.len() as u64,
+        attestations: beacon_block.message.body.attestations.len() as u64,
         sync_aggregate: beacon_block
+            .message
             .body
             .sync_aggregate
             .sync_committee_bits
             .num_set_bits() as u64,
-        proposer_slashings: beacon_block.body.proposer_slashings.len() as u64,
-        attester_slashings: beacon_block.body.attester_slashings.len() as u64,
+        proposer_slashings: beacon_block.message.body.proposer_slashings.len() as u64,
+        attester_slashings: beacon_block.message.body.attester_slashings.len() as u64,
     };
 
     Ok(with_status(BeaconResponse::json(response), StatusCode::OK))
