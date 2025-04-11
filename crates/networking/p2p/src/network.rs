@@ -216,14 +216,12 @@ impl Network {
                 None
             }
             SwarmEvent::OutgoingConnectionError { peer_id, .. } => {
-                // todo: should this count towards the peer count?
                 if let Some(peer_id) = peer_id {
                     self.upsert_peer_status(peer_id, PeerStatus::Disconnected);
                 }
                 None
             }
             SwarmEvent::IncomingConnectionError { .. } => {
-                // todo: should this count towards the peer count?
                 // No specific peer to track for incoming connection errors
                 None
             }
