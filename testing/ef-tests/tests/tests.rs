@@ -139,6 +139,7 @@ test_sanity_blocks!();
 // Testing sanity_slots
 test_sanity_slots!();
 
+// Testing fork_choice
 test_fork_choice!(ex_ante);
 test_fork_choice!(get_head);
 test_fork_choice!(get_proposer_head);
