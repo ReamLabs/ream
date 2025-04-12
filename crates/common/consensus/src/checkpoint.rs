@@ -17,6 +17,7 @@ use tree_hash_derive::TreeHash;
     TreeHash,
     PartialOrd,
     Ord,
+    Default,
 )]
 pub struct Checkpoint {
     pub epoch: u64,

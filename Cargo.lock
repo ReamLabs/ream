@@ -1315,10 +1315,12 @@ name = "ef-tests"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "anyhow",
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "paste",
  "ream-consensus",
+ "ream-fork-choice",
  "rstest",
  "serde",
  "serde_yaml",

@@ -51,23 +51,23 @@ macro_rules! test_sanity_slots {
                     let result = state.process_slots(state.slot + slot);
 
                     match (result, expected_post) {
-                        (Ok(_), Some(expected)) => {
+                        (Ok(_), Ok(expected)) => {
                             assert_eq!(
                                 state, expected,
                                 "Post state mismatch in case {}",
                                 case_name
                             );
                         }
-                        (Ok(_), None) => {
+                        (Ok(_), Err(_)) => {
                             panic!("Test case {} should have failed but succeeded", case_name);
                         }
-                        (Err(err), Some(_)) => {
+                        (Err(err), Ok(_)) => {
                             panic!(
                                 "Test case {} should have succeeded but failed, err={:?}",
                                 case_name, err
                             );
                         }
-                        (Err(_), None) => {
+                        (Err(_), Err(_)) => {
                             // Expected: invalid operations result in an error and no post state.
                         }
                     }

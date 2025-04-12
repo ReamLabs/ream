@@ -1,116 +1,220 @@
 #[macro_export]
 macro_rules! test_fork_choice {
-    () => {
-        #[cfg(test)]
-        #[allow(non_snake_case)]
-        mod tests_fork_choice {
-            use super::*;
-            use rstest::rstest;
-            use alloy_primitives::B256;
-            use std::fs;
-            use ssz_types::{
-                typenum::{U1099511627776},
-                VariableList,
-            };
-            use ssz_derive::{Decode, Encode};
+    ($path:ident) => {
+        paste::paste! {
+            #[cfg(test)]
+            #[allow(non_snake_case)]
+            mod [<tests_ $path>] {
+                use std::fs;
 
-            #[derive(Debug, serde::Deserialize)]
-            struct Tick {
-                tick: usize,
-            }
+                use alloy_primitives::{B256, map::HashMap};
+                use ream_consensus::{
+                    attestation::Attestation,
+                    attester_slashing::AttesterSlashing,
+                    checkpoint::Checkpoint,
+                    deneb::{
+                        beacon_block::{BeaconBlock, SignedBeaconBlock},
+                        beacon_state::BeaconState,
+                    },
+                    execution_engine::mock_engine::MockExecutionEngine,
+                };
+                use ream_fork_choice::{
+                    handlers::{get_forkchoice_store, on_attestation, on_attester_slashing, on_block, on_tick},
+                    store::Store,
+                };
+                use rstest::rstest;
+                use serde::Deserialize;
+                use ssz_derive::{Decode, Encode};
+                use ssz_types::{
+                    FixedVector, VariableList,
+                    typenum::{self, U1099511627776},
+                };
 
-            #[derive(Debug, serde::Deserialize)]
-            pub struct Head {
-                pub slot: u64,
-                pub root: B256,
-            }
+                use super::*;
+                use $crate::utils;
 
-            #[derive(Debug, serde::Deserialize)]
-            pub struct Checks {
-                pub time: usize,
-                pub head: Head,
-                pub justified_checkpoint: Checkpoint,
-                pub finalized_checkpoint: Checkpoint,
-                pub proposer_boost_root: B256,
-            }
+                #[derive(Debug, Deserialize)]
+                pub struct Tick {
+                    pub tick: u64,
+                    #[serde(default)]
+                    pub valid: Option<bool>,
+                }
 
-            #[derive(Debug, serde::Deserialize)]
-            pub struct Block {
-                pub block: String,
-                pub valid: bool,
-            }
+                #[derive(Debug, Deserialize)]
+                pub struct ShouldOverrideForkchoiceUpdate {
+                    pub validator_is_connected: bool,
+                    pub result: bool,
+                }
 
-            #[derive(Debug, serde::Deserialize)]
-            pub struct AttestationStep {
-                pub attestation: String,
-            }
+                #[derive(Debug, Deserialize)]
+                pub struct Head {
+                    pub slot: u64,
+                    pub root: B256,
+                }
 
-            #[derive(Debug, serde::Deserialize)]
-            #[serde(untagged)]
-            enum ForkChoiceStep {
-                Tick(Tick),
-                Checks(Checks),
-                Block(Block),
-                Attestation(AttestationStep),
-            }
+                #[derive(Debug, Deserialize)]
+                pub struct Checks {
+                    #[serde(default)]
+                    pub head: Option<Head>,
+                    #[serde(default)]
+                    pub time: Option<u64>,
+                    #[serde(default)]
+                    pub justified_checkpoint: Option<Checkpoint>,
+                    #[serde(default)]
+                    pub finalized_checkpoint: Option<Checkpoint>,
+                    #[serde(default)]
+                    pub proposer_boost_root: Option<B256>,
+                    #[serde(default)]
+                    pub get_proposer_head: Option<B256>,
+                    #[serde(default)]
+                    pub should_override_forkchoice_update: Option<ShouldOverrideForkchoiceUpdate>,
+                }
 
-            #[rstest]
-            fn test_fork_choice() {
-                let base_path = std::env::current_dir()
-                    .unwrap()
-                    .join("mainnet/tests/mainnet/deneb/fork_choice/{}/pyspec_tests");
+                #[derive(Debug, Deserialize)]
+                pub struct Block {
+                    pub block: String,
+                    pub blobs: Option<String>,
+                    pub proofs: Option<Vec<String>>,
+                    pub valid: Option<bool>,
+                }
 
-                for entry in std::fs::read_dir(base_path).unwrap() {
-                    let entry = entry.unwrap();
-                    let case_dir = entry.path();
+                #[derive(Debug, Deserialize)]
+                pub struct AttestationStep {
+                    pub attestation: String,
+                    #[serde(default)]
+                    pub valid: Option<bool>,
+                }
 
-                    if !case_dir.is_dir() {
-                        continue;
-                    }
+                #[derive(Debug, Deserialize)]
+                pub struct AttesterSlashingStep {
+                    pub attester_slashing: String,
+                    #[serde(default)]
+                    pub valid: Option<bool>,
+                }
 
-                    let case_name = case_dir.file_name().unwrap().to_str().unwrap();
-                    println!("Testing case: {}", case_name);
+                #[derive(Deserialize)]
+                #[serde(untagged)]
+                pub enum ForkChoiceStep {
+                    Tick(Tick),
+                    Checks { checks: Checks },
+                    Block(Block),
+                    Attestation(AttestationStep),
+                    AttesterSlashing(AttesterSlashingStep),
+                }
 
-                    let steps: Vec<ForkChoiceStep> = {
-                        let meta_path = case_dir.join("steps.yaml");
-                        let content =
-                            fs::read_to_string(meta_path).expect("Failed to read steps.yaml");
-                        serde_yaml::from_str(&content).expect("Failed to parse steps.yaml")
+                #[tokio::test]
+                async fn test_fork_choice() {
+                    let base_path = format!(
+                        "mainnet/tests/mainnet/deneb/fork_choice/{}/pyspec_tests",
+                        stringify!($path)
+                    );
+                    let mock_engine = MockExecutionEngine {
+                        execution_valid: true,
                     };
-                    
-                    let anchor_state: BeaconState = utils::read_ssz_snappy(&case_dir.join("anchor_state.ssz_snappy")).expect("Failed to read anchor_state.ssz_snappy");
-                    let anchor_block: BeaconBlock = utils::read_ssz_snappy(&case_dir.join("anchor_block.ssz_snappy")).expect("Failed to read anchor_block.ssz_snappy");
 
-                    for block_and_attestation in std::fs::read_dir(&case_dir).unwrap() {
-                        let file = block_and_attestation.unwrap();
-                        let file_path = file.path();
-                        let file_name = file.file_name().into_string().unwrap();
+                    for entry in std::fs::read_dir(base_path).unwrap() {
+                        let entry = entry.unwrap();
+                        let case_dir = entry.path();
 
-                        if file_name.starts_with("attestation_") && file_name.ends_with(".ssz_snappy") {
-                            let attestation: Attestation = utils::read_ssz_snappy(&file_path).expect("Failed to read attestation file");
+                        if !case_dir.is_dir() {
+                            continue;
                         }
 
-                        if file_name.starts_with("block_") && file_name.ends_with(".ssz_snappy") {
-                            let block: SignedBeaconBlock = utils::read_ssz_snappy(&file_path).expect("Failed to read block file");
-                        }
-                    }
+                        let case_name = case_dir.file_name().unwrap().to_str().unwrap();
+                        println!("Testing case: {}", case_name);
 
-                    let mut store = get_forkchoice_store(anchor_state.clone(), anchor_block.clone());
+                        let steps: Vec<ForkChoiceStep> = {
+                            let steps_path = case_dir.join("steps.yaml");
+                            let content =
+                                std::fs::read_to_string(&steps_path).expect("Failed to read steps.yaml");
+                            serde_yaml::from_str::<Vec<ForkChoiceStep>>(&content)
+                                .expect("Failed to parse steps.yaml")
+                        };
 
+                        let anchor_state: BeaconState =
+                            utils::read_ssz_snappy(&case_dir.join("anchor_state.ssz_snappy"))
+                                .expect("Failed to read anchor_state.ssz_snappy");
+                        let anchor_block: BeaconBlock =
+                            utils::read_ssz_snappy(&case_dir.join("anchor_block.ssz_snappy"))
+                                .expect("Failed to read anchor_block.ssz_snappy");
 
-                    match (result, inactivity_penalty_deltas) {
-                        (Ok(result), Some(expected)) => {
-                            assert_eq!(state, expected, "Post state mismatch in case {case_name}");
-                        }
-                        (Ok(_), None) => {
-                            panic!("Test case {case_name} should have failed but succeeded");
-                        }
-                        (Err(err), Some(_)) => {
-                            panic!("Test case {case_name} should have succeeded but failed, err={err:?}");
-                        }
-                        (Err(_), None) => {
-                            // Test should fail and there should be no post state
-                            // This is the expected outcome for invalid operations
+                        let mut store = get_forkchoice_store(anchor_state.clone(), anchor_block.clone())
+                            .expect("get_forkchoice_store failed");
+
+                        for step in steps {
+                            match step {
+                                ForkChoiceStep::Tick(ticks) => {
+                                    on_tick(&mut store, ticks.tick).expect("on_tick failed");
+                                }
+                                ForkChoiceStep::Block(blocks) => {
+                                    let block_path = case_dir.join(format!("{}.ssz_snappy", blocks.block));
+                                    if !block_path.exists() {
+                                        panic!("Test asset not found: {:?}", block_path);
+                                    }
+                                    let block: SignedBeaconBlock = utils::read_ssz_snappy(&block_path)
+                                        .unwrap_or_else(|_| {
+                                            panic!("cannot find test asset (block_{blocks:?}.ssz_snappy)")
+                                        });
+
+                                    on_block(&mut store, &block, &mock_engine)
+                                        .await
+                                        .expect("on_block failed");
+                                }
+                                ForkChoiceStep::Attestation(attestations) => {
+                                    let attestation_path =
+                                        case_dir.join(format!("{}.ssz_snappy", attestations.attestation));
+                                    if !attestation_path.exists() {
+                                        panic!("Test asset not found: {:?}", attestation_path);
+                                    }
+                                    let attestation: Attestation = utils::read_ssz_snappy(&attestation_path)
+                                        .unwrap_or_else(|_| {
+                                            panic!("cannot find test asset (block_{attestations:?}.ssz_snappy)")
+                                        });
+                                    on_attestation(&mut store, attestation.clone(), false)
+                                        .expect("on_attestation failed");
+                                }
+                                ForkChoiceStep::AttesterSlashing(slashing_step) => {
+                                    let slashing_path = case_dir
+                                        .join(format!("{}.ssz_snappy", slashing_step.attester_slashing));
+                                    if !slashing_path.exists() {
+                                        panic!("Test asset not found: {:?}", slashing_path);
+                                    }
+                                    let slashing: AttesterSlashing = utils::read_ssz_snappy(&slashing_path)
+                                        .unwrap_or_else(|_| {
+                                            panic!(
+                                                "cannot find test asset (block_{slashing_step:?}.ssz_snappy)"
+                                            )
+                                        });
+                                    on_attester_slashing(&mut store, slashing)
+                                        .expect("on_attester_slashing failed");
+                                }
+                                ForkChoiceStep::Checks { checks } => {
+                                    if let Some(time) = checks.time {
+                                        assert_eq!(
+                                            store.time, time,
+                                            "checks time mismatch in case {case_name}"
+                                        );
+                                    }
+                                    if let Some(justified_checkpoint) = checks.justified_checkpoint {
+                                        assert_eq!(
+                                            store.justified_checkpoint, justified_checkpoint,
+                                            "checks justified_checkpoint mismatch in case {case_name}"
+                                        );
+                                    }
+                                    if let Some(finalized_checkpoint) = checks.finalized_checkpoint {
+                                        assert_eq!(
+                                            store.finalized_checkpoint, finalized_checkpoint,
+                                            "checks finalized_checkpoint mismatch in case {case_name}"
+                                        );
+                                    }
+                                    if let Some(proposer_boost_root) = checks.proposer_boost_root {
+                                        assert_eq!(
+                                            store.proposer_boost_root, proposer_boost_root,
+                                            "checks proposer_boost_root mismatch in case {case_name}"
+                                        );
+                                    }
+                                }
+                            }
                         }
                     }
                 }

@@ -4,7 +4,7 @@ use alloy_primitives::{
     B256,
     map::{HashMap, HashSet},
 };
-use anyhow::{anyhow, bail, ensure};
+use anyhow::{anyhow, ensure};
 use ream_consensus::{
     attestation::Attestation,
     attester_slashing::AttesterSlashing,
@@ -13,6 +13,7 @@ use ream_consensus::{
     deneb::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
+        execution_payload::ExecutionPayload,
     },
     execution_engine::{blob_versioned_hashes::blob_versioned_hashes, engine_trait::ExecutionApi},
     fork_choice::latest_message::LatestMessage,
@@ -26,8 +27,7 @@ use tree_hash::TreeHash;
 use crate::store::Store;
 
 pub async fn is_data_available(
-    beacon_block_root: B256,
-    store: &Store,
+    execution_payload: &ExecutionPayload,
     blob_kzg_commitments: &[KZGCommitment],
     execution_engine: &impl ExecutionApi,
 ) -> anyhow::Result<bool> {
@@ -35,11 +35,7 @@ pub async fn is_data_available(
     // It returns all the blobs for the given block root, and raises an exception if not available
     // Note: the p2p network does not guarantee sidecar retrieval outside of
     // `MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS`
-
-    let Some(beacon_block) = store.blocks.get(&beacon_block_root) else {
-        bail!("could not get beack block");
-    };
-    let blob_versioned_hashes = blob_versioned_hashes(&beacon_block.body.execution_payload)?;
+    let blob_versioned_hashes = blob_versioned_hashes(execution_payload)?;
     let blobs_and_proofs = execution_engine
         .engine_get_blobs_v1(blob_versioned_hashes)
         .await?;
@@ -145,10 +141,24 @@ pub async fn on_block(
     let block = &signed_block.message;
 
     // Parent block must be known
-    ensure!(store.block_states.contains_key(&block.parent_root));
+    if !store.block_states.contains_key(&block.parent_root) {
+        println!(
+            "Missing parent block state for parent_root: {:x}",
+            block.parent_root
+        );
+        return Ok(());
+    }
+
     // Blocks cannot be in the future. If they are, their consideration must be delayed until they
     // are in the past.
-    ensure!(store.get_current_slot() >= block.slot);
+    if store.get_current_slot() < block.slot {
+        println!(
+            "Block slot is ahead of current slot: block.slot = {}, store.get_current_slot() = {}",
+            block.slot,
+            store.get_current_slot()
+        );
+        return Ok(());
+    }
 
     // Check that block is later than the finalized epoch slot (optimization to reduce calls to
     // get_ancestor)
@@ -168,8 +178,7 @@ pub async fn on_block(
     // received on the p2p network MUST NOT invalidate a block that is otherwise valid and available
     ensure!(
         is_data_available(
-            block.tree_hash_root(),
-            store,
+            &block.body.execution_payload,
             &block.body.blob_kzg_commitments,
             execution_engine
         )
@@ -198,7 +207,7 @@ pub async fn on_block(
         .insert(block.tree_hash_root(), is_timely);
 
     // Add proposer score boost if the block is timely and not conflicting with an existing block
-    let is_first_block = store.proposer_boost_root == block_root;
+    let is_first_block = store.proposer_boost_root == B256::default();
     if is_timely && is_first_block {
         store.proposer_boost_root = block.tree_hash_root()
     }
