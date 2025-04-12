@@ -1,4 +1,4 @@
-use ream_consensus::deneb::beacon_state::BeaconState;
+use ream_consensus::{deneb::beacon_state::BeaconState, withdrawal::Withdrawal};
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
@@ -96,7 +96,16 @@ pub async fn get_pending_partial_withdrawals(
     let state = get_state_from_id(state_id, &db).await?;
 
     let withdrawals = state.get_expected_withdrawals();
-    let withdrawal_data: Vec<WithdrawalData> = withdrawals
+    let partial_withdrawals: Vec<Withdrawal> = withdrawals
+        .into_iter()
+        .filter(|w| {
+            let validator = &state.validators[w.validator_index as usize];
+            let balance = state.balances[w.validator_index as usize];
+            validator.is_partially_withdrawable_validator(balance)
+        })
+        .collect();
+
+    let withdrawal_data: Vec<WithdrawalData> = partial_withdrawals
         .into_iter()
         .map(|w| WithdrawalData {
             validator_index: w.validator_index,
