@@ -3,17 +3,18 @@ use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
+use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
 use warp::{
     http::status::StatusCode,
     reject::Rejection,
-    reply::{Reply, with_status},
+    reply::{Reply,with_status},
 };
 
 use crate::types::{
     errors::ApiError,
     id::ID,
-    response::{BeaconResponse, RootResponse},
+    response::{BeaconResponse, BeaconVersionedResponse, RootResponse},
 };
 
 pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {
@@ -76,4 +77,37 @@ pub async fn get_state_root(state_id: ID, db: ReamDB) -> Result<impl Reply, Reje
         BeaconResponse::json(RootResponse::new(state_root)),
         StatusCode::OK,
     ))
+}
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct WithdrawalData {
+    #[serde(with = "serde_utils::quoted_u64")]
+    validator_index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    amount: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    withdrawable_epoch: u64,
+}
+// Called by `/states/{state_id}/get_pending_partial_withdrawals` to get pending partial withdrawals for state with given stateId
+pub async fn get_pending_partial_withdrawals(
+    state_id: ID,
+    db: ReamDB,
+) -> Result<impl Reply, Rejection> {
+    let state = get_state_from_id(state_id, &db).await?;
+
+    let withdrawals = state.get_expected_withdrawals();
+    let withdrawal_data: Vec<WithdrawalData> = withdrawals
+        .into_iter()
+        .map(|w| WithdrawalData {
+            validator_index: w.validator_index,
+            amount: w.amount,
+            withdrawable_epoch: state.get_current_epoch(),
+        })
+        .collect();
+    let response = warp::reply::with_header(
+        BeaconVersionedResponse::json(withdrawal_data),
+        "Eth-Consensus-Version",
+        "electra",
+    );
+
+    Ok(with_status(response, StatusCode::OK))
 }
