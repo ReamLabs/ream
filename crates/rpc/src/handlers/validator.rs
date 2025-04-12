@@ -360,7 +360,7 @@ pub async fn get_validator_balances_from_state(
                     return None;
                 }
             }
-            let balance = state.validators.get(i).map(|v| v.effective_balance).unwrap();
+            let balance = state.validators.get(i).map(|v| v.effective_balance).expect("Validator balance not found");
             Some(ValidatorBalance {
                 index: i as u64,
                 balance: balance,
