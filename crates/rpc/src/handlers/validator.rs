@@ -331,6 +331,12 @@ pub async fn get_validator_balances_from_state(
 ) -> Result<impl Reply, Rejection> {
     let state = get_state_from_id(state_id, &db).await?;
 
+    if let Some(ref ids) = query.id {
+        if ids.len() > 1000 {
+            return Err(ApiError::TooManyValidatorIds("Too many validator IDs in request".to_string()))?;
+        }
+    }
+
     let filter: Option<HashSet<PubKey>> = match &query.id {
         Some(ids) if ids.is_empty() => None,
         Some(ids) => {
@@ -340,12 +346,6 @@ pub async fn get_validator_balances_from_state(
                     _ => None,
                 }
             }).collect();
-
-            if addresses.len() > 1000 {
-                return Err(ApiError::TooManyValidatorIds(
-                    "Too many validator IDs in request".to_string(),
-                ))?;
-            }
             Some(addresses)
         },
         None => None,
