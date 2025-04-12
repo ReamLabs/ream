@@ -8,7 +8,7 @@ use tree_hash::TreeHash;
 use warp::{
     http::status::StatusCode,
     reject::Rejection,
-    reply::{Reply,with_status},
+    reply::{Reply, with_status},
 };
 
 use crate::types::{
@@ -87,7 +87,8 @@ pub struct WithdrawalData {
     #[serde(with = "serde_utils::quoted_u64")]
     withdrawable_epoch: u64,
 }
-// Called by `/states/{state_id}/get_pending_partial_withdrawals` to get pending partial withdrawals for state with given stateId
+// Called by `/states/{state_id}/get_pending_partial_withdrawals` to get pending partial withdrawals
+// for state with given stateId
 pub async fn get_pending_partial_withdrawals(
     state_id: ID,
     db: ReamDB,
