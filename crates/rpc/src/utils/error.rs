@@ -1,21 +1,14 @@
+use std::str::FromStr;
+
 use warp::{
+    Filter,
     http::StatusCode,
-    reject::Rejection,
+    reject::{Rejection, custom},
     reply::{Reply, json, with_status},
 };
 
 use crate::types::errors::{ApiError, ErrorMessage};
 pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
-    if err.is_not_found() {
-        return Ok(with_status(
-            json(&ErrorMessage {
-                code: 404,
-                message: "Not Found".to_string(),
-            }),
-            StatusCode::NOT_FOUND,
-        ));
-    }
-
     if let Some(api_error) = err.find::<ApiError>() {
         let (status, message) = match api_error {
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
@@ -48,4 +41,16 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
         }),
         StatusCode::INTERNAL_SERVER_ERROR,
     ))
+}
+
+pub fn parsed_param<T>() -> impl Filter<Extract = (T,), Error = Rejection> + Clone
+where
+    T: FromStr<Err = ApiError> + Send + 'static,
+{
+    warp::path::param::<String>().and_then(|s: String| async move {
+        match s.parse::<T>() {
+            Ok(val) => Ok(val),
+            Err(e) => Err(custom(e)),
+        }
+    })
 }

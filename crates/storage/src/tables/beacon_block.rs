@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-use ream_consensus::deneb::beacon_block::BeaconBlock;
+use ream_consensus::deneb::beacon_block::SignedBeaconBlock;
 use redb::{Database, Durability, TableDefinition};
 use tree_hash::TreeHash;
 
@@ -14,7 +14,7 @@ use crate::errors::StoreError;
 ///
 /// Key: block_id
 /// Value: BeaconBlock
-pub const BEACON_BLOCK_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<BeaconBlock>> =
+pub const BEACON_BLOCK_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<SignedBeaconBlock>> =
     TableDefinition::new("beacon_block");
 
 pub struct BeaconBlockTable {
@@ -24,7 +24,7 @@ pub struct BeaconBlockTable {
 impl Table for BeaconBlockTable {
     type Key = B256;
 
-    type Value = BeaconBlock;
+    type Value = SignedBeaconBlock;
 
     fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
         let read_txn = self.db.begin_read()?;
@@ -40,13 +40,13 @@ impl Table for BeaconBlockTable {
         let slot_index_table = SlotIndexTable {
             db: self.db.clone(),
         };
-        slot_index_table.insert(value.slot, block_root)?;
+        slot_index_table.insert(value.message.slot, block_root)?;
 
         // insert entry to state root index table
         let state_root_index_table = StateRootIndexTable {
             db: self.db.clone(),
         };
-        state_root_index_table.insert(value.state_root, block_root)?;
+        state_root_index_table.insert(value.message.state_root, block_root)?;
 
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate);
