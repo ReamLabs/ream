@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use kzg::eip_4844::verify_blob_kzg_proof_batch_raw;
 use ream_consensus::{
     constants::BYTES_PER_BLOB, execution_engine::rpc_types::get_blobs::Blob,
@@ -16,8 +17,12 @@ pub fn verify_blob_kzg_proof_batch(
 ) -> anyhow::Result<bool> {
     let raw_blobs: Vec<[u8; BYTES_PER_BLOB]> = blobs
         .iter()
-        .map(|blob| blob.as_slice().try_into().unwrap())
-        .collect();
+        .map(|blob| {
+            blob.as_slice()
+                .try_into()
+                .map_err(|_| anyhow!("blob is not correct"))
+        })
+        .collect::<Result<_, _>>()?;
 
     let raw_commitments = commitments_bytes
         .iter()

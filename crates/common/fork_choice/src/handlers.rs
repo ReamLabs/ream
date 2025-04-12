@@ -141,24 +141,20 @@ pub async fn on_block(
     let block = &signed_block.message;
 
     // Parent block must be known
-    if !store.block_states.contains_key(&block.parent_root) {
-        println!(
-            "Missing parent block state for parent_root: {:x}",
-            block.parent_root
-        );
-        return Ok(());
-    }
+    ensure!(
+        store.block_states.contains_key(&block.parent_root),
+        "Missing parent block state for parent_root: {:x}",
+        block.parent_root
+    );
 
     // Blocks cannot be in the future. If they are, their consideration must be delayed until they
     // are in the past.
-    if store.get_current_slot() < block.slot {
-        println!(
-            "Block slot is ahead of current slot: block.slot = {}, store.get_current_slot() = {}",
-            block.slot,
-            store.get_current_slot()
-        );
-        return Ok(());
-    }
+    ensure!(
+        store.get_current_slot() >= block.slot,
+        "Block slot is ahead of current slot: block.slot = {}, store.get_current_slot() = {}",
+        block.slot,
+        store.get_current_slot()
+    );
 
     // Check that block is later than the finalized epoch slot (optimization to reduce calls to
     // get_ancestor)
@@ -207,7 +203,7 @@ pub async fn on_block(
         .insert(block.tree_hash_root(), is_timely);
 
     // Add proposer score boost if the block is timely and not conflicting with an existing block
-    let is_first_block = store.proposer_boost_root == B256::default();
+    let is_first_block = store.proposer_boost_root == B256::ZERO;
     if is_timely && is_first_block {
         store.proposer_boost_root = block.tree_hash_root()
     }

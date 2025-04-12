@@ -24,8 +24,8 @@ tokio.workspace = true
 tree_hash.workspace = true
 
 # ream
-ream-consensus = { path = "../../crates/common/consensus" }
-ream-fork-choice = { path = "../../crates/common/fork_choice" }
+ream-consensus.workspace = true
+ream-fork-choice.workspace = true
 
 [features]
 ef-tests = []
