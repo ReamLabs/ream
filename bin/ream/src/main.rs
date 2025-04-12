@@ -4,9 +4,11 @@ use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_discv5::config::NetworkConfig;
 use ream_executor::ReamExecutor;
+use ream_node::network_channel::NetworkChannel;
 use ream_p2p::network::Network;
 use ream_rpc::{config::ServerConfig, start_server};
 use ream_storage::db::ReamDB;
+use tokio::sync::mpsc;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -58,13 +60,21 @@ async fn main() {
 
             info!("ream database initialized ");
 
-            let http_future = start_server(config.network.clone(), server_config, ream_db);
+            let (request_tx, request_rx) = mpsc::channel(100);
+            let network_channel = NetworkChannel::new(request_tx);
+
+            let http_future = start_server(
+                config.network.clone(),
+                server_config,
+                ream_db,
+                network_channel,
+            );
 
             let network_future = async {
                 match Network::init(async_executor, &binding).await {
                     Ok(mut network) => {
                         main_executor.spawn(async move {
-                            network.polling_events().await;
+                            network.polling_events(request_rx).await;
                         });
                         tokio::signal::ctrl_c()
                             .await

@@ -3,6 +3,7 @@ use std::{
     fmt::Debug,
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -24,6 +25,11 @@ use ream_discv5::{
     discovery::{DiscoveredPeers, Discovery},
 };
 use ream_executor::ReamExecutor;
+use ream_node::{
+    peer::{Peer, PeerCountData, PeerStatus},
+    network_channel::NetworkRequest,
+};
+use tokio::sync::mpsc::Receiver;
 use tracing::{error, info, warn};
 
 #[derive(NetworkBehaviour)]
@@ -52,6 +58,7 @@ pub enum ReamNetworkEvent {
 pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
+    peers: Arc<RwLock<HashMap<PeerId, Peer>>>,
 }
 
 struct Executor(ReamExecutor);
@@ -124,6 +131,7 @@ impl Network {
 
         let mut network = Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
+            peers: Arc::new(RwLock::new(HashMap::new())),
             swarm,
         };
 
@@ -163,9 +171,19 @@ impl Network {
     }
 
     /// polling the libp2p swarm for network events.
-    pub async fn polling_events(&mut self) -> ReamNetworkEvent {
+    pub async fn polling_events(
+        &mut self,
+        mut request_rx: Receiver<NetworkRequest>,
+    ) -> ReamNetworkEvent {
         loop {
             tokio::select! {
+                 Some(request) = request_rx.recv() => {
+                    match request {
+                        NetworkRequest::GetPeerCount(response_tx) => {
+                            let _ = response_tx.send(self.get_peer_counts());
+                        },
+                    }
+                }
                 Some(event) = self.swarm.next() => {
                     if let Some(event) = self.parse_swarm_event(event){
                         return event;
@@ -179,7 +197,6 @@ impl Network {
         &mut self,
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {
-        // currently no-op for any network events
         info!("Event: {:?}", event);
         match event {
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -193,6 +210,35 @@ impl Network {
                     None
                 }
             },
+            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                self.upsert_peer_status(peer_id, PeerStatus::Connected);
+                info!("Peer connected: {}", peer_id);
+                None
+            }
+            SwarmEvent::OutgoingConnectionError { peer_id, .. } => {
+                if let Some(peer_id) = peer_id {
+                    self.upsert_peer_status(peer_id, PeerStatus::Disconnected);
+                }
+                None
+            }
+            SwarmEvent::IncomingConnectionError { .. } => {
+                // No specific peer to track for incoming connection errors
+                None
+            }
+            SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                self.upsert_peer_status(peer_id, PeerStatus::Disconnected);
+                info!("Peer disconnected: {}", peer_id);
+                None
+            }
+            SwarmEvent::Dialing { peer_id, .. } => {
+                if let Some(peer_id) = peer_id {
+                    self.upsert_peer_status(peer_id, PeerStatus::Connecting);
+                    info!("Dialing peer: {}", peer_id);
+                } else {
+                    warn!("Dialing event without peer_id");
+                }
+                None
+            }
             swarm_event => {
                 info!("Unhandled swarm event: {swarm_event:?}");
                 None
@@ -224,6 +270,45 @@ impl Network {
                 }
             }
         }
+    }
+
+    fn upsert_peer_status(&self, peer_id: PeerId, status: PeerStatus) {
+        if let Ok(mut peers) = self.peers.write() {
+            peers.insert(
+                peer_id,
+                Peer {
+                    id: peer_id,
+                    status,
+                },
+            );
+            info!("Peer {}: status changed to {:?}", peer_id, status);
+        }
+    }
+
+    // todo: when should a peer be removed?
+    // fn remove_peer(&self, peer_id: &PeerId) {
+    //     if let Ok(mut peers) = self.peers.write() {
+    //         peers.remove(peer_id);
+    //         info!("Peer {}: removed from tracking", peer_id);
+    //     }
+    // }
+
+    pub fn get_peer_counts(&self) -> PeerCountData {
+        let mut connected = 0;
+        let mut connecting = 0;
+        let mut disconnecting = 0;
+        let mut disconnected = 0;
+        if let Ok(peers) = self.peers.read() {
+            for peer in peers.values() {
+                match peer.status {
+                    PeerStatus::Connected => connected += 1,
+                    PeerStatus::Connecting => connecting += 1,
+                    PeerStatus::Disconnecting => disconnecting += 1,
+                    PeerStatus::Disconnected => disconnected += 1,
+                }
+            }
+        }
+        PeerCountData { connected, connecting, disconnecting, disconnected }
     }
 }
 
