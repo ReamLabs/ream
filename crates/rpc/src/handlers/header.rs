@@ -9,8 +9,10 @@ use warp::{
     reply::{Reply, with_status},
 };
 
+use super::block::get_beacon_block_from_id;
 use crate::types::{
     errors::ApiError,
+    id::ID,
     query::{ParentRootQuery, SlotQuery},
     response::BeaconResponse,
 };
@@ -98,31 +100,22 @@ pub async fn get_header_from_slot(
     slot: u64,
     db: ReamDB,
 ) -> Result<(SignedBeaconBlockHeader, B256), ApiError> {
-    let block_root = db
-        .slot_index_provider()
-        .get(slot)
-        .map_err(|_| ApiError::InternalError)?
-        .ok_or_else(|| ApiError::NotFound(String::from("Block Root not found")))?;
-
-    let signed_block = db
-        .beacon_block_provider()
-        .get(block_root)
-        .map_err(|_| ApiError::InternalError)?
-        .ok_or_else(|| ApiError::NotFound(String::from("Header not found")))?;
+    let beacon_block = get_beacon_block_from_id(ID::Slot(slot), &db).await?;
 
     let header_message = BeaconBlockHeader {
-        slot: signed_block.message.slot,
-        proposer_index: signed_block.message.proposer_index,
-        state_root: signed_block.message.state_root,
-        parent_root: signed_block.message.parent_root,
-        body_root: signed_block.message.body.tree_hash_root(),
+        slot: beacon_block.message.slot,
+        proposer_index: beacon_block.message.proposer_index,
+        state_root: beacon_block.message.state_root,
+        parent_root: beacon_block.message.parent_root,
+        body_root: beacon_block.message.body.tree_hash_root(),
     };
+    let root = header_message.tree_hash_root();
 
     Ok((
         SignedBeaconBlockHeader {
             message: header_message,
-            signature: signed_block.signature,
+            signature: beacon_block.signature,
         },
-        block_root,
+        root,
     ))
 }

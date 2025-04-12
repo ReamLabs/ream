@@ -72,7 +72,7 @@ pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, A
     Ok(block_root)
 }
 
-async fn get_beacon_block_from_id(
+pub async fn get_beacon_block_from_id(
     block_id: ID,
     db: &ReamDB,
 ) -> Result<SignedBeaconBlock, ApiError> {
