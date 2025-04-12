@@ -18,7 +18,7 @@ use crate::{
         genesis::get_genesis,
         header::get_headers,
         randao::get_randao_mix,
-        state::get_state_root,
+        state::{get_pending_partial_withdrawals, get_state_root},
         validator::get_validator_from_state,
     },
     types::{
@@ -132,6 +132,15 @@ pub fn get_beacon_routes(
         .and(db_filter.clone())
         .and_then(move |block_id: ID, db: ReamDB| get_block_rewards(block_id, db))
         .with(log("block_rewards"));
+    let pending_partial_withdrawals = beacon_base
+        .and(path("states"))
+        .and(parsed_param::<ID>())
+        .and(path("pending_partial_withdrawals"))
+        .and(end())
+        .and(get())
+        .and(db_filter.clone())
+        .and_then(move |state_id: ID, db: ReamDB| get_pending_partial_withdrawals(state_id, db))
+        .with(log("pending_partial_withdrawals"));
 
     genesis
         .or(validator)
@@ -141,6 +150,7 @@ pub fn get_beacon_routes(
         .or(state_root)
         .or(block_root)
         .or(block_rewards)
+        .or(pending_partial_withdrawals)
         .or(headers)
 }
 
