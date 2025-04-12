@@ -58,22 +58,8 @@ impl StatusQuery {
         }
     }
 }
-#[derive(Debug, Deserialize)]
-pub struct SlotQuery {
-    pub slot: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RootQuery {
-    pub root: Option<B256>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ParentRootQuery {
-    pub parent_root: Option<B256>,
-}
 
 #[derive(Debug, Deserialize)]
 pub struct ValidatorBalanceQuery {
-    pub id: Option<Vec<String>>,
+    pub id: Option<Vec<ValidatorID>>,
 }

@@ -7,6 +7,7 @@ use alloy_primitives::map::HashSet;
 use ream_bls::PubKey;
 use std::collections::HashSet;
 
+use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
@@ -48,8 +49,10 @@ impl ValidatorData {
 
 #[derive(Debug, Serialize)]
 struct ValidatorBalance {
-    index: String,
-    balance: String,
+    #[serde(with = "serde_utils::quoted_u64")]
+    index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    balance: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -326,48 +329,48 @@ pub async fn get_validator_balances_from_state(
     query: ValidatorBalanceQuery, 
     db: ReamDB,
 ) -> Result<impl Reply, Rejection> {
-
     let state = get_state_from_id(state_id, &db).await?;
 
-    let filter: Option<HashSet<String>> = match query.id {
-        Some(ref ids) if ids.is_empty() => None,
-        Some(ids) => Some(ids.into_iter().collect()),
+    let filter: Option<HashSet<PubKey>> = match &query.id {
+        Some(ids) if ids.is_empty() => None,
+        Some(ids) => {
+            let addresses: HashSet<PubKey> = ids.iter().filter_map(|v| {
+                match v {
+                    ValidatorID::Address(addr) => Some(addr.clone()),
+                    _ => None,
+                }
+            }).collect();
+
+            if addresses.len() > 1000 {
+                return Err(ApiError::TooManyValidatorIds(
+                    "Too many validator IDs in request".to_string(),
+                ))?;
+            }
+            Some(addresses)
+        },
         None => None,
     };
-
-    //need to decide on the limit
-    if let Some(ref ids) = filter {
-        if ids.len() > 1000 {
-            return Err(ApiError::TooManyValidatorIds("Too many validator IDs in request".to_string()))?;
-        }
-    }
 
     let validator_balances: Vec<ValidatorBalance> = state
         .validators
         .iter()
         .enumerate()
         .filter_map(|(i, validator)| {
-            if let Some(ref ids) = filter {
-                if !ids.contains(&i.to_string()) && !ids.contains(&format!("{:?}", validator.pubkey)) {
+            if let Some(ref addresses) = filter {
+                if !addresses.contains(&validator.pubkey) {
                     return None;
                 }
             }
-            let balance = state.balances.get(i).unwrap_or(&0);
+            let balance = state.validators.get(i).map(|v| v.effective_balance).unwrap();
             Some(ValidatorBalance {
-                index: i.to_string(),
-                balance: balance.to_string(),
+                index: i as u64,
+                balance: balance,
             })
         })
         .collect();
 
-    let response = BeaconResponse {
-        execution_optimistic: false,
-        finalized: false,
-        data: validator_balances,
-    };
-
     Ok(warp::reply::with_status(
-        warp::reply::json(&response),
+        BeaconResponse::json(validator_balances),
         StatusCode::OK,
     ))
 }
