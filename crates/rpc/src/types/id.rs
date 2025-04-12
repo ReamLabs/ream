@@ -58,7 +58,7 @@ impl fmt::Display for ID {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ValidatorID {
     Index(u64),
