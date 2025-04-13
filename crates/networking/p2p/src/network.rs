@@ -363,8 +363,10 @@ mod tests {
 
     use ream_discv5::config::DiscoveryConfig;
     use ream_executor::ReamExecutor;
-    use ream_gossipsub::config::GossipsubConfig;
-    use ream_gossipsub::topics::{GossipTopic, GossipTopicKind};
+    use ream_gossipsub::{
+        config::GossipsubConfig,
+        topics::{GossipTopic, GossipTopicKind},
+    };
     use tokio::runtime::Runtime;
 
     use super::*;
