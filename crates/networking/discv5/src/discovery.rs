@@ -6,6 +6,7 @@ use std::{
     time::Instant,
 };
 
+use alloy_rlp::Bytes;
 use anyhow::anyhow;
 use discv5::{
     Discv5, Enr,
@@ -55,6 +56,7 @@ struct QueryResult {
 
 pub struct Discovery {
     discv5: Discv5,
+    local_enr: Enr,
     event_stream: EventStream,
     discovery_queries: FuturesUnordered<Pin<Box<dyn Future<Output = QueryResult> + Send>>>,
     find_peer_active: bool,
@@ -73,14 +75,14 @@ impl Discovery {
         enr_builder.ip(config.socket_address);
         enr_builder.udp4(config.socket_port);
         if let Some(attestation_bytes) = config.subnets.attestation_bytes() {
-            enr_builder.add_value(ATTESTATION_BITFIELD_ENR_KEY, &attestation_bytes);
+            enr_builder.add_value::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &attestation_bytes);
         }
         let enr = enr_builder
             .build(&enr_key)
             .map_err(|e| anyhow::anyhow!("Failed to build ENR: {:?}", e))?;
         let node_local_id = enr.node_id();
 
-        let mut discv5 = Discv5::new(enr, enr_key, config.discv5_config.clone())
+        let mut discv5 = Discv5::new(enr.clone(), enr_key, config.discv5_config.clone())
             .map_err(|e| anyhow::anyhow!("Failed to create discv5: {:?}", e))?;
 
         for bootnode_enr in config.bootnodes.clone() {
@@ -105,12 +107,17 @@ impl Discovery {
 
         Ok(Self {
             discv5,
+            local_enr: enr,
             event_stream,
             discovery_queries: FuturesUnordered::new(),
             find_peer_active: false,
             started: !config.disable_discovery,
             subnets: config.subnets.clone(),
         })
+    }
+
+    pub fn local_enr(&self) -> &Enr {
+        &self.local_enr
     }
 
     pub fn discover_peers(&mut self, target_peers: usize) {
@@ -149,7 +156,7 @@ impl Discovery {
                 }
                 if let Some(bytes) = current_subnets.attestation_bytes() {
                     self.discv5
-                        .enr_insert(ATTESTATION_BITFIELD_ENR_KEY, &bytes)
+                        .enr_insert::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &bytes)
                         .map_err(|e| format!("Failed to update ENR attnets: {:?}", e))?;
                 }
             }
@@ -337,4 +344,157 @@ fn convert_to_enr(key: Keypair) -> anyhow::Result<CombinedKey> {
     let secret = SigningKey::from_slice(&key.secret().to_bytes())
         .map_err(|err| anyhow!("Failed to convert keypair to SigningKey: {err:?}"))?;
     Ok(CombinedKey::Secp256k1(secret))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv4Addr;
+
+    use libp2p::identity::Keypair;
+
+    use super::*;
+    use crate::config::NetworkConfig;
+
+    #[tokio::test]
+    async fn test_initial_subnet_setup() -> Result<(), String> {
+        let key = Keypair::generate_secp256k1();
+        let mut config = NetworkConfig::default();
+        config.subnets.enable_subnet(Subnet::Attestation(0)); // Set subnet 0
+        config.subnets.disable_subnet(Subnet::Attestation(1)); // Set subnet 0
+        config.disable_discovery = true;
+
+        let discovery = Discovery::new(key, &config).await.unwrap();
+        let enr: &discv5::enr::Enr<CombinedKey> = discovery.local_enr();
+
+        // Check ENR reflects config.subnets
+        let enr_subnets = Subnets::from_enr(enr)?;
+        assert!(enr_subnets.is_active(Subnet::Attestation(0)));
+        assert!(!enr_subnets.is_active(Subnet::Attestation(1)));
+        assert_eq!(
+            discovery.subnets.attestation_bytes(),
+            enr_subnets.attestation_bytes()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_subnet_update() -> Result<(), String> {
+        let key = Keypair::generate_secp256k1();
+        let mut config = NetworkConfig::default();
+        config.subnets.enable_subnet(Subnet::Attestation(0)); // Initial subnet 0
+        config.disable_discovery = true;
+
+        let mut discovery = Discovery::new(key, &config).await.unwrap();
+
+        // Update to enable subnet 1, disable 0
+        discovery.update_attestation_subnet(1, true).unwrap();
+        discovery.update_attestation_subnet(0, false).unwrap();
+
+        assert!(discovery.subnets.is_active(Subnet::Attestation(1)));
+        assert!(!discovery.subnets.is_active(Subnet::Attestation(0)));
+
+        let enr_subnets = Subnets::from_enr(discovery.local_enr())?;
+        assert!(enr_subnets.is_active(Subnet::Attestation(1)));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_subnet_predicate() {
+        let key = Keypair::generate_secp256k1();
+        let mut config = NetworkConfig::default();
+        config.subnets.enable_subnet(Subnet::Attestation(0)); // Local node on subnet 0
+        config.subnets.disable_subnet(Subnet::Attestation(1));
+        config.disable_discovery = true;
+
+        let discovery = Discovery::new(key, &config).await.unwrap();
+        let local_enr = discovery.local_enr();
+
+        // Predicate for subnet 0 should match
+        let predicate = subnet_predicate(vec![Subnet::Attestation(0)]);
+        assert!(predicate(local_enr));
+
+        // Predicate for subnet 1 should not match
+        let predicate = subnet_predicate(vec![Subnet::Attestation(1)]);
+        assert!(!predicate(local_enr));
+    }
+
+    #[tokio::test]
+    async fn test_discovery_with_subnets() {
+        let key = Keypair::generate_secp256k1();
+        let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::default())
+            .table_filter(|_| true)
+            .build();
+
+        let mut config = NetworkConfig {
+            disable_discovery: false,
+            discv5_config: discv5_config.clone(),
+            ..NetworkConfig::default()
+        };
+
+        config.subnets.enable_subnet(Subnet::Attestation(0)); // Local node on subnet 0
+        config.disable_discovery = false;
+        let mut discovery = Discovery::new(key, &config).await.unwrap();
+
+        // Simulate a peer with another Discovery instance
+        let peer_key = Keypair::generate_secp256k1();
+        let mut peer_config = NetworkConfig {
+            subnets: Subnets::new(),
+            disable_discovery: true,
+            discv5_config,
+            ..NetworkConfig::default()
+        };
+
+        peer_config.subnets.enable_subnet(Subnet::Attestation(0));
+        peer_config.socket_address = Ipv4Addr::new(192, 168, 1, 100).into(); // Non-localhost IP
+        peer_config.socket_port = 9001; // Different port
+        peer_config.disable_discovery = true;
+
+        let peer_discovery = Discovery::new(peer_key, &peer_config).await.unwrap();
+        let peer_enr = peer_discovery.local_enr().clone();
+
+        // Add peer to discv5
+        discovery.discv5.add_enr(peer_enr.clone()).unwrap();
+
+        // Discover peers on subnet 0
+        discovery.discover_subnet_peers(0, 1);
+
+        // Mock the query result to bypass async polling
+        discovery.discovery_queries.clear(); // Remove real query
+        let query_result = QueryResult {
+            query_type: QueryType::FindSubnetPeers(vec![Subnet::Attestation(0)]),
+            result: Ok(vec![peer_enr.clone()]),
+        };
+        discovery
+            .discovery_queries
+            .push(Box::pin(async move { query_result }));
+
+        // Poll the discovery to process the query
+        let mut cx = Context::from_waker(futures::task::noop_waker_ref());
+        if let Poll::Ready(ToSwarm::GenerateEvent(DiscoveredPeers { peers })) =
+            discovery.poll(&mut cx)
+        {
+            assert_eq!(peers.len(), 1);
+            assert!(peers.contains_key(&peer_enr));
+        } else {
+            panic!("Expected peers to be discovered");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_invalid_subnet_update() {
+        let key = Keypair::generate_secp256k1();
+        let config = NetworkConfig {
+            disable_discovery: true,
+            ..NetworkConfig::default()
+        };
+        let mut discovery = Discovery::new(key, &config).await.unwrap();
+
+        // Attempt to update with invalid subnet ID (64)
+        let result = discovery.update_attestation_subnet(64, true);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "Subnet ID 64 exceeds bitfield length 64"
+        );
+    }
 }

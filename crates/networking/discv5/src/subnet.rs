@@ -1,6 +1,6 @@
 use alloy_rlp::bytes::Bytes;
 use discv5::Enr;
-use ssz::Decode;
+use ssz::{Decode, Encode};
 use ssz_types::{BitVector, typenum::U64};
 use tracing::trace;
 
@@ -60,25 +60,32 @@ impl Subnets {
         }
     }
 
-    pub fn attestation_bytes(&self) -> Option<Vec<u8>> {
+    pub fn attestation_bytes(&self) -> Option<Bytes> {
         self.attestation_bits
             .as_ref()
-            .map(|bits| bits.clone().into_bytes().into_vec())
+            .map(|bits| bits.as_ssz_bytes().into())
     }
 
-    pub fn from_enr(enr: &Enr) -> Self {
-        let attestation_bits = enr
+    pub fn from_enr(enr: &Enr) -> Result<Subnets, String> {
+        let bitfield_bytes: Bytes = enr
             .get_decodable(ATTESTATION_BITFIELD_ENR_KEY)
-            .and_then(|res| res.ok())
-            .and_then(|bytes: Bytes| BitVector::<U64>::from_ssz_bytes(&bytes).ok());
+            .ok_or("ENR attestation bitfield non-existent")?
+            .map_err(|_| "Invalid RLP Encoding")?;
 
-        Self { attestation_bits }
+        let attestation_bits = BitVector::from_ssz_bytes(&bitfield_bytes)
+            .map_err(|_| "Could not decode the ENR attnets bitfield")?;
+        Ok(Subnets {
+            attestation_bits: Some(attestation_bits),
+        })
     }
 }
 
 pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + Sync {
     move |enr: &Enr| {
-        let subnets_state = Subnets::from_enr(enr);
+        let subnets_state = match Subnets::from_enr(enr) {
+            Ok(subnets) => subnets,
+            Err(_e) => return false,
+        };
         let attestation_bits = match &subnets_state.attestation_bits {
             Some(bits) => bits,
             None => {
