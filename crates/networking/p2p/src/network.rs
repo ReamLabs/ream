@@ -68,7 +68,7 @@ impl Network {
 
         let discovery = {
             let mut discovery = Discovery::new(Keypair::from(local_key.clone()), config).await?;
-            discovery.discover_peers(16);
+            discovery.discover_peers(16, None);
             discovery
         };
 

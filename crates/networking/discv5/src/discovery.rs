@@ -120,25 +120,20 @@ impl Discovery {
         &self.local_enr
     }
 
-    pub fn discover_peers(&mut self, target_peers: usize) {
+    pub fn discover_peers(&mut self, target_peers: usize, subnet_id: Option<u8>) {
         // If the discv5 service isn't running or we are in the process of a query, don't bother
         // queuing a new one.
         if !self.started || self.find_peer_active {
             return;
         }
         self.find_peer_active = true;
-        self.start_query(QueryType::FindPeers, target_peers);
-    }
 
-    pub fn discover_subnet_peers(&mut self, subnet_id: u8, target_peers: usize) {
-        if !self.started || self.find_peer_active {
-            return;
-        }
-        self.find_peer_active = true;
-        self.start_query(
-            QueryType::FindSubnetPeers(vec![Subnet::Attestation(subnet_id)]),
-            target_peers,
-        );
+        let query = match subnet_id {
+            Some(id) => QueryType::FindSubnetPeers(vec![Subnet::Attestation(id)]),
+            None => QueryType::FindPeers,
+        };
+
+        self.start_query(query, target_peers);
     }
 
     pub fn update_attestation_subnet(&mut self, subnet_id: u8, value: bool) -> Result<(), String> {
@@ -456,7 +451,7 @@ mod tests {
         discovery.discv5.add_enr(peer_enr.clone()).unwrap();
 
         // Discover peers on subnet 0
-        discovery.discover_subnet_peers(0, 1);
+        discovery.discover_peers(0, Some(1));
 
         // Mock the query result to bypass async polling
         discovery.discovery_queries.clear(); // Remove real query
