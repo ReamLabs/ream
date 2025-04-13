@@ -174,7 +174,7 @@ fn get_proposer_slashing_rewards(
     proposer_slashing_reward
 }
 
-fn get_atterter_slashing_rewards(
+fn get_attester_slashing_rewards(
     beacon_state: &BeaconState,
     beacon_block: &SignedBeaconBlock,
 ) -> u64 {
@@ -261,7 +261,7 @@ pub async fn get_block_rewards(
     let beacon_state = get_beacon_state(block_id, &db).await?;
 
     let attestation_reward = get_attestations_rewards(&beacon_state, &beacon_block);
-    let attester_slashing_reward = get_atterter_slashing_rewards(&beacon_state, &beacon_block);
+    let attester_slashing_reward = get_attester_slashing_rewards(&beacon_state, &beacon_block);
     let proposer_slashing_reward = get_proposer_slashing_rewards(&beacon_state, &beacon_block);
     let sync_committee_reward = get_sync_committee_rewards(&beacon_state, &beacon_block);
 
