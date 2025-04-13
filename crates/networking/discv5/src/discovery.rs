@@ -62,6 +62,8 @@ impl Discovery {
         enr_key: CombinedKey,
         config: &DiscoveryConfig,
     ) -> anyhow::Result<Self> {
+        info!("ENR: {}", enr);
+
         let node_local_id = enr.node_id();
 
         let mut discv5 = Discv5::new(enr, enr_key, config.discv5_config.clone())
@@ -103,7 +105,7 @@ impl Discovery {
     pub fn discover_peers(&mut self, target_peers: usize) {
         // If the discv5 service isn't running or we are in the process of a query, don't bother
         // queuing a new one.
-        info!("Discovering peers... ENR: {}", self.discv5.local_enr());
+        info!("Discovering peers...");
 
         if !self.started || self.find_peer_active {
             return;
