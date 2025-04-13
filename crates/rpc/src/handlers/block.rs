@@ -1,9 +1,18 @@
+use std::collections::BTreeSet;
+
 use actix_web::{
     HttpResponse, Responder, get,
     web::{Data, Path},
 };
 use alloy_primitives::B256;
-use ream_consensus::deneb::beacon_block::SignedBeaconBlock;
+use ream_consensus::{
+    attester_slashing::AttesterSlashing,
+    constants::{
+        EFFECTIVE_BALANCE_INCREMENT, PROPOSER_WEIGHT, SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE,
+        SYNC_REWARD_WEIGHT, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
+    },
+    deneb::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
+};
 use ream_network_spec::networks::NetworkSpec;
 use ream_storage::{
     db::ReamDB,
@@ -22,8 +31,8 @@ use crate::types::{
 pub struct BlockRewards {
     #[serde(with = "serde_utils::quoted_u64")]
     pub proposer_index: u64,
-    #[serde(with = "serde_utils::quoted_i64")]
-    pub total: i64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub total: u64,
     #[serde(with = "serde_utils::quoted_u64")]
     pub attestations: u64,
     #[serde(with = "serde_utils::quoted_u64")]
@@ -75,6 +84,124 @@ pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, A
     .ok_or_else(|| ApiError::NotFound(format!("Failed to find `block_root` from {block_id:?}")))?;
 
     Ok(block_root)
+}
+
+async fn get_beacon_state(block_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {
+    let block_root = get_block_root_from_id(block_id, db).await?;
+
+    db.beacon_state_provider()
+        .get(block_root)
+        .map_err(|_| ApiError::InternalError)?
+        .ok_or(ApiError::NotFound(format!(
+            "Failed to find `beacon_state` from {block_root:?}"
+        )))
+}
+
+fn get_attestations_rewards(beacon_state: &BeaconState, beacon_block: &SignedBeaconBlock) -> u64 {
+    let mut attester_reward = 0;
+    let attestations = &beacon_block.message.body.attestations;
+    for attestation in attestations {
+        if let Ok(attesting_indices) = beacon_state.get_attesting_indices(attestation) {
+            for index in attesting_indices {
+                attester_reward += beacon_state.get_proposer_reward(index);
+            }
+        }
+    }
+    attester_reward
+}
+
+fn get_sync_committee_rewards(beacon_state: &BeaconState, beacon_block: &SignedBeaconBlock) -> u64 {
+    let total_active_balance = beacon_state.get_total_active_balance();
+    let total_active_increments = total_active_balance / EFFECTIVE_BALANCE_INCREMENT;
+    let total_base_rewards = beacon_state.get_base_reward_per_increment() * total_active_increments;
+    let max_participant_rewards =
+        total_base_rewards * SYNC_REWARD_WEIGHT / WEIGHT_DENOMINATOR / SLOTS_PER_EPOCH;
+    let participant_reward = max_participant_rewards / SYNC_COMMITTEE_SIZE;
+    let proposer_reward =
+        participant_reward * PROPOSER_WEIGHT / (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT);
+
+    beacon_block
+        .message
+        .body
+        .sync_aggregate
+        .sync_committee_bits
+        .num_set_bits() as u64
+        * proposer_reward
+}
+
+fn get_slashable_attester_indices(
+    beacon_state: &BeaconState,
+    attester_shashing: &AttesterSlashing,
+) -> Vec<u64> {
+    let attestation_1 = &attester_shashing.attestation_1;
+    let attestation_2 = &attester_shashing.attestation_2;
+
+    let attestation_indices_1 = attestation_1
+        .attesting_indices
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let attestation_indices_2 = attestation_2
+        .attesting_indices
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    let mut slashing_indices = vec![];
+
+    for index in &attestation_indices_1 & &attestation_indices_2 {
+        let validator = &beacon_state.validators[index as usize];
+        let current_epoch = beacon_state.get_current_epoch();
+        if validator.is_slashable_validator(current_epoch) {
+            slashing_indices.push(index);
+        }
+    }
+
+    slashing_indices
+}
+
+fn get_proposer_slashing_rewards(
+    beacon_state: &BeaconState,
+    beacon_block: &SignedBeaconBlock,
+) -> u64 {
+    let mut proposer_slashing_reward = 0;
+    let proposer_slashings = &beacon_block.message.body.proposer_slashings;
+    for proposer_slashing in proposer_slashings {
+        let index = proposer_slashing.signed_header_1.message.proposer_index;
+        let reward = beacon_state.validators[index as usize].effective_balance;
+        proposer_slashing_reward += reward;
+    }
+    proposer_slashing_reward
+}
+
+fn get_atterter_slashing_rewards(
+    beacon_state: &BeaconState,
+    beacon_block: &SignedBeaconBlock,
+) -> u64 {
+    let mut attester_slashing_reward = 0;
+    let attester_shashings = &beacon_block.message.body.attester_slashings;
+    for attester_shashing in attester_shashings {
+        for index in get_slashable_attester_indices(beacon_state, attester_shashing) {
+            let reward = beacon_state.validators[index as usize].effective_balance
+                / WHISTLEBLOWER_REWARD_QUOTIENT;
+            attester_slashing_reward += reward;
+        }
+    }
+
+    attester_slashing_reward
+}
+
+async fn get_total_rewards(block_id: ID, db: &ReamDB) -> Result<u64, ApiError> {
+    let beacon_state = get_beacon_state(block_id.clone(), db).await?;
+    let beacon_block: SignedBeaconBlock = get_beacon_block_from_id(block_id, db).await?;
+
+    let attestation_rewards = get_attestations_rewards(&beacon_state, &beacon_block);
+    let sync_committee_rewards = get_sync_committee_rewards(&beacon_state, &beacon_block);
+    let slashing_rewards = get_proposer_slashing_rewards(&beacon_state, &beacon_block)
+        + get_atterter_slashing_rewards(&beacon_state, &beacon_block);
+
+    let total = attestation_rewards + sync_committee_rewards + slashing_rewards;
+    Ok(total)
 }
 
 pub async fn get_beacon_block_from_id(
@@ -130,11 +257,12 @@ pub async fn get_block_rewards(
     db: Data<ReamDB>,
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
-    let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
+    let beacon_block = get_beacon_block_from_id(block_id.into_inner().clone(), &db).await?;
+    let total_reward = get_total_rewards(block_id, &db).await?;
 
     let response = BlockRewards {
         proposer_index: beacon_block.message.proposer_index,
-        total: 0, // todo: implement the calculate block reward logic
+        total: total_reward, // todo: implement the calculate block reward logic
         attestations: beacon_block.message.body.attestations.len() as u64,
         sync_aggregate: beacon_block
             .message
