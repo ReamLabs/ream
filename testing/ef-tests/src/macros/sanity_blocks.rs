@@ -91,6 +91,7 @@ macro_rules! test_sanity_blocks {
                             );
                         }
                         (Err(_), None) => {
+                            // Expected: invalid operations result in an error and no post state.
                             println!(
                                 "Test case {} failed as expected, no post state available.",
                                 case_name
