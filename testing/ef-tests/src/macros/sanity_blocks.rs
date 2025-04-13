@@ -61,10 +61,12 @@ macro_rules! test_sanity_blocks {
                         let signed_block: SignedBeaconBlock = utils::read_ssz_snappy(&block_path)
                             .expect(&format!("cannot find test asset (blocks_{i}.ssz_snappy)"));
 
-                        result = state
-                            .state_transition(&signed_block, validate_result, &mock_engine)
-                            .await
-                            .map_err(|err| err.to_string());
+                        if result.is_ok() {
+                            result = state
+                                .state_transition(&signed_block, validate_result, &mock_engine)
+                                .await
+                                .map_err(|err| err.to_string());
+                        }
                     }
 
                     let expected_post =
@@ -89,7 +91,6 @@ macro_rules! test_sanity_blocks {
                             );
                         }
                         (Err(_), None) => {
-                            // Expected: invalid operations result in an error and no post state.
                             println!(
                                 "Test case {} failed as expected, no post state available.",
                                 case_name
