@@ -145,9 +145,9 @@ impl Discovery {
                     return Ok(()); // No change needed
                 }
                 if value {
-                    current_subnets.enable_subnet(Subnet::Attestation(id));
+                    current_subnets.enable_subnet(Subnet::Attestation(id))?;
                 } else {
-                    current_subnets.disable_subnet(Subnet::Attestation(id));
+                    current_subnets.disable_subnet(Subnet::Attestation(id))?;
                 }
                 if let Some(bytes) = current_subnets.attestation_bytes() {
                     self.discv5
@@ -354,8 +354,8 @@ mod tests {
     async fn test_initial_subnet_setup() -> Result<(), String> {
         let key = Keypair::generate_secp256k1();
         let mut config = NetworkConfig::default();
-        config.subnets.enable_subnet(Subnet::Attestation(0)); // Set subnet 0
-        config.subnets.disable_subnet(Subnet::Attestation(1)); // Set subnet 0
+        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Set subnet 0
+        config.subnets.disable_subnet(Subnet::Attestation(1))?; // Set subnet 0
         config.disable_discovery = true;
 
         let discovery = Discovery::new(key, &config).await.unwrap();
@@ -376,7 +376,7 @@ mod tests {
     async fn test_subnet_update() -> Result<(), String> {
         let key = Keypair::generate_secp256k1();
         let mut config = NetworkConfig::default();
-        config.subnets.enable_subnet(Subnet::Attestation(0)); // Initial subnet 0
+        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Initial subnet 0
         config.disable_discovery = true;
 
         let mut discovery = Discovery::new(key, &config).await.unwrap();
@@ -394,11 +394,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_subnet_predicate() {
+    async fn test_subnet_predicate() -> Result<(), String> {
         let key = Keypair::generate_secp256k1();
         let mut config = NetworkConfig::default();
-        config.subnets.enable_subnet(Subnet::Attestation(0)); // Local node on subnet 0
-        config.subnets.disable_subnet(Subnet::Attestation(1));
+        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
+        config.subnets.disable_subnet(Subnet::Attestation(1))?;
         config.disable_discovery = true;
 
         let discovery = Discovery::new(key, &config).await.unwrap();
@@ -411,10 +411,11 @@ mod tests {
         // Predicate for subnet 1 should not match
         let predicate = subnet_predicate(vec![Subnet::Attestation(1)]);
         assert!(!predicate(local_enr));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_discovery_with_subnets() {
+    async fn test_discovery_with_subnets() -> Result<(), String> {
         let key = Keypair::generate_secp256k1();
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::default())
             .table_filter(|_| true)
@@ -426,7 +427,7 @@ mod tests {
             ..NetworkConfig::default()
         };
 
-        config.subnets.enable_subnet(Subnet::Attestation(0)); // Local node on subnet 0
+        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
         config.disable_discovery = false;
         let mut discovery = Discovery::new(key, &config).await.unwrap();
 
@@ -439,7 +440,7 @@ mod tests {
             ..NetworkConfig::default()
         };
 
-        peer_config.subnets.enable_subnet(Subnet::Attestation(0));
+        peer_config.subnets.enable_subnet(Subnet::Attestation(0))?;
         peer_config.socket_address = Ipv4Addr::new(192, 168, 1, 100).into(); // Non-localhost IP
         peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
@@ -473,6 +474,7 @@ mod tests {
         } else {
             panic!("Expected peers to be discovered");
         }
+        Ok(())
     }
 
     #[tokio::test]

@@ -46,8 +46,8 @@ impl Default for NetworkConfig {
     fn default() -> Self {
         let mut subnets = Subnets::new();
         // Enable attestation subnets 0 and 1 as a reasonable default
-        subnets.enable_subnet(Subnet::Attestation(0));
-        subnets.enable_subnet(Subnet::Attestation(1));
+        let _ = subnets.enable_subnet(Subnet::Attestation(0));
+        let _ = subnets.enable_subnet(Subnet::Attestation(1));
 
         let filter_rate_limiter = Some(
             discv5::RateLimiterBuilder::new()

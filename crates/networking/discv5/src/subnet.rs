@@ -24,27 +24,29 @@ impl Subnets {
         }
     }
 
-    pub fn enable_subnet(&mut self, subnet: Subnet) {
+    pub fn enable_subnet(&mut self, subnet: Subnet) -> Result<(), String> {
         match subnet {
             Subnet::Attestation(id) if id < 64 => {
                 let bits = self.attestation_bits.get_or_insert(BitVector::new());
                 bits.set(id as usize, true)
-                    .expect("Subnet ID within bounds");
+                    .map_err(|_| "Subnet ID out of bounds".to_string())?;
+                Ok(())
             }
-            Subnet::Attestation(_) => {}
+            Subnet::Attestation(_) => Ok(()),
             Subnet::SyncCommittee(_) => unimplemented!("SyncCommittee support not yet implemented"),
         }
     }
 
-    pub fn disable_subnet(&mut self, subnet: Subnet) {
+    pub fn disable_subnet(&mut self, subnet: Subnet) -> Result<(), String> {
         match subnet {
             Subnet::Attestation(id) if id < 64 => {
                 if let Some(bits) = &mut self.attestation_bits {
                     bits.set(id as usize, false)
-                        .expect("Subnet ID within bounds");
+                        .map_err(|_| "Subnet ID out of bounds".to_string())?;
                 }
+                Ok(())
             }
-            Subnet::Attestation(_) => {}
+            Subnet::Attestation(_) => Ok(()),
             Subnet::SyncCommittee(_) => unimplemented!("SyncCommittee support not yet implemented"),
         }
     }
