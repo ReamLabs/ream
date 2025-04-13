@@ -108,6 +108,7 @@ pub fn get_beacon_routes(
         .and(db_filter.clone())
         .and_then(move |block_id: ID, db: ReamDB| get_block_root(block_id, db))
         .with(log("block_root"));
+
     let block_rewards = beacon_base
         .and(path("blocks"))
         .and(parsed_param::<ID>())
