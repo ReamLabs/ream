@@ -204,7 +204,7 @@ async fn get_total_rewards(block_id: ID, db: &ReamDB) -> Result<u64, ApiError> {
     Ok(total)
 }
 
-pub async fn get_beacon_block_from_id(
+async fn get_beacon_block_from_id(
     block_id: ID,
     db: &ReamDB,
 ) -> Result<SignedBeaconBlock, ApiError> {
@@ -258,20 +258,26 @@ pub async fn get_block_rewards(
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let beacon_block = get_beacon_block_from_id(block_id.into_inner().clone(), &db).await?;
-    let total_reward = get_total_rewards(block_id, &db).await?;
+    let beacon_state = get_beacon_state(block_id, &db).await?;
+
+    let attestation_reward = get_attestations_rewards(&beacon_state, &beacon_block);
+    let attester_slashing_reward = get_atterter_slashing_rewards(&beacon_state, &beacon_block);
+    let proposer_slashing_reward = get_proposer_slashing_rewards(&beacon_state, &beacon_block);
+    let sync_committee_reward = get_sync_committee_rewards(&beacon_state, &beacon_block);
+
+    let total = attestation_reward
+        + sync_committee_reward
+        + proposer_slashing_reward
+        + attester_slashing_reward;
+
 
     let response = BlockRewards {
         proposer_index: beacon_block.message.proposer_index,
-        total: total_reward, // todo: implement the calculate block reward logic
-        attestations: beacon_block.message.body.attestations.len() as u64,
-        sync_aggregate: beacon_block
-            .message
-            .body
-            .sync_aggregate
-            .sync_committee_bits
-            .num_set_bits() as u64,
-        proposer_slashings: beacon_block.message.body.proposer_slashings.len() as u64,
-        attester_slashings: beacon_block.message.body.attester_slashings.len() as u64,
+        total,
+        attestations: attestation_reward,
+        sync_aggregate: sync_committee_reward,
+        proposer_slashings: proposer_slashing_reward,
+        attester_slashings: attester_slashing_reward,
     };
 
     Ok(HttpResponse::Ok().json(BeaconResponse::new(response)))
