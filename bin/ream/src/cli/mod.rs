@@ -15,7 +15,7 @@ const DEFAULT_HTTP_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 const DEFAULT_HTTP_ALLOW_ORIGIN: bool = false;
 const DEFAULT_HTTP_PORT: u16 = 5052;
 const DEFAULT_NETWORK: &str = "mainnet";
-const DEFAULT_SOCKET_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+const DEFAULT_SOCKET_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 const DEFAULT_SOCKET_PORT: u16 = 9000;
 
 #[derive(Debug, Parser)]

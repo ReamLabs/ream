@@ -9,13 +9,12 @@ use std::{
 use anyhow::anyhow;
 use discv5::{
     Discv5, Enr,
-    enr::{CombinedKey, NodeId, k256::ecdsa::SigningKey},
+    enr::{CombinedKey, NodeId},
 };
 use futures::{FutureExt, StreamExt, TryFutureExt, stream::FuturesUnordered};
 use libp2p::{
     Multiaddr, PeerId,
     core::{Endpoint, transport::PortUse},
-    identity::Keypair,
     swarm::{
         ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
         THandlerOutEvent, ToSwarm, dummy::ConnectionHandler,
@@ -24,7 +23,7 @@ use libp2p::{
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
-use crate::config::NetworkConfig;
+use crate::config::DiscoveryConfig;
 
 #[derive(Debug)]
 pub struct DiscoveredPeers {
@@ -58,12 +57,16 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    pub async fn new(local_key: Keypair, config: &NetworkConfig) -> anyhow::Result<Self> {
-        let enr_local = convert_to_enr(local_key)?;
-        let enr = Enr::builder().build(&enr_local).unwrap();
+    pub async fn new(
+        enr: Enr,
+        enr_key: CombinedKey,
+        config: &DiscoveryConfig,
+    ) -> anyhow::Result<Self> {
+        info!("ENR: {}", enr);
+
         let node_local_id = enr.node_id();
 
-        let mut discv5 = Discv5::new(enr, enr_local, config.discv5_config.clone())
+        let mut discv5 = Discv5::new(enr, enr_key, config.discv5_config.clone())
             .map_err(|err| anyhow!("Failed to create discv5: {err:?}"))?;
 
         // adding bootnodes to discv5
@@ -102,7 +105,7 @@ impl Discovery {
     pub fn discover_peers(&mut self, target_peers: usize) {
         // If the discv5 service isn't running or we are in the process of a query, don't bother
         // queuing a new one.
-        info!("Discovering peers {:?}", self.discv5.local_enr());
+        info!("Discovering peers...");
 
         if !self.started || self.find_peer_active {
             return;
@@ -233,13 +236,4 @@ impl NetworkBehaviour for Discovery {
 
         Poll::Pending
     }
-}
-
-fn convert_to_enr(key: Keypair) -> anyhow::Result<CombinedKey> {
-    let key = key
-        .try_into_secp256k1()
-        .map_err(|err| anyhow!("Failed to get secp256k1 keypair: {err:?}"))?;
-    let secret = SigningKey::from_slice(&key.secret().to_bytes())
-        .map_err(|err| anyhow!("Failed to convert keypair to SigningKey: {err:?}"))?;
-    Ok(CombinedKey::Secp256k1(secret))
 }

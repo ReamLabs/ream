@@ -2,9 +2,10 @@ use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
-use ream_discv5::config::NetworkConfig;
+use ream_discv5::config::DiscoveryConfig;
 use ream_executor::ReamExecutor;
-use ream_p2p::network::Network;
+use ream_gossipsub::config::GossipsubConfig;
+use ream_p2p::{config::NetworkConfig, network::Network};
 use ream_rpc::{config::ServerConfig, start_server};
 use ream_storage::db::ReamDB;
 use tracing::{error, info};
@@ -44,13 +45,19 @@ async fn main() {
             .build();
 
             let bootnodes = config.bootnodes.to_enrs(config.network.network);
-            let binding = NetworkConfig {
+            let disc_config = DiscoveryConfig {
                 discv5_config,
                 bootnodes,
-                socket_address: config.socket_address,
-                socket_port: config.socket_port,
                 disable_discovery: config.disable_discovery,
                 total_peers: 0,
+            };
+            let gossipsub_config = GossipsubConfig::default();
+            let network_config = NetworkConfig {
+                socket_address: config.socket_address,
+                socket_port: config.socket_port,
+                discovery_port: config.discovery_port,
+                disc_config,
+                gossipsub_config,
             };
 
             let ream_db = ReamDB::new(config.data_dir, config.ephemeral)
@@ -61,7 +68,7 @@ async fn main() {
             let http_future = start_server(config.network.clone(), server_config, ream_db);
 
             let network_future = async {
-                match Network::init(async_executor, &binding).await {
+                match Network::init(async_executor, &network_config).await {
                     Ok(mut network) => {
                         main_executor.spawn(async move {
                             network.polling_events().await;
