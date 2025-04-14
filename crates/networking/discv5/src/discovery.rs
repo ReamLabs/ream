@@ -170,28 +170,17 @@ impl Discovery {
     }
 
     fn start_query(&mut self, query: QueryType, target_peers: usize) {
-        let query_future: Pin<Box<dyn Future<Output = QueryResult> + Send>> = match query {
-            QueryType::FindPeers => Box::pin({
-                let query_clone = query.clone();
-                self.discv5
-                    .find_node(NodeId::random())
-                    .map(move |result| QueryResult {
-                        query_type: query_clone,
-                        result,
-                    })
-            }),
+        let predicate = match query {
+            QueryType::FindPeers =>  do an empty predicate,
             QueryType::FindSubnetPeers(ref subnets) => {
-                let predicate = subnet_predicate(subnets.clone());
-                Box::pin(
-                    self.discv5
+                subnet_predicate(subnets)
+        };
+        let query_future = self.discv5
                         .find_node_predicate(NodeId::random(), Box::new(predicate), target_peers)
                         .map(|result| QueryResult {
                             query_type: query,
                             result,
-                        }),
-                )
-            }
-        };
+                        });
         self.discovery_queries.push(query_future);
     }
 
