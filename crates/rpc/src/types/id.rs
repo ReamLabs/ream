@@ -66,7 +66,7 @@ impl fmt::Display for ID {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ValidatorID {
     Index(u64),
     /// expected to be a 0x-prefixed hex string.
@@ -108,7 +108,7 @@ impl Display for ValidatorID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ValidatorID::Index(i) => write!(f, "{i}"),
-            ValidatorID::Address(pub_key) => write!(f, "0x{:?}", pub_key.to_bytes()),
+            ValidatorID::Address(pub_key) => write!(f, "0x{}", hex::encode(pub_key.to_bytes())),
         }
     }
 }

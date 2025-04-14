@@ -9,7 +9,7 @@ use tree_hash_derive::TreeHash;
 
 use crate::errors::BLSError;
 
-#[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default, Eq, Hash)]
 pub struct PubKey {
     pub inner: FixedVector<u8, typenum::U48>,
 }
