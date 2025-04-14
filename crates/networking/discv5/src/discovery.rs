@@ -72,8 +72,12 @@ impl Discovery {
         let enr_key = convert_to_enr(local_key)
             .map_err(|e| anyhow::anyhow!("Failed to convert key: {:?}", e))?;
         let mut enr_builder = Enr::builder();
-        enr_builder.ip(config.socket_address);
-        enr_builder.udp4(config.socket_port);
+        // Need this test block to pass port and socket for test purpose
+        #[cfg(test)]
+        {
+            enr_builder.ip(config.socket_address);
+            enr_builder.udp4(config.socket_port);
+        }
         if let Some(attestation_bytes) = config.subnets.attestation_bytes() {
             enr_builder.add_value::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &attestation_bytes);
         }
