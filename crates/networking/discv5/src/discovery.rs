@@ -83,8 +83,8 @@ impl Discovery {
         let mut discv5 = Discv5::new(enr.clone(), enr_key, config.discv5_config.clone())
             .map_err(|e| anyhow::anyhow!("Failed to create discv5: {:?}", e))?;
 
-        for bootnode_enr in config.bootnodes.clone() {
-            if bootnode_enr.node_id() == node_local_id {
+        for enr in config.bootnodes.clone() {
+            if enr.node_id() == node_local_id {
                 continue;
             }
             discv5
