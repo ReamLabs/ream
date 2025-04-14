@@ -110,7 +110,7 @@ impl Discovery {
             discovery_queries: FuturesUnordered::new(),
             find_peer_active: false,
             started: !config.disable_discovery,
-            subnets: config.subnets.clone(),
+            subnets: config.subnets,
         })
     }
 
