@@ -26,17 +26,6 @@ pub struct ValidatorData {
     validator: Validator,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Validators {
-    data: Vec<ValidatorData>,
-}
-
-impl Validators {
-    pub fn new(data: Vec<ValidatorData>) -> Self {
-        Self { data }
-    }
-}
-
 impl ValidatorData {
     pub fn new(index: u64, balance: u64, status: String, validator: Validator) -> Self {
         Self {
@@ -125,10 +114,12 @@ pub async fn get_validators_from_state(
 ) -> Result<impl Reply, Rejection> {
     let state = get_state_from_id(state_id, &db).await?;
     let mut validators_data = Vec::new();
+    let mut validator_indices_to_process = Vec::new();
 
+    // First, collect all the validator indices we need to process
     if let Some(validator_ids) = &id_query.id {
         for validator_id in validator_ids {
-            let (index, validator) = {
+            let (index, _) = {
                 match validator_id {
                     ValidatorID::Index(i) => match state.validators.get(*i as usize) {
                         Some(validator) => (*i as usize, validator.to_owned()),
@@ -155,47 +146,35 @@ pub async fn get_validators_from_state(
                     }
                 }
             };
-
-            let status = validator_status(&validator, &db).await?;
-
-            if status_query.has_statuses() && !status_query.contains_status(&status) {
-                continue;
-            }
-
-            let balance = state.balances.get(index).ok_or(ApiError::NotFound(format!(
-                "Validator not found for index: {index}"
-            )))?;
-
-            validators_data.push(ValidatorData::new(
-                index as u64,
-                *balance,
-                status,
-                validator,
-            ));
+            validator_indices_to_process.push(index);
         }
     } else {
-        for (index, validator) in state.validators.iter().enumerate() {
-            let status = validator_status(validator, &db).await?;
+        validator_indices_to_process = (0..state.validators.len()).collect();
+    }
 
-            if status_query.has_statuses() && !status_query.contains_status(&status) {
-                continue;
-            }
+    for index in validator_indices_to_process {
+        let validator = &state.validators[index];
 
-            let balance = state.balances.get(index).ok_or(ApiError::NotFound(format!(
-                "Validator not found for index: {index}"
-            )))?;
+        let status = validator_status(validator, &db).await?;
 
-            validators_data.push(ValidatorData::new(
-                index as u64,
-                *balance,
-                status,
-                validator.clone(),
-            ));
+        if status_query.has_status() && !status_query.contains_status(&status) {
+            continue;
         }
+
+        let balance = state.balances.get(index).ok_or(ApiError::NotFound(format!(
+            "Validator not found for index: {index}"
+        )))?;
+
+        validators_data.push(ValidatorData::new(
+            index as u64,
+            *balance,
+            status,
+            validator.clone(),
+        ));
     }
 
     Ok(with_status(
-        BeaconResponse::json(Validators::new(validators_data)),
+        BeaconResponse::json(validators_data),
         StatusCode::OK,
     ))
 }
@@ -207,12 +186,8 @@ pub async fn post_validators_from_state(
 ) -> Result<impl Reply, Rejection> {
     let id_query = IdQuery { id: request.ids };
 
-    // Fix: Use struct initialization with correct field name (status not statuses)
-    let status_query = match request.statuses {
-        Some(statuses) => StatusQuery {
-            status: Some(statuses),
-        },
-        None => StatusQuery { status: None },
+    let status_query = StatusQuery {
+        status: request.status,
     };
 
     get_validators_from_state(state_id, id_query, status_query, db).await

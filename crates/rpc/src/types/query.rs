@@ -31,7 +31,7 @@ pub struct StatusQuery {
 }
 
 impl StatusQuery {
-    pub fn has_statuses(&self) -> bool {
+    pub fn has_status(&self) -> bool {
         match &self.status {
             Some(statuses) => !statuses.is_empty(),
             None => false,

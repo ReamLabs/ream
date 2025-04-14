@@ -30,6 +30,7 @@ use crate::{
         },
     },
     types::{
+        errors::ApiError,
         id::{ID, ValidatorID},
         query::{ParentRootQuery, RandaoQuery, SlotQuery},
     },
@@ -92,7 +93,6 @@ pub fn get_beacon_routes(
         .and(get())
         .and(db_filter.clone())
         .and_then(move |state_id: ID, db: ReamDB| get_finality_checkpoint(state_id, db));
-
     let validator = beacon_base
         .and(path("states"))
         .and(parsed_param::<ID>())
@@ -129,13 +129,21 @@ pub fn get_beacon_routes(
         .and(query::<StatusQuery>())
         .and(db_filter.clone())
         .and_then(
-            move |state_id: ID, id_query: IdQuery, status_query: StatusQuery, db: ReamDB| {
-                get_validators_from_state(state_id, id_query, status_query, db)
+            move |state_id: ID, id_query: IdQuery, status_query: StatusQuery, db: ReamDB| async move {
+                const MAX_VALIDATOR_COUNT: usize = 100;
+                if let Some(validator_ids) = &id_query.id {
+                    if validator_ids.len() >= MAX_VALIDATOR_COUNT {
+                        return Err(warp::reject::custom(
+                            ApiError::TooManyValidatorsIds(),
+                        ));
+                    }
+                }
+                get_validators_from_state(state_id, id_query, status_query, db).await
             },
         )
         .with(log("validators"));
 
-    let postvalidators = beacon_base
+    let post_validators = beacon_base
         .and(path("states"))
         .and(param::<ID>())
         .and(path("validators"))
@@ -180,7 +188,7 @@ pub fn get_beacon_routes(
     genesis
         .or(validator)
         .or(validators)
-        .or(postvalidators)
+        .or(post_validators)
         .or(randao)
         .or(fork)
         .or(checkpoint)
