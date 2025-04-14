@@ -72,6 +72,8 @@ impl Discovery {
         let enr_key = convert_to_enr(local_key)
             .map_err(|e| anyhow::anyhow!("Failed to convert key: {:?}", e))?;
         let mut enr_builder = Enr::builder();
+        enr_builder.ip(config.socket_address);
+        enr_builder.udp4(config.socket_port);
         if let Some(attestation_bytes) = config.subnets.attestation_bytes() {
             enr_builder.add_value::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &attestation_bytes);
         }
@@ -87,9 +89,9 @@ impl Discovery {
             if enr.node_id() == node_local_id {
                 continue;
             }
-            discv5
-                .add_enr(enr)
-                .map_err(|e| anyhow::anyhow!("Failed to add bootnode: {:?}", e))?;
+            if let Err(err) = discv5.add_enr(enr) {
+                error!("Failed to add bootnode to Discv5 {err:?}");
+            };
         }
 
         let event_stream = if !config.disable_discovery {
@@ -110,7 +112,7 @@ impl Discovery {
             discovery_queries: FuturesUnordered::new(),
             find_peer_active: false,
             started: !config.disable_discovery,
-            subnets: config.subnets,
+            subnets: config.subnets.clone(),
         })
     }
 
@@ -172,12 +174,13 @@ impl Discovery {
     fn start_query(&mut self, query: QueryType, target_peers: usize) {
         let predicate = match query {
             QueryType::FindPeers => subnet_predicate(vec![]),
-            QueryType::FindSubnetPeers(ref subnets) => subnet_predicate(subnets.to_owned()),
+            QueryType::FindSubnetPeers(ref subnets) => subnet_predicate(subnets.clone()),
         };
+
         let query_future = self
             .discv5
             .find_node_predicate(NodeId::random(), Box::new(predicate), target_peers)
-            .map(|result| QueryResult {
+            .map(move |result| QueryResult {
                 query_type: query,
                 result,
             });
