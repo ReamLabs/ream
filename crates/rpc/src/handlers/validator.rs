@@ -1,9 +1,11 @@
+use alloy_primitives::map::HashSet;
+use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
 use warp::{
     http::status::StatusCode,
-    reject::Rejection,
+    reject::{Rejection, custom},
     reply::{Reply, with_status},
 };
 
@@ -35,6 +37,15 @@ impl ValidatorData {
             validator,
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct ValidatorIdentity {
+    #[serde(with = "serde_utils::quoted_u64")]
+    index: u64,
+    pubkey: PubKey,
+    #[serde(with = "serde_utils::quoted_u64")]
+    activation_epoch: u64,
 }
 
 pub async fn get_validator_from_state(
@@ -85,6 +96,46 @@ pub async fn get_validator_from_state(
             status,
             validator,
         )),
+        StatusCode::OK,
+    ))
+}
+
+/// Called by `/eth/v1/beacon/states/{state_id}/validator_identities` to get validator identities
+pub async fn get_validator_identities_from_state(
+    state_id: ID,
+    validator_ids: Vec<ValidatorID>,
+    db: ReamDB,
+) -> Result<impl Reply, Rejection> {
+    let state = match get_state_from_id(state_id, &db).await {
+        Ok(s) => s,
+        Err(_) => {
+            return Err(custom(ApiError::NotFound(String::from("State not found"))));
+        }
+    };
+
+    let validator_ids_set: HashSet<ValidatorID> = validator_ids.into_iter().collect();
+
+    let validator_identities: Vec<ValidatorIdentity> = state
+        .validators
+        .iter()
+        .enumerate()
+        .filter_map(|(index, validator)| {
+            if validator_ids_set.contains(&ValidatorID::Address(validator.pubkey.clone()))
+                || validator_ids_set.contains(&ValidatorID::Index(index as u64))
+            {
+                Some(ValidatorIdentity {
+                    index: index as u64,
+                    pubkey: validator.pubkey.clone(),
+                    activation_epoch: validator.activation_epoch,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(with_status(
+        BeaconResponse::json(validator_identities),
         StatusCode::OK,
     ))
 }

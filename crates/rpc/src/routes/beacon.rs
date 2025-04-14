@@ -3,8 +3,8 @@ use std::sync::Arc;
 use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
 use warp::{
-    Filter, Rejection, body,
-    filters::{path::end, query::query},
+    Filter, Rejection,
+    filters::{body, path::end, query::query},
     get, log, path, post,
     reply::Reply,
 };
@@ -20,7 +20,8 @@ use crate::{
         randao::get_randao_mix,
         state::{get_pending_partial_withdrawals, get_state_root},
         validator::{
-            get_validator_from_state, get_validators_from_state, post_validators_from_state,
+            get_validator_from_state, get_validator_identities_from_state,
+            get_validators_from_state, post_validators_from_state,
         },
     },
     types::{
@@ -105,6 +106,19 @@ pub fn get_beacon_routes(
         })
         .with(log("validator"));
 
+    let validator_identities = beacon_base
+        .and(path("states"))
+        .and(parsed_param::<ID>())
+        .and(path("validator_identities"))
+        .and(end())
+        .and(post())
+        .and(body::json::<Vec<ValidatorID>>())
+        .and(db_filter.clone())
+        .and_then(move |state_id: ID, body: Vec<ValidatorID>, db: ReamDB| {
+            get_validator_identities_from_state(state_id, body, db)
+        })
+        .with(log("validator_identities"));
+
     let headers = beacon_base
         .and(path("headers"))
         .and(query::<SlotQuery>())
@@ -186,6 +200,7 @@ pub fn get_beacon_routes(
         .or(validator)
         .or(validators)
         .or(post_validators)
+        .or(validator_identities)
         .or(randao)
         .or(fork)
         .or(checkpoint)
