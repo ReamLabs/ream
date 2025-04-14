@@ -82,7 +82,7 @@ impl Subnets {
     }
 }
 
-pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + Sync {
+pub fn subnet_predicate(subnets: &[Subnet]) -> impl Fn(&Enr) -> bool + Send + Sync {
     move |enr: &Enr| {
         let subnets_state = match Subnets::from_enr(enr) {
             Ok(subnets) => subnets,
