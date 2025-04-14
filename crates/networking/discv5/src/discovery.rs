@@ -88,7 +88,7 @@ impl Discovery {
                 continue;
             }
             discv5
-                .add_enr(bootnode_enr)
+                .add_enr(enr)
                 .map_err(|e| anyhow::anyhow!("Failed to add bootnode: {:?}", e))?;
         }
 
@@ -171,17 +171,17 @@ impl Discovery {
 
     fn start_query(&mut self, query: QueryType, target_peers: usize) {
         let predicate = match query {
-            QueryType::FindPeers =>  do an empty predicate,
-            QueryType::FindSubnetPeers(ref subnets) => {
-                subnet_predicate(subnets)
+            QueryType::FindPeers => subnet_predicate(vec![]),
+            QueryType::FindSubnetPeers(ref subnets) => subnet_predicate(subnets.to_owned()),
         };
-        let query_future = self.discv5
-                        .find_node_predicate(NodeId::random(), Box::new(predicate), target_peers)
-                        .map(|result| QueryResult {
-                            query_type: query,
-                            result,
-                        });
-        self.discovery_queries.push(query_future);
+        let query_future = self
+            .discv5
+            .find_node_predicate(NodeId::random(), Box::new(predicate), target_peers)
+            .map(|result| QueryResult {
+                query_type: query,
+                result,
+            });
+        self.discovery_queries.push(Box::pin(query_future));
     }
 
     fn process_queries(&mut self, cx: &mut Context) -> Option<HashMap<Enr, Option<Instant>>> {
