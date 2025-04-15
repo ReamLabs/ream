@@ -3,15 +3,9 @@ use std::sync::Arc;
 use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
 use warp::{
-    Filter, Rejection,
+    post , body ,Filter, Rejection,
     filters::{path::end, query::query},
     get, log, path,
-    filters::{
-        body,
-        path::{end, param},
-        query::query,
-    },
-    get, log, path, post,
     reply::Reply,
 };
 
@@ -32,7 +26,8 @@ use crate::{
     types::{
         errors::ApiError,
         id::{ID, ValidatorID},
-        query::{ParentRootQuery, RandaoQuery, SlotQuery},
+        query::{ParentRootQuery, RandaoQuery, SlotQuery , StatusQuery , IdQuery},
+        request::ValidatorsPostRequest,
     },
     utils::error::parsed_param,
 };
@@ -120,9 +115,10 @@ pub fn get_beacon_routes(
             }
         })
         .with(log("headers"));
+
     let validators = beacon_base
         .and(path("states"))
-        .and(param::<ID>())
+        .and(parsed_param::<ID>())
         .and(path("validators"))
         .and(get())
         .and(query::<IdQuery>())
@@ -145,7 +141,7 @@ pub fn get_beacon_routes(
 
     let post_validators = beacon_base
         .and(path("states"))
-        .and(param::<ID>())
+        .and(parsed_param::<ID>())
         .and(path("validators"))
         .and(end())
         .and(post())
