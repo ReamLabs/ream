@@ -3,9 +3,9 @@ use std::sync::Arc;
 use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
 use warp::{
-    post , body ,Filter, Rejection,
+    Filter, Rejection, body,
     filters::{path::end, query::query},
-    get, log, path,
+    get, log, path, post,
     reply::Reply,
 };
 
@@ -26,7 +26,7 @@ use crate::{
     types::{
         errors::ApiError,
         id::{ID, ValidatorID},
-        query::{ParentRootQuery, RandaoQuery, SlotQuery , StatusQuery , IdQuery},
+        query::{IdQuery, ParentRootQuery, RandaoQuery, SlotQuery, StatusQuery},
         request::ValidatorsPostRequest,
     },
     utils::error::parsed_param,

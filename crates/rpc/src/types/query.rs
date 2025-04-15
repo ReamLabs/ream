@@ -21,7 +21,7 @@ pub struct RootQuery {
 #[derive(Debug, Deserialize)]
 pub struct ParentRootQuery {
     pub parent_root: Option<B256>,
-}    
+}
 
 #[derive(Default, Debug, Deserialize)]
 pub struct IdQuery {
