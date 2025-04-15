@@ -122,8 +122,8 @@ pub async fn post_validator_identities_from_state(
         .iter()
         .enumerate()
         .filter_map(|(index, validator)| {
-            if validator_ids_set.contains(&ValidatorID::Address(validator.pubkey.clone()))
-                || validator_ids_set.contains(&ValidatorID::Index(index as u64))
+            if validator_ids_set.contains(&ValidatorID::Index(index as u64))
+                || validator_ids_set.contains(&ValidatorID::Address(validator.pubkey.clone()))
             {
                 Some(ValidatorIdentity {
                     index: index as u64,
