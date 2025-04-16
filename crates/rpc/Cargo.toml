@@ -26,4 +26,6 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 warp.workspace = true
+actix-web.workspace = true
 tree_hash.workspace = true
+parking_lot = "0.12"

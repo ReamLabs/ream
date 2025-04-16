@@ -1,11 +1,11 @@
-use std::env;
+use std::{env, sync::mpsc};
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_discv5::{config::NetworkConfig, subnet::Subnets};
 use ream_executor::ReamExecutor;
 use ream_p2p::network::Network;
-use ream_rpc::{config::ServerConfig, start_server};
+use ream_rpc::{config::ServerConfig, run_app, start_server};
 use ream_storage::db::ReamDB;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -58,7 +58,7 @@ async fn main() {
 
             info!("ream database initialized ");
 
-            let http_future = start_server(config.network.clone(), server_config, ream_db);
+            let http_future = run_app(config.network.clone(), server_config, ream_db);
 
             let network_future = async {
                 match Network::init(async_executor, &binding).await {

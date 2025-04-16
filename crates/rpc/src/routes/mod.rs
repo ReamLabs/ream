@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use actix_web::{App, HttpServer, Scope, dev::Server, middleware, web};
 use beacon::{get_beacon_routes, get_beacon_routes_v2};
 use config::get_config_routes;
 use debug::get_debug_routes_v2;
@@ -8,10 +9,13 @@ use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
 use warp::{Filter, Rejection, path, reply::Reply};
 
+use crate::routes::test::welcome;
+
 pub mod beacon;
 pub mod config;
 pub mod debug;
 pub mod node;
+mod test;
 
 fn get_v1_routes(
     network_spec: Arc<NetworkSpec>,
@@ -46,7 +50,8 @@ pub fn get_routes(
     let v1_routes = get_v1_routes(network_spec.clone(), db.clone());
     let v2_routes = get_v2_routes(db.clone());
 
-    v2_routes.or(v1_routes)
+    // v2_routes.or(v1_routes)
+    path("warp").and(v2_routes.or(v1_routes))
 }
 
 /// Creates a filter for DB.
@@ -54,4 +59,18 @@ fn with_db(
     db: ReamDB,
 ) -> impl Filter<Extract = (ReamDB,), Error = std::convert::Infallible> + Clone {
     warp::any().map(move || db.clone())
+}
+
+// pub async fn get_rounter() -> Scope {
+//     web::scope("eth").service(welcome)
+//     // .bind(("127.0.0.1", 8080))?
+//     // .run()
+//     // .await
+// }
+
+pub fn register_routers(config: &mut web::ServiceConfig) {
+    config
+        // .app_data(web::Data::new(create_schema()))
+        // .service(graphql)
+        .service(welcome);
 }
