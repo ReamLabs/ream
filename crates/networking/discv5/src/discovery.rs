@@ -58,8 +58,6 @@ pub struct Discovery {
     discovery_queries: FuturesUnordered<Pin<Box<dyn Future<Output = QueryResult> + Send>>>,
     find_peer_active: bool,
     pub started: bool,
-    #[allow(dead_code)]
-    eth2_fork_id: ENRForkID,
 }
 
 impl Discovery {
@@ -104,7 +102,6 @@ impl Discovery {
             discovery_queries: FuturesUnordered::new(),
             find_peer_active: false,
             started: true,
-            eth2_fork_id: ENRForkID::pectra(),
         })
     }
 

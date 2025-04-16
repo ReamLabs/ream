@@ -3,9 +3,10 @@ use alloy_rlp::{Decodable, Encodable};
 use ream_consensus::{constants::FAR_FUTURE_EPOCH, fork_data::ForkData};
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
+
+pub const ENR_ETH2_KEY: &str = "eth2";
 pub const GENESIS_VALIDATORS_ROOT: B256 =
     fixed_bytes!("0x0000000000000000000000000000000000000000000000000000000000000000");
-pub const ENR_ETH2_KEY: &str = "eth2";
 
 #[derive(Default, Debug, Encode, Decode)]
 pub struct ENRForkID {
