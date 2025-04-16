@@ -3,14 +3,18 @@ use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
+use tree_hash::TreeHash;
 use warp::{
     http::status::StatusCode,
     reject::Rejection,
     reply::{Reply, with_status},
 };
 
-use super::BeaconResponse;
-use crate::types::{errors::ApiError, id::ID};
+use crate::types::{
+    errors::ApiError,
+    id::ID,
+    response::{BeaconResponse, RootResponse},
+};
 
 pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {
     let block_root = match state_id {
@@ -61,4 +65,15 @@ pub async fn get_state(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection
     let state = get_state_from_id(state_id, &db).await?;
 
     Ok(with_status(BeaconResponse::json(state), StatusCode::OK))
+}
+
+pub async fn get_state_root(state_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
+    let state = get_state_from_id(state_id, &db).await?;
+
+    let state_root = state.tree_hash_root();
+
+    Ok(with_status(
+        BeaconResponse::json(RootResponse::new(state_root)),
+        StatusCode::OK,
+    ))
 }

@@ -37,11 +37,11 @@ pub struct Store {
 
 impl Store {
     pub fn is_previous_epoch_justified(&self) -> bool {
-        let current_epoch = compute_epoch_at_slot(self.get_current_store_slot());
+        let current_epoch = self.get_current_store_epoch();
         self.justified_checkpoint.epoch + 1 == current_epoch
     }
 
-    pub fn get_current_store_slot(&self) -> u64 {
+    pub fn get_current_store_epoch(&self) -> u64 {
         compute_epoch_at_slot(self.get_current_slot())
     }
 
@@ -50,7 +50,7 @@ impl Store {
     }
 
     pub fn get_slots_since_genesis(&self) -> u64 {
-        self.time - self.genesis_time
+        (self.time - self.genesis_time) / SECONDS_PER_SLOT
     }
 
     pub fn get_ancestor(&self, root: B256, slot: u64) -> anyhow::Result<B256> {
@@ -97,7 +97,7 @@ impl Store {
             return Ok(false);
         }
 
-        let current_epoch = compute_epoch_at_slot(self.get_current_slot());
+        let current_epoch = self.get_current_store_epoch();
         let voting_source = self.get_voting_source(block_root);
 
         let correct_justified = self.justified_checkpoint.epoch == GENESIS_EPOCH || {
@@ -175,7 +175,7 @@ impl Store {
             .get(&self.justified_checkpoint)
             .ok_or(anyhow!("Failed to find checkpoint in checkpoint states"))?;
         let committee_weight =
-            get_total_active_balance(justified_checkpoint_state.clone()) / SLOTS_PER_EPOCH;
+            get_total_active_balance(justified_checkpoint_state) / SLOTS_PER_EPOCH;
         Ok((committee_weight * PROPOSER_SCORE_BOOST) / 100)
     }
 
@@ -214,7 +214,7 @@ impl Store {
     pub fn get_voting_source(&self, block_root: B256) -> Checkpoint {
         let block = &self.blocks[&block_root];
 
-        let current_epoch = self.get_current_slot();
+        let current_epoch = self.get_current_store_epoch();
         let block_epoch = compute_epoch_at_slot(block.slot);
 
         if current_epoch > block_epoch {
@@ -232,7 +232,7 @@ impl Store {
             .ok_or(anyhow!("Justified checkpoint must exist in the store"))?;
 
         let reorg_threshold =
-            calculate_committee_fraction(justified_state.clone(), REORG_HEAD_WEIGHT_THRESHOLD);
+            calculate_committee_fraction(justified_state, REORG_HEAD_WEIGHT_THRESHOLD);
         let head_weight = self.get_weight(head_root)?;
 
         Ok(head_weight < reorg_threshold)
@@ -245,7 +245,7 @@ impl Store {
             .ok_or(anyhow!("Justified checkpoint must exist in the store"))?;
 
         let parent_threshold =
-            calculate_committee_fraction(justified_state.clone(), REORG_PARENT_WEIGHT_THRESHOLD);
+            calculate_committee_fraction(justified_state, REORG_PARENT_WEIGHT_THRESHOLD);
         let parent_weight = self.get_weight(parent_root)?;
 
         Ok(parent_weight > parent_threshold)

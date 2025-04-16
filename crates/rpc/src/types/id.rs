@@ -5,6 +5,8 @@ use alloy_primitives::{B256, hex};
 use ream_bls::PubKey;
 use serde::{Deserialize, Serialize};
 
+use super::errors::ApiError;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ID {
@@ -18,7 +20,7 @@ pub enum ID {
 }
 
 impl FromStr for ID {
-    type Err = String;
+    type Err = ApiError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
@@ -30,11 +32,13 @@ impl FromStr for ID {
                 if s.starts_with("0x") {
                     B256::from_str(s)
                         .map(ID::Root)
-                        .map_err(|err| format!("Invalid hex root: {err}"))
-                } else {
+                        .map_err(|_| ApiError::BadRequest(format!("Invalid hex root: {s}")))
+                } else if s.chars().all(|c| c.is_ascii_digit()) {
                     s.parse::<u64>()
                         .map(ID::Slot)
-                        .map_err(|err| format!("Invalid slot: {err}"))
+                        .map_err(|_| ApiError::BadRequest(format!("Invalid slot number: {s}")))
+                } else {
+                    Err(ApiError::BadRequest(format!("Invalid state ID: {s}")))
                 }
             }
         }
@@ -63,17 +67,19 @@ pub enum ValidatorID {
 }
 
 impl FromStr for ValidatorID {
-    type Err = String;
+    type Err = ApiError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.starts_with("0x") {
             PubKey::from_str(s)
                 .map(ValidatorID::Address)
-                .map_err(|err| format!("Invalid hex root: {err}"))
-        } else {
+                .map_err(|_| ApiError::BadRequest(format!("Invalid hex address: {s}")))
+        } else if s.chars().all(|c| c.is_ascii_digit()) {
             s.parse::<u64>()
                 .map(ValidatorID::Index)
-                .map_err(|err| format!("Invalid slot: {err}"))
+                .map_err(|_| ApiError::BadRequest(format!("Invalid validator index: {s}")))
+        } else {
+            Err(ApiError::BadRequest(format!("Invalid validator ID: {s}")))
         }
     }
 }

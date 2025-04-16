@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use beacon::get_beacon_routes;
+use beacon::{get_beacon_routes, get_beacon_routes_v2};
 use config::get_config_routes;
 use debug::get_debug_routes_v2;
 use node::get_node_routes;
@@ -33,7 +33,9 @@ fn get_v2_routes(db: ReamDB) -> impl Filter<Extract = impl Reply, Error = Reject
 
     let debug_routes_v2 = get_debug_routes_v2(db.clone());
 
-    eth_base_v2.and(debug_routes_v2.or(warp::any().map(warp::reply)))
+    let beacon_routes_v2 = get_beacon_routes_v2(db.clone());
+
+    eth_base_v2.and(debug_routes_v2.or(beacon_routes_v2))
 }
 
 /// Creates and returns all possible routes.
