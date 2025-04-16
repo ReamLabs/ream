@@ -24,4 +24,3 @@ tracing.workspace = true
 
 # ream dependencies
 ream-consensus.workspace = true
-ream-network-spec.workspace = true
