@@ -58,6 +58,7 @@ pub struct Discovery {
     discovery_queries: FuturesUnordered<Pin<Box<dyn Future<Output = QueryResult> + Send>>>,
     find_peer_active: bool,
     pub started: bool,
+    #[allow(dead_code)]
     eth2_fork_id: ENRForkID,
 }
 
@@ -65,10 +66,9 @@ impl Discovery {
     pub async fn new(local_key: Keypair, config: &NetworkConfig) -> anyhow::Result<Self> {
         let enr_local = convert_to_enr(local_key)?;
         let enr = Enr::builder()
-            .add_value(ENR_ETH2_KEY, &ENRForkID::new_pectra().as_ssz_bytes())
+            .add_value(ENR_ETH2_KEY, &ENRForkID::pectra())
             .build(&enr_local)
-            .unwrap();
-
+            .map_err(|e| anyhow::anyhow!("Failed to build ENR: {}", e))?;
         let node_local_id = enr.node_id();
 
         let mut discv5 = Discv5::new(enr, enr_local, config.discv5_config.clone())
@@ -104,7 +104,7 @@ impl Discovery {
             discovery_queries: FuturesUnordered::new(),
             find_peer_active: false,
             started: true,
-            eth2_fork_id: ENRForkID::new_pectra(),
+            eth2_fork_id: ENRForkID::pectra(),
         })
     }
 

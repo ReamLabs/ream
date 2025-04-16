@@ -11,17 +11,17 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
+alloy-rlp.workspace = true
 anyhow.workspace = true
 discv5.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
 futures.workspace = true
 libp2p.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
-# external crates 
-ethereum_ssz = "0.9.0"
-ethereum_ssz_derive = "1.0.0-beta.2"
 
 # ream dependencies
 ream-consensus.workspace = true
-ream-network-spec = { path = "../../common/network_spec" }
+ream-network-spec.workspace = true
