@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use warp::reject::Reject;
+// use warp::reject::Reject;
 
 #[derive(Error, Debug)]
 pub enum ApiError {
@@ -26,7 +26,7 @@ pub enum ApiError {
     TooManyValidatorsIds(),
 }
 
-impl Reject for ApiError {}
+// impl Reject for ApiError {}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ErrorMessage {

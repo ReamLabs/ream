@@ -1,20 +1,16 @@
+use actix_web::{HttpResponse, Responder, error, get, web};
 use alloy_primitives::B256;
-use ream_consensus::deneb::beacon_block::SignedBeaconBlock;
+use ream_consensus::{deneb::beacon_block::SignedBeaconBlock, genesis::Genesis};
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
 use serde::{Deserialize, Serialize};
-use warp::{
-    http::status::StatusCode,
-    reject::Rejection,
-    reply::{Reply, with_status},
-};
 
 use crate::types::{
     errors::ApiError,
     id::ID,
-    response::{BeaconResponse, BeaconVersionedResponse, RootResponse},
+    response::{BeaconResponse, RootResponse},
 };
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -86,28 +82,51 @@ pub async fn get_beacon_block_from_id(
         )))
 }
 
-/// Called by `/eth/v2/beacon/{block_id}/attestations` to get block attestations
-pub async fn get_block_attestations(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
-    let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
+/// Called by `/genesis` to get the Genesis Config of Beacon Chain.
+#[get("/beacon/genesis")]
+pub async fn get_genesis(db: web::Data<ReamDB>) -> actix_web::Result<impl Responder> {
+    Ok(HttpResponse::Ok())
+}
 
-    Ok(with_status(
-        BeaconVersionedResponse::json(beacon_block.message.body.attestations),
-        StatusCode::OK,
-    ))
+/// Called by `/eth/v2/beacon/{block_id}/attestations` to get block attestations
+#[get("/beacon/{block_id}/attestations")]
+pub async fn get_block_attestations(
+    db: web::Data<ReamDB>,
+    block_id: web::Path<ID>,
+) -> actix_web::Result<impl Responder> {
+    let block_id = block_id.into_inner();
+    let beacon_block = get_beacon_block_from_id(block_id, &db)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
+
+    Ok(HttpResponse::Ok().json(beacon_block.message.body.attestations))
 }
 
 /// Called by `/blocks/<block_id>/root` to get the Tree hash of the Block.
-pub async fn get_block_root(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
-    let block_root = get_block_root_from_id(block_id, &db).await?;
-    Ok(with_status(
-        BeaconResponse::json(RootResponse { root: block_root }),
-        StatusCode::OK,
-    ))
+#[get("/beacon/blocks/{block_id}/root")]
+pub async fn get_block_root(
+    db: web::Data<ReamDB>,
+    block_id: web::Path<ID>,
+) -> actix_web::Result<impl Responder> {
+    let block_id = block_id.into_inner();
+    let block_root = get_block_root_from_id(block_id, &db)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
+
+    Ok(HttpResponse::Ok().json(RootResponse { root: block_root }))
 }
 
-// Called by `/beacon/blocks/{block_id}/rewards` to get the block rewards response
-pub async fn get_block_rewards(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
-    let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
+/// Called by `/beacon/blocks/{block_id}/rewards` to get the block rewards response
+#[get("/beacon/blocks/{block_id}/rewards")]
+pub async fn get_block_rewards(
+    db: web::Data<ReamDB>,
+    block_id: web::Path<ID>,
+) -> actix_web::Result<impl Responder> {
+    let block_id = block_id.into_inner();
+    let beacon_block = get_beacon_block_from_id(block_id, &db)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
+
     let response = BlockRewards {
         proposer_index: beacon_block.message.proposer_index,
         total: 0, // todo: implement the calculate block reward logic
@@ -122,15 +141,19 @@ pub async fn get_block_rewards(block_id: ID, db: ReamDB) -> Result<impl Reply, R
         attester_slashings: beacon_block.message.body.attester_slashings.len() as u64,
     };
 
-    Ok(with_status(BeaconResponse::json(response), StatusCode::OK))
+    Ok(HttpResponse::Ok().json(response))
 }
 
 /// Called by `/blocks/<block_id>` to get the Beacon Block.
-pub async fn get_block_from_id(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
-    let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
+#[get("/beacon/blocks/{block_id}")]
+pub async fn get_block_from_id(
+    db: web::Data<ReamDB>,
+    block_id: web::Path<ID>,
+) -> actix_web::Result<impl Responder> {
+    let block_id = block_id.into_inner();
+    let beacon_block = get_beacon_block_from_id(block_id, &db)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
 
-    Ok(with_status(
-        BeaconVersionedResponse::json(beacon_block),
-        StatusCode::OK,
-    ))
+    Ok(HttpResponse::Ok().json(beacon_block))
 }

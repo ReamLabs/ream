@@ -1,12 +1,13 @@
+use actix_web::{HttpResponse, Responder, get};
 use ream_node::version::ream_node_version;
 use serde::{Deserialize, Serialize};
-use warp::{
-    http::status::StatusCode,
-    reject::Rejection,
-    reply::{Reply, with_status},
-};
+// use warp::{
+//     http::status::StatusCode,
+//     reject::Rejection,
+//     reply::{Reply, with_status},
+// };
 
-use super::Data;
+// use super::Data;
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Version {
@@ -21,7 +22,8 @@ impl Version {
     }
 }
 
-/// Called by `/version` to get the Node Version.
-pub async fn get_version() -> Result<impl Reply, Rejection> {
-    Ok(with_status(Data::json(Version::new()), StatusCode::OK))
+/// Called by `eth/v1/node/version` to get the Node Version.
+#[get("node/version")]
+pub async fn get_version() -> impl Responder {
+    HttpResponse::Ok().json(Version::new())
 }

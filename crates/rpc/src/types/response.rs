@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use warp::reply::{Json, json};
+// use warp::reply::{Json, json};
 
 pub const ELECTRA: &str = "electra";
 pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
@@ -36,32 +36,31 @@ pub struct BeaconResponse<T> {
     pub finalized: bool,
     pub data: T,
 }
-
-impl<T: Serialize> BeaconResponse<T> {
-    pub fn json(data: T) -> Json {
-        json(&json!(Self {
-            data,
-            execution_optimistic: EXECUTION_OPTIMISTIC,
-            finalized: FINALIZED
-        }))
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct BeaconVersionedResponse<T> {
-    pub version: String,
-    pub execution_optimistic: bool,
-    pub finalized: bool,
-    pub data: T,
-}
-
-impl<T: Serialize> BeaconVersionedResponse<T> {
-    pub fn json(data: T) -> Json {
-        json(&json!(Self {
-            version: String::from("electra"),
-            data,
-            execution_optimistic: EXECUTION_OPTIMISTIC,
-            finalized: FINALIZED
-        }))
-    }
-}
+// impl<T: Serialize> BeaconResponse<T> {
+//     pub fn json(data: T) -> Json {
+//         json(&json!(Self {
+//             data,
+//             execution_optimistic: EXECUTION_OPTIMISTIC,
+//             finalized: FINALIZED
+//         }))
+//     }
+// }
+//
+// #[derive(Debug, Serialize)]
+// pub struct BeaconVersionedResponse<T> {
+//     pub version: String,
+//     pub execution_optimistic: bool,
+//     pub finalized: bool,
+//     pub data: T,
+// }
+//
+// impl<T: Serialize> BeaconVersionedResponse<T> {
+//     pub fn json(data: T) -> Json {
+//         json(&json!(Self {
+//             version: String::from("electra"),
+//             data,
+//             execution_optimistic: EXECUTION_OPTIMISTIC,
+//             finalized: FINALIZED
+//         }))
+//     }
+// }
