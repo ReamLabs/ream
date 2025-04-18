@@ -135,8 +135,15 @@ impl Network {
     async fn start_network_worker(&mut self, config: &NetworkConfig) -> anyhow::Result<()> {
         info!("Libp2p starting .... ");
 
-        let mut multi_addr: Multiaddr = config.socket_address.into();
-        multi_addr.push(Protocol::Tcp(config.socket_port));
+        let mut multi_addr: Multiaddr = config
+            .socket_address
+            .ok_or_else(|| anyhow!("Socket address not found"))?
+            .into();
+        multi_addr.push(Protocol::Tcp(
+            config
+                .socket_port
+                .ok_or_else(|| anyhow!("Socket port not found"))?,
+        ));
 
         match self.swarm.listen_on(multi_addr.clone()) {
             Ok(listener_id) => {

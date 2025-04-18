@@ -1,6 +1,8 @@
-use alloy_rlp::bytes::Bytes;
+use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
+use anyhow::anyhow;
 use discv5::Enr;
 use ssz::{Decode, Encode};
+use ssz_derive::{Decode, Encode};
 use ssz_types::{BitVector, typenum::U64};
 use tracing::trace;
 
@@ -12,7 +14,7 @@ pub enum Subnet {
     SyncCommittee(u8),
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Encode, Decode)]
 pub struct Subnets {
     attestation_bits: Option<BitVector<U64>>,
 }
@@ -29,7 +31,7 @@ impl Subnets {
             Subnet::Attestation(id) if id < 64 => {
                 let bits = self.attestation_bits.get_or_insert(BitVector::new());
                 bits.set(id as usize, true)
-                    .map_err(|_| "Subnet ID out of bounds".to_string())?;
+                    .map_err(|_| anyhow!("Subnet ID out of bounds"))?;
                 Ok(())
             }
             Subnet::Attestation(_) => Ok(()),
@@ -37,12 +39,12 @@ impl Subnets {
         }
     }
 
-    pub fn disable_subnet(&mut self, subnet: Subnet) -> Result<(), String> {
+    pub fn disable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
         match subnet {
             Subnet::Attestation(id) if id < 64 => {
                 if let Some(bits) = &mut self.attestation_bits {
                     bits.set(id as usize, false)
-                        .map_err(|_| "Subnet ID out of bounds".to_string())?;
+                        .map_err(|_| anyhow!("Subnet ID out of bounds"))?;
                 }
                 Ok(())
             }
@@ -61,11 +63,10 @@ impl Subnets {
             Subnet::SyncCommittee(_) => unimplemented!("SyncCommittee support not yet implemented"),
         }
     }
-
 }
 
 impl Encodable for Subnets {
-    fn encode(&self, out: &mut dyn bytes::BufMut) {
+    fn encode(&self, out: &mut dyn BufMut) {
         let ssz_bytes = self.as_ssz_bytes();
         let bytes = Bytes::from(ssz_bytes);
         bytes.encode(out);
@@ -81,11 +82,17 @@ impl Decodable for Subnets {
     }
 }
 
-We should implement these traits on subnets, so then devs can just read the value directly
-
 pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + Sync {
     move |enr: &Enr| {
-        let subnets_state = match Subnets::from_enr(enr) {
+        let value = if let Some(result) = enr.get_decodable::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY) {
+            match result {
+                Ok(value) => value,
+                Err(_) => return false,
+            }
+        } else {
+            return false;
+        };
+        let subnets_state = match Subnets::from_ssz_bytes(&value) {
             Ok(subnets) => subnets,
             Err(_e) => return false,
         };

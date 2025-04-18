@@ -47,10 +47,9 @@ async fn main() {
             let binding = NetworkConfig {
                 discv5_config,
                 bootnodes,
-                socket_address: config.socket_address,
-                socket_port: config.socket_port,
+                socket_address: Some(config.socket_address),
+                socket_port: Some(config.socket_port),
                 disable_discovery: config.disable_discovery,
-                total_peers: 0,
                 subnets: Subnets::new(),
             };
 

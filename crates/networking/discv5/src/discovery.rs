@@ -6,7 +6,6 @@ use std::{
     time::Instant,
 };
 
-use alloy_rlp::Bytes;
 use anyhow::anyhow;
 use discv5::{
     Discv5, Enr,
@@ -69,28 +68,29 @@ impl Discovery {
         local_key: libp2p::identity::Keypair,
         config: &NetworkConfig,
     ) -> anyhow::Result<Self> {
-        let enr_local = convert_to_enr(local_key)
-            .map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
+        let enr_local =
+            convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
         let mut enr_builder = Enr::builder();
-        // Need this test block to pass port and socket for test purpose
-        if let (socker_address) = config.socker_address {
-             enr_builder.ip(socker_address)
+        if let Some(socket_address) = config.socket_address {
+            enr_builder.ip(socket_address);
         }
-        if let (socker_port) = config.socker_port {
-             enr_builder.udp4(socker_port);
+        if let Some(socker_port) = config.socket_port {
+            enr_builder.udp4(socker_port);
         }
         let enr = enr_builder
             .add_value(ENR_ETH2_KEY, &ENRForkID::pectra())
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.subnets)
             .build(&enr_local)
-            .map_err(|e| anyhow::anyhow!("Failed to build ENR: {}", e))?;
+            .map_err(|e| anyhow!("Failed to build ENR: {}", e))?;
 
         let node_local_id = enr.node_id();
 
         let mut discv5 = Discv5::new(enr.clone(), enr_local, config.discv5_config.clone())
             .map_err(|err| anyhow!("Failed to create discv5: {err:?}"))?;
 
+        // adding bootnodes to discv5
         for enr in config.bootnodes.clone() {
+            // Skip adding ourselves to the routing table if we are a bootnode
             if enr.node_id() == node_local_id {
                 continue;
             }
@@ -304,13 +304,15 @@ fn convert_to_enr(key: Keypair) -> anyhow::Result<CombinedKey> {
 mod tests {
     use std::net::Ipv4Addr;
 
+    use alloy_rlp::Bytes;
     use libp2p::identity::Keypair;
+    use ssz::Decode;
 
     use super::*;
     use crate::{config::NetworkConfig, subnet::Subnets};
 
     #[tokio::test]
-    async fn test_initial_subnet_setup() -> Result<(), String> {
+    async fn test_initial_subnet_setup() -> anyhow::Result<()> {
         let key = Keypair::generate_secp256k1();
         let mut config = NetworkConfig::default();
         config.subnets.enable_subnet(Subnet::Attestation(0))?; // Set subnet 0
@@ -321,14 +323,19 @@ mod tests {
         let enr: &discv5::enr::Enr<CombinedKey> = discovery.local_enr();
 
         // Check ENR reflects config.subnets
-        let enr_subnets = Subnets::from_enr(enr)?;
+        let value: Bytes = enr
+            .get_decodable(ATTESTATION_BITFIELD_ENR_KEY)
+            .ok_or("ATTESTATION_BITFIELD_ENR_KEY not found")
+            .map_err(|err| anyhow!(err.to_string()))??;
+        let enr_subnets = Subnets::from_ssz_bytes(&value)
+            .map_err(|_| anyhow!("ATTESTATION_BITFIELD_ENR_KEY decoding failed"))?;
         assert!(enr_subnets.is_active(Subnet::Attestation(0)));
         assert!(!enr_subnets.is_active(Subnet::Attestation(1)));
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_subnet_predicate() -> Result<(), String> {
+    async fn test_subnet_predicate() -> anyhow::Result<()> {
         let key = Keypair::generate_secp256k1();
         let mut config = NetworkConfig::default();
         config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
@@ -349,7 +356,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_discovery_with_subnets() -> Result<(), String> {
+    async fn test_discovery_with_subnets() -> anyhow::Result<()> {
         let key = Keypair::generate_secp256k1();
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::default())
             .table_filter(|_| true)
@@ -375,8 +382,8 @@ mod tests {
         };
 
         peer_config.subnets.enable_subnet(Subnet::Attestation(0))?;
-        peer_config.socket_address = Ipv4Addr::new(192, 168, 1, 100).into(); // Non-localhost IP
-        peer_config.socket_port = 9001; // Different port
+        peer_config.socket_address = Some(Ipv4Addr::new(192, 168, 1, 100).into()); // Non-localhost IP
+        peer_config.socket_port = Some(9001); // Different port
         peer_config.disable_discovery = true;
 
         let peer_discovery = Discovery::new(peer_key, &peer_config).await.unwrap();

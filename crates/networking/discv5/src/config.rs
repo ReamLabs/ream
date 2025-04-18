@@ -1,19 +1,15 @@
-use std::{
-    net::{IpAddr, Ipv4Addr},
-    time::Duration,
-};
+use std::net::{IpAddr, Ipv4Addr};
 
-use discv5::Enr;
+use discv5::{ConfigBuilder, Enr, ListenConfig};
 
 use crate::subnet::{Subnet, Subnets};
 
 pub struct NetworkConfig {
     pub discv5_config: discv5::Config,
     pub bootnodes: Vec<Enr>,
-    pub socket_address: IpAddr,
-    pub socket_port: u16,
+    pub socket_address: Option<IpAddr>,
+    pub socket_port: Option<u16>,
     pub disable_discovery: bool,
-    pub total_peers: usize,
     pub subnets: Subnets,
 }
 
@@ -24,19 +20,17 @@ impl Default for NetworkConfig {
         subnets.enable_subnet(Subnet::Attestation(0)).expect("xyz");
         subnets.enable_subnet(Subnet::Attestation(1)).expect("xyz");
 
-        let socker_address = Ipv4Addr::UNSPECIFIED;
+        let socket_address = Ipv4Addr::UNSPECIFIED;
         let socket_port = 9000;
-        let listen_config =
-            ListenConfig::from_ip(socker_address.into(), socket_port);
+        let listen_config = ListenConfig::from_ip(socket_address.into(), socket_port);
 
-        let discv5_config = ConfigBuilder::new(discv5_listen_config)
-            .build();
+        let discv5_config = ConfigBuilder::new(listen_config).build();
 
         Self {
             discv5_config,
             bootnodes: Vec::new(),
-            socket_address,
-            socket_port,
+            socket_address: Some(socket_address.into()),
+            socket_port: Some(socket_port),
             disable_discovery: false,
             subnets,
         }
