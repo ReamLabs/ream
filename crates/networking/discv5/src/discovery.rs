@@ -70,7 +70,7 @@ impl Discovery {
         config: &NetworkConfig,
     ) -> anyhow::Result<Self> {
         let enr_local = convert_to_enr(local_key)
-            .map_err(|e| anyhow::anyhow!("Failed to convert key: {:?}", e))?;
+            .map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
         let mut enr_builder = Enr::builder();
         // Need this test block to pass port and socket for test purpose
         #[cfg(test)]
