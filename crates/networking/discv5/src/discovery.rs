@@ -198,8 +198,8 @@ impl Discovery {
                             }
                             Some(peer_map)
                         }
-                        Err(e) => {
-                            warn!("Failed to find subnet peers: {:?}", e);
+                        Err(err) => {
+                            warn!("Failed to find subnet peers: {err:?}");
                             None
                         }
                     }
