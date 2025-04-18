@@ -38,8 +38,8 @@ impl HeaderData {
 #[get("/beacon/headers")]
 pub async fn get_headers(
     db: web::Data<ReamDB>,
-    slot: web::Json<SlotQuery>,
-    parent_root: web::Json<ParentRootQuery>,
+    web::Json(slot): web::Json<SlotQuery>,
+    web::Json(parent_root): web::Json<ParentRootQuery>,
 ) -> actix_web::Result<impl Responder> {
     let (header, root) = match (slot.slot, parent_root.parent_root) {
         (None, None) => {

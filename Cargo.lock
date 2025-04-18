@@ -4448,7 +4448,6 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "alloy-primitives",
- "derive_more 2.0.1",
  "ethereum_serde_utils",
  "parking_lot",
  "ream-bls",

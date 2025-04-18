@@ -12,7 +12,6 @@ pub mod config;
 pub mod handlers;
 pub mod routes;
 pub mod types;
-pub mod utils;
 
 /// Start the Beacon API server.
 pub async fn start_server(

@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use actix_web::{HttpResponse, Responder, error, get, web};
 use alloy_primitives::B256;
 use ream_consensus::{
@@ -13,7 +15,7 @@ use tree_hash::TreeHash;
 
 use crate::types::{
     errors::ApiError,
-    id::ID,
+    id::{ID, ValidatorID},
     query::RandaoQuery,
     response::{BeaconResponse, RootResponse},
 };
@@ -113,9 +115,9 @@ pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState,
 #[get("/beacon/states/{state_id}")]
 pub async fn get_beacon_state(
     db: web::Data<ReamDB>,
-    state_id: web::Path<ID>,
+    state_id: web::Path<String>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = state_id.into_inner();
+    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
     let state = get_state_from_id(state_id, &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
@@ -126,10 +128,10 @@ pub async fn get_beacon_state(
 #[get("/beacon/states/{state_id}/root")]
 pub async fn get_state_root(
     db: web::Data<ReamDB>,
-    state_id: web::Path<ID>,
+    state_id: web::Path<String>,
 ) -> actix_web::Result<impl Responder> {
     warn!("start get_state_root");
-    let state_id = state_id.into_inner();
+    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
     let state = get_state_from_id(state_id, &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
@@ -144,9 +146,9 @@ pub async fn get_state_root(
 #[get("/beacon/states/{state_id}/fork")]
 pub async fn get_state_fork(
     db: web::Data<ReamDB>,
-    state_id: web::Path<ID>,
+    state_id: web::Path<String>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = state_id.into_inner();
+    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
     let state = get_state_from_id(state_id, &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
@@ -158,9 +160,9 @@ pub async fn get_state_fork(
 #[get("/beacon/states/{state_id}/finality_checkpoints")]
 pub async fn get_state_finality_checkpoint(
     db: web::Data<ReamDB>,
-    state_id: web::Path<ID>,
+    state_id: web::Path<String>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = state_id.into_inner();
+    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
     let state = get_state_from_id(state_id, &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
@@ -179,10 +181,10 @@ pub async fn get_state_finality_checkpoint(
 #[get("/beacon/states/{state_id}/randao")]
 pub async fn get_state_randao(
     db: web::Data<ReamDB>,
-    state_id: web::Path<ID>,
-    query: web::Json<RandaoQuery>,
+    state_id: web::Path<String>,
+    web::Json(query): web::Json<RandaoQuery>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = state_id.into_inner();
+    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
     let state = get_state_from_id(state_id, &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
@@ -196,12 +198,15 @@ pub async fn get_state_randao(
     Ok(HttpResponse::Ok().json(response))
 }
 
-#[get("/beacon/states/{state_id}/validator")]
+#[get("/beacon/states/{state_id}/validator/{validator_id}")]
 pub async fn get_state_validator(
     db: web::Data<ReamDB>,
-    state_id: web::Path<ID>,
-    validator: web::Json<Validator>,
+    param: web::Path<(String, String)>,
+    web::Json(validator): web::Json<Validator>,
 ) -> actix_web::Result<impl Responder> {
+    let (state_id, validator_id) = param.into_inner();
+    let state_id = ID::from_str(&state_id).map_err(error::ErrorBadRequest)?;
+    let validator_id = ValidatorID::from_str(&validator_id).map_err(error::ErrorBadRequest)?;
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
