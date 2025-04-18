@@ -105,7 +105,7 @@ impl Discovery {
             discv5
                 .start()
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to start discv5: {:?}", e))?;
+                .map_err(|err| anyhow!("Failed to start discv5: {err:?}"))?;
             info!("Started discovery with ENR: {:?}", discv5.local_enr());
             EventStream::Awaiting(Box::pin(discv5.event_stream()))
         } else {
