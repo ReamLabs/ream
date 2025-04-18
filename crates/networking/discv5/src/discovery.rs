@@ -79,12 +79,9 @@ impl Discovery {
         if let (socker_port) = config.socker_port {
              enr_builder.udp4(socker_port);
         }
-        if let Some(attestation_bytes) = config.subnets.attestation_bytes() {
-            enr_builder.add_value::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &attestation_bytes);
-        }
-
         let enr = enr_builder
             .add_value(ENR_ETH2_KEY, &ENRForkID::pectra())
+            .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.subnets)
             .build(&enr_local)
             .map_err(|e| anyhow::anyhow!("Failed to build ENR: {}", e))?;
 
