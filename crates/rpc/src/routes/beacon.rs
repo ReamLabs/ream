@@ -6,6 +6,12 @@ use warp::{
     Filter, Rejection,
     filters::{path::end, query::query},
     get, log, path,
+    filters::{
+        body,
+        path::{end, param},
+        query::query,
+    },
+    get, log, path, post,
     reply::Reply,
 };
 
@@ -19,7 +25,9 @@ use crate::{
         header::get_headers,
         randao::get_randao_mix,
         state::{get_pending_partial_withdrawals, get_state_root},
-        validator::get_validator_from_state,
+        validator::{
+            get_validator_from_state, get_validators_from_state, post_validators_from_state,
+        },
     },
     types::{
         id::{ID, ValidatorID},
@@ -104,7 +112,6 @@ pub fn get_beacon_routes(
         .and(path("headers"))
         .and(query::<SlotQuery>())
         .and(query::<ParentRootQuery>())
-        .and(end())
         .and(get())
         .and(db_filter.clone())
         .and_then({
@@ -113,11 +120,39 @@ pub fn get_beacon_routes(
             }
         })
         .with(log("headers"));
+    let validators = beacon_base
+        .and(path("states"))
+        .and(param::<ID>())
+        .and(path("validators"))
+        .and(get())
+        .and(query::<IdQuery>())
+        .and(query::<StatusQuery>())
+        .and(db_filter.clone())
+        .and_then(
+            move |state_id: ID, id_query: IdQuery, status_query: StatusQuery, db: ReamDB| {
+                get_validators_from_state(state_id, id_query, status_query, db)
+            },
+        )
+        .with(log("validators"));
+
+    let postvalidators = beacon_base
+        .and(path("states"))
+        .and(param::<ID>())
+        .and(path("validators"))
+        .and(end())
+        .and(post())
+        .and(body::json::<ValidatorsPostRequest>())
+        .and(db_filter.clone())
+        .and_then(
+            move |state_id: ID, request: ValidatorsPostRequest, db: ReamDB| {
+                post_validators_from_state(state_id, request, db)
+            },
+        )
+        .with(log("post_validators"));
 
     let block_root = beacon_base
         .and(path("blocks"))
         .and(parsed_param::<ID>())
-        .and(path("root"))
         .and(end())
         .and(get())
         .and(db_filter.clone())
@@ -144,6 +179,8 @@ pub fn get_beacon_routes(
 
     genesis
         .or(validator)
+        .or(validators)
+        .or(postvalidators)
         .or(randao)
         .or(fork)
         .or(checkpoint)

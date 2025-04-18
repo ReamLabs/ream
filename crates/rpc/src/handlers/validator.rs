@@ -11,6 +11,8 @@ use super::state::get_state_from_id;
 use crate::types::{
     errors::ApiError,
     id::{ID, ValidatorID},
+    query::{IdQuery, StatusQuery},
+    request::ValidatorsPostRequest,
     response::BeaconResponse,
 };
 
@@ -22,6 +24,17 @@ pub struct ValidatorData {
     balance: u64,
     status: String,
     validator: Validator,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Validators {
+    data: Vec<ValidatorData>,
+}
+
+impl Validators {
+    pub fn new(data: Vec<ValidatorData>) -> Self {
+        Self { data }
+    }
 }
 
 impl ValidatorData {
@@ -102,4 +115,105 @@ pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<Stri
     } else {
         Ok("active_ongoing".to_string())
     }
+}
+
+pub async fn get_validators_from_state(
+    state_id: ID,
+    id_query: IdQuery,
+    status_query: StatusQuery,
+    db: ReamDB,
+) -> Result<impl Reply, Rejection> {
+    let state = get_state_from_id(state_id, &db).await?;
+    let mut validators_data = Vec::new();
+
+    if let Some(validator_ids) = &id_query.id {
+        for validator_id in validator_ids {
+            let (index, validator) = {
+                match validator_id {
+                    ValidatorID::Index(i) => match state.validators.get(*i as usize) {
+                        Some(validator) => (*i as usize, validator.to_owned()),
+                        None => {
+                            return Err(ApiError::ValidatorNotFound(format!(
+                                "Validator not found for index: {i}"
+                            )))?;
+                        }
+                    },
+                    ValidatorID::Address(pubkey) => {
+                        match state
+                            .validators
+                            .iter()
+                            .enumerate()
+                            .find(|(_, v)| v.pubkey == *pubkey)
+                        {
+                            Some((i, validator)) => (i, validator.to_owned()),
+                            None => {
+                                return Err(ApiError::ValidatorNotFound(format!(
+                                    "Validator not found for pubkey: {pubkey:?}"
+                                )))?;
+                            }
+                        }
+                    }
+                }
+            };
+
+            let status = validator_status(&validator, &db).await?;
+
+            if status_query.has_statuses() && !status_query.contains_status(&status) {
+                continue;
+            }
+
+            let balance = state.balances.get(index).ok_or(ApiError::NotFound(format!(
+                "Validator not found for index: {index}"
+            )))?;
+
+            validators_data.push(ValidatorData::new(
+                index as u64,
+                *balance,
+                status,
+                validator,
+            ));
+        }
+    } else {
+        for (index, validator) in state.validators.iter().enumerate() {
+            let status = validator_status(validator, &db).await?;
+
+            if status_query.has_statuses() && !status_query.contains_status(&status) {
+                continue;
+            }
+
+            let balance = state.balances.get(index).ok_or(ApiError::NotFound(format!(
+                "Validator not found for index: {index}"
+            )))?;
+
+            validators_data.push(ValidatorData::new(
+                index as u64,
+                *balance,
+                status,
+                validator.clone(),
+            ));
+        }
+    }
+
+    Ok(with_status(
+        BeaconResponse::json(Validators::new(validators_data)),
+        StatusCode::OK,
+    ))
+}
+
+pub async fn post_validators_from_state(
+    state_id: ID,
+    request: ValidatorsPostRequest,
+    db: ReamDB,
+) -> Result<impl Reply, Rejection> {
+    let id_query = IdQuery { id: request.ids };
+
+    // Fix: Use struct initialization with correct field name (status not statuses)
+    let status_query = match request.statuses {
+        Some(statuses) => StatusQuery {
+            status: Some(statuses),
+        },
+        None => StatusQuery { status: None },
+    };
+
+    get_validators_from_state(state_id, id_query, status_query, db).await
 }
