@@ -7,7 +7,6 @@ use warp::{
     filters::{path::end, query::query},
     get, log, path, post,
     reply::Reply,
-    filters::{body, method::post, path::end, query::query}, get, log, path, reply::Reply, Filter, Rejection
 };
 
 use super::with_db;
@@ -21,20 +20,14 @@ use crate::{
         randao::get_randao_mix,
         state::{get_pending_partial_withdrawals, get_state_root},
         validator::{
-            get_validator_from_state, get_validators_from_state, post_validators_from_state,
+            get_validator_balances_from_state, get_validator_from_state, get_validators_from_state, post_validators_from_state
         },
     },
     types::{
         errors::ApiError,
-        id::{ID, ValidatorID},
-        query::{IdQuery, ParentRootQuery, RandaoQuery, SlotQuery, StatusQuery},
-        request::ValidatorsPostRequest,
-        state::get_state_root,
-        validator::{get_validator_balances_from_state, get_validator_from_state},
-    },
-    types::{
         id::{ValidatorID, ID},
-        query::{{ParentRootQuery, RandaoQuery, ValidatorBalanceQuery}, SlotQuery},
+        query::{IdQuery, ParentRootQuery, RandaoQuery, SlotQuery, StatusQuery, ValidatorBalanceQuery},
+        request::ValidatorsPostRequest,
     },
     utils::error::parsed_param,
 };
