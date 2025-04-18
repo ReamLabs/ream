@@ -108,12 +108,7 @@ pub async fn post_validator_identities_from_state(
     state_id: Path<ID>,
     validator_ids: Json<Vec<ValidatorID>>,
 ) -> Result<impl Responder, ApiError> {
-    let state = match get_state_from_id(state_id.into_inner(), &db).await {
-        Ok(s) => s,
-        Err(_) => {
-            return Err(ApiError::NotFound(String::from("State not found")));
-        }
-    };
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
     let validator_ids_set: HashSet<ValidatorID> = validator_ids.into_inner().into_iter().collect();
 
