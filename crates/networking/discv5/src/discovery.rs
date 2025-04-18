@@ -28,6 +28,7 @@ use tracing::{error, info, warn};
 use crate::{
     config::NetworkConfig,
     subnet::{ATTESTATION_BITFIELD_ENR_KEY, Subnet, Subnets, subnet_predicate},
+    eth2::{ENR_ETH2_KEY, ENRForkID},
 };
 
 #[derive(Debug)]
@@ -69,7 +70,7 @@ impl Discovery {
         local_key: libp2p::identity::Keypair,
         config: &NetworkConfig,
     ) -> anyhow::Result<Self> {
-        let enr_key = convert_to_enr(local_key)
+        let enr_local = convert_to_enr(local_key)
             .map_err(|e| anyhow::anyhow!("Failed to convert key: {:?}", e))?;
         let mut enr_builder = Enr::builder();
         // Need this test block to pass port and socket for test purpose
@@ -81,9 +82,11 @@ impl Discovery {
         if let Some(attestation_bytes) = config.subnets.attestation_bytes() {
             enr_builder.add_value::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &attestation_bytes);
         }
-        let enr = enr_builder
-            .build(&enr_key)
-            .map_err(|e| anyhow::anyhow!("Failed to build ENR: {:?}", e))?;
+
+        let enr = Enr::builder()
+            .add_value(ENR_ETH2_KEY, &ENRForkID::pectra())
+            .build(&enr_local)
+            .map_err(|e| anyhow::anyhow!("Failed to build ENR: {}", e))?;
         let node_local_id = enr.node_id();
 
         let mut discv5 = Discv5::new(enr.clone(), enr_key, config.discv5_config.clone())

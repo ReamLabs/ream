@@ -1,28 +1,27 @@
 pub mod rpc_types;
-pub mod transaction;
 pub mod utils;
 
 use alloy_primitives::{B64, B256, hex};
-use alloy_rlp::Decodable;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use jsonwebtoken::{EncodingKey, Header, encode, get_current_timestamp};
 use ream_consensus::{
     deneb::execution_payload::ExecutionPayload,
-    execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
+    execution_engine::{
+        blob_versioned_hashes::blob_versioned_hashes, engine_trait::ExecutionApi,
+        new_payload_request::NewPayloadRequest, rpc_types::get_blobs::BlobsAndProofV1,
+    },
 };
 use reqwest::{Client, Request};
 use rpc_types::{
     eth_syncing::EthSyncing,
     execution_payload::ExecutionPayloadV3,
     forkchoice_update::{ForkchoiceStateV1, ForkchoiceUpdateResult, PayloadAttributesV3},
-    get_blobs::BlobsAndProofV1,
     get_payload::PayloadV3,
     payload_status::{PayloadStatus, PayloadStatusV1},
 };
 use serde_json::json;
 use ssz_types::VariableList;
-use transaction::{BlobTransaction, TransactionType};
 use utils::{Claims, JsonRpcRequest, JsonRpcResponse, strip_prefix};
 
 pub struct ExecutionEngine {
@@ -60,36 +59,6 @@ impl ExecutionEngine {
         parent_beacon_block_root: B256,
     ) -> bool {
         execution_payload.block_hash == execution_payload.header_hash(parent_beacon_block_root)
-    }
-
-    pub fn blob_versioned_hashes(
-        &self,
-        execution_payload: &ExecutionPayload,
-    ) -> anyhow::Result<Vec<B256>> {
-        let mut blob_versioned_hashes = vec![];
-        for transaction in execution_payload.transactions.iter() {
-            if TransactionType::try_from(&transaction[..])
-                .map_err(|err| anyhow!("Failed to detect transaction type: {err:?}"))?
-                == TransactionType::BlobTransaction
-            {
-                let blob_transaction = BlobTransaction::decode(&mut &transaction[1..])?;
-                blob_versioned_hashes.extend(blob_transaction.blob_versioned_hashes);
-            }
-        }
-
-        Ok(blob_versioned_hashes)
-    }
-
-    /// Return ``True`` if and only if the version hashes computed by the blob transactions of
-    /// ``new_payload_request.execution_payload`` matches ``new_payload_request.versioned_hashes``.
-    pub fn is_valid_versioned_hashes(
-        &self,
-        new_payload_request: &NewPayloadRequest,
-    ) -> anyhow::Result<bool> {
-        Ok(
-            self.blob_versioned_hashes(&new_payload_request.execution_payload)?
-                == new_payload_request.versioned_hashes,
-        )
     }
 
     /// Return ``PayloadStatus`` of execution payload``.
@@ -229,27 +198,15 @@ impl ExecutionEngine {
             .await?
             .to_result()
     }
+}
 
-    pub async fn engine_get_blobs_v1(
-        &self,
-        blob_version_hashes: Vec<B256>,
-    ) -> anyhow::Result<Vec<Option<BlobsAndProofV1>>> {
-        let request_body = JsonRpcRequest {
-            id: 1,
-            jsonrpc: "2.0".to_string(),
-            method: "engine_getBlobsV1".to_string(),
-            params: vec![json!(blob_version_hashes)],
-        };
-
-        let http_post_request = self.build_request(request_body)?;
-
-        self.http_client
-            .execute(http_post_request)
-            .await?
-            .json::<JsonRpcResponse<Vec<Option<BlobsAndProofV1>>>>()
-            .await?
-            .to_result()
-    }
+/// Return ``True`` if and only if the version hashes computed by the blob transactions of
+/// ``new_payload_request.execution_payload`` matches ``new_payload_request.versioned_hashes``.
+pub fn is_valid_versioned_hashes(new_payload_request: &NewPayloadRequest) -> anyhow::Result<bool> {
+    Ok(
+        blob_versioned_hashes(&new_payload_request.execution_payload)?
+            == new_payload_request.versioned_hashes,
+    )
 }
 
 #[async_trait]
@@ -273,10 +230,31 @@ impl ExecutionApi for ExecutionEngine {
             return Ok(false);
         }
 
-        if !self.is_valid_versioned_hashes(&new_payload_request)? {
+        if !is_valid_versioned_hashes(&new_payload_request)? {
             return Ok(false);
         }
 
         return Ok(self.notify_new_payload(new_payload_request).await? == PayloadStatus::Valid);
+    }
+
+    async fn engine_get_blobs_v1(
+        &self,
+        blob_version_hashes: Vec<B256>,
+    ) -> anyhow::Result<Vec<Option<BlobsAndProofV1>>> {
+        let request_body = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".to_string(),
+            method: "engine_getBlobsV1".to_string(),
+            params: vec![json!(blob_version_hashes)],
+        };
+
+        let http_post_request = self.build_request(request_body)?;
+
+        self.http_client
+            .execute(http_post_request)
+            .await?
+            .json::<JsonRpcResponse<Vec<Option<BlobsAndProofV1>>>>()
+            .await?
+            .to_result()
     }
 }

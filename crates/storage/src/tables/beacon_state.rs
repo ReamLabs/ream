@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use alloy_primitives::B256;
 use ream_consensus::deneb::beacon_state::BeaconState;
 use redb::{Database, Durability, TableDefinition};
 
@@ -8,9 +9,9 @@ use crate::errors::StoreError;
 
 /// Table definition for the Beacon State table
 ///
-/// Key: Slot number
+/// Key: block_root
 /// Value: BeaconState
-pub const BEACON_STATE_TABLE: TableDefinition<u64, SSZEncoding<BeaconState>> =
+pub const BEACON_STATE_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<BeaconState>> =
     TableDefinition::new("beacon_state");
 
 pub struct BeaconStateTable {
@@ -18,7 +19,7 @@ pub struct BeaconStateTable {
 }
 
 impl Table for BeaconStateTable {
-    type Key = u64;
+    type Key = B256;
 
     type Value = BeaconState;
 

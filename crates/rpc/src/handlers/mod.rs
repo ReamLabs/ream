@@ -1,4 +1,12 @@
+pub mod block;
+pub mod checkpoint;
+pub mod config;
+pub mod fork;
 pub mod genesis;
+pub mod header;
+pub mod randao;
+pub mod state;
+pub mod validator;
 pub mod version;
 
 use serde::Serialize;

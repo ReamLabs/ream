@@ -935,6 +935,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19d374276b40fb8bbdee95aef7c7fa6b5316ec764510eb64b8dd0e2ed0d7e7f5"
 
 [[package]]
+name = "critical-section"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3433,6 +3439,10 @@ name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+dependencies = [
+ "critical-section",
+ "portable-atomic",
+]
 
 [[package]]
 name = "opaque-debug"
@@ -3701,6 +3711,12 @@ dependencies = [
  "opaque-debug",
  "universal-hash",
 ]
+
+[[package]]
+name = "portable-atomic"
+version = "1.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "350e9b48cbc6b0e028b0473b114454c6316e57336ee184ceab6e53f72c178b3e"
 
 [[package]]
 name = "powerfmt"
@@ -4037,8 +4053,10 @@ dependencies = [
  "kzg",
  "ream-bls",
  "serde",
+ "serde_json",
  "serde_yaml",
  "ssz_types",
+ "thiserror 2.0.12",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -4047,6 +4065,7 @@ dependencies = [
 name = "ream-discv5"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "alloy-rlp",
  "anyhow",
  "discv5",
@@ -4055,6 +4074,7 @@ dependencies = [
  "futures",
  "libp2p",
  "ssz_types",
+ "ream-consensus",
  "tokio",
  "tracing",
 ]
@@ -4086,6 +4106,34 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "tokio",
+]
+
+[[package]]
+name = "ream-fork-choice"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
+ "alloy-rlp",
+ "anyhow",
+ "async-trait",
+ "ethereum_hashing",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "itertools 0.14.0",
+ "kzg",
+ "ream-bls",
+ "ream-consensus",
+ "ream-polynomial-commitments",
+ "rust-kzg-blst",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "ssz_types",
+ "thiserror 2.0.12",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -4124,16 +4172,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-polynomial-commitments"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
+ "alloy-rlp",
+ "anyhow",
+ "async-trait",
+ "ethereum_hashing",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "itertools 0.14.0",
+ "kzg",
+ "ream-bls",
+ "ream-consensus",
+ "rust-kzg-blst",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "ssz_types",
+ "thiserror 2.0.12",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
 name = "ream-rpc"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
+ "ethereum_serde_utils",
+ "ream-bls",
  "ream-consensus",
  "ream-network-spec",
  "ream-node",
+ "ream-storage",
  "serde",
  "serde_json",
+ "ssz_types",
  "thiserror 2.0.12",
  "tracing",
+ "tree_hash",
  "warp",
 ]
 
@@ -4145,6 +4226,7 @@ version = "0.1.0"
 name = "ream-storage"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
  "directories",
  "ethereum_ssz",
@@ -4153,6 +4235,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.12",
  "tracing",
+ "tree_hash",
 ]
 
 [[package]]
@@ -4416,6 +4499,20 @@ name = "ruint-macro"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
+
+[[package]]
+name = "rust-kzg-blst"
+version = "0.1.0"
+source = "git+https://github.com/grandinetech/rust-kzg#0ad46bf1f6eaac04487d25ad10857c84c88c505a"
+dependencies = [
+ "blst",
+ "hex",
+ "kzg",
+ "libc",
+ "once_cell",
+ "rand 0.8.5",
+ "smallvec",
+]
 
 [[package]]
 name = "rustc-demangle"

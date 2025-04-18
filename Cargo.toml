@@ -1,12 +1,14 @@
 [workspace]
 default-members = ["bin/ream"]
 members = [
-    "bin/ream", 
+    "bin/ream",
     "crates/common/consensus", 
     "crates/common/execution_engine", 
-    "crates/common/executor", 
+    "crates/common/executor",
+    "crates/common/fork_choice", 
     "crates/common/network_spec", 
     "crates/common/node",
+    "crates/common/polynomial_commitments",
     "crates/crypto/bls",
     "crates/networking/discv5",
     "crates/networking/p2p",
@@ -52,6 +54,7 @@ libp2p-mplex = "0.42"
 redb = { version = "2.4.0" }
 reqwest = { version = "0.12", features = ["json"] }
 rstest = "0.23"
+rust-kzg-blst = { git = 'https://github.com/grandinetech/rust-kzg.git' }
 serde = { version = '1.0', features = ['derive', "rc"] }
 serde_json = "1.0.139"
 serde_yaml = "0.9"
@@ -72,8 +75,10 @@ ream-consensus = { path = "crates/common/consensus" }
 ream-discv5 = { path = "crates/networking/discv5" }
 ream-execution-engine = { path = "crates/common/execution_engine" }
 ream-executor = { path = "crates/common/executor" }
+ream-fork-choice = { path = "crates/common/fork_choice" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }
+ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-p2p = { path = "crates/networking/p2p" }
 ream-rpc = { path = "crates/rpc" }
 ream-storage = { path = "crates/storage" }

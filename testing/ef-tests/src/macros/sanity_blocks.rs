@@ -62,7 +62,7 @@ macro_rules! test_sanity_blocks {
                             .expect(&format!("cannot find test asset (blocks_{i}.ssz_snappy)"));
 
                         result = state
-                            .state_transition(signed_block, validate_result, &mock_engine)
+                            .state_transition(&signed_block, validate_result, &mock_engine)
                             .await
                             .map_err(|err| err.to_string());
                     }

@@ -1,9 +1,13 @@
+use std::str::FromStr;
+
 use alloy_primitives::hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz::Encode;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum};
 use tree_hash_derive::TreeHash;
+
+use crate::errors::BLSError;
 
 #[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default)]
 pub struct PubKey {
@@ -35,5 +39,21 @@ impl<'de> Deserialize<'de> for PubKey {
 impl PubKey {
     pub fn to_bytes(&self) -> &[u8] {
         self.inner.iter().as_slice()
+    }
+}
+
+impl FromStr for PubKey {
+    type Err = BLSError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let clean_str = s.strip_prefix("0x").unwrap_or(s);
+        let bytes = hex::decode(clean_str).map_err(|_| BLSError::InvalidHexString)?;
+
+        if bytes.len() != 48 {
+            return Err(BLSError::InvalidByteLength);
+        }
+
+        Ok(PubKey {
+            inner: FixedVector::from(bytes),
+        })
     }
 }

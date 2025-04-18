@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use warp::reject::Reject;
 
@@ -11,6 +12,21 @@ pub enum ApiError {
 
     #[error("Bad Request: {0}")]
     BadRequest(String),
+
+    #[error("Internal Server Error")]
+    InternalError,
+
+    #[error("Invalid parameter: {0}")]
+    InvalidParameter(String),
+
+    #[error("Validator not found: {0}")]
+    ValidatorNotFound(String),
 }
 
 impl Reject for ApiError {}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ErrorMessage {
+    pub code: u16,
+    pub message: String,
+}

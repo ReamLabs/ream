@@ -1,20 +1,23 @@
 use alloy_primitives::{B256, map::HashMap};
-use serde::{Deserialize, Serialize};
-
-use super::{
-    helpers::constants::{
-        GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, REORG_HEAD_WEIGHT_THRESHOLD,
-        REORG_MAX_EPOCHS_SINCE_FINALIZATION, REORG_PARENT_WEIGHT_THRESHOLD, SECONDS_PER_SLOT,
-    },
-    latest_message::LatestMessage,
-};
-use crate::{
+use anyhow::anyhow;
+use ream_consensus::{
     checkpoint::Checkpoint,
+    constants::{
+        GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SECONDS_PER_SLOT, SLOTS_PER_EPOCH,
+    },
     deneb::{beacon_block::BeaconBlock, beacon_state::BeaconState},
-    helpers::{calculate_committee_fraction, get_voting_source, get_weight},
+    fork_choice::latest_message::LatestMessage,
+    helpers::{calculate_committee_fraction, get_total_active_balance},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
 };
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+use serde::{Deserialize, Serialize};
+
+use crate::constants::{
+    PROPOSER_SCORE_BOOST, REORG_HEAD_WEIGHT_THRESHOLD, REORG_MAX_EPOCHS_SINCE_FINALIZATION,
+    REORG_PARENT_WEIGHT_THRESHOLD,
+};
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Store {
     pub time: u64,
     pub genesis_time: u64,
@@ -34,11 +37,11 @@ pub struct Store {
 
 impl Store {
     pub fn is_previous_epoch_justified(&self) -> bool {
-        let current_epoch = compute_epoch_at_slot(self.get_current_store_slot());
+        let current_epoch = self.get_current_store_epoch();
         self.justified_checkpoint.epoch + 1 == current_epoch
     }
 
-    pub fn get_current_store_slot(&self) -> u64 {
+    pub fn get_current_store_epoch(&self) -> u64 {
         compute_epoch_at_slot(self.get_current_slot())
     }
 
@@ -47,22 +50,22 @@ impl Store {
     }
 
     pub fn get_slots_since_genesis(&self) -> u64 {
-        self.time - self.genesis_time
+        (self.time - self.genesis_time) / SECONDS_PER_SLOT
     }
 
-    pub fn get_ancestor(&self, root: B256, slot: u64) -> B256 {
+    pub fn get_ancestor(&self, root: B256, slot: u64) -> anyhow::Result<B256> {
         let block = self
             .blocks
             .get(&root)
-            .expect("Failed to find root in blocks");
+            .ok_or(anyhow!("Failed to find root in blocks"))?;
         if block.slot > slot {
             self.get_ancestor(block.parent_root, slot)
         } else {
-            root
+            Ok(root)
         }
     }
 
-    pub fn get_checkpoint_block(&self, root: B256, epoch: u64) -> B256 {
+    pub fn get_checkpoint_block(&self, root: B256, epoch: u64) -> anyhow::Result<B256> {
         let epoch_first_slot = compute_start_slot_at_epoch(epoch);
         self.get_ancestor(root, epoch_first_slot)
     }
@@ -71,7 +74,7 @@ impl Store {
         &self,
         block_root: B256,
         blocks: &mut HashMap<B256, BeaconBlock>,
-    ) -> bool {
+    ) -> anyhow::Result<bool> {
         let block = &self.blocks[&block_root];
 
         let children: Vec<B256> = self
@@ -82,20 +85,20 @@ impl Store {
             .collect();
 
         if !children.is_empty() {
-            let filter_results: Vec<bool> = children
+            let filter_results = children
                 .iter()
                 .map(|child| self.filter_block_tree(*child, blocks))
-                .collect();
+                .collect::<anyhow::Result<Vec<_>>>()?;
 
             if filter_results.iter().any(|&result| result) {
                 blocks.insert(block_root, block.clone());
-                return true;
+                return Ok(true);
             }
-            return false;
+            return Ok(false);
         }
 
-        let current_epoch = compute_epoch_at_slot(self.get_current_slot());
-        let voting_source = get_voting_source(self, block_root);
+        let current_epoch = self.get_current_store_epoch();
+        let voting_source = self.get_voting_source(block_root);
 
         let correct_justified = self.justified_checkpoint.epoch == GENESIS_EPOCH || {
             voting_source.epoch == self.justified_checkpoint.epoch
@@ -103,17 +106,17 @@ impl Store {
         };
 
         let finalized_checkpoint_block =
-            self.get_checkpoint_block(block_root, self.finalized_checkpoint.epoch);
+            self.get_checkpoint_block(block_root, self.finalized_checkpoint.epoch)?;
 
         let correct_finalized = self.finalized_checkpoint.epoch == GENESIS_EPOCH
             || self.finalized_checkpoint.root == finalized_checkpoint_block;
 
         if correct_justified && correct_finalized {
             blocks.insert(block_root, block.clone());
-            return true;
+            return Ok(true);
         }
 
-        false
+        Ok(false)
     }
 
     pub fn update_checkpoints(
@@ -166,39 +169,98 @@ impl Store {
         epochs_since_finalization <= REORG_MAX_EPOCHS_SINCE_FINALIZATION
     }
 
-    pub fn is_head_weak(&self, head_root: B256) -> bool {
+    pub fn get_proposer_score(&self) -> anyhow::Result<u64> {
+        let justified_checkpoint_state = self
+            .checkpoint_states
+            .get(&self.justified_checkpoint)
+            .ok_or(anyhow!("Failed to find checkpoint in checkpoint states"))?;
+        let committee_weight =
+            get_total_active_balance(justified_checkpoint_state) / SLOTS_PER_EPOCH;
+        Ok((committee_weight * PROPOSER_SCORE_BOOST) / 100)
+    }
+
+    pub fn get_weight(&self, root: B256) -> anyhow::Result<u64> {
+        let state = &self.checkpoint_states[&self.justified_checkpoint];
+
+        let unslashed_and_active_indices: Vec<u64> = state
+            .get_active_validator_indices(state.get_current_epoch())
+            .into_iter()
+            .filter(|&i| !state.validators[i as usize].slashed)
+            .collect();
+
+        let mut attestation_score: u64 = 0;
+        for index in unslashed_and_active_indices {
+            if self.latest_messages.contains_key(&index)
+                && !self.equivocating_indices.contains(&index)
+                && self.get_ancestor(self.latest_messages[&index].root, self.blocks[&root].slot)?
+                    == root
+            {
+                attestation_score += state.validators[index as usize].effective_balance;
+            }
+        }
+
+        if self.proposer_boost_root == B256::ZERO {
+            return Ok(attestation_score);
+        }
+
+        let mut proposer_score: u64 = 0;
+        if self.get_ancestor(self.proposer_boost_root, self.blocks[&root].slot)? == root {
+            proposer_score = self.get_proposer_score()?;
+        }
+
+        Ok(attestation_score + proposer_score)
+    }
+
+    pub fn get_voting_source(&self, block_root: B256) -> Checkpoint {
+        let block = &self.blocks[&block_root];
+
+        let current_epoch = self.get_current_store_epoch();
+        let block_epoch = compute_epoch_at_slot(block.slot);
+
+        if current_epoch > block_epoch {
+            self.unrealized_justifications[&block_root]
+        } else {
+            let head_state = &self.block_states[&block_root];
+            head_state.current_justified_checkpoint
+        }
+    }
+
+    pub fn is_head_weak(&self, head_root: B256) -> anyhow::Result<bool> {
         let justified_state = self
             .checkpoint_states
             .get(&self.justified_checkpoint)
-            .expect("Justified checkpoint must exist in the store");
+            .ok_or(anyhow!("Justified checkpoint must exist in the store"))?;
 
         let reorg_threshold =
-            calculate_committee_fraction(justified_state.clone(), REORG_HEAD_WEIGHT_THRESHOLD);
-        let head_weight = get_weight(self.clone(), head_root);
+            calculate_committee_fraction(justified_state, REORG_HEAD_WEIGHT_THRESHOLD);
+        let head_weight = self.get_weight(head_root)?;
 
-        head_weight < reorg_threshold
+        Ok(head_weight < reorg_threshold)
     }
 
-    pub fn is_parent_strong(&self, parent_root: B256) -> bool {
+    pub fn is_parent_strong(&self, parent_root: B256) -> anyhow::Result<bool> {
         let justified_state = self
             .checkpoint_states
             .get(&self.justified_checkpoint)
-            .expect("Justified checkpoint must exist in the store");
+            .ok_or(anyhow!("Justified checkpoint must exist in the store"))?;
 
         let parent_threshold =
-            calculate_committee_fraction(justified_state.clone(), REORG_PARENT_WEIGHT_THRESHOLD);
-        let parent_weight = get_weight(self.clone(), parent_root);
+            calculate_committee_fraction(justified_state, REORG_PARENT_WEIGHT_THRESHOLD);
+        let parent_weight = self.get_weight(parent_root)?;
 
-        parent_weight > parent_threshold
+        Ok(parent_weight > parent_threshold)
     }
 
-    pub fn get_proposer_head(&self, head_root: B256, slot: u64) -> B256 {
-        let head_block = self.blocks.get(&head_root).expect("Head block must exist");
+    pub fn get_proposer_head(&self, head_root: B256, slot: u64) -> anyhow::Result<B256> {
+        let head_block = self
+            .blocks
+            .get(&head_root)
+            .ok_or(anyhow!("Head block must exist"))?;
         let parent_root = head_block.parent_root;
         let parent_block = self
             .blocks
             .get(&parent_root)
-            .expect("Parent block must exist");
+            .ok_or(anyhow!("Parent block must exist"))?;
 
         let head_late = self.is_head_late(head_root);
 
@@ -215,9 +277,9 @@ impl Store {
         let single_slot_reorg = parent_slot_ok && current_time_ok;
 
         assert!(self.proposer_boost_root != head_root); // Ensure boost has worn off
-        let head_weak = self.is_head_weak(head_root);
+        let head_weak = self.is_head_weak(head_root)?;
 
-        let parent_strong = self.is_parent_strong(parent_root);
+        let parent_strong = self.is_parent_strong(parent_root)?;
 
         if head_late
             && shuffling_stable
@@ -228,9 +290,9 @@ impl Store {
             && head_weak
             && parent_strong
         {
-            parent_root
+            Ok(parent_root)
         } else {
-            head_root
+            Ok(head_root)
         }
     }
 }

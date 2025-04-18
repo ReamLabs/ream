@@ -35,12 +35,7 @@ use crate::{
     beacon_block_header::BeaconBlockHeader,
     bls_to_execution_change::SignedBLSToExecutionChange,
     checkpoint::Checkpoint,
-    deposit::Deposit,
-    deposit_message::DepositMessage,
-    eth_1_data::Eth1Data,
-    execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
-    fork::Fork,
-    fork_choice::helpers::constants::{
+    constants::{
         BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
         DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
         DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
@@ -63,6 +58,11 @@ use crate::{
         TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT, WEIGHT_DENOMINATOR,
         WHISTLEBLOWER_REWARD_QUOTIENT,
     },
+    deposit::Deposit,
+    deposit_message::DepositMessage,
+    eth_1_data::Eth1Data,
+    execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
+    fork::Fork,
     helpers::xor,
     historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
@@ -1818,7 +1818,7 @@ impl BeaconState {
 
     pub async fn state_transition(
         &mut self,
-        signed_block: SignedBeaconBlock,
+        signed_block: &SignedBeaconBlock,
         validate_result: bool,
         execution_engine: &impl ExecutionApi,
     ) -> anyhow::Result<()> {
@@ -1829,7 +1829,7 @@ impl BeaconState {
 
         // Verify signature
         if validate_result {
-            ensure!(self.verify_block_signature(&signed_block)?)
+            ensure!(self.verify_block_signature(signed_block)?)
         }
 
         // Process block

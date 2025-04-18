@@ -6,9 +6,7 @@ use ethereum_hashing::hash;
 use tree_hash::TreeHash;
 
 use crate::{
-    fork_choice::helpers::constants::{
-        GENESIS_FORK_VERSION, MAX_SEED_LOOKAHEAD, SHUFFLE_ROUND_COUNT, SLOTS_PER_EPOCH,
-    },
+    constants::{GENESIS_FORK_VERSION, MAX_SEED_LOOKAHEAD, SHUFFLE_ROUND_COUNT, SLOTS_PER_EPOCH},
     fork_data::ForkData,
     signing_data::SigningData,
 };
