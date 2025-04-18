@@ -12,7 +12,7 @@ use ream_storage::{
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
 
-use crate::types::{errors::ApiError, id::ID, query::RandaoQuery};
+use crate::types::{errors::ApiError, id::ID, query::RandaoQuery, response::BeaconResponse};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckpointData {
@@ -95,7 +95,7 @@ pub async fn get_beacon_state(
         .await
         .map_err(error::ErrorInternalServerError)?;
 
-    Ok(HttpResponse::Ok().json(state))
+    Ok(HttpResponse::Ok().json(BeaconResponse::from(state)))
 }
 
 #[get("/beacon/states/{state_id}/root")]
@@ -110,7 +110,7 @@ pub async fn get_state_root(
 
     let state_root = state.tree_hash_root();
 
-    Ok(HttpResponse::Ok().json(state_root.to_string()))
+    Ok(HttpResponse::Ok().json(BeaconResponse::from(state_root.to_string())))
 }
 
 /// Called by `/eth/v1/beacon/states/{state_id}/fork` to get fork of state.

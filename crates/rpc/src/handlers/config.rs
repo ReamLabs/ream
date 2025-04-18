@@ -8,6 +8,8 @@ use ream_consensus::constants::{
 use ream_network_spec::networks::NetworkSpec;
 use serde::{Deserialize, Serialize};
 
+use crate::types::response::BeaconResponse;
+
 #[derive(Serialize, Deserialize, Default)]
 pub struct DepositContract {
     #[serde(with = "serde_utils::quoted_u64")]
@@ -48,12 +50,12 @@ impl From<Arc<NetworkSpec>> for SpecConfig {
 #[get("config/spec")]
 pub async fn get_config_spec() -> impl Responder {
     let spec_config = SpecConfig::default();
-    HttpResponse::Ok().json(spec_config)
+    HttpResponse::Ok().json(BeaconResponse::from(spec_config))
 }
 
 /// Called by `/deposit_contract` to get the Genesis Config of Beacon Chain.
 #[get("config/deposit_contract")]
 pub async fn get_config_deposit_contract() -> impl Responder {
     let deposit_contract = DepositContract::default();
-    HttpResponse::Ok().json(deposit_contract)
+    HttpResponse::Ok().json(BeaconResponse::from(deposit_contract))
 }

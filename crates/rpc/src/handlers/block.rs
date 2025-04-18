@@ -9,7 +9,11 @@ use ream_storage::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::types::{errors::ApiError, id::ID, response::RootResponse};
+use crate::types::{
+    errors::ApiError,
+    id::ID,
+    response::{BeaconResponse, RootResponse},
+};
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct BlockRewards {
@@ -113,7 +117,7 @@ pub async fn get_block_root(
         .await
         .map_err(error::ErrorInternalServerError)?;
 
-    Ok(HttpResponse::Ok().json(RootResponse { root: block_root }))
+    Ok(HttpResponse::Ok().json(BeaconResponse::from(RootResponse { root: block_root })))
 }
 
 /// Called by `/beacon/blocks/{block_id}/rewards` to get the block rewards response
@@ -142,7 +146,7 @@ pub async fn get_block_rewards(
         attester_slashings: beacon_block.message.body.attester_slashings.len() as u64,
     };
 
-    Ok(HttpResponse::Ok().json(response))
+    Ok(HttpResponse::Ok().json(BeaconResponse::from(response)))
 }
 
 /// Called by `/blocks/<block_id>` to get the Beacon Block.

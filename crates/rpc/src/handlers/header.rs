@@ -10,6 +10,7 @@ use crate::types::{
     errors::ApiError,
     id::ID,
     query::{ParentRootQuery, SlotQuery},
+    response::BeaconResponse,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -94,7 +95,7 @@ pub async fn get_headers(
         }
     };
 
-    Ok(HttpResponse::Ok().json(HeaderData::new(root, true, header)))
+    Ok(HttpResponse::Ok().json(BeaconResponse::from(HeaderData::new(root, true, header))))
 }
 
 pub async fn get_header_from_slot(
