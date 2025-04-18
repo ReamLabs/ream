@@ -1,9 +1,9 @@
 use alloy_primitives::B256;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::id::ValidatorID;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RandaoQuery {
     pub epoch: Option<u64>,
 }

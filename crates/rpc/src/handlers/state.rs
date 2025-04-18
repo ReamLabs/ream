@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use actix_web::{HttpResponse, Responder, error, get, web};
 use alloy_primitives::B256;
 use ream_consensus::{
@@ -12,7 +10,7 @@ use ream_storage::{
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
 
-use crate::types::{errors::ApiError, id::ID, query::RandaoQuery, response::BeaconResponse};
+use crate::types::{id::ID, query::RandaoQuery, response::BeaconResponse};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckpointData {
@@ -40,16 +38,14 @@ struct RandaoResponse {
     pub randao: B256,
 }
 
-pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {
+pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> actix_web::Result<BeaconState> {
     let block_root = match state_id {
         ID::Finalized => {
             let finalized_checkpoint = db
                 .finalized_checkpoint_provider()
                 .get()
-                .map_err(|_| ApiError::InternalError)?
-                .ok_or_else(|| {
-                    ApiError::NotFound(String::from("Finalized checkpoint not found"))
-                })?;
+                .map_err(error::ErrorInternalServerError)?
+                .ok_or_else(|| error::ErrorNotFound("Finalized checkpoint not found"))?;
 
             Ok(Some(finalized_checkpoint.root))
         }
@@ -57,84 +53,78 @@ pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState,
             let justified_checkpoint = db
                 .justified_checkpoint_provider()
                 .get()
-                .map_err(|_| ApiError::InternalError)?
-                .ok_or_else(|| {
-                    ApiError::NotFound(String::from("Justified checkpoint not found"))
-                })?;
+                .map_err(error::ErrorInternalServerError)?
+                .ok_or_else(|| error::ErrorNotFound("Justified checkpoint not found"))?;
 
             Ok(Some(justified_checkpoint.root))
         }
         ID::Head | ID::Genesis => {
-            return Err(ApiError::NotFound(format!(
+            return Err(error::ErrorNotFound(format!(
                 "This ID type is currently not supported: {state_id:?}"
             )));
         }
         ID::Slot(slot) => db.slot_index_provider().get(slot),
         ID::Root(root) => db.state_root_index_provider().get(root),
     }
-    .map_err(|_| ApiError::InternalError)?
-    .ok_or(ApiError::NotFound(format!(
-        "Failed to find `block_root` from {state_id:?}"
-    )))?;
+    .map_err(error::ErrorInternalServerError)?
+    .ok_or_else(|| {
+        error::ErrorNotFound(format!("Failed to find `block_root` from {state_id:?}"))
+    })?;
 
     db.beacon_state_provider()
         .get(block_root)
-        .map_err(|_| ApiError::InternalError)?
-        .ok_or(ApiError::NotFound(format!(
-            "Failed to find `beacon_state` from {block_root:?}"
-        )))
+        .map_err(error::ErrorInternalServerError)?
+        .ok_or_else(|| {
+            error::ErrorNotFound(format!("Failed to find `block_root` from {state_id:?}"))
+        })
 }
 
 #[get("/beacon/states/{state_id}")]
 pub async fn get_beacon_state(
     db: web::Data<ReamDB>,
-    state_id: web::Path<String>,
+    state_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
-    let state = get_state_from_id(state_id, &db)
+    let state = get_state_from_id(state_id.into_inner(), &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::from(state)))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(state)))
 }
 
 #[get("/beacon/states/{state_id}/root")]
 pub async fn get_state_root(
     db: web::Data<ReamDB>,
-    state_id: web::Path<String>,
+    state_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
-    let state = get_state_from_id(state_id, &db)
+    let state = get_state_from_id(state_id.into_inner(), &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
 
     let state_root = state.tree_hash_root();
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::from(state_root.to_string())))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(state_root.to_string())))
 }
 
 /// Called by `/eth/v1/beacon/states/{state_id}/fork` to get fork of state.
 #[get("/beacon/states/{state_id}/fork")]
 pub async fn get_state_fork(
     db: web::Data<ReamDB>,
-    state_id: web::Path<String>,
+    state_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
-    let state = get_state_from_id(state_id, &db)
+    let state = get_state_from_id(state_id.into_inner(), &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
 
-    Ok(HttpResponse::Ok().json(state.fork))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(state.fork)))
 }
 
 /// Called by `/states/<state_id>/finality_checkpoints` to get the Checkpoint Data of state.
 #[get("/beacon/states/{state_id}/finality_checkpoints")]
 pub async fn get_state_finality_checkpoint(
     db: web::Data<ReamDB>,
-    state_id: web::Path<String>,
+    state_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
-    let state = get_state_from_id(state_id, &db)
+    let state = get_state_from_id(state_id.into_inner(), &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
 
@@ -143,7 +133,7 @@ pub async fn get_state_finality_checkpoint(
         state.current_justified_checkpoint,
         state.finalized_checkpoint,
     );
-    Ok(HttpResponse::Ok().json(response))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(response)))
 }
 
 /// Called by `/states/<state_id>/randao` to get the Randao mix of state.
@@ -152,11 +142,10 @@ pub async fn get_state_finality_checkpoint(
 #[get("/beacon/states/{state_id}/randao")]
 pub async fn get_state_randao(
     db: web::Data<ReamDB>,
-    state_id: web::Path<String>,
+    state_id: web::Path<ID>,
     web::Json(query): web::Json<RandaoQuery>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
-    let state = get_state_from_id(state_id, &db)
+    let state = get_state_from_id(state_id.into_inner(), &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
 
@@ -166,7 +155,7 @@ pub async fn get_state_randao(
     };
 
     let response = RandaoResponse { randao: randao_mix };
-    Ok(HttpResponse::Ok().json(response))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(response)))
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -183,10 +172,9 @@ pub struct WithdrawalData {
 #[get("/beacon/states/{state_id}/get_pending_partial_withdrawals")]
 pub async fn get_pending_partial_withdrawals(
     db: web::Data<ReamDB>,
-    state_id: web::Path<String>,
+    state_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
-    let state = get_state_from_id(state_id, &db)
+    let state = get_state_from_id(state_id.into_inner(), &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
 
@@ -200,7 +188,7 @@ pub async fn get_pending_partial_withdrawals(
         })
         .collect();
 
-    let withdrawal_data: Vec<WithdrawalData> = partial_withdrawals
+    let response: Vec<WithdrawalData> = partial_withdrawals
         .into_iter()
         .map(|withdrawal: Withdrawal| WithdrawalData {
             validator_index: withdrawal.validator_index,
@@ -208,5 +196,5 @@ pub async fn get_pending_partial_withdrawals(
             withdrawable_epoch: state.get_current_epoch(),
         })
         .collect();
-    Ok(HttpResponse::Ok().json(withdrawal_data))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(response)))
 }

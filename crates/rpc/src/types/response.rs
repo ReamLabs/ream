@@ -6,6 +6,21 @@ pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
 const EXECUTION_OPTIMISTIC: bool = false;
 const FINALIZED: bool = false;
 
+/// # Example
+/// {
+///  "data": json!(T)
+/// }
+#[derive(Debug, Serialize)]
+pub struct DataResponse<T> {
+    pub data: T,
+}
+
+impl<T: Serialize> DataResponse<T> {
+    pub fn new(data: T) -> Self {
+        Self { data }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct RootResponse {
     pub root: B256,
@@ -35,7 +50,7 @@ pub struct BeaconResponse<T> {
     pub data: T,
 }
 impl<T: Serialize> BeaconResponse<T> {
-    pub fn from(data: T) -> Self {
+    pub fn new(data: T) -> Self {
         Self {
             data,
             execution_optimistic: EXECUTION_OPTIMISTIC,

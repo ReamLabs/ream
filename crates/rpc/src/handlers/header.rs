@@ -7,7 +7,6 @@ use tree_hash::TreeHash;
 
 use super::block::get_beacon_block_from_id;
 use crate::types::{
-    errors::ApiError,
     id::ID,
     query::{ParentRootQuery, SlotQuery},
     response::BeaconResponse,
@@ -95,13 +94,13 @@ pub async fn get_headers(
         }
     };
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::from(HeaderData::new(root, true, header))))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(HeaderData::new(root, true, header))))
 }
 
 pub async fn get_header_from_slot(
     slot: u64,
     db: &ReamDB,
-) -> Result<(SignedBeaconBlockHeader, B256), ApiError> {
+) -> actix_web::Result<(SignedBeaconBlockHeader, B256)> {
     let beacon_block = get_beacon_block_from_id(ID::Slot(slot), &db).await?;
 
     let header_message = BeaconBlockHeader {

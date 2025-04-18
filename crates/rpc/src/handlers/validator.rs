@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use actix_web::{HttpResponse, Responder, error, get, post, web};
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
@@ -39,12 +37,11 @@ impl ValidatorData {
 #[get("/beacon/states/{state_id}/validator/{validator_id}")]
 pub async fn get_validator_from_state(
     db: web::Data<ReamDB>,
-    param: web::Path<(String, String)>,
+    param: web::Path<(ID, ValidatorID)>,
     web::Json(validator): web::Json<Validator>,
 ) -> actix_web::Result<impl Responder> {
     let (state_id, validator_id) = param.into_inner();
-    let state_id = ID::from_str(&state_id).map_err(error::ErrorBadRequest)?;
-    let validator_id = ValidatorID::from_str(&validator_id).map_err(error::ErrorBadRequest)?;
+
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
@@ -93,7 +90,7 @@ pub async fn get_validator_from_state(
     let status = validator_status(&validator, &db).await?;
 
     Ok(
-        HttpResponse::Ok().json(BeaconResponse::from(ValidatorData::new(
+        HttpResponse::Ok().json(BeaconResponse::new(ValidatorData::new(
             index as u64,
             *balance,
             status,
@@ -124,7 +121,7 @@ pub async fn validator_status(validator: &Validator, db: &ReamDB) -> actix_web::
 #[get("/beacon/states/{state_id}/validators")]
 pub async fn get_validators_from_state(
     db: web::Data<ReamDB>,
-    state_id: web::Path<String>,
+    state_id: web::Path<ID>,
     web::Json(id_query): web::Json<IdQuery>,
     web::Json(status_query): web::Json<StatusQuery>,
 ) -> actix_web::Result<impl Responder> {
@@ -136,9 +133,7 @@ pub async fn get_validators_from_state(
         }
     }
 
-    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
-
-    let state = get_state_from_id(state_id, &db)
+    let state = get_state_from_id(state_id.into_inner(), &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
     let mut validators_data = Vec::new();
@@ -204,24 +199,23 @@ pub async fn get_validators_from_state(
         ));
     }
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::from(validators_data)))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(validators_data)))
 }
 
 #[post("/beacon/states/{state_id}/validators")]
 pub async fn post_validators_from_state(
     db: web::Data<ReamDB>,
-    state_id: web::Path<String>,
+    state_id: web::Path<ID>,
     web::Json(request): web::Json<ValidatorsPostRequest>,
     web::Json(status_query): web::Json<StatusQuery>,
 ) -> actix_web::Result<impl Responder> {
-    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
     let id_query = IdQuery { id: request.ids };
 
     let status_query = StatusQuery {
         status: request.status,
     };
 
-    let state = get_state_from_id(state_id, &db)
+    let state = get_state_from_id(state_id.into_inner(), &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
     let mut validators_data = Vec::new();
@@ -287,5 +281,5 @@ pub async fn post_validators_from_state(
         ));
     }
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::from(validators_data)))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(validators_data)))
 }

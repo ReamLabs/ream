@@ -1,7 +1,8 @@
-#![allow(unused_variables, dead_code)]
+#![allow(unused_variables)]
+#![allow(clippy::needless_borrow)]
 use std::sync::Arc;
 
-use actix_web::{App, HttpResponse, HttpServer, dev::ServerHandle, middleware, web};
+use actix_web::{App, HttpServer, dev::ServerHandle, middleware, web};
 use config::ServerConfig;
 use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
@@ -30,13 +31,11 @@ pub async fn start_server(
     let server = HttpServer::new(move || {
         let stop_handle = stop_handle.clone();
         App::new()
-            // enable logger
+            .wrap(middleware::Logger::default())
             .app_data(stop_handle)
             .app_data(web::Data::new(network_spec.clone()))
             .app_data(web::Data::new(db.clone()))
-            .wrap(middleware::Logger::default())
             .configure(register_routers)
-            .default_service(web::to(|| HttpResponse::NotFound()))
     })
     .bind(server_config.http_socket_address)?
     .run();
@@ -49,6 +48,7 @@ struct StopHandle {
     inner: parking_lot::Mutex<Option<ServerHandle>>,
 }
 
+#[allow(dead_code)]
 impl StopHandle {
     /// Sets the server handle to stop.
     pub(crate) fn register(&self, handle: ServerHandle) {

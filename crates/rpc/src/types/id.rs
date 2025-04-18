@@ -7,8 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::errors::ApiError;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ID {
     Finalized,
     Genesis,
@@ -17,6 +16,25 @@ pub enum ID {
     Slot(u64),
     /// expected to be a 0x-prefixed hex string.
     Root(B256),
+}
+
+impl Serialize for ID {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for ID {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        ID::from_str(&s).map_err(serde::de::Error::custom)
+    }
 }
 
 impl FromStr for ID {
@@ -58,12 +76,30 @@ impl fmt::Display for ID {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub enum ValidatorID {
     Index(u64),
     /// expected to be a 0x-prefixed hex string.
     Address(PubKey),
+}
+
+impl Serialize for ValidatorID {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for ValidatorID {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).map_err(serde::de::Error::custom)
+    }
 }
 
 impl FromStr for ValidatorID {
