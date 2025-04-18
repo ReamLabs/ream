@@ -24,7 +24,7 @@ impl Subnets {
         }
     }
 
-    pub fn enable_subnet(&mut self, subnet: Subnet) -> Result<(), String> {
+    pub fn enable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
         match subnet {
             Subnet::Attestation(id) if id < 64 => {
                 let bits = self.attestation_bits.get_or_insert(BitVector::new());
