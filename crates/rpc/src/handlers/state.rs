@@ -1,8 +1,4 @@
-use ream_consensus::{
-    constants::{ELECTRA, ETH_CONSENSUS_VERSION_HEADER},
-    deneb::beacon_state::BeaconState,
-    withdrawal::Withdrawal,
-};
+use ream_consensus::{deneb::beacon_state::BeaconState, withdrawal::Withdrawal};
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
@@ -18,7 +14,10 @@ use warp::{
 use crate::types::{
     errors::ApiError,
     id::ID,
-    response::{BeaconResponse, BeaconVersionedResponse, RootResponse},
+    response::{
+        BeaconResponse, BeaconVersionedResponse, ELECTRA, ETH_CONSENSUS_VERSION_HEADER,
+        RootResponse,
+    },
 };
 
 pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {

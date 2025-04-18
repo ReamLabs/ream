@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use warp::reply::{Json, json};
 
+pub const ELECTRA: &str = "electra";
+pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
 const EXECUTION_OPTIMISTIC: bool = false;
 const FINALIZED: bool = false;
 
