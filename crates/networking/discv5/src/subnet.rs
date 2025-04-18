@@ -62,12 +62,6 @@ impl Subnets {
         }
     }
 
-    pub fn attestation_bytes(&self) -> Option<Bytes> {
-        self.attestation_bits
-            .as_ref()
-            .map(|bits| bits.as_ssz_bytes().into())
-    }
-
     pub fn from_enr(enr: &Enr) -> Result<Subnets, String> {
         let bitfield_bytes: Bytes = enr
             .get_decodable(ATTESTATION_BITFIELD_ENR_KEY)
