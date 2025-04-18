@@ -32,6 +32,8 @@ use crate::{
     utils::error::parsed_param,
 };
 
+const MAX_VALIDATOR_COUNT: usize = 100;
+
 /// Creates and returns all `/beacon` routes.
 pub fn get_beacon_routes(
     network_spec: Arc<NetworkSpec>,
@@ -126,7 +128,6 @@ pub fn get_beacon_routes(
         .and(db_filter.clone())
         .and_then(
             move |state_id: ID, id_query: IdQuery, status_query: StatusQuery, db: ReamDB| async move {
-                const MAX_VALIDATOR_COUNT: usize = 100;
                 if let Some(validator_ids) = &id_query.id {
                     if validator_ids.len() >= MAX_VALIDATOR_COUNT {
                         return Err(warp::reject::custom(
