@@ -1,4 +1,8 @@
-use ream_consensus::{deneb::beacon_state::BeaconState, withdrawal::Withdrawal};
+use ream_consensus::{
+    constants::{ELECTRA, ETH_CONSENSUS_VERSION_HEADER},
+    deneb::beacon_state::BeaconState,
+    withdrawal::Withdrawal,
+};
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
@@ -8,7 +12,7 @@ use tree_hash::TreeHash;
 use warp::{
     http::status::StatusCode,
     reject::Rejection,
-    reply::{Reply, with_status},
+    reply::{Reply, with_header, with_status},
 };
 
 use crate::types::{
@@ -98,26 +102,27 @@ pub async fn get_pending_partial_withdrawals(
     let withdrawals = state.get_expected_withdrawals();
     let partial_withdrawals: Vec<Withdrawal> = withdrawals
         .into_iter()
-        .filter(|w| {
-            let validator = &state.validators[w.validator_index as usize];
-            let balance = state.balances[w.validator_index as usize];
+        .filter(|withdrawal: &Withdrawal| {
+            let validator = &state.validators[withdrawal.validator_index as usize];
+            let balance = state.balances[withdrawal.validator_index as usize];
             validator.is_partially_withdrawable_validator(balance)
         })
         .collect();
 
     let withdrawal_data: Vec<WithdrawalData> = partial_withdrawals
         .into_iter()
-        .map(|w| WithdrawalData {
-            validator_index: w.validator_index,
-            amount: w.amount,
+        .map(|withdrawal: Withdrawal| WithdrawalData {
+            validator_index: withdrawal.validator_index,
+            amount: withdrawal.amount,
             withdrawable_epoch: state.get_current_epoch(),
         })
         .collect();
-    let response = warp::reply::with_header(
-        BeaconVersionedResponse::json(withdrawal_data),
-        "Eth-Consensus-Version",
-        "electra",
-    );
-
-    Ok(with_status(response, StatusCode::OK))
+    Ok(with_status(
+        with_header(
+            BeaconVersionedResponse::json(withdrawal_data),
+            ETH_CONSENSUS_VERSION_HEADER,
+            ELECTRA,
+        ),
+        StatusCode::OK,
+    ))
 }
