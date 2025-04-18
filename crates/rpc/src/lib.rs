@@ -1,3 +1,4 @@
+#![allow(unused_variables, dead_code)]
 use std::sync::Arc;
 
 use actix_web::{App, HttpResponse, HttpServer, dev::ServerHandle, middleware, web};

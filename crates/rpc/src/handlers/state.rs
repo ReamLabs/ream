@@ -3,43 +3,16 @@ use std::str::FromStr;
 use actix_web::{HttpResponse, Responder, error, get, web};
 use alloy_primitives::B256;
 use ream_consensus::{
-    checkpoint::Checkpoint, deneb::beacon_state::BeaconState, validator::Validator,
+    checkpoint::Checkpoint, deneb::beacon_state::BeaconState, withdrawal::Withdrawal,
 };
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
 use tree_hash::TreeHash;
 
-use crate::types::{
-    errors::ApiError,
-    id::{ID, ValidatorID},
-    query::RandaoQuery,
-    response::{BeaconResponse, RootResponse},
-};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ValidatorData {
-    #[serde(with = "serde_utils::quoted_u64")]
-    index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    balance: u64,
-    status: String,
-    validator: Validator,
-}
-
-impl ValidatorData {
-    pub fn new(index: u64, balance: u64, status: String, validator: Validator) -> Self {
-        Self {
-            index,
-            balance,
-            status,
-            validator,
-        }
-    }
-}
+use crate::types::{errors::ApiError, id::ID, query::RandaoQuery};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckpointData {
@@ -130,14 +103,12 @@ pub async fn get_state_root(
     db: web::Data<ReamDB>,
     state_id: web::Path<String>,
 ) -> actix_web::Result<impl Responder> {
-    warn!("start get_state_root");
     let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
     let state = get_state_from_id(state_id, &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
 
     let state_root = state.tree_hash_root();
-    warn!("state_root: {:?}", state_root);
 
     Ok(HttpResponse::Ok().json(state_root.to_string()))
 }
@@ -198,28 +169,44 @@ pub async fn get_state_randao(
     Ok(HttpResponse::Ok().json(response))
 }
 
-#[get("/beacon/states/{state_id}/validator/{validator_id}")]
-pub async fn get_state_validator(
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct WithdrawalData {
+    #[serde(with = "serde_utils::quoted_u64")]
+    validator_index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    amount: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    withdrawable_epoch: u64,
+}
+// Called by `/states/{state_id}/get_pending_partial_withdrawals` to get pending partial withdrawals
+// for state with given stateId
+#[get("/beacon/states/{state_id}/get_pending_partial_withdrawals")]
+pub async fn get_pending_partial_withdrawals(
     db: web::Data<ReamDB>,
-    param: web::Path<(String, String)>,
-    web::Json(validator): web::Json<Validator>,
+    state_id: web::Path<String>,
 ) -> actix_web::Result<impl Responder> {
-    let (state_id, validator_id) = param.into_inner();
-    let state_id = ID::from_str(&state_id).map_err(error::ErrorBadRequest)?;
-    let validator_id = ValidatorID::from_str(&validator_id).map_err(error::ErrorBadRequest)?;
-    let highest_slot = db
-        .slot_index_provider()
-        .get_highest_slot()
-        .map_err(error::ErrorInternalServerError)?
-        .ok_or(error::ErrorNotFound("Failed to find highest slot"))?;
-
-    let state = get_state_from_id(ID::Slot(highest_slot), &db)
+    let state_id = ID::from_str(&state_id.into_inner()).map_err(error::ErrorBadRequest)?;
+    let state = get_state_from_id(state_id, &db)
         .await
         .map_err(error::ErrorInternalServerError)?;
 
-    if validator.exit_epoch < state.get_current_epoch() {
-        Ok("offline".to_string())
-    } else {
-        Ok("active_ongoing".to_string())
-    }
+    let withdrawals = state.get_expected_withdrawals();
+    let partial_withdrawals: Vec<Withdrawal> = withdrawals
+        .into_iter()
+        .filter(|withdrawal: &Withdrawal| {
+            let validator = &state.validators[withdrawal.validator_index as usize];
+            let balance = state.balances[withdrawal.validator_index as usize];
+            validator.is_partially_withdrawable_validator(balance)
+        })
+        .collect();
+
+    let withdrawal_data: Vec<WithdrawalData> = partial_withdrawals
+        .into_iter()
+        .map(|withdrawal: Withdrawal| WithdrawalData {
+            validator_index: withdrawal.validator_index,
+            amount: withdrawal.amount,
+            withdrawable_epoch: state.get_current_epoch(),
+        })
+        .collect();
+    Ok(HttpResponse::Ok().json(withdrawal_data))
 }

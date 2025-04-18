@@ -2,18 +2,14 @@ use std::str::FromStr;
 
 use actix_web::{HttpResponse, Responder, error, get, web};
 use alloy_primitives::B256;
-use ream_consensus::{deneb::beacon_block::SignedBeaconBlock, genesis::Genesis};
+use ream_consensus::deneb::beacon_block::SignedBeaconBlock;
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
 use serde::{Deserialize, Serialize};
 
-use crate::types::{
-    errors::ApiError,
-    id::ID,
-    response::{BeaconResponse, RootResponse},
-};
+use crate::types::{errors::ApiError, id::ID, response::RootResponse};
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct BlockRewards {
@@ -90,8 +86,8 @@ pub async fn get_genesis(db: web::Data<ReamDB>) -> actix_web::Result<impl Respon
     Ok(HttpResponse::Ok())
 }
 
-/// Called by `/eth/v2/beacon/{block_id}/attestations` to get block attestations
-#[get("/beacon/{block_id}/attestations")]
+/// Called by `/eth/v2/beacon/blocks/{block_id}/attestations` to get block attestations
+#[get("/beacon/blocks/{block_id}/attestations")]
 pub async fn get_block_attestations(
     db: web::Data<ReamDB>,
     block_id: web::Path<String>,

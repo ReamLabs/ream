@@ -1,6 +1,6 @@
+use actix_web::{HttpResponse, ResponseError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-// use warp::reject::Reject;
 
 #[derive(Error, Debug)]
 pub enum ApiError {
@@ -23,7 +23,21 @@ pub enum ApiError {
     ValidatorNotFound(String),
 
     #[error("Too many validator IDs in request")]
-    TooManyValidatorsIds(),
+    TooManyValidatorsIds,
+}
+
+// impl ResponseError trait allows to convert our errors into http responses with appropriate data
+impl ResponseError for ApiError {
+    fn error_response(&self) -> HttpResponse {
+        match self {
+            Self::TooManyValidatorsIds => {
+                HttpResponse::InternalServerError().json("Too many validator IDs in request")
+            }
+            _ => {
+                todo!()
+            }
+        }
+    }
 }
 
 // impl Reject for ApiError {}

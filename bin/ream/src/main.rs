@@ -1,4 +1,4 @@
-use std::{env, sync::mpsc};
+use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};

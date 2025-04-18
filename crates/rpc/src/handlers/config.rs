@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use actix_web::{HttpResponse, Responder, get, http::StatusCode, web};
+use actix_web::{HttpResponse, Responder, get};
 use alloy_primitives::{Address, aliases::B32};
 use ream_consensus::constants::{
     DOMAIN_AGGREGATE_AND_PROOF, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,

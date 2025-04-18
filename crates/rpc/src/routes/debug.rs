@@ -1,5 +1,4 @@
 use actix_web::web;
-use ream_storage::db::ReamDB;
 
 use crate::handlers::state::get_beacon_state;
 

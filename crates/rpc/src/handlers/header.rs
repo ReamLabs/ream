@@ -1,9 +1,6 @@
 use actix_web::{HttpResponse, Responder, error, get, web};
 use alloy_primitives::B256;
-use ream_consensus::{
-    beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
-    genesis::Genesis,
-};
+use ream_consensus::beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader};
 use ream_storage::{db::ReamDB, tables::Table};
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
@@ -13,7 +10,6 @@ use crate::types::{
     errors::ApiError,
     id::ID,
     query::{ParentRootQuery, SlotQuery},
-    response::BeaconResponse,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
