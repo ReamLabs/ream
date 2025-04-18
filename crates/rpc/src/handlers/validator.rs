@@ -5,7 +5,7 @@ use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
 use warp::{
     http::status::StatusCode,
-    reject::{Rejection, custom},
+    reject::Rejection,
     reply::{Reply, with_status},
 };
 
@@ -106,12 +106,7 @@ pub async fn get_validator_identities_from_state(
     validator_ids: Vec<ValidatorID>,
     db: ReamDB,
 ) -> Result<impl Reply, Rejection> {
-    let state = match get_state_from_id(state_id, &db).await {
-        Ok(s) => s,
-        Err(_) => {
-            return Err(custom(ApiError::NotFound(String::from("State not found"))));
-        }
-    };
+    let state = get_state_from_id(state_id, &db).await?;
 
     let validator_ids_set: HashSet<ValidatorID> = validator_ids.into_iter().collect();
 
