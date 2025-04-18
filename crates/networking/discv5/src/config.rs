@@ -38,7 +38,6 @@ impl Default for NetworkConfig {
             socket_address,
             socket_port,
             disable_discovery: false,
-            total_peers: 10,
             subnets,
         }
     }
