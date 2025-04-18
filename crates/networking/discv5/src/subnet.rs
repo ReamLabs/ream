@@ -62,19 +62,26 @@ impl Subnets {
         }
     }
 
-    pub fn from_enr(enr: &Enr) -> Result<Subnets, String> {
-        let bitfield_bytes: Bytes = enr
-            .get_decodable(ATTESTATION_BITFIELD_ENR_KEY)
-            .ok_or("ENR attestation bitfield non-existent")?
-            .map_err(|_| "Invalid RLP Encoding")?;
+}
 
-        let attestation_bits = BitVector::from_ssz_bytes(&bitfield_bytes)
-            .map_err(|_| "Could not decode the ENR attnets bitfield")?;
-        Ok(Subnets {
-            attestation_bits: Some(attestation_bits),
-        })
+impl Encodable for Subnets {
+    fn encode(&self, out: &mut dyn bytes::BufMut) {
+        let ssz_bytes = self.as_ssz_bytes();
+        let bytes = Bytes::from(ssz_bytes);
+        bytes.encode(out);
     }
 }
+
+impl Decodable for Subnets {
+    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        let bytes = Bytes::decode(buf)?;
+        let subnets = Subnets::from_ssz_bytes(&bytes)
+            .map_err(|_| alloy_rlp::Error::Custom("Failed to decode SSZ subnets"))?;
+        Ok(subnets)
+    }
+}
+
+We should implement these traits on subnets, so then devs can just read the value directly
 
 pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + Sync {
     move |enr: &Enr| {
