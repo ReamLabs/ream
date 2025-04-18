@@ -21,7 +21,7 @@ use crate::types::{
     query::{IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
     response::BeaconResponse,
-    errors::ApiError, id::{ValidatorID, ID}, query::ValidatorBalanceQuery, response::BeaconResponse
+    query::ValidatorBalanceQuery
 };
 
 const MAX_VALIDATOR_COUNT: usize = 100;
@@ -333,7 +333,7 @@ pub async fn get_validator_balances_from_state(
 
     if let Some(ref ids) = query.id {
         if ids.len() > 1000 {
-            return Err(ApiError::TooManyValidatorIds("Too many validator IDs in request".to_string()))?;
+            return Err(ApiError::TooManyValidatorsIds())?;
         }
     }
 
