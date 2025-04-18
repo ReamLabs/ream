@@ -18,10 +18,9 @@ use super::state::get_state_from_id;
 use crate::types::{
     errors::ApiError,
     id::{ID, ValidatorID},
-    query::{IdQuery, StatusQuery},
+    query::{IdQuery, StatusQuery, ValidatorBalanceQuery},
     request::ValidatorsPostRequest,
     response::BeaconResponse,
-    query::ValidatorBalanceQuery
 };
 
 const MAX_VALIDATOR_COUNT: usize = 100;
@@ -326,7 +325,7 @@ pub async fn post_validator_identities_from_state(
 }
 pub async fn get_validator_balances_from_state(
     state_id: ID,
-    query: ValidatorBalanceQuery, 
+    query: ValidatorBalanceQuery,
     db: ReamDB,
 ) -> Result<impl Reply, Rejection> {
     let state = get_state_from_id(state_id, &db).await?;
@@ -340,34 +339,41 @@ pub async fn get_validator_balances_from_state(
     let filter: Option<HashSet<PubKey>> = match &query.id {
         Some(ids) if ids.is_empty() => None,
         Some(ids) => {
-            let addresses: HashSet<PubKey> = ids.iter().filter_map(|v| {
-                match v {
+            let addresses: HashSet<PubKey> = ids
+                .iter()
+                .filter_map(|v| match v {
                     ValidatorID::Address(addr) => Some(addr.clone()),
                     _ => None,
-                }
-            }).collect();
+                })
+                .collect();
             Some(addresses)
-        },
+        }
         None => None,
     };
 
-    let validator_balances: Vec<ValidatorBalance> = state
-        .validators
-        .iter()
-        .enumerate()
-        .filter_map(|(i, validator)| {
-            if let Some(ref addresses) = filter {
-                if !addresses.contains(&validator.pubkey) {
-                    return None;
-                }
+    let mut validator_balances = Vec::new();
+
+    for (i, validator) in state.validators.iter().enumerate() {
+        if let Some(ref addresses) = filter {
+            if !addresses.contains(&validator.pubkey) {
+                continue;
             }
-            let balance = state.validators.get(i).map(|v| v.effective_balance).expect("Validator balance not found");
-            Some(ValidatorBalance {
-                index: i as u64,
-                balance: balance,
-            })
-        })
-        .collect();
+        }
+
+        let balance =
+            state
+                .validators
+                .get(i)
+                .map(|v| v.effective_balance)
+                .ok_or(ApiError::NotFound(format!(
+                    "Validator balance not found for index: {i}"
+                )))?;
+
+        validator_balances.push(ValidatorBalance {
+            index: i as u64,
+            balance,
+        });
+    }
 
     Ok(warp::reply::with_status(
         BeaconResponse::json(validator_balances),
