@@ -39,12 +39,12 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
         ));
     }
 
-    if let Some(e) = err.find::<BodyDeserializeError>() {
-        if let Some(source) = e.source() {
+    if let Some(err) = err.find::<BodyDeserializeError>() {
+        if let Some(source) = err.source() {
             return Ok(with_status(
                 json(&ErrorMessage {
                     code: 400,
-                    message: format!("{}", source),
+                    message: source.to_string(),
                 }),
                 StatusCode::BAD_REQUEST,
             ));
@@ -53,7 +53,7 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
         return Ok(with_status(
             json(&ErrorMessage {
                 code: 400,
-                message: format!("{}", e),
+                message: err.to_string(),
             }),
             StatusCode::BAD_REQUEST,
         ));
