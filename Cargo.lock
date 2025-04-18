@@ -4073,8 +4073,8 @@ dependencies = [
  "ethereum_ssz_derive",
  "futures",
  "libp2p",
- "ssz_types",
  "ream-consensus",
+ "ssz_types",
  "tokio",
  "tracing",
 ]

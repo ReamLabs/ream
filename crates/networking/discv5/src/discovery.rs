@@ -27,8 +27,8 @@ use tracing::{error, info, warn};
 
 use crate::{
     config::NetworkConfig,
-    subnet::{ATTESTATION_BITFIELD_ENR_KEY, Subnet, Subnets, subnet_predicate},
     eth2::{ENR_ETH2_KEY, ENRForkID},
+    subnet::{ATTESTATION_BITFIELD_ENR_KEY, Subnet, subnet_predicate},
 };
 
 #[derive(Debug)]
@@ -62,7 +62,6 @@ pub struct Discovery {
     discovery_queries: FuturesUnordered<Pin<Box<dyn Future<Output = QueryResult> + Send>>>,
     find_peer_active: bool,
     pub started: bool,
-    subnets: Subnets,
 }
 
 impl Discovery {
@@ -83,13 +82,14 @@ impl Discovery {
             enr_builder.add_value::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &attestation_bytes);
         }
 
-        let enr = Enr::builder()
+        let enr = enr_builder
             .add_value(ENR_ETH2_KEY, &ENRForkID::pectra())
             .build(&enr_local)
             .map_err(|e| anyhow::anyhow!("Failed to build ENR: {}", e))?;
+
         let node_local_id = enr.node_id();
 
-        let mut discv5 = Discv5::new(enr.clone(), enr_key, config.discv5_config.clone())
+        let mut discv5 = Discv5::new(enr.clone(), enr_local, config.discv5_config.clone())
             .map_err(|e| anyhow::anyhow!("Failed to create discv5: {:?}", e))?;
 
         for enr in config.bootnodes.clone() {
@@ -119,7 +119,6 @@ impl Discovery {
             discovery_queries: FuturesUnordered::new(),
             find_peer_active: false,
             started: !config.disable_discovery,
-            subnets: config.subnets.clone(),
         })
     }
 
@@ -141,41 +140,6 @@ impl Discovery {
         };
 
         self.start_query(query, target_peers);
-    }
-
-    pub fn update_attestation_subnet(&mut self, subnet_id: u8, value: bool) -> Result<(), String> {
-        let mut current_subnets = self.subnets.clone();
-        match Subnet::Attestation(subnet_id) {
-            // Use Subnet enum
-            Subnet::Attestation(id) if id < 64 => {
-                if current_subnets.is_active(Subnet::Attestation(id)) == value {
-                    return Ok(()); // No change needed
-                }
-                if value {
-                    current_subnets.enable_subnet(Subnet::Attestation(id))?;
-                } else {
-                    current_subnets.disable_subnet(Subnet::Attestation(id))?;
-                }
-                if let Some(bytes) = current_subnets.attestation_bytes() {
-                    self.discv5
-                        .enr_insert::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY, &bytes)
-                        .map_err(|e| format!("Failed to update ENR attnets: {:?}", e))?;
-                }
-            }
-            Subnet::Attestation(_) => {
-                return Err(format!(
-                    "Subnet ID {} exceeds bitfield length 64",
-                    subnet_id
-                ));
-            }
-            Subnet::SyncCommittee(_) => unimplemented!("SyncCommittee support not yet implemented"),
-        }
-        self.subnets = current_subnets;
-        info!(
-            "Updated ENR attnets: {:?}",
-            self.subnets.attestation_bytes()
-        );
-        Ok(())
     }
 
     fn start_query(&mut self, query: QueryType, target_peers: usize) {
@@ -345,7 +309,7 @@ mod tests {
     use libp2p::identity::Keypair;
 
     use super::*;
-    use crate::config::NetworkConfig;
+    use crate::{config::NetworkConfig, subnet::Subnets};
 
     #[tokio::test]
     async fn test_initial_subnet_setup() -> Result<(), String> {
@@ -362,31 +326,6 @@ mod tests {
         let enr_subnets = Subnets::from_enr(enr)?;
         assert!(enr_subnets.is_active(Subnet::Attestation(0)));
         assert!(!enr_subnets.is_active(Subnet::Attestation(1)));
-        assert_eq!(
-            discovery.subnets.attestation_bytes(),
-            enr_subnets.attestation_bytes()
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_subnet_update() -> Result<(), String> {
-        let key = Keypair::generate_secp256k1();
-        let mut config = NetworkConfig::default();
-        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Initial subnet 0
-        config.disable_discovery = true;
-
-        let mut discovery = Discovery::new(key, &config).await.unwrap();
-
-        // Update to enable subnet 1, disable 0
-        discovery.update_attestation_subnet(1, true).unwrap();
-        discovery.update_attestation_subnet(0, false).unwrap();
-
-        assert!(discovery.subnets.is_active(Subnet::Attestation(1)));
-        assert!(!discovery.subnets.is_active(Subnet::Attestation(0)));
-
-        let enr_subnets = Subnets::from_enr(discovery.local_enr())?;
-        assert!(enr_subnets.is_active(Subnet::Attestation(1)));
         Ok(())
     }
 
@@ -472,23 +411,5 @@ mod tests {
             panic!("Expected peers to be discovered");
         }
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_invalid_subnet_update() {
-        let key = Keypair::generate_secp256k1();
-        let config = NetworkConfig {
-            disable_discovery: true,
-            ..NetworkConfig::default()
-        };
-        let mut discovery = Discovery::new(key, &config).await.unwrap();
-
-        // Attempt to update with invalid subnet ID (64)
-        let result = discovery.update_attestation_subnet(64, true);
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err(),
-            "Subnet ID 64 exceeds bitfield length 64"
-        );
     }
 }
