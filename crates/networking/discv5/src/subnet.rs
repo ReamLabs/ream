@@ -31,7 +31,7 @@ impl Subnets {
             Subnet::Attestation(id) if id < 64 => {
                 let bits = self.attestation_bits.get_or_insert(BitVector::new());
                 bits.set(id as usize, true)
-                    .map_err(|_| anyhow!("Subnet ID out of bounds"))?;
+                    .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))?;
                 Ok(())
             }
             Subnet::Attestation(_) => Ok(()),
