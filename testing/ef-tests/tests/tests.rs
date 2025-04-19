@@ -1,4 +1,4 @@
-#![cfg(feature = "ef-tests")]
+// #![cfg(feature = "ef-tests")]
 
 use ef_tests::{
     test_consensus_type, test_epoch_processing, test_fork_choice, test_operation, test_rewards,

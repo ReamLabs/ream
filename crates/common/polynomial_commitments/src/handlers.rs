@@ -14,7 +14,7 @@ pub fn verify_blob_kzg_proof_batch(
     commitments_bytes: &[KZGCommitment],
     proofs_bytes: &[KZGProof],
 ) -> anyhow::Result<bool> {
-    let raw_blobs = blobs.iter().map(Blob::to_fixed_bytes).collect::<Vec<_>>();
+    let raw_blobs = blobs.iter().map(|blob| blob.0).collect::<Vec<_>>();
 
     let raw_commitments = commitments_bytes
         .iter()

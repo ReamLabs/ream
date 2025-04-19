@@ -56,7 +56,6 @@ pub async fn on_block(
     ensure!(
         store
             .is_data_available(
-                &block.body.execution_payload,
                 &block.body.blob_kzg_commitments,
                 execution_engine,
                 block.tree_hash_root()

@@ -21,10 +21,10 @@ macro_rules! test_fork_choice {
                 use ream_fork_choice::{
                     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
                     store::{get_forkchoice_store, Store},
+                    blob_sidecar::BlobIdentifier,
                 };
                 use rstest::rstest;
                 use serde::Deserialize;
-                pub const MAX_BLOB_COMMITMENTS_PER_BLOCK: u64 = 4096;
                 use ssz_derive::{Decode, Encode};
                 use ssz_types::{
                     typenum::{self, U1099511627776, U4096}, FixedVector, VariableList
@@ -37,7 +37,6 @@ macro_rules! test_fork_choice {
                 #[derive(Debug, Deserialize)]
                 pub struct Tick {
                     pub tick: u64,
-                    #[serde(default)]
                     pub valid: Option<bool>,
                 }
 
@@ -55,19 +54,12 @@ macro_rules! test_fork_choice {
 
                 #[derive(Debug, Deserialize)]
                 pub struct Checks {
-                    #[serde(default)]
                     pub head: Option<Head>,
-                    #[serde(default)]
                     pub time: Option<u64>,
-                    #[serde(default)]
                     pub justified_checkpoint: Option<Checkpoint>,
-                    #[serde(default)]
                     pub finalized_checkpoint: Option<Checkpoint>,
-                    #[serde(default)]
                     pub proposer_boost_root: Option<B256>,
-                    #[serde(default)]
                     pub get_proposer_head: Option<B256>,
-                    #[serde(default)]
                     pub should_override_forkchoice_update: Option<ShouldOverrideForkchoiceUpdate>,
                 }
 
@@ -82,14 +74,12 @@ macro_rules! test_fork_choice {
                 #[derive(Debug, Deserialize)]
                 pub struct AttestationStep {
                     pub attestation: String,
-                    #[serde(default)]
                     pub valid: Option<bool>,
                 }
 
                 #[derive(Debug, Deserialize)]
                 pub struct AttesterSlashingStep {
                     pub attester_slashing: String,
-                    #[serde(default)]
                     pub valid: Option<bool>,
                 }
 
@@ -138,18 +128,13 @@ macro_rules! test_fork_choice {
                             utils::read_ssz_snappy(&case_dir.join("anchor_block.ssz_snappy"))
                                 .expect("Failed to read anchor_block.ssz_snappy");
 
-                        let mut store = get_forkchoice_store(anchor_state.clone(), anchor_block.clone())
+                        let mut store = get_forkchoice_store(anchor_state, anchor_block)
                             .expect("get_forkchoice_store failed");
 
                         for step in steps {
                             match step {
                                 ForkChoiceStep::Tick(ticks) => {
-                                    let result = on_tick(&mut store, ticks.tick);
-                                    if ticks.valid == Some(false) {
-                                        assert!(result.is_err());
-                                    } else {
-                                        assert!(result.is_ok())
-                                    }
+                                    assert_eq!(on_tick(&mut store, ticks.tick).is_ok(), ticks.valid.unwrap_or(true));
                                 }
                                 ForkChoiceStep::Block(blocks) => {
                                     let block_path = case_dir.join(format!("{}.ssz_snappy", blocks.block));
@@ -163,25 +148,14 @@ macro_rules! test_fork_choice {
 
                                     if let (Some(blobs), Some(proof)) = (blocks.blobs, blocks.proofs) {
                                         let blobs_path = case_dir.join(format!("{}.ssz_snappy", blobs));
-                                        let blob: VariableList<Blob, U4096> = utils::read_ssz_snappy(&blobs_path).expect("");
+                                        let blob: VariableList<Blob, U4096> = utils::read_ssz_snappy(&blobs_path).expect("Could not read blob file.");
 
-                                        let proof: Vec<KZGProof> = proof
-                                            .into_iter()
-                                            .map(|proof| KZGProof::from_hex(proof).expect("could not get KZGProof"))
-                                            .collect();
-
-                                        let blobs_and_proof = blob.into_iter().zip(proof.into_iter()).map(|(blob, proof)| BlobsAndProofV1 { blob, proof  } ).collect::<Vec<_>>();
-
-                                        store.blobs_and_proofs.insert(block.message.tree_hash_root(), blobs_and_proof);
+                                        for (index, (blob, proof)) in blob.into_iter().zip(proof.into_iter()).enumerate() {
+                                            let proof = KZGProof::from_hex(proof).expect("Couldn't decode poof");
+                                            store.blobs_and_proofs.insert(BlobIdentifier::new(block.message.tree_hash_root(), index as u64), BlobsAndProofV1 { blob, proof  });
+                                        }
                                     }
-                                    let result = on_block(&mut store, &block, &mock_engine)
-                                        .await;
-
-                                    if blocks.valid == Some(false) {
-                                        assert!(result.is_err());
-                                    } else {
-                                        assert!(result.is_ok());
-                                    }
+                                    assert_eq!(on_block(&mut store, &block, &mock_engine).await.is_ok(), blocks.valid.unwrap_or(true));
                                 }
                                 ForkChoiceStep::Attestation(attestations) => {
                                     let attestation_path =
@@ -193,12 +167,7 @@ macro_rules! test_fork_choice {
                                         .unwrap_or_else(|_| {
                                             panic!("cannot find test asset (block_{attestations:?}.ssz_snappy)")
                                         });
-                                    let result = on_attestation(&mut store, attestation.clone(), false);
-                                    if attestations.valid == Some(false) {
-                                        assert!(result.is_err());
-                                    } else {
-                                        assert!(result.is_ok())
-                                    }
+                                    assert_eq!(on_attestation(&mut store, attestation, false).is_ok(), attestations.valid.unwrap_or(true));
                                 }
                                 ForkChoiceStep::AttesterSlashing(slashing_step) => {
                                     let slashing_path = case_dir
@@ -212,13 +181,7 @@ macro_rules! test_fork_choice {
                                                 "cannot find test asset (block_{slashing_step:?}.ssz_snappy)"
                                             )
                                         });
-                                    let result = on_attester_slashing(&mut store, slashing);
-
-                                    if slashing_step.valid == Some(false) {
-                                        assert!(result.is_err());
-                                    } else {
-                                        assert!(result.is_ok())
-                                    }
+                                    assert_eq!(on_attester_slashing(&mut store, slashing).is_ok(), slashing_step.valid.unwrap_or(true));
                                 }
                                 ForkChoiceStep::Checks { checks } => {
                                     if let Some(time) = checks.time {

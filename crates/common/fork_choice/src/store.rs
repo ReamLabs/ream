@@ -8,26 +8,23 @@ use ream_consensus::{
     constants::{
         GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SECONDS_PER_SLOT, SLOTS_PER_EPOCH,
     },
-    deneb::{
-        beacon_block::BeaconBlock, beacon_state::BeaconState, execution_payload::ExecutionPayload,
-    },
-    execution_engine::{
-        blob_versioned_hashes::blob_versioned_hashes,
-        engine_trait::ExecutionApi,
-        rpc_types::get_blobs::{Blob, BlobsAndProofV1},
-    },
+    deneb::{beacon_block::BeaconBlock, beacon_state::BeaconState},
+    execution_engine::{engine_trait::ExecutionApi, rpc_types::get_blobs::BlobsAndProofV1},
     fork_choice::latest_message::LatestMessage,
     helpers::{calculate_committee_fraction, get_total_active_balance},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
-    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
+    polynomial_commitments::kzg_commitment::KZGCommitment,
 };
 use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use serde::Deserialize;
 use tree_hash::TreeHash;
 
-use crate::constants::{
-    PROPOSER_SCORE_BOOST, REORG_HEAD_WEIGHT_THRESHOLD, REORG_MAX_EPOCHS_SINCE_FINALIZATION,
-    REORG_PARENT_WEIGHT_THRESHOLD,
+use crate::{
+    blob_sidecar::BlobIdentifier,
+    constants::{
+        PROPOSER_SCORE_BOOST, REORG_HEAD_WEIGHT_THRESHOLD, REORG_MAX_EPOCHS_SINCE_FINALIZATION,
+        REORG_PARENT_WEIGHT_THRESHOLD,
+    },
 };
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -46,7 +43,7 @@ pub struct Store {
     pub checkpoint_states: HashMap<Checkpoint, BeaconState>,
     pub latest_messages: HashMap<u64, LatestMessage>,
     pub unrealized_justifications: HashMap<B256, Checkpoint>,
-    pub blobs_and_proofs: HashMap<B256, Vec<BlobsAndProofV1>>,
+    pub blobs_and_proofs: HashMap<BlobIdentifier, BlobsAndProofV1>,
 }
 
 impl Store {
@@ -451,7 +448,6 @@ impl Store {
 
     pub async fn is_data_available(
         &self,
-        execution_payload: &ExecutionPayload,
         blob_kzg_commitments: &[KZGCommitment],
         execution_engine: &impl ExecutionApi,
         beacon_block_root: B256,
@@ -460,57 +456,60 @@ impl Store {
         // It returns all the blobs for the given block root, and raises an exception if not
         // available Note: the p2p network does not guarantee sidecar retrieval outside of
         // `MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS`
-        if let Some(blob_and_proof) = self.blobs_and_proofs.get(&beacon_block_root) {
-            let blobs: Vec<Blob> = blob_and_proof
-                .iter()
-                .map(|blobs_and_proof| blobs_and_proof.blob.clone())
-                .collect();
-            let proofs: Vec<KZGProof> = blob_and_proof
-                .iter()
-                .map(|blobs_and_proof| blobs_and_proof.proof)
-                .collect();
+        let blob_count = blob_kzg_commitments.len();
+        let mut blobs_and_proofs: Vec<Option<BlobsAndProofV1>> = vec![None; blob_count];
 
-            if blobs.len() != blob_kzg_commitments.len()
-                || proofs.len() != blob_kzg_commitments.len()
-            {
-                return Err(anyhow::anyhow!(
-                    "count not correct: blobs={}, proofs={}, commitments={}",
-                    blobs.len(),
-                    proofs.len(),
-                    blob_kzg_commitments.len()
-                ));
-            }
+        // Try to get blobs_and_proofs from p2p cache
+        for (index, blob_and_proof) in blobs_and_proofs.iter_mut().enumerate() {
+            *blob_and_proof = self
+                .blobs_and_proofs
+                .get(&BlobIdentifier::new(beacon_block_root, index as u64))
+                .cloned();
+        }
 
-            let verified = verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?;
-            if !verified {
-                return Err(anyhow::anyhow!(
-                    "Blob KZG proof batch verification failed (from store)"
-                ));
-            }
-        } else {
-            let blob_versioned_hashes = blob_versioned_hashes(execution_payload)?;
-            let blobs_and_proofs = execution_engine
+        // Fallback to trying engine api
+        if blobs_and_proofs.contains(&None) {
+            let indexed_blob_versioned_hashes = blobs_and_proofs
+                .iter()
+                .enumerate()
+                .filter_map(|(index, blob_and_proof)| {
+                    if blob_and_proof.is_none() {
+                        Some((
+                            index,
+                            blob_kzg_commitments[index].calculate_versioned_hash(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            let (indices, blob_versioned_hashes): (Vec<_>, Vec<_>) =
+                indexed_blob_versioned_hashes.into_iter().unzip();
+            let execution_blobs_and_proofs = execution_engine
                 .engine_get_blobs_v1(blob_versioned_hashes)
                 .await?;
-
-            let mut blobs = vec![];
-            let mut proofs = vec![];
-
-            for blob_and_proof in blobs_and_proofs {
-                let blob_and_proof =
-                    blob_and_proof.ok_or_else(|| anyhow::anyhow!("Invalid proposer index"))?;
-
-                blobs.push(blob_and_proof.blob);
-                proofs.push(blob_and_proof.proof);
-            }
-
-            let verified = verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?;
-            if !verified {
-                return Err(anyhow::anyhow!(
-                    "Blob KZG proof batch verification failed (from engine)"
-                ));
+            for (index, blob_and_proof) in indices
+                .into_iter()
+                .zip(execution_blobs_and_proofs.into_iter())
+            {
+                blobs_and_proofs[index] = blob_and_proof;
             }
         }
+
+        let blobs_and_proofs = blobs_and_proofs
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| anyhow!("Couldn't find all blobs_and_proofs"))?;
+
+        let (blobs, proofs): (Vec<_>, Vec<_>) = blobs_and_proofs
+            .into_iter()
+            .map(|blob_and_proof| (blob_and_proof.blob, blob_and_proof.proof))
+            .unzip();
+
+        ensure!(
+            !verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?,
+            "Blob KZG proof batch verification failed (from store)"
+        );
         Ok(true)
     }
 

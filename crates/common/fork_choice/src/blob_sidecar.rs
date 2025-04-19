@@ -19,8 +19,14 @@ pub struct BlobSidecar {
     pub kzg_commitment_inclusion_proof: FixedVector<B256, KzgCommitmentInclusionProofDepth>,
 }
 
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Deserialize)]
 pub struct BlobIdentifier {
     pub block_root: B256,
     pub index: u64,
+}
+
+impl BlobIdentifier {
+    pub fn new(block_root: B256, index: u64) -> Self {
+        Self { block_root, index }
+    }
 }
