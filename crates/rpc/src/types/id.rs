@@ -3,7 +3,7 @@ use std::{fmt::Display, str::FromStr};
 
 use alloy_primitives::{B256, hex};
 use ream_bls::PubKey;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::errors::ApiError;
 
@@ -58,7 +58,7 @@ impl fmt::Display for ID {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ValidatorID {
     Index(u64),
@@ -88,7 +88,17 @@ impl Display for ValidatorID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ValidatorID::Index(i) => write!(f, "{i}"),
-            ValidatorID::Address(pub_key) => write!(f, "0x{:?}", pub_key.to_bytes()),
+            ValidatorID::Address(pub_key) => write!(f, "0x{}", hex::encode(pub_key.to_bytes())),
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for ValidatorID {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        ValidatorID::from_str(&string).map_err(|e| serde::de::Error::custom(format!("{e}")))
     }
 }

@@ -1,7 +1,8 @@
-use std::str::FromStr;
+use std::{error::Error, str::FromStr};
 
 use warp::{
     Filter,
+    filters::body::BodyDeserializeError,
     http::StatusCode,
     reject::{Rejection, custom},
     reply::{Reply, json, with_status},
@@ -35,6 +36,26 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
                 message,
             }),
             status,
+        ));
+    }
+
+    if let Some(err) = err.find::<BodyDeserializeError>() {
+        if let Some(source) = err.source() {
+            return Ok(with_status(
+                json(&ErrorMessage {
+                    code: 400,
+                    message: source.to_string(),
+                }),
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
+        return Ok(with_status(
+            json(&ErrorMessage {
+                code: 400,
+                message: err.to_string(),
+            }),
+            StatusCode::BAD_REQUEST,
         ));
     }
 
