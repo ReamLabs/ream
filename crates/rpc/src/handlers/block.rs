@@ -18,15 +18,16 @@ use ream_consensus::{
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table},
+    tables::{Field, Table, TableWithIter},
 };
 use serde::{Deserialize, Serialize};
+use tree_hash::TreeHash;
 use tracing::error;
 
 use crate::types::{
     errors::ApiError,
     id::ID,
-    response::{BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse},
+    response::{BeaconHeadResponse, BeaconHeadsResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse},
 };
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -202,6 +203,14 @@ pub async fn get_beacon_block_from_id(
         })
 }
 
+pub async fn get_beacon_blocks(db: &ReamDB) -> Result<Vec<SignedBeaconBlock>, ApiError> {
+    let beacon_blocks = db.beacon_block_provider().get_all();
+    if beacon_blocks.is_err() {
+        return Err(ApiError::InternalError);
+    }
+    Ok(beacon_blocks.unwrap())
+}
+
 /// Called by `/genesis` to get the Genesis Config of Beacon Chain.
 #[get("/beacon/genesis")]
 pub async fn get_genesis() -> Result<impl Responder, ApiError> {
@@ -277,4 +286,22 @@ pub async fn get_block_from_id(
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
 
     Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(beacon_block)))
+}
+
+/// Called by `debug/beacon/blocks` to get the Beacon Block.
+#[get("/beacon/blocks/heads")]
+pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
+    let beacon_blocks = get_beacon_blocks(&db).await?;
+
+    let mut beacon_heads = Vec::new();
+    for block in beacon_blocks.iter() {
+        let beacon_head = BeaconHeadResponse {
+            root: block.message.tree_hash_root(),
+            slot: block.message.slot,
+            execution_optimistic: false
+        };
+        beacon_heads.push(beacon_head);
+    };
+    
+    Ok(HttpResponse::Ok().json(BeaconHeadsResponse::json(beacon_heads)))
 }

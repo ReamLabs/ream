@@ -116,3 +116,33 @@ impl<T: Serialize> DataVersionedResponse<T> {
         }
     }
 }
+
+#[derive(Debug, Serialize)]
+pub struct BeaconHeadResponse {
+    pub root: B256,
+    pub slot: u64,
+    pub execution_optimistic: bool,
+}
+
+impl BeaconHeadResponse {
+    pub fn json(root: B256, slot: u64, execution_optimistic: bool) -> Json {
+        json(&json!(Self {
+            root,
+            slot,
+            execution_optimistic
+        }))
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct BeaconHeadsResponse {
+    pub data: Vec<BeaconHeadResponse>,
+}
+
+impl BeaconHeadsResponse {
+    pub fn json(data: Vec<BeaconHeadResponse>) -> Json {
+        json(&json!(Self {
+            data
+        }))
+    }
+}
