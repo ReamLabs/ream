@@ -298,7 +298,7 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
         let beacon_head = BeaconHeadResponse {
             root: block.message.tree_hash_root(),
             slot: block.message.slot,
-            execution_optimistic: false
+            execution_optimistic: false,
         };
         beacon_heads.push(beacon_head);
     };

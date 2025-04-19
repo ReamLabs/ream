@@ -24,7 +24,7 @@ pub struct BeaconBlockTable {
 
 impl Table for BeaconBlockTable {
     type Key = B256;
-    
+
     type Value = SignedBeaconBlock;
 
     fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
