@@ -88,8 +88,6 @@ pub struct BeaconHeadsResponse {
 
 impl BeaconHeadsResponse {
     pub fn json(data: Vec<BeaconHeadResponse>) -> Json {
-        json(&json!(Self {
-            data
-        }))
+        json(&json!(Self { data }))
     }
 }

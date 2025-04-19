@@ -7,7 +7,10 @@ use warp::{
 };
 
 use super::with_db;
-use crate::{handlers::{block::get_beacon_heads, state::get_state}, types::id::ID};
+use crate::{
+    handlers::{block::get_beacon_heads, state::get_state},
+    types::id::ID,
+};
 
 /// Creates and returns all `/debug` routes.
 pub fn get_debug_routes_v2(
@@ -16,7 +19,7 @@ pub fn get_debug_routes_v2(
     let db_filter = with_db(db);
 
     let debug_base = path("debug");
-    
+
     let beacon_state = debug_base
         .and(path("beacon"))
         .and(path("states"))

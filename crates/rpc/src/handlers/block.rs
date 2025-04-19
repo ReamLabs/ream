@@ -15,7 +15,10 @@ use warp::{
 use crate::types::{
     errors::ApiError,
     id::ID,
-    response::{BeaconHeadResponse, BeaconHeadsResponse, BeaconResponse, BeaconVersionedResponse, RootResponse},
+    response::{
+        BeaconHeadResponse, BeaconHeadsResponse, BeaconResponse, BeaconVersionedResponse,
+        RootResponse,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -153,9 +156,12 @@ pub async fn get_beacon_heads(db: ReamDB) -> Result<impl Reply, Rejection> {
         let beacon_head = BeaconHeadResponse {
             root: block.message.tree_hash_root(),
             slot: block.message.slot,
-            execution_optimistic: false
+            execution_optimistic: false,
         };
         beacon_heads.push(beacon_head);
-    };
-    Ok(with_status(BeaconHeadsResponse::json(beacon_heads), StatusCode::OK))
+    }
+    Ok(with_status(
+        BeaconHeadsResponse::json(beacon_heads),
+        StatusCode::OK,
+    ))
 }

@@ -6,7 +6,8 @@ use redb::{Database, Durability, ReadableTable, TableDefinition};
 use tree_hash::TreeHash;
 
 use super::{
-    slot_index::SlotIndexTable, state_root_index::StateRootIndexTable, SSZEncoding, Table, TableWithHeadIter
+    SSZEncoding, Table, TableWithHeadIter, slot_index::SlotIndexTable,
+    state_root_index::StateRootIndexTable,
 };
 use crate::errors::StoreError;
 
@@ -23,7 +24,7 @@ pub struct BeaconBlockTable {
 
 impl TableWithHeadIter for BeaconBlockTable {
     type Key = B256;
-    
+
     type Value = SignedBeaconBlock;
 
     fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
@@ -37,25 +38,25 @@ impl TableWithHeadIter for BeaconBlockTable {
     fn get_all_heads(&self) -> Result<Vec<Self::Value>, StoreError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(BEACON_BLOCK_TABLE)?;
-        
+
         let mut blocks = std::collections::HashMap::new();
         let mut parent_roots = std::collections::HashSet::new();
-        
+
         for entry in table.iter()? {
             let (_, value) = entry?;
             let block = value.value();
             let block_root = block.message.tree_hash_root();
-            
+
             blocks.insert(block_root, block.clone());
             parent_roots.insert(block.message.parent_root);
         }
-        
+
         let chain_heads: Vec<Self::Value> = blocks
             .into_iter()
             .filter(|(root, _)| !parent_roots.contains(root))
             .map(|(_, block)| block)
             .collect();
-        
+
         Ok(chain_heads)
     }
 
