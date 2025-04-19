@@ -35,6 +35,8 @@ pub struct ValidatorData {
     validator: Validator,
 }
 
+pub const MAX_REQUEST_LENGTH: usize = 1000;
+
 impl ValidatorData {
     pub fn new(index: u64, balance: u64, status: String, validator: Validator) -> Self {
         Self {
@@ -323,6 +325,7 @@ pub async fn post_validator_identities_from_state(
 
     Ok(HttpResponse::Ok().json(BeaconResponse::new(validator_identities)))
 }
+
 pub async fn get_validator_balances_from_state(
     state_id: ID,
     query: ValidatorBalanceQuery,
@@ -331,43 +334,44 @@ pub async fn get_validator_balances_from_state(
     let state = get_state_from_id(state_id, &db).await?;
 
     if let Some(ref ids) = query.id {
-        if ids.len() > 1000 {
+        if ids.len() > MAX_REQUEST_LENGTH {
             return Err(ApiError::TooManyValidatorsIds())?;
         }
     }
 
     let filter: Option<HashSet<PubKey>> = match &query.id {
-        Some(ids) if ids.is_empty() => None,
-        Some(ids) => {
-            let addresses: HashSet<PubKey> = ids
-                .iter()
-                .filter_map(|v| match v {
-                    ValidatorID::Address(addr) => Some(addr.clone()),
-                    _ => None,
-                })
-                .collect();
-            Some(addresses)
+        Some(ids) if !ids.is_empty() => {
+            let mut addrs = HashSet::new();
+            for id in ids {
+                match id {
+                    ValidatorID::Address(pk) => {
+                        if state.validators.iter().any(|v| &v.pubkey == pk) {
+                            addrs.insert(pk.clone());
+                        }
+                    }
+                    ValidatorID::Index(idx) => {
+                        if let Some(validator) = state.validators.get(*idx as usize) {
+                            addrs.insert(validator.pubkey.clone());
+                        }
+                    }
+                }
+            }
+            Some(addrs)
         }
-        None => None,
+        _ => None,
     };
 
     let mut validator_balances = Vec::new();
 
     for (i, validator) in state.validators.iter().enumerate() {
-        if let Some(ref addresses) = filter {
-            if !addresses.contains(&validator.pubkey) {
+        if let Some(ref allowed) = filter {
+            if !allowed.contains(&validator.pubkey) {
                 continue;
             }
         }
 
-        let balance =
-            state
-                .validators
-                .get(i)
-                .map(|v| v.effective_balance)
-                .ok_or(ApiError::NotFound(format!(
-                    "Validator balance not found for index: {i}"
-                )))?;
+        let balance = validator
+            .effective_balance;
 
         validator_balances.push(ValidatorBalance {
             index: i as u64,
