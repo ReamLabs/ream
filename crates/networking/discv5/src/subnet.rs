@@ -77,7 +77,7 @@ impl Decodable for Subnets {
     fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
         let bytes = Bytes::decode(buf)?;
         let subnets = Subnets::from_ssz_bytes(&bytes)
-            .map_err(|_| alloy_rlp::Error::Custom("Failed to decode SSZ subnets"))?;
+            .map_err(|err| alloy_rlp::Error::Custom(format!("Failed to decode SSZ subnets: {err:?}")))?;
         Ok(subnets)
     }
 }
