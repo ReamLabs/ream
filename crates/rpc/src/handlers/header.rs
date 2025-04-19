@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use ream_consensus::beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader};
-use ream_storage::{db::ReamDB, tables::Table};
+use ream_storage::{db::ReamDB, tables::TableWithIter};
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
 use warp::{
