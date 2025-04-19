@@ -81,7 +81,7 @@ impl Discovery {
             .add_value(ENR_ETH2_KEY, &ENRForkID::pectra())
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.subnets)
             .build(&enr_local)
-            .map_err(|e| anyhow!("Failed to build ENR: {}", e))?;
+            .map_err(|err| anyhow!("Failed to build ENR: {err}"))?;
 
         let node_local_id = enr.node_id();
 
