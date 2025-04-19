@@ -459,8 +459,8 @@ impl Store {
         // It returns all the blobs for the given block root, and raises an exception if not
         // available Note: the p2p network does not guarantee sidecar retrieval outside of
         // `MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS`
-        let blob_count = blob_kzg_commitments.len();
-        let mut blobs_and_proofs: Vec<Option<BlobsAndProofV1>> = vec![None; blob_count];
+        let mut blobs_and_proofs: Vec<Option<BlobsAndProofV1>> =
+            vec![None; blob_kzg_commitments.len()];
 
         // Try to get blobs_and_proofs from p2p cache
         for (index, blob_and_proof) in blobs_and_proofs.iter_mut().enumerate() {
