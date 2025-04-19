@@ -76,23 +76,27 @@ impl Encodable for Subnets {
 impl Decodable for Subnets {
     fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
         let bytes = Bytes::decode(buf)?;
-        let subnets = Subnets::from_ssz_bytes(&bytes)
-            .map_err(|err| alloy_rlp::Error::Custom(format!("Failed to decode SSZ subnets: {err:?}")))?;
+        let subnets = Subnets::from_ssz_bytes(&bytes).map_err(|err| {
+            alloy_rlp::Error::Custom(Box::leak(
+                format!("Failed to decode SSZ subnets: {err:?}").into_boxed_str(),
+            ))
+        })?;
         Ok(subnets)
     }
 }
 
 pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + Sync {
     move |enr: &Enr| {
-        let Some(Ok(subnets_state)) = enr.get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY) else {
-            return false
-        } 
+        let Some(Ok(subnets_state)) = enr.get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY)
+        else {
+            return false;
+        };
         let Some(attestation_bits) = &subnets_state.attestation_bits else {
-                trace!(
-                    "Peer rejected: invalid or missing attnets field; peer_id: {}",
-                    enr.node_id()
-                );
-                return false;
+            trace!(
+                "Peer rejected: invalid or missing attnets field; peer_id: {}",
+                enr.node_id()
+            );
+            return false;
         };
 
         let mut matches_subnet = false;

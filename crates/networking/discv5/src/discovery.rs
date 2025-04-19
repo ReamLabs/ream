@@ -304,9 +304,7 @@ fn convert_to_enr(key: Keypair) -> anyhow::Result<CombinedKey> {
 mod tests {
     use std::net::Ipv4Addr;
 
-    use alloy_rlp::Bytes;
     use libp2p::identity::Keypair;
-    use ssz::Decode;
 
     use super::*;
     use crate::{config::NetworkConfig, subnet::Subnets};
@@ -316,19 +314,16 @@ mod tests {
         let key = Keypair::generate_secp256k1();
         let mut config = NetworkConfig::default();
         config.subnets.enable_subnet(Subnet::Attestation(0))?; // Set subnet 0
-        config.subnets.disable_subnet(Subnet::Attestation(1))?; // Set subnet 0
+        config.subnets.disable_subnet(Subnet::Attestation(1))?; // Set subnet 1
         config.disable_discovery = true;
 
         let discovery = Discovery::new(key, &config).await.unwrap();
         let enr: &discv5::enr::Enr<CombinedKey> = discovery.local_enr();
-
         // Check ENR reflects config.subnets
-        let value: Bytes = enr
-            .get_decodable(ATTESTATION_BITFIELD_ENR_KEY)
+        let enr_subnets = enr
+            .get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .ok_or("ATTESTATION_BITFIELD_ENR_KEY not found")
-            .map_err(|err| anyhow!(err.to_string()))??;
-        let enr_subnets = Subnets::from_ssz_bytes(&value)
-            .map_err(|_| anyhow!("ATTESTATION_BITFIELD_ENR_KEY decoding failed"))?;
+            .map_err(|err| anyhow!("ATTESTATION_BITFIELD_ENR_KEY decoding failed: {err:?}"))??;
         assert!(enr_subnets.is_active(Subnet::Attestation(0)));
         assert!(!enr_subnets.is_active(Subnet::Attestation(1)));
         Ok(())
