@@ -34,6 +34,19 @@ pub trait Table {
 }
 
 #[allow(clippy::result_large_err)]
+pub trait TableWithHeadIter {
+    type Key;
+
+    type Value;
+
+    fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError>;
+
+    fn get_all_heads(&self) -> Result<Vec<Self::Value>, StoreError>;
+
+    fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError>;
+}
+
+#[allow(clippy::result_large_err)]
 pub trait Field {
     type Value;
 

@@ -2,9 +2,10 @@ use alloy_primitives::B256;
 use ream_consensus::deneb::beacon_block::SignedBeaconBlock;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table},
+    tables::{Field, Table, TableWithHeadIter},
 };
 use serde::{Deserialize, Serialize};
+use tree_hash::TreeHash;
 use warp::{
     http::status::StatusCode,
     reject::Rejection,
@@ -14,7 +15,10 @@ use warp::{
 use crate::types::{
     errors::ApiError,
     id::ID,
-    response::{BeaconResponse, BeaconVersionedResponse, RootResponse},
+    response::{
+        BeaconHeadResponse, BeaconHeadsResponse, BeaconResponse, BeaconVersionedResponse,
+        RootResponse,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -86,6 +90,14 @@ pub async fn get_beacon_block_from_id(
         )))
 }
 
+pub async fn get_beacon_blocks(db: &ReamDB) -> Result<Vec<SignedBeaconBlock>, ApiError> {
+    let beacon_blocks = db.beacon_block_provider().get_all_heads();
+    if beacon_blocks.is_err() {
+        return Err(ApiError::InternalError);
+    }
+    Ok(beacon_blocks.unwrap())
+}
+
 /// Called by `/eth/v2/beacon/{block_id}/attestations` to get block attestations
 pub async fn get_block_attestations(block_id: ID, db: ReamDB) -> Result<impl Reply, Rejection> {
     let beacon_block = get_beacon_block_from_id(block_id, &db).await?;
@@ -131,6 +143,25 @@ pub async fn get_block_from_id(block_id: ID, db: ReamDB) -> Result<impl Reply, R
 
     Ok(with_status(
         BeaconVersionedResponse::json(beacon_block),
+        StatusCode::OK,
+    ))
+}
+
+/// Called by `debug/beacon/blocks` to get the Beacon Block.
+pub async fn get_beacon_heads(db: ReamDB) -> Result<impl Reply, Rejection> {
+    let beacon_blocks = get_beacon_blocks(&db).await?;
+
+    let mut beacon_heads = Vec::new();
+    for block in beacon_blocks.iter() {
+        let beacon_head = BeaconHeadResponse {
+            root: block.message.tree_hash_root(),
+            slot: block.message.slot,
+            execution_optimistic: false,
+        };
+        beacon_heads.push(beacon_head);
+    }
+    Ok(with_status(
+        BeaconHeadsResponse::json(beacon_heads),
         StatusCode::OK,
     ))
 }

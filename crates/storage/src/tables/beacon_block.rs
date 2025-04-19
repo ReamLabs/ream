@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus::deneb::beacon_block::SignedBeaconBlock;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableTable, TableDefinition};
 use tree_hash::TreeHash;
 
 use super::{
-    SSZEncoding, Table, slot_index::SlotIndexTable, state_root_index::StateRootIndexTable,
+    SSZEncoding, Table, TableWithHeadIter, slot_index::SlotIndexTable,
+    state_root_index::StateRootIndexTable,
 };
 use crate::errors::StoreError;
 
@@ -21,7 +22,7 @@ pub struct BeaconBlockTable {
     pub db: Arc<Database>,
 }
 
-impl Table for BeaconBlockTable {
+impl TableWithHeadIter for BeaconBlockTable {
     type Key = B256;
 
     type Value = SignedBeaconBlock;
@@ -32,6 +33,31 @@ impl Table for BeaconBlockTable {
         let table = read_txn.open_table(BEACON_BLOCK_TABLE)?;
         let result = table.get(key)?;
         Ok(result.map(|res| res.value()))
+    }
+
+    fn get_all_heads(&self) -> Result<Vec<Self::Value>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(BEACON_BLOCK_TABLE)?;
+
+        let mut blocks = std::collections::HashMap::new();
+        let mut parent_roots = std::collections::HashSet::new();
+
+        for entry in table.iter()? {
+            let (_, value) = entry?;
+            let block = value.value();
+            let block_root = block.message.tree_hash_root();
+
+            blocks.insert(block_root, block.clone());
+            parent_roots.insert(block.message.parent_root);
+        }
+
+        let chain_heads: Vec<Self::Value> = blocks
+            .into_iter()
+            .filter(|(root, _)| !parent_roots.contains(root))
+            .map(|(_, block)| block)
+            .collect();
+
+        Ok(chain_heads)
     }
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
