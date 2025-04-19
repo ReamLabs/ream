@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use ream_consensus::kzg_commitment::KZGCommitment;
+use ream_consensus::polynomial_commitments::kzg_commitment::KZGCommitment;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{VariableList, serde_utils::list_of_hex_var_list, typenum};

@@ -12,13 +12,29 @@ use super::{
 
 #[derive(Deserialize, Debug)]
 pub struct MockExecutionEngine {
-    pub execution_valid: bool,
+    execution_valid: bool,
+}
+
+impl Default for MockExecutionEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockExecutionEngine {
-    pub fn new(execution_yaml_path: &Path) -> anyhow::Result<MockExecutionEngine> {
+    pub fn new() -> Self {
+        Self {
+            execution_valid: true,
+        }
+    }
+
+    pub fn from_file(execution_yaml_path: &Path) -> anyhow::Result<MockExecutionEngine> {
         let file = std::fs::File::open(execution_yaml_path)?;
         Ok(serde_yaml::from_reader(file)?)
+    }
+
+    pub fn set_payload_status(&mut self, payload_status: bool) {
+        self.execution_valid = payload_status;
     }
 }
 

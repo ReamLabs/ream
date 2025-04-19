@@ -1,8 +1,7 @@
-use anyhow::anyhow;
 use kzg::eip_4844::verify_blob_kzg_proof_batch_raw;
 use ream_consensus::{
-    constants::BYTES_PER_BLOB, execution_engine::rpc_types::get_blobs::Blob,
-    kzg_commitment::KZGCommitment, polynomial_commitments::kzg_proof::KZGProof,
+    execution_engine::rpc_types::get_blobs::Blob,
+    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
 
 use super::{error::KzgError, trusted_setup};
@@ -15,24 +14,14 @@ pub fn verify_blob_kzg_proof_batch(
     commitments_bytes: &[KZGCommitment],
     proofs_bytes: &[KZGProof],
 ) -> anyhow::Result<bool> {
-    let raw_blobs: Vec<[u8; BYTES_PER_BLOB]> = blobs
-        .iter()
-        .map(|blob| {
-            blob.as_slice()
-                .try_into()
-                .map_err(|_| anyhow!("blob is not correct"))
-        })
-        .collect::<Result<_, _>>()?;
+    let raw_blobs = blobs.iter().map(Blob::to_fixed_bytes).collect::<Vec<_>>();
 
     let raw_commitments = commitments_bytes
         .iter()
         .map(KZGCommitment::to_fixed_bytes)
         .collect::<Vec<_>>();
 
-    let raw_proofs = proofs_bytes
-        .iter()
-        .map(KZGProof::to_fixed_bytes)
-        .collect::<Vec<_>>();
+    let raw_proofs = proofs_bytes.iter().map(|proof| proof.0).collect::<Vec<_>>();
 
     let result = verify_blob_kzg_proof_batch_raw(
         &raw_blobs,

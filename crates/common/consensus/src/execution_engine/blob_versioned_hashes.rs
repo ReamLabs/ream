@@ -12,9 +12,8 @@ pub fn blob_versioned_hashes(execution_payload: &ExecutionPayload) -> anyhow::Re
             .map_err(|err| anyhow!("Failed to detect transaction type: {err:?}"))?
             == TransactionType::BlobTransaction
         {
-            if let Ok(blob_transaction) = BlobTransaction::decode(&mut &transaction[1..]) {
-                blob_versioned_hashes.extend(blob_transaction.blob_versioned_hashes);
-            }
+            let blob_transaction = BlobTransaction::decode(&mut &transaction[1..])?;
+            blob_versioned_hashes.extend(blob_transaction.blob_versioned_hashes);
         }
     }
     Ok(blob_versioned_hashes)

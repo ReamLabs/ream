@@ -7,7 +7,7 @@ macro_rules! test_fork_choice {
             mod [<tests_ $path>] {
                 use std::fs;
 
-                use alloy_primitives::{B256, map::HashMap};
+                use alloy_primitives::{hex, map::HashMap, B256, hex::FromHex};
                 use ream_consensus::{
                     attestation::Attestation,
                     attester_slashing::AttesterSlashing,
@@ -16,19 +16,20 @@ macro_rules! test_fork_choice {
                         beacon_block::{BeaconBlock, SignedBeaconBlock},
                         beacon_state::BeaconState,
                     },
-                    execution_engine::mock_engine::MockExecutionEngine,
+                    execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::{Blob, BlobsAndProofV1}}, polynomial_commitments::kzg_proof::KZGProof,
                 };
                 use ream_fork_choice::{
-                    handlers::{get_forkchoice_store, on_attestation, on_attester_slashing, on_block, on_tick},
-                    store::Store,
+                    handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
+                    store::{get_forkchoice_store, Store},
                 };
                 use rstest::rstest;
                 use serde::Deserialize;
+                pub const MAX_BLOB_COMMITMENTS_PER_BLOCK: u64 = 4096;
                 use ssz_derive::{Decode, Encode};
                 use ssz_types::{
-                    FixedVector, VariableList,
-                    typenum::{self, U1099511627776},
+                    typenum::{self, U1099511627776, U4096}, FixedVector, VariableList
                 };
+                use tree_hash::TreeHash;
 
                 use super::*;
                 use $crate::utils;
@@ -108,9 +109,8 @@ macro_rules! test_fork_choice {
                         "mainnet/tests/mainnet/deneb/fork_choice/{}/pyspec_tests",
                         stringify!($path)
                     );
-                    let mock_engine = MockExecutionEngine {
-                        execution_valid: true,
-                    };
+
+                    let mock_engine = MockExecutionEngine::new();
 
                     for entry in std::fs::read_dir(base_path).unwrap() {
                         let entry = entry.unwrap();
@@ -144,7 +144,12 @@ macro_rules! test_fork_choice {
                         for step in steps {
                             match step {
                                 ForkChoiceStep::Tick(ticks) => {
-                                    on_tick(&mut store, ticks.tick).expect("on_tick failed");
+                                    let result = on_tick(&mut store, ticks.tick);
+                                    if ticks.valid == Some(false) {
+                                        assert!(result.is_err());
+                                    } else {
+                                        assert!(result.is_ok())
+                                    }
                                 }
                                 ForkChoiceStep::Block(blocks) => {
                                     let block_path = case_dir.join(format!("{}.ssz_snappy", blocks.block));
@@ -156,9 +161,27 @@ macro_rules! test_fork_choice {
                                             panic!("cannot find test asset (block_{blocks:?}.ssz_snappy)")
                                         });
 
-                                    on_block(&mut store, &block, &mock_engine)
-                                        .await
-                                        .expect("on_block failed");
+                                    if let (Some(blobs), Some(proof)) = (blocks.blobs, blocks.proofs) {
+                                        let blobs_path = case_dir.join(format!("{}.ssz_snappy", blobs));
+                                        let blob: VariableList<Blob, U4096> = utils::read_ssz_snappy(&blobs_path).expect("");
+
+                                        let proof: Vec<KZGProof> = proof
+                                            .into_iter()
+                                            .map(|proof| KZGProof::from_hex(proof).expect("could not get KZGProof"))
+                                            .collect();
+
+                                        let blobs_and_proof = blob.into_iter().zip(proof.into_iter()).map(|(blob, proof)| BlobsAndProofV1 { blob, proof  } ).collect::<Vec<_>>();
+
+                                        store.blobs_and_proofs.insert(block.message.tree_hash_root(), blobs_and_proof);
+                                    }
+                                    let result = on_block(&mut store, &block, &mock_engine)
+                                        .await;
+
+                                    if blocks.valid == Some(false) {
+                                        assert!(result.is_err());
+                                    } else {
+                                        assert!(result.is_ok());
+                                    }
                                 }
                                 ForkChoiceStep::Attestation(attestations) => {
                                     let attestation_path =
@@ -170,8 +193,12 @@ macro_rules! test_fork_choice {
                                         .unwrap_or_else(|_| {
                                             panic!("cannot find test asset (block_{attestations:?}.ssz_snappy)")
                                         });
-                                    on_attestation(&mut store, attestation.clone(), false)
-                                        .expect("on_attestation failed");
+                                    let result = on_attestation(&mut store, attestation.clone(), false);
+                                    if attestations.valid == Some(false) {
+                                        assert!(result.is_err());
+                                    } else {
+                                        assert!(result.is_ok())
+                                    }
                                 }
                                 ForkChoiceStep::AttesterSlashing(slashing_step) => {
                                     let slashing_path = case_dir
@@ -185,8 +212,13 @@ macro_rules! test_fork_choice {
                                                 "cannot find test asset (block_{slashing_step:?}.ssz_snappy)"
                                             )
                                         });
-                                    on_attester_slashing(&mut store, slashing)
-                                        .expect("on_attester_slashing failed");
+                                    let result = on_attester_slashing(&mut store, slashing);
+
+                                    if slashing_step.valid == Some(false) {
+                                        assert!(result.is_err());
+                                    } else {
+                                        assert!(result.is_ok())
+                                    }
                                 }
                                 ForkChoiceStep::Checks { checks } => {
                                     if let Some(time) = checks.time {

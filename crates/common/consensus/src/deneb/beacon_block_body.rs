@@ -12,7 +12,7 @@ use super::execution_payload::ExecutionPayload;
 use crate::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     bls_to_execution_change::SignedBLSToExecutionChange, deposit::Deposit, eth_1_data::Eth1Data,
-    kzg_commitment::KZGCommitment, proposer_slashing::ProposerSlashing,
+    polynomial_commitments::kzg_commitment::KZGCommitment, proposer_slashing::ProposerSlashing,
     sync_aggregate::SyncAggregate, voluntary_exit::SignedVoluntaryExit,
 };
 
