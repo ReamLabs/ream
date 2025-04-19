@@ -6,6 +6,9 @@ pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
 const EXECUTION_OPTIMISTIC: bool = false;
 const FINALIZED: bool = false;
 
+/// A DataResponse data struct that can be used to wrap data type
+/// used for json rpc responses
+///
 /// # Example
 /// {
 ///  "data": json!(T)
@@ -59,6 +62,18 @@ impl<T: Serialize> BeaconResponse<T> {
     }
 }
 
+/// A BeaconResponse data struct that can be used to wrap data type
+/// used for json rpc responses
+///
+/// # Example
+/// {
+///  "data": json!({
+///     "version": "electra"
+///     "execution_optimistic" : bool,
+///     "finalized" : bool,
+///     "data" : T
+/// })
+/// }
 #[derive(Debug, Serialize)]
 pub struct BeaconVersionedResponse<T> {
     pub version: String,
