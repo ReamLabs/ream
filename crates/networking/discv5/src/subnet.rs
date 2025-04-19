@@ -44,7 +44,7 @@ impl Subnets {
             Subnet::Attestation(id) if id < 64 => {
                 if let Some(bits) = &mut self.attestation_bits {
                     bits.set(id as usize, false)
-                        .map_err(|_| anyhow!("Subnet ID out of bounds"))?;
+                        .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))?;
                 }
                 Ok(())
             }
