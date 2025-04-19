@@ -378,14 +378,17 @@ impl Store {
 
         // Attestations must be from the current or previous epoch
         let current_epoch = self.get_current_store_epoch();
+
         // Use GENESIS_EPOCH for previous when genesis to avoid underflow
         let previous_epoch = if current_epoch > GENESIS_EPOCH {
             current_epoch - 1
         } else {
             GENESIS_EPOCH
         };
+
         // If attestation target is from a future epoch, delay consideration until the epoch arrives
         ensure!([current_epoch, previous_epoch].contains(&target.epoch));
+
         Ok(())
     }
 
@@ -507,9 +510,10 @@ impl Store {
             .unzip();
 
         ensure!(
-            !verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?,
+            verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?,
             "Blob KZG proof batch verification failed (from store)"
         );
+
         Ok(true)
     }
 

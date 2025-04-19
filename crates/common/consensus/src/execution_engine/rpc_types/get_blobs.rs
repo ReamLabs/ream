@@ -1,10 +1,8 @@
-use alloy_primitives::FixedBytes;
+use alloy_consensus::Blob;
 use serde::Deserialize;
 use ssz_derive::Decode;
 
-use crate::{constants::BYTES_PER_BLOB, polynomial_commitments::kzg_proof::KZGProof};
-
-pub type Blob = FixedBytes<BYTES_PER_BLOB>;
+use crate::polynomial_commitments::kzg_proof::KZGProof;
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Decode)]
 #[serde(rename_all = "camelCase")]

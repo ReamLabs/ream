@@ -11,6 +11,7 @@ version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+alloy-consensus.workspace = true
 alloy-primitives.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true

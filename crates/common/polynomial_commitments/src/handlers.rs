@@ -1,8 +1,6 @@
+use alloy_consensus::Blob;
 use kzg::eip_4844::verify_blob_kzg_proof_batch_raw;
-use ream_consensus::{
-    execution_engine::rpc_types::get_blobs::Blob,
-    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
-};
+use ream_consensus::polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof};
 
 use super::{error::KzgError, trusted_setup};
 

@@ -10,15 +10,9 @@ use super::{
     rpc_types::get_blobs::BlobsAndProofV1,
 };
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default)]
 pub struct MockExecutionEngine {
     execution_valid: bool,
-}
-
-impl Default for MockExecutionEngine {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl MockExecutionEngine {

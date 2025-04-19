@@ -7,8 +7,6 @@ use ream_consensus::{
 use serde::Deserialize;
 use ssz_types::{FixedVector, typenum::U17};
 
-type KzgCommitmentInclusionProofDepth = U17;
-
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct BlobSidecar {
     pub index: u64,
@@ -16,7 +14,7 @@ pub struct BlobSidecar {
     pub kzg_commitment: KZGCommitment,
     pub kzg_proof: KZGProof,
     pub signed_block_header: SignedBeaconBlockHeader,
-    pub kzg_commitment_inclusion_proof: FixedVector<B256, KzgCommitmentInclusionProofDepth>,
+    pub kzg_commitment_inclusion_proof: FixedVector<B256, U17>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Deserialize)]

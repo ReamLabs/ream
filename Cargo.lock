@@ -1314,6 +1314,7 @@ dependencies = [
 name = "ef-tests"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
  "alloy-primitives",
  "anyhow",
  "ethereum_ssz",
