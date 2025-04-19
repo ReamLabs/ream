@@ -87,15 +87,12 @@ pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + 
         let Some(Ok(subnets_state)) = enr.get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY) else {
             return false
         } 
-        let attestation_bits = match &subnets_state.attestation_bits {
-            Some(bits) => bits,
-            None => {
+        let Some(attestation_bits) = &subnets_state.attestation_bits else {
                 trace!(
                     "Peer rejected: invalid or missing attnets field; peer_id: {}",
                     enr.node_id()
                 );
                 return false;
-            }
         };
 
         let mut matches_subnet = false;
