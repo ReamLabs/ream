@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+
+use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
@@ -11,7 +14,7 @@ use super::state::get_state_from_id;
 use crate::types::{
     errors::ApiError,
     id::{ID, ValidatorID},
-    query::{IdQuery, StatusQuery},
+    query::{IdQuery, StatusQuery, ValidatorBalanceQuery},
     request::ValidatorsPostRequest,
     response::BeaconResponse,
 };
@@ -26,6 +29,8 @@ pub struct ValidatorData {
     validator: Validator,
 }
 
+pub const MAX_REQUEST_LENGTH: usize = 1000;
+
 impl ValidatorData {
     pub fn new(index: u64, balance: u64, status: String, validator: Validator) -> Self {
         Self {
@@ -35,6 +40,14 @@ impl ValidatorData {
             validator,
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct ValidatorBalance {
+    #[serde(with = "serde_utils::quoted_u64")]
+    index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    balance: u64,
 }
 
 pub async fn get_validator_from_state(
@@ -191,4 +204,63 @@ pub async fn post_validators_from_state(
     };
 
     get_validators_from_state(state_id, id_query, status_query, db).await
+}
+
+pub async fn get_validator_balances_from_state(
+    state_id: ID,
+    query: ValidatorBalanceQuery,
+    db: ReamDB,
+) -> Result<impl Reply, Rejection> {
+    let state = get_state_from_id(state_id, &db).await?;
+
+    if let Some(ref ids) = query.id {
+        if ids.len() > MAX_REQUEST_LENGTH {
+            return Err(ApiError::TooManyValidatorsIds())?;
+        }
+    }
+
+    let filter: Option<HashSet<PubKey>> = match &query.id {
+        Some(ids) if !ids.is_empty() => {
+            let mut addrs = HashSet::new();
+            for id in ids {
+                match id {
+                    ValidatorID::Address(pk) => {
+                        if state.validators.iter().any(|v| &v.pubkey == pk) {
+                            addrs.insert(pk.clone());
+                        }
+                    }
+                    ValidatorID::Index(idx) => {
+                        if let Some(validator) = state.validators.get(*idx as usize) {
+                            addrs.insert(validator.pubkey.clone());
+                        }
+                    }
+                }
+            }
+            Some(addrs)
+        }
+        _ => None,
+    };
+
+    let mut validator_balances = Vec::new();
+
+    for (i, validator) in state.validators.iter().enumerate() {
+        if let Some(ref allowed) = filter {
+            if !allowed.contains(&validator.pubkey) {
+                continue;
+            }
+        }
+
+        let balance = validator
+            .effective_balance;
+
+        validator_balances.push(ValidatorBalance {
+            index: i as u64,
+            balance,
+        });
+    }
+
+    Ok(warp::reply::with_status(
+        BeaconResponse::json(validator_balances),
+        StatusCode::OK,
+    ))
 }

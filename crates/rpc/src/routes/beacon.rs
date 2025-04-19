@@ -20,13 +20,13 @@ use crate::{
         randao::get_randao_mix,
         state::{get_pending_partial_withdrawals, get_state_root},
         validator::{
-            get_validator_from_state, get_validators_from_state, post_validators_from_state,
+            get_validator_balances_from_state, get_validator_from_state, get_validators_from_state, post_validators_from_state
         },
     },
     types::{
         errors::ApiError,
-        id::{ID, ValidatorID},
-        query::{IdQuery, ParentRootQuery, RandaoQuery, SlotQuery, StatusQuery},
+        id::{ValidatorID, ID},
+        query::{IdQuery, ParentRootQuery, RandaoQuery, SlotQuery, StatusQuery, ValidatorBalanceQuery},
         request::ValidatorsPostRequest,
     },
     utils::error::parsed_param,
@@ -104,6 +104,30 @@ pub fn get_beacon_routes(
             }
         })
         .with(log("validator"));
+
+    let get_validator_balances = beacon_base
+        .and(path("states"))
+        .and(parsed_param::<ID>())
+        .and(path("validator_balances"))
+        .and(query::<ValidatorBalanceQuery>())
+        .and(end())
+        .and(get())
+        .and(db_filter.clone())
+        .and_then(move |state_id: ID, query: ValidatorBalanceQuery, db: ReamDB| get_validator_balances_from_state(state_id, query, db))
+        .with(log("validator_balances"));
+
+    let post_validator_balances = beacon_base
+        .and(path("states"))
+        .and(parsed_param::<ID>())
+        .and(path("validator_balances"))
+        .and(body::json::<ValidatorBalanceQuery>())
+        .and(end())
+        .and(post())
+        .and(db_filter.clone())
+        .and_then(move |state_id: ID, query: ValidatorBalanceQuery, db: ReamDB| {
+            get_validator_balances_from_state(state_id, query, db)
+        })
+        .with(log("validator_balances"));
 
     let headers = beacon_base
         .and(path("headers"))
@@ -193,6 +217,8 @@ pub fn get_beacon_routes(
         .or(block_root)
         .or(block_rewards)
         .or(pending_partial_withdrawals)
+        .or(get_validator_balances)
+        .or(post_validator_balances)
         .or(headers)
 }
 

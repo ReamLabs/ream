@@ -48,3 +48,8 @@ impl StatusQuery {
         }
     }
 }
+
+#[derive(Debug, Deserialize)]
+pub struct ValidatorBalanceQuery {
+    pub id: Option<Vec<ValidatorID>>,
+}
