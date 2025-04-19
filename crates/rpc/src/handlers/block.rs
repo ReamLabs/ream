@@ -18,7 +18,7 @@ use ream_consensus::{
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table, TableWithIter},
+    tables::{Field, Table, TableWithHeadIter},
 };
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
@@ -204,7 +204,7 @@ pub async fn get_beacon_block_from_id(
 }
 
 pub async fn get_beacon_blocks(db: &ReamDB) -> Result<Vec<SignedBeaconBlock>, ApiError> {
-    let beacon_blocks = db.beacon_block_provider().get_all();
+    let beacon_blocks = db.beacon_block_provider().get_all_heads();
     if beacon_blocks.is_err() {
         return Err(ApiError::InternalError);
     }
