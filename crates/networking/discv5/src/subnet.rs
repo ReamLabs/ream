@@ -84,18 +84,9 @@ impl Decodable for Subnets {
 
 pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + Sync {
     move |enr: &Enr| {
-        let value = if let Some(result) = enr.get_decodable::<Bytes>(ATTESTATION_BITFIELD_ENR_KEY) {
-            match result {
-                Ok(value) => value,
-                Err(_) => return false,
-            }
-        } else {
-            return false;
-        };
-        let subnets_state = match Subnets::from_ssz_bytes(&value) {
-            Ok(subnets) => subnets,
-            Err(_e) => return false,
-        };
+        let Some(Ok(subnets_state)) = enr.get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY) else {
+            return false
+        } 
         let attestation_bits = match &subnets_state.attestation_bits {
             Some(bits) => bits,
             None => {
