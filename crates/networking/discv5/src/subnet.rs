@@ -121,8 +121,8 @@ pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + 
                             );
                             false
                         }
-                        Err(_) => {
-                            trace!(
+                        Err(err) => {
+                            trace!(?err, 
                                 "Peer rejected: invalid attestation bitfield index; subnet_id: {}, peer_id: {}",
                                 id,
                                 enr.node_id()
