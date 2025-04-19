@@ -46,17 +46,17 @@ macro_rules! test_rewards {
                         let result = state.$processing_fn();
 
                         match (result, inactivity_penalty_deltas) {
-                            (Ok(result), Some(expected)) => {
+                            (Ok(result), Ok(expected)) => {
                                 assert_eq!(expected.rewards.to_vec(), result.0, "rewards mismatch in case {case_name}");
                                 assert_eq!(expected.penalties.to_vec(), result.1, "penalties mismatch in case {case_name}");
                             }
-                            (Ok(_), None) => {
+                            (Ok(_), Err(_)) => {
                                 panic!("Test case {case_name} should have failed but succeeded");
                             }
-                            (Err(err), Some(_)) => {
+                            (Err(err), Ok(_)) => {
                                 panic!("Test case {case_name} should have succeeded but failed, err={err:?}");
                             }
-                            (Err(_), None) => {
+                            (Err(_), Err(_)) => {
                                 // Test should fail and there should be no post state
                                 // This is the expected outcome for invalid operations
                             }

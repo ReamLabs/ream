@@ -16,6 +16,5 @@ pub fn blob_versioned_hashes(execution_payload: &ExecutionPayload) -> anyhow::Re
             blob_versioned_hashes.extend(blob_transaction.blob_versioned_hashes);
         }
     }
-
     Ok(blob_versioned_hashes)
 }

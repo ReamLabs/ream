@@ -28,7 +28,7 @@ macro_rules! test_operation_impl {
             // The closure is expected to return a Future.
             let result = $compute_result(state.clone(), input, case_dir.to_path_buf()).await;
             match (result, expected_post) {
-                (Ok(_), Some(expected)) => {
+                (Ok(_), Ok(expected)) => {
                     assert_eq!(
                         *state.lock().await,
                         expected,
@@ -36,16 +36,16 @@ macro_rules! test_operation_impl {
                         case_name
                     );
                 }
-                (Ok(_), None) => {
+                (Ok(_), Err(_)) => {
                     panic!("Test case {} should have failed but succeeded", case_name);
                 }
-                (Err(err), Some(_)) => {
+                (Err(err), Ok(_)) => {
                     panic!(
                         "Test case {} should have succeeded but failed, err={:?}",
                         case_name, err
                     );
                 }
-                (Err(_), None) => {
+                (Err(_), Err(_)) => {
                     // Expected: invalid operations result in an error and no post state.
                 }
             }
@@ -89,7 +89,7 @@ macro_rules! test_operation {
             #[tokio::test]
             async fn test_operation() {
                 test_operation_impl!($operation_name, $operation_object, $input_name, |state: Arc<Mutex<BeaconState>>, input: $operation_object, case_dir: PathBuf| async move {
-                    let mock_engine = MockExecutionEngine::new(&case_dir.as_path().join("execution.yaml"))
+                    let mock_engine = MockExecutionEngine::from_file(&case_dir.as_path().join("execution.yaml"))
                         .expect("remove result");
                     state.lock().await.process_execution_payload(&input, &mock_engine).await
                 });

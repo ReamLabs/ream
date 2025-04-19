@@ -34,16 +34,16 @@ macro_rules! test_epoch_processing {
                         let result = state.$processing_fn();
 
                         match (result, expected_post) {
-                            (Ok(_), Some(expected)) => {
+                            (Ok(_), Ok(expected)) => {
                                 assert_eq!(state, expected, "Post state mismatch in case {case_name}");
                             }
-                            (Ok(_), None) => {
+                            (Ok(_), Err(_)) => {
                                 panic!("Test case {case_name} should have failed but succeeded");
                             }
-                            (Err(err), Some(_)) => {
+                            (Err(err), Ok(_)) => {
                                 panic!("Test case {case_name} should have succeeded but failed, err={err:?}");
                             }
-                            (Err(_), None) => {
+                            (Err(_), Err(_)) => {
                                 // Test should fail and there should be no post state
                                 // This is the expected outcome for invalid operations
                             }

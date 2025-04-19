@@ -66,12 +66,12 @@ use crate::{
     helpers::xor,
     historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
-    kzg_commitment::{KZGCommitment, VERSIONED_HASH_VERSION_KZG},
     misc::{
         compute_activation_exit_epoch, compute_committee, compute_domain, compute_epoch_at_slot,
         compute_shuffled_index, compute_signing_root, compute_start_slot_at_epoch,
         is_sorted_and_unique,
     },
+    polynomial_commitments::kzg_commitment::{KZGCommitment, VERSIONED_HASH_VERSION_KZG},
     predicates::is_slashable_attestation_data,
     proposer_slashing::ProposerSlashing,
     sync_aggregate::SyncAggregate,

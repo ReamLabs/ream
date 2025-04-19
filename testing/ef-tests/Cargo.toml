@@ -10,6 +10,8 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+alloy-consensus.workspace = true
 alloy-primitives.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
@@ -23,7 +25,8 @@ tokio.workspace = true
 tree_hash.workspace = true
 
 # ream
-ream-consensus = { path = "../../crates/common/consensus" }
+ream-consensus.workspace = true
+ream-fork-choice.workspace = true
 
 [features]
 ef-tests = []

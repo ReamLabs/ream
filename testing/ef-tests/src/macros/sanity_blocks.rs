@@ -23,9 +23,7 @@ macro_rules! test_sanity_blocks {
                     .unwrap()
                     .join("mainnet/tests/mainnet/deneb/sanity/blocks/pyspec_tests");
 
-                let mock_engine = MockExecutionEngine {
-                    execution_valid: true,
-                };
+                let mock_engine = MockExecutionEngine::new();
 
                 for entry in std::fs::read_dir(&base_path).unwrap() {
                     let entry = entry.unwrap();
@@ -71,7 +69,7 @@ macro_rules! test_sanity_blocks {
                         utils::read_ssz_snappy::<BeaconState>(&case_dir.join("post.ssz_snappy"));
 
                     match (result, expected_post) {
-                        (Ok(_), Some(expected)) => {
+                        (Ok(_), Ok(expected)) => {
                             let locked_state = state;
                             assert_eq!(
                                 locked_state, expected,
@@ -79,16 +77,16 @@ macro_rules! test_sanity_blocks {
                                 case_name
                             );
                         }
-                        (Ok(_), None) => {
+                        (Ok(_), Err(_)) => {
                             panic!("Test case {} should have failed but succeeded", case_name);
                         }
-                        (Err(err), Some(_)) => {
+                        (Err(err), Ok(_)) => {
                             panic!(
                                 "Test case {} should have succeeded but failed, err={:?}",
                                 case_name, err
                             );
                         }
-                        (Err(_), None) => {
+                        (Err(_), Err(_)) => {
                             // Expected: invalid operations result in an error and no post state.
                             println!(
                                 "Test case {} failed as expected, no post state available.",

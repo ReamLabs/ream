@@ -1,15 +1,5 @@
-use serde::Deserialize;
-use ssz_types::{VariableList, typenum};
+use alloy_primitives::FixedBytes;
 
-#[derive(Deserialize, Debug)]
-pub struct KZGProof {
-    pub bytes: VariableList<u8, typenum::U48>,
-}
+use crate::constants::BYTES_PER_PROOF;
 
-impl KZGProof {
-    pub fn to_fixed_bytes(&self) -> [u8; 48] {
-        let mut fixed_array = [0u8; 48];
-        fixed_array.copy_from_slice(&self.bytes);
-        fixed_array
-    }
-}
+pub type KZGProof = FixedBytes<BYTES_PER_PROOF>;
