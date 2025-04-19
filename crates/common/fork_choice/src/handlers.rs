@@ -391,13 +391,10 @@ pub fn update_latest_messages(
                     ))?
                     .epoch
         {
-            store.latest_messages.insert(
-                *index,
-                LatestMessage {
-                    epoch: target.epoch,
-                    root: beacon_block_root,
-                },
-            );
+            store.latest_messages.insert(*index, LatestMessage {
+                epoch: target.epoch,
+                root: beacon_block_root,
+            });
         }
     }
 

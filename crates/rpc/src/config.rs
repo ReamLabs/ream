@@ -1,5 +1,6 @@
 use std::net::{IpAddr, SocketAddr};
 
+#[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub http_socket_address: SocketAddr,
     pub http_allow_origin: bool,

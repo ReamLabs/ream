@@ -1,18 +1,14 @@
 use std::sync::Arc;
 
+use actix_web::{HttpResponse, Responder, get, web};
 use alloy_primitives::{Address, aliases::B32};
 use ream_consensus::constants::{
     DOMAIN_AGGREGATE_AND_PROOF, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
 };
 use ream_network_spec::networks::NetworkSpec;
 use serde::{Deserialize, Serialize};
-use warp::{
-    http::status::StatusCode,
-    reject::Rejection,
-    reply::{Reply, with_status},
-};
 
-use super::Data;
+use crate::types::response::DataResponse;
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct DepositContract {
@@ -27,17 +23,6 @@ impl DepositContract {
     }
 }
 
-/// Called by `/deposit_contract` to get the Genesis Config of Beacon Chain.
-pub async fn get_deposit_contract(network_spec: Arc<NetworkSpec>) -> Result<impl Reply, Rejection> {
-    Ok(with_status(
-        Data::json(DepositContract::new(
-            network_spec.network.chain_id(),
-            network_spec.deposit_contract_address,
-        )),
-        StatusCode::OK,
-    ))
-}
-
 #[derive(Serialize, Deserialize, Default)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct SpecConfig {
@@ -49,8 +34,8 @@ pub struct SpecConfig {
     inactivity_penalty_quotient: u64,
 }
 
-impl From<Arc<NetworkSpec>> for SpecConfig {
-    fn from(network_spec: Arc<NetworkSpec>) -> Self {
+impl From<&Arc<NetworkSpec>> for SpecConfig {
+    fn from(network_spec: &Arc<NetworkSpec>) -> Self {
         Self {
             deposit_contract_address: network_spec.deposit_contract_address,
             deposit_network_id: network_spec.network.chain_id(),
@@ -61,7 +46,25 @@ impl From<Arc<NetworkSpec>> for SpecConfig {
 }
 
 /// Called by `config/spec` to get specification configuration.
-pub async fn get_spec(network_spec: Arc<NetworkSpec>) -> Result<impl Reply, Rejection> {
+#[get("config/spec")]
+pub async fn get_config_spec(
+    network_spec: web::Data<Arc<NetworkSpec>>,
+) -> actix_web::Result<impl Responder> {
+    let network_spec = network_spec.as_ref();
     let spec_config = SpecConfig::from(network_spec);
-    Ok(with_status(Data::json(spec_config), StatusCode::OK))
+
+    Ok(HttpResponse::Ok().json(DataResponse::new(spec_config)))
+}
+
+/// Called by `/deposit_contract` to get the Genesis Config of Beacon Chain.
+#[get("config/deposit_contract")]
+pub async fn get_config_deposit_contract(
+    network_spec: web::Data<Arc<NetworkSpec>>,
+) -> actix_web::Result<impl Responder> {
+    let network_spec = network_spec.as_ref();
+    let deposit_contract = DepositContract::new(
+        network_spec.network.chain_id(),
+        network_spec.deposit_contract_address,
+    );
+    Ok(HttpResponse::Ok().json(DataResponse::new(deposit_contract)))
 }
