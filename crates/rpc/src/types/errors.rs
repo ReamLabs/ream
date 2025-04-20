@@ -20,6 +20,9 @@ pub enum ApiError {
 
     #[error("Validator not found: {0}")]
     ValidatorNotFound(String),
+
+    #[error("Too many validator IDs in request")]
+    TooManyValidatorsIds,
 }
 
 impl ResponseError for ApiError {
@@ -35,6 +38,7 @@ impl ResponseError for ApiError {
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
             ApiError::InvalidParameter(_) => StatusCode::BAD_REQUEST,
             ApiError::ValidatorNotFound(_) => StatusCode::NOT_FOUND,
+            ApiError::TooManyValidatorsIds => StatusCode::URI_TOO_LONG,
         }
     }
 }

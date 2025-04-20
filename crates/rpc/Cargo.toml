@@ -10,9 +10,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-# http
-actix-web.workspace = true
-
 #ream-dependencies
 ream-bls.workspace = true
 ream-consensus.workspace = true
@@ -21,6 +18,7 @@ ream-node.workspace = true
 ream-storage.workspace = true
 
 #misc
+actix-web.workspace = true
 alloy-primitives.workspace = true
 parking_lot.workspace = true
 ethereum_serde_utils.workspace = true

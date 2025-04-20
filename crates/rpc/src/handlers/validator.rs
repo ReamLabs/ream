@@ -43,22 +43,9 @@ impl ValidatorData {
 pub async fn get_validator_from_state(
     db: Data<ReamDB>,
     param: Path<(ID, ValidatorID)>,
-    _validator: Json<Validator>,
 ) -> Result<impl Responder, ApiError> {
-    let (_state_id, validator_id) = param.into_inner();
-
-    let highest_slot = db
-        .slot_index_provider()
-        .get_highest_slot()
-        .map_err(|err| {
-            error!("Failed to get_highest_slot, error: {err:?}");
-            ApiError::InternalError
-        })?
-        .ok_or(ApiError::NotFound(
-            "Failed to find highest slot".to_string(),
-        ))?;
-
-    let state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
+    let (state_id, validator_id) = param.into_inner();
+    let state = get_state_from_id(state_id, &db).await?;
 
     let (index, validator) = {
         match &validator_id {
@@ -133,9 +120,7 @@ pub async fn get_validators_from_state(
 ) -> Result<impl Responder, ApiError> {
     if let Some(validator_ids) = &id_query.id {
         if validator_ids.len() >= MAX_VALIDATOR_COUNT {
-            return Err(ApiError::InvalidParameter(
-                "Too many validator IDs in request".to_string(),
-            ));
+            return Err(ApiError::TooManyValidatorsIds);
         }
     }
 
@@ -213,14 +198,12 @@ pub async fn post_validators_from_state(
     let ValidatorsPostRequest { ids, status, .. } = request.into_inner();
     let status_query = StatusQuery { status };
 
-    let id_query = IdQuery { id: ids };
-
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
     let mut validators_data = Vec::new();
     let mut validator_indices_to_process = Vec::new();
 
     // First, collect all the validator indices we need to process
-    if let Some(validator_ids) = &id_query.id {
+    if let Some(validator_ids) = &ids {
         for validator_id in validator_ids {
             let (index, _) = {
                 match validator_id {
