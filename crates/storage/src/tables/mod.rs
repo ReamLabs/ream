@@ -1,5 +1,6 @@
 pub mod beacon_block;
 pub mod beacon_state;
+pub mod blobs_and_proofs;
 pub mod block_timeliness;
 pub mod checkpoint_states;
 pub mod equivocating_indices;

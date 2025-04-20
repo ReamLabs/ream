@@ -5,6 +5,7 @@ use ream_consensus::{
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
 use serde::Deserialize;
+use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U17};
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -17,7 +18,7 @@ pub struct BlobSidecar {
     pub kzg_commitment_inclusion_proof: FixedVector<B256, U17>,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Deserialize, Encode, Decode, Ord, PartialOrd)]
 pub struct BlobIdentifier {
     pub block_root: B256,
     pub index: u64,

@@ -9,6 +9,7 @@ use crate::{
     tables::{
         beacon_block::{BEACON_BLOCK_TABLE, BeaconBlockTable},
         beacon_state::{BEACON_STATE_TABLE, BeaconStateTable},
+        blobs_and_proofs::BlobsAndProofsTable,
         block_timeliness::{BLOCK_TIMELINESS_TABLE, BlockTimelinessTable},
         checkpoint_states::{CHECKPOINT_STATES_TABLE, CheckpointStatesTable},
         equivocating_indices::{EQUIVOCATING_INDICES_FIELD, EquivocatingIndicesField},
@@ -89,6 +90,12 @@ impl ReamDB {
 
     pub fn beacon_state_provider(&self) -> BeaconStateTable {
         BeaconStateTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn blobs_and_proofs_provider(&self) -> BlobsAndProofsTable {
+        BlobsAndProofsTable {
             db: self.db.clone(),
         }
     }

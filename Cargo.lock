@@ -4233,6 +4233,7 @@ dependencies = [
  "directories",
  "ethereum_ssz",
  "ream-consensus",
+ "ream-fork-choice",
  "redb",
  "tempfile",
  "thiserror 2.0.12",
