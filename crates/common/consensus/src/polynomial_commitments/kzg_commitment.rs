@@ -6,7 +6,6 @@ use std::{
 
 use alloy_primitives::hex;
 use ethereum_hashing::hash_fixed;
-use kzg::eip_4844::BYTES_PER_COMMITMENT;
 use serde::{
     de::{Deserialize, Deserializer},
     ser::{Serialize, Serializer},
@@ -14,6 +13,7 @@ use serde::{
 use ssz_derive::{Decode, Encode};
 use tree_hash::{Hash256, PackedEncoding, TreeHash};
 
+use crate::constants::BYTES_PER_COMMITMENT;
 pub const VERSIONED_HASH_VERSION_KZG: u8 = 0x01;
 
 #[derive(Clone, Copy, Encode, Decode, PartialEq, Eq, Hash)]

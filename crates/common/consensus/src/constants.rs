@@ -4,6 +4,7 @@ pub const BASE_REWARDS_PER_EPOCH: u64 = 4;
 pub const BASE_REWARD_FACTOR: u64 = 64;
 pub const BLS_WITHDRAWAL_PREFIX: &[u8] = &[0];
 pub const BYTES_PER_BLOB: usize = BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB;
+pub const BYTES_PER_COMMITMENT: usize = 48;
 pub const BYTES_PER_FIELD_ELEMENT: usize = 32;
 pub const BYTES_PER_PROOF: usize = 48;
 pub const CAPELLA_FORK_VERSION: B32 = fixed_bytes!("0x03000000");
