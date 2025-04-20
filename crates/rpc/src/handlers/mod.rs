@@ -1,3 +1,4 @@
+pub mod blob_sidecar;
 pub mod block;
 pub mod config;
 pub mod header;

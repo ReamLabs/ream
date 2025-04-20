@@ -29,6 +29,11 @@ pub struct IdQuery {
 }
 
 #[derive(Default, Debug, Deserialize)]
+pub struct BlobSidecarQuery {
+    pub indices: Option<Vec<u64>>,
+}
+
+#[derive(Default, Debug, Deserialize)]
 pub struct StatusQuery {
     pub status: Option<Vec<String>>,
 }

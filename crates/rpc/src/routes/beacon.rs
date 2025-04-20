@@ -1,6 +1,7 @@
 use actix_web::web::ServiceConfig;
 
 use crate::handlers::{
+    blob_sidecar::get_blob_sidecars,
     block::{
         get_block_attestations, get_block_from_id, get_block_rewards, get_block_root, get_genesis,
     },
@@ -17,7 +18,8 @@ use crate::handlers::{
 
 /// Creates and returns all `/beacon` routes.
 pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
-    cfg.service(get_block_rewards)
+    cfg.service(get_blob_sidecars)
+        .service(get_block_rewards)
         .service(get_block_root)
         .service(get_headers)
         .service(get_genesis)

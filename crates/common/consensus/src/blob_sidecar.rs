@@ -1,6 +1,6 @@
 use alloy_consensus::Blob;
 use alloy_primitives::B256;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U17};
 
@@ -9,7 +9,7 @@ use crate::{
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
 
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct BlobSidecar {
     pub index: u64,
     pub blob: Blob,
