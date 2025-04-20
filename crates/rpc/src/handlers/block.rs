@@ -191,20 +191,7 @@ fn get_attester_slashing_rewards(
     attester_slashing_reward
 }
 
-async fn get_total_rewards(block_id: ID, db: &ReamDB) -> Result<u64, ApiError> {
-    let beacon_state = get_beacon_state(block_id.clone(), db).await?;
-    let beacon_block: SignedBeaconBlock = get_beacon_block_from_id(block_id, db).await?;
-
-    let attestation_rewards = get_attestations_rewards(&beacon_state, &beacon_block);
-    let sync_committee_rewards = get_sync_committee_rewards(&beacon_state, &beacon_block);
-    let slashing_rewards = get_proposer_slashing_rewards(&beacon_state, &beacon_block)
-        + get_atterter_slashing_rewards(&beacon_state, &beacon_block);
-
-    let total = attestation_rewards + sync_committee_rewards + slashing_rewards;
-    Ok(total)
-}
-
-async fn get_beacon_block_from_id(
+pub async fn get_beacon_block_from_id(
     block_id: ID,
     db: &ReamDB,
 ) -> Result<SignedBeaconBlock, ApiError> {
