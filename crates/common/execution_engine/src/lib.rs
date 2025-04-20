@@ -9,7 +9,7 @@ use ream_consensus::{
     deneb::execution_payload::ExecutionPayload,
     execution_engine::{
         engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest,
-        rpc_types::get_blobs::BlobsAndProofV1,
+        rpc_types::get_blobs::BlobAndProofV1,
     },
 };
 use reqwest::{Client, Request};
@@ -240,7 +240,7 @@ impl ExecutionApi for ExecutionEngine {
     async fn engine_get_blobs_v1(
         &self,
         blob_version_hashes: Vec<B256>,
-    ) -> anyhow::Result<Vec<Option<BlobsAndProofV1>>> {
+    ) -> anyhow::Result<Vec<Option<BlobAndProofV1>>> {
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
@@ -253,7 +253,7 @@ impl ExecutionApi for ExecutionEngine {
         self.http_client
             .execute(http_post_request)
             .await?
-            .json::<JsonRpcResponse<Vec<Option<BlobsAndProofV1>>>>()
+            .json::<JsonRpcResponse<Vec<Option<BlobAndProofV1>>>>()
             .await?
             .to_result()
     }

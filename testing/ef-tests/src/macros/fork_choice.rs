@@ -17,7 +17,7 @@ macro_rules! test_fork_choice {
                         beacon_block::{BeaconBlock, SignedBeaconBlock},
                         beacon_state::BeaconState,
                     },
-                    execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::BlobsAndProofV1}, polynomial_commitments::kzg_proof::KZGProof,
+                    execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::BlobAndProofV1}, polynomial_commitments::kzg_proof::KZGProof,
                     blob_sidecar::BlobIdentifier,
                 };
                 use ream_fork_choice::{
@@ -154,7 +154,7 @@ macro_rules! test_fork_choice {
                                             .into_iter()
                                             .map(|proof| KZGProof::from_hex(proof).expect("could not get KZGProof"))
                                             .collect();
-                                        let blobs_and_proofs = blobs.into_iter().zip(proof.into_iter()).map(|(blob, proof)| BlobsAndProofV1 { blob, proof  } ).collect::<Vec<_>>();
+                                        let blobs_and_proofs = blobs.into_iter().zip(proof.into_iter()).map(|(blob, proof)| BlobAndProofV1 { blob, proof  } ).collect::<Vec<_>>();
                                         for (index, blob_and_proof) in blobs_and_proofs.into_iter().enumerate() {
                                             store.blobs_and_proofs.insert(BlobIdentifier::new(block.message.tree_hash_root(), index as u64), blob_and_proof);
                                         }

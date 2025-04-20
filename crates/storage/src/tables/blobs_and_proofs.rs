@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ream_consensus::{
-    blob_sidecar::BlobIdentifier, execution_engine::rpc_types::get_blobs::BlobsAndProofV1,
+    blob_sidecar::BlobIdentifier, execution_engine::rpc_types::get_blobs::BlobAndProofV1,
 };
 use redb::{Database, Durability, TableDefinition};
 
@@ -14,7 +14,7 @@ use crate::errors::StoreError;
 /// Value: BlobsAndProofV1
 pub const BLOBS_AND_PROOFS_TABLE: TableDefinition<
     SSZEncoding<BlobIdentifier>,
-    SSZEncoding<BlobsAndProofV1>,
+    SSZEncoding<BlobAndProofV1>,
 > = TableDefinition::new("blobs_and_proofs");
 
 pub struct BlobsAndProofsTable {
@@ -24,7 +24,7 @@ pub struct BlobsAndProofsTable {
 impl Table for BlobsAndProofsTable {
     type Key = BlobIdentifier;
 
-    type Value = BlobsAndProofV1;
+    type Value = BlobAndProofV1;
 
     fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
         let read_txn = self.db.begin_read()?;

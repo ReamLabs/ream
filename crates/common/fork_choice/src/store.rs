@@ -10,7 +10,7 @@ use ream_consensus::{
         GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SECONDS_PER_SLOT, SLOTS_PER_EPOCH,
     },
     deneb::{beacon_block::BeaconBlock, beacon_state::BeaconState},
-    execution_engine::{engine_trait::ExecutionApi, rpc_types::get_blobs::BlobsAndProofV1},
+    execution_engine::{engine_trait::ExecutionApi, rpc_types::get_blobs::BlobAndProofV1},
     fork_choice::latest_message::LatestMessage,
     helpers::{calculate_committee_fraction, get_total_active_balance},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
@@ -41,7 +41,7 @@ pub struct Store {
     pub checkpoint_states: HashMap<Checkpoint, BeaconState>,
     pub latest_messages: HashMap<u64, LatestMessage>,
     pub unrealized_justifications: HashMap<B256, Checkpoint>,
-    pub blobs_and_proofs: HashMap<BlobIdentifier, BlobsAndProofV1>,
+    pub blobs_and_proofs: HashMap<BlobIdentifier, BlobAndProofV1>,
 }
 
 impl Store {
@@ -457,7 +457,7 @@ impl Store {
         // It returns all the blobs for the given block root, and raises an exception if not
         // available Note: the p2p network does not guarantee sidecar retrieval outside of
         // `MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS`
-        let mut blobs_and_proofs: Vec<Option<BlobsAndProofV1>> =
+        let mut blobs_and_proofs: Vec<Option<BlobAndProofV1>> =
             vec![None; blob_kzg_commitments.len()];
 
         // Try to get blobs_and_proofs from p2p cache
