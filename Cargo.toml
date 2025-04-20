@@ -31,6 +31,7 @@ rust-version = "1.85.0"
 version = "0.1.0"
 
 [workspace.dependencies]
+actix-web = "4.10.2"
 alloy-consensus = { version = "0.11.1", default-features = false }
 alloy-primitives = { version = "0.8", features = ['serde'] }
 alloy-rlp = { version = "0.3.8", default-features = false, features = ["derive"] }
@@ -51,6 +52,7 @@ kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 libp2p = { version = "0.54", default-features = false, features = ["identify", "yamux", "noise", "dns", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
 libp2p-identity = "0.2"
 libp2p-mplex = "0.42"
+parking_lot = "0.12"
 redb = { version = "2.4.0" }
 reqwest = { version = "0.12", features = ["json"] }
 rstest = "0.23"
@@ -67,9 +69,6 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 tree_hash = "0.9"
 tree_hash_derive = "0.9"
-actix-web = "4.10.2"
-parking_lot = "0.12"
-derive_more = "2.0.1"
 
 # ream dependencies
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto

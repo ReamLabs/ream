@@ -41,6 +41,7 @@ impl CheckpointData {
 struct RandaoResponse {
     pub randao: B256,
 }
+
 impl RandaoResponse {
     pub fn new(randao: B256) -> Self {
         Self { randao }

@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-#![allow(clippy::needless_borrow)]
 use std::sync::Arc;
 
 use actix_web::{App, HttpServer, dev::ServerHandle, middleware, web::Data};

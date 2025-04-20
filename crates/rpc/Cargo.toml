@@ -10,6 +10,9 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+# http
+actix-web.workspace = true
+
 #ream-dependencies
 ream-bls.workspace = true
 ream-consensus.workspace = true
@@ -19,12 +22,11 @@ ream-storage.workspace = true
 
 #misc
 alloy-primitives.workspace = true
+parking_lot.workspace = true
 ethereum_serde_utils.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ssz_types.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-actix-web.workspace = true
 tree_hash.workspace = true
-parking_lot.workspace = true
