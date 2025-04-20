@@ -1,10 +1,15 @@
-use actix_web::{HttpResponse, Responder, error, get, post, web};
+use actix_web::{
+    HttpResponse, Responder, get, post,
+    web::{Data, Json, Path},
+};
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use super::state::get_state_from_id;
 use crate::types::{
+    errors::ApiError,
     id::{ID, ValidatorID},
     query::{IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
@@ -36,17 +41,22 @@ impl ValidatorData {
 
 #[get("/beacon/states/{state_id}/validator/{validator_id}")]
 pub async fn get_validator_from_state(
-    db: web::Data<ReamDB>,
-    param: web::Path<(ID, ValidatorID)>,
-    validator: web::Json<Validator>,
-) -> actix_web::Result<impl Responder> {
+    db: Data<ReamDB>,
+    param: Path<(ID, ValidatorID)>,
+    validator: Json<Validator>,
+) -> Result<impl Responder, ApiError> {
     let (state_id, validator_id) = param.into_inner();
 
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
-        .map_err(error::ErrorInternalServerError)?
-        .ok_or(error::ErrorNotFound("Failed to find highest slot"))?;
+        .map_err(|e| {
+            error!("Failed to get_highest_slot, error: {:?}", e);
+            ApiError::InternalError
+        })?
+        .ok_or(ApiError::NotFound(
+            "Failed to find highest slot".to_string(),
+        ))?;
 
     let state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
 
@@ -55,7 +65,7 @@ pub async fn get_validator_from_state(
             ValidatorID::Index(i) => match state.validators.get(*i as usize) {
                 Some(validator) => (*i as usize, validator.to_owned()),
                 None => {
-                    return Err(error::ErrorNotFound(format!(
+                    return Err(ApiError::NotFound(format!(
                         "Validator not found for index: {i}"
                     )));
                 }
@@ -69,7 +79,7 @@ pub async fn get_validator_from_state(
                 {
                     Some((i, validator)) => (i, validator.to_owned()),
                     None => {
-                        return Err(error::ErrorNotFound(format!(
+                        return Err(ApiError::NotFound(format!(
                             "Validator not found for pubkey: {pubkey:?}"
                         )))?;
                     }
@@ -78,12 +88,9 @@ pub async fn get_validator_from_state(
         }
     };
 
-    let balance = state
-        .balances
-        .get(index)
-        .ok_or(error::ErrorNotFound(format!(
-            "Validator not found for index: {index}"
-        )))?;
+    let balance = state.balances.get(index).ok_or(ApiError::NotFound(format!(
+        "Validator not found for index: {index}"
+    )))?;
 
     let status = validator_status(&validator, &db).await?;
 
@@ -97,12 +104,15 @@ pub async fn get_validator_from_state(
     )
 }
 
-pub async fn validator_status(validator: &Validator, db: &ReamDB) -> actix_web::Result<String> {
+pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<String, ApiError> {
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
-        .map_err(error::ErrorInternalServerError)?
-        .ok_or(error::ErrorNotFound(
+        .map_err(|e| {
+            error!("Failed to get_highest_slot, error: {:?}", e);
+            ApiError::InternalError
+        })?
+        .ok_or(ApiError::NotFound(
             "Failed to find highest slot".to_string(),
         ))?;
     let state = get_state_from_id(ID::Slot(highest_slot), db).await?;
@@ -116,15 +126,15 @@ pub async fn validator_status(validator: &Validator, db: &ReamDB) -> actix_web::
 
 #[get("/beacon/states/{state_id}/validators")]
 pub async fn get_validators_from_state(
-    db: web::Data<ReamDB>,
-    state_id: web::Path<ID>,
-    id_query: web::Json<IdQuery>,
-    status_query: web::Json<StatusQuery>,
-) -> actix_web::Result<impl Responder> {
+    db: Data<ReamDB>,
+    state_id: Path<ID>,
+    id_query: Json<IdQuery>,
+    status_query: Json<StatusQuery>,
+) -> Result<impl Responder, ApiError> {
     if let Some(validator_ids) = &id_query.id {
         if validator_ids.len() >= MAX_VALIDATOR_COUNT {
-            return Err(error::ErrorNotAcceptable(
-                "Too many validator IDs in request",
+            return Err(ApiError::InvalidParameter(
+                "Too many validator IDs in request".to_string(),
             ));
         }
     }
@@ -141,7 +151,7 @@ pub async fn get_validators_from_state(
                     ValidatorID::Index(i) => match state.validators.get(*i as usize) {
                         Some(validator) => (*i as usize, validator.to_owned()),
                         None => {
-                            return Err(error::ErrorNotFound(format!(
+                            return Err(ApiError::NotFound(format!(
                                 "Validator not found for index: {i}"
                             )))?;
                         }
@@ -155,7 +165,7 @@ pub async fn get_validators_from_state(
                         {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
-                                return Err(error::ErrorNotFound(format!(
+                                return Err(ApiError::NotFound(format!(
                                     "Validator not found for pubkey: {pubkey:?}"
                                 )))?;
                             }
@@ -178,12 +188,9 @@ pub async fn get_validators_from_state(
             continue;
         }
 
-        let balance = state
-            .balances
-            .get(index)
-            .ok_or(error::ErrorNotFound(format!(
-                "Validator not found for index: {index}"
-            )))?;
+        let balance = state.balances.get(index).ok_or(ApiError::NotFound(format!(
+            "Validator not found for index: {index}"
+        )))?;
 
         validators_data.push(ValidatorData::new(
             index as u64,
@@ -198,11 +205,11 @@ pub async fn get_validators_from_state(
 
 #[post("/beacon/states/{state_id}/validators")]
 pub async fn post_validators_from_state(
-    db: web::Data<ReamDB>,
-    state_id: web::Path<ID>,
-    request: web::Json<ValidatorsPostRequest>,
-    status_query: web::Json<StatusQuery>,
-) -> actix_web::Result<impl Responder> {
+    db: Data<ReamDB>,
+    state_id: Path<ID>,
+    request: Json<ValidatorsPostRequest>,
+    status_query: Json<StatusQuery>,
+) -> Result<impl Responder, ApiError> {
     let id_query = IdQuery {
         id: request.ids.clone(),
     };
@@ -223,7 +230,7 @@ pub async fn post_validators_from_state(
                     ValidatorID::Index(i) => match state.validators.get(*i as usize) {
                         Some(validator) => (*i as usize, validator.to_owned()),
                         None => {
-                            return Err(error::ErrorNotFound(format!(
+                            return Err(ApiError::NotFound(format!(
                                 "Validator not found for index: {i}"
                             )))?;
                         }
@@ -237,7 +244,7 @@ pub async fn post_validators_from_state(
                         {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
-                                return Err(error::ErrorNotFound(format!(
+                                return Err(ApiError::NotFound(format!(
                                     "Validator not found for pubkey: {pubkey:?}"
                                 )))?;
                             }
@@ -260,12 +267,9 @@ pub async fn post_validators_from_state(
             continue;
         }
 
-        let balance = state
-            .balances
-            .get(index)
-            .ok_or(error::ErrorNotFound(format!(
-                "Validator not found for index: {index}"
-            )))?;
+        let balance = state.balances.get(index).ok_or(ApiError::NotFound(format!(
+            "Validator not found for index: {index}"
+        )))?;
 
         validators_data.push(ValidatorData::new(
             index as u64,

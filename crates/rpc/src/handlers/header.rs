@@ -1,12 +1,17 @@
-use actix_web::{HttpResponse, Responder, error, get, web};
+use actix_web::{
+    HttpResponse, Responder, get,
+    web::{Data, Json},
+};
 use alloy_primitives::B256;
 use ream_consensus::beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader};
 use ream_storage::{db::ReamDB, tables::Table};
 use serde::{Deserialize, Serialize};
+use tracing::error;
 use tree_hash::TreeHash;
 
 use super::block::get_beacon_block_from_id;
 use crate::types::{
+    errors::ApiError,
     id::ID,
     query::{ParentRootQuery, SlotQuery},
     response::BeaconResponse,
@@ -33,17 +38,20 @@ impl HeaderData {
 /// Optional paramaters `slot` and/or `parent_root`
 #[get("/beacon/headers")]
 pub async fn get_headers(
-    db: web::Data<ReamDB>,
-    slot: web::Json<SlotQuery>,
-    parent_root: web::Json<ParentRootQuery>,
-) -> actix_web::Result<impl Responder> {
+    db: Data<ReamDB>,
+    slot: Json<SlotQuery>,
+    parent_root: Json<ParentRootQuery>,
+) -> Result<impl Responder, ApiError> {
     let (header, root) = match (slot.slot, parent_root.parent_root) {
         (None, None) => {
             let slot = db
                 .slot_index_provider()
                 .get_highest_slot()
-                .map_err(error::ErrorInternalServerError)?
-                .ok_or_else(|| error::ErrorNotFound(String::from("Unable to fetch latest slot")))?;
+                .map_err(|e| {
+                    error!("Failed to get headers, error: {:?}", e);
+                    ApiError::InternalError
+                })?
+                .ok_or_else(|| ApiError::NotFound(String::from("Unable to fetch latest slot")))?;
 
             get_header_from_slot(slot, &db).await?
         }
@@ -52,17 +60,18 @@ pub async fn get_headers(
             let parent_block = db
                 .beacon_block_provider()
                 .get(parent_root)
-                .map_err(error::ErrorInternalServerError)?
-                .ok_or_else(|| {
-                    error::ErrorNotFound(String::from("Unable to fetch parent block"))
-                })?;
+                .map_err(|e| {
+                    error!("Failed to get headers, error: {:?}", e);
+                    ApiError::InternalError
+                })?
+                .ok_or_else(|| ApiError::NotFound(String::from("Unable to fetch parent block")))?;
 
             // fetch block header at `slot+1`
             let (child_header, child_block_root) =
                 get_header_from_slot(parent_block.message.slot + 1, &db).await?;
 
             if child_header.message.parent_root != parent_root {
-                return Err(error::ErrorNotFound(format!(
+                return Err(ApiError::NotFound(format!(
                     "Header with parent root :{parent_root:?}"
                 )))?;
             }
@@ -75,7 +84,7 @@ pub async fn get_headers(
             if header.message.parent_root == parent_root {
                 (header, root)
             } else {
-                return Err(error::ErrorNotFound(format!(
+                return Err(ApiError::NotFound(format!(
                     "Header at slot: {slot} with parent root: {parent_root:?} not found"
                 )))?;
             }
@@ -88,7 +97,7 @@ pub async fn get_headers(
 pub async fn get_header_from_slot(
     slot: u64,
     db: &ReamDB,
-) -> actix_web::Result<(SignedBeaconBlockHeader, B256)> {
+) -> Result<(SignedBeaconBlockHeader, B256), ApiError> {
     let beacon_block = get_beacon_block_from_id(ID::Slot(slot), &db).await?;
 
     let header_message = BeaconBlockHeader {

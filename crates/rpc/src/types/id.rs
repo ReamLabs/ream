@@ -5,8 +5,6 @@ use alloy_primitives::{B256, hex};
 use ream_bls::PubKey;
 use serde::{Deserialize, Serialize};
 
-use super::errors::ApiError;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ID {
     Finalized,
@@ -33,14 +31,6 @@ impl<'de> Deserialize<'de> for ID {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        ID::from_str(&s).map_err(serde::de::Error::custom)
-    }
-}
-
-impl FromStr for ID {
-    type Err = ApiError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "finalized" => Ok(ID::Finalized),
             "genesis" => Ok(ID::Genesis),
@@ -48,15 +38,15 @@ impl FromStr for ID {
             "justified" => Ok(ID::Justified),
             _ => {
                 if s.starts_with("0x") {
-                    B256::from_str(s)
+                    B256::from_str(&s)
                         .map(ID::Root)
-                        .map_err(|_| ApiError::BadRequest(format!("Invalid hex root: {s}")))
+                        .map_err(|_| serde::de::Error::custom(format!("Invalid hex root: {s}")))
                 } else if s.chars().all(|c| c.is_ascii_digit()) {
                     s.parse::<u64>()
                         .map(ID::Slot)
-                        .map_err(|_| ApiError::BadRequest(format!("Invalid slot number: {s}")))
+                        .map_err(|_| serde::de::Error::custom(format!("Invalid slot number: {s}")))
                 } else {
-                    Err(ApiError::BadRequest(format!("Invalid state ID: {s}")))
+                    Err(serde::de::Error::custom(format!("Invalid state ID: {s}")))
                 }
             }
         }
@@ -98,24 +88,18 @@ impl<'de> Deserialize<'de> for ValidatorID {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Self::from_str(&s).map_err(serde::de::Error::custom)
-    }
-}
-
-impl FromStr for ValidatorID {
-    type Err = ApiError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.starts_with("0x") {
-            PubKey::from_str(s)
+            PubKey::from_str(&s)
                 .map(ValidatorID::Address)
-                .map_err(|_| ApiError::BadRequest(format!("Invalid hex address: {s}")))
+                .map_err(|_| serde::de::Error::custom(format!("Invalid hex address: {s}")))
         } else if s.chars().all(|c| c.is_ascii_digit()) {
             s.parse::<u64>()
                 .map(ValidatorID::Index)
-                .map_err(|_| ApiError::BadRequest(format!("Invalid validator index: {s}")))
+                .map_err(|_| serde::de::Error::custom(format!("Invalid validator index: {s}")))
         } else {
-            Err(ApiError::BadRequest(format!("Invalid validator ID: {s}")))
+            Err(serde::de::Error::custom(format!(
+                "Invalid validator ID: {s}"
+            )))
         }
     }
 }

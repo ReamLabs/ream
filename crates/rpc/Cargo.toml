@@ -27,5 +27,5 @@ thiserror.workspace = true
 tracing.workspace = true
 actix-web.workspace = true
 tree_hash.workspace = true
-parking_lot = "0.12"
-
+parking_lot.workspace = true
+derive_more.workspace = true

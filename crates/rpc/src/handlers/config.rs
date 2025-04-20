@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use actix_web::{HttpResponse, Responder, get, web};
+use actix_web::{HttpResponse, Responder, get, web::Data};
 use alloy_primitives::{Address, aliases::B32};
 use ream_consensus::constants::{
     DOMAIN_AGGREGATE_AND_PROOF, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
@@ -8,7 +8,7 @@ use ream_consensus::constants::{
 use ream_network_spec::networks::NetworkSpec;
 use serde::{Deserialize, Serialize};
 
-use crate::types::response::DataResponse;
+use crate::types::{errors::ApiError, response::DataResponse};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct DepositContract {
@@ -34,8 +34,8 @@ pub struct SpecConfig {
     inactivity_penalty_quotient: u64,
 }
 
-impl From<&Arc<NetworkSpec>> for SpecConfig {
-    fn from(network_spec: &Arc<NetworkSpec>) -> Self {
+impl From<Arc<NetworkSpec>> for SpecConfig {
+    fn from(network_spec: Arc<NetworkSpec>) -> Self {
         Self {
             deposit_contract_address: network_spec.deposit_contract_address,
             deposit_network_id: network_spec.network.chain_id(),
@@ -47,10 +47,8 @@ impl From<&Arc<NetworkSpec>> for SpecConfig {
 
 /// Called by `config/spec` to get specification configuration.
 #[get("config/spec")]
-pub async fn get_config_spec(
-    network_spec: web::Data<Arc<NetworkSpec>>,
-) -> actix_web::Result<impl Responder> {
-    let spec_config = SpecConfig::from(network_spec.as_ref());
+pub async fn get_config_spec(network_spec: Data<NetworkSpec>) -> Result<impl Responder, ApiError> {
+    let spec_config = SpecConfig::from(network_spec.into_inner());
 
     Ok(HttpResponse::Ok().json(DataResponse::new(spec_config)))
 }
@@ -58,8 +56,8 @@ pub async fn get_config_spec(
 /// Called by `/deposit_contract` to get the Genesis Config of Beacon Chain.
 #[get("config/deposit_contract")]
 pub async fn get_config_deposit_contract(
-    network_spec: web::Data<Arc<NetworkSpec>>,
-) -> actix_web::Result<impl Responder> {
+    network_spec: Data<NetworkSpec>,
+) -> Result<impl Responder, ApiError> {
     Ok(
         HttpResponse::Ok().json(DataResponse::new(DepositContract::new(
             network_spec.network.chain_id(),

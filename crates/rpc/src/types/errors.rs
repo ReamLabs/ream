@@ -1,41 +1,41 @@
-use actix_web::{HttpResponse, ResponseError};
+use actix_web::{HttpResponse, ResponseError, http::StatusCode};
+use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Debug, Display)]
 pub enum ApiError {
-    #[error("Unauthorized")]
+    #[display("Unauthorized")]
     Unauthorized,
 
-    #[error("Api Endpoint Not Found: {0}")]
+    #[display("Api Endpoint Not Found: {_0}")]
     NotFound(String),
 
-    #[error("Bad Request: {0}")]
+    #[display("Bad Request: {_0}")]
     BadRequest(String),
 
-    #[error("Internal Server Error")]
+    #[display("Internal Server Error")]
     InternalError,
 
-    #[error("Invalid parameter: {0}")]
+    #[display("Invalid parameter: {_0}")]
     InvalidParameter(String),
 
-    #[error("Validator not found: {0}")]
+    #[display("Validator not found: {_0}")]
     ValidatorNotFound(String),
-
-    #[error("Too many validator IDs in request")]
-    TooManyValidatorsIds,
 }
 
-// impl ResponseError trait allows to convert our errors into http responses with appropriate data
 impl ResponseError for ApiError {
     fn error_response(&self) -> HttpResponse {
-        match self {
-            Self::TooManyValidatorsIds => {
-                HttpResponse::InternalServerError().json("Too many validator IDs in request")
-            }
-            _ => {
-                todo!()
-            }
+        HttpResponse::build(self.status_code()).body(self.to_string())
+    }
+
+    fn status_code(&self) -> StatusCode {
+        match *self {
+            ApiError::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
+            ApiError::NotFound(_) => StatusCode::NOT_FOUND,
+            ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            ApiError::InvalidParameter(_) => StatusCode::BAD_REQUEST,
+            ApiError::ValidatorNotFound(_) => StatusCode::NOT_FOUND,
         }
     }
 }

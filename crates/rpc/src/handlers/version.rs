@@ -2,7 +2,7 @@ use actix_web::{HttpResponse, Responder, get};
 use ream_node::version::ream_node_version;
 use serde::{Deserialize, Serialize};
 
-use crate::types::response::DataResponse;
+use crate::types::{errors::ApiError, response::DataResponse};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Version {
@@ -19,6 +19,6 @@ impl Version {
 
 /// Called by `eth/v1/node/version` to get the Node Version.
 #[get("/node/version")]
-pub async fn get_version() -> actix_web::Result<impl Responder> {
+pub async fn get_version() -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::Ok().json(DataResponse::new(Version::new())))
 }

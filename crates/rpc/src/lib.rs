@@ -2,7 +2,7 @@
 #![allow(clippy::needless_borrow)]
 use std::sync::Arc;
 
-use actix_web::{App, HttpServer, dev::ServerHandle, middleware, web};
+use actix_web::{App, HttpServer, dev::ServerHandle, middleware, web::Data};
 use config::ServerConfig;
 use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
@@ -26,15 +26,15 @@ pub async fn start_server(
         server_config.http_socket_address
     );
     // create the stop handle container
-    let stop_handle = web::Data::new(StopHandle::default());
+    let stop_handle = Data::new(StopHandle::default());
 
     let server = HttpServer::new(move || {
         let stop_handle = stop_handle.clone();
         App::new()
             .wrap(middleware::Logger::default())
             .app_data(stop_handle)
-            .app_data(web::Data::new(network_spec.clone()))
-            .app_data(web::Data::new(db.clone()))
+            .app_data(Data::from(network_spec.clone()))
+            .app_data(Data::new(db.clone()))
             .configure(register_routers)
     })
     .bind(server_config.http_socket_address)?

@@ -68,6 +68,8 @@ tracing-subscriber = "0.3"
 tree_hash = "0.9"
 tree_hash_derive = "0.9"
 actix-web = "4.10.2"
+parking_lot = "0.12"
+derive_more = "2.0.1"
 
 # ream dependencies
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto

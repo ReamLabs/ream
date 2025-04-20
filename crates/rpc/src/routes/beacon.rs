@@ -1,4 +1,4 @@
-use actix_web::web;
+use actix_web::web::ServiceConfig;
 
 use crate::handlers::{
     block::{
@@ -13,7 +13,7 @@ use crate::handlers::{
 };
 
 /// Creates and returns all `/beacon` routes.
-pub fn register_beacon_routes(cfg: &mut web::ServiceConfig) {
+pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
     cfg.service(get_state_root)
         .service(get_state_fork)
         .service(get_state_finality_checkpoint)
@@ -27,7 +27,7 @@ pub fn register_beacon_routes(cfg: &mut web::ServiceConfig) {
         .service(get_block_rewards)
         .service(get_pending_partial_withdrawals);
 }
-pub fn register_beacon_routes_v2(cfg: &mut web::ServiceConfig) {
+pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {
     cfg.service(get_block_attestations)
         .service(get_block_from_id);
 }
