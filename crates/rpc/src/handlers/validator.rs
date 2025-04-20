@@ -50,8 +50,8 @@ pub async fn get_validator_from_state(
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
-        .map_err(|e| {
-            error!("Failed to get_highest_slot, error: {:?}", e);
+        .map_err(|err| {
+            error!("Failed to get_highest_slot, error: {err:?}");
             ApiError::InternalError
         })?
         .ok_or(ApiError::NotFound(
@@ -108,8 +108,8 @@ pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<Stri
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
-        .map_err(|e| {
-            error!("Failed to get_highest_slot, error: {:?}", e);
+        .map_err(|err| {
+            error!("Failed to get_highest_slot, error: {err:?}");
             ApiError::InternalError
         })?
         .ok_or(ApiError::NotFound(

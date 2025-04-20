@@ -40,8 +40,8 @@ pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, A
             let finalized_checkpoint = db
                 .finalized_checkpoint_provider()
                 .get()
-                .map_err(|e| {
-                    error!("Failed to get block by block_root, error: {:?}", e);
+                .map_err(|err| {
+                    error!("Failed to get block by block_root, error: {err:?}");
                     ApiError::InternalError
                 })?
                 .ok_or_else(|| ApiError::NotFound("Finalized checkpoint not found".to_string()))?;
@@ -52,8 +52,8 @@ pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, A
             let justified_checkpoint = db
                 .justified_checkpoint_provider()
                 .get()
-                .map_err(|e| {
-                    error!("Failed to get block by block_root, error: {:?}", e);
+                .map_err(|err| {
+                    error!("Failed to get block by block_root, error: {err:?}");
                     ApiError::InternalError
                 })?
                 .ok_or_else(|| ApiError::NotFound("Justified checkpoint not found".to_string()))?;
@@ -68,8 +68,8 @@ pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, A
         ID::Slot(slot) => db.slot_index_provider().get(slot),
         ID::Root(root) => Ok(Some(root)),
     }
-    .map_err(|e| {
-        error!("Failed to get block by block_root, error: {:?}", e);
+    .map_err(|err| {
+        error!("Failed to get block by block_root, error: {err:?}");
         ApiError::InternalError
     })?
     .ok_or_else(|| ApiError::NotFound(format!("Failed to find `block_root` from {block_id:?}")))?;
@@ -85,8 +85,8 @@ pub async fn get_beacon_block_from_id(
 
     db.beacon_block_provider()
         .get(block_root)
-        .map_err(|e| {
-            error!("Failed to get block by block_root, error: {:?}", e);
+        .map_err(|err| {
+            error!("Failed to get block by block_root, error: {err:?}");
             ApiError::InternalError
         })?
         .ok_or_else(|| {

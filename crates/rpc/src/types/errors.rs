@@ -1,25 +1,24 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
-use derive_more::derive::Display;
-use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Debug, Display)]
+#[derive(Error, Debug)]
 pub enum ApiError {
-    #[display("Unauthorized")]
+    #[error("Unauthorized")]
     Unauthorized,
 
-    #[display("Api Endpoint Not Found: {_0}")]
+    #[error("Api Endpoint Not Found: {0}")]
     NotFound(String),
 
-    #[display("Bad Request: {_0}")]
+    #[error("Bad Request: {0}")]
     BadRequest(String),
 
-    #[display("Internal Server Error")]
+    #[error("Internal Server Error")]
     InternalError,
 
-    #[display("Invalid parameter: {_0}")]
+    #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
 
-    #[display("Validator not found: {_0}")]
+    #[error("Validator not found: {0}")]
     ValidatorNotFound(String),
 }
 
@@ -38,12 +37,4 @@ impl ResponseError for ApiError {
             ApiError::ValidatorNotFound(_) => StatusCode::NOT_FOUND,
         }
     }
-}
-
-// impl Reject for ApiError {}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ErrorMessage {
-    pub code: u16,
-    pub message: String,
 }

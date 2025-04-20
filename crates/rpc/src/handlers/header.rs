@@ -47,8 +47,8 @@ pub async fn get_headers(
             let slot = db
                 .slot_index_provider()
                 .get_highest_slot()
-                .map_err(|e| {
-                    error!("Failed to get headers, error: {:?}", e);
+                .map_err(|err| {
+                    error!("Failed to get headers, error: {err:?}");
                     ApiError::InternalError
                 })?
                 .ok_or_else(|| ApiError::NotFound(String::from("Unable to fetch latest slot")))?;
@@ -60,8 +60,8 @@ pub async fn get_headers(
             let parent_block = db
                 .beacon_block_provider()
                 .get(parent_root)
-                .map_err(|e| {
-                    error!("Failed to get headers, error: {:?}", e);
+                .map_err(|err| {
+                    error!("Failed to get headers, error: {err:?}");
                     ApiError::InternalError
                 })?
                 .ok_or_else(|| ApiError::NotFound(String::from("Unable to fetch parent block")))?;
