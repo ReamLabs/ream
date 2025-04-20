@@ -10,7 +10,7 @@ use crate::errors::StoreError;
 
 /// Table definition for the Blobs And Proofs table
 ///
-/// Key: blobs_and_proofs
+/// Key: BlobIdentifier
 /// Value: BlobsAndProofV1
 pub const BLOBS_AND_PROOFS_TABLE: TableDefinition<
     SSZEncoding<BlobIdentifier>,
