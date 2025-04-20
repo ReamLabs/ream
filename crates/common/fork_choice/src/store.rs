@@ -331,10 +331,13 @@ impl Store {
                         ))?
                         .epoch
             {
-                self.latest_messages.insert(*index, LatestMessage {
-                    epoch: target.epoch,
-                    root: beacon_block_root,
-                });
+                self.latest_messages.insert(
+                    *index,
+                    LatestMessage {
+                        epoch: target.epoch,
+                        root: beacon_block_root,
+                    },
+                );
             }
         }
 
