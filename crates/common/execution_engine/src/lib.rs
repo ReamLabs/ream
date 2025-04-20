@@ -8,8 +8,8 @@ use jsonwebtoken::{EncodingKey, Header, encode, get_current_timestamp};
 use ream_consensus::{
     deneb::execution_payload::ExecutionPayload,
     execution_engine::{
-        blob_versioned_hashes::blob_versioned_hashes, engine_trait::ExecutionApi,
-        new_payload_request::NewPayloadRequest, rpc_types::get_blobs::BlobsAndProofV1,
+        engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest,
+        rpc_types::get_blobs::BlobsAndProofV1,
     },
 };
 use reqwest::{Client, Request};
@@ -22,7 +22,7 @@ use rpc_types::{
 };
 use serde_json::json;
 use ssz_types::VariableList;
-use utils::{Claims, JsonRpcRequest, JsonRpcResponse, strip_prefix};
+use utils::{Claims, JsonRpcRequest, JsonRpcResponse, blob_versioned_hashes, strip_prefix};
 
 pub struct ExecutionEngine {
     http_client: Client,
@@ -204,7 +204,7 @@ impl ExecutionEngine {
 /// ``new_payload_request.execution_payload`` matches ``new_payload_request.versioned_hashes``.
 pub fn is_valid_versioned_hashes(new_payload_request: &NewPayloadRequest) -> anyhow::Result<bool> {
     Ok(
-        blob_versioned_hashes(&new_payload_request.execution_payload)?
+        blob_versioned_hashes(&new_payload_request.execution_payload.transactions)?
             == new_payload_request.versioned_hashes,
     )
 }

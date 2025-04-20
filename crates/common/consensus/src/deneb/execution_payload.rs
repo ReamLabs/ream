@@ -15,6 +15,8 @@ use crate::withdrawal::Withdrawal;
 const EMPTY_UNCLE_ROOT_HASH: B256 =
     b256!("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347");
 
+pub type Transactions = VariableList<VariableList<u8, typenum::U1073741824>, typenum::U1048576>;
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct ExecutionPayload {
     // Execution block header fields
@@ -37,7 +39,7 @@ pub struct ExecutionPayload {
     // Extra payload fields
     pub block_hash: B256,
     #[serde(with = "list_of_hex_var_list")]
-    pub transactions: VariableList<VariableList<u8, typenum::U1073741824>, typenum::U1048576>,
+    pub transactions: Transactions,
     pub withdrawals: VariableList<Withdrawal, typenum::U16>,
     pub blob_gas_used: u64,
     pub excess_blob_gas: u64,
