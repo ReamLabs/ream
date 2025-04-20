@@ -98,7 +98,7 @@ pub async fn get_header_from_slot(
     slot: u64,
     db: &ReamDB,
 ) -> Result<(SignedBeaconBlockHeader, B256), ApiError> {
-    let beacon_block = get_beacon_block_from_id(ID::Slot(slot), &db).await?;
+    let beacon_block = get_beacon_block_from_id(ID::Slot(slot), db).await?;
 
     let header_message = BeaconBlockHeader {
         slot: beacon_block.message.slot,
