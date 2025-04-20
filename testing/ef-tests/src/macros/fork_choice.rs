@@ -18,11 +18,11 @@ macro_rules! test_fork_choice {
                         beacon_state::BeaconState,
                     },
                     execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::BlobsAndProofV1}, polynomial_commitments::kzg_proof::KZGProof,
+                    blob_sidecar::BlobIdentifier,
                 };
                 use ream_fork_choice::{
                     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
                     store::{get_forkchoice_store, Store},
-                    blob_sidecar::BlobIdentifier,
                 };
                 use rstest::rstest;
                 use serde::Deserialize;
