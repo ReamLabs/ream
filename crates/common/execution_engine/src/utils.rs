@@ -1,4 +1,10 @@
-use anyhow::bail;
+use alloy_primitives::B256;
+use alloy_rlp::Decodable;
+use anyhow::{anyhow, bail};
+use ream_consensus::{
+    deneb::execution_payload::Transactions,
+    execution_engine::rpc_types::transaction::{BlobTransaction, TransactionType},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -43,4 +49,18 @@ pub struct Claims {
     pub id: Option<String>,
     /// Optional client version for the CL node.
     pub clv: Option<String>,
+}
+
+pub fn blob_versioned_hashes(transactions: &Transactions) -> anyhow::Result<Vec<B256>> {
+    let mut blob_versioned_hashes = vec![];
+    for transaction in transactions.iter() {
+        if TransactionType::try_from(&transaction[..])
+            .map_err(|err| anyhow!("Failed to detect transaction type: {err:?}"))?
+            == TransactionType::BlobTransaction
+        {
+            let blob_transaction = BlobTransaction::decode(&mut &transaction[1..])?;
+            blob_versioned_hashes.extend(blob_transaction.blob_versioned_hashes);
+        }
+    }
+    Ok(blob_versioned_hashes)
 }
