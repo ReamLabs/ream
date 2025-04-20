@@ -95,9 +95,7 @@ pub async fn get_block_attestations(
     db: web::Data<ReamDB>,
     block_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
 
     Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(
         beacon_block.message.body.attestations,
@@ -110,11 +108,9 @@ pub async fn get_block_root(
     db: web::Data<ReamDB>,
     block_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let block_root = get_block_root_from_id(block_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let block_root = get_block_root_from_id(block_id.into_inner(), &db).await?;
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(RootResponse { root: block_root })))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(RootResponse::new(block_root))))
 }
 
 /// Called by `/beacon/blocks/{block_id}/rewards` to get the block rewards response
@@ -123,9 +119,7 @@ pub async fn get_block_rewards(
     db: web::Data<ReamDB>,
     block_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
 
     let response = BlockRewards {
         proposer_index: beacon_block.message.proposer_index,
@@ -150,9 +144,7 @@ pub async fn get_block_from_id(
     db: web::Data<ReamDB>,
     block_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
 
     Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(beacon_block)))
 }

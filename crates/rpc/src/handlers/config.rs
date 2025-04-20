@@ -50,8 +50,7 @@ impl From<&Arc<NetworkSpec>> for SpecConfig {
 pub async fn get_config_spec(
     network_spec: web::Data<Arc<NetworkSpec>>,
 ) -> actix_web::Result<impl Responder> {
-    let network_spec = network_spec.as_ref();
-    let spec_config = SpecConfig::from(network_spec);
+    let spec_config = SpecConfig::from(network_spec.as_ref());
 
     Ok(HttpResponse::Ok().json(DataResponse::new(spec_config)))
 }
@@ -61,10 +60,10 @@ pub async fn get_config_spec(
 pub async fn get_config_deposit_contract(
     network_spec: web::Data<Arc<NetworkSpec>>,
 ) -> actix_web::Result<impl Responder> {
-    let network_spec = network_spec.as_ref();
-    let deposit_contract = DepositContract::new(
-        network_spec.network.chain_id(),
-        network_spec.deposit_contract_address,
-    );
-    Ok(HttpResponse::Ok().json(DataResponse::new(deposit_contract)))
+    Ok(
+        HttpResponse::Ok().json(DataResponse::new(DepositContract::new(
+            network_spec.network.chain_id(),
+            network_spec.deposit_contract_address,
+        ))),
+    )
 }

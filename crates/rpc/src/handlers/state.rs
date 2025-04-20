@@ -84,9 +84,7 @@ pub async fn get_beacon_state(
     db: web::Data<ReamDB>,
     state_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let state = get_state_from_id(state_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
     Ok(HttpResponse::Ok().json(BeaconResponse::new(state)))
 }
@@ -96,13 +94,11 @@ pub async fn get_state_root(
     db: web::Data<ReamDB>,
     state_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let state = get_state_from_id(state_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
     let state_root = state.tree_hash_root();
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(state_root.to_string())))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(state_root)))
 }
 
 /// Called by `/eth/v1/beacon/states/{state_id}/fork` to get fork of state.
@@ -111,9 +107,7 @@ pub async fn get_state_fork(
     db: web::Data<ReamDB>,
     state_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let state = get_state_from_id(state_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
     Ok(HttpResponse::Ok().json(BeaconResponse::new(state.fork)))
 }
@@ -124,9 +118,7 @@ pub async fn get_state_finality_checkpoint(
     db: web::Data<ReamDB>,
     state_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let state = get_state_from_id(state_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
     let response = CheckpointData::new(
         state.previous_justified_checkpoint,
@@ -145,9 +137,7 @@ pub async fn get_state_randao(
     state_id: web::Path<ID>,
     web::Json(query): web::Json<RandaoQuery>,
 ) -> actix_web::Result<impl Responder> {
-    let state = get_state_from_id(state_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
     let randao_mix = match query.epoch {
         Some(epoch) => state.get_randao_mix(epoch),
@@ -174,9 +164,7 @@ pub async fn get_pending_partial_withdrawals(
     db: web::Data<ReamDB>,
     state_id: web::Path<ID>,
 ) -> actix_web::Result<impl Responder> {
-    let state = get_state_from_id(state_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
     let withdrawals = state.get_expected_withdrawals();
     let partial_withdrawals: Vec<Withdrawal> = withdrawals

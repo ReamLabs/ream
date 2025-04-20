@@ -48,9 +48,7 @@ pub async fn get_validator_from_state(
         .map_err(error::ErrorInternalServerError)?
         .ok_or(error::ErrorNotFound("Failed to find highest slot"))?;
 
-    let state = get_state_from_id(ID::Slot(highest_slot), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
 
     let (index, validator) = {
         match &validator_id {
@@ -107,9 +105,7 @@ pub async fn validator_status(validator: &Validator, db: &ReamDB) -> actix_web::
         .ok_or(error::ErrorNotFound(
             "Failed to find highest slot".to_string(),
         ))?;
-    let state = get_state_from_id(ID::Slot(highest_slot), db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let state = get_state_from_id(ID::Slot(highest_slot), db).await?;
 
     if validator.exit_epoch < state.get_current_epoch() {
         Ok("offline".to_string())
@@ -133,9 +129,7 @@ pub async fn get_validators_from_state(
         }
     }
 
-    let state = get_state_from_id(state_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
     let mut validators_data = Vec::new();
     let mut validator_indices_to_process = Vec::new();
 
@@ -215,9 +209,7 @@ pub async fn post_validators_from_state(
         status: request.status,
     };
 
-    let state = get_state_from_id(state_id.into_inner(), &db)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
     let mut validators_data = Vec::new();
     let mut validator_indices_to_process = Vec::new();
 

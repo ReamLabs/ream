@@ -45,9 +45,7 @@ pub async fn get_headers(
                 .map_err(error::ErrorInternalServerError)?
                 .ok_or_else(|| error::ErrorNotFound(String::from("Unable to fetch latest slot")))?;
 
-            get_header_from_slot(slot, &db)
-                .await
-                .map_err(error::ErrorInternalServerError)?
+            get_header_from_slot(slot, &db).await?
         }
         (None, Some(parent_root)) => {
             // get parent block to have access to `slot`
@@ -61,13 +59,7 @@ pub async fn get_headers(
 
             // fetch block header at `slot+1`
             let (child_header, child_block_root) =
-                get_header_from_slot(parent_block.message.slot + 1, &db)
-                    .await
-                    .map_err(|_| {
-                        error::ErrorNotFound(format!(
-                            "Unable to fetch header with parent root: {parent_root:?}"
-                        ))
-                    })?;
+                get_header_from_slot(parent_block.message.slot + 1, &db).await?;
 
             if child_header.message.parent_root != parent_root {
                 return Err(error::ErrorNotFound(format!(
@@ -77,13 +69,9 @@ pub async fn get_headers(
 
             (child_header, child_block_root)
         }
-        (Some(slot), None) => get_header_from_slot(slot, &db)
-            .await
-            .map_err(error::ErrorInternalServerError)?,
+        (Some(slot), None) => get_header_from_slot(slot, &db).await?,
         (Some(slot), Some(parent_root)) => {
-            let (header, root) = get_header_from_slot(slot, &db)
-                .await
-                .map_err(error::ErrorInternalServerError)?;
+            let (header, root) = get_header_from_slot(slot, &db).await?;
             if header.message.parent_root == parent_root {
                 (header, root)
             } else {
