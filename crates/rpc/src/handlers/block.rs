@@ -244,8 +244,9 @@ pub async fn get_block_rewards(
     db: Data<ReamDB>,
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
-    let beacon_block = get_beacon_block_from_id(block_id.into_inner().clone(), &db).await?;
-    let beacon_state = get_beacon_state(block_id, &db).await?;
+    let block_id_value = block_id.into_inner();
+    let beacon_block = get_beacon_block_from_id(block_id_value.clone(), &db).await?;
+    let beacon_state = get_beacon_state(block_id_value.clone(), &db).await?;
 
     let attestation_reward = get_attestations_rewards(&beacon_state, &beacon_block);
     let attester_slashing_reward = get_attester_slashing_rewards(&beacon_state, &beacon_block);
@@ -256,7 +257,6 @@ pub async fn get_block_rewards(
         + sync_committee_reward
         + proposer_slashing_reward
         + attester_slashing_reward;
-
 
     let response = BlockRewards {
         proposer_index: beacon_block.message.proposer_index,
