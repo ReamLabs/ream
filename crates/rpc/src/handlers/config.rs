@@ -5,7 +5,7 @@ use alloy_primitives::{Address, aliases::B32};
 use ream_consensus::constants::{
     DOMAIN_AGGREGATE_AND_PROOF, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
 };
-use ream_network_spec::networks::NetworkSpec;
+use ream_network_spec::{forks::UNSCHEDULED_FORK_EPOCH, networks::NetworkSpec};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{errors::ApiError, response::DataResponse};
@@ -64,4 +64,18 @@ pub async fn get_config_deposit_contract(
             network_spec.deposit_contract_address,
         ))),
     )
+}
+
+/// Called by `config/fork_schedule` to get fork schedule
+#[get("config/fork_schedule")]
+pub async fn get_fork_schedule(
+    network_spec: Data<NetworkSpec>,
+) -> Result<impl Responder, ApiError> {
+    Ok(HttpResponse::Ok().json(DataResponse::new(
+        network_spec
+            .forks
+            .iter()
+            .filter(|fork| fork.epoch != UNSCHEDULED_FORK_EPOCH)
+            .collect::<Vec<_>>(),
+    )))
 }
