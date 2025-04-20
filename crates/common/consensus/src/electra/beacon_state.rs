@@ -584,6 +584,7 @@ impl BeaconState {
                 )
             }
         }
+
         Ok(())
     }
 
@@ -679,6 +680,7 @@ impl BeaconState {
                 penalties[index as usize] += penalty_numerator / penalty_denominator;
             }
         }
+
         Ok((rewards, penalties))
     }
 
@@ -809,6 +811,7 @@ impl BeaconState {
             }
             validator_index = (validator_index + 1) % self.validators.len() as u64
         }
+
         Ok((withdrawals, processed_partial_withdrawals_count))
     }
 
@@ -888,6 +891,7 @@ impl BeaconState {
         self.inactivity_scores
             .push(0)
             .map_err(|err| anyhow!("Couldn't push to inactivity_scores {:?}", err))?;
+
         Ok(())
     }
 
@@ -1422,6 +1426,7 @@ impl BeaconState {
                 .push(historical_summary)
                 .map_err(|err| anyhow!("Failed to push historical summary: {err:?}"))?;
         }
+
         Ok(())
     }
 
@@ -1463,6 +1468,7 @@ impl BeaconState {
         }
 
         ensure!(slashed_any, "No validator was slashed");
+
         Ok(())
     }
 
@@ -1673,6 +1679,7 @@ impl BeaconState {
                     .min(validator.get_max_effective_balance());
             }
         }
+
         Ok(())
     }
 
@@ -1818,6 +1825,7 @@ impl BeaconState {
             (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT) * WEIGHT_DENOMINATOR / PROPOSER_WEIGHT;
         let proposer_reward = proposer_reward_numerator / proposer_reward_denominator;
         self.increase_balance(self.get_beacon_proposer_index()?, proposer_reward)?;
+
         Ok(())
     }
 
@@ -1827,6 +1835,7 @@ impl BeaconState {
         // Set randao mix
         self.randao_mixes[(next_epoch % EPOCHS_PER_HISTORICAL_VECTOR) as usize] =
             self.get_randao_mix(current_epoch);
+
         Ok(())
     }
 
@@ -1834,6 +1843,7 @@ impl BeaconState {
         let next_epoch = self.get_current_epoch() + 1;
         // Reset slashings
         self.slashings[(next_epoch % EPOCHS_PER_SLASHINGS_VECTOR) as usize] = 0;
+
         Ok(())
     }
 
@@ -1894,6 +1904,7 @@ impl BeaconState {
                 )?;
             }
         }
+
         Ok(())
     }
 
@@ -2204,6 +2215,7 @@ impl BeaconState {
                 self.decrease_balance(index as u64, penalties[index])?;
             }
         }
+
         Ok(())
     }
 
@@ -2230,12 +2242,14 @@ impl BeaconState {
             self.current_sync_committee = self.next_sync_committee.clone();
             self.next_sync_committee = Arc::new(self.get_next_sync_committee()?);
         }
+
         Ok(())
     }
 
     pub fn process_participation_flag_updates(&mut self) -> anyhow::Result<()> {
         self.previous_epoch_participation = self.current_epoch_participation.clone();
         self.current_epoch_participation = vec![0; self.validators.len()].into();
+
         Ok(())
     }
 
@@ -2254,6 +2268,7 @@ impl BeaconState {
         self.process_historical_summaries_update()?;
         self.process_participation_flag_updates()?;
         self.process_sync_committee_updates()?;
+
         Ok(())
     }
 
@@ -2268,6 +2283,7 @@ impl BeaconState {
             }
             self.slot += 1
         }
+
         Ok(())
     }
 
@@ -2282,6 +2298,7 @@ impl BeaconState {
         // Cache block root
         let previous_block_root = self.latest_block_header.tree_hash_root();
         self.block_roots[(self.slot % SLOTS_PER_HISTORICAL_ROOT) as usize] = previous_block_root;
+
         Ok(())
     }
 
@@ -2355,6 +2372,7 @@ impl BeaconState {
         self.process_eth1_data(&block.body)?;
         self.process_operations(&block.body)?;
         self.process_sync_aggregate(&block.body.sync_aggregate)?;
+
         Ok(())
     }
 
@@ -2381,6 +2399,7 @@ impl BeaconState {
         if validate_result {
             ensure!(block.state_root == self.tree_hash_root())
         }
+
         Ok(())
     }
 

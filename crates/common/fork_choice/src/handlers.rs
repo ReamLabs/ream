@@ -140,7 +140,6 @@ pub fn on_attester_slashing(
         &attestation_1.data,
         &attestation_2.data
     ));
-
     let state = &store
         .db
         .beacon_state_provider()

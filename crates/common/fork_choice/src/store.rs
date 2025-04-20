@@ -221,6 +221,7 @@ impl Store {
             .ok_or(anyhow!("Failed to find checkpoint in checkpoint states"))?;
         let committee_weight =
             get_total_active_balance(&justified_checkpoint_state) / SLOTS_PER_EPOCH;
+
         Ok((committee_weight * PROPOSER_SCORE_BOOST) / 100)
     }
 
@@ -709,7 +710,6 @@ pub fn get_forkchoice_store(
         .insert(justified_checkpoint, anchor_state)?;
     db.unrealized_justifications_provider()
         .insert(anchor_root, justified_checkpoint)?;
-
     Ok(Store { db })
 }
 
