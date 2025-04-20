@@ -38,7 +38,7 @@ impl ValidatorData {
 pub async fn get_validator_from_state(
     db: web::Data<ReamDB>,
     param: web::Path<(ID, ValidatorID)>,
-    web::Json(validator): web::Json<Validator>,
+    validator: web::Json<Validator>,
 ) -> actix_web::Result<impl Responder> {
     let (state_id, validator_id) = param.into_inner();
 
@@ -118,8 +118,8 @@ pub async fn validator_status(validator: &Validator, db: &ReamDB) -> actix_web::
 pub async fn get_validators_from_state(
     db: web::Data<ReamDB>,
     state_id: web::Path<ID>,
-    web::Json(id_query): web::Json<IdQuery>,
-    web::Json(status_query): web::Json<StatusQuery>,
+    id_query: web::Json<IdQuery>,
+    status_query: web::Json<StatusQuery>,
 ) -> actix_web::Result<impl Responder> {
     if let Some(validator_ids) = &id_query.id {
         if validator_ids.len() >= MAX_VALIDATOR_COUNT {
@@ -200,13 +200,15 @@ pub async fn get_validators_from_state(
 pub async fn post_validators_from_state(
     db: web::Data<ReamDB>,
     state_id: web::Path<ID>,
-    web::Json(request): web::Json<ValidatorsPostRequest>,
-    web::Json(status_query): web::Json<StatusQuery>,
+    request: web::Json<ValidatorsPostRequest>,
+    status_query: web::Json<StatusQuery>,
 ) -> actix_web::Result<impl Responder> {
-    let id_query = IdQuery { id: request.ids };
+    let id_query = IdQuery {
+        id: request.ids.clone(),
+    };
 
     let status_query = StatusQuery {
-        status: request.status,
+        status: request.status.clone(),
     };
 
     let state = get_state_from_id(state_id.into_inner(), &db).await?;

@@ -135,7 +135,7 @@ pub async fn get_state_finality_checkpoint(
 pub async fn get_state_randao(
     db: web::Data<ReamDB>,
     state_id: web::Path<ID>,
-    web::Json(query): web::Json<RandaoQuery>,
+    query: web::Json<RandaoQuery>,
 ) -> actix_web::Result<impl Responder> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
