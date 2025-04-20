@@ -17,6 +17,7 @@ use crate::{
         genesis_time::{GENESIS_TIME_FIELD, GenesisTimeField},
         justified_checkpoint::{JUSTIFIED_CHECKPOINT_FIELD, JustifiedCheckpointField},
         latest_messages::{LATEST_MESSAGES_TABLE, LatestMessagesTable},
+        parent_root_index::{PARENT_ROOT_INDEX_MULTIMAP_TABLE, ParentRootIndexMultimapTable},
         proposer_boost_root::{PROPOSER_BOOST_ROOT_FIELD, ProposerBoostRootField},
         slot_index::{SLOT_INDEX_TABLE, SlotIndexTable},
         state_root_index::{STATE_ROOT_INDEX_TABLE, StateRootIndexTable},
@@ -69,6 +70,7 @@ impl ReamDB {
         write_txn.open_table(GENESIS_TIME_FIELD)?;
         write_txn.open_table(JUSTIFIED_CHECKPOINT_FIELD)?;
         write_txn.open_table(LATEST_MESSAGES_TABLE)?;
+        write_txn.open_multimap_table(PARENT_ROOT_INDEX_MULTIMAP_TABLE)?;
         write_txn.open_table(PROPOSER_BOOST_ROOT_FIELD)?;
         write_txn.open_table(SLOT_INDEX_TABLE)?;
         write_txn.open_table(STATE_ROOT_INDEX_TABLE)?;
@@ -119,6 +121,12 @@ impl ReamDB {
 
     pub fn unrealized_justifications_provider(&self) -> UnrealizedJustificationsTable {
         UnrealizedJustificationsTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn parent_root_index_multimap_provider(&self) -> ParentRootIndexMultimapTable {
+        ParentRootIndexMultimapTable {
             db: self.db.clone(),
         }
     }

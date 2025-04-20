@@ -19,12 +19,14 @@ pub struct GenesisTimeField {
 impl Field for GenesisTimeField {
     type Value = u64;
 
-    fn get(&self) -> Result<Option<Self::Value>, StoreError> {
+    fn get(&self) -> Result<u64, StoreError> {
         let read_txn = self.db.begin_read()?;
 
         let table = read_txn.open_table(GENESIS_TIME_FIELD)?;
-        let result = table.get(GENESIS_TIME_KEY)?;
-        Ok(result.map(|res| res.value()))
+        let result = table
+            .get(GENESIS_TIME_KEY)?
+            .ok_or(StoreError::FieldNotInitilized)?;
+        Ok(result.value())
     }
 
     fn insert(&self, value: Self::Value) -> Result<(), StoreError> {

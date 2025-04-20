@@ -7,6 +7,9 @@ pub enum StoreError {
 
     #[error("Io error in creating DB file: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Field not initilized")]
+    FieldNotInitilized,
 }
 
 impl From<redb::Error> for StoreError {

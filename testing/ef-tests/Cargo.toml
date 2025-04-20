@@ -25,9 +25,11 @@ tokio.workspace = true
 tree_hash.workspace = true
 
 # ream
+ream-bls.workspace = true
 ream-consensus.workspace = true
 ream-fork-choice.workspace = true
 ream-merkle.workspace = true
+ream-storage.workspace = true
 
 [features]
 ef-tests = []

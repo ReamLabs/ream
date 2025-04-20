@@ -8,6 +8,7 @@ pub mod finalized_checkpoint;
 pub mod genesis_time;
 pub mod justified_checkpoint;
 pub mod latest_messages;
+pub mod parent_root_index;
 pub mod proposer_boost_root;
 pub mod slot_index;
 pub mod state_root_index;
@@ -33,10 +34,24 @@ pub trait Table {
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError>;
 }
 
+#[allow(clippy::result_large_err)]
+pub trait MultimapTable {
+    type Key;
+
+    type GetValue;
+
+    type InsertValue;
+
+    fn get(&self, key: Self::Key) -> Result<Option<Self::GetValue>, StoreError>;
+
+    fn insert(&self, key: Self::Key, value: Self::InsertValue) -> Result<(), StoreError>;
+}
+
+#[allow(clippy::result_large_err)]
 pub trait Field {
     type Value;
 
-    fn get(&self) -> Result<Option<Self::Value>, StoreError>;
+    fn get(&self) -> Result<Self::Value, StoreError>;
 
     fn insert(&self, value: Self::Value) -> Result<(), StoreError>;
 }

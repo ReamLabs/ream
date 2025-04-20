@@ -46,26 +46,18 @@ pub struct BlockRewards {
 pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, ApiError> {
     let block_root = match block_id {
         ID::Finalized => {
-            let finalized_checkpoint = db
-                .finalized_checkpoint_provider()
-                .get()
-                .map_err(|err| {
-                    error!("Failed to get block by block_root, error: {err:?}");
-                    ApiError::InternalError
-                })?
-                .ok_or_else(|| ApiError::NotFound("Finalized checkpoint not found".to_string()))?;
+            let finalized_checkpoint = db.finalized_checkpoint_provider().get().map_err(|err| {
+                error!("Failed to get block by block_root, error: {err:?}");
+                ApiError::InternalError
+            })?;
 
             Ok(Some(finalized_checkpoint.root))
         }
         ID::Justified => {
-            let justified_checkpoint = db
-                .justified_checkpoint_provider()
-                .get()
-                .map_err(|err| {
-                    error!("Failed to get block by block_root, error: {err:?}");
-                    ApiError::InternalError
-                })?
-                .ok_or_else(|| ApiError::NotFound("Justified checkpoint not found".to_string()))?;
+            let justified_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
+                error!("Failed to get block by block_root, error: {err:?}");
+                ApiError::InternalError
+            })?;
 
             Ok(Some(justified_checkpoint.root))
         }
