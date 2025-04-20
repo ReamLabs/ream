@@ -3,7 +3,7 @@ use actix_web::{
     web::{Data, Json},
 };
 use alloy_primitives::B256;
-use ream_consensus::beacon_block_header::{SignedBeaconBlockHeader, compute_signed_block_header};
+use ream_consensus::beacon_block_header::SignedBeaconBlockHeader;
 use ream_storage::{db::ReamDB, tables::Table};
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -100,7 +100,7 @@ pub async fn get_header_from_slot(
 ) -> Result<(SignedBeaconBlockHeader, B256), ApiError> {
     let beacon_block = get_beacon_block_from_id(ID::Slot(slot), db).await?;
 
-    let header_message = compute_signed_block_header(beacon_block);
+    let header_message = beacon_block.compute_signed_block_header();
     let root = header_message.tree_hash_root();
 
     Ok((header_message, root))
