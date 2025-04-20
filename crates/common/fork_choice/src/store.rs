@@ -4,6 +4,7 @@ use alloy_primitives::{B256, map::HashMap};
 use anyhow::{anyhow, ensure};
 use ream_consensus::{
     attestation::Attestation,
+    blob_sidecar::BlobIdentifier,
     checkpoint::Checkpoint,
     constants::{
         GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SECONDS_PER_SLOT, SLOTS_PER_EPOCH,
@@ -19,12 +20,9 @@ use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use serde::Deserialize;
 use tree_hash::TreeHash;
 
-use crate::{
-    blob_sidecar::BlobIdentifier,
-    constants::{
-        PROPOSER_SCORE_BOOST, REORG_HEAD_WEIGHT_THRESHOLD, REORG_MAX_EPOCHS_SINCE_FINALIZATION,
-        REORG_PARENT_WEIGHT_THRESHOLD,
-    },
+use crate::constants::{
+    PROPOSER_SCORE_BOOST, REORG_HEAD_WEIGHT_THRESHOLD, REORG_MAX_EPOCHS_SINCE_FINALIZATION,
+    REORG_PARENT_WEIGHT_THRESHOLD,
 };
 
 #[derive(Debug, PartialEq, Deserialize)]

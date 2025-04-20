@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use ream_consensus::execution_engine::rpc_types::get_blobs::BlobsAndProofV1;
-use ream_fork_choice::blob_sidecar::BlobIdentifier;
+use ream_consensus::{
+    blob_sidecar::BlobIdentifier, execution_engine::rpc_types::get_blobs::BlobsAndProofV1,
+};
 use redb::{Database, Durability, TableDefinition};
 
 use super::{SSZEncoding, Table};

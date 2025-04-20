@@ -4,6 +4,7 @@ pub mod attestation;
 pub mod attestation_data;
 pub mod attester_slashing;
 pub mod beacon_block_header;
+pub mod blob_sidecar;
 pub mod bls_to_execution_change;
 pub mod checkpoint;
 pub mod constants;

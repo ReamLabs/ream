@@ -22,4 +22,3 @@ tree_hash.workspace = true
 
 # Ream dependencies
 ream-consensus.workspace = true
-ream-fork-choice.workspace = true

@@ -1,12 +1,13 @@
 use alloy_consensus::Blob;
 use alloy_primitives::B256;
-use ream_consensus::{
-    beacon_block_header::SignedBeaconBlockHeader,
-    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
-};
 use serde::Deserialize;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U17};
+
+use crate::{
+    beacon_block_header::SignedBeaconBlockHeader,
+    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
+};
 
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct BlobSidecar {
