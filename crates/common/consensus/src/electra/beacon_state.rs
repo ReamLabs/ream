@@ -92,9 +92,7 @@ use crate::{
     withdrawal::Withdrawal, withdrawal_request::WithdrawalRequest,
 };
 
-fn quoted_u8_var_list<'de, D>(
-    deserializer: D,
-) -> Result<VariableList<u8, U1099511627776>, D::Error>
+fn quoted_u8_var_list<'de, D>(deserializer: D) -> Result<VariableList<u8, U1099511627776>, D::Error>
 where
     D: Deserializer<'de>,
 {

@@ -74,7 +74,7 @@ impl<T: Serialize> BeaconResponse<T> {
 ///     "data" : T
 /// })
 /// }
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BeaconVersionedResponse<T> {
     pub version: String,
     pub execution_optimistic: bool,

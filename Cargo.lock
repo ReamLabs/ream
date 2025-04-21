@@ -1566,9 +1566,15 @@ dependencies = [
  "paste",
  "ream-consensus",
  "ream-fork-choice",
+<<<<<<< HEAD
  "ream-merkle",
+=======
+ "ream-rpc",
+ "reqwest",
+>>>>>>> 9081113 (feat: add tests for block and state parsing)
  "rstest",
  "serde",
+ "serde_json",
  "serde_yaml",
  "snap",
  "ssz_types",
