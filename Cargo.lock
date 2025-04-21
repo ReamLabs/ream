@@ -4169,10 +4169,21 @@ dependencies = [
  "ream-discv5",
  "ream-executor",
  "ream-network-spec",
+ "ream-node",
+ "ream-peer-management",
  "serde",
  "serde_yaml",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "ream-peer-management"
+version = "0.1.0"
+dependencies = [
+ "libp2p",
+ "serde",
+ "vergen",
 ]
 
 [[package]]
