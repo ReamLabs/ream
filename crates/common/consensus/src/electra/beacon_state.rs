@@ -15,10 +15,11 @@ use ream_bls::{
     traits::{Aggregatable, Verifiable},
 };
 use ream_merkle::is_valid_merkle_branch;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitVector, FixedVector, VariableList,
+    serde_utils::{quoted_u64_fixed_vec, quoted_u64_var_list},
     typenum::{U4, U2048, U8192, U65536, U262144, U16777216, U134217728, U1099511627776},
 };
 use tree_hash::TreeHash;
@@ -88,15 +89,32 @@ use crate::{
     sync_committee::SyncCommittee,
     validator::Validator,
     voluntary_exit::SignedVoluntaryExit,
-    withdrawal::Withdrawal,
-    withdrawal_request::WithdrawalRequest,
+    withdrawal::Withdrawal, withdrawal_request::WithdrawalRequest,
 };
+
+fn deserialize_string_vec_to_variable_list<'de, D>(
+    deserializer: D,
+) -> Result<VariableList<u8, U1099511627776>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let string_vec: Vec<String> = Vec::deserialize(deserializer)?;
+    let bytes_result: Result<Vec<u8>, _> = string_vec
+        .into_iter()
+        .map(|s| s.parse::<u8>().map_err(serde::de::Error::custom))
+        .collect();
+
+    let bytes = bytes_result?;
+    Ok(VariableList::from(bytes))
+}
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BeaconState {
     // Versioning
+    #[serde(with = "serde_utils::quoted_u64")]
     pub genesis_time: u64,
     pub genesis_validators_root: B256,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,
     pub fork: Fork,
 
@@ -110,20 +128,25 @@ pub struct BeaconState {
     // Eth1
     pub eth1_data: Eth1Data,
     pub eth1_data_votes: VariableList<Eth1Data, U2048>,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub eth1_deposit_index: u64,
 
     // Registry
     pub validators: VariableList<Validator, U1099511627776>,
+    #[serde(with = "quoted_u64_var_list")]
     pub balances: VariableList<u64, U1099511627776>,
 
     // Randomness
     pub randao_mixes: FixedVector<B256, U65536>,
 
     // Slashings
+    #[serde(with = "quoted_u64_fixed_vec")]
     pub slashings: FixedVector<u64, U8192>,
 
     // Participation
+    #[serde(deserialize_with = "deserialize_string_vec_to_variable_list")]
     pub previous_epoch_participation: VariableList<u8, U1099511627776>,
+    #[serde(deserialize_with = "deserialize_string_vec_to_variable_list")]
     pub current_epoch_participation: VariableList<u8, U1099511627776>,
 
     // Finality
@@ -133,6 +156,7 @@ pub struct BeaconState {
     pub finalized_checkpoint: Checkpoint,
 
     // Inactivity
+    #[serde(with = "quoted_u64_var_list")]
     pub inactivity_scores: VariableList<u64, U1099511627776>,
 
     // Sync
@@ -143,7 +167,9 @@ pub struct BeaconState {
     pub latest_execution_payload_header: ExecutionPayloadHeader,
 
     // Withdrawals
+    #[serde(with = "serde_utils::quoted_u64")]
     pub next_withdrawal_index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub next_withdrawal_validator_index: u64,
 
     // Deep history valid from Capella onwards.

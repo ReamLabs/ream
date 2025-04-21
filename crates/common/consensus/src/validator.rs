@@ -20,15 +20,20 @@ pub struct Validator {
     pub withdrawal_credentials: B256,
 
     /// Balance at stake
+    #[serde(with = "serde_utils::quoted_u64")]
     pub effective_balance: u64,
     pub slashed: bool,
 
     /// When criteria for activation were met
+    #[serde(with = "serde_utils::quoted_u64")]
     pub activation_eligibility_epoch: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub activation_epoch: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub exit_epoch: u64,
 
     /// When validator can withdraw funds
+    #[serde(with = "serde_utils::quoted_u64")]
     pub withdrawable_epoch: u64,
 }
 
