@@ -73,7 +73,7 @@ impl Serialize for KZGCommitment {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&format!("{self:?}"))
+        serializer.serialize_str(&format!("0x{self:?}"))
     }
 }
 

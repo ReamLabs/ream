@@ -25,6 +25,16 @@ pub async fn test_beacon_state_serialization(rpc_url: &str) -> anyhow::Result<()
         beacon_state.data.latest_block_header.parent_root,
         b256!("0x81c89d2dbd540ade21b9c28d8a78395706563ac5af78fb67c3960ecad3706c8a")
     );
+
+    let re_encoded = serde_json::to_string(&beacon_state)?;
+    let reparsed: serde_json::Value = serde_json::from_str(&re_encoded)?;
+    let original: serde_json::Value = serde_json::from_str(&body)?;
+
+    assert_eq!(
+        reparsed, original,
+        "Re-encoded state doesn't match original JSON"
+    );
+
     println!("State Serialization completed successfully");
 
     Ok(())
@@ -41,6 +51,15 @@ pub async fn test_beacon_block_serialization(rpc_url: &str, slot: u64) -> anyhow
 
     assert_eq!(beacon_block.version, "deneb");
     assert_eq!(beacon_block.data.message.slot, 11532800);
+
+    let re_encoded = serde_json::to_string(&beacon_block)?;
+    let reparsed: serde_json::Value = serde_json::from_str(&re_encoded)?;
+    let original: serde_json::Value = serde_json::from_str(&body)?;
+
+    assert_eq!(
+        reparsed, original,
+        "Re-encoded block doesn't match original JSON"
+    );
 
     println!("Block Serialization completed successfully");
 

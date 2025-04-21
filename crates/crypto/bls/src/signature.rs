@@ -15,7 +15,7 @@ impl Serialize for BLSSignature {
     where
         S: Serializer,
     {
-        let val = hex::encode(self.inner.as_ssz_bytes());
+        let val = format!("0x{}", hex::encode(self.inner.as_ssz_bytes()));
         serializer.serialize_str(&val)
     }
 }

@@ -15,7 +15,7 @@ use ream_bls::{
     traits::{Aggregatable, Verifiable},
 };
 use ream_merkle::is_valid_merkle_branch;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitVector, FixedVector, VariableList,
@@ -92,6 +92,16 @@ use crate::{
     withdrawal::Withdrawal, withdrawal_request::WithdrawalRequest,
 };
 
+fn serialize_u8_as_quoted_list<S>(
+    value: &VariableList<u8, U1099511627776>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let string_vec: Vec<String> = value.iter().map(|v| v.to_string()).collect();
+    string_vec.serialize(serializer)
+}
 fn quoted_u8_var_list<'de, D>(deserializer: D) -> Result<VariableList<u8, U1099511627776>, D::Error>
 where
     D: Deserializer<'de>,
@@ -142,9 +152,15 @@ pub struct BeaconState {
     pub slashings: FixedVector<u64, U8192>,
 
     // Participation
-    #[serde(deserialize_with = "quoted_u8_var_list")]
+    #[serde(
+        deserialize_with = "quoted_u8_var_list",
+        serialize_with = "serialize_u8_as_quoted_list"
+    )]
     pub previous_epoch_participation: VariableList<u8, U1099511627776>,
-    #[serde(deserialize_with = "quoted_u8_var_list")]
+    #[serde(
+        deserialize_with = "quoted_u8_var_list",
+        serialize_with = "serialize_u8_as_quoted_list"
+    )]
     pub current_epoch_participation: VariableList<u8, U1099511627776>,
 
     // Finality
