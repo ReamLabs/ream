@@ -12,6 +12,7 @@ pub struct SignedBLSToExecutionChange {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BLSToExecutionChange {
+    #[serde(with = "serde_utils::quoted_u64")]
     pub validator_index: u64,
     pub from_bls_pubkey: PubKey,
     pub to_execution_address: Address,

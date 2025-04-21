@@ -7,7 +7,9 @@ use crate::checkpoint::Checkpoint;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct AttestationData {
+    #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub index: u64,
 
     /// LMD GHOST vote

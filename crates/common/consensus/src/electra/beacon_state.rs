@@ -92,7 +92,7 @@ use crate::{
     withdrawal::Withdrawal, withdrawal_request::WithdrawalRequest,
 };
 
-fn deserialize_string_vec_to_variable_list<'de, D>(
+fn quoted_u8_var_list<'de, D>(
     deserializer: D,
 ) -> Result<VariableList<u8, U1099511627776>, D::Error>
 where
@@ -144,9 +144,9 @@ pub struct BeaconState {
     pub slashings: FixedVector<u64, U8192>,
 
     // Participation
-    #[serde(deserialize_with = "deserialize_string_vec_to_variable_list")]
+    #[serde(deserialize_with = "quoted_u8_var_list")]
     pub previous_epoch_participation: VariableList<u8, U1099511627776>,
-    #[serde(deserialize_with = "deserialize_string_vec_to_variable_list")]
+    #[serde(deserialize_with = "quoted_u8_var_list")]
     pub current_epoch_participation: VariableList<u8, U1099511627776>,
 
     // Finality
