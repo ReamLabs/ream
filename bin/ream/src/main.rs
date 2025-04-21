@@ -7,6 +7,7 @@ use ream_executor::ReamExecutor;
 use ream_p2p::network::Network;
 use ream_rpc::{config::ServerConfig, start_server};
 use ream_storage::db::ReamDB;
+use tokio::sync::mpsc;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -24,7 +25,6 @@ async fn main() {
     let cli = Cli::parse();
 
     let async_executor = ReamExecutor::new().expect("unable to create executor");
-
     let main_executor = ReamExecutor::new().expect("unable to create executor");
 
     match cli.command {
@@ -63,12 +63,26 @@ async fn main() {
             let network_future = async {
                 match Network::init(async_executor, &binding).await {
                     Ok(mut network) => {
-                        main_executor.spawn(async move {
-                            network.polling_events().await;
+                        let (tx, mut rx) = mpsc::channel(1);
+                        
+                        // Spawn the network polling task
+                        let network_task = main_executor.spawn(async move {
+                            loop {
+                                let event = network.polling_events().await;
+                                info!("Network event: {:?}", event);
+                            }
                         });
-                        tokio::signal::ctrl_c()
-                            .await
-                            .expect("Unable to terminate future");
+
+                        // Wait for Ctrl+C or network task completion
+                        tokio::select! {
+                            _ = tokio::signal::ctrl_c() => {
+                                info!("Received Ctrl+C, shutting down...");
+                                let _ = tx.send(()).await;
+                            }
+                            _ = network_task => {
+                                info!("Network task completed");
+                            }
+                        }
                     }
                     Err(e) => {
                         error!("Failed to initialize network: {}", e);

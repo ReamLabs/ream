@@ -4,7 +4,6 @@ use std::{
     net::IpAddr,
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
-    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -57,7 +56,7 @@ pub enum ReamNetworkEvent {
 pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
-    peers: Arc<RwLock<HashMap<PeerId, PeerInfo>>>,
+    peers: HashMap<PeerId, PeerInfo>,
 }
 
 struct Executor(ReamExecutor);
@@ -131,7 +130,7 @@ impl Network {
         let mut network = Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
-            peers: Arc::new(RwLock::new(HashMap::new())),
+            peers: HashMap::new(),
         };
 
         network.start_network_worker(config).await?;
@@ -210,22 +209,33 @@ impl Network {
                 peer_id, endpoint, ..
             } => {
                 // Update peers hashmap with new connection
-                let mut peers = self.peers.write().unwrap();
-                if let Some(peer_info) = peers.get_mut(&peer_id) {
-                    // Update existing peer info
-                    peer_info.connection_status = PeerConnectionStatus::Connected;
-                    peer_info.update_last_seen();
-                } else {
-                    // Create new peer info
-                    let peer_info = PeerInfo::new(peer_id, endpoint.get_remote_address().clone());
-                    peers.insert(peer_id, peer_info);
+                match self.peers.get_mut(&peer_id) {
+                    Some(peer_info) => {
+                        peer_info.connection_status = PeerConnectionStatus::Connected;
+                        peer_info.update_last_seen();
+                    }
+                    None => {
+                        // Create new peer info
+                        let peer_info =
+                            PeerInfo::new(peer_id, endpoint.get_remote_address().clone());
+                        self.peers.insert(peer_id, peer_info);
+                    }
                 }
                 Some(ReamNetworkEvent::PeerConnectedIncoming(peer_id))
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 // Update peer status to disconnected
-                if let Some(peer_info) = self.peers.write().unwrap().get_mut(&peer_id) {
-                    peer_info.connection_status = PeerConnectionStatus::Disconnected;
+                match self.peers.get_mut(&peer_id) {
+                    Some(peer_info) => {
+                        peer_info.connection_status = PeerConnectionStatus::Disconnected;
+                        peer_info.update_last_seen();
+                    }
+                    None => {
+                        println!(
+                            "Received disconnect from a peer not present in local db {:}",
+                            peer_id
+                        );
+                    }
                 }
                 Some(ReamNetworkEvent::PeerDisconnected(peer_id))
             }
