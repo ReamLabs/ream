@@ -4490,6 +4490,7 @@ dependencies = [
  "ethereum_ssz_derive",
  "futures",
  "libp2p",
+ "rand 0.8.5",
  "ream-consensus",
  "ream-network-spec",
  "ssz_types",
