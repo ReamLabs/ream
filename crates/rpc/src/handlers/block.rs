@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use actix_web::{
     HttpResponse, Responder, get,
@@ -18,7 +18,10 @@ use ream_consensus::{
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table, TableWithHeadIter},
+    tables::{
+        beacon_block::BEACON_BLOCK_TABLE,
+        Field, Table,
+    },
 };
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
@@ -203,12 +206,40 @@ pub async fn get_beacon_block_from_id(
         })
 }
 
-pub async fn get_beacon_blocks(db: &ReamDB) -> Result<Vec<SignedBeaconBlock>, ApiError> {
-    let beacon_blocks = db.beacon_block_provider().get_all_heads();
-    if beacon_blocks.is_err() {
-        return Err(ApiError::InternalError);
+pub async fn get_filtered_block_tree(db: &ReamDB) -> Result<Vec<SignedBeaconBlock>, ApiError> {
+    let justified_checkpoint = db
+        .justified_checkpoint_provider()
+        .get()
+        .map_err(|_| ApiError::InternalError)?
+        .ok_or_else(|| 
+            ApiError::NotFound(String::from("Justified checkpoint not found"))
+        )?;
+    let root = justified_checkpoint.root;
+
+    let read_txn = db.db.begin_read().map_err(|_| ApiError::InternalError)?;
+    let table = read_txn.open_table(BEACON_BLOCK_TABLE).map_err(|_| ApiError::InternalError)?;
+    
+    let mut blocks: Vec<SignedBeaconBlock> = Vec::new();
+    let mut visited = HashMap::new();
+    let mut to_visit = vec![root];
+
+    while let Some(current_root) = to_visit.pop() {
+        if visited.contains_key(&current_root) {
+            continue;
+        }
+        visited.insert(current_root, true);
+
+        if let Some(block) = table.get(current_root).map_err(|_| ApiError::InternalError)? {
+            let block = block.value();
+            blocks.push(block.clone());
+
+            if block.message.parent_root != B256::ZERO {
+                to_visit.push(block.message.parent_root);
+            }
+        }
     }
-    Ok(beacon_blocks.unwrap())
+
+    Ok(blocks)
 }
 
 /// Called by `/genesis` to get the Genesis Config of Beacon Chain.
@@ -291,7 +322,7 @@ pub async fn get_block_from_id(
 /// Called by `debug/beacon/blocks` to get the Beacon Block.
 #[get("/beacon/blocks/heads")]
 pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
-    let beacon_blocks = get_beacon_blocks(&db).await?;
+    let beacon_blocks = get_filtered_block_tree(&db).await?;
 
     let mut beacon_heads = Vec::new();
     for block in beacon_blocks.iter() {
