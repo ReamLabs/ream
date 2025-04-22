@@ -18,19 +18,18 @@ use ream_consensus::{
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
-    tables::{
-        beacon_block::BEACON_BLOCK_TABLE,
-        Field, Table,
-    },
+    tables::{Field, Table, beacon_block::BEACON_BLOCK_TABLE},
 };
 use serde::{Deserialize, Serialize};
-use tree_hash::TreeHash;
 use tracing::error;
+use tree_hash::TreeHash;
 
 use crate::types::{
     errors::ApiError,
     id::ID,
-    response::{BeaconHeadResponse, BeaconHeadsResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse},
+    response::{
+        BeaconHeadResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -211,14 +210,14 @@ pub async fn get_filtered_block_tree(db: &ReamDB) -> Result<Vec<SignedBeaconBloc
         .justified_checkpoint_provider()
         .get()
         .map_err(|_| ApiError::InternalError)?
-        .ok_or_else(|| 
-            ApiError::NotFound(String::from("Justified checkpoint not found"))
-        )?;
+        .ok_or_else(|| ApiError::NotFound(String::from("Justified checkpoint not found")))?;
     let root = justified_checkpoint.root;
 
     let read_txn = db.db.begin_read().map_err(|_| ApiError::InternalError)?;
-    let table = read_txn.open_table(BEACON_BLOCK_TABLE).map_err(|_| ApiError::InternalError)?;
-    
+    let table = read_txn
+        .open_table(BEACON_BLOCK_TABLE)
+        .map_err(|_| ApiError::InternalError)?;
+
     let mut blocks: Vec<SignedBeaconBlock> = Vec::new();
     let mut visited = HashMap::new();
     let mut to_visit = vec![root];
@@ -229,7 +228,10 @@ pub async fn get_filtered_block_tree(db: &ReamDB) -> Result<Vec<SignedBeaconBloc
         }
         visited.insert(current_root, true);
 
-        if let Some(block) = table.get(current_root).map_err(|_| ApiError::InternalError)? {
+        if let Some(block) = table
+            .get(current_root)
+            .map_err(|_| ApiError::InternalError)?
+        {
             let block = block.value();
             blocks.push(block.clone());
 
@@ -332,7 +334,7 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
             execution_optimistic: false,
         };
         beacon_heads.push(beacon_head);
-    };
-    
-    Ok(HttpResponse::Ok().json(BeaconHeadsResponse::json(beacon_heads)))
+    }
+
+    Ok(HttpResponse::Ok().json(DataResponse::new(beacon_heads)))
 }
