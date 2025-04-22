@@ -25,9 +25,11 @@ use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use crate::{
-    config::DiscoveryConfig,
-    eth2::{ENR_ETH2_KEY, EnrForkId},
-    subnet::{ATTESTATION_BITFIELD_ENR_KEY, Subnet, subnet_predicate},
+    config::NetworkConfig,
+    eth2::{ENR_ETH2_KEY, ENRForkID},
+    subnet::{
+        ATTESTATION_BITFIELD_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY, Subnet, subnet_predicate,
+    },
 };
 
 #[derive(Debug)]
@@ -44,9 +46,11 @@ enum EventStream {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 enum QueryType {
     FindPeers,
     FindSubnetPeers(Vec<Subnet>),
+    FindSyncCommitteeSubnetPeers(Vec<Subnet>),
 }
 
 struct QueryResult {
@@ -76,6 +80,7 @@ impl Discovery {
         let enr = enr_builder
             .add_value(ENR_ETH2_KEY, &EnrForkId::electra())
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.subnets)
+            .add_value(SYNC_COMMITTEE_BITFIELD_ENR_KEY, &config.subnets)
             .build(&enr_local)
             .map_err(|err| anyhow!("Failed to build ENR: {err}"))?;
 
@@ -136,7 +141,33 @@ impl Discovery {
         self.start_query(query, target_peers);
     }
 
+    pub fn discover_sync_committee_peers(&mut self, target_peers: usize, subnet_id: Option<u8>) {
+        // If the discv5 service isn't running or we are in the process of a query, don't bother
+        // queuing a new one.
+        if !self.started || self.find_peer_active {
+            return;
+        }
+        self.find_peer_active = true;
+
+        let query = match subnet_id {
+            Some(id) => QueryType::FindSyncCommitteeSubnetPeers(vec![Subnet::SyncCommittee(id)]),
+            None => QueryType::FindPeers,
+        };
+
+        self.start_query(query, target_peers);
+    }
+
     fn start_query(&mut self, query: QueryType, target_peers: usize) {
+        // Define the predicate but we don't need to use it directly
+        // The predicate is created again in find_node_predicate
+        let _predicate = match query {
+            QueryType::FindPeers => subnet_predicate(vec![]),
+            QueryType::FindSubnetPeers(ref subnets) => subnet_predicate(subnets.clone()),
+            QueryType::FindSyncCommitteeSubnetPeers(ref subnets) => {
+                subnet_predicate(subnets.clone())
+            }
+        };
+
         let query_future = self
             .discv5
             .find_node_predicate(
@@ -144,6 +175,9 @@ impl Discovery {
                 match query {
                     QueryType::FindPeers => Box::new(empty_predicate()),
                     QueryType::FindSubnetPeers(ref subnets) => {
+                        Box::new(subnet_predicate(subnets.clone()))
+                    }
+                    QueryType::FindSyncCommitteeSubnetPeers(ref subnets) => {
                         Box::new(subnet_predicate(subnets.clone()))
                     }
                 },
@@ -199,6 +233,32 @@ impl Discovery {
                         }
                         Err(err) => {
                             warn!("Failed to find subnet peers: {err:?}");
+                            None
+                        }
+                    }
+                }
+                QueryType::FindSyncCommitteeSubnetPeers(subnets) => {
+                    self.find_peer_active = false;
+                    match query.result {
+                        Ok(peers) => {
+                            let predicate = subnet_predicate(subnets.clone());
+                            let filtered_peers = peers
+                                .into_iter()
+                                .filter(|enr| predicate(enr))
+                                .collect::<Vec<_>>();
+                            info!(
+                                "Found {} peers for sync committee subnets {:?}",
+                                filtered_peers.len(),
+                                subnets
+                            );
+                            let mut peer_map = HashMap::new();
+                            for peer in filtered_peers {
+                                peer_map.insert(peer, None);
+                            }
+                            Some(peer_map)
+                        }
+                        Err(err) => {
+                            warn!("Failed to find sync committee subnet peers: {err:?}");
                             None
                         }
                     }
