@@ -1,10 +1,11 @@
 use std::sync::{Arc, LazyLock};
 
 use alloy_primitives::{Address, address, b256, fixed_bytes};
-use ream_consensus::{fork::Fork, genesis::Genesis};
+use ream_consensus::genesis::Genesis;
 
-use crate::forks::{
-    DEV_FORKS, HOLESKY_FORKS, HOODI_FORKS, MAINNET_FORKS, SEPOLIA_FORKS, TOTAL_FORKS,
+use crate::fork_schedule::{
+    ForkSchedule, dev::DEV_FORK_SCHEDULE, holesky::HOLESKY_FORK_SCHEDULE,
+    hoodi::HOODI_FORK_SCHEDULE, mainnet::MAINNET_FORK_SCHEDULE, sepolia::SEPOLIA_FORK_SCHEDULE,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +34,7 @@ pub struct NetworkSpec {
     pub network: Network,
     pub genesis: Genesis,
     pub deposit_contract_address: Address,
-    pub forks: [Fork; TOTAL_FORKS],
+    pub fork_schedule: ForkSchedule,
 }
 
 pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
@@ -47,7 +48,7 @@ pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x00000000"),
         },
         deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
-        forks: *MAINNET_FORKS,
+        fork_schedule: MAINNET_FORK_SCHEDULE,
     }
     .into()
 });
@@ -63,7 +64,7 @@ pub static HOLESKY: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x01017000"),
         },
         deposit_contract_address: address!("0x4242424242424242424242424242424242424242"),
-        forks: *HOLESKY_FORKS,
+        fork_schedule: HOLESKY_FORK_SCHEDULE,
     }
     .into()
 });
@@ -79,7 +80,7 @@ pub static SEPOLIA: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x90000069"),
         },
         deposit_contract_address: address!("0x7f02C3E3c98b133055B8B348B2Ac625669Ed295D"),
-        forks: *SEPOLIA_FORKS,
+        fork_schedule: SEPOLIA_FORK_SCHEDULE,
     }
     .into()
 });
@@ -95,7 +96,7 @@ pub static HOODI: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x10000910"),
         },
         deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
-        forks: *HOODI_FORKS,
+        fork_schedule: HOODI_FORK_SCHEDULE,
     }
     .into()
 });
@@ -111,7 +112,7 @@ pub static DEV: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
             genesis_fork_version: fixed_bytes!("0x00000000"),
         },
         deposit_contract_address: address!("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
-        forks: *DEV_FORKS,
+        fork_schedule: DEV_FORK_SCHEDULE,
     }
     .into()
 });

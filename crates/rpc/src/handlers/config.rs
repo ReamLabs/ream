@@ -5,7 +5,7 @@ use alloy_primitives::{Address, aliases::B32};
 use ream_consensus::constants::{
     DOMAIN_AGGREGATE_AND_PROOF, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
 };
-use ream_network_spec::{forks::UNSCHEDULED_FORK_EPOCH, networks::NetworkSpec};
+use ream_network_spec::networks::NetworkSpec;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{errors::ApiError, response::DataResponse};
@@ -72,10 +72,6 @@ pub async fn get_fork_schedule(
     network_spec: Data<NetworkSpec>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::Ok().json(DataResponse::new(
-        network_spec
-            .forks
-            .iter()
-            .filter(|fork| fork.epoch != UNSCHEDULED_FORK_EPOCH)
-            .collect::<Vec<_>>(),
+        network_spec.fork_schedule.scheduled().collect::<Vec<_>>(),
     )))
 }

@@ -1,3 +1,3 @@
 pub mod cli;
-pub mod forks;
+pub mod fork_schedule;
 pub mod networks;
