@@ -10,3 +10,7 @@ pub struct Fork {
     #[serde(with = "serde_utils::quoted_u64")]
     pub epoch: u64,
 }
+
+impl Fork {
+    pub const UNSCHEDULED_EPOCH: u64 = u64::MAX;
+}
