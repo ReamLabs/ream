@@ -9,7 +9,7 @@ fn get_power_of_two_ceil(x: usize) -> usize {
     } else if x == 2 {
         2
     } else {
-        2 * get_power_of_two_ceil((x + 1) / 2)
+        2 * get_power_of_two_ceil(x.div_ceil(2))
     }
 }
 
