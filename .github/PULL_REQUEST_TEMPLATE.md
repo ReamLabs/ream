@@ -10,4 +10,4 @@
 
  <!-- Stay ahead of things, add list items here!  -->
 - [ ] I have read [CONTRIBUTING.md](https://github.com/ReamLabs/ream/blob/master/CONTRIBUTING.md).
-- [ ] Uses [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
+- [ ] This PR uses [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
