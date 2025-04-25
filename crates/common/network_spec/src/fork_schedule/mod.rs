@@ -5,13 +5,13 @@ use ream_consensus::fork::Fork;
 macro_rules! fork_array {
     // Entry
     (
-        ( $first_ver:expr , $first_epoch:expr )
-        $( , ( $rest_ver:expr , $rest_epoch:expr ) )* $(,)?
+        ( $first_ver:literal , $first_epoch:expr )
+        $( , ( $rest_ver:literal , $rest_epoch:expr ) )* $(,)?
     ) => {
         fork_array!(@internal (
             Fork {
-                previous_version: $first_ver,
-                current_version:  $first_ver,
+                previous_version: fixed_bytes!($first_ver),
+                current_version:  fixed_bytes!($first_ver),
                 epoch:            $first_epoch,
             }
         ), $first_ver $( , $rest_ver , $rest_epoch )* )
@@ -20,12 +20,12 @@ macro_rules! fork_array {
     // Recursive case
     (@internal (
         $( $forks:expr ),*
-    ), $prev_ver:expr , $curr_ver:expr , $curr_epoch:expr $( , $tail_ver:expr , $tail_epoch:expr )* ) => {
+    ), $prev_ver:literal , $curr_ver:literal , $curr_epoch:expr $( , $tail_ver:literal , $tail_epoch:expr )* ) => {
         fork_array!(@internal (
             $( $forks ),* ,
             Fork {
-                previous_version: $prev_ver,
-                current_version:  $curr_ver,
+                previous_version: fixed_bytes!($prev_ver),
+                current_version:  fixed_bytes!($curr_ver),
                 epoch:            $curr_epoch,
             }
         ), $curr_ver $( , $tail_ver , $tail_epoch )* )
@@ -34,7 +34,7 @@ macro_rules! fork_array {
     // Final case
     (@internal (
         $( $forks:expr ),*
-    ), $last_ver:expr ) => {
+    ), $last_ver:literal ) => {
         [ $( $forks ),* ]
     };
 }
@@ -65,11 +65,7 @@ mod tests {
         ];
 
         assert_eq!(
-            fork_array!(
-                (fixed_bytes!("0x90000069"), 0),
-                (fixed_bytes!("0x90000070"), 50),
-                (fixed_bytes!("0x90000071"), 100),
-            ),
+            fork_array!(("0x90000069", 0), ("0x90000070", 50), ("0x90000071", 100),),
             expected
         );
     }
