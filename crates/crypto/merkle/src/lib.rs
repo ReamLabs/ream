@@ -3,16 +3,6 @@
 use alloy_primitives::B256;
 use anyhow::ensure;
 
-fn get_power_of_two_ceil(x: usize) -> usize {
-    if x <= 1 {
-        1
-    } else if x == 2 {
-        2
-    } else {
-        2 * get_power_of_two_ceil(x.div_ceil(2))
-    }
-}
-
 fn get_generalized_index_length(index: usize) -> usize {
     (index as f64).log2() as usize
 }
@@ -25,9 +15,9 @@ fn get_generalized_index_child(index: usize, right_side: bool) -> usize {
     index * 2 + right_side as usize
 }
 
-pub fn merkle_tree(leaves: &[B256]) -> Vec<B256> {
+pub fn merkle_tree(leaves: &[B256], depth: usize) -> Vec<B256> {
     let num_of_leaves = leaves.len();
-    let bottom_length = get_power_of_two_ceil(num_of_leaves);
+    let bottom_length = 1 << depth;
 
     let mut tree = vec![B256::ZERO; bottom_length];
     tree.extend(leaves);
@@ -100,7 +90,7 @@ pub fn verify_merkle_proof(
     depth: usize,
     root: B256,
 ) -> anyhow::Result<bool> {
-    Ok(calculate_merkle_root(leaf, proof, 2 * depth + index)? == root)
+    Ok(calculate_merkle_root(leaf, proof, (1usize << depth) + index)? == root)
 }
 
 #[cfg(test)]
@@ -126,7 +116,7 @@ mod tests {
         let root: B256 =
             ethereum_hashing::hash32_concat(node_2.as_slice(), node_3.as_slice()).into();
 
-        let tree = merkle_tree(&leaves);
+        let tree = merkle_tree(&leaves, depth);
 
         assert_eq!(tree[1], root);
 

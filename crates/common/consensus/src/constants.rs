@@ -2,6 +2,7 @@ use alloy_primitives::{aliases::B32, fixed_bytes};
 
 pub const BASE_REWARDS_PER_EPOCH: u64 = 4;
 pub const BASE_REWARD_FACTOR: u64 = 64;
+pub const BLOB_KZG_COMMITMENTS_INDEX: usize = 11;
 pub const BLS_WITHDRAWAL_PREFIX: &[u8] = &[0];
 pub const BYTES_PER_BLOB: usize = BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB;
 pub const BYTES_PER_COMMITMENT: usize = 48;
@@ -38,6 +39,7 @@ pub const INTERVALS_PER_SLOT: u64 = 3;
 pub const INACTIVITY_SCORE_BIAS: u64 = 4;
 pub const INACTIVITY_SCORE_RECOVERY_RATE: u64 = 16;
 pub const JUSTIFICATION_BITS_LENGTH: usize = 4;
+pub const MAX_BLOB_COMMITMENTS_PER_BLOCK: u64 = 4096;
 pub const MAX_BLOBS_PER_BLOCK: u64 = 6;
 pub const MAX_COMMITTEES_PER_SLOT: u64 = 64;
 pub const MAX_DEPOSITS: u64 = 16;

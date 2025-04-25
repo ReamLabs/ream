@@ -1,19 +1,27 @@
 use alloy_primitives::B256;
 use ream_bls::BLSSignature;
+use ream_merkle::{generate_proof, merkle_tree};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     VariableList,
     typenum::{U2, U16, U128, U4096},
 };
+use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use super::execution_payload::ExecutionPayload;
 use crate::{
-    attestation::Attestation, attester_slashing::AttesterSlashing,
-    bls_to_execution_change::SignedBLSToExecutionChange, deposit::Deposit, eth_1_data::Eth1Data,
-    polynomial_commitments::kzg_commitment::KZGCommitment, proposer_slashing::ProposerSlashing,
-    sync_aggregate::SyncAggregate, voluntary_exit::SignedVoluntaryExit,
+    attestation::Attestation,
+    attester_slashing::AttesterSlashing,
+    bls_to_execution_change::SignedBLSToExecutionChange,
+    constants::{BLOB_KZG_COMMITMENTS_INDEX, MAX_BLOB_COMMITMENTS_PER_BLOCK},
+    deposit::Deposit,
+    eth_1_data::Eth1Data,
+    polynomial_commitments::kzg_commitment::KZGCommitment,
+    proposer_slashing::ProposerSlashing,
+    sync_aggregate::SyncAggregate,
+    voluntary_exit::SignedVoluntaryExit,
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
@@ -36,4 +44,59 @@ pub struct BeaconBlockBody {
     pub execution_payload: ExecutionPayload,
     pub bls_to_execution_changes: VariableList<SignedBLSToExecutionChange, U16>,
     pub blob_kzg_commitments: VariableList<KZGCommitment, U4096>,
+}
+
+impl BeaconBlockBody {
+    pub fn merkle_leaves(&self) -> Vec<B256> {
+        vec![
+            self.randao_reveal.tree_hash_root(),
+            self.eth1_data.tree_hash_root(),
+            self.graffiti,
+            self.proposer_slashings.tree_hash_root(),
+            self.attester_slashings.tree_hash_root(),
+            self.attestations.tree_hash_root(),
+            self.deposits.tree_hash_root(),
+            self.voluntary_exits.tree_hash_root(),
+            self.sync_aggregate.tree_hash_root(),
+            self.execution_payload.tree_hash_root(),
+            self.bls_to_execution_changes.tree_hash_root(),
+            self.blob_kzg_commitments.tree_hash_root(),
+        ]
+    }
+
+    pub fn blob_kzg_commitment_inclusion_proof(
+        &self,
+        index: usize,
+    ) -> anyhow::Result<(B256, Vec<B256>)> {
+        // inclusion proof for blob_kzg_commitment in blob_kzg_commitments
+        let depth = (MAX_BLOB_COMMITMENTS_PER_BLOCK as f64).log2().ceil() as usize;
+        let tree = merkle_tree(
+            self.blob_kzg_commitments
+                .iter()
+                .map(|c| c.tree_hash_root())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            depth,
+        );
+        let proof_1 = generate_proof(&tree, index, depth)?;
+
+        // add branch for length of blob_kzg_commitments
+        let length_hash = self
+            .blob_kzg_commitments
+            .len()
+            .to_le_bytes()
+            .tree_hash_root();
+
+        // inclusion proof for blob_kzg_commitments in beacon_block_body
+        let merkle_leaves = self.merkle_leaves();
+        let depth = (merkle_leaves.len() as f64).log2().ceil() as usize;
+        let tree = merkle_tree(&self.merkle_leaves(), depth);
+        let proof_2 = generate_proof(&tree, BLOB_KZG_COMMITMENTS_INDEX, depth)?;
+
+        // merge proofs data
+        Ok((
+            proof_1.0,
+            [proof_1.1, vec![length_hash], proof_2.1].concat(),
+        ))
+    }
 }

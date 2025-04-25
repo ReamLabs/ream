@@ -1,8 +1,8 @@
 #![cfg(feature = "ef-tests")]
 
 use ef_tests::{
-    test_consensus_type, test_epoch_processing, test_fork_choice, test_operation, test_rewards,
-    test_sanity_blocks, test_sanity_slots, test_shuffling, utils,
+    test_consensus_type, test_epoch_processing, test_fork_choice, test_merkle_proof,
+    test_operation, test_rewards, test_sanity_blocks, test_sanity_slots, test_shuffling, utils,
 };
 use ream_consensus::{
     attestation::Attestation,
@@ -35,6 +35,7 @@ use ream_consensus::{
     voluntary_exit::{SignedVoluntaryExit, VoluntaryExit},
     withdrawal::Withdrawal,
 };
+use ream_merkle::verify_merkle_proof;
 
 // Testing consensus types
 test_consensus_type!(Attestation);
@@ -145,3 +146,6 @@ test_fork_choice!(get_head);
 test_fork_choice!(get_proposer_head);
 test_fork_choice!(on_block);
 test_fork_choice!(should_override_forkchoice_update);
+
+// Testing merkle proof
+test_merkle_proof!();

@@ -27,6 +27,7 @@ tree_hash.workspace = true
 # ream
 ream-consensus.workspace = true
 ream-fork-choice.workspace = true
+ream-merkle.workspace = true
 
 [features]
 ef-tests = []
