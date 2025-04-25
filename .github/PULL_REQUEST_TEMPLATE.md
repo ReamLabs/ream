@@ -1,8 +1,12 @@
-### What was wrong?
+### What are you trying to achieve?
 
-### How was it fixed?
+ <!-- Describe in a sentence or two of the reason for this PR. Link to the issue if possible.  -->
+
+### How was it implemented/fixed?
+
+ <!-- List the approach you used, and/or changes made to the codebase  -->
 
 ### To-Do
 
-[//]: # (Stay ahead of things, add list items here!)
+ <!-- Stay ahead of things, add list items here!  -->
 - [ ] Uses [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
