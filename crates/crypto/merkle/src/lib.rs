@@ -1,7 +1,7 @@
-use anyhow::ensure;
-use tree_hash::Hash256;
+//! https://ethereum.github.io/consensus-specs/ssz/merkle-proofs
 
-// https://ethereum.github.io/consensus-specs/ssz/merkle-proofs
+use alloy_primitives::B256;
+use anyhow::ensure;
 
 fn get_power_of_two_ceil(x: usize) -> usize {
     if x <= 1 {
@@ -25,13 +25,13 @@ fn get_generalized_index_child(index: usize, right_side: bool) -> usize {
     index * 2 + right_side as usize
 }
 
-pub fn merkle_tree(leaves: &[Hash256]) -> Vec<Hash256> {
+pub fn merkle_tree(leaves: &[B256]) -> Vec<B256> {
     let num_of_leaves = leaves.len();
     let bottom_length = get_power_of_two_ceil(num_of_leaves);
 
-    let mut tree = vec![Hash256::default(); bottom_length];
+    let mut tree = vec![B256::ZERO; bottom_length];
     tree.extend(leaves);
-    tree.extend(vec![Hash256::default(); bottom_length - num_of_leaves]);
+    tree.extend(vec![B256::ZERO; bottom_length - num_of_leaves]);
 
     for i in (1..bottom_length).rev() {
         let left = tree[i * 2].as_slice();
@@ -43,10 +43,10 @@ pub fn merkle_tree(leaves: &[Hash256]) -> Vec<Hash256> {
 }
 
 pub fn generate_proof(
-    tree: &[Hash256],
+    tree: &[B256],
     index: usize,
     depth: usize,
-) -> anyhow::Result<(Hash256, Vec<Hash256>)> {
+) -> anyhow::Result<(B256, Vec<B256>)> {
     let mut proof = vec![];
     let mut current_index = 1;
     let mut current_depth = depth;
@@ -74,10 +74,10 @@ pub fn generate_proof(
 }
 
 pub fn calculate_merkle_root(
-    leaf: Hash256,
-    proof: Vec<Hash256>,
+    leaf: B256,
+    proof: Vec<B256>,
     generalized_index: usize,
-) -> anyhow::Result<Hash256> {
+) -> anyhow::Result<B256> {
     ensure!(
         proof.len() == get_generalized_index_length(generalized_index),
         "Proof length does not match index length"
@@ -94,11 +94,11 @@ pub fn calculate_merkle_root(
 }
 
 pub fn verify_merkle_proof(
-    leaf: Hash256,
-    proof: Vec<Hash256>,
+    leaf: B256,
+    proof: Vec<B256>,
     index: usize,
     depth: usize,
-    root: Hash256,
+    root: B256,
 ) -> anyhow::Result<bool> {
     Ok(calculate_merkle_root(leaf, proof, 2 * depth + index)? == root)
 }
@@ -110,20 +110,20 @@ mod tests {
     #[test]
     fn test_merkle_tree() {
         let leaves = vec![
-            Hash256::from_slice(&[0xAA; 32]),
-            Hash256::from_slice(&[0xBB; 32]),
-            Hash256::from_slice(&[0xCC; 32]),
-            Hash256::from_slice(&[0xDD; 32]),
+            B256::from_slice(&[0xAA; 32]),
+            B256::from_slice(&[0xBB; 32]),
+            B256::from_slice(&[0xCC; 32]),
+            B256::from_slice(&[0xDD; 32]),
         ];
 
         let depth = (leaves.len() as f64).log2().ceil() as usize;
 
-        let node_2: Hash256 =
+        let node_2: B256 =
             ethereum_hashing::hash32_concat(leaves[0].as_slice(), leaves[1].as_slice()).into();
-        let node_3: Hash256 =
+        let node_3: B256 =
             ethereum_hashing::hash32_concat(leaves[2].as_slice(), leaves[3].as_slice()).into();
 
-        let root: Hash256 =
+        let root: B256 =
             ethereum_hashing::hash32_concat(node_2.as_slice(), node_3.as_slice()).into();
 
         let tree = merkle_tree(&leaves);

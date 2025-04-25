@@ -4381,6 +4381,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-merkle"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_hashing",
+]
+
+[[package]]
 name = "ream-network-spec"
 version = "0.1.0"
 dependencies = [

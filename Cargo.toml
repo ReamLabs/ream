@@ -10,6 +10,7 @@ members = [
     "crates/common/node",
     "crates/common/polynomial_commitments",
     "crates/crypto/bls",
+    "crates/crypto/merkle",
     "crates/networking/discv5",
     "crates/networking/p2p",
     "crates/rpc",
@@ -72,6 +73,7 @@ tree_hash_derive = "0.9"
 
 # ream dependencies
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
+ream-merkle = { path = "crates/crypto/merkle" }
 ream-consensus = { path = "crates/common/consensus" }
 ream-discv5 = { path = "crates/networking/discv5" }
 ream-execution-engine = { path = "crates/common/execution_engine" }

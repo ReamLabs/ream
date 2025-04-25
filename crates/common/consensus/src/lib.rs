@@ -22,7 +22,6 @@ pub mod helpers;
 pub mod historical_batch;
 pub mod historical_summary;
 pub mod indexed_attestation;
-pub mod merkle;
 pub mod misc;
 pub mod pending_attestation;
 pub mod polynomial_commitments;
