@@ -20,7 +20,8 @@ macro_rules! fork_array {
     // Recursive case
     (@internal (
         $( $forks:expr ),*
-    ), $prev_ver:literal , $curr_ver:literal , $curr_epoch:expr $( , $tail_ver:literal , $tail_epoch:expr )* ) => {
+    ), $prev_ver:literal , $curr_ver:literal , $curr_epoch:expr
+       $( , $tail_ver:literal , $tail_epoch:expr )* ) => {
         fork_array!(@internal (
             $( $forks ),* ,
             Fork {
