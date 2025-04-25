@@ -40,6 +40,32 @@ macro_rules! fork_array {
     };
 }
 
+pub mod dev;
+pub mod holesky;
+pub mod hoodi;
+pub mod mainnet;
+pub mod sepolia;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ForkSchedule(pub [Fork; ForkSchedule::TOTAL]);
+
+impl ForkSchedule {
+    pub const TOTAL: usize = 6;
+
+    pub const fn new(forks: [Fork; ForkSchedule::TOTAL]) -> Self {
+        Self(forks)
+    }
+
+    pub fn iter(&self) -> Iter<'_, Fork> {
+        self.0.iter()
+    }
+
+    pub fn scheduled(&self) -> impl Iterator<Item = &Fork> {
+        self.iter()
+            .filter(|fork| fork.epoch != Fork::UNSCHEDULED_EPOCH)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use alloy_primitives::fixed_bytes;
@@ -69,31 +95,5 @@ mod tests {
             fork_array!(("0x90000069", 0), ("0x90000070", 50), ("0x90000071", 100)),
             expected
         );
-    }
-}
-
-pub mod dev;
-pub mod holesky;
-pub mod hoodi;
-pub mod mainnet;
-pub mod sepolia;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ForkSchedule(pub [Fork; ForkSchedule::TOTAL]);
-
-impl ForkSchedule {
-    pub const TOTAL: usize = 6;
-
-    pub const fn new(forks: [Fork; ForkSchedule::TOTAL]) -> Self {
-        Self(forks)
-    }
-
-    pub fn iter(&self) -> Iter<'_, Fork> {
-        self.0.iter()
-    }
-
-    pub fn scheduled(&self) -> impl Iterator<Item = &Fork> {
-        self.iter()
-            .filter(|fork| fork.epoch != Fork::UNSCHEDULED_EPOCH)
     }
 }
