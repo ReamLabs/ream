@@ -4,8 +4,8 @@ use alloy_primitives::{Address, address, b256, fixed_bytes};
 use ream_consensus::genesis::Genesis;
 
 use crate::fork_schedule::{
-    ForkSchedule, dev::DEV_FORK_SCHEDULE, holesky::HOLESKY_FORK_SCHEDULE,
-    hoodi::HOODI_FORK_SCHEDULE, mainnet::MAINNET_FORK_SCHEDULE, sepolia::SEPOLIA_FORK_SCHEDULE,
+    DEV_FORK_SCHEDULE, ForkSchedule, HOLESKY_FORK_SCHEDULE, HOODI_FORK_SCHEDULE,
+    MAINNET_FORK_SCHEDULE, SEPOLIA_FORK_SCHEDULE,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
