@@ -12,7 +12,10 @@ use ream_consensus::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
     },
-    execution_engine::{engine_trait::ExecutionApi, rpc_types::get_blobs::BlobAndProofV1},
+    execution_engine::{
+        engine_trait::ExecutionApi,
+        rpc_types::get_blobs::{Blob, BlobAndProofV1},
+    },
     fork_choice::latest_message::LatestMessage,
     helpers::{calculate_committee_fraction, get_total_active_balance},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
@@ -573,10 +576,11 @@ impl Store {
 
         // Try to get blobs_and_proofs from p2p cache
         for (index, blob_and_proof) in blobs_and_proofs.iter_mut().enumerate() {
-            *blob_and_proof = self
+            let blob_and_proof_v1 = self
                 .db
                 .blobs_and_proofs_provider()
                 .get(BlobIdentifier::new(beacon_block_root, index as u64))?;
+            *blob_and_proof = blob_and_proof_v1;
         }
 
         // Fallback to trying engine api
@@ -613,10 +617,15 @@ impl Store {
             .collect::<Option<Vec<_>>>()
             .ok_or_else(|| anyhow!("Couldn't find all blobs_and_proofs"))?;
 
-        let (blobs, proofs): (Vec<_>, Vec<_>) = blobs_and_proofs
-            .into_iter()
-            .map(|blob_and_proof| (blob_and_proof.blob, blob_and_proof.proof))
-            .unzip();
+        let blobs: Vec<Blob> = blobs_and_proofs
+            .iter()
+            .map(|blob_and_proof| blob_and_proof.blob.clone())
+            .collect();
+
+        let proofs: Vec<_> = blobs_and_proofs
+            .iter()
+            .map(|blob_and_proof| blob_and_proof.proof)
+            .collect();
 
         ensure!(
             verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?,
@@ -710,6 +719,7 @@ pub fn get_forkchoice_store(
         .insert(justified_checkpoint, anchor_state)?;
     db.unrealized_justifications_provider()
         .insert(anchor_root, justified_checkpoint)?;
+
     Ok(Store { db })
 }
 
