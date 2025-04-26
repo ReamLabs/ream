@@ -15,7 +15,9 @@ use crate::{
     attestation::Attestation,
     attester_slashing::AttesterSlashing,
     bls_to_execution_change::SignedBLSToExecutionChange,
-    constants::{BLOB_KZG_COMMITMENTS_INDEX, MAX_BLOB_COMMITMENTS_PER_BLOCK},
+    constants::{
+        BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH, KZG_COMMITMENTS_MERKLE_DEPTH,
+    },
     deposit::Deposit,
     eth_1_data::Eth1Data,
     polynomial_commitments::kzg_commitment::KZGCommitment,
@@ -66,16 +68,16 @@ impl BeaconBlockBody {
 
     pub fn blob_kzg_commitment_inclusion_proof(&self, index: u64) -> anyhow::Result<Vec<B256>> {
         // inclusion proof for blob_kzg_commitment in blob_kzg_commitments
-        let depth = (MAX_BLOB_COMMITMENTS_PER_BLOCK as f64).log2().ceil() as u64;
         let tree = merkle_tree(
             self.blob_kzg_commitments
                 .iter()
                 .map(|commitment| commitment.tree_hash_root())
                 .collect::<Vec<_>>()
                 .as_slice(),
-            depth,
+            KZG_COMMITMENTS_MERKLE_DEPTH,
         )?;
-        let kzg_commitment_to_kzg_commitments_proof = generate_proof(&tree, index, depth)?;
+        let kzg_commitment_to_kzg_commitments_proof =
+            generate_proof(&tree, index, KZG_COMMITMENTS_MERKLE_DEPTH)?;
 
         // add branch for length of blob_kzg_commitments
         let kzg_commitments_length_root = self
@@ -85,11 +87,9 @@ impl BeaconBlockBody {
             .tree_hash_root();
 
         // inclusion proof for blob_kzg_commitments in beacon_block_body
-        let merkle_leaves = self.merkle_leaves();
-        let depth = (merkle_leaves.len() as f64).log2().ceil() as u64;
-        let tree = merkle_tree(&self.merkle_leaves(), depth)?;
+        let tree = merkle_tree(&self.merkle_leaves(), BLOCK_BODY_MERKLE_DEPTH)?;
         let kzg_commitments_to_block_body_proof =
-            generate_proof(&tree, BLOB_KZG_COMMITMENTS_INDEX, depth)?;
+            generate_proof(&tree, BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH)?;
 
         // merge proofs data
         Ok([
