@@ -1,5 +1,8 @@
+use std::collections::HashSet;
+
 use alloy_primitives::{B256, map::HashMap};
 use anyhow::{anyhow, bail, ensure};
+use ream_bls::BLSSignature;
 use ream_consensus::{
     attestation::Attestation,
     blob_sidecar::BlobIdentifier,
@@ -11,7 +14,10 @@ use ream_consensus::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
     },
-    execution_engine::{engine_trait::ExecutionApi, rpc_types::get_blobs::BlobAndProofV1},
+    execution_engine::{
+        engine_trait::ExecutionApi,
+        rpc_types::get_blobs::{Blob, BlobAndProofV1},
+    },
     fork_choice::latest_message::LatestMessage,
     helpers::{calculate_committee_fraction, get_total_active_balance},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
@@ -176,6 +182,7 @@ impl Store {
                 .unrealized_finalized_checkpoint_provider()
                 .insert(unrealized_finalized_checkpoint)?;
         }
+
         Ok(())
     }
 
@@ -351,23 +358,29 @@ impl Store {
             .get(parent_root)?
             .ok_or(anyhow!("Parent block must exist"))?;
 
+        // Only re-org the head block if it arrived later than the attestation deadline.
         let head_late = self.is_head_late(head_root)?;
-
+        // Do not re-org on an epoch boundary where the proposer shuffling could change.
         let shuffling_stable = is_shuffling_stable(slot);
-
+        // Ensure that the FFG information of the new head will be competitive with the current
+        // head.
         let ffg_competitive = self.is_ffg_competitive(head_root, parent_root)?;
 
+        // Do not re-org if the chain is not finalizing with acceptable frequency.
         let finalization_ok = self.is_finalization_ok(slot)?;
-
+        // Only re-org if we are proposing on-time.
         let proposing_on_time = self.is_proposing_on_time()?;
 
+        // Only re-org a single slot at most.
         let parent_slot_ok = parent_block.message.slot + 1 == head_block.message.slot;
         let current_time_ok = head_block.message.slot + 1 == slot;
         let single_slot_reorg = parent_slot_ok && current_time_ok;
 
+        // Check that the head has few enough votes to be overpowered by our proposer boost.
         assert!(self.db.proposer_boost_root_provider().get()? != head_root); // Ensure boost has worn off
         let head_weak = self.is_head_weak(head_root)?;
 
+        // Check that the missing votes are assigned to the parent and not being hoarded.
         let parent_strong = self.is_parent_strong(parent_root)?;
 
         if head_late
@@ -379,6 +392,7 @@ impl Store {
             && head_weak
             && parent_strong
         {
+            // We can re-org the current head by building upon its parent block.
             Ok(parent_root)
         } else {
             Ok(head_root)
@@ -394,13 +408,17 @@ impl Store {
         let beacon_block_root = attestation.data.beacon_block_root;
         let mut non_equivocating_attesting_indices = vec![];
 
+        let equivocating = self
+            .db
+            .equivocating_indices_provider()
+            .get()
+            .unwrap_or_else(|err| {
+                println!("equivocating_indices not found: {:?}", err);
+                HashSet::default()
+            });
+
         for &index in &attesting_indices {
-            if !self
-                .db
-                .equivocating_indices_provider()
-                .get()?
-                .contains(&index)
-            {
+            if !equivocating.contains(&index) {
                 non_equivocating_attesting_indices.push(index);
             }
         }
@@ -560,10 +578,11 @@ impl Store {
 
         // Try to get blobs_and_proofs from p2p cache
         for (index, blob_and_proof) in blobs_and_proofs.iter_mut().enumerate() {
-            *blob_and_proof = self
+            let blob_and_proof_v1 = self
                 .db
                 .blobs_and_proofs_provider()
                 .get(BlobIdentifier::new(beacon_block_root, index as u64))?;
+            *blob_and_proof = blob_and_proof_v1;
         }
 
         // Fallback to trying engine api
@@ -600,10 +619,15 @@ impl Store {
             .collect::<Option<Vec<_>>>()
             .ok_or_else(|| anyhow!("Couldn't find all blobs_and_proofs"))?;
 
-        let (blobs, proofs): (Vec<_>, Vec<_>) = blobs_and_proofs
-            .into_iter()
-            .map(|blob_and_proof| (blob_and_proof.blob, blob_and_proof.proof))
-            .unzip();
+        let blobs: Vec<Blob> = blobs_and_proofs
+            .iter()
+            .map(|blob_and_proof| blob_and_proof.blob.clone())
+            .collect();
+
+        let proofs: Vec<_> = blobs_and_proofs
+            .iter()
+            .map(|blob_and_proof| blob_and_proof.proof)
+            .collect();
 
         ensure!(
             verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?,
@@ -653,10 +677,10 @@ impl Store {
 
 pub fn get_forkchoice_store(
     anchor_state: BeaconState,
-    anchor_block: SignedBeaconBlock,
+    anchor_block: BeaconBlock,
     db: ReamDB,
 ) -> anyhow::Result<Store> {
-    ensure!(anchor_block.message.state_root == anchor_state.tree_hash_root());
+    ensure!(anchor_block.state_root == anchor_state.tree_hash_root());
     let anchor_root = anchor_block.tree_hash_root();
     let anchor_epoch = anchor_state.get_current_epoch();
     let justified_checkpoint = Checkpoint {
@@ -668,6 +692,13 @@ pub fn get_forkchoice_store(
         root: anchor_root,
     };
     let proposer_boost_root = B256::ZERO;
+    let signature = BLSSignature::default();
+
+    let signed_anchor_block = SignedBeaconBlock {
+        message: anchor_block,
+        signature,
+    };
+
     db.time_provider()
         .insert(anchor_state.genesis_time + SECONDS_PER_SLOT * anchor_state.slot)?;
     db.genesis_time_provider()
@@ -683,13 +714,14 @@ pub fn get_forkchoice_store(
     db.proposer_boost_root_provider()
         .insert(proposer_boost_root)?;
     db.beacon_block_provider()
-        .insert(anchor_root, anchor_block)?;
+        .insert(anchor_root, signed_anchor_block)?;
     db.beacon_state_provider()
         .insert(anchor_root, anchor_state.clone())?;
     db.checkpoint_states_provider()
         .insert(justified_checkpoint, anchor_state)?;
     db.unrealized_justifications_provider()
         .insert(anchor_root, justified_checkpoint)?;
+
     Ok(Store { db })
 }
 

@@ -6,20 +6,10 @@ macro_rules! test_fork_choice {
             #[allow(non_snake_case)]
             mod [<tests_ $path>] {
                 use std::fs;
-
-                use alloy_consensus::Blob;
                 use alloy_primitives::{hex, map::HashMap, B256, hex::FromHex};
                 use ream_bls::BLSSignature;
                 use ream_consensus::{
-                    attestation::Attestation,
-                    attester_slashing::AttesterSlashing,
-                    checkpoint::Checkpoint,
-                    electra::{
-                        beacon_block::{BeaconBlock, SignedBeaconBlock},
-                        beacon_state::BeaconState,
-                    },
-                    execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::BlobAndProofV1}, polynomial_commitments::kzg_proof::KZGProof,
-                    blob_sidecar::BlobIdentifier,
+                    attestation::Attestation, attester_slashing::AttesterSlashing, blob_sidecar::BlobIdentifier, checkpoint::Checkpoint, electra::{beacon_block::{BeaconBlock, SignedBeaconBlock}, beacon_state::BeaconState}, execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::{Blob, BlobAndProofV1}}, polynomial_commitments::kzg_proof::KZGProof
                 };
                 use ream_fork_choice::{
                     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
@@ -89,7 +79,7 @@ macro_rules! test_fork_choice {
                     pub valid: Option<bool>,
                 }
 
-                #[derive(Deserialize)]
+                #[derive(Deserialize, Debug)]
                 #[serde(untagged)]
                 pub enum ForkChoiceStep {
                     Tick(Tick),
@@ -102,7 +92,7 @@ macro_rules! test_fork_choice {
                 #[tokio::test]
                 async fn test_fork_choice() -> anyhow::Result<()> {
                     let base_path = format!(
-                        "mainnet/tests/mainnet/electra/fork_choice/{}/pyspec_tests",
+                        "mainnet/tests/mainnet/deneb/fork_choice/{}/pyspec_tests",
                         stringify!($path)
                     );
 
@@ -126,72 +116,121 @@ macro_rules! test_fork_choice {
                             serde_yaml::from_str::<Vec<ForkChoiceStep>>(&content)
                                 .expect("Failed to parse steps.yaml")
                         };
+                        println!("rio 1");
 
                         let anchor_state: BeaconState =
                             utils::read_ssz_snappy(&case_dir.join("anchor_state.ssz_snappy"))
                                 .expect("Failed to read anchor_state.ssz_snappy");
+                        println!("rio 2");
+
                         let anchor_block: BeaconBlock =
                             utils::read_ssz_snappy(&case_dir.join("anchor_block.ssz_snappy"))
                                 .expect("Failed to read anchor_block.ssz_snappy");
+                        println!("rio 3");
 
                         let reamdb = ReamDB::new(None, true).expect("count not find reabdb");
-                        let mut store = get_forkchoice_store(anchor_state, SignedBeaconBlock { message: anchor_block, signature: BLSSignature::default() }, reamdb)
+                        println!("rio 4");
+
+                        let mut store = get_forkchoice_store(anchor_state, anchor_block, reamdb)
                             .expect("get_forkchoice_store failed");
+                        println!("rio 5");
 
                         for step in steps {
+                            println!("hi burger {step:?}");
                             match step {
                                 ForkChoiceStep::Tick(ticks) => {
+                                    println!("lee 1");
                                     assert_eq!(on_tick(&mut store, ticks.tick).is_ok(), ticks.valid.unwrap_or(true), "Unexpected result on on_tick");
                                 }
                                 ForkChoiceStep::Block(blocks) => {
+                                    println!("kolby 1");
                                     let block_path = case_dir.join(format!("{}.ssz_snappy", blocks.block));
+                                    println!("kolby 2");
+
                                     if !block_path.exists() {
                                         panic!("Test asset not found: {:?}", block_path);
                                     }
+                                    println!("kolby 3");
+
                                     let block: SignedBeaconBlock = utils::read_ssz_snappy(&block_path)
                                         .unwrap_or_else(|_| {
                                             panic!("cannot find test asset (block_{blocks:?}.ssz_snappy)")
                                         });
+                                    println!("kolby 4");
 
                                     if let (Some(blobs), Some(proof)) = (blocks.blobs, blocks.proofs) {
+                                        println!("kolby 5");
+
                                         let blobs_path = case_dir.join(format!("{}.ssz_snappy", blobs));
+                                        println!("kolby 6");
+
                                         let blobs: VariableList<Blob, U4096> = utils::read_ssz_snappy(&blobs_path).expect("Could not read blob file.");
+                                        println!("kolby 7");
+
                                         let proof: Vec<KZGProof> = proof
                                             .into_iter()
                                             .map(|proof| KZGProof::from_hex(proof).expect("could not get KZGProof"))
                                             .collect();
+                                        println!("kolby 8");
+
                                         let blobs_and_proofs = blobs.into_iter().zip(proof.into_iter()).map(|(blob, proof)| BlobAndProofV1 { blob, proof  } ).collect::<Vec<_>>();
+                                        println!("kolby 9");
+
                                         for (index, blob_and_proof) in blobs_and_proofs.into_iter().enumerate() {
                                             store.db.blobs_and_proofs_provider().insert(BlobIdentifier::new(block.message.tree_hash_root(), index as u64), blob_and_proof)?;
                                         }
+                                        println!("kolby 10");
+
                                     }
+                                    println!("kolby 11");
+
+                                    println!("BEFORE on_block: proposer_boost_root = {:?}", store.db.proposer_boost_root_provider().get()?);
 
                                     assert_eq!(on_block(&mut store, &block, &mock_engine).await.is_ok(), blocks.valid.unwrap_or(true), "Unexpected result on on_block");
+                                    println!("kolby 12");
+                                    println!("AFTER on_block: proposer_boost_root = {:?}", store.db.proposer_boost_root_provider().get()?);
+
                                 }
                                 ForkChoiceStep::Attestation(attestations) => {
+                                    println!("kolby 13");
+
                                     let attestation_path =
                                         case_dir.join(format!("{}.ssz_snappy", attestations.attestation));
+                                    println!("kolby 14");
+
                                     if !attestation_path.exists() {
                                         panic!("Test asset not found: {:?}", attestation_path);
                                     }
+                                    println!("kolby 15");
+
                                     let attestation: Attestation = utils::read_ssz_snappy(&attestation_path)
                                         .unwrap_or_else(|_| {
                                             panic!("cannot find test asset (block_{attestations:?}.ssz_snappy)")
                                         });
+                                    println!("kolby 16");
+
                                     assert_eq!(on_attestation(&mut store, attestation, false).is_ok(), attestations.valid.unwrap_or(true), "Unexpected result on on_attestation");
                                 }
                                 ForkChoiceStep::AttesterSlashing(slashing_step) => {
+                                    println!("kenzie 1");
+
                                     let slashing_path = case_dir
                                         .join(format!("{}.ssz_snappy", slashing_step.attester_slashing));
+                                    println!("kenzie 2");
+
                                     if !slashing_path.exists() {
                                         panic!("Test asset not found: {:?}", slashing_path);
                                     }
+                                    println!("kenzie 3");
+
                                     let slashing: AttesterSlashing = utils::read_ssz_snappy(&slashing_path)
                                         .unwrap_or_else(|_| {
                                             panic!(
                                                 "cannot find test asset (block_{slashing_step:?}.ssz_snappy)"
                                             )
                                         });
+                                    println!("kenzie 4");
+
                                     assert_eq!(on_attester_slashing(&mut store, slashing).is_ok(), slashing_step.valid.unwrap_or(true), "Unexpected result on on_attester_slashing");
                                 }
                                 ForkChoiceStep::Checks { checks } => {

@@ -9,7 +9,10 @@ use ream_consensus::{
     misc::compute_start_slot_at_epoch,
     predicates::is_slashable_attestation_data,
 };
-use ream_storage::tables::{Field, Table};
+use ream_storage::{
+    errors::StoreError,
+    tables::{Field, Table},
+};
 use tree_hash::TreeHash;
 
 use crate::store::Store;
@@ -106,16 +109,11 @@ pub async fn on_block(
         .insert(block.tree_hash_root(), is_timely)?;
 
     // Add proposer score boost if the block is timely and not conflicting with an existing block
-    let is_first_block = store
-        .db
-        .proposer_boost_root_provider()
-        .insert(B256::ZERO)
-        .is_ok();
+    let proposer_boost_root = store.db.proposer_boost_root_provider().get()?;
+    let is_first_block = proposer_boost_root == B256::ZERO;
+
     if is_timely && is_first_block {
-        store
-            .db
-            .proposer_boost_root_provider()
-            .insert(block.tree_hash_root())?
+        store.db.proposer_boost_root_provider().insert(block_root)?;
     }
 
     // Update checkpoints in store if necessary
@@ -138,15 +136,18 @@ pub fn on_attester_slashing(
 ) -> anyhow::Result<()> {
     let attestation_1 = attester_slashing.attestation_1;
     let attestation_2 = attester_slashing.attestation_2;
+
     ensure!(is_slashable_attestation_data(
         &attestation_1.data,
         &attestation_2.data
     ));
+
     let state = &store
         .db
         .beacon_state_provider()
         .get(store.db.justified_checkpoint_provider().get()?.root)?
         .expect("beacon_state not found");
+
     ensure!(state.is_valid_indexed_attestation(&attestation_1)?);
     ensure!(state.is_valid_indexed_attestation(&attestation_2)?);
 
@@ -154,17 +155,27 @@ pub fn on_attester_slashing(
         .attesting_indices
         .into_iter()
         .collect::<HashSet<_>>();
+
     let attestation_2_indices = attestation_2
         .attesting_indices
         .into_iter()
         .collect::<HashSet<_>>();
+
+    let mut equivocating = match store.db.equivocating_indices_provider().get() {
+        Ok(set) => set,
+        Err(StoreError::FieldNotInitilized) => HashSet::default(),
+        Err(err) => return Err(err.into()),
+    };
+
     for index in attestation_1_indices.intersection(&attestation_2_indices) {
-        store
-            .db
-            .equivocating_indices_provider()
-            .get()?
-            .insert(*index);
+        equivocating.insert(*index);
     }
+
+    store
+        .db
+        .equivocating_indices_provider()
+        .insert(equivocating)?;
+
     Ok(())
 }
 
@@ -177,7 +188,6 @@ pub fn on_tick(store: &mut Store, time: u64) -> anyhow::Result<()> {
             + (store.get_current_slot()? + 1) * SECONDS_PER_SLOT;
         store.on_tick_per_slot(previous_time)?;
     }
-
     store.on_tick_per_slot(time)?;
 
     Ok(())
@@ -205,7 +215,6 @@ pub fn on_attestation(
         .expect("checkpoint_states not found");
     let indexed_attestation = target_state.get_indexed_attestation(&attestation)?;
     ensure!(target_state.is_valid_indexed_attestation(&indexed_attestation)?);
-
     // Update latest messages for attesting indices
     store.update_latest_messages(indexed_attestation.attesting_indices.to_vec(), attestation)?;
 
