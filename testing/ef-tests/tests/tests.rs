@@ -35,7 +35,7 @@ use ream_consensus::{
     voluntary_exit::{SignedVoluntaryExit, VoluntaryExit},
     withdrawal::Withdrawal,
 };
-use ream_merkle::verify_merkle_proof;
+use ream_merkle::is_valid_normalized_merkle_branch;
 
 // Testing consensus types
 test_consensus_type!(Attestation);

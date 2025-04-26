@@ -13,7 +13,7 @@ macro_rules! test_merkle_proof {
             #[derive(Debug, Deserialize)]
             struct MerkleProofTest {
                 leaf: B256,
-                leaf_index: usize,
+                leaf_index: u64,
                 branch: Vec<B256>,
             }
 
@@ -46,32 +46,23 @@ macro_rules! test_merkle_proof {
                         utils::read_ssz_snappy(&case_dir.join("object.ssz_snappy"))
                             .expect(&format!("cannot find test asset (object.ssz_snappy)"));
 
-                    let depth = (test_data.leaf_index as f64).log2().floor() as usize;
-
                     // Verify merkle proof
-                    let result = verify_merkle_proof(
+                    let result = is_valid_normalized_merkle_branch(
                         test_data.leaf,
-                        test_data.branch.clone(),
-                        test_data.leaf_index % (1usize << depth),
-                        depth,
+                        &test_data.branch,
+                        test_data.leaf_index,
                         beacon_block_body.tree_hash_root(),
-                    )
-                    .expect("Failed to verify merkle proof");
+                    );
                     assert!(result, "Merkle proof verification should succeed");
 
                     // Generate merkle proof
-                    let blob_kzg_commitment_index = beacon_block_body
-                        .blob_kzg_commitments
-                        .iter()
-                        .map(|commitment| commitment.tree_hash_root())
-                        .collect::<Vec<_>>()
-                        .iter()
-                        .position(|hash| hash == &test_data.leaf)
-                        .expect("Failed to find blob kzg commitment index");
-                    let (leaf, branch) = beacon_block_body
-                        .blob_kzg_commitment_inclusion_proof(blob_kzg_commitment_index)
+                    let branch = beacon_block_body
+                        .blob_kzg_commitment_inclusion_proof(0)
                         .expect("Failed to generate merkle proof");
-                    assert_eq!(leaf, test_data.leaf);
+                    assert_eq!(
+                        beacon_block_body.blob_kzg_commitments[0].tree_hash_root(),
+                        test_data.leaf
+                    );
                     assert_eq!(branch, test_data.branch);
                 }
             }

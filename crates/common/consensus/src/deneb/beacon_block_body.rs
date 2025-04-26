@@ -51,7 +51,7 @@ impl BeaconBlockBody {
         vec![
             self.randao_reveal.tree_hash_root(),
             self.eth1_data.tree_hash_root(),
-            self.graffiti,
+            self.graffiti.tree_hash_root(),
             self.proposer_slashings.tree_hash_root(),
             self.attester_slashings.tree_hash_root(),
             self.attestations.tree_hash_root(),
@@ -64,24 +64,21 @@ impl BeaconBlockBody {
         ]
     }
 
-    pub fn blob_kzg_commitment_inclusion_proof(
-        &self,
-        index: usize,
-    ) -> anyhow::Result<(B256, Vec<B256>)> {
+    pub fn blob_kzg_commitment_inclusion_proof(&self, index: u64) -> anyhow::Result<Vec<B256>> {
         // inclusion proof for blob_kzg_commitment in blob_kzg_commitments
-        let depth = (MAX_BLOB_COMMITMENTS_PER_BLOCK as f64).log2().ceil() as usize;
+        let depth = (MAX_BLOB_COMMITMENTS_PER_BLOCK as f64).log2().ceil() as u64;
         let tree = merkle_tree(
             self.blob_kzg_commitments
                 .iter()
-                .map(|c| c.tree_hash_root())
+                .map(|commitment| commitment.tree_hash_root())
                 .collect::<Vec<_>>()
                 .as_slice(),
             depth,
-        );
-        let proof_1 = generate_proof(&tree, index, depth)?;
+        )?;
+        let kzg_commitment_to_kzg_commitments_proof = generate_proof(&tree, index, depth)?;
 
         // add branch for length of blob_kzg_commitments
-        let length_hash = self
+        let kzg_commitments_length_root = self
             .blob_kzg_commitments
             .len()
             .to_le_bytes()
@@ -89,14 +86,17 @@ impl BeaconBlockBody {
 
         // inclusion proof for blob_kzg_commitments in beacon_block_body
         let merkle_leaves = self.merkle_leaves();
-        let depth = (merkle_leaves.len() as f64).log2().ceil() as usize;
-        let tree = merkle_tree(&self.merkle_leaves(), depth);
-        let proof_2 = generate_proof(&tree, BLOB_KZG_COMMITMENTS_INDEX, depth)?;
+        let depth = (merkle_leaves.len() as f64).log2().ceil() as u64;
+        let tree = merkle_tree(&self.merkle_leaves(), depth)?;
+        let kzg_commitments_to_block_body_proof =
+            generate_proof(&tree, BLOB_KZG_COMMITMENTS_INDEX, depth)?;
 
         // merge proofs data
-        Ok((
-            proof_1.0,
-            [proof_1.1, vec![length_hash], proof_2.1].concat(),
-        ))
+        Ok([
+            kzg_commitment_to_kzg_commitments_proof,
+            vec![kzg_commitments_length_root],
+            kzg_commitments_to_block_body_proof,
+        ]
+        .concat())
     }
 }

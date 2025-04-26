@@ -2,7 +2,7 @@ use alloy_primitives::{aliases::B32, fixed_bytes};
 
 pub const BASE_REWARDS_PER_EPOCH: u64 = 4;
 pub const BASE_REWARD_FACTOR: u64 = 64;
-pub const BLOB_KZG_COMMITMENTS_INDEX: usize = 11;
+pub const BLOB_KZG_COMMITMENTS_INDEX: u64 = 11;
 pub const BLS_WITHDRAWAL_PREFIX: &[u8] = &[0];
 pub const BYTES_PER_BLOB: usize = BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB;
 pub const BYTES_PER_COMMITMENT: usize = 48;

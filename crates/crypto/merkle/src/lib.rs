@@ -3,21 +3,25 @@
 use alloy_primitives::B256;
 use anyhow::ensure;
 
-fn get_generalized_index_length(index: usize) -> usize {
-    (index as f64).log2() as usize
-}
-
-fn get_generalized_index_bit(index: usize, position: usize) -> bool {
+fn get_generalized_index_bit(index: u64, position: u64) -> bool {
     (index & (1 << position)) > 0
 }
 
-fn get_generalized_index_child(index: usize, right_side: bool) -> usize {
-    index * 2 + right_side as usize
+fn get_generalized_index_child(index: u64, right_side: bool) -> u64 {
+    index * 2 + right_side as u64
 }
 
-pub fn merkle_tree(leaves: &[B256], depth: usize) -> Vec<B256> {
+fn get_subtree_index(generalized_index: u64) -> u64 {
+    generalized_index % (1 << (generalized_index as f64).log2().floor() as u64)
+}
+
+pub fn merkle_tree(leaves: &[B256], depth: u64) -> anyhow::Result<Vec<B256>> {
     let num_of_leaves = leaves.len();
     let bottom_length = 1 << depth;
+    ensure!(
+        num_of_leaves <= bottom_length,
+        "Number of leaves is greater than the bottom length (depth too small)"
+    );
 
     let mut tree = vec![B256::ZERO; bottom_length];
     tree.extend(leaves);
@@ -29,14 +33,13 @@ pub fn merkle_tree(leaves: &[B256], depth: usize) -> Vec<B256> {
         tree[i] = ethereum_hashing::hash32_concat(left, right).into();
     }
 
-    tree
+    Ok(tree)
 }
 
-pub fn generate_proof(
-    tree: &[B256],
-    index: usize,
-    depth: usize,
-) -> anyhow::Result<(B256, Vec<B256>)> {
+pub fn generate_proof(tree: &[B256], index: u64, depth: u64) -> anyhow::Result<Vec<B256>> {
+    let bottom_length = 1 << depth;
+    ensure!(index < bottom_length, "Index out of bounds");
+
     let mut proof = vec![];
     let mut current_index = 1;
     let mut current_depth = depth;
@@ -48,10 +51,10 @@ pub fn generate_proof(
         );
 
         if get_generalized_index_bit(index, current_depth - 1) {
-            proof.push(tree[left_child_index]);
+            proof.push(tree[left_child_index as usize]);
             current_index = right_child_index;
         } else {
-            proof.push(tree[right_child_index]);
+            proof.push(tree[right_child_index as usize]);
             current_index = left_child_index;
         }
 
@@ -60,37 +63,46 @@ pub fn generate_proof(
 
     proof.reverse();
 
-    Ok((tree[current_index], proof))
+    Ok(proof)
 }
 
-pub fn calculate_merkle_root(
+pub fn is_valid_merkle_branch(
     leaf: B256,
-    proof: Vec<B256>,
-    generalized_index: usize,
-) -> anyhow::Result<B256> {
-    ensure!(
-        proof.len() == get_generalized_index_length(generalized_index),
-        "Proof length does not match index length"
-    );
-    let mut current = leaf;
-    for (i, proof) in proof.iter().enumerate() {
-        if get_generalized_index_bit(generalized_index, i) {
-            current = ethereum_hashing::hash32_concat(proof.as_slice(), current.as_slice()).into();
+    branch: &[B256],
+    depth: u64,
+    index: u64,
+    root: B256,
+) -> bool {
+    let mut value = leaf;
+    for i in 0..depth {
+        if get_generalized_index_bit(index, i) {
+            value =
+                ethereum_hashing::hash32_concat(branch[i as usize].as_slice(), value.as_slice())
+                    .into();
         } else {
-            current = ethereum_hashing::hash32_concat(current.as_slice(), proof.as_slice()).into();
+            value =
+                ethereum_hashing::hash32_concat(value.as_slice(), branch[i as usize].as_slice())
+                    .into();
         }
     }
-    Ok(current)
+    value == root
 }
 
-pub fn verify_merkle_proof(
+pub fn is_valid_normalized_merkle_branch(
     leaf: B256,
-    proof: Vec<B256>,
-    index: usize,
-    depth: usize,
+    branch: &[B256],
+    generalized_index: u64,
     root: B256,
-) -> anyhow::Result<bool> {
-    Ok(calculate_merkle_root(leaf, proof, (1usize << depth) + index)? == root)
+) -> bool {
+    let depth = (generalized_index as f64).log2().floor() as u64;
+    let index = get_subtree_index(generalized_index);
+    let num_extra = branch.len() - depth as usize;
+    for node in branch[..num_extra].iter() {
+        if *node != B256::ZERO {
+            return false;
+        }
+    }
+    is_valid_merkle_branch(leaf, &branch[num_extra..], depth, index, root)
 }
 
 #[cfg(test)]
@@ -106,7 +118,7 @@ mod tests {
             B256::from_slice(&[0xDD; 32]),
         ];
 
-        let depth = (leaves.len() as f64).log2().ceil() as usize;
+        let depth = (leaves.len() as f64).log2().floor() as u64;
 
         let node_2: B256 =
             ethereum_hashing::hash32_concat(leaves[0].as_slice(), leaves[1].as_slice()).into();
@@ -116,7 +128,7 @@ mod tests {
         let root: B256 =
             ethereum_hashing::hash32_concat(node_2.as_slice(), node_3.as_slice()).into();
 
-        let tree = merkle_tree(&leaves, depth);
+        let tree = merkle_tree(&leaves, depth).unwrap();
 
         assert_eq!(tree[1], root);
 
@@ -125,16 +137,34 @@ mod tests {
         let proof_2 = generate_proof(&tree, 2, depth).unwrap();
         let proof_3 = generate_proof(&tree, 3, depth).unwrap();
 
-        assert_eq!(proof_0.0, leaves[0]);
-        assert!(verify_merkle_proof(leaves[0], proof_0.1, 0, depth, root).unwrap());
+        assert!(is_valid_merkle_branch(leaves[0], &proof_0, depth, 0, root));
+        assert!(is_valid_merkle_branch(leaves[1], &proof_1, depth, 1, root));
+        assert!(is_valid_merkle_branch(leaves[2], &proof_2, depth, 2, root));
+        assert!(is_valid_merkle_branch(leaves[3], &proof_3, depth, 3, root));
 
-        assert_eq!(proof_1.0, leaves[1]);
-        assert!(verify_merkle_proof(leaves[1], proof_1.1, 1, depth, root).unwrap());
-
-        assert_eq!(proof_2.0, leaves[2]);
-        assert!(verify_merkle_proof(leaves[2], proof_2.1, 2, depth, root).unwrap());
-
-        assert_eq!(proof_3.0, leaves[3]);
-        assert!(verify_merkle_proof(leaves[3], proof_3.1, 3, depth, root).unwrap());
+        assert!(is_valid_normalized_merkle_branch(
+            leaves[0],
+            &proof_0,
+            2 * depth,
+            root
+        ));
+        assert!(is_valid_normalized_merkle_branch(
+            leaves[1],
+            &proof_1,
+            2 * depth + 1,
+            root
+        ));
+        assert!(is_valid_normalized_merkle_branch(
+            leaves[2],
+            &proof_2,
+            2 * depth + 2,
+            root
+        ));
+        assert!(is_valid_normalized_merkle_branch(
+            leaves[3],
+            &proof_3,
+            2 * depth + 3,
+            root
+        ));
     }
 }

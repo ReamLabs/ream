@@ -13,6 +13,7 @@ use ream_bls::{
     AggregatePubKey, BLSSignature, PubKey,
     traits::{Aggregatable, Verifiable},
 };
+use ream_merkle::is_valid_merkle_branch;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -1841,27 +1842,6 @@ impl BeaconState {
         }
         Ok(())
     }
-}
-
-/// Check if ``leaf`` at ``index`` verifies against the Merkle ``root`` and ``branch``.
-pub fn is_valid_merkle_branch(
-    leaf: B256,
-    branch: &[B256],
-    depth: u64,
-    index: u64,
-    root: B256,
-) -> bool {
-    let mut value = leaf;
-    for i in 0..depth {
-        if (index / 2u64.pow(i as u32) % 2) == 1 {
-            let branch_value = [branch[i as usize], value].concat();
-            value = B256::from_slice(&hash(&branch_value));
-        } else {
-            let branch_value = [value, branch[i as usize]].concat();
-            value = B256::from_slice(&hash(&branch_value));
-        }
-    }
-    value == root
 }
 
 pub fn get_validator_from_deposit(
