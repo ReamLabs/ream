@@ -107,13 +107,12 @@ where
     D: Deserializer<'de>,
 {
     let string_vec: Vec<String> = Vec::deserialize(deserializer)?;
-    let bytes_result: Result<Vec<u8>, _> = string_vec
+    let bytes = string_vec
         .into_iter()
         .map(|s| s.parse::<u8>().map_err(serde::de::Error::custom))
-        .collect();
-
-    let bytes = bytes_result?;
-    Ok(VariableList::from(bytes))
+        .collect::<Result<Vec<_>, _>>()?;
+    VariableList::new(bytes)
+        .map_err(|_| serde::de::Error::custom("Cannot create VariableList from bytes"))
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
