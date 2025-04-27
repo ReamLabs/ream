@@ -18,7 +18,7 @@ use ream_consensus::{
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table, beacon_block::BEACON_BLOCK_TABLE},
+    tables::{Field, Table},
 };
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -213,11 +213,6 @@ pub async fn get_filtered_block_tree(db: &ReamDB) -> Result<Vec<SignedBeaconBloc
         .ok_or_else(|| ApiError::NotFound(String::from("Justified checkpoint not found")))?;
     let root = justified_checkpoint.root;
 
-    let read_txn = db.db.begin_read().map_err(|_| ApiError::InternalError)?;
-    let table = read_txn
-        .open_table(BEACON_BLOCK_TABLE)
-        .map_err(|_| ApiError::InternalError)?;
-
     let mut blocks: Vec<SignedBeaconBlock> = Vec::new();
     let mut visited = HashMap::new();
     let mut to_visit = vec![root];
@@ -228,11 +223,11 @@ pub async fn get_filtered_block_tree(db: &ReamDB) -> Result<Vec<SignedBeaconBloc
         }
         visited.insert(current_root, true);
 
-        if let Some(block) = table
+        if let Some(block) = db
+            .beacon_block_provider()
             .get(current_root)
             .map_err(|_| ApiError::InternalError)?
         {
-            let block = block.value();
             blocks.push(block.clone());
 
             if block.message.parent_root != B256::ZERO {
