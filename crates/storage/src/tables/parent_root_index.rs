@@ -48,5 +48,3 @@ impl MultimapTable for ParentRootIndexMultimapTable {
         Ok(())
     }
 }
-
-pub struct ParentRootIndex {}

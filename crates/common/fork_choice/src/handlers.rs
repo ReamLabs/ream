@@ -1,5 +1,5 @@
 use alloy_primitives::{B256, map::HashSet};
-use anyhow::ensure;
+use anyhow::{anyhow, ensure};
 use ream_consensus::{
     attestation::Attestation,
     attester_slashing::AttesterSlashing,
@@ -79,7 +79,7 @@ pub async fn on_block(
         .db
         .beacon_state_provider()
         .get(block.parent_root)?
-        .expect("beacon_state not found")
+        .ok_or_else(|| anyhow!("beacon state not found"))?
         .clone();
     let block_root = block.tree_hash_root();
     state
@@ -106,11 +106,10 @@ pub async fn on_block(
     store
         .db
         .block_timeliness_provider()
-        .insert(block.tree_hash_root(), is_timely)?;
+        .insert(block_root, is_timely)?;
 
     // Add proposer score boost if the block is timely and not conflicting with an existing block
-    let proposer_boost_root = store.db.proposer_boost_root_provider().get()?;
-    let is_first_block = proposer_boost_root == B256::ZERO;
+    let is_first_block = store.db.proposer_boost_root_provider().get()? == B256::ZERO;
 
     if is_timely && is_first_block {
         store.db.proposer_boost_root_provider().insert(block_root)?;
@@ -146,7 +145,7 @@ pub fn on_attester_slashing(
         .db
         .beacon_state_provider()
         .get(store.db.justified_checkpoint_provider().get()?.root)?
-        .expect("beacon_state not found");
+        .ok_or_else(|| anyhow!("beacon state not found"))?;
 
     ensure!(state.is_valid_indexed_attestation(&attestation_1)?);
     ensure!(state.is_valid_indexed_attestation(&attestation_2)?);
@@ -212,7 +211,7 @@ pub fn on_attestation(
         .db
         .checkpoint_states_provider()
         .get(attestation.data.target)?
-        .expect("checkpoint_states not found");
+        .ok_or_else(|| anyhow!("checkpoint_states not found"))?;
     let indexed_attestation = target_state.get_indexed_attestation(&attestation)?;
     ensure!(target_state.is_valid_indexed_attestation(&indexed_attestation)?);
     // Update latest messages for attesting indices

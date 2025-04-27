@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use alloy_primitives::{B256, map::HashMap};
 use anyhow::{anyhow, bail, ensure};
 use ream_bls::BLSSignature;
@@ -14,10 +12,7 @@ use ream_consensus::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
     },
-    execution_engine::{
-        engine_trait::ExecutionApi,
-        rpc_types::get_blobs::{Blob, BlobAndProofV1},
-    },
+    execution_engine::{engine_trait::ExecutionApi, rpc_types::get_blobs::BlobAndProofV1},
     fork_choice::latest_message::LatestMessage,
     helpers::{calculate_committee_fraction, get_total_active_balance},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
@@ -66,7 +61,7 @@ impl Store {
             .db
             .beacon_block_provider()
             .get(root)?
-            .ok_or(anyhow!("Failed to find root in blocks"))?
+            .ok_or(anyhow!("Failed to find beacon_block_provider()"))?
             .message;
         if block.slot > slot {
             self.get_ancestor(block.parent_root, slot)
@@ -111,20 +106,18 @@ impl Store {
         let current_epoch = self.get_current_store_epoch()?;
         let voting_source = self.get_voting_source(block_root)?;
 
-        let correct_justified =
-            self.db.justified_checkpoint_provider().get()?.epoch == GENESIS_EPOCH || {
-                voting_source.epoch == self.db.justified_checkpoint_provider().get()?.epoch
-                    || voting_source.epoch + 2 >= current_epoch
-            };
+        let justified_checkpoint_epoch = self.db.justified_checkpoint_provider().get()?.epoch;
+        let correct_justified = justified_checkpoint_epoch == GENESIS_EPOCH || {
+            voting_source.epoch == justified_checkpoint_epoch
+                || voting_source.epoch + 2 >= current_epoch
+        };
 
-        let finalized_checkpoint_block = self.get_checkpoint_block(
-            block_root,
-            self.db.finalized_checkpoint_provider().get()?.epoch,
-        )?;
+        let finalized_checkpoint = self.db.finalized_checkpoint_provider().get()?;
+        let finalized_checkpoint_block =
+            self.get_checkpoint_block(block_root, finalized_checkpoint.epoch)?;
 
-        let correct_finalized = self.db.finalized_checkpoint_provider().get()?.epoch
-            == GENESIS_EPOCH
-            || self.db.finalized_checkpoint_provider().get()?.root == finalized_checkpoint_block;
+        let correct_finalized = finalized_checkpoint.epoch == GENESIS_EPOCH
+            || finalized_checkpoint.root == finalized_checkpoint_block;
 
         if correct_justified && correct_finalized {
             blocks.insert(block_root, block.message.clone());
@@ -236,7 +229,7 @@ impl Store {
             .db
             .checkpoint_states_provider()
             .get(self.db.justified_checkpoint_provider().get()?)?
-            .expect("checkpoint_states not found");
+            .ok_or_else(|| anyhow!("checkpoint_states not found"))?;
 
         let unslashed_and_active_indices: Vec<u64> = state
             .get_active_validator_indices(state.get_current_epoch())
@@ -256,12 +249,12 @@ impl Store {
                     self.db
                         .latest_messages_provider()
                         .get(index)?
-                        .expect("latest_messages not found")
+                        .ok_or_else(|| anyhow!("latest_messages not found"))?
                         .root,
                     self.db
                         .beacon_block_provider()
                         .get(root)?
-                        .expect("beacon_block not found")
+                        .ok_or_else(|| anyhow!("beacon_block not found"))?
                         .message
                         .slot,
                 )? == root
@@ -280,7 +273,7 @@ impl Store {
             self.db
                 .beacon_block_provider()
                 .get(root)?
-                .expect("proposer_boost_root not found")
+                .ok_or_else(|| anyhow!("beacon_block not found"))?
                 .message
                 .slot,
         )? == root
@@ -296,7 +289,7 @@ impl Store {
             .db
             .beacon_block_provider()
             .get(block_root)?
-            .expect("beacon_block not found");
+            .ok_or_else(|| anyhow!("beacon_block not found"))?;
 
         let current_epoch = self.get_current_store_epoch()?;
         let block_epoch = compute_epoch_at_slot(block.message.slot);
@@ -306,13 +299,13 @@ impl Store {
                 .db
                 .unrealized_justifications_provider()
                 .get(block_root)?
-                .expect("unrealized_justifications not found"))
+                .ok_or_else(|| anyhow!("unrealized_justifications not found"))?)
         } else {
             let head_state = self
                 .db
                 .beacon_state_provider()
                 .get(block_root)?
-                .expect("beacon_state not found");
+                .ok_or_else(|| anyhow!("beacon state not found"))?;
             Ok(head_state.current_justified_checkpoint)
         }
     }
@@ -412,10 +405,7 @@ impl Store {
             .db
             .equivocating_indices_provider()
             .get()
-            .unwrap_or_else(|err| {
-                println!("equivocating_indices not found: {:?}", err);
-                HashSet::default()
-            });
+            .unwrap_or_default();
 
         for &index in &attesting_indices {
             if !equivocating.contains(&index) {
@@ -528,7 +518,7 @@ impl Store {
             self.db
                 .beacon_block_provider()
                 .get(attestation.data.beacon_block_root)?
-                .expect("beacon_block not found")
+                .ok_or_else(|| anyhow!("beacon_block not found"))?
                 .message
                 .slot
                 <= attestation.data.slot
@@ -578,11 +568,10 @@ impl Store {
 
         // Try to get blobs_and_proofs from p2p cache
         for (index, blob_and_proof) in blobs_and_proofs.iter_mut().enumerate() {
-            let blob_and_proof_v1 = self
+            *blob_and_proof = self
                 .db
                 .blobs_and_proofs_provider()
                 .get(BlobIdentifier::new(beacon_block_root, index as u64))?;
-            *blob_and_proof = blob_and_proof_v1;
         }
 
         // Fallback to trying engine api
@@ -619,15 +608,10 @@ impl Store {
             .collect::<Option<Vec<_>>>()
             .ok_or_else(|| anyhow!("Couldn't find all blobs_and_proofs"))?;
 
-        let blobs: Vec<Blob> = blobs_and_proofs
-            .iter()
-            .map(|blob_and_proof| blob_and_proof.blob.clone())
-            .collect();
-
-        let proofs: Vec<_> = blobs_and_proofs
-            .iter()
-            .map(|blob_and_proof| blob_and_proof.proof)
-            .collect();
+        let (blobs, proofs): (Vec<_>, Vec<_>) = blobs_and_proofs
+            .into_iter()
+            .map(|blob_and_proof| (blob_and_proof.blob, blob_and_proof.proof))
+            .unzip();
 
         ensure!(
             verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?,
@@ -642,7 +626,7 @@ impl Store {
             .db
             .beacon_state_provider()
             .get(block_root)?
-            .expect("Beacon state not found");
+            .ok_or_else(|| anyhow!("beacon state not found"))?;
         // Pull up the post-state of the block to the next epoch boundary
         state.process_justification_and_finalization()?;
 
@@ -659,7 +643,7 @@ impl Store {
             self.db
                 .beacon_block_provider()
                 .get(block_root)?
-                .expect("Beacon state not found")
+                .ok_or_else(|| anyhow!("beacon_block not found"))?
                 .message
                 .slot,
         );
