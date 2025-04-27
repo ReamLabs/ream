@@ -321,7 +321,7 @@ pub async fn get_block_from_id(
     Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(beacon_block)))
 }
 
-/// Called by `debug/beacon/heads` to get fork choice leaves.
+/// Called by `/beacon/heads` to get fork choice leaves.
 #[get("/beacon/heads")]
 pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
     let beacon_blocks = get_filtered_block_tree(&db).await?;
