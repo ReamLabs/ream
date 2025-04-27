@@ -111,8 +111,9 @@ where
         .into_iter()
         .map(|s| s.parse::<u8>().map_err(serde::de::Error::custom))
         .collect::<Result<Vec<_>, _>>()?;
-    VariableList::new(bytes)
-        .map_err(|_| serde::de::Error::custom("Cannot create VariableList from bytes"))
+    VariableList::new(bytes).map_err(|err| {
+        serde::de::Error::custom(format!("Cannot create VariableList from bytes {err:?}"))
+    })
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]

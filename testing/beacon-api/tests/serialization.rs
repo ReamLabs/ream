@@ -1,19 +1,21 @@
-use std::{fs, io::Read};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use alloy_primitives::b256;
 use ream_consensus::deneb::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
 use ream_rpc::types::response::BeaconVersionedResponse;
 use serde_json::Value;
+const PATH_TO_TEST_DATA_FOLDER: &str = "./tests/assets";
 
 #[tokio::test]
 async fn test_beacon_state_serialization() -> anyhow::Result<()> {
-    pub type Response = BeaconVersionedResponse<BeaconState>;
-
-    let file_path = "./tests/assets/state.json";
-    let original_json = read_json_file(file_path)?;
+    let original_json = read_json_file("state.json")?;
     println!("Serialization initiated");
 
-    let beacon_state: Response = serde_json::from_value(original_json.clone())?;
+    let beacon_state: BeaconVersionedResponse<BeaconState> =
+        serde_json::from_value(original_json.clone())?;
 
     assert_eq!(beacon_state.version, "deneb");
     assert_eq!(beacon_state.data.latest_block_header.slot, 1);
@@ -35,13 +37,11 @@ async fn test_beacon_state_serialization() -> anyhow::Result<()> {
 }
 #[tokio::test]
 async fn test_beacon_block_serialization() -> anyhow::Result<()> {
-    pub type Response = BeaconVersionedResponse<SignedBeaconBlock>;
-
-    let file_path = "./tests/assets/block.json";
-    let original_json = read_json_file(file_path)?;
+    let original_json = read_json_file("block.json")?;
 
     println!("Block Serialization initiated");
-    let beacon_block: Response = serde_json::from_value(original_json.clone())?;
+    let beacon_block: BeaconVersionedResponse<SignedBeaconBlock> =
+        serde_json::from_value(original_json.clone())?;
 
     assert_eq!(beacon_block.version, "deneb");
     assert_eq!(beacon_block.data.message.slot, 11532800);
@@ -58,10 +58,8 @@ async fn test_beacon_block_serialization() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn read_json_file(path: &str) -> anyhow::Result<Value> {
-    let mut file = fs::File::open(path)?;
-    let mut json_str = String::new();
-    file.read_to_string(&mut json_str)?;
-
-    Ok(serde_json::from_str(&json_str)?)
+pub fn read_json_file<P: AsRef<Path>>(file_name: P) -> anyhow::Result<Value> {
+    let file_contents =
+        fs::read_to_string(PathBuf::from(PATH_TO_TEST_DATA_FOLDER).join(file_name))?;
+    Ok(serde_json::from_str(&file_contents)?)
 }
