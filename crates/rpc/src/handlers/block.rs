@@ -328,12 +328,11 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
 
     let mut beacon_heads = Vec::new();
     for block in beacon_blocks.iter() {
-        let beacon_head = BeaconHeadResponse {
+        beacon_heads.push(BeaconHeadResponse {
             root: block.message.tree_hash_root(),
             slot: block.message.slot,
             execution_optimistic: false,
-        };
-        beacon_heads.push(beacon_head);
+        });
     }
 
     Ok(HttpResponse::Ok().json(DataResponse::new(beacon_heads)))
