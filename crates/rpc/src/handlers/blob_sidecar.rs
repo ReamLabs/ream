@@ -61,7 +61,7 @@ pub async fn get_blob_sidecars(
                 .body
                 .blob_kzg_commitment_inclusion_proof(index)
                 .map_err(|err| {
-                    error!("Failed to get blob sidecar, error: {err:?}");
+                    error!("Failed to create inclusion proof for blob at index: {index}, error: {err:?}");
                     ApiError::InternalError
                 })?
                 .into(),
