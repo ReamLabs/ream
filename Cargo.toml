@@ -17,8 +17,6 @@ members = [
     "crates/runtime",
     "crates/storage",
     "testing/beacon-api",
-    "testing/beacon-api"
-,
     "testing/ef-tests"]
 resolver = "2"
 exclude = ["book/cli", "book/sources"]

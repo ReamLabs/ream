@@ -7,12 +7,12 @@ use alloy_primitives::b256;
 use ream_consensus::electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
 use ream_rpc::types::response::BeaconVersionedResponse;
 use serde_json::Value;
+
 const PATH_TO_TEST_DATA_FOLDER: &str = "./tests/assets";
 
 #[tokio::test]
 async fn test_beacon_state_serialization() -> anyhow::Result<()> {
     let original_json = read_json_file("state.json")?;
-    println!("Serialization initiated");
 
     let beacon_state: BeaconVersionedResponse<BeaconState> =
         serde_json::from_value(original_json.clone())?;
@@ -31,15 +31,12 @@ async fn test_beacon_state_serialization() -> anyhow::Result<()> {
         "Original JSON and re-serialized JSON do not match!"
     );
 
-    println!("State Serialization completed successfully");
-
     Ok(())
 }
 #[tokio::test]
 async fn test_beacon_block_serialization() -> anyhow::Result<()> {
     let original_json = read_json_file("block.json")?;
 
-    println!("Block Serialization initiated");
     let beacon_block: BeaconVersionedResponse<SignedBeaconBlock> =
         serde_json::from_value(original_json.clone())?;
 
@@ -52,8 +49,6 @@ async fn test_beacon_block_serialization() -> anyhow::Result<()> {
         serialized_json, original_json,
         "Re-encoded block doesn't match original JSON!"
     );
-
-    println!("Block Serialization completed successfully");
 
     Ok(())
 }
