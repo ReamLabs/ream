@@ -20,7 +20,7 @@ macro_rules! test_sanity_slots {
             async fn test_sanity_slots() {
                 let base_path = std::env::current_dir()
                     .unwrap()
-                    .join("mainnet/tests/mainnet/deneb/sanity/slots/pyspec_tests");
+                    .join("mainnet/tests/mainnet/electra/sanity/slots/pyspec_tests");
 
                 for entry in std::fs::read_dir(&base_path).unwrap() {
                     let entry = entry.unwrap();

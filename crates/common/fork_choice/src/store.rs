@@ -9,7 +9,7 @@ use ream_consensus::{
     constants::{
         GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SECONDS_PER_SLOT, SLOTS_PER_EPOCH,
     },
-    deneb::{beacon_block::BeaconBlock, beacon_state::BeaconState},
+    electra::{beacon_block::BeaconBlock, beacon_state::BeaconState},
     execution_engine::{engine_trait::ExecutionApi, rpc_types::get_blobs::BlobAndProofV1},
     fork_choice::latest_message::LatestMessage,
     helpers::{calculate_committee_fraction, get_total_active_balance},

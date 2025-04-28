@@ -11,7 +11,7 @@ macro_rules! test_epoch_processing {
                 #[rstest]
                 fn test_epoch_processing() {
                     let base_path = format!(
-                        "mainnet/tests/mainnet/deneb/epoch_processing/{}/pyspec_tests",
+                        "mainnet/tests/mainnet/electra/epoch_processing/{}/pyspec_tests",
                         stringify!($operation_name)
                     );
 

@@ -11,7 +11,7 @@ use ream_consensus::{
         EFFECTIVE_BALANCE_INCREMENT, PROPOSER_WEIGHT, SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE,
         SYNC_REWARD_WEIGHT, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
-    deneb::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
+    electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
 };
 use ream_network_spec::networks::NetworkSpec;
 use ream_storage::{

@@ -23,7 +23,7 @@ macro_rules! test_rewards {
                 #[rstest]
                 fn test_rewards() {
                     let base_path = format!(
-                        "mainnet/tests/mainnet/deneb/rewards/{}/pyspec_tests",
+                        "mainnet/tests/mainnet/electra/rewards/{}/pyspec_tests",
                         stringify!($operation_name)
                     );
 

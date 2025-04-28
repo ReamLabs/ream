@@ -21,7 +21,7 @@ macro_rules! test_sanity_blocks {
             async fn test_sanity_blocks() {
                 let base_path = std::env::current_dir()
                     .unwrap()
-                    .join("mainnet/tests/mainnet/deneb/sanity/blocks/pyspec_tests");
+                    .join("mainnet/tests/mainnet/electra/sanity/blocks/pyspec_tests");
 
                 let mock_engine = MockExecutionEngine::new();
 
@@ -46,8 +46,6 @@ macro_rules! test_sanity_blocks {
                         utils::read_ssz_snappy(&case_dir.join("pre.ssz_snappy"))
                             .expect("cannot find test asset (pre.ssz_snappy)");
 
-                    let validate_result = true;
-
                     let mut result: Result<(), String> = Ok(());
 
                     for i in 0..meta.blocks_count {
@@ -60,7 +58,7 @@ macro_rules! test_sanity_blocks {
                             .expect(&format!("cannot find test asset (blocks_{i}.ssz_snappy)"));
 
                         result = state
-                            .state_transition(&signed_block, validate_result, &mock_engine)
+                            .state_transition(&signed_block, true, &mock_engine)
                             .await
                             .map_err(|err| err.to_string());
                     }

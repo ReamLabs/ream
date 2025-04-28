@@ -13,7 +13,7 @@ macro_rules! test_fork_choice {
                     attestation::Attestation,
                     attester_slashing::AttesterSlashing,
                     checkpoint::Checkpoint,
-                    deneb::{
+                    electra::{
                         beacon_block::{BeaconBlock, SignedBeaconBlock},
                         beacon_state::BeaconState,
                     },
@@ -97,7 +97,7 @@ macro_rules! test_fork_choice {
                 #[tokio::test]
                 async fn test_fork_choice() {
                     let base_path = format!(
-                        "mainnet/tests/mainnet/deneb/fork_choice/{}/pyspec_tests",
+                        "mainnet/tests/mainnet/electra/fork_choice/{}/pyspec_tests",
                         stringify!($path)
                     );
 

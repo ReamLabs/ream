@@ -4,7 +4,7 @@ use actix_web::{
 };
 use alloy_primitives::B256;
 use ream_consensus::{
-    checkpoint::Checkpoint, deneb::beacon_state::BeaconState, withdrawal::Withdrawal,
+    checkpoint::Checkpoint, electra::beacon_state::BeaconState, withdrawal::Withdrawal,
 };
 use ream_storage::{
     db::ReamDB,
@@ -184,7 +184,9 @@ pub async fn get_pending_partial_withdrawals(
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
-    let withdrawals = state.get_expected_withdrawals();
+    let (withdrawals, _) = state
+        .get_expected_withdrawals()
+        .map_err(|_| ApiError::InternalError)?;
     let partial_withdrawals: Vec<Withdrawal> = withdrawals
         .into_iter()
         .filter(|withdrawal: &Withdrawal| {

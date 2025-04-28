@@ -1,6 +1,7 @@
 use std::{
     cmp::{max, min},
     collections::HashSet,
+    mem::take,
     ops::Deref,
     sync::Arc,
 };
@@ -18,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitVector, FixedVector, VariableList,
-    typenum::{U4, U2048, U8192, U65536, U16777216, U1099511627776},
+    typenum::{U4, U2048, U8192, U65536, U262144, U16777216, U134217728, U1099511627776},
 };
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
@@ -36,31 +37,37 @@ use crate::{
     beacon_block_header::BeaconBlockHeader,
     bls_to_execution_change::SignedBLSToExecutionChange,
     checkpoint::Checkpoint,
+    consolidation_request::ConsolidationRequest,
     constants::{
         BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
-        DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
-        DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
-        DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EJECTION_BALANCE,
-        EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
-        EPOCHS_PER_SYNC_COMMITTEE_PERIOD, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH,
-        GENESIS_EPOCH, GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT,
+        COMPOUNDING_WITHDRAWAL_PREFIX, DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER,
+        DOMAIN_BEACON_PROPOSER, DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO,
+        DOMAIN_SYNC_COMMITTEE, DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT,
+        EJECTION_BALANCE, EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR,
+        EPOCHS_PER_SLASHINGS_VECTOR, EPOCHS_PER_SYNC_COMMITTEE_PERIOD,
+        ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH, FULL_EXIT_REQUEST_AMOUNT, GENESIS_EPOCH,
+        GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT,
         HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX, INACTIVITY_SCORE_BIAS,
-        INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_BLOBS_PER_BLOCK,
-        MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE,
-        MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_RANDOM_BYTE,
-        MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
-        MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
+        INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_BLOBS_PER_BLOCK_ELECTRA,
+        MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE_ELECTRA,
+        MAX_PENDING_DEPOSITS_PER_EPOCH, MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP,
+        MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT,
+        MAX_RANDOM_VALUE, MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
+        MIN_ACTIVATION_BALANCE, MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
-        MIN_SEED_LOOKAHEAD, MIN_SLASHING_PENALTY_QUOTIENT, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
-        PARTICIPATION_FLAG_WEIGHTS, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
+        MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA, MIN_SEED_LOOKAHEAD,
+        MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
+        PARTICIPATION_FLAG_WEIGHTS, PENDING_CONSOLIDATIONS_LIMIT,
+        PENDING_PARTIAL_WITHDRAWALS_LIMIT, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
         PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SECONDS_PER_SLOT, SHARD_COMMITTEE_PERIOD,
         SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT,
         TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
-        TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT, WEIGHT_DENOMINATOR,
-        WHISTLEBLOWER_REWARD_QUOTIENT,
+        TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT, UNSET_DEPOSIT_REQUESTS_START_INDEX,
+        WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA,
     },
     deposit::Deposit,
     deposit_message::DepositMessage,
+    deposit_request::DepositRequest,
     eth_1_data::Eth1Data,
     execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
     fork::Fork,
@@ -68,11 +75,13 @@ use crate::{
     historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
     misc::{
-        compute_activation_exit_epoch, compute_committee, compute_domain, compute_epoch_at_slot,
-        compute_shuffled_index, compute_signing_root, compute_start_slot_at_epoch,
-        is_sorted_and_unique,
+        bytes_to_int64, compute_activation_exit_epoch, compute_committee, compute_domain,
+        compute_epoch_at_slot, compute_shuffled_index, compute_signing_root,
+        compute_start_slot_at_epoch, get_committee_indices, is_sorted_and_unique,
     },
-    polynomial_commitments::kzg_commitment::{KZGCommitment, VERSIONED_HASH_VERSION_KZG},
+    pending_consolidation::PendingConsolidation,
+    pending_deposit::PendingDeposit,
+    pending_partial_withdrawal::PendingPartialWithdrawal,
     predicates::is_slashable_attestation_data,
     proposer_slashing::ProposerSlashing,
     sync_aggregate::SyncAggregate,
@@ -80,6 +89,7 @@ use crate::{
     validator::Validator,
     voluntary_exit::SignedVoluntaryExit,
     withdrawal::Withdrawal,
+    withdrawal_request::WithdrawalRequest,
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
@@ -138,6 +148,17 @@ pub struct BeaconState {
 
     // Deep history valid from Capella onwards.
     pub historical_summaries: VariableList<HistoricalSummary, U16777216>,
+
+    // Electra
+    pub deposit_requests_start_index: u64,
+    pub deposit_balance_to_consume: u64,
+    pub exit_balance_to_consume: u64,
+    pub earliest_exit_epoch: u64,
+    pub consolidation_balance_to_consume: u64,
+    pub earliest_consolidation_epoch: u64,
+    pub pending_deposits: VariableList<PendingDeposit, U134217728>,
+    pub pending_partial_withdrawals: VariableList<PendingPartialWithdrawal, U134217728>,
+    pub pending_consolidations: VariableList<PendingConsolidation, U262144>,
 }
 
 impl BeaconState {
@@ -226,13 +247,14 @@ impl BeaconState {
         loop {
             let candidate_index = indices[compute_shuffled_index(i % total, total, seed)?];
 
-            let seed_with_index = [seed.as_slice(), &(i / 32).to_le_bytes()].concat();
-            let hash = hash(&seed_with_index);
-            let random_byte = hash[i % 32];
+            let random_bytes = hash(&[seed.as_slice(), &(i / 16).to_le_bytes()].concat());
+            let offset = i % 16 * 2;
+            let random_value = bytes_to_int64(&random_bytes[offset..offset + 2]);
 
             let effective_balance = self.validators[candidate_index as usize].effective_balance;
 
-            if (effective_balance * MAX_RANDOM_BYTE) >= (MAX_EFFECTIVE_BALANCE * random_byte as u64)
+            if (effective_balance * MAX_RANDOM_VALUE)
+                >= (MAX_EFFECTIVE_BALANCE_ELECTRA * random_value as u64)
             {
                 return Ok(candidate_index);
             }
@@ -348,23 +370,29 @@ impl BeaconState {
             .map_err(|e| anyhow!("Invalid indexed attestation: {:?}", e))
     }
 
-    /// Return the set of attesting indices corresponding to ``data`` and ``bits``.
-    pub fn get_attesting_indices(&self, attestation: &Attestation) -> anyhow::Result<Vec<u64>> {
-        let committee = self.get_beacon_committee(attestation.data.slot, attestation.data.index)?;
-        let indices: Vec<u64> = committee
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, index)| {
-                attestation
+    /// Return the set of attesting indices corresponding to ``aggregation_bits`` and
+    /// ``committee_bits``.
+    pub fn get_attesting_indices(&self, attestation: &Attestation) -> anyhow::Result<HashSet<u64>> {
+        let mut output = HashSet::new();
+        let mut committee_offset = 0;
+        for committee_index in get_committee_indices(&attestation.committee_bits) {
+            let committee = self.get_beacon_committee(attestation.data.slot, committee_index)?;
+
+            let mut committee_attesters = HashSet::new();
+            for (i, attester_index) in committee.iter().enumerate() {
+                if attestation
                     .aggregation_bits
-                    .get(i)
-                    .ok()
-                    .filter(|&bit| bit)
-                    .map(|_| index)
-            })
-            .unique()
-            .collect();
-        Ok(indices)
+                    .get(committee_offset + i)
+                    .map_err(|err| anyhow!("Failed to get aggregation_bit {err:?}"))?
+                {
+                    committee_attesters.insert(*attester_index);
+                }
+            }
+            output = output.union(&committee_attesters).copied().collect();
+
+            committee_offset += committee.len();
+        }
+        Ok(output)
     }
 
     /// Return the indexed attestation corresponding to ``attestation``.
@@ -372,8 +400,11 @@ impl BeaconState {
         &self,
         attestation: &Attestation,
     ) -> anyhow::Result<IndexedAttestation> {
-        let mut attesting_indices = self.get_attesting_indices(attestation)?;
-        attesting_indices.sort();
+        let attesting_indices = self
+            .get_attesting_indices(attestation)?
+            .into_iter()
+            .sorted()
+            .collect::<Vec<_>>();
         Ok(IndexedAttestation {
             attesting_indices: attesting_indices.into(),
             data: attestation.data.clone(),
@@ -401,50 +432,23 @@ impl BeaconState {
         }
     }
 
-    /// Initiate if validator already initiated exit.
+    /// Initiate the exit of the validator with index ``index``.
     pub fn initiate_validator_exit(&mut self, index: u64) -> anyhow::Result<()> {
         // Return if validator already initiated exit
-        if index as usize >= self.validators.len() {
+        let Some(validator) = self.validators.get(index as usize) else {
+            bail!("could not get validator")
+        };
+        if validator.exit_epoch != FAR_FUTURE_EPOCH {
             return Ok(());
         }
 
         // Compute exit queue epoch
-        let exit_epochs: Vec<u64> = self
-            .validators
-            .iter()
-            .filter_map(|v| {
-                if v.exit_epoch != FAR_FUTURE_EPOCH {
-                    Some(v.exit_epoch)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let mut exit_queue_epoch = exit_epochs
-            .iter()
-            .max()
-            .copied()
-            .unwrap_or(0)
-            .max(compute_activation_exit_epoch(self.get_current_epoch()));
-
-        let exit_queue_churn = self
-            .validators
-            .iter()
-            .filter(|v| v.exit_epoch == exit_queue_epoch)
-            .count();
-
-        if exit_queue_churn >= self.get_validator_churn_limit() as usize {
-            exit_queue_epoch += 1;
-        }
+        let exit_queue_epoch =
+            self.compute_exit_epoch_and_update_churn(validator.effective_balance);
 
         let Some(validator) = self.validators.get_mut(index as usize) else {
             bail!("could not get validator")
         };
-
-        if validator.exit_epoch != FAR_FUTURE_EPOCH {
-            return Ok(());
-        }
 
         // Set validator exit epoch and withdrawable epoch
         validator.exit_epoch = exit_queue_epoch;
@@ -484,14 +488,15 @@ impl BeaconState {
         // Decrease validator balance
         self.decrease_balance(
             slashed_index,
-            validator_effective_balance / MIN_SLASHING_PENALTY_QUOTIENT,
+            validator_effective_balance / MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA,
         )?;
 
         // Apply proposer and whistleblower rewards
         let proposer_index = self.get_beacon_proposer_index()?;
         let whistleblower_index = whistleblower_index.unwrap_or(proposer_index);
 
-        let whistleblower_reward = validator_effective_balance / WHISTLEBLOWER_REWARD_QUOTIENT;
+        let whistleblower_reward =
+            validator_effective_balance / WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA;
         let proposer_reward = whistleblower_reward * PROPOSER_WEIGHT / WEIGHT_DENOMINATOR;
         self.increase_balance(proposer_index, proposer_reward)?;
         self.increase_balance(whistleblower_index, whistleblower_reward - proposer_reward)?;
@@ -715,15 +720,73 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn get_expected_withdrawals(&self) -> Vec<Withdrawal> {
+    pub fn get_expected_withdrawals(&self) -> anyhow::Result<(Vec<Withdrawal>, u64)> {
         let epoch = self.get_current_epoch();
         let mut withdrawal_index = self.next_withdrawal_index;
         let mut validator_index = self.next_withdrawal_validator_index;
         let mut withdrawals: Vec<Withdrawal> = vec![];
+        let mut processed_partial_withdrawals_count = 0;
+
+        // Consume pending partial withdrawals
+        for withdrawal in self.pending_partial_withdrawals.iter() {
+            if withdrawal.withdrawable_epoch > epoch
+                || withdrawals.len() as u64 == MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP
+            {
+                break;
+            }
+
+            let Some(validator) = self.validators.get(withdrawal.validator_index as usize) else {
+                bail!(
+                    "Validator index out of bounds: {}",
+                    withdrawal.validator_index
+                );
+            };
+            let total_withdrawn = withdrawals
+                .iter()
+                .filter(|w| w.validator_index == withdrawal.validator_index)
+                .map(|w| w.amount)
+                .sum::<u64>();
+            let balance = *self
+                .balances
+                .get(withdrawal.validator_index as usize)
+                .ok_or(anyhow!(
+                    "Balance index out of bounds: {}",
+                    withdrawal.validator_index
+                ))?
+                - total_withdrawn;
+            if validator.exit_epoch == FAR_FUTURE_EPOCH
+                && validator.effective_balance >= MIN_ACTIVATION_BALANCE
+                && balance > MIN_ACTIVATION_BALANCE
+            {
+                let withdrawable_balance = min(balance - MIN_ACTIVATION_BALANCE, withdrawal.amount);
+                withdrawals.push(Withdrawal {
+                    index: withdrawal_index,
+                    validator_index: withdrawal.validator_index,
+                    address: Address::from_slice(&validator.withdrawal_credentials[12..]),
+                    amount: withdrawable_balance,
+                });
+                withdrawal_index += 1;
+            }
+            processed_partial_withdrawals_count += 1;
+        }
+
+        // Sweep for remaining.
         let bound = min(self.validators.len(), MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP);
         for _ in 0..bound {
-            let validator = &self.validators[validator_index as usize];
-            let balance = self.balances[validator_index as usize];
+            let validator = &self
+                .validators
+                .get(validator_index as usize)
+                .ok_or(anyhow!("Validator index out of bounds: {validator_index}"))?;
+            let partially_withdrawn_balance = withdrawals
+                .iter()
+                .filter(|withdrawal| withdrawal.validator_index == validator_index)
+                .map(|withdrawal| withdrawal.amount)
+                .sum::<u64>();
+            let balance = *self
+                .balances
+                .get(validator_index as usize)
+                .ok_or(anyhow!("Balance index out of bounds: {validator_index}"))?
+                - partially_withdrawn_balance;
             if validator.is_fully_withdrawable_validator(balance, epoch) {
                 withdrawals.push(Withdrawal {
                     index: withdrawal_index,
@@ -737,7 +800,7 @@ impl BeaconState {
                     index: withdrawal_index,
                     validator_index,
                     address: Address::from_slice(&validator.withdrawal_credentials[12..]),
-                    amount: balance - MAX_EFFECTIVE_BALANCE,
+                    amount: balance - validator.get_max_effective_balance(),
                 });
                 withdrawal_index += 1
             }
@@ -746,18 +809,33 @@ impl BeaconState {
             }
             validator_index = (validator_index + 1) % self.validators.len() as u64
         }
-        withdrawals
+        Ok((withdrawals, processed_partial_withdrawals_count))
     }
 
     pub fn process_withdrawals(&mut self, payload: &ExecutionPayload) -> anyhow::Result<()> {
-        let expected_withdrawals = self.get_expected_withdrawals();
+        let (expected_withdrawals, processed_partial_withdrawals_count) =
+            self.get_expected_withdrawals()?;
         ensure!(
             payload.withdrawals.deref() == expected_withdrawals,
-            "Can't compare"
+            "Withdrawals do not match expected withdrawals",
         );
 
         for withdrawal in &expected_withdrawals {
             self.decrease_balance(withdrawal.validator_index, withdrawal.amount)?;
+        }
+
+        let remaining_partial_withdrawals = Vec::from(take(&mut self.pending_partial_withdrawals));
+        for partial_withdrawal in remaining_partial_withdrawals
+            .into_iter()
+            .skip(processed_partial_withdrawals_count as usize)
+        {
+            self.pending_partial_withdrawals
+                .push(partial_withdrawal)
+                .map_err(|err| {
+                    anyhow!(
+                        "Failed to push partial_withdrawal to pending_partial_withdrawals: {err:?}"
+                    )
+                })?;
         }
 
         // Update the next withdrawal index if this block contained withdrawals
@@ -820,36 +898,33 @@ impl BeaconState {
         amount: u64,
         signature: BLSSignature,
     ) -> anyhow::Result<()> {
-        let mut validator_pubkeys = vec![];
-        for validator in &self.validators {
-            validator_pubkeys.push(validator.pubkey.clone());
-        }
-        if !validator_pubkeys.contains(&pubkey) {
+        if !self
+            .validators
+            .iter()
+            .any(|validator| validator.pubkey == pubkey)
+        {
             // Verify the deposit signature (proof of possession) which is not checked by the
             // deposit contract
-            let deposit_message = DepositMessage {
-                pubkey: pubkey.clone(),
-                withdrawal_credentials,
-                amount,
-            };
-            let domain = compute_domain(DOMAIN_DEPOSIT, None, None); // # Fork-agnostic domain since deposits are valid across forks
-            let signing_root = compute_signing_root(deposit_message, domain);
-
-            match signature.verify(&pubkey, signing_root.as_ref()) {
+            match is_valid_deposit_signature(&pubkey, withdrawal_credentials, amount, &signature) {
                 Ok(true) => {
-                    self.add_validator_to_registry(pubkey, withdrawal_credentials, amount)?
+                    self.add_validator_to_registry(pubkey.clone(), withdrawal_credentials, 0)?
                 }
-                // Skip adding validator if either pubkey or signature is invalid
                 _ => return Ok(()),
             }
-        } else {
-            // Increase balance by deposit amount
-            let index = validator_pubkeys
-                .iter()
-                .position(|r| *r == pubkey)
-                .ok_or(anyhow!("Can't find pubkey in validator_pubkeys"))?;
-            self.increase_balance(index as u64, amount)?;
         }
+
+        // Increase balance by deposit amount
+        self.pending_deposits
+            .push(PendingDeposit {
+                pubkey,
+                withdrawal_credentials,
+                amount,
+                signature,
+                // Use GENESIS_SLOT to distinguish from a pending deposit request
+                slot: GENESIS_SLOT,
+            })
+            .map_err(|err| anyhow!("Couldn't push to pending_deposits {err:?}"))?;
+
         Ok(())
     }
 
@@ -858,7 +933,8 @@ impl BeaconState {
         ensure!(is_valid_merkle_branch(
             deposit.data.tree_hash_root(),
             &deposit.proof,
-            DEPOSIT_CONTRACT_TREE_DEPTH + 1, // Add 1 for the List length mix-in
+            // Add 1 for the List length mix-in
+            DEPOSIT_CONTRACT_TREE_DEPTH + 1,
             self.eth1_deposit_index,
             self.eth1_data.deposit_root,
         ));
@@ -906,7 +982,7 @@ impl BeaconState {
         );
 
         let withdrawal_credentials = [
-            ETH1_ADDRESS_WITHDRAWAL_PREFIX.as_slice(),
+            ETH1_ADDRESS_WITHDRAWAL_PREFIX,
             vec![0x00; 11].as_slice(),
             address_change.to_execution_address.as_slice(),
         ]
@@ -952,6 +1028,12 @@ impl BeaconState {
             "Exit is not yet valid"
         );
 
+        // Only exit validator if it has no pending withdrawals in the queue
+        ensure!(
+            self.get_pending_balance_to_withdraw(voluntary_exit.validator_index) == 0,
+            "Validator has pending withdrawals"
+        );
+
         // Verify the validator has been active long enough
         let earlist_exit_epoch = validator
             .activation_epoch
@@ -983,6 +1065,268 @@ impl BeaconState {
         Ok(())
     }
 
+    pub fn process_withdrawal_request(
+        &mut self,
+        withdrawal_request: &WithdrawalRequest,
+    ) -> anyhow::Result<()> {
+        let amount = withdrawal_request.amount;
+        let is_full_exit_request = amount == FULL_EXIT_REQUEST_AMOUNT;
+
+        // If partial withdrawal queue is full, only full exits are processed
+        if self.pending_partial_withdrawals.len() as u64 == PENDING_PARTIAL_WITHDRAWALS_LIMIT
+            && !is_full_exit_request
+        {
+            return Ok(());
+        }
+
+        // Verify pubkey exists
+        let Some((index, validator)) = self
+            .validators
+            .iter()
+            .enumerate()
+            .find(|(_, validator)| validator.pubkey == withdrawal_request.validator_pubkey)
+        else {
+            return Ok(());
+        };
+
+        // Verify withdrawal credentials
+        let has_correct_credentials = validator.has_execution_withdrawal_credential();
+        let is_correct_source_address =
+            validator.withdrawal_credentials[12..] == withdrawal_request.source_address;
+
+        if !(has_correct_credentials && is_correct_source_address) {
+            return Ok(());
+        }
+
+        // Verify the validator is active
+        if !validator.is_active_validator(self.get_current_epoch()) {
+            return Ok(());
+        }
+
+        // Verify exit has not been initiated
+        if validator.exit_epoch != FAR_FUTURE_EPOCH {
+            return Ok(());
+        }
+
+        // Verify the validator has been active long enough
+        if self.get_current_epoch() < validator.activation_epoch + SHARD_COMMITTEE_PERIOD {
+            return Ok(());
+        }
+
+        let pending_balance_to_withdraw = self.get_pending_balance_to_withdraw(index as u64);
+
+        if is_full_exit_request {
+            // Only exit validator if it has no pending withdrawals in the queue
+            if pending_balance_to_withdraw == 0 {
+                self.initiate_validator_exit(index as u64)?;
+            }
+            return Ok(());
+        }
+
+        let has_sufficient_effective_balance =
+            validator.effective_balance >= MIN_ACTIVATION_BALANCE;
+        let balance = *self
+            .balances
+            .get(index)
+            .ok_or(anyhow!("Failed to get balance"))?;
+        let has_excess_balance = balance > MIN_ACTIVATION_BALANCE + pending_balance_to_withdraw;
+
+        // Only allow partial withdrawals with compounding withdrawal credentials
+        if validator.has_compounding_withdrawal_credential()
+            && has_sufficient_effective_balance
+            && has_excess_balance
+        {
+            let to_withdraw = min(
+                balance - MIN_ACTIVATION_BALANCE - pending_balance_to_withdraw,
+                amount,
+            );
+            let exit_queue_epoch = self.compute_exit_epoch_and_update_churn(to_withdraw);
+            let withdrawable_epoch = exit_queue_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY;
+            self.pending_partial_withdrawals
+                .push(PendingPartialWithdrawal {
+                    validator_index: index as u64,
+                    amount: to_withdraw,
+                    withdrawable_epoch,
+                }).map_err(|err| anyhow!("Failed to push PendingPartialWithdrawal to pending_partial_withdrawals {err:?}"))?;
+        }
+
+        Ok(())
+    }
+
+    pub fn process_deposit_request(
+        &mut self,
+        deposit_request: &DepositRequest,
+    ) -> anyhow::Result<()> {
+        // Set deposit request start index
+        if self.deposit_requests_start_index == UNSET_DEPOSIT_REQUESTS_START_INDEX {
+            self.deposit_requests_start_index = deposit_request.index;
+        }
+
+        // Create pending deposit
+        self.pending_deposits
+            .push(PendingDeposit {
+                pubkey: deposit_request.pubkey.clone(),
+                withdrawal_credentials: deposit_request.withdrawal_credentials,
+                amount: deposit_request.amount,
+                signature: deposit_request.signature.clone(),
+                slot: self.slot,
+            })
+            .map_err(|err| anyhow!("Failed to push PendingDeposit to pending_deposits {err:?}"))?;
+
+        Ok(())
+    }
+
+    pub fn is_valid_switch_to_compounding_request(
+        &self,
+        consolidation_request: &ConsolidationRequest,
+    ) -> bool {
+        // Switch to compounding requires source and target be equal
+        if consolidation_request.source_pubkey != consolidation_request.target_pubkey {
+            return false;
+        }
+
+        // Verify pubkey exists
+        let Some(source_validator) = self
+            .validators
+            .iter()
+            .find(|validator| validator.pubkey == consolidation_request.source_pubkey)
+        else {
+            return false;
+        };
+
+        // Verify request has been authorized
+        if source_validator.withdrawal_credentials[12..] != consolidation_request.source_address {
+            return false;
+        }
+
+        // Verify source withdrawal credentials
+        if !source_validator.has_eth1_withdrawal_credential() {
+            return false;
+        }
+
+        // Verify the source is active
+        if !source_validator.is_active_validator(self.get_current_epoch()) {
+            return false;
+        }
+
+        // Verify exit for source has not been initiated
+        if source_validator.exit_epoch != FAR_FUTURE_EPOCH {
+            return false;
+        }
+
+        true
+    }
+
+    pub fn process_consolidation_request(
+        &mut self,
+        consolidation_request: &ConsolidationRequest,
+    ) -> anyhow::Result<()> {
+        if self.is_valid_switch_to_compounding_request(consolidation_request) {
+            let Some((index, _)) = self
+                .validators
+                .iter()
+                .enumerate()
+                .find(|(_, validator)| validator.pubkey == consolidation_request.source_pubkey)
+            else {
+                bail!("Validator not found");
+            };
+            self.switch_to_compounding_validator(index as u64)?;
+            return Ok(());
+        }
+
+        // Verify that source != target, so a consolidation cannot be used as an exit
+        if consolidation_request.source_pubkey == consolidation_request.target_pubkey {
+            return Ok(());
+        }
+
+        // If the pending consolidations queue is full, consolidation requests are ignored
+        if self.pending_consolidations.len() as u64 == PENDING_CONSOLIDATIONS_LIMIT {
+            return Ok(());
+        }
+
+        // If there is too little available consolidation churn limit, consolidation requests are
+        // ignored
+        if self.get_consolidation_churn_limit() <= MIN_ACTIVATION_BALANCE {
+            return Ok(());
+        }
+
+        let Some((source_index, source_validator)) = self
+            .validators
+            .iter()
+            .enumerate()
+            .find(|(_, validator)| validator.pubkey == consolidation_request.source_pubkey)
+        else {
+            return Ok(());
+        };
+        let Some((target_index, target_validator)) = self
+            .validators
+            .iter()
+            .enumerate()
+            .find(|(_, validator)| validator.pubkey == consolidation_request.target_pubkey)
+        else {
+            return Ok(());
+        };
+
+        // Verify source withdrawal credentials
+        let has_correct_credential = source_validator.has_execution_withdrawal_credential();
+        let is_correct_source_address =
+            source_validator.withdrawal_credentials[12..] == consolidation_request.source_address;
+        if !(has_correct_credential && is_correct_source_address) {
+            return Ok(());
+        }
+
+        // Verify that target has compounding withdrawal credentials
+        if !target_validator.has_compounding_withdrawal_credential() {
+            return Ok(());
+        }
+
+        // Verify the source and the target are active
+        let current_epoch = self.get_current_epoch();
+        if !source_validator.is_active_validator(current_epoch)
+            || !target_validator.is_active_validator(current_epoch)
+        {
+            return Ok(());
+        }
+
+        // Verify exits for source and target have not been initiated
+        if source_validator.exit_epoch != FAR_FUTURE_EPOCH
+            || target_validator.exit_epoch != FAR_FUTURE_EPOCH
+        {
+            return Ok(());
+        }
+
+        // Verify the source has been active long enough
+        if current_epoch < source_validator.activation_epoch + SHARD_COMMITTEE_PERIOD {
+            return Ok(());
+        }
+
+        // Verify the source has no pending withdrawals in the queue
+        if self.get_pending_balance_to_withdraw(source_index as u64) > 0 {
+            return Ok(());
+        }
+
+        // Initiate source validator exit and append pending consolidation
+        let exit_epoch =
+            self.compute_consolidation_epoch_and_update_churn(source_validator.effective_balance);
+        let Some(source_validator) = self.validators.get_mut(source_index) else {
+            bail!("Validator not found");
+        };
+        source_validator.exit_epoch = exit_epoch;
+        source_validator.withdrawable_epoch =
+            source_validator.exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY;
+
+        self.pending_consolidations
+            .push(PendingConsolidation {
+                source_index: source_index as u64,
+                target_index: target_index as u64,
+            })
+            .map_err(|err| {
+                anyhow!("Failed to push PendingConsolidation to pending_consolidations {err:?}")
+            })?;
+
+        Ok(())
+    }
+
     /// Return the sync committee indices, with possible duplicates, for the next sync committee.
     pub fn get_next_sync_committee_indices(&self) -> anyhow::Result<Vec<u64>> {
         let epoch = self.get_current_epoch() + 1;
@@ -995,11 +1339,14 @@ impl BeaconState {
             let shuffled_index =
                 compute_shuffled_index(i % active_validator_count, active_validator_count, seed)?;
             let candidate_index = active_validator_indices[shuffled_index];
-            let seed_with_index = [seed.as_slice(), &(i / 32).to_le_bytes()].concat();
-            let hash = hash(&seed_with_index);
-            let random_byte = hash[i % 32];
+
+            let random_bytes = hash(&[seed.as_slice(), &(i / 16).to_le_bytes()].concat());
+            let offset = i % 16 * 2;
+            let random_value = bytes_to_int64(&random_bytes[offset..offset + 2]);
             let effective_balance = self.validators[candidate_index as usize].effective_balance;
-            if effective_balance * MAX_RANDOM_BYTE >= MAX_EFFECTIVE_BALANCE * random_byte as u64 {
+            if effective_balance * MAX_RANDOM_VALUE
+                >= MAX_EFFECTIVE_BALANCE_ELECTRA * random_value as u64
+            {
                 sync_committee_indices.push(candidate_index)
             }
             i += 1
@@ -1322,8 +1669,8 @@ impl BeaconState {
             if balance + downward_threshold < validator.effective_balance
                 || validator.effective_balance + upward_threshold < balance
             {
-                validator.effective_balance =
-                    (balance - balance % EFFECTIVE_BALANCE_INCREMENT).min(MAX_EFFECTIVE_BALANCE);
+                validator.effective_balance = (balance - balance % EFFECTIVE_BALANCE_INCREMENT)
+                    .min(validator.get_max_effective_balance());
             }
         }
         Ok(())
@@ -1375,38 +1722,59 @@ impl BeaconState {
     }
 
     pub fn process_attestation(&mut self, attestation: &Attestation) -> anyhow::Result<()> {
+        let data = &attestation.data;
         ensure!(
-            attestation.data.target.epoch == self.get_previous_epoch()
-                || attestation.data.target.epoch == self.get_current_epoch(),
+            data.target.epoch == self.get_previous_epoch()
+                || data.target.epoch == self.get_current_epoch(),
             "Target epoch must be the previous or current epoch"
         );
 
         ensure!(
-            attestation.data.target.epoch == compute_epoch_at_slot(attestation.data.slot),
+            data.target.epoch == compute_epoch_at_slot(data.slot),
             "Target epoch must match the computed epoch at slot"
         );
 
         ensure!(
-            attestation.data.slot + MIN_ATTESTATION_INCLUSION_DELAY <= self.slot,
+            data.slot + MIN_ATTESTATION_INCLUSION_DELAY <= self.slot,
             "Attestation must be included after the minimum delay"
         );
 
         ensure!(
-            attestation.data.index
-                < self.get_committee_count_per_slot(attestation.data.target.epoch),
+            data.index < self.get_committee_count_per_slot(data.target.epoch),
             "Committee index must be within bounds"
         );
 
-        let committee = self.get_beacon_committee(attestation.data.slot, attestation.data.index)?;
+        ensure!(data.index == 0);
+        let committee_indices = get_committee_indices(&attestation.committee_bits);
+        let mut committee_offset = 0;
+        for committee_index in committee_indices {
+            ensure!(committee_index < self.get_committee_count_per_slot(data.target.epoch));
+            let committee = self.get_beacon_committee(data.slot, data.index)?;
+            let mut committee_attesters = HashSet::new();
+            for (i, &attester_index) in committee.iter().enumerate() {
+                if attestation
+                    .aggregation_bits
+                    .get(committee_offset + i)
+                    .map_err(|err| anyhow!("Failed to get aggregation bit {err:?}"))?
+                {
+                    committee_attesters.insert(attester_index);
+                }
+            }
+            ensure!(
+                !committee_attesters.is_empty(),
+                "Committee attesters must not be empty"
+            );
+            committee_offset += committee.len();
+        }
+
+        // Bitfield length matches total number of participants
         ensure!(
-            attestation.aggregation_bits.len() == committee.len(),
+            attestation.aggregation_bits.len() == committee_offset,
             "Aggregation bits length must match committee size"
         );
 
-        let participation_flag_indices = self.get_attestation_participation_flag_indices(
-            &attestation.data,
-            self.slot - attestation.data.slot,
-        )?;
+        let participation_flag_indices =
+            self.get_attestation_participation_flag_indices(data, self.slot - data.slot)?;
 
         ensure!(
             self.is_valid_indexed_attestation(&self.get_indexed_attestation(attestation)?)?,
@@ -1420,7 +1788,7 @@ impl BeaconState {
             .collect();
 
         // Update epoch participation flags
-        let epoch_participation = if attestation.data.target.epoch == self.get_current_epoch() {
+        let epoch_participation = if data.target.epoch == self.get_current_epoch() {
             &mut self.current_epoch_participation
         } else {
             &mut self.previous_epoch_participation
@@ -1476,15 +1844,21 @@ impl BeaconState {
             * PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX)
             .min(total_balance);
 
+        // Factored out from penalty numerator to avoid uint64 overflow
+        let increment = EFFECTIVE_BALANCE_INCREMENT;
+        let penalty_per_effective_balance_increment =
+            adjusted_total_slashing_balance / (total_balance / increment);
         for index in 0..self.validators.len() {
-            let validator = &self.validators[index];
+            let validator = &self
+                .validators
+                .get(index)
+                .ok_or_else(|| anyhow!("Invalid validator index: {index}"))?;
             if validator.slashed
                 && epoch + EPOCHS_PER_SLASHINGS_VECTOR / 2 == validator.withdrawable_epoch
             {
-                let increment = EFFECTIVE_BALANCE_INCREMENT; // Factored out from penalty numerator to avoid uint64 overflow
-                let penalty_numerator =
-                    validator.effective_balance / increment * adjusted_total_slashing_balance;
-                let penalty = penalty_numerator / total_balance * increment;
+                let effective_balance_increments = validator.effective_balance / increment;
+                let penalty =
+                    penalty_per_effective_balance_increment * effective_balance_increments;
 
                 self.decrease_balance(index as u64, penalty)?;
             }
@@ -1493,15 +1867,193 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn process_operations(&mut self, body: &BeaconBlockBody) -> anyhow::Result<()> {
-        // Verify that outstanding deposits are processed up to the maximum number of deposits
-        ensure!(
-            body.deposits.len()
-                == min(
-                    MAX_DEPOSITS as usize,
-                    (self.eth1_data.deposit_count - self.eth1_deposit_index) as usize
+    /// Applies ``deposit`` to the ``state``.
+    pub fn apply_pending_deposit(&mut self, deposit: &PendingDeposit) -> anyhow::Result<()> {
+        if let Some((index, _validator)) = self
+            .validators
+            .iter()
+            .enumerate()
+            .find(|(_, v)| v.pubkey == deposit.pubkey)
+        {
+            self.increase_balance(index as u64, deposit.amount)?;
+        } else {
+            // Verify the deposit signature (proof of possession) which is not checked by the
+            // deposit contract
+            if is_valid_deposit_signature(
+                &deposit.pubkey,
+                deposit.withdrawal_credentials,
+                deposit.amount,
+                &deposit.signature,
+            )
+            .unwrap_or_default()
+            {
+                self.add_validator_to_registry(
+                    deposit.pubkey.clone(),
+                    deposit.withdrawal_credentials,
+                    deposit.amount,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn process_pending_deposits(&mut self) -> anyhow::Result<()> {
+        let next_epoch = self.get_current_epoch() + 1;
+        let available_for_processing =
+            self.deposit_balance_to_consume + self.get_activation_exit_churn_limit();
+        let mut processed_amount = 0;
+        let mut next_deposit_index = 0;
+        let mut deposits_to_postpone = vec![];
+        let mut is_churn_limit_reached = false;
+        let finalized_slot = compute_start_slot_at_epoch(self.finalized_checkpoint.epoch);
+
+        for index in 0..self.pending_deposits.len() {
+            let Some(deposit) = self.pending_deposits.get(index).cloned() else {
+                bail!("Pending deposit not found");
+            };
+            // Do not process deposit requests if Eth1 bridge deposits are not yet applied
+            if deposit.slot > GENESIS_SLOT
+                && self.eth1_deposit_index < self.deposit_requests_start_index
+            {
+                break;
+            }
+
+            // Check if deposit has been finalized, otherwise, stop processing.
+            if deposit.slot > finalized_slot {
+                break;
+            }
+
+            // Check if number of processed deposits has not reached the limit, otherwise, stop
+            // processing.
+            if next_deposit_index >= MAX_PENDING_DEPOSITS_PER_EPOCH {
+                break;
+            }
+
+            // Read validator state
+            let (is_validator_exited, is_validator_withdrawn) = if let Some(validator) = self
+                .validators
+                .iter()
+                .find(|validator| validator.pubkey == deposit.pubkey)
+            {
+                (
+                    validator.exit_epoch < FAR_FUTURE_EPOCH,
+                    validator.withdrawable_epoch < next_epoch,
                 )
+            } else {
+                (false, false)
+            };
+
+            if is_validator_withdrawn {
+                // Deposited balance will never become active. Increase balance but do not consume
+                // churn
+                self.apply_pending_deposit(&deposit)?;
+            } else if is_validator_exited {
+                // Validator is exiting, postpone the deposit until after withdrawable epoch
+                deposits_to_postpone.push(deposit.clone());
+            } else {
+                // Check if deposit fits in the churn, otherwise, do no more deposit processing in
+                // this epoch.
+                is_churn_limit_reached =
+                    processed_amount + deposit.amount > available_for_processing;
+                if is_churn_limit_reached {
+                    break;
+                }
+
+                // Consume churn and apply deposit.
+                processed_amount += deposit.amount;
+                self.apply_pending_deposit(&deposit)?;
+            }
+
+            // Regardless of how the deposit was handled, we move on in the queue.
+            next_deposit_index += 1;
+        }
+
+        let remaining_deposits = Vec::from(take(&mut self.pending_deposits));
+        for deposit in remaining_deposits
+            .into_iter()
+            .skip(next_deposit_index as usize)
+            .chain(deposits_to_postpone)
+        {
+            self.pending_deposits
+                .push(deposit)
+                .map_err(|err| anyhow!("Failed to push deposit to pending deposits: {err:?}"))?;
+        }
+
+        // Accumulate churn only if the churn limit has been hit.
+        self.deposit_balance_to_consume = if is_churn_limit_reached {
+            available_for_processing - processed_amount
+        } else {
+            0
+        };
+
+        Ok(())
+    }
+
+    pub fn process_pending_consolidations(&mut self) -> anyhow::Result<()> {
+        let next_epoch = self.get_current_epoch() + 1;
+        let mut next_pending_consolidation = 0;
+        for index in 0..self.pending_consolidations.len() {
+            let Some(pending_consolidation) = self.pending_consolidations.get(index).cloned()
+            else {
+                bail!("Pending consolidation not found");
+            };
+            let Some(source_validator) = self
+                .validators
+                .get(pending_consolidation.source_index as usize)
+            else {
+                return Err(anyhow!("Validator not found"));
+            };
+
+            if source_validator.slashed {
+                next_pending_consolidation += 1;
+                continue;
+            }
+            if source_validator.withdrawable_epoch > next_epoch {
+                break;
+            }
+
+            // Calculate the consolidated balance
+            let source_effective_balance = min(
+                *self
+                    .balances
+                    .get(pending_consolidation.source_index as usize)
+                    .ok_or(anyhow!("Failed to get balance"))?,
+                source_validator.effective_balance,
+            );
+
+            // Move active balance to target. Excess balance is withdrawable.
+            self.decrease_balance(pending_consolidation.source_index, source_effective_balance)?;
+            self.increase_balance(pending_consolidation.target_index, source_effective_balance)?;
+            next_pending_consolidation += 1;
+        }
+
+        let remaining_consolidations = Vec::from(take(&mut self.pending_consolidations));
+        for pending_consolidation in remaining_consolidations
+            .into_iter()
+            .skip(next_pending_consolidation)
+        {
+            self.pending_consolidations
+                .push(pending_consolidation)
+                .map_err(|err| anyhow!("Failed to push pending_consolidation: {err:?}"))?;
+        }
+
+        Ok(())
+    }
+
+    pub fn process_operations(&mut self, body: &BeaconBlockBody) -> anyhow::Result<()> {
+        // Disable former deposit mechanism once all prior deposits are processed
+        let eth1_deposit_index_limit = min(
+            self.eth1_data.deposit_count,
+            self.deposit_requests_start_index,
         );
+        if self.eth1_deposit_index < eth1_deposit_index_limit {
+            ensure!(
+                body.deposits.len() as u64
+                    == MAX_DEPOSITS.min(eth1_deposit_index_limit - self.eth1_deposit_index,),
+            );
+        } else {
+            ensure!(body.deposits.is_empty());
+        }
 
         for proposer_slashing in body.proposer_slashings.iter() {
             self.process_proposer_slashing(proposer_slashing)?;
@@ -1521,6 +2073,15 @@ impl BeaconState {
         for bls_to_execution_change in body.bls_to_execution_changes.iter() {
             self.process_bls_to_execution_change(bls_to_execution_change)?;
         }
+        for deposit in body.execution_requests.deposits.iter() {
+            self.process_deposit_request(deposit)?;
+        }
+        for withdrawal in body.execution_requests.withdrawals.iter() {
+            self.process_withdrawal_request(withdrawal)?;
+        }
+        for consolidation in body.execution_requests.consolidations.iter() {
+            self.process_consolidation_request(consolidation)?;
+        }
 
         Ok(())
     }
@@ -1539,9 +2100,12 @@ impl BeaconState {
     }
 
     /// Check if ``validator`` is eligible for activation.
-    pub fn is_eligible_for_activation(&self, validator: &Validator) -> bool {
+    pub fn is_eligible_for_activation(
+        finalized_checkpoint_epoch: u64,
+        validator: &Validator,
+    ) -> bool {
         // Placement in queue is finalized
-        validator.activation_eligibility_epoch <= self.finalized_checkpoint.epoch
+        validator.activation_eligibility_epoch <= finalized_checkpoint_epoch
             && validator.activation_epoch == FAR_FUTURE_EPOCH
     }
 
@@ -1555,54 +2119,28 @@ impl BeaconState {
 
     pub fn process_registry_updates(&mut self) -> anyhow::Result<()> {
         let current_epoch = self.get_current_epoch();
-        let mut initiate_validator = vec![];
+        let activation_epoch = compute_activation_exit_epoch(current_epoch);
 
-        // Process activation eligibility and ejections
+        // Process activation eligibility, ejections, and activations
+        let mut initiate_validator = vec![];
+        let finalized_checkpoint_epoch = self.finalized_checkpoint.epoch;
         for (index, validator) in self.validators.iter_mut().enumerate() {
             if validator.is_eligible_for_activation_queue() {
                 validator.activation_eligibility_epoch =
                     current_epoch.checked_add(1).ok_or_else(|| {
                         anyhow::anyhow!("Epoch overflow when setting activation eligibility epoch")
                     })?;
-            }
-
-            if validator.is_active_validator(current_epoch)
+            } else if validator.is_active_validator(current_epoch)
                 && validator.effective_balance <= EJECTION_BALANCE
             {
                 initiate_validator.push(index as u64);
+            } else if Self::is_eligible_for_activation(finalized_checkpoint_epoch, validator) {
+                validator.activation_epoch = activation_epoch;
             }
         }
 
         for index in initiate_validator {
             self.initiate_validator_exit(index)?;
-        }
-
-        // Queue validators eligible for activation and not yet dequeued for activation
-        let mut activation_queue: Vec<usize> = self
-            .validators
-            .iter()
-            .enumerate()
-            .filter_map(|(index, validator)| {
-                if self.is_eligible_for_activation(validator) {
-                    Some(index)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Order by the sequence of activation_eligibility_epoch setting and then index
-        activation_queue
-            .sort_by_key(|&index| (self.validators[index].activation_eligibility_epoch, index));
-
-        // Dequeued validators for activation up to activation churn limit
-        for &index in activation_queue
-            .iter()
-            .take(self.get_validator_activation_churn_limit() as usize)
-        {
-            let activation_epoch = compute_activation_exit_epoch(current_epoch);
-
-            self.validators[index].activation_epoch = activation_epoch;
         }
 
         Ok(())
@@ -1708,6 +2246,8 @@ impl BeaconState {
         self.process_registry_updates()?;
         self.process_slashings()?;
         self.process_eth1_data_reset()?;
+        self.process_pending_deposits()?;
+        self.process_pending_consolidations()?;
         self.process_effective_balance_updates()?;
         self.process_slashings_reset()?;
         self.process_randao_mixes_reset()?;
@@ -1760,12 +2300,12 @@ impl BeaconState {
         // Verify timestamp
         ensure!(payload.timestamp == self.compute_timestamp_at_slot(self.slot));
         // Verify commitments are under limit
-        ensure!(body.blob_kzg_commitments.len() <= MAX_BLOBS_PER_BLOCK as usize);
+        ensure!(body.blob_kzg_commitments.len() <= MAX_BLOBS_PER_BLOCK_ELECTRA as usize);
 
         // Verify the execution payload is valid
         let mut versioned_hashes = vec![];
         for commitment in body.blob_kzg_commitments.iter() {
-            versioned_hashes.push(kzg_commitment_to_versioned_hash(commitment));
+            versioned_hashes.push(commitment.calculate_versioned_hash());
         }
         ensure!(
             execution_engine
@@ -1773,6 +2313,7 @@ impl BeaconState {
                     execution_payload: payload.clone(),
                     versioned_hashes,
                     parent_beacon_block_root: self.latest_block_header.parent_root,
+                    execution_requests: body.execution_requests.clone()
                 })
                 .await?
         );
@@ -1842,6 +2383,149 @@ impl BeaconState {
         }
         Ok(())
     }
+
+    /// Return the churn limit for the current epoch.
+    pub fn get_balance_churn_limit(&self) -> u64 {
+        let churn = max(
+            MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA,
+            self.get_total_active_balance() / CHURN_LIMIT_QUOTIENT,
+        );
+        churn - churn % EFFECTIVE_BALANCE_INCREMENT
+    }
+
+    /// Return the churn limit for the current epoch dedicated to activations and exits.
+    pub fn get_activation_exit_churn_limit(&self) -> u64 {
+        min(
+            MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT,
+            self.get_balance_churn_limit(),
+        )
+    }
+
+    pub fn get_consolidation_churn_limit(&self) -> u64 {
+        self.get_balance_churn_limit() - self.get_activation_exit_churn_limit()
+    }
+
+    pub fn get_pending_balance_to_withdraw(&self, validator_index: u64) -> u64 {
+        self.pending_partial_withdrawals
+            .iter()
+            .filter(|withdrawal| withdrawal.validator_index == validator_index)
+            .map(|withdrawal| withdrawal.amount)
+            .sum()
+    }
+
+    pub fn switch_to_compounding_validator(&mut self, index: u64) -> anyhow::Result<()> {
+        let Some(validator) = self.validators.get_mut(index as usize) else {
+            return Err(anyhow!("Validator index out of bounds"));
+        };
+
+        validator.withdrawal_credentials = B256::from_slice(
+            &[
+                COMPOUNDING_WITHDRAWAL_PREFIX,
+                &validator.withdrawal_credentials[1..],
+            ]
+            .concat(),
+        );
+        self.queue_excess_active_balance(index)?;
+
+        Ok(())
+    }
+
+    pub fn queue_excess_active_balance(&mut self, index: u64) -> anyhow::Result<()> {
+        let Some(balance) = self.balances.get(index as usize) else {
+            bail!("Balance index out of bounds");
+        };
+
+        if balance > &MIN_ACTIVATION_BALANCE {
+            let excess_balance = balance - MIN_ACTIVATION_BALANCE;
+            *self
+                .balances
+                .get_mut(index as usize)
+                .ok_or(anyhow!("Balance index out of bounds"))? = MIN_ACTIVATION_BALANCE;
+
+            let Some(validator) = self.validators.get(index as usize) else {
+                return Err(anyhow!("Validator index out of bounds"));
+            };
+
+            // Use bls.G2_POINT_AT_INFINITY as a signature field placeholder
+            // and GENESIS_SLOT to distinguish from a pending deposit request
+            self.pending_deposits
+                .push(PendingDeposit {
+                    pubkey: validator.pubkey.clone(),
+                    withdrawal_credentials: validator.withdrawal_credentials,
+                    amount: excess_balance,
+                    signature: BLSSignature::infinity(),
+                    slot: GENESIS_SLOT,
+                })
+                .map_err(|err| {
+                    anyhow!("Failed to push excess active balance to pending deposits: {err:?}")
+                })?;
+        }
+
+        Ok(())
+    }
+
+    pub fn compute_exit_epoch_and_update_churn(&mut self, exit_balance: u64) -> u64 {
+        let mut earliest_exit_epoch = max(
+            self.earliest_exit_epoch,
+            compute_activation_exit_epoch(self.get_current_epoch()),
+        );
+        let per_epoch_churn = self.get_activation_exit_churn_limit();
+
+        // New epoch for exits.
+        let mut exit_balance_to_consume = if self.earliest_exit_epoch < earliest_exit_epoch {
+            per_epoch_churn
+        } else {
+            self.exit_balance_to_consume
+        };
+
+        // Exit doesn't fit in the current earliest epoch.
+        if exit_balance > exit_balance_to_consume {
+            let balance_to_process = exit_balance - exit_balance_to_consume;
+            let additional_epochs = (balance_to_process - 1) / per_epoch_churn + 1;
+            earliest_exit_epoch += additional_epochs;
+            exit_balance_to_consume += additional_epochs * per_epoch_churn;
+        }
+
+        // Consume the balance and update the state variables.
+        self.exit_balance_to_consume = exit_balance_to_consume - exit_balance;
+        self.earliest_exit_epoch = earliest_exit_epoch;
+
+        self.earliest_exit_epoch
+    }
+
+    pub fn compute_consolidation_epoch_and_update_churn(
+        &mut self,
+        consolidation_balance: u64,
+    ) -> u64 {
+        let mut earliest_consolidation_epoch = max(
+            self.earliest_consolidation_epoch,
+            compute_activation_exit_epoch(self.get_current_epoch()),
+        );
+        let per_epoch_churn = self.get_consolidation_churn_limit();
+
+        // New epoch for consolidations.
+        let mut consolidation_balance_to_consume =
+            if self.earliest_consolidation_epoch < earliest_consolidation_epoch {
+                per_epoch_churn
+            } else {
+                self.consolidation_balance_to_consume
+            };
+
+        // Exit doesn't fit in the current earliest epoch.
+        if consolidation_balance > consolidation_balance_to_consume {
+            let balance_to_process = consolidation_balance - consolidation_balance_to_consume;
+            let additional_epochs = (balance_to_process - 1) / per_epoch_churn + 1;
+            earliest_consolidation_epoch += additional_epochs;
+            consolidation_balance_to_consume += additional_epochs * per_epoch_churn;
+        }
+
+        // Consume the balance and update the state variables.
+        self.consolidation_balance_to_consume =
+            consolidation_balance_to_consume - consolidation_balance;
+        self.earliest_consolidation_epoch = earliest_consolidation_epoch;
+
+        self.earliest_consolidation_epoch
+    }
 }
 
 pub fn get_validator_from_deposit(
@@ -1849,20 +2533,23 @@ pub fn get_validator_from_deposit(
     withdrawal_credentials: B256,
     amount: u64,
 ) -> Validator {
-    let effective_balance = min(
-        amount - amount % EFFECTIVE_BALANCE_INCREMENT,
-        MAX_EFFECTIVE_BALANCE,
-    );
-    Validator {
+    let mut validator = Validator {
         pubkey,
         withdrawal_credentials,
-        effective_balance,
+        effective_balance: 0,
         slashed: false,
         activation_eligibility_epoch: FAR_FUTURE_EPOCH,
         activation_epoch: FAR_FUTURE_EPOCH,
         exit_epoch: FAR_FUTURE_EPOCH,
         withdrawable_epoch: FAR_FUTURE_EPOCH,
-    }
+    };
+
+    let max_effective_balance = validator.get_max_effective_balance();
+    validator.effective_balance = min(
+        amount - amount % EFFECTIVE_BALANCE_INCREMENT,
+        max_effective_balance,
+    );
+    validator
 }
 
 /// Wrapper to ``bls.FastAggregateVerify`` accepting the ``G2_POINT_AT_INFINITY`` signature when
@@ -1893,12 +2580,6 @@ pub fn eth_aggregate_pubkeys(pubkeys: &[&PubKey]) -> anyhow::Result<PubKey> {
     Ok(aggregate_pubkey.to_pubkey())
 }
 
-pub fn kzg_commitment_to_versioned_hash(kzg_commitment: &KZGCommitment) -> B256 {
-    let mut versioned_hash = hash(&kzg_commitment.0);
-    versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
-    B256::from_slice(&versioned_hash)
-}
-
 /// Return the largest integer ``x`` such that ``x**2 <= n``.
 pub fn integer_squareroot(n: u64) -> u64 {
     if n == UINT64_MAX {
@@ -1912,4 +2593,24 @@ pub fn integer_squareroot(n: u64) -> u64 {
         y = (x + n / x) / 2;
     }
     x
+}
+
+pub fn is_valid_deposit_signature(
+    pubkey: &PubKey,
+    withdrawal_credentials: B256,
+    amount: u64,
+    signature: &BLSSignature,
+) -> anyhow::Result<bool> {
+    let deposit_message = DepositMessage {
+        pubkey: pubkey.clone(),
+        withdrawal_credentials,
+        amount,
+    };
+    // Fork-agnostic domain since deposits are valid across forks
+    let domain = compute_domain(DOMAIN_DEPOSIT, None, None);
+    let signing_root = compute_signing_root(deposit_message, domain);
+
+    signature
+        .verify(pubkey, signing_root.as_ref())
+        .map_err(|err| anyhow!("Invalid deposit signature: {err:?}"))
 }

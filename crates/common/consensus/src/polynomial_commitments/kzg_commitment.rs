@@ -4,14 +4,14 @@ use std::{
     str::FromStr,
 };
 
-use alloy_primitives::hex;
+use alloy_primitives::{B256, hex};
 use ethereum_hashing::hash_fixed;
 use serde::{
     de::{Deserialize, Deserializer},
     ser::{Serialize, Serializer},
 };
 use ssz_derive::{Decode, Encode};
-use tree_hash::{Hash256, PackedEncoding, TreeHash};
+use tree_hash::{PackedEncoding, TreeHash};
 
 use crate::constants::BYTES_PER_COMMITMENT;
 pub const VERSIONED_HASH_VERSION_KZG: u8 = 0x01;
@@ -21,10 +21,10 @@ pub const VERSIONED_HASH_VERSION_KZG: u8 = 0x01;
 pub struct KZGCommitment(pub [u8; BYTES_PER_COMMITMENT]);
 
 impl KZGCommitment {
-    pub fn calculate_versioned_hash(&self) -> Hash256 {
+    pub fn calculate_versioned_hash(&self) -> B256 {
         let mut versioned_hash = hash_fixed(&self.0);
         versioned_hash[0] = VERSIONED_HASH_VERSION_KZG;
-        Hash256::from_slice(versioned_hash.as_slice())
+        B256::from_slice(versioned_hash.as_slice())
     }
 
     pub fn empty_for_testing() -> Self {
@@ -63,7 +63,7 @@ impl TreeHash for KZGCommitment {
         <[u8; BYTES_PER_COMMITMENT] as TreeHash>::tree_hash_packing_factor()
     }
 
-    fn tree_hash_root(&self) -> tree_hash::Hash256 {
+    fn tree_hash_root(&self) -> B256 {
         self.0.tree_hash_root()
     }
 }

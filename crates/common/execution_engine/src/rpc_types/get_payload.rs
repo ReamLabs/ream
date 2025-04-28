@@ -1,4 +1,4 @@
-use alloy_primitives::B256;
+use alloy_primitives::{B256, Bytes};
 use ream_consensus::polynomial_commitments::kzg_commitment::KZGCommitment;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -19,9 +19,10 @@ pub struct BlobsBundleV1 {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct PayloadV3 {
+pub struct PayloadV4 {
     pub execution_payload: ExecutionPayloadV3,
     pub block_value: B256,
     pub blobs_bundle: BlobsBundleV1,
     pub should_overide_builder: bool,
+    pub execution_requests: Vec<Bytes>,
 }

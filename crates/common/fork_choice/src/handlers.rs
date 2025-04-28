@@ -4,7 +4,7 @@ use ream_consensus::{
     attestation::Attestation,
     attester_slashing::AttesterSlashing,
     constants::{INTERVALS_PER_SLOT, SECONDS_PER_SLOT},
-    deneb::beacon_block::SignedBeaconBlock,
+    electra::beacon_block::SignedBeaconBlock,
     execution_engine::engine_trait::ExecutionApi,
     misc::compute_start_slot_at_epoch,
     predicates::is_slashable_attestation_data,
@@ -48,7 +48,6 @@ pub async fn on_block(
 
     ensure!(store.finalized_checkpoint.root == finalized_checkpoint_block);
 
-    // [New in Deneb:EIP4844]
     // Check if blob data is available
     // If not, this block MAY be queued and subsequently considered when blob data becomes available
     // *Note*: Extraneous or invalid Blobs (in addition to the expected/referenced valid blobs)

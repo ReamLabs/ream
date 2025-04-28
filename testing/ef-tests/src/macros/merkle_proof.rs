@@ -20,7 +20,7 @@ macro_rules! test_merkle_proof {
             #[rstest]
             fn test_merkle_proof() {
                 let base_path =
-                    "mainnet/tests/mainnet/deneb/merkle_proof/single_merkle_proof/BeaconBlockBody";
+                    "mainnet/tests/mainnet/electra/merkle_proof/single_merkle_proof/BeaconBlockBody";
 
                 for entry in std::fs::read_dir(base_path).unwrap() {
                     let entry = entry.unwrap();

@@ -1,26 +1,29 @@
 pub mod rpc_types;
 pub mod utils;
 
-use alloy_primitives::{B64, B256, hex};
+use alloy_primitives::{B64, B256, Bytes, hex};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use jsonwebtoken::{EncodingKey, Header, encode, get_current_timestamp};
 use ream_consensus::{
-    deneb::execution_payload::ExecutionPayload,
+    constants::{CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE},
+    electra::execution_payload::ExecutionPayload,
     execution_engine::{
         engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest,
         rpc_types::get_blobs::BlobAndProofV1,
     },
+    execution_requests::ExecutionRequests,
 };
 use reqwest::{Client, Request};
 use rpc_types::{
     eth_syncing::EthSyncing,
     execution_payload::ExecutionPayloadV3,
     forkchoice_update::{ForkchoiceStateV1, ForkchoiceUpdateResult, PayloadAttributesV3},
-    get_payload::PayloadV3,
+    get_payload::PayloadV4,
     payload_status::{PayloadStatus, PayloadStatusV1},
 };
 use serde_json::json;
+use ssz::Encode;
 use ssz_types::VariableList;
 use utils::{Claims, JsonRpcRequest, JsonRpcResponse, blob_versioned_hashes, strip_prefix};
 
@@ -57,8 +60,12 @@ impl ExecutionEngine {
         &self,
         execution_payload: &ExecutionPayload,
         parent_beacon_block_root: B256,
+        execution_requests_list: &[Bytes],
     ) -> bool {
-        execution_payload.block_hash == execution_payload.header_hash(parent_beacon_block_root)
+        execution_payload.block_hash
+            == execution_payload
+                .to_execution_header(parent_beacon_block_root, execution_requests_list)
+                .hash_slow()
     }
 
     /// Return ``PayloadStatus`` of execution payload``.
@@ -70,12 +77,14 @@ impl ExecutionEngine {
             execution_payload,
             versioned_hashes,
             parent_beacon_block_root,
+            execution_requests,
         } = new_payload_request;
         let payload_status = self
-            .engine_new_payload_v3(
+            .engine_new_payload_v4(
                 execution_payload.into(),
                 versioned_hashes,
                 parent_beacon_block_root,
+                get_execution_requests_list(&execution_requests),
             )
             .await?;
         Ok(payload_status.status)
@@ -112,8 +121,8 @@ impl ExecutionEngine {
         let capabilities: Vec<String> = vec![
             "engine_forkchoiceUpdatedV3".to_string(),
             "engine_getBlobsV1".to_string(),
-            "engine_getPayloadV3".to_string(),
-            "engine_newPayloadV3".to_string(),
+            "engine_getPayloadV4".to_string(),
+            "engine_newPayloadV4".to_string(),
         ];
         let request_body = JsonRpcRequest {
             id: 1,
@@ -132,11 +141,11 @@ impl ExecutionEngine {
             .to_result()
     }
 
-    pub async fn engine_get_payload_v3(&self, payload_id: B64) -> anyhow::Result<PayloadV3> {
+    pub async fn engine_get_payload_v4(&self, payload_id: B64) -> anyhow::Result<PayloadV4> {
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
-            method: "engine_getPayloadV3".to_string(),
+            method: "engine_getPayloadV4".to_string(),
             params: vec![json!(payload_id)],
         };
 
@@ -145,25 +154,27 @@ impl ExecutionEngine {
         self.http_client
             .execute(http_post_request)
             .await?
-            .json::<JsonRpcResponse<PayloadV3>>()
+            .json::<JsonRpcResponse<PayloadV4>>()
             .await?
             .to_result()
     }
 
-    pub async fn engine_new_payload_v3(
+    pub async fn engine_new_payload_v4(
         &self,
         execution_payload: ExecutionPayloadV3,
         expected_blob_versioned_hashes: Vec<B256>,
         parent_beacon_block_root: B256,
+        execution_requests: Vec<Bytes>,
     ) -> anyhow::Result<PayloadStatusV1> {
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
-            method: "engine_newPayloadV3".to_string(),
+            method: "engine_newPayloadV4".to_string(),
             params: vec![
                 json!(execution_payload),
                 json!(expected_blob_versioned_hashes),
                 json!(parent_beacon_block_root),
+                json!(execution_requests),
             ],
         };
 
@@ -209,12 +220,46 @@ pub fn is_valid_versioned_hashes(new_payload_request: &NewPayloadRequest) -> any
     )
 }
 
+fn get_execution_requests_list(execution_requests: &ExecutionRequests) -> Vec<Bytes> {
+    let mut requests_list = vec![];
+    if !execution_requests.deposits.is_empty() {
+        requests_list.push(Bytes::from(
+            [
+                DEPOSIT_REQUEST_TYPE,
+                &execution_requests.deposits.as_ssz_bytes(),
+            ]
+            .concat(),
+        ));
+    }
+    if !execution_requests.withdrawals.is_empty() {
+        requests_list.push(Bytes::from(
+            [
+                WITHDRAWAL_REQUEST_TYPE,
+                &execution_requests.withdrawals.as_ssz_bytes(),
+            ]
+            .concat(),
+        ));
+    }
+    if !execution_requests.consolidations.is_empty() {
+        requests_list.push(Bytes::from(
+            [
+                CONSOLIDATION_REQUEST_TYPE,
+                &execution_requests.consolidations.as_ssz_bytes(),
+            ]
+            .concat(),
+        ));
+    }
+    requests_list
+}
+
 #[async_trait]
 impl ExecutionApi for ExecutionEngine {
     async fn verify_and_notify_new_payload(
         &self,
         new_payload_request: NewPayloadRequest,
     ) -> anyhow::Result<bool> {
+        let execution_requests_list =
+            get_execution_requests_list(&new_payload_request.execution_requests);
         if new_payload_request
             .execution_payload
             .transactions
@@ -226,6 +271,7 @@ impl ExecutionApi for ExecutionEngine {
         if !self.is_valid_block_hash(
             &new_payload_request.execution_payload,
             new_payload_request.parent_beacon_block_root,
+            &execution_requests_list,
         ) {
             return Ok(false);
         }
