@@ -29,3 +29,4 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tree_hash.workspace = true
+libp2p.workspace = true

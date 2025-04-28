@@ -4557,6 +4557,7 @@ dependencies = [
  "actix-web",
  "alloy-primitives",
  "ethereum_serde_utils",
+ "libp2p",
  "parking_lot",
  "ream-bls",
  "ream-consensus",
