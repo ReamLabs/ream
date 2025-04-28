@@ -52,8 +52,8 @@ pub async fn get_blob_sidecars(
         blob_sidecars.push(
             beacon_block
                 .blob_sidecar(blob_and_proof, *index)
-                .map_err(|_| {
-                    error!("Failed to create blob sidecar for index: {index}");
+                .map_err(|err| {
+                    error!("Failed to create blob sidecar for index: {index}, error: {err:?}");
                     ApiError::InternalError
                 })?,
         );

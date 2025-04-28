@@ -21,19 +21,19 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
     cfg.service(get_blob_sidecars)
         .service(get_block_rewards)
         .service(get_block_root)
-        .service(get_headers)
         .service(get_genesis)
+        .service(get_headers)
+        .service(get_pending_consolidations)
+        .service(get_pending_deposits)
+        .service(get_pending_partial_withdrawals)
         .service(get_state_finality_checkpoint)
         .service(get_state_fork)
         .service(get_state_randao)
         .service(get_state_root)
         .service(get_validator_from_state)
         .service(get_validators_from_state)
-        .service(get_pending_consolidations)
-        .service(get_pending_deposits)
-        .service(get_pending_partial_withdrawals)
-        .service(post_validators_from_state)
-        .service(post_validator_identities_from_state);
+        .service(post_validator_identities_from_state)
+        .service(post_validators_from_state);
 }
 pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {
     cfg.service(get_block_attestations)
