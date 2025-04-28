@@ -1,7 +1,10 @@
+use std::str::FromStr;
+
 use actix_web::{
     HttpResponse, Responder, get,
     web::{Data, Path},
 };
+use libp2p::PeerId;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -38,19 +41,22 @@ impl PeerData {
 /// Called by `/eth/v1/node/peers/{peer_id}` to return the current connection
 #[get("/node/peers/{peer_id}")]
 pub async fn get_peer(db: Data<ReamDB>, peer_id: Path<String>) -> Result<impl Responder, ApiError> {
-    let peer_id = peer_id.into_inner();
-    let (enr, last_seen, state, direction) = match mock_fetch_peer(&peer_id, &db).await {
+    let peer_id_raw = peer_id.into_inner();
+    PeerId::from_str(&peer_id_raw)
+        .map_err(|_| ApiError::BadRequest(format!("Invalid peer ID: {peer_id_raw}")))?;
+
+    let (enr, last_seen, state, direction) = match mock_fetch_peer(&peer_id_raw, &db).await {
         Ok(tuple) => tuple,
         Err(ApiError::NotFound(_)) => {
-            return Err(ApiError::NotFound(format!("Peer not found: {peer_id}")));
+            return Err(ApiError::NotFound(format!("Peer not found: {peer_id_raw}")));
         }
         Err(e) => {
-            error!("Failed to fetch peer {peer_id}, err: {e:?}");
+            error!("Failed to fetch peer {peer_id_raw}, err: {e:?}");
             return Err(ApiError::InternalError);
         }
     };
 
-    let payload = PeerData::new(peer_id, enr, last_seen, state, direction);
+    let payload = PeerData::new(peer_id_raw, enr, last_seen, state, direction);
     Ok(HttpResponse::Ok().json(DataResponse::new(payload)))
 }
 

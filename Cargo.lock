@@ -5030,6 +5030,7 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "hashbrown 0.15.3",
+ "libp2p",
  "parking_lot",
  "ream-bls",
  "ream-consensus",
