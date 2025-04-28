@@ -3,6 +3,7 @@ pub mod block;
 pub mod config;
 pub mod header;
 pub mod light_client;
+pub mod peers;
 pub mod state;
 pub mod validator;
 pub mod version;
