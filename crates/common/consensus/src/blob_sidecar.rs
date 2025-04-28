@@ -11,6 +11,7 @@ use crate::{
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct BlobSidecar {
+    #[serde(with = "serde_utils::quoted_u64")]
     pub index: u64,
     pub blob: Blob,
     pub kzg_commitment: KZGCommitment,
