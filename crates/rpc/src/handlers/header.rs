@@ -100,8 +100,8 @@ pub async fn get_header_from_slot(
 ) -> Result<(SignedBeaconBlockHeader, B256), ApiError> {
     let beacon_block = get_beacon_block_from_id(ID::Slot(slot), db).await?;
 
-    let header_message = beacon_block.compute_signed_block_header();
-    let root = header_message.tree_hash_root();
+    let header = beacon_block.signed_header();
+    let root = header.tree_hash_root();
 
-    Ok((header_message, root))
+    Ok((header, root))
 }

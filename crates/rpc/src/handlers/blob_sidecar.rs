@@ -2,7 +2,7 @@ use actix_web::{
     HttpResponse, Responder, get,
     web::{Data, Json, Path},
 };
-use ream_consensus::blob_sidecar::{BlobIdentifier, BlobSidecar};
+use ream_consensus::blob_sidecar::BlobIdentifier;
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::error;
 use tree_hash::TreeHash;
@@ -20,7 +20,6 @@ pub async fn get_blob_sidecars(
 ) -> Result<impl Responder, ApiError> {
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
     let block_root = beacon_block.message.tree_hash_root();
-    let signed_block_header = beacon_block.compute_signed_block_header();
 
     let indices = if let Some(indices) = &query.indices {
         let max_index = beacon_block.message.body.blob_kzg_commitments.len() as u64;
@@ -32,9 +31,9 @@ pub async fn get_blob_sidecars(
                 )));
             }
         }
-        indices.clone()
+        indices
     } else {
-        (0..beacon_block.message.body.blob_kzg_commitments.len() as u64).collect()
+        &(0..beacon_block.message.body.blob_kzg_commitments.len() as u64).collect()
     };
 
     let mut blob_sidecars = vec![];
@@ -42,7 +41,7 @@ pub async fn get_blob_sidecars(
     for index in indices {
         let blob_and_proof = db
             .blobs_and_proofs_provider()
-            .get(BlobIdentifier::new(block_root, index))
+            .get(BlobIdentifier::new(block_root, *index))
             .map_err(|err| {
                 error!("Failed to get blob and proof for index: {index}, error: {err:?}");
                 ApiError::InternalError
@@ -50,22 +49,14 @@ pub async fn get_blob_sidecars(
             .ok_or(ApiError::NotFound(format!(
                 "Failed to get blob and proof for index: {index}"
             )))?;
-        blob_sidecars.push(BlobSidecar {
-            index,
-            blob: blob_and_proof.blob,
-            kzg_commitment: beacon_block.message.body.blob_kzg_commitments[index as usize],
-            kzg_proof: blob_and_proof.proof,
-            signed_block_header: signed_block_header.clone(),
-            kzg_commitment_inclusion_proof: beacon_block
-                .message
-                .body
-                .blob_kzg_commitment_inclusion_proof(index)
-                .map_err(|err| {
-                    error!("Failed to create inclusion proof for blob at index: {index}, error: {err:?}");
+        blob_sidecars.push(
+            beacon_block
+                .blob_sidecar(blob_and_proof, *index)
+                .map_err(|_| {
+                    error!("Failed to create blob sidecar for index: {index}");
                     ApiError::InternalError
-                })?
-                .into(),
-        });
+                })?,
+        );
     }
 
     Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(blob_sidecars)))
