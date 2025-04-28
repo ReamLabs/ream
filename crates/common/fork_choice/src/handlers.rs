@@ -9,7 +9,10 @@ use ream_consensus::{
     misc::compute_start_slot_at_epoch,
     predicates::is_slashable_attestation_data,
 };
-use ream_storage::tables::{Field, Table};
+use ream_storage::{
+    errors::StoreError,
+    tables::{Field, Table},
+};
 use tree_hash::TreeHash;
 
 use crate::store::Store;
@@ -157,7 +160,11 @@ pub fn on_attester_slashing(
         .into_iter()
         .collect::<HashSet<_>>();
 
-    let mut equivocating = store.db.equivocating_indices_provider().get()?;
+    let mut equivocating = match store.db.equivocating_indices_provider().get() {
+        Ok(set) => set,
+        Err(StoreError::FieldNotInitilized) => HashSet::default(),
+        Err(err) => return Err(err.into()),
+    };
 
     for index in attestation_1_indices.intersection(&attestation_2_indices) {
         equivocating.insert(*index);
