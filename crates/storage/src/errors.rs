@@ -10,9 +10,6 @@ pub enum StoreError {
 
     #[error("Field not initilized")]
     FieldNotInitilized,
-
-    #[error("Beacon state not found for given root")]
-    BeaconStateNotFound,
 }
 
 impl From<redb::Error> for StoreError {

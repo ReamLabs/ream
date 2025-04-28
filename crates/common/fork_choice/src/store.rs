@@ -538,18 +538,22 @@ impl Store {
     }
 
     pub fn store_target_checkpoint_state(&mut self, target: Checkpoint) -> anyhow::Result<()> {
-        if self.db.checkpoint_states_provider().get(target)?.is_none() {
-            if let Some(base_state) = self.db.beacon_state_provider().get(target.root)? {
-                let mut base_state = base_state;
-                let target_slot = compute_start_slot_at_epoch(target.epoch);
-                if base_state.slot < target_slot {
-                    base_state.process_slots(target_slot)?;
-                }
-                self.db
-                    .checkpoint_states_provider()
-                    .insert(target, base_state)?;
-            }
+        if self.db.checkpoint_states_provider().get(target)?.is_some() {
+            return Ok(());
         }
+
+        let Some(mut base_state) = self.db.beacon_state_provider().get(target.root)? else {
+            return Ok(());
+        };
+
+        let target_slot = compute_start_slot_at_epoch(target.epoch);
+        if base_state.slot < target_slot {
+            base_state.process_slots(target_slot)?;
+        }
+        self.db
+            .checkpoint_states_provider()
+            .insert(target, base_state)?;
+
         Ok(())
     }
 
