@@ -1,7 +1,7 @@
 use alloy_primitives::{Address, B64, B256};
 use ream_consensus::withdrawal::Withdrawal;
 use serde::{Deserialize, Serialize};
-use ssz_types::{VariableList, typenum};
+use ssz_types::{VariableList, typenum::U16};
 
 use super::payload_status::PayloadStatusV1;
 
@@ -20,7 +20,7 @@ pub struct PayloadAttributesV3 {
     pub timestamp: u64,
     pub prev_randao: B256,
     pub suggested_fee_recipient: Address,
-    pub withdrawals: VariableList<Withdrawal, typenum::U16>,
+    pub withdrawals: VariableList<Withdrawal, U16>,
     pub parent_beacon_block_root: B256,
 }
 

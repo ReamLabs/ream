@@ -74,7 +74,7 @@ impl Validator {
 
     /// Check if ``validator`` has a 0x01 or 0x02 prefixed withdrawal credential.
     pub fn has_execution_withdrawal_credential(&self) -> bool {
-        self.has_compounding_withdrawal_credential() | self.has_eth1_withdrawal_credential()
+        self.has_compounding_withdrawal_credential() || self.has_eth1_withdrawal_credential()
     }
 
     /// Get max effective balance for ``validator``.

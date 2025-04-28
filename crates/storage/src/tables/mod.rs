@@ -23,7 +23,6 @@ use ssz::{Decode, Encode};
 
 use crate::errors::StoreError;
 
-#[allow(clippy::result_large_err)]
 pub trait Table {
     type Key;
 
@@ -34,7 +33,6 @@ pub trait Table {
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError>;
 }
 
-#[allow(clippy::result_large_err)]
 pub trait Field {
     type Value;
 

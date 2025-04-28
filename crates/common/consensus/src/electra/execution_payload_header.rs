@@ -4,7 +4,7 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::{
     FixedVector, VariableList,
     serde_utils::{hex_fixed_vec, hex_var_list},
-    typenum,
+    typenum::{self, U32},
 };
 use tree_hash_derive::TreeHash;
 
@@ -23,7 +23,7 @@ pub struct ExecutionPayloadHeader {
     pub gas_used: u64,
     pub timestamp: u64,
     #[serde(with = "hex_var_list")]
-    pub extra_data: VariableList<u8, typenum::U32>,
+    pub extra_data: VariableList<u8, U32>,
     #[serde(with = "serde_utils::quoted_u256")]
     pub base_fee_per_gas: U256,
 

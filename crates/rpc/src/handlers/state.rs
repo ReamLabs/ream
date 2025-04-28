@@ -3,9 +3,7 @@ use actix_web::{
     web::{Data, Json, Path},
 };
 use alloy_primitives::B256;
-use ream_consensus::{
-    checkpoint::Checkpoint, electra::beacon_state::BeaconState, withdrawal::Withdrawal,
-};
+use ream_consensus::{checkpoint::Checkpoint, electra::beacon_state::BeaconState};
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
@@ -14,7 +12,12 @@ use serde::{Deserialize, Serialize};
 use tracing::error;
 use tree_hash::TreeHash;
 
-use crate::types::{errors::ApiError, id::ID, query::RandaoQuery, response::BeaconResponse};
+use crate::types::{
+    errors::ApiError,
+    id::ID,
+    query::RandaoQuery,
+    response::{BeaconResponse, BeaconVersionedResponse},
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckpointData {
@@ -166,43 +169,50 @@ pub async fn get_state_randao(
     Ok(HttpResponse::Ok().json(BeaconResponse::new(RandaoResponse::new(randao_mix))))
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct WithdrawalData {
-    #[serde(with = "serde_utils::quoted_u64")]
-    validator_index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    amount: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    withdrawable_epoch: u64,
+/// Called by `/eth/v1/beacon/states/{state_id}/pending_consolidations` to get pending
+/// consolidations for state with given stateId
+#[get("/beacon/states/{state_id}/pending_consolidations")]
+pub async fn get_pending_consolidations(
+    db: Data<ReamDB>,
+    state_id: Path<ID>,
+) -> Result<impl Responder, ApiError> {
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
+
+    Ok(
+        HttpResponse::Ok().json(BeaconVersionedResponse::new(Vec::from(
+            state.pending_consolidations,
+        ))),
+    )
 }
-// Called by `/states/{state_id}/get_pending_partial_withdrawals` to get pending partial withdrawals
-// for state with given stateId
-#[get("/beacon/states/{state_id}/get_pending_partial_withdrawals")]
+
+/// Called by `/eth/v1/beacon/states/{state_id}/pending_deposits` to get pending deposits
+/// for state with given stateId
+#[get("/beacon/states/{state_id}/pending_deposits")]
+pub async fn get_pending_deposits(
+    db: Data<ReamDB>,
+    state_id: Path<ID>,
+) -> Result<impl Responder, ApiError> {
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
+
+    Ok(
+        HttpResponse::Ok().json(BeaconVersionedResponse::new(Vec::from(
+            state.pending_deposits,
+        ))),
+    )
+}
+
+/// Called by `/states/{state_id}/pending_partial_withdrawals` to get pending partial withdrawals
+/// for state with given stateId
+#[get("/beacon/states/{state_id}/pending_partial_withdrawals")]
 pub async fn get_pending_partial_withdrawals(
     db: Data<ReamDB>,
     state_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
-    let (withdrawals, _) = state
-        .get_expected_withdrawals()
-        .map_err(|_| ApiError::InternalError)?;
-    let partial_withdrawals: Vec<Withdrawal> = withdrawals
-        .into_iter()
-        .filter(|withdrawal: &Withdrawal| {
-            let validator = &state.validators[withdrawal.validator_index as usize];
-            let balance = state.balances[withdrawal.validator_index as usize];
-            validator.is_partially_withdrawable_validator(balance)
-        })
-        .collect();
-
-    let response: Vec<WithdrawalData> = partial_withdrawals
-        .into_iter()
-        .map(|withdrawal: Withdrawal| WithdrawalData {
-            validator_index: withdrawal.validator_index,
-            amount: withdrawal.amount,
-            withdrawable_epoch: state.get_current_epoch(),
-        })
-        .collect();
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(response)))
+    Ok(
+        HttpResponse::Ok().json(BeaconVersionedResponse::new(Vec::from(
+            state.pending_partial_withdrawals,
+        ))),
+    )
 }

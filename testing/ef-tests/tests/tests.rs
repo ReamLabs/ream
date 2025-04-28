@@ -45,7 +45,7 @@ use ream_consensus::{
 };
 use ream_merkle::is_valid_normalized_merkle_branch;
 
-// Testing consensus types
+// General consensus types
 test_consensus_type!(Attestation);
 test_consensus_type!(AttestationData);
 test_consensus_type!(AttesterSlashing);
@@ -76,7 +76,7 @@ test_consensus_type!(Validator);
 test_consensus_type!(VoluntaryExit);
 test_consensus_type!(Withdrawal);
 
-// Testing consensus types Pectra
+// Electra consensus types
 test_consensus_type!(ConsolidationRequest);
 test_consensus_type!(DepositRequest);
 test_consensus_type!(ExecutionRequests);
@@ -86,7 +86,7 @@ test_consensus_type!(PendingPartialWithdrawal);
 test_consensus_type!(SingleAttestation);
 test_consensus_type!(WithdrawalRequest);
 
-// Testing operations for block processing
+// Testing operations
 test_operation!(attestation, Attestation, "attestation", process_attestation);
 test_operation!(
     attester_slashing,
@@ -172,10 +172,8 @@ test_rewards!(basic, get_inactivity_penalty_deltas);
 test_rewards!(leak, get_inactivity_penalty_deltas);
 test_rewards!(random, get_inactivity_penalty_deltas);
 
-// Testing sanity_blocks
+// Testing sanity
 test_sanity_blocks!();
-
-// Testing sanity_slots
 test_sanity_slots!();
 
 // Testing fork_choice

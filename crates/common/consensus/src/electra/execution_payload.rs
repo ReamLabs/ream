@@ -10,7 +10,7 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::{
     FixedVector, VariableList,
     serde_utils::{hex_fixed_vec, hex_var_list, list_of_hex_var_list},
-    typenum,
+    typenum::{self, U16, U32, U1048576, U1073741824},
 };
 use tree_hash_derive::TreeHash;
 
@@ -19,7 +19,7 @@ use crate::withdrawal::Withdrawal;
 const EMPTY_UNCLE_ROOT_HASH: B256 =
     b256!("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347");
 
-pub type Transactions = VariableList<VariableList<u8, typenum::U1073741824>, typenum::U1048576>;
+pub type Transactions = VariableList<VariableList<u8, U1073741824>, U1048576>;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct ExecutionPayload {
@@ -36,7 +36,7 @@ pub struct ExecutionPayload {
     pub gas_used: u64,
     pub timestamp: u64,
     #[serde(with = "hex_var_list")]
-    pub extra_data: VariableList<u8, typenum::U32>,
+    pub extra_data: VariableList<u8, U32>,
     #[serde(with = "serde_utils::quoted_u256")]
     pub base_fee_per_gas: U256,
 
@@ -44,7 +44,7 @@ pub struct ExecutionPayload {
     pub block_hash: B256,
     #[serde(with = "list_of_hex_var_list")]
     pub transactions: Transactions,
-    pub withdrawals: VariableList<Withdrawal, typenum::U16>,
+    pub withdrawals: VariableList<Withdrawal, U16>,
     pub blob_gas_used: u64,
     pub excess_blob_gas: u64,
 }

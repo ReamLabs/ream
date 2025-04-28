@@ -47,7 +47,6 @@ pub struct ReamDB {
     pub db: Arc<Database>,
 }
 
-#[allow(clippy::result_large_err)]
 impl ReamDB {
     pub fn new(data_dir: Option<PathBuf>, ephemeral: bool) -> Result<Self, StoreError> {
         let ream_dir =
@@ -57,8 +56,7 @@ impl ReamDB {
 
         let db = Builder::new()
             .set_cache_size(REDB_CACHE_SIZE)
-            .create(&ream_file)
-            .map_err(|err| StoreError::Database(err.into()))?;
+            .create(&ream_file)?;
 
         let write_txn = db.begin_write()?;
         write_txn.open_table(BEACON_BLOCK_TABLE)?;

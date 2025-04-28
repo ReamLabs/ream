@@ -125,6 +125,6 @@ pub fn get_committee_indices(commitee_bits: &BitVector<U64>) -> Vec<u64> {
     commitee_bits
         .iter()
         .enumerate()
-        .filter_map(|(i, bit)| if bit { Some(i as u64) } else { None })
+        .filter_map(|(i, bit)| bit.then_some(i as u64))
         .collect()
 }

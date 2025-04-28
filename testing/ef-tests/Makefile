@@ -21,7 +21,7 @@ $(TARGET):
 	@if [ -d $(EXTRACT_DIR) ]; then \
 		echo "$(EXTRACT_DIR) already downloaded. Skipping download."; \
 	else \
-		echo "Fetching the latest release (including pre-releases) for $(EF_TESTS_TARGET)..."; \
+		echo "Fetching the latest release (including pre-releases) for $(TARGET)..."; \
 		curl -s $(LATEST_RELEASE_URL) \
 		| grep "browser_download_url.*$(TARGET)" \
 		| head -n 1 \
