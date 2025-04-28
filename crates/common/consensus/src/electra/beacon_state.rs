@@ -89,7 +89,8 @@ use crate::{
     sync_committee::SyncCommittee,
     validator::Validator,
     voluntary_exit::SignedVoluntaryExit,
-    withdrawal::Withdrawal, withdrawal_request::WithdrawalRequest,
+    withdrawal::Withdrawal,
+    withdrawal_request::WithdrawalRequest,
 };
 
 fn serialize_u8_as_quoted_list<S>(
@@ -190,11 +191,17 @@ pub struct BeaconState {
     pub historical_summaries: VariableList<HistoricalSummary, U16777216>,
 
     // Electra
+    #[serde(with = "serde_utils::quoted_u64")]
     pub deposit_requests_start_index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub deposit_balance_to_consume: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub exit_balance_to_consume: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub earliest_exit_epoch: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub consolidation_balance_to_consume: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub earliest_consolidation_epoch: u64,
     pub pending_deposits: VariableList<PendingDeposit, U134217728>,
     pub pending_partial_withdrawals: VariableList<PendingPartialWithdrawal, U134217728>,

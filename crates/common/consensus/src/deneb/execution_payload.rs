@@ -21,6 +21,7 @@ pub type Transactions = VariableList<VariableList<u8, typenum::U1073741824>, typ
 pub struct ExecutionPayload {
     // Execution block header fields
     pub parent_hash: B256,
+    #[serde(with = "checksummed_address")]
     pub fee_recipient: Address,
     pub state_root: B256,
     pub receipts_root: B256,

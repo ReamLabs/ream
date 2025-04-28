@@ -1,5 +1,5 @@
 use alloy_primitives::{Address, B256, U256};
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
+use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     FixedVector, VariableList,
@@ -7,6 +7,8 @@ use ssz_types::{
     typenum::{self, U32},
 };
 use tree_hash_derive::TreeHash;
+
+use crate::misc::checksummed_address;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct ExecutionPayloadHeader {
@@ -40,24 +42,4 @@ pub struct ExecutionPayloadHeader {
     pub blob_gas_used: u64,
     #[serde(with = "serde_utils::quoted_u64")]
     pub excess_blob_gas: u64,
-}
-
-pub mod checksummed_address {
-    use super::*;
-
-    pub fn serialize<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let checksummed = address.to_checksum(None);
-        serializer.serialize_str(&checksummed)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Address, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s: String = Deserialize::deserialize(deserializer)?;
-        s.parse::<Address>().map_err(D::Error::custom)
-    }
 }

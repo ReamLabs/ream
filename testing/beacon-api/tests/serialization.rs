@@ -4,7 +4,7 @@ use std::{
 };
 
 use alloy_primitives::b256;
-use ream_consensus::deneb::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
+use ream_consensus::electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
 use ream_rpc::types::response::BeaconVersionedResponse;
 use serde_json::Value;
 const PATH_TO_TEST_DATA_FOLDER: &str = "./tests/assets";
@@ -17,7 +17,7 @@ async fn test_beacon_state_serialization() -> anyhow::Result<()> {
     let beacon_state: BeaconVersionedResponse<BeaconState> =
         serde_json::from_value(original_json.clone())?;
 
-    assert_eq!(beacon_state.version, "deneb");
+    assert_eq!(beacon_state.version, "electra");
     assert_eq!(beacon_state.data.latest_block_header.slot, 1);
     assert_eq!(
         beacon_state.data.latest_block_header.parent_root,
@@ -43,8 +43,8 @@ async fn test_beacon_block_serialization() -> anyhow::Result<()> {
     let beacon_block: BeaconVersionedResponse<SignedBeaconBlock> =
         serde_json::from_value(original_json.clone())?;
 
-    assert_eq!(beacon_block.version, "deneb");
-    assert_eq!(beacon_block.data.message.slot, 11532800);
+    assert_eq!(beacon_block.version, "electra");
+    assert_eq!(beacon_block.data.message.slot, 1);
 
     let serialized_json: Value = serde_json::to_value(&beacon_block)?;
 
