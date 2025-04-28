@@ -516,11 +516,13 @@ impl BeaconState {
         true
     }
 
+    /// Return a new ``ParticipationFlags`` adding ``flag_index`` to ``flags``.
     pub fn add_flag(flags: u8, flag_index: u8) -> u8 {
         let flag = 1 << flag_index;
         flags | flag
     }
 
+    /// Return whether ``flags`` has ``flag_index`` set.
     pub fn has_flag(flags: u8, flag_index: u8) -> bool {
         let flag = 1 << flag_index;
         flags & flag == flag
@@ -1780,9 +1782,11 @@ impl BeaconState {
             "Aggregation bits length must match committee size"
         );
 
+        // Participation flag indices
         let participation_flag_indices =
             self.get_attestation_participation_flag_indices(data, self.slot - data.slot)?;
 
+        // Verify signature
         ensure!(
             self.is_valid_indexed_attestation(&self.get_indexed_attestation(attestation)?)?,
             "Attestation signature must be valid"
@@ -1821,6 +1825,7 @@ impl BeaconState {
             }
         }
 
+        // Reward proposer
         let proposer_reward_denominator =
             (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT) * WEIGHT_DENOMINATOR / PROPOSER_WEIGHT;
         let proposer_reward = proposer_reward_numerator / proposer_reward_denominator;

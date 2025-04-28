@@ -70,6 +70,7 @@ impl Store {
         }
     }
 
+    /// Compute the checkpoint block for epoch ``epoch`` in the chain of block ``root``
     pub fn get_checkpoint_block(&self, root: B256, epoch: u64) -> anyhow::Result<B256> {
         let epoch_first_slot = compute_start_slot_at_epoch(epoch);
         self.get_ancestor(root, epoch_first_slot)
@@ -84,6 +85,8 @@ impl Store {
             bail!("failed to get block");
         };
 
+        // If any children branches contain expected finalized/justified checkpoints,
+        // add to filtered block-tree and signal viability to parent.
         let children = self
             .db
             .parent_root_index_multimap_provider()
@@ -106,6 +109,8 @@ impl Store {
         let current_epoch = self.get_current_store_epoch()?;
         let voting_source = self.get_voting_source(block_root)?;
 
+        // The voting source should be either at the same height as the store's justified checkpoint
+        // or not more than two epochs ago
         let justified_checkpoint_epoch = self.db.justified_checkpoint_provider().get()?.epoch;
         let correct_justified = justified_checkpoint_epoch == GENESIS_EPOCH || {
             voting_source.epoch == justified_checkpoint_epoch
@@ -119,25 +124,30 @@ impl Store {
         let correct_finalized = finalized_checkpoint.epoch == GENESIS_EPOCH
             || finalized_checkpoint.root == finalized_checkpoint_block;
 
+        // If expected finalized/justified, add to viable block-tree and signal viability to parent.
         if correct_justified && correct_finalized {
             blocks.insert(block_root, block.message.clone());
             return Ok(true);
         }
 
+        // Otherwise, branch not viable
         Ok(false)
     }
 
+    /// Update checkpoints in store if necessary
     pub fn update_checkpoints(
         &mut self,
         justified_checkpoint: Checkpoint,
         finalized_checkpoint: Checkpoint,
     ) -> anyhow::Result<()> {
+        // Update justified checkpoint
         if justified_checkpoint.epoch > self.db.justified_checkpoint_provider().get()?.epoch {
             self.db
                 .justified_checkpoint_provider()
                 .insert(justified_checkpoint)?;
         }
 
+        // Update finalized checkpoint
         if finalized_checkpoint.epoch > self.db.finalized_checkpoint_provider().get()?.epoch {
             self.db
                 .finalized_checkpoint_provider()
@@ -147,11 +157,13 @@ impl Store {
         Ok(())
     }
 
+    /// Update unrealized checkpoints in store if necessary
     pub fn update_unrealized_checkpoints(
         &mut self,
         unrealized_justified_checkpoint: Checkpoint,
         unrealized_finalized_checkpoint: Checkpoint,
     ) -> anyhow::Result<()> {
+        // Update unrealized justified checkpoint
         if unrealized_justified_checkpoint.epoch
             > self
                 .db
@@ -164,6 +176,7 @@ impl Store {
                 .insert(unrealized_justified_checkpoint)?;
         }
 
+        // Update unrealized finalized checkpoint
         if unrealized_finalized_checkpoint.epoch
             > self
                 .db
@@ -200,6 +213,7 @@ impl Store {
     }
 
     pub fn is_proposing_on_time(&self) -> anyhow::Result<bool> {
+        // Use half `SECONDS_PER_SLOT // INTERVALS_PER_SLOT` as the proposer reorg deadline
         let time_into_slot = (self.db.time_provider().get()?
             - self.db.genesis_time_provider().get()?)
             % SECONDS_PER_SLOT;
@@ -265,10 +279,13 @@ impl Store {
         }
 
         if self.db.proposer_boost_root_provider().get()? == B256::ZERO {
+            // Return only attestation score if ``proposer_boost_root`` is not set
             return Ok(attestation_score);
         }
 
+        // Calculate proposer score if ``proposer_boost_root`` is set
         let mut proposer_score: u64 = 0;
+        // Boost is applied if ``root`` is an ancestor of ``proposer_boost_root``
         if self.get_ancestor(
             self.db.proposer_boost_root_provider().get()?,
             self.db
@@ -285,6 +302,8 @@ impl Store {
         Ok(attestation_score + proposer_score)
     }
 
+    // Compute the voting source checkpoint in event that block with root ``block_root`` is the head
+    // block
     pub fn get_voting_source(&self, block_root: B256) -> anyhow::Result<Checkpoint> {
         let block = self
             .db
@@ -296,12 +315,14 @@ impl Store {
         let block_epoch = compute_epoch_at_slot(block.message.slot);
 
         if current_epoch > block_epoch {
+            // The block is from a prior epoch, the voting source will be pulled-up
             Ok(self
                 .db
                 .unrealized_justifications_provider()
                 .get(block_root)?
                 .ok_or_else(|| anyhow!("unrealized_justifications not found"))?)
         } else {
+            // The block is not from a prior epoch, therefore the voting source is not pulled up
             let head_state = self
                 .db
                 .beacon_state_provider()
@@ -354,14 +375,17 @@ impl Store {
 
         // Only re-org the head block if it arrived later than the attestation deadline.
         let head_late = self.is_head_late(head_root)?;
+
         // Do not re-org on an epoch boundary where the proposer shuffling could change.
         let shuffling_stable = is_shuffling_stable(slot);
+
         // Ensure that the FFG information of the new head will be competitive with the current
         // head.
         let ffg_competitive = self.is_ffg_competitive(head_root, parent_root)?;
 
         // Do not re-org if the chain is not finalizing with acceptable frequency.
         let finalization_ok = self.is_finalization_ok(slot)?;
+
         // Only re-org if we are proposing on-time.
         let proposing_on_time = self.is_proposing_on_time()?;
 
