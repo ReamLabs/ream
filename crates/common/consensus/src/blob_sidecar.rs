@@ -1,4 +1,3 @@
-use alloy_consensus::Blob;
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -6,6 +5,7 @@ use ssz_types::{FixedVector, typenum::U17};
 
 use crate::{
     beacon_block_header::SignedBeaconBlockHeader,
+    execution_engine::rpc_types::get_blobs::Blob,
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
 
