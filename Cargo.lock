@@ -4457,6 +4457,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-light-client"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ream-consensus",
+ "serde",
+ "ssz_types",
+ "tree_hash",
+]
+
+[[package]]
 name = "ream-merkle"
 version = "0.1.0"
 dependencies = [
@@ -4538,6 +4550,7 @@ dependencies = [
  "parking_lot",
  "ream-bls",
  "ream-consensus",
+ "ream-light-client",
  "ream-network-spec",
  "ream-node",
  "ream-storage",

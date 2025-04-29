@@ -6,6 +6,7 @@ members = [
     "crates/common/execution_engine", 
     "crates/common/executor",
     "crates/common/fork_choice", 
+    "crates/common/light_client",
     "crates/common/network_spec", 
     "crates/common/node",
     "crates/common/polynomial_commitments",
@@ -80,6 +81,7 @@ ream-discv5 = { path = "crates/networking/discv5" }
 ream-execution-engine = { path = "crates/common/execution_engine" }
 ream-executor = { path = "crates/common/executor" }
 ream-fork-choice = { path = "crates/common/fork_choice" }
+ream-light-client = { path = "crates/common/light_client" }
 ream-merkle = { path = "crates/crypto/merkle" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }

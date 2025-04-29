@@ -2,6 +2,7 @@ use alloy_primitives::{aliases::B32, fixed_bytes};
 
 pub const BASE_REWARDS_PER_EPOCH: u64 = 4;
 pub const BASE_REWARD_FACTOR: u64 = 64;
+pub const BEACON_STATE_MERKLE_DEPTH: u64 = 6;
 pub const BLOB_KZG_COMMITMENTS_INDEX: u64 = 11;
 pub const BLOCK_BODY_MERKLE_DEPTH: u64 = 4;
 pub const BYTES_PER_BLOB: usize = BYTES_PER_FIELD_ELEMENT * FIELD_ELEMENTS_PER_BLOB;
@@ -10,6 +11,7 @@ pub const BYTES_PER_FIELD_ELEMENT: usize = 32;
 pub const BYTES_PER_PROOF: usize = 48;
 pub const CAPELLA_FORK_VERSION: B32 = fixed_bytes!("0x03000000");
 pub const CHURN_LIMIT_QUOTIENT: u64 = 65536;
+pub const CURRENT_SYNC_COMMITTEE_INDEX: u64 = 22;
 pub const DEPOSIT_CONTRACT_TREE_DEPTH: u64 = 32;
 pub const DOMAIN_AGGREGATE_AND_PROOF: B32 = fixed_bytes!("0x06000000");
 pub const DOMAIN_BEACON_ATTESTER: B32 = fixed_bytes!("0x01000000");

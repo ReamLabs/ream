@@ -71,6 +71,11 @@ impl BeaconBlockBody {
         ]
     }
 
+    pub fn data_inclusion_proof(&self, index: u64) -> anyhow::Result<Vec<B256>> {
+        let tree = merkle_tree(&self.merkle_leaves(), BLOCK_BODY_MERKLE_DEPTH)?;
+        generate_proof(&tree, index, BLOCK_BODY_MERKLE_DEPTH)
+    }
+
     pub fn blob_kzg_commitment_inclusion_proof(&self, index: u64) -> anyhow::Result<Vec<B256>> {
         // inclusion proof for blob_kzg_commitment in blob_kzg_commitments
         let tree = merkle_tree(
@@ -92,9 +97,8 @@ impl BeaconBlockBody {
             .tree_hash_root();
 
         // inclusion proof for blob_kzg_commitments in beacon_block_body
-        let tree = merkle_tree(&self.merkle_leaves(), BLOCK_BODY_MERKLE_DEPTH)?;
         let kzg_commitments_to_block_body_proof =
-            generate_proof(&tree, BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH)?;
+            self.data_inclusion_proof(BLOB_KZG_COMMITMENTS_INDEX)?;
 
         // merge proofs data
         Ok([

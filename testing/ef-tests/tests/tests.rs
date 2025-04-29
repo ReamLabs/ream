@@ -2,7 +2,8 @@
 
 use ef_tests::{
     test_consensus_type, test_epoch_processing, test_fork_choice, test_merkle_proof,
-    test_operation, test_rewards, test_sanity_blocks, test_sanity_slots, test_shuffling, utils,
+    test_merkle_proof_impl, test_operation, test_rewards, test_sanity_blocks, test_sanity_slots,
+    test_shuffling, utils,
 };
 use ream_consensus::{
     attestation::Attestation,
@@ -189,5 +190,17 @@ test_fork_choice!(get_proposer_head);
 test_fork_choice!(on_block);
 test_fork_choice!(should_override_forkchoice_update);
 
-// Testing merkle proof
-test_merkle_proof!();
+// Testing merkle_proof
+test_merkle_proof!(
+    "light_client",
+    BeaconState,
+    "current_sync_committee",
+    current_sync_committee_inclusion_proof
+);
+test_merkle_proof!(
+    "merkle_proof",
+    BeaconBlockBody,
+    "blob_kzg_commitment",
+    blob_kzg_commitment_inclusion_proof,
+    0
+);
