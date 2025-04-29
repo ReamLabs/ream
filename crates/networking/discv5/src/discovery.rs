@@ -49,9 +49,9 @@ enum EventStream {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::enum_variant_names)]
 enum QueryType {
-    FindPeers,
-    FindSubnetPeers(Vec<Subnet>),
-    FindSyncCommitteeSubnetPeers(Vec<Subnet>),
+    Peers,
+    SubnetPeers(Vec<Subnet>),
+    SyncCommitteeSubnetPeers(Vec<Subnet>),
 }
 
 struct QueryResult {
@@ -135,8 +135,8 @@ impl Discovery {
         self.find_peer_active = true;
 
         let query = match subnet_id {
-            Some(id) => QueryType::FindSubnetPeers(vec![Subnet::Attestation(id)]),
-            None => QueryType::FindPeers,
+            Some(id) => QueryType::SubnetPeers(vec![Subnet::Attestation(id)]),
+            None => QueryType::Peers,
         };
 
         self.start_query(query, target_peers);
@@ -151,22 +151,18 @@ impl Discovery {
         self.find_peer_active = true;
 
         let query = match subnet_id {
-            Some(id) => QueryType::FindSyncCommitteeSubnetPeers(vec![Subnet::SyncCommittee(id)]),
-            None => QueryType::FindPeers,
+            Some(id) => QueryType::SyncCommitteeSubnetPeers(vec![Subnet::SyncCommittee(id)]),
+            None => QueryType::Peers,
         };
 
         self.start_query(query, target_peers);
     }
 
     fn start_query(&mut self, query: QueryType, target_peers: usize) {
-        // Define the predicate but we don't need to use it directly
-        // The predicate is created again in find_node_predicate
         let _predicate = match query {
-            QueryType::FindPeers => subnet_predicate(vec![]),
-            QueryType::FindSubnetPeers(ref subnets) => subnet_predicate(subnets.clone()),
-            QueryType::FindSyncCommitteeSubnetPeers(ref subnets) => {
-                subnet_predicate(subnets.clone())
-            }
+            QueryType::Peers => subnet_predicate(vec![]),
+            QueryType::SubnetPeers(ref subnets) => subnet_predicate(subnets.clone()),
+            QueryType::SyncCommitteeSubnetPeers(ref subnets) => subnet_predicate(subnets.clone()),
         };
 
         let query_future = self
@@ -174,11 +170,11 @@ impl Discovery {
             .find_node_predicate(
                 NodeId::random(),
                 match query {
-                    QueryType::FindPeers => Box::new(empty_predicate()),
-                    QueryType::FindSubnetPeers(ref subnets) => {
+                    QueryType::Peers => Box::new(empty_predicate()),
+                    QueryType::SubnetPeers(ref subnets) => {
                         Box::new(subnet_predicate(subnets.clone()))
                     }
-                    QueryType::FindSyncCommitteeSubnetPeers(ref subnets) => {
+                    QueryType::SyncCommitteeSubnetPeers(ref subnets) => {
                         Box::new(subnet_predicate(subnets.clone()))
                     }
                 },
@@ -195,7 +191,7 @@ impl Discovery {
     fn process_queries(&mut self, cx: &mut Context) -> Option<HashMap<Enr, Option<Instant>>> {
         while let Poll::Ready(Some(query)) = self.discovery_queries.poll_next_unpin(cx) {
             let result = match query.query_type {
-                QueryType::FindPeers => {
+                QueryType::Peers => {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
@@ -212,7 +208,7 @@ impl Discovery {
                         }
                     }
                 }
-                QueryType::FindSubnetPeers(subnets) => {
+                QueryType::SubnetPeers(subnets) => {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
@@ -238,7 +234,7 @@ impl Discovery {
                         }
                     }
                 }
-                QueryType::FindSyncCommitteeSubnetPeers(subnets) => {
+                QueryType::SyncCommitteeSubnetPeers(subnets) => {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
@@ -466,7 +462,7 @@ mod tests {
         // Mock the query result to bypass async polling
         discovery.discovery_queries.clear(); // Remove real query
         let query_result = QueryResult {
-            query_type: QueryType::FindSubnetPeers(vec![Subnet::Attestation(0)]),
+            query_type: QueryType::SubnetPeers(vec![Subnet::Attestation(0)]),
             result: Ok(vec![peer_enr.clone()]),
         };
         discovery
