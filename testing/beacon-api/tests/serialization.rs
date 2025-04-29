@@ -33,6 +33,7 @@ async fn test_beacon_state_serialization() -> anyhow::Result<()> {
 
     Ok(())
 }
+
 #[tokio::test]
 async fn test_beacon_block_serialization() -> anyhow::Result<()> {
     let original_json = read_json_file("block.json")?;

@@ -92,8 +92,10 @@ use crate::{
     withdrawal::Withdrawal,
     withdrawal_request::WithdrawalRequest,
 };
+
 pub mod quoted_u8_var_list {
     use super::*;
+
     pub fn serialize<S>(
         value: &VariableList<u8, U1099511627776>,
         serializer: S,
@@ -104,6 +106,7 @@ pub mod quoted_u8_var_list {
         let string_vec: Vec<String> = value.iter().map(|v| v.to_string()).collect();
         string_vec.serialize(serializer)
     }
+
     pub fn deserialize<'de, D>(
         deserializer: D,
     ) -> Result<VariableList<u8, U1099511627776>, D::Error>
