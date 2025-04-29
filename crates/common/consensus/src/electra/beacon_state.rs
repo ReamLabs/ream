@@ -92,29 +92,33 @@ use crate::{
     withdrawal::Withdrawal,
     withdrawal_request::WithdrawalRequest,
 };
-
-fn serialize_u8_as_quoted_list<S>(
-    value: &VariableList<u8, U1099511627776>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let string_vec: Vec<String> = value.iter().map(|v| v.to_string()).collect();
-    string_vec.serialize(serializer)
-}
-fn quoted_u8_var_list<'de, D>(deserializer: D) -> Result<VariableList<u8, U1099511627776>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let string_vec: Vec<String> = Vec::deserialize(deserializer)?;
-    let bytes = string_vec
-        .into_iter()
-        .map(|s| s.parse::<u8>().map_err(serde::de::Error::custom))
-        .collect::<Result<Vec<_>, _>>()?;
-    VariableList::new(bytes).map_err(|err| {
-        serde::de::Error::custom(format!("Cannot create VariableList from bytes {err:?}"))
-    })
+pub mod quoted_u8_var_list {
+    use super::*;
+    pub fn serialize<S>(
+        value: &VariableList<u8, U1099511627776>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let string_vec: Vec<String> = value.iter().map(|v| v.to_string()).collect();
+        string_vec.serialize(serializer)
+    }
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<VariableList<u8, U1099511627776>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string_vec: Vec<String> = Vec::deserialize(deserializer)?;
+        let bytes = string_vec
+            .into_iter()
+            .map(|s| s.parse::<u8>().map_err(serde::de::Error::custom))
+            .collect::<Result<Vec<_>, _>>()?;
+        VariableList::new(bytes).map_err(|err| {
+            serde::de::Error::custom(format!("Cannot create VariableList from bytes: {err:?}"))
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
@@ -153,15 +157,9 @@ pub struct BeaconState {
     pub slashings: FixedVector<u64, U8192>,
 
     // Participation
-    #[serde(
-        deserialize_with = "quoted_u8_var_list",
-        serialize_with = "serialize_u8_as_quoted_list"
-    )]
+    #[serde(with = "quoted_u8_var_list")]
     pub previous_epoch_participation: VariableList<u8, U1099511627776>,
-    #[serde(
-        deserialize_with = "quoted_u8_var_list",
-        serialize_with = "serialize_u8_as_quoted_list"
-    )]
+    #[serde(with = "quoted_u8_var_list")]
     pub current_epoch_participation: VariableList<u8, U1099511627776>,
 
     // Finality
