@@ -96,24 +96,24 @@ test_operation!(
 );
 test_operation!(block_header, BeaconBlock, "block", process_block_header);
 test_operation!(
+    bls_to_execution_change,
+    SignedBLSToExecutionChange,
+    "address_change",
+    process_bls_to_execution_change
+);
+test_operation!(
     consolidation_request,
     ConsolidationRequest,
     "consolidation_request",
     process_consolidation_request
 );
+test_operation!(deposit, Deposit, "deposit", process_deposit);
 test_operation!(
     deposit_request,
     DepositRequest,
     "deposit_request",
     process_deposit_request
 );
-test_operation!(
-    bls_to_execution_change,
-    SignedBLSToExecutionChange,
-    "address_change",
-    process_bls_to_execution_change
-);
-test_operation!(deposit, Deposit, "deposit", process_deposit);
 test_operation!(execution_payload, BeaconBlockBody, "body");
 test_operation!(
     proposer_slashing,
@@ -122,22 +122,28 @@ test_operation!(
     process_proposer_slashing
 );
 test_operation!(
+    sync_aggregate,
+    SyncAggregate,
+    "sync_aggregate",
+    process_sync_aggregate
+);
+test_operation!(
     voluntary_exit,
     SignedVoluntaryExit,
     "voluntary_exit",
     process_voluntary_exit
 );
 test_operation!(
-    withdrawals,
-    ExecutionPayload,
-    "execution_payload",
-    process_withdrawals
-);
-test_operation!(
     withdrawal_request,
     WithdrawalRequest,
     "withdrawal_request",
     process_withdrawal_request
+);
+test_operation!(
+    withdrawals,
+    ExecutionPayload,
+    "execution_payload",
+    process_withdrawals
 );
 
 // Testing shuffling
