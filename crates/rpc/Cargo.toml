@@ -34,3 +34,4 @@ ream-light-client.workspace = true
 ream-network-spec.workspace = true
 ream-node.workspace = true
 ream-storage.workspace = true
+ream_p2p.workspace = true
