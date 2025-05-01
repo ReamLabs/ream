@@ -5,7 +5,7 @@ use actix_web::{
     web::{Data, Path},
 };
 use libp2p::PeerId;
-use ream_storage::db::ReamDB;
+use ream_p2p::network::Network;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
@@ -40,7 +40,10 @@ impl PeerData {
 
 /// Called by `/eth/v1/node/peers/{peer_id}` to return the current connection
 #[get("/node/peers/{peer_id}")]
-pub async fn get_peer(db: Data<ReamDB>, peer_id: Path<String>) -> Result<impl Responder, ApiError> {
+pub async fn get_peer(
+    net: Data<Network>,
+    peer_id: Path<String>,
+) -> Result<impl Responder, ApiError> {
     let peer_id_raw = peer_id.into_inner();
     PeerId::from_str(&peer_id_raw)
         .map_err(|_| ApiError::BadRequest(format!("Invalid peer ID: {peer_id_raw}")))?;
