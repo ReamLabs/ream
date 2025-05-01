@@ -48,7 +48,7 @@ pub async fn get_peer(
     PeerId::from_str(&peer_id_raw)
         .map_err(|_| ApiError::BadRequest(format!("Invalid peer ID: {peer_id_raw}")))?;
 
-    let (enr, last_seen, state, direction) = match mock_fetch_peer(&peer_id_raw, &db).await {
+    let (enr, last_seen, state, direction) = match mock_fetch_peer(&peer_id_raw, &net).await {
         Ok(tuple) => tuple,
         Err(ApiError::NotFound(_)) => {
             return Err(ApiError::NotFound(format!("Peer not found: {peer_id_raw}")));
@@ -65,7 +65,7 @@ pub async fn get_peer(
 
 async fn mock_fetch_peer(
     peer_id: &str,
-    _db: &ReamDB,
+    _db: &Network,
 ) -> Result<(Option<String>, String, String, String), ApiError> {
     if peer_id != "QmMockPeer_______" {
         return Err(ApiError::NotFound("peer".into()));
