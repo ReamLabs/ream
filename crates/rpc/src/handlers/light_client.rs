@@ -7,7 +7,7 @@ use ream_light_client::bootstrap::LightClientBootstrap;
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::error;
 
-use crate::types::errors::ApiError;
+use crate::types::{errors::ApiError, response::DataVersionedResponse};
 
 #[get("/beacon/light_client/bootstrap/{block_root}")]
 pub async fn get_light_client_bootstrap(
@@ -40,5 +40,5 @@ pub async fn get_light_client_bootstrap(
             ApiError::InternalError
         })?;
 
-    Ok(HttpResponse::Ok().json(light_client_bootstrap))
+    Ok(HttpResponse::Ok().json(DataVersionedResponse::new(light_client_bootstrap)))
 }
