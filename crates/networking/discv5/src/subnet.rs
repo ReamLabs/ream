@@ -53,12 +53,16 @@ impl Subnets {
         }
     }
 
-    pub fn is_active(&self, subnet: Subnet) -> bool {
-        match subnet {
-            Subnet::Attestation(id) if id < 64 => self.attestation_bits.get(id as usize).unwrap(),
+    pub fn is_active(&self, subnet: Subnet) -> anyhow::Result<bool> {
+        let active = match subnet {
+            Subnet::Attestation(id) if id < 64 => self
+                .attestation_bits
+                .get(id as usize)
+                .map_err(|err| anyhow!("Couldn't get expected attestation {:?}", err))?,
             Subnet::Attestation(_) => false,
             Subnet::SyncCommittee(_) => unimplemented!("SyncCommittee support not yet implemented"),
-        }
+        };
+        Ok(active)
     }
 }
 

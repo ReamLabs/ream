@@ -332,8 +332,8 @@ mod tests {
             .get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .ok_or("ATTESTATION_BITFIELD_ENR_KEY not found")
             .map_err(|err| anyhow!("ATTESTATION_BITFIELD_ENR_KEY decoding failed: {err:?}"))??;
-        assert!(enr_subnets.is_active(Subnet::Attestation(0)));
-        assert!(!enr_subnets.is_active(Subnet::Attestation(1)));
+        assert!(enr_subnets.is_active(Subnet::Attestation(0))?);
+        assert!(!enr_subnets.is_active(Subnet::Attestation(1))?);
         Ok(())
     }
 
