@@ -1,10 +1,7 @@
 use alloy_primitives::B256;
 use ream_consensus::{
     beacon_block_header::BeaconBlockHeader,
-    electra::{
-        beacon_block::SignedBeaconBlock, beacon_state::BeaconState,
-        execution_payload_header::ExecutionPayloadHeader,
-    },
+    electra::{beacon_block::SignedBeaconBlock, execution_payload_header::ExecutionPayloadHeader},
 };
 use serde::Serialize;
 use ssz_types::{FixedVector, typenum::U3};
@@ -18,7 +15,7 @@ pub struct LightClientHeader {
 }
 
 impl LightClientHeader {
-    pub fn new(state: &BeaconState, signed_block: &SignedBeaconBlock) -> anyhow::Result<Self> {
+    pub fn new(signed_block: &SignedBeaconBlock) -> anyhow::Result<Self> {
         Ok(Self {
             beacon: BeaconBlockHeader {
                 slot: signed_block.message.slot,
@@ -27,7 +24,11 @@ impl LightClientHeader {
                 state_root: signed_block.message.state_root,
                 body_root: signed_block.message.body.tree_hash_root(),
             },
-            execution: state.latest_execution_payload_header.clone(),
+            execution: signed_block
+                .message
+                .body
+                .execution_payload
+                .to_execution_payload_header(),
             execution_branch: signed_block
                 .message
                 .body

@@ -12,8 +12,10 @@ use ssz_types::{
     serde_utils::{hex_fixed_vec, hex_var_list, list_of_hex_var_list},
     typenum::{self, U16, U32, U1048576, U1073741824},
 };
+use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
+use super::execution_payload_header::ExecutionPayloadHeader;
 use crate::{misc::checksummed_address, withdrawal::Withdrawal};
 
 const EMPTY_UNCLE_ROOT_HASH: B256 =
@@ -92,6 +94,28 @@ impl ExecutionPayload {
             excess_blob_gas: Some(self.excess_blob_gas),
             parent_beacon_block_root: Some(parent_beacon_block_root),
             requests_hash: Some(compute_requests_hash(execution_requests_list)),
+        }
+    }
+
+    pub fn to_execution_payload_header(&self) -> ExecutionPayloadHeader {
+        ExecutionPayloadHeader {
+            parent_hash: self.parent_hash,
+            fee_recipient: self.fee_recipient,
+            state_root: self.state_root,
+            receipts_root: self.receipts_root,
+            logs_bloom: self.logs_bloom.clone(),
+            prev_randao: self.prev_randao,
+            block_number: self.block_number,
+            gas_limit: self.gas_limit,
+            gas_used: self.gas_used,
+            timestamp: self.timestamp,
+            extra_data: self.extra_data.clone(),
+            base_fee_per_gas: self.base_fee_per_gas,
+            block_hash: self.block_hash,
+            transactions_root: self.transactions.tree_hash_root(),
+            withdrawals_root: self.withdrawals.tree_hash_root(),
+            blob_gas_used: self.blob_gas_used,
+            excess_blob_gas: self.excess_blob_gas,
         }
     }
 }

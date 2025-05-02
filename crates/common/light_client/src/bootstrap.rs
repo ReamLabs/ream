@@ -33,7 +33,7 @@ impl LightClientBootstrap {
         );
 
         Ok(LightClientBootstrap {
-            header: LightClientHeader::new(state, signed_block)?,
+            header: LightClientHeader::new(signed_block)?,
             current_sync_committee: (*state.current_sync_committee).clone(),
             current_sync_committee_branch: state.current_sync_committee_inclusion_proof()?.into(),
         })
