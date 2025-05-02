@@ -16,7 +16,8 @@ use crate::{
     attester_slashing::AttesterSlashing,
     bls_to_execution_change::SignedBLSToExecutionChange,
     constants::{
-        BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH, KZG_COMMITMENTS_MERKLE_DEPTH,
+        BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH, EXECUTION_PAYLOAD_INDEX,
+        KZG_COMMITMENTS_MERKLE_DEPTH,
     },
     deposit::Deposit,
     eth_1_data::Eth1Data,
@@ -107,5 +108,9 @@ impl BeaconBlockBody {
             kzg_commitments_to_block_body_proof,
         ]
         .concat())
+    }
+
+    pub fn execution_payload_inclusion_proof(&self) -> anyhow::Result<Vec<B256>> {
+        self.data_inclusion_proof(EXECUTION_PAYLOAD_INDEX)
     }
 }

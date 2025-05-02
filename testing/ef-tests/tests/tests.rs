@@ -198,6 +198,12 @@ test_merkle_proof!(
     current_sync_committee_inclusion_proof
 );
 test_merkle_proof!(
+    "light_client",
+    BeaconBlockBody,
+    "execution",
+    execution_payload_inclusion_proof
+);
+test_merkle_proof!(
     "merkle_proof",
     BeaconBlockBody,
     "blob_kzg_commitment",

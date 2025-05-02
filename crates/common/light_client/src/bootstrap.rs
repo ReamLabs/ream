@@ -8,7 +8,7 @@ use serde::Serialize;
 use ssz_types::{FixedVector, typenum::U5};
 use tree_hash::TreeHash;
 
-use crate::{header::LightClientHeader, utils::block_to_light_client_header};
+use crate::header::LightClientHeader;
 
 #[derive(Serialize)]
 pub struct LightClientBootstrap {
@@ -33,7 +33,7 @@ impl LightClientBootstrap {
         );
 
         Ok(LightClientBootstrap {
-            header: block_to_light_client_header(signed_block),
+            header: LightClientHeader::new(state, signed_block)?,
             current_sync_committee: (*state.current_sync_committee).clone(),
             current_sync_committee_branch: state.current_sync_committee_inclusion_proof()?.into(),
         })
