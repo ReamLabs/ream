@@ -199,6 +199,18 @@ test_merkle_proof!(
 );
 test_merkle_proof!(
     "light_client",
+    BeaconState,
+    "next_sync_committee",
+    next_sync_committee_inclusion_proof
+);
+test_merkle_proof!(
+    "light_client",
+    BeaconState,
+    "finality_root",
+    finalized_root_inclusion_proof
+);
+test_merkle_proof!(
+    "light_client",
     BeaconBlockBody,
     "execution",
     execution_payload_inclusion_proof
