@@ -92,7 +92,6 @@ async fn main() {
             if config.sync_mode.is_checkpoint_sync() {
                 if config.rpc_url.is_none() {
                     error!("RPC URL is required for checkpoint sync");
-                    exit(1);
                 }
                 (_store, _slot) = config
                     .sync_mode
