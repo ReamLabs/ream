@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
 use actix_web::{App, HttpServer, dev::ServerHandle, middleware, web::Data};
 use config::ServerConfig;
-use ream_network_spec::networks::NetworkSpec;
 use ream_storage::db::ReamDB;
 use tracing::info;
 
@@ -14,11 +11,7 @@ pub mod routes;
 pub mod types;
 
 /// Start the Beacon API server.
-pub async fn start_server(
-    server_config: ServerConfig,
-    network_spec: Arc<NetworkSpec>,
-    db: ReamDB,
-) -> std::io::Result<()> {
+pub async fn start_server(server_config: ServerConfig, db: ReamDB) -> std::io::Result<()> {
     info!(
         "starting HTTP server on {:?}",
         server_config.http_socket_address
@@ -31,7 +24,6 @@ pub async fn start_server(
         App::new()
             .wrap(middleware::Logger::default())
             .app_data(stop_handle)
-            .app_data(Data::from(network_spec.clone()))
             .app_data(Data::new(db.clone()))
             .configure(register_routers)
     })

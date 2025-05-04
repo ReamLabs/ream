@@ -13,7 +13,7 @@ use ream_consensus::{
     },
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
 };
-use ream_network_spec::networks::NetworkSpec;
+use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
@@ -202,8 +202,8 @@ pub async fn get_beacon_block_from_id(
 
 /// Called by `/genesis` to get the Genesis Config of Beacon Chain.
 #[get("/beacon/genesis")]
-pub async fn get_genesis(network_spec: Data<NetworkSpec>) -> Result<impl Responder, ApiError> {
-    Ok(HttpResponse::Ok().json(DataResponse::new(network_spec.genesis.clone())))
+pub async fn get_genesis() -> Result<impl Responder, ApiError> {
+    Ok(HttpResponse::Ok().json(DataResponse::new(network_spec().genesis.clone())))
 }
 
 /// Called by `/eth/v2/beacon/blocks/{block_id}/attestations` to get block attestations

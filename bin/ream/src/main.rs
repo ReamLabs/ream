@@ -4,6 +4,7 @@ use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_discv5::{config::NetworkConfig, subnet::Subnets};
 use ream_executor::ReamExecutor;
+use ream_network_spec::networks::{network_spec, set_network_spec};
 use ream_p2p::network::Network;
 use ream_rpc::{config::ServerConfig, start_server};
 use ream_storage::db::ReamDB;
@@ -31,6 +32,8 @@ async fn main() {
         Commands::Node(config) => {
             info!("starting up...");
 
+            set_network_spec(config.network);
+
             let server_config = ServerConfig::new(
                 config.http_address,
                 config.http_port,
@@ -43,7 +46,7 @@ async fn main() {
             ))
             .build();
 
-            let bootnodes = config.bootnodes.to_enrs(config.network.network);
+            let bootnodes = config.bootnodes.to_enrs(network_spec().network);
             let binding = NetworkConfig {
                 discv5_config,
                 bootnodes,
@@ -58,7 +61,7 @@ async fn main() {
 
             info!("ream database initialized ");
 
-            let http_future = start_server(server_config, config.network.clone(), ream_db);
+            let http_future = start_server(server_config, ream_db);
 
             let network_future = async {
                 match Network::init(async_executor, &binding).await {
