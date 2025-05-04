@@ -2,8 +2,8 @@
 
 use ef_tests::{
     test_consensus_type, test_epoch_processing, test_fork_choice, test_merkle_proof,
-    test_merkle_proof_impl, test_operation, test_rewards, test_sanity_blocks, test_sanity_slots,
-    test_shuffling, utils,
+    test_merkle_proof_impl, test_operation, test_random, test_rewards, test_sanity_blocks,
+    test_sanity_slots, test_shuffling, utils,
 };
 use ream_consensus::{
     attestation::Attestation,
@@ -222,3 +222,6 @@ test_merkle_proof!(
     blob_kzg_commitment_inclusion_proof,
     0
 );
+
+// Testing random
+test_random!();
