@@ -67,3 +67,9 @@ pub struct BeaconBlock {
     pub state_root: B256,
     pub body: BeaconBlockBody,
 }
+
+impl BeaconBlock {
+    pub fn block_hash(&self) -> B256 {
+        self.tree_hash_root()
+    }
+}

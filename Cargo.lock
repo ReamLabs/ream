@@ -4331,6 +4331,7 @@ dependencies = [
  "ream-p2p",
  "ream-rpc",
  "ream-storage",
+ "ream-sync",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -4594,6 +4595,22 @@ dependencies = [
  "thiserror 2.0.12",
  "tracing",
  "tree_hash",
+]
+
+[[package]]
+name = "ream-sync"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ream-consensus",
+ "ream-fork-choice",
+ "ream-rpc",
+ "ream-storage",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]

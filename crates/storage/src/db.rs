@@ -1,6 +1,11 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    fs,
+    io::{self, Write},
+    path::PathBuf,
+    sync::Arc,
+};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use redb::{Builder, Database};
 
 use crate::{
@@ -190,4 +195,30 @@ impl ReamDB {
             db: self.db.clone(),
         }
     }
+}
+
+pub fn reset_db(path: Option<PathBuf>) -> anyhow::Result<()> {
+    let db_path = path.clone().ok_or_else(|| anyhow!("Path does not exist"))?;
+
+    if db_path.exists() {
+        println!(
+            "Are you sure you want to remove the database at {:?}? (y/n):",
+            path
+        );
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        if input.trim().eq_ignore_ascii_case("y") {
+            match fs::remove_dir_all(&db_path) {
+                Ok(_) => println!("Database cleared successfully."),
+                Err(e) => eprintln!("Failed to remove database: {}", e),
+            }
+        } else {
+            println!("Database path does not exist: {:?}", db_path);
+        }
+    } else {
+        println!("Operation canceled.");
+    }
+    Ok(())
 }

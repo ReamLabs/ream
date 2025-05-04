@@ -1,0 +1,23 @@
+[package]
+name = "ream-sync"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+ream-consensus.workspace = true
+ream-rpc.workspace = true
+ream-storage.workspace = true
+ream-fork-choice.workspace = true
+
+alloy-primitives.workspace = true
+anyhow.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true

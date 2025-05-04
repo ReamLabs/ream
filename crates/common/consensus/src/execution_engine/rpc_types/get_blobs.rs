@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use ssz_types::{FixedVector, typenum::U131072};
+use ssz_types::{FixedVector, serde_utils::hex_fixed_vec, typenum::U131072};
 
 use crate::{constants::BYTES_PER_BLOB, polynomial_commitments::kzg_proof::KZGProof};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Decode, Encode)]
 #[serde(transparent)]
 pub struct Blob {
+    #[serde(with = "hex_fixed_vec")]
     pub inner: FixedVector<u8, U131072>,
 }
 

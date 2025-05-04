@@ -23,6 +23,7 @@ ream-node.workspace = true
 ream-p2p.workspace = true 
 ream-rpc.workspace = true
 ream-storage.workspace = true
+ream-sync.workspace = true
 
 # other dependencies
 clap = { workspace = true, features = ["derive", "env"] }

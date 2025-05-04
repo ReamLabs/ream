@@ -730,6 +730,10 @@ pub fn get_forkchoice_store(
         .insert(anchor_root, signed_anchor_block)?;
     db.beacon_state_provider()
         .insert(anchor_root, anchor_state.clone())?;
+    db.state_root_index_provider()
+        .insert(anchor_state.tree_hash_root(), anchor_root)?;
+    db.slot_index_provider()
+        .insert(anchor_state.slot, anchor_root)?;
     db.checkpoint_states_provider()
         .insert(justified_checkpoint, anchor_state)?;
     db.unrealized_justifications_provider()

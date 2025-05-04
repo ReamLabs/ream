@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use ream_node::version::FULL_VERSION;
 use ream_p2p::bootnodes::Bootnodes;
+use ream_sync::SyncMode;
 
 const DEFAULT_DISABLE_DISCOVERY: bool = false;
 const DEFAULT_DISCOVERY_PORT: u16 = 9000;
@@ -86,6 +87,25 @@ pub struct NodeConfig {
         help = "One or more comma-delimited base64-encoded ENR's of peers to initially connect to. Use 'default' to use the default bootnodes for the network. Use 'none' to disable bootnodes."
     )]
     pub bootnodes: Bootnodes,
+
+    #[arg(
+        default_value = "checkpoint-sync",
+        long = "sync-mode",
+        help = "Sync Mode for the node. Defauls to CheckpointSync"
+    )]
+    pub sync_mode: SyncMode,
+
+    #[arg(
+        long = "rpc-url",
+        help = "Trusted RPC URL to initiate Checkpoint Sync."
+    )]
+    pub rpc_url: Option<String>,
+
+    #[arg(
+        long = "ws-epoch",
+        help = "Optional epoch to start Checkpoint Sync from."
+    )]
+    pub ws_epoch: Option<u64>,
 }
 
 #[cfg(test)]
