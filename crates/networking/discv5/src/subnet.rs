@@ -205,6 +205,10 @@ pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + 
             let Some(Ok(subnets_state)) =
                 enr.get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY)
             else {
+                trace!(
+                    "Peer rejected: invalid or missing attnets field; peer_id: {}",
+                    enr.node_id()
+                );
                 return false;
             };
             let Some(attestation_bits) = &subnets_state.attestation_bits else {
@@ -344,7 +348,10 @@ pub fn compute_subnets_for_sync_committee(sync_committee_indices: &[usize]) -> V
 mod tests {
     use std::str::FromStr;
 
-    use discv5::Enr;
+    use discv5::{
+        Enr,
+        enr::{CombinedKey, k256::ecdsa::SigningKey},
+    };
 
     use super::*;
 
@@ -475,5 +482,70 @@ mod tests {
         } else {
             panic!("Expected attestation_bits to be Some, got None");
         }
+    }
+
+    #[test]
+    fn test_encode_decode_subnet_fields() {
+        // Create ENR key
+        let secret_key = SigningKey::random(&mut rand::thread_rng());
+        let combined_key = CombinedKey::from(secret_key);
+
+        // Create and initialize subnets
+        let mut subnets = Subnets::new();
+
+        // Enable specific attestation subnets
+        subnets.enable_subnet(Subnet::Attestation(1)).unwrap();
+        subnets.enable_subnet(Subnet::Attestation(5)).unwrap();
+
+        // Enable specific sync committee subnets
+        subnets.enable_subnet(Subnet::SyncCommittee(0)).unwrap();
+        subnets.enable_subnet(Subnet::SyncCommittee(2)).unwrap();
+
+        // Build ENR with both subnet fields
+        let enr = Enr::builder()
+            .add_value(ATTESTATION_BITFIELD_ENR_KEY, &subnets)
+            .add_value(SYNC_COMMITTEE_BITFIELD_ENR_KEY, &subnets)
+            .build(&combined_key)
+            .expect("Failed to build ENR");
+
+        // Decode attestation bitfield
+        let decoded_attnets = enr
+            .get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY)
+            .expect("Failed to get attestation bitfield")
+            .expect("Failed to decode attestation bitfield");
+
+        // Verify attestation subnets
+        assert!(decoded_attnets.is_active(Subnet::Attestation(1)).unwrap());
+        assert!(decoded_attnets.is_active(Subnet::Attestation(5)).unwrap());
+        assert!(!decoded_attnets.is_active(Subnet::Attestation(0)).unwrap());
+        assert!(!decoded_attnets.is_active(Subnet::Attestation(10)).unwrap());
+
+        // Decode sync committee bitfield
+        let decoded_syncnets = enr
+            .get_decodable::<Subnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
+            .expect("Failed to get sync committee bitfield")
+            .expect("Failed to decode sync committee bitfield");
+
+        // Verify sync committee subnets
+        assert!(
+            decoded_syncnets
+                .is_active(Subnet::SyncCommittee(0))
+                .unwrap()
+        );
+        assert!(
+            decoded_syncnets
+                .is_active(Subnet::SyncCommittee(2))
+                .unwrap()
+        );
+        assert!(
+            !decoded_syncnets
+                .is_active(Subnet::SyncCommittee(1))
+                .unwrap()
+        );
+        assert!(
+            !decoded_syncnets
+                .is_active(Subnet::SyncCommittee(3))
+                .unwrap()
+        );
     }
 }
