@@ -4,8 +4,8 @@ use std::{
 };
 
 use actix_web::{
-    HttpResponse, Responder, get,
-    web::{Data, Path},
+    HttpResponse, Responder, get, post,
+    web::{Data, Json, Path},
 };
 use alloy_primitives::B256;
 use hashbrown::HashMap;
@@ -34,7 +34,13 @@ use ream_storage::{
     tables::{Field, Table},
 };
 use serde::{Deserialize, Serialize};
-use tree_hash::TreeHash;
+use tracing::error;
+
+use crate::types::{
+    errors::ApiError,
+    id::{ID, ValidatorID},
+    response::{BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse},
+};
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct BlockRewards {
@@ -50,6 +56,12 @@ pub struct BlockRewards {
     pub proposer_slashings: u64,
     #[serde(with = "serde_utils::quoted_u64")]
     pub attester_slashings: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ValidatorSyncCommitteeReward {
+    pub validator_index: u64,
+    pub reward: u64,
 }
 
 pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, ApiError> {
@@ -116,7 +128,7 @@ fn get_attestations_rewards(beacon_state: &BeaconState, beacon_block: &SignedBea
     attester_reward
 }
 
-fn get_sync_committee_rewards(beacon_state: &BeaconState, beacon_block: &SignedBeaconBlock) -> u64 {
+fn get_sync_aggregate_rewards(beacon_state: &BeaconState) -> (u64, u64) {
     let total_active_balance = beacon_state.get_total_active_balance();
     let total_active_increments = total_active_balance / EFFECTIVE_BALANCE_INCREMENT;
     let total_base_rewards = beacon_state.get_base_reward_per_increment() * total_active_increments;
@@ -126,13 +138,7 @@ fn get_sync_committee_rewards(beacon_state: &BeaconState, beacon_block: &SignedB
     let proposer_reward =
         participant_reward * PROPOSER_WEIGHT / (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT);
 
-    beacon_block
-        .message
-        .body
-        .sync_aggregate
-        .sync_committee_bits
-        .num_set_bits() as u64
-        * proposer_reward
+    (participant_reward, proposer_reward)
 }
 
 fn get_slashable_attester_indices(
@@ -213,6 +219,103 @@ pub async fn get_beacon_block_from_id(
         })
 }
 
+pub fn compute_sync_committee_rewards(
+    beacon_block: &SignedBeaconBlock,
+    beacon_state: &BeaconState,
+) -> Result<Vec<ValidatorSyncCommitteeReward>, ApiError> {
+    let sync_aggregate = &beacon_block.message.body.sync_aggregate;
+    let sync_committee = &beacon_state.current_sync_committee;
+
+    let mut sync_committee_indices = Vec::with_capacity(sync_committee.pubkeys.len());
+    for sync_pubkey in &sync_committee.pubkeys {
+        let index = beacon_state
+            .validators
+            .iter()
+            .position(|validator| validator.pubkey == *sync_pubkey);
+        match index {
+            Some(index) => sync_committee_indices.push(index),
+            None => {
+                return Err(ApiError::NotFound(format!(
+                    "Failed to find `sync_pubkey` from {sync_pubkey:?}"
+                )));
+            }
+        }
+    }
+
+    let (participant_reward, proposer_reward) = get_sync_aggregate_rewards(beacon_state);
+
+    let mut balances = HashMap::<usize, u64>::new();
+
+    for validator_index in &sync_committee_indices {
+        balances.insert(
+            *validator_index,
+            *beacon_state
+                .balances
+                .get(*validator_index)
+                .ok_or(ApiError::NotFound(String::from(
+                    "Sync Committee Rewards Sync Error",
+                )))?,
+        );
+    }
+
+    let proposer_index = beacon_block.message.proposer_index as usize;
+    balances.insert(
+        proposer_index,
+        *beacon_state
+            .balances
+            .get(proposer_index)
+            .ok_or(ApiError::NotFound(String::from(
+                "Sync Committee Rewards Sync Error",
+            )))?,
+    );
+
+    let mut total_proposer_rewards = 0;
+
+    for (validator_index, participant_bit) in sync_committee_indices
+        .iter()
+        .zip(sync_aggregate.sync_committee_bits.iter())
+    {
+        let participant_balance =
+            balances
+                .get_mut(validator_index)
+                .ok_or(ApiError::NotFound(String::from(
+                    "Sync Committee Rewards Sync Error",
+                )))?;
+
+        if participant_bit {
+            *participant_balance += participant_reward;
+
+            *balances
+                .get_mut(&proposer_index)
+                .ok_or(ApiError::NotFound(String::from(
+                    "Sync Committee Rewards Sync Error",
+                )))? += proposer_reward;
+            total_proposer_rewards += proposer_reward;
+        } else {
+            *participant_balance = participant_balance.saturating_sub(participant_reward);
+        }
+    }
+
+    Ok(balances
+        .iter()
+        .filter_map(|(&index, &new_balance)| {
+            let initial_balance = *beacon_state.balances.get(index)? as i64;
+            let reward = if index != proposer_index {
+                new_balance as i64 - initial_balance
+            } else if sync_committee_indices.contains(&index) {
+                new_balance as i64 - initial_balance - total_proposer_rewards as i64
+            } else {
+                return None;
+            };
+
+            Some(ValidatorSyncCommitteeReward {
+                validator_index: index as u64,
+                reward: reward as u64,
+            })
+        })
+        .collect())
+}
+
 /// Called by `/genesis` to get the Genesis Config of Beacon Chain.
 #[get("/beacon/genesis")]
 pub async fn get_genesis() -> Result<impl Responder, ApiError> {
@@ -260,10 +363,18 @@ pub async fn get_block_rewards(
     let attestation_reward = get_attestations_rewards(&beacon_state, &beacon_block);
     let attester_slashing_reward = get_attester_slashing_rewards(&beacon_state, &beacon_block);
     let proposer_slashing_reward = get_proposer_slashing_rewards(&beacon_state, &beacon_block);
-    let sync_committee_reward = get_sync_committee_rewards(&beacon_state, &beacon_block);
+    let (_, proposer_reward) = get_sync_aggregate_rewards(&beacon_state);
+
+    let sync_aggregate_reward = beacon_block
+        .message
+        .body
+        .sync_aggregate
+        .sync_committee_bits
+        .num_set_bits() as u64
+        * proposer_reward;
 
     let total = attestation_reward
-        + sync_committee_reward
+        + sync_aggregate_reward
         + proposer_slashing_reward
         + attester_slashing_reward;
 
@@ -271,7 +382,7 @@ pub async fn get_block_rewards(
         proposer_index: beacon_block.message.proposer_index,
         total,
         attestations: attestation_reward,
-        sync_aggregate: sync_committee_reward,
+        sync_aggregate: sync_aggregate_reward,
         proposer_slashings: proposer_slashing_reward,
         attester_slashings: attester_slashing_reward,
     };
@@ -288,6 +399,44 @@ pub async fn get_block_from_id(
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
 
     Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(beacon_block)))
+}
+
+#[post("/beacon/rewards/sync_committee/{block_id}")]
+pub async fn post_sync_committee_rewards(
+    db: Data<ReamDB>,
+    block_id: Path<ID>,
+    validators: Json<Vec<ValidatorID>>,
+) -> Result<impl Responder, ApiError> {
+    let block_id_value = block_id.into_inner();
+    let beacon_block = get_beacon_block_from_id(block_id_value.clone(), &db).await?;
+    let beacon_state = get_beacon_state(block_id_value.clone(), &db).await?;
+
+    let sync_committee_rewards =
+        compute_sync_committee_rewards(&beacon_block, &beacon_state)?;
+    let reward_data = if sync_committee_rewards.is_empty() {
+        None
+    } else if validators.is_empty() {
+        Some(sync_committee_rewards)
+    } else {
+        Some(
+            sync_committee_rewards
+                .into_iter()
+                .filter(|reward| {
+                    validators.iter().any(|validator| match validator {
+                        ValidatorID::Index(index) => *index == reward.validator_index,
+                        ValidatorID::Address(pubkey) => {
+                            match beacon_state.validators.get(reward.validator_index as usize) {
+                                Some(validator) => validator.pubkey == *pubkey,
+                                None => false,
+                            }
+                        }
+                    })
+                })
+                .collect::<Vec<ValidatorSyncCommitteeReward>>(),
+        )
+    };
+
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(reward_data)))
 }
 
 /// Called by `/beacon/heads` to get fork choice leaves.
