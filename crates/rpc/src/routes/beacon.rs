@@ -3,7 +3,7 @@ use actix_web::web::ServiceConfig;
 use crate::handlers::{
     blob_sidecar::get_blob_sidecars,
     block::{
-        get_block_attestations, get_block_from_id, get_block_rewards, get_block_root, get_genesis,
+        get_block_attestations, get_block_from_id, get_block_rewards, get_block_root, get_genesis, post_sync_committee_rewards,
     },
     committee::get_committees,
     header::get_headers,
@@ -35,7 +35,8 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(get_validator_from_state)
         .service(get_validators_from_state)
         .service(post_validator_identities_from_state)
-        .service(post_validators_from_state);
+        .service(post_validators_from_state)
+        .service(post_sync_committee_rewards);
 }
 pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {
     cfg.service(get_block_attestations)
