@@ -4,7 +4,7 @@ use alloy_primitives::B256;
 
 use crate::{
     constants::{EFFECTIVE_BALANCE_INCREMENT, SLOTS_PER_EPOCH},
-    deneb::beacon_state::BeaconState,
+    electra::beacon_state::BeaconState,
 };
 
 pub fn get_total_balance(state: &BeaconState, indices: Vec<u64>) -> u64 {

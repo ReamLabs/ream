@@ -1,11 +1,11 @@
 use alloy_primitives::{Address, B256, U256};
-use ream_consensus::{deneb::execution_payload::ExecutionPayload, withdrawal::Withdrawal};
+use ream_consensus::{electra::execution_payload::ExecutionPayload, withdrawal::Withdrawal};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     FixedVector, VariableList,
     serde_utils::{hex_fixed_vec, hex_var_list, list_of_hex_var_list},
-    typenum,
+    typenum::{self, U16, U32, U1048576, U1073741824},
 };
 use tree_hash_derive::TreeHash;
 
@@ -28,14 +28,14 @@ pub struct ExecutionPayloadV3 {
     #[serde(with = "serde_utils::u64_hex_be")]
     pub timestamp: u64,
     #[serde(with = "hex_var_list")]
-    pub extra_data: VariableList<u8, typenum::U32>,
+    pub extra_data: VariableList<u8, U32>,
     #[serde(with = "serde_utils::u256_hex_be")]
     pub base_fee_per_gas: U256,
 
     pub block_hash: B256,
     #[serde(with = "list_of_hex_var_list")]
-    pub transactions: VariableList<VariableList<u8, typenum::U1073741824>, typenum::U1048576>,
-    pub withdrawals: VariableList<Withdrawal, typenum::U16>,
+    pub transactions: VariableList<VariableList<u8, U1073741824>, U1048576>,
+    pub withdrawals: VariableList<Withdrawal, U16>,
     #[serde(with = "serde_utils::u64_hex_be")]
     pub blob_gas_used: u64,
     #[serde(with = "serde_utils::u64_hex_be")]

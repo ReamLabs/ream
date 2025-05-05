@@ -1,6 +1,8 @@
-use alloy_consensus::Blob;
 use kzg::eip_4844::verify_blob_kzg_proof_batch_raw;
-use ream_consensus::polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof};
+use ream_consensus::{
+    execution_engine::rpc_types::get_blobs::Blob,
+    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
+};
 
 use super::{error::KzgError, trusted_setup};
 
@@ -12,7 +14,10 @@ pub fn verify_blob_kzg_proof_batch(
     commitments_bytes: &[KZGCommitment],
     proofs_bytes: &[KZGProof],
 ) -> anyhow::Result<bool> {
-    let raw_blobs = blobs.iter().map(|blob| blob.0).collect::<Vec<_>>();
+    let raw_blobs = blobs
+        .iter()
+        .map(|blob| blob.to_fixed_bytes())
+        .collect::<Vec<_>>();
 
     let raw_commitments = commitments_bytes
         .iter()

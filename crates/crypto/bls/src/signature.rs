@@ -2,12 +2,12 @@ use alloy_primitives::hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz::Encode;
 use ssz_derive::{Decode, Encode};
-use ssz_types::{FixedVector, typenum};
+use ssz_types::{FixedVector, typenum::U96};
 use tree_hash_derive::TreeHash;
 
 #[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default)]
 pub struct BLSSignature {
-    pub inner: FixedVector<u8, typenum::U96>,
+    pub inner: FixedVector<u8, U96>,
 }
 
 impl Serialize for BLSSignature {
@@ -15,7 +15,7 @@ impl Serialize for BLSSignature {
     where
         S: Serializer,
     {
-        let val = hex::encode(self.inner.as_ssz_bytes());
+        let val = format!("0x{}", hex::encode(self.inner.as_ssz_bytes()));
         serializer.serialize_str(&val)
     }
 }

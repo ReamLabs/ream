@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use super::{
     engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest,
-    rpc_types::get_blobs::BlobsAndProofV1,
+    rpc_types::get_blobs::BlobAndProofV1,
 };
 
 #[derive(Deserialize, Debug, Default)]
@@ -44,7 +44,7 @@ impl ExecutionApi for MockExecutionEngine {
     async fn engine_get_blobs_v1(
         &self,
         blob_version_hashes: Vec<B256>,
-    ) -> anyhow::Result<Vec<Option<BlobsAndProofV1>>> {
+    ) -> anyhow::Result<Vec<Option<BlobAndProofV1>>> {
         Ok(blob_version_hashes.into_iter().map(|_| None).collect())
     }
 }

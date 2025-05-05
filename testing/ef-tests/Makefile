@@ -1,6 +1,6 @@
 TARGET = mainnet.tar.gz
 EXTRACT_DIR = mainnet
-LATEST_RELEASE_URL = https://api.github.com/repos/ethereum/consensus-spec-tests/releases/latest
+LATEST_RELEASE_URL = https://api.github.com/repos/ethereum/consensus-spec-tests/releases
 
 .PHONY: all clean
 
@@ -21,9 +21,10 @@ $(TARGET):
 	@if [ -d $(EXTRACT_DIR) ]; then \
 		echo "$(EXTRACT_DIR) already downloaded. Skipping download."; \
 	else \
-		echo "Fetching the latest release URL for $(TARGET)..."; \
+		echo "Fetching the latest release (including pre-releases) for $(TARGET)..."; \
 		curl -s $(LATEST_RELEASE_URL) \
 		| grep "browser_download_url.*$(TARGET)" \
+		| head -n 1 \
 		| cut -d : -f 2,3 \
 		| tr -d \" \
 		| wget -qi -; \

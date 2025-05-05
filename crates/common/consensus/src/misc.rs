@@ -3,13 +3,38 @@ use std::cmp::max;
 use alloy_primitives::{B256, aliases::B32};
 use anyhow::ensure;
 use ethereum_hashing::hash;
+use ssz_types::{BitVector, typenum::U64};
 use tree_hash::TreeHash;
 
 use crate::{
-    constants::{GENESIS_FORK_VERSION, MAX_SEED_LOOKAHEAD, SHUFFLE_ROUND_COUNT, SLOTS_PER_EPOCH},
+    constants::{
+        COMPOUNDING_WITHDRAWAL_PREFIX, GENESIS_FORK_VERSION, MAX_SEED_LOOKAHEAD,
+        SHUFFLE_ROUND_COUNT, SLOTS_PER_EPOCH,
+    },
     fork_data::ForkData,
     signing_data::SigningData,
 };
+
+pub mod checksummed_address {
+    use alloy_primitives::Address;
+    use serde::{Deserialize, Deserializer, Serializer, de::Error as _};
+
+    pub fn serialize<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let checksummed = address.to_checksum(None);
+        serializer.serialize_str(&checksummed)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Address, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        s.parse::<Address>().map_err(D::Error::custom)
+    }
+}
 
 pub fn compute_signing_root<SSZObject: TreeHash>(ssz_object: SSZObject, domain: B256) -> B256 {
     SigningData {
@@ -45,9 +70,11 @@ pub fn compute_shuffled_index(
     Ok(index)
 }
 
-fn bytes_to_int64(slice: &[u8]) -> u64 {
-    let mut bytes = [0; 8];
-    bytes.copy_from_slice(&slice[0..8]);
+// Return the integer deserialization of ``data`` interpreted as ``ENDIANNESS``-endian.
+pub fn bytes_to_int64(slice: &[u8]) -> u64 {
+    let mut bytes = [0u8; 8];
+    let len = slice.len().min(8);
+    bytes[..len].copy_from_slice(&slice[..len]);
     u64::from_le_bytes(bytes)
 }
 
@@ -109,4 +136,16 @@ pub fn compute_domain(
 
 pub fn is_sorted_and_unique(indices: &[usize]) -> bool {
     indices.windows(2).all(|w| w[0] < w[1])
+}
+
+pub fn is_compounding_withdrawal_credential(withdrawal_credentials: B256) -> bool {
+    &withdrawal_credentials[..1] == COMPOUNDING_WITHDRAWAL_PREFIX
+}
+
+pub fn get_committee_indices(commitee_bits: &BitVector<U64>) -> Vec<u64> {
+    commitee_bits
+        .iter()
+        .enumerate()
+        .filter_map(|(i, bit)| bit.then_some(i as u64))
+        .collect()
 }

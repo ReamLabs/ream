@@ -1,9 +1,9 @@
 use alloy_primitives::B256;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::id::ValidatorID;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RandaoQuery {
     pub epoch: Option<u64>,
 }
@@ -26,6 +26,11 @@ pub struct ParentRootQuery {
 #[derive(Default, Debug, Deserialize)]
 pub struct IdQuery {
     pub id: Option<Vec<ValidatorID>>,
+}
+
+#[derive(Default, Debug, Deserialize)]
+pub struct BlobSidecarQuery {
+    pub indices: Option<Vec<u64>>,
 }
 
 #[derive(Default, Debug, Deserialize)]

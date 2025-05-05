@@ -2,7 +2,7 @@ use alloy_primitives::B256;
 use alloy_rlp::Decodable;
 use anyhow::{anyhow, bail};
 use ream_consensus::{
-    deneb::execution_payload::Transactions,
+    electra::execution_payload::Transactions,
     execution_engine::rpc_types::transaction::{BlobTransaction, TransactionType},
 };
 use serde::{Deserialize, Serialize};

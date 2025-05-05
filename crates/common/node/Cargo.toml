@@ -14,4 +14,5 @@ libp2p.workspace = true
 serde.workspace = true
 
 [build-dependencies]
-vergen = { version = "8.0.0", features = ["build", "cargo", "git", "gitcl", "rustc"] }
+vergen = { version = "9.0", features = ["build", "cargo", "emit_and_set", "rustc"] }
+vergen-git2 = "1.0"

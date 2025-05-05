@@ -22,7 +22,7 @@ macro_rules! test_consensus_type {
                 #[case("case_4")]
                 fn test_type(#[case] case: &str) {
                     let path = format!(
-                        "mainnet/tests/mainnet/deneb/ssz_static/{}/ssz_random/{case}/",
+                        "mainnet/tests/mainnet/electra/ssz_static/{}/ssz_random/{case}/",
                         stringify!($struct_name)
                     );
 

@@ -9,6 +9,7 @@ use crate::{
     tables::{
         beacon_block::{BEACON_BLOCK_TABLE, BeaconBlockTable},
         beacon_state::{BEACON_STATE_TABLE, BeaconStateTable},
+        blobs_and_proofs::{BLOBS_AND_PROOFS_TABLE, BlobsAndProofsTable},
         block_timeliness::{BLOCK_TIMELINESS_TABLE, BlockTimelinessTable},
         checkpoint_states::{CHECKPOINT_STATES_TABLE, CheckpointStatesTable},
         equivocating_indices::{EQUIVOCATING_INDICES_FIELD, EquivocatingIndicesField},
@@ -16,6 +17,7 @@ use crate::{
         genesis_time::{GENESIS_TIME_FIELD, GenesisTimeField},
         justified_checkpoint::{JUSTIFIED_CHECKPOINT_FIELD, JustifiedCheckpointField},
         latest_messages::{LATEST_MESSAGES_TABLE, LatestMessagesTable},
+        parent_root_index::{PARENT_ROOT_INDEX_MULTIMAP_TABLE, ParentRootIndexMultimapTable},
         proposer_boost_root::{PROPOSER_BOOST_ROOT_FIELD, ProposerBoostRootField},
         slot_index::{SLOT_INDEX_TABLE, SlotIndexTable},
         state_root_index::{STATE_ROOT_INDEX_TABLE, StateRootIndexTable},
@@ -46,7 +48,6 @@ pub struct ReamDB {
     pub db: Arc<Database>,
 }
 
-#[allow(clippy::result_large_err)]
 impl ReamDB {
     pub fn new(data_dir: Option<PathBuf>, ephemeral: bool) -> Result<Self, StoreError> {
         let ream_dir =
@@ -56,12 +57,12 @@ impl ReamDB {
 
         let db = Builder::new()
             .set_cache_size(REDB_CACHE_SIZE)
-            .create(&ream_file)
-            .map_err(|err| StoreError::Database(err.into()))?;
+            .create(&ream_file)?;
 
         let write_txn = db.begin_write()?;
         write_txn.open_table(BEACON_BLOCK_TABLE)?;
         write_txn.open_table(BEACON_STATE_TABLE)?;
+        write_txn.open_table(BLOBS_AND_PROOFS_TABLE)?;
         write_txn.open_table(BLOCK_TIMELINESS_TABLE)?;
         write_txn.open_table(CHECKPOINT_STATES_TABLE)?;
         write_txn.open_table(EQUIVOCATING_INDICES_FIELD)?;
@@ -69,6 +70,7 @@ impl ReamDB {
         write_txn.open_table(GENESIS_TIME_FIELD)?;
         write_txn.open_table(JUSTIFIED_CHECKPOINT_FIELD)?;
         write_txn.open_table(LATEST_MESSAGES_TABLE)?;
+        write_txn.open_multimap_table(PARENT_ROOT_INDEX_MULTIMAP_TABLE)?;
         write_txn.open_table(PROPOSER_BOOST_ROOT_FIELD)?;
         write_txn.open_table(SLOT_INDEX_TABLE)?;
         write_txn.open_table(STATE_ROOT_INDEX_TABLE)?;
@@ -93,6 +95,12 @@ impl ReamDB {
         }
     }
 
+    pub fn blobs_and_proofs_provider(&self) -> BlobsAndProofsTable {
+        BlobsAndProofsTable {
+            db: self.db.clone(),
+        }
+    }
+
     pub fn block_timeliness_provider(&self) -> BlockTimelinessTable {
         BlockTimelinessTable {
             db: self.db.clone(),
@@ -113,6 +121,12 @@ impl ReamDB {
 
     pub fn unrealized_justifications_provider(&self) -> UnrealizedJustificationsTable {
         UnrealizedJustificationsTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn parent_root_index_multimap_provider(&self) -> ParentRootIndexMultimapTable {
+        ParentRootIndexMultimapTable {
             db: self.db.clone(),
         }
     }

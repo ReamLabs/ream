@@ -4,14 +4,14 @@ use alloy_primitives::hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz::Encode;
 use ssz_derive::{Decode, Encode};
-use ssz_types::{FixedVector, typenum};
+use ssz_types::{FixedVector, typenum::U48};
 use tree_hash_derive::TreeHash;
 
 use crate::errors::BLSError;
 
-#[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default, Eq, Hash)]
 pub struct PubKey {
-    pub inner: FixedVector<u8, typenum::U48>,
+    pub inner: FixedVector<u8, U48>,
 }
 
 impl Serialize for PubKey {
@@ -19,7 +19,7 @@ impl Serialize for PubKey {
     where
         S: Serializer,
     {
-        let val = hex::encode(self.inner.as_ssz_bytes());
+        let val = format!("0x{}", hex::encode(self.inner.as_ssz_bytes()));
         serializer.serialize_str(&val)
     }
 }

@@ -141,18 +141,23 @@ impl Discovery {
     }
 
     fn start_query(&mut self, query: QueryType, target_peers: usize) {
-        let predicate = match query {
-            QueryType::FindPeers => subnet_predicate(vec![]),
-            QueryType::FindSubnetPeers(ref subnets) => subnet_predicate(subnets.clone()),
-        };
-
         let query_future = self
             .discv5
-            .find_node_predicate(NodeId::random(), Box::new(predicate), target_peers)
+            .find_node_predicate(
+                NodeId::random(),
+                match query {
+                    QueryType::FindPeers => Box::new(empty_predicate()),
+                    QueryType::FindSubnetPeers(ref subnets) => {
+                        Box::new(subnet_predicate(subnets.clone()))
+                    }
+                },
+                target_peers,
+            )
             .map(move |result| QueryResult {
                 query_type: query,
                 result,
             });
+
         self.discovery_queries.push(Box::pin(query_future));
     }
 
@@ -291,6 +296,10 @@ impl NetworkBehaviour for Discovery {
     }
 }
 
+pub fn empty_predicate() -> impl Fn(&Enr) -> bool + Send + Sync {
+    move |_enr: &Enr| true
+}
+
 fn convert_to_enr(key: Keypair) -> anyhow::Result<CombinedKey> {
     let key = key
         .try_into_secp256k1()
@@ -324,8 +333,8 @@ mod tests {
             .get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .ok_or("ATTESTATION_BITFIELD_ENR_KEY not found")
             .map_err(|err| anyhow!("ATTESTATION_BITFIELD_ENR_KEY decoding failed: {err:?}"))??;
-        assert!(enr_subnets.is_active(Subnet::Attestation(0)));
-        assert!(!enr_subnets.is_active(Subnet::Attestation(1)));
+        assert!(enr_subnets.is_active(Subnet::Attestation(0))?);
+        assert!(!enr_subnets.is_active(Subnet::Attestation(1))?);
         Ok(())
     }
 

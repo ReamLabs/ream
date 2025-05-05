@@ -13,17 +13,19 @@ version.workspace = true
 #ream-dependencies
 ream-bls.workspace = true
 ream-consensus.workspace = true
+ream-light-client.workspace = true
 ream-network-spec.workspace = true
 ream-node.workspace = true
 ream-storage.workspace = true
 
 #misc
+actix-web.workspace = true
 alloy-primitives.workspace = true
+parking_lot.workspace = true
 ethereum_serde_utils.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ssz_types.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-warp.workspace = true
 tree_hash.workspace = true

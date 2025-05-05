@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use alloy_primitives::B256;
+use alloy_primitives::{B256, FixedBytes};
 use redb::{Database, Durability, TableDefinition};
 
 use super::{Field, SSZEncoding};
@@ -21,12 +21,14 @@ pub struct ProposerBoostRootField {
 impl Field for ProposerBoostRootField {
     type Value = B256;
 
-    fn get(&self) -> Result<Option<Self::Value>, StoreError> {
+    fn get(&self) -> Result<FixedBytes<32>, StoreError> {
         let read_txn = self.db.begin_read()?;
 
         let table = read_txn.open_table(PROPOSER_BOOST_ROOT_FIELD)?;
-        let result = table.get(PROPOSER_BOOST_ROOT_KEY)?;
-        Ok(result.map(|res| res.value()))
+        let result = table
+            .get(PROPOSER_BOOST_ROOT_KEY)?
+            .ok_or(StoreError::FieldNotInitilized)?;
+        Ok(result.value())
     }
 
     fn insert(&self, value: Self::Value) -> Result<(), StoreError> {

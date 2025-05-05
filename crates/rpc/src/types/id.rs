@@ -5,10 +5,7 @@ use alloy_primitives::{B256, hex};
 use ream_bls::PubKey;
 use serde::{Deserialize, Serialize};
 
-use super::errors::ApiError;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ID {
     Finalized,
     Genesis,
@@ -19,10 +16,21 @@ pub enum ID {
     Root(B256),
 }
 
-impl FromStr for ID {
-    type Err = ApiError;
+impl Serialize for ID {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+impl<'de> Deserialize<'de> for ID {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
         match s.to_lowercase().as_str() {
             "finalized" => Ok(ID::Finalized),
             "genesis" => Ok(ID::Genesis),
@@ -30,15 +38,15 @@ impl FromStr for ID {
             "justified" => Ok(ID::Justified),
             _ => {
                 if s.starts_with("0x") {
-                    B256::from_str(s)
+                    B256::from_str(&s)
                         .map(ID::Root)
-                        .map_err(|_| ApiError::BadRequest(format!("Invalid hex root: {s}")))
+                        .map_err(|_| serde::de::Error::custom(format!("Invalid hex root: {s}")))
                 } else if s.chars().all(|c| c.is_ascii_digit()) {
                     s.parse::<u64>()
                         .map(ID::Slot)
-                        .map_err(|_| ApiError::BadRequest(format!("Invalid slot number: {s}")))
+                        .map_err(|_| serde::de::Error::custom(format!("Invalid slot number: {s}")))
                 } else {
-                    Err(ApiError::BadRequest(format!("Invalid state ID: {s}")))
+                    Err(serde::de::Error::custom(format!("Invalid state ID: {s}")))
                 }
             }
         }
@@ -58,28 +66,40 @@ impl fmt::Display for ID {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ValidatorID {
     Index(u64),
     /// expected to be a 0x-prefixed hex string.
     Address(PubKey),
 }
 
-impl FromStr for ValidatorID {
-    type Err = ApiError;
+impl Serialize for ValidatorID {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+impl<'de> Deserialize<'de> for ValidatorID {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
         if s.starts_with("0x") {
-            PubKey::from_str(s)
+            PubKey::from_str(&s)
                 .map(ValidatorID::Address)
-                .map_err(|_| ApiError::BadRequest(format!("Invalid hex address: {s}")))
+                .map_err(|_| serde::de::Error::custom(format!("Invalid hex address: {s}")))
         } else if s.chars().all(|c| c.is_ascii_digit()) {
             s.parse::<u64>()
                 .map(ValidatorID::Index)
-                .map_err(|_| ApiError::BadRequest(format!("Invalid validator index: {s}")))
+                .map_err(|_| serde::de::Error::custom(format!("Invalid validator index: {s}")))
         } else {
-            Err(ApiError::BadRequest(format!("Invalid validator ID: {s}")))
+            Err(serde::de::Error::custom(format!(
+                "Invalid validator ID: {s}"
+            )))
         }
     }
 }
@@ -88,7 +108,7 @@ impl Display for ValidatorID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ValidatorID::Index(i) => write!(f, "{i}"),
-            ValidatorID::Address(pub_key) => write!(f, "0x{:?}", pub_key.to_bytes()),
+            ValidatorID::Address(pub_key) => write!(f, "0x{}", hex::encode(pub_key.to_bytes())),
         }
     }
 }

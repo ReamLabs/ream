@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     net::IpAddr,
+    io,
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
     time::{Duration, Instant},
@@ -11,15 +12,22 @@ use anyhow::anyhow;
 use discv5::Enr;
 use libp2p::{
     Multiaddr, PeerId, Swarm, SwarmBuilder, Transport, connection_limits,
-    core::{muxing::StreamMuxerBox, transport::Boxed},
+    core::{
+        muxing::StreamMuxerBox,
+        transport::Boxed,
+        upgrade::{SelectUpgrade, Version},
+    },
+    dns::Transport as DnsTransport,
     futures::StreamExt,
     identify,
     multiaddr::Protocol,
-    noise,
+    noise::Config as NoiseConfig,
     swarm::{NetworkBehaviour, SwarmEvent},
+    tcp::{Config as TcpConfig, tokio::Transport as TcpTransport},
     yamux,
 };
 use libp2p_identity::{Keypair, PublicKey, secp256k1};
+use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use ream_discv5::{
     config::NetworkConfig,
     discovery::{DiscoveredPeers, Discovery},
@@ -27,6 +35,9 @@ use ream_discv5::{
 use ream_executor::ReamExecutor;
 use ream_peer_management::peer::{PeerConnectionStatus, PeerInfo};
 use tracing::{error, info, warn};
+use yamux::Config as YamuxConfig;
+
+use crate::req_resp::ReqResp;
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
@@ -34,6 +45,9 @@ pub(crate) struct ReamBehaviour {
 
     /// The discovery domain: discv5
     pub discovery: Discovery,
+
+    /// The request-response domain
+    pub req_resp: ReqResp,
 
     pub connection_registry: connection_limits::Behaviour,
 }
@@ -77,6 +91,8 @@ impl Network {
             discovery
         };
 
+        let req_resp = ReqResp::new();
+
         let connection_limits = {
             let limits = libp2p::connection_limits::ConnectionLimits::default()
                 .with_max_pending_incoming(Some(5))
@@ -101,6 +117,7 @@ impl Network {
         let behaviour = {
             ReamBehaviour {
                 discovery,
+                req_resp,
                 identify,
                 connection_registry: connection_limits,
             }
@@ -200,6 +217,10 @@ impl Network {
                     self.handle_discovered_peers(peers);
                     None
                 }
+                ReamBehaviourEvent::ReqResp(message) => {
+                    info!("Unhandled reqresp event {message:?}");
+                    None
+                }
                 ream_behavior_event => {
                     info!("Unhandled behaviour event: {ream_behavior_event:?}");
                     None
@@ -273,26 +294,22 @@ impl Network {
     }
 }
 
-type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
-pub fn build_transport(local_private_key: Keypair) -> std::io::Result<BoxedTransport> {
+pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, StreamMuxerBox)>> {
     // mplex config
-    let mut mplex_config = libp2p_mplex::MplexConfig::new();
+    let mut mplex_config = MplexConfig::new();
     mplex_config.set_max_buffer_size(256);
-    mplex_config.set_max_buffer_behaviour(libp2p_mplex::MaxBufferBehaviour::Block);
+    mplex_config.set_max_buffer_behaviour(MaxBufferBehaviour::Block);
 
-    let yamux_config = yamux::Config::default();
+    let yamux_config = YamuxConfig::default();
 
-    let tcp = libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::default().nodelay(true))
-        .upgrade(libp2p::core::upgrade::Version::V1)
-        .authenticate(noise::Config::new(&local_private_key).expect("Noise disabled"))
-        .multiplex(libp2p::core::upgrade::SelectUpgrade::new(
-            yamux_config,
-            mplex_config,
-        ))
+    let tcp = TcpTransport::new(TcpConfig::default().nodelay(true))
+        .upgrade(Version::V1)
+        .authenticate(NoiseConfig::new(&local_private_key).expect("Noise disabled"))
+        .multiplex(SelectUpgrade::new(yamux_config, mplex_config))
         .timeout(Duration::from_secs(10));
     let transport = tcp.boxed();
 
-    let transport = libp2p::dns::tokio::Transport::system(transport)?.boxed();
+    let transport = DnsTransport::system(transport)?.boxed();
 
     Ok(transport)
 }

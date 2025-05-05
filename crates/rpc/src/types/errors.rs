@@ -1,6 +1,5 @@
-use serde::{Deserialize, Serialize};
+use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use thiserror::Error;
-use warp::reject::Reject;
 
 #[derive(Error, Debug)]
 pub enum ApiError {
@@ -23,13 +22,23 @@ pub enum ApiError {
     ValidatorNotFound(String),
 
     #[error("Too many validator IDs in request")]
-    TooManyValidatorsIds(),
+    TooManyValidatorsIds,
 }
 
-impl Reject for ApiError {}
+impl ResponseError for ApiError {
+    fn error_response(&self) -> HttpResponse {
+        HttpResponse::build(self.status_code()).body(self.to_string())
+    }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ErrorMessage {
-    pub code: u16,
-    pub message: String,
+    fn status_code(&self) -> StatusCode {
+        match *self {
+            ApiError::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
+            ApiError::NotFound(_) => StatusCode::NOT_FOUND,
+            ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            ApiError::InvalidParameter(_) => StatusCode::BAD_REQUEST,
+            ApiError::ValidatorNotFound(_) => StatusCode::NOT_FOUND,
+            ApiError::TooManyValidatorsIds => StatusCode::URI_TOO_LONG,
+        }
+    }
 }

@@ -6,23 +6,18 @@ macro_rules! test_fork_choice {
             #[allow(non_snake_case)]
             mod [<tests_ $path>] {
                 use std::fs;
-
-                use alloy_consensus::Blob;
                 use alloy_primitives::{hex, map::HashMap, B256, hex::FromHex};
+                use ream_bls::BLSSignature;
                 use ream_consensus::{
-                    attestation::Attestation,
-                    attester_slashing::AttesterSlashing,
-                    checkpoint::Checkpoint,
-                    deneb::{
-                        beacon_block::{BeaconBlock, SignedBeaconBlock},
-                        beacon_state::BeaconState,
-                    },
-                    execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::BlobsAndProofV1}, polynomial_commitments::kzg_proof::KZGProof,
+                    attestation::Attestation, attester_slashing::AttesterSlashing, blob_sidecar::BlobIdentifier, checkpoint::Checkpoint, electra::{beacon_block::{BeaconBlock, SignedBeaconBlock}, beacon_state::BeaconState}, execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::{Blob, BlobAndProofV1}}, polynomial_commitments::kzg_proof::KZGProof
                 };
                 use ream_fork_choice::{
                     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
                     store::{get_forkchoice_store, Store},
-                    blob_sidecar::BlobIdentifier,
+                };
+                use ream_storage::{
+                    db::ReamDB,
+                    tables::{Table, Field},
                 };
                 use rstest::rstest;
                 use serde::Deserialize;
@@ -84,7 +79,7 @@ macro_rules! test_fork_choice {
                     pub valid: Option<bool>,
                 }
 
-                #[derive(Deserialize)]
+                #[derive(Deserialize, Debug)]
                 #[serde(untagged)]
                 pub enum ForkChoiceStep {
                     Tick(Tick),
@@ -95,9 +90,9 @@ macro_rules! test_fork_choice {
                 }
 
                 #[tokio::test]
-                async fn test_fork_choice() {
+                async fn test_fork_choice() -> anyhow::Result<()> {
                     let base_path = format!(
-                        "mainnet/tests/mainnet/deneb/fork_choice/{}/pyspec_tests",
+                        "mainnet/tests/mainnet/electra/fork_choice/{}/pyspec_tests",
                         stringify!($path)
                     );
 
@@ -129,7 +124,8 @@ macro_rules! test_fork_choice {
                             utils::read_ssz_snappy(&case_dir.join("anchor_block.ssz_snappy"))
                                 .expect("Failed to read anchor_block.ssz_snappy");
 
-                        let mut store = get_forkchoice_store(anchor_state, anchor_block)
+                        let reamdb = ReamDB::new(None, true).expect("count not find reabdb");
+                        let mut store = get_forkchoice_store(anchor_state, anchor_block, reamdb)
                             .expect("get_forkchoice_store failed");
 
                         for step in steps {
@@ -154,9 +150,9 @@ macro_rules! test_fork_choice {
                                             .into_iter()
                                             .map(|proof| KZGProof::from_hex(proof).expect("could not get KZGProof"))
                                             .collect();
-                                        let blobs_and_proofs = blobs.into_iter().zip(proof.into_iter()).map(|(blob, proof)| BlobsAndProofV1 { blob, proof  } ).collect::<Vec<_>>();
+                                        let blobs_and_proofs = blobs.into_iter().zip(proof.into_iter()).map(|(blob, proof)| BlobAndProofV1 { blob, proof  } ).collect::<Vec<_>>();
                                         for (index, blob_and_proof) in blobs_and_proofs.into_iter().enumerate() {
-                                            store.blobs_and_proofs.insert(BlobIdentifier::new(block.message.tree_hash_root(), index as u64), blob_and_proof);
+                                            store.db.blobs_and_proofs_provider().insert(BlobIdentifier::new(block.message.tree_hash_root(), index as u64), blob_and_proof)?;
                                         }
                                     }
 
@@ -191,25 +187,25 @@ macro_rules! test_fork_choice {
                                 ForkChoiceStep::Checks { checks } => {
                                     if let Some(time) = checks.time {
                                         assert_eq!(
-                                            store.time, time,
+                                            store.db.time_provider().get()?, time,
                                             "checks time mismatch in case {case_name}"
                                         );
                                     }
                                     if let Some(justified_checkpoint) = checks.justified_checkpoint {
                                         assert_eq!(
-                                            store.justified_checkpoint, justified_checkpoint,
+                                            store.db.justified_checkpoint_provider().get()?, justified_checkpoint,
                                             "checks justified_checkpoint mismatch in case {case_name}"
                                         );
                                     }
                                     if let Some(finalized_checkpoint) = checks.finalized_checkpoint {
                                         assert_eq!(
-                                            store.finalized_checkpoint, finalized_checkpoint,
+                                            store.db.finalized_checkpoint_provider().get()?, finalized_checkpoint,
                                             "checks finalized_checkpoint mismatch in case {case_name}"
                                         );
                                     }
                                     if let Some(proposer_boost_root) = checks.proposer_boost_root {
                                         assert_eq!(
-                                            store.proposer_boost_root, proposer_boost_root,
+                                            store.db.proposer_boost_root_provider().get()?, proposer_boost_root,
                                             "checks proposer_boost_root mismatch in case {case_name}"
                                         );
                                     }
@@ -217,6 +213,7 @@ macro_rules! test_fork_choice {
                             }
                         }
                     }
+                    Ok(())
                 }
             }
         }
