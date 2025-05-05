@@ -1,4 +1,5 @@
 pub mod epoch_processing;
+pub mod finality;
 pub mod fork_choice;
 pub mod merkle_proof;
 pub mod operations;

@@ -1,7 +1,7 @@
 #![cfg(feature = "ef-tests")]
 
 use ef_tests::{
-    test_consensus_type, test_epoch_processing, test_fork_choice, test_merkle_proof,
+    test_consensus_type, test_epoch_processing, test_finality, test_fork_choice, test_merkle_proof,
     test_merkle_proof_impl, test_operation, test_rewards, test_sanity_blocks, test_sanity_slots,
     test_shuffling, utils,
 };
@@ -225,3 +225,10 @@ test_merkle_proof!(
 
 // Testing random
 test_sanity_blocks!(test_random, "random/random");
+
+// Testing finality
+test_finality!(finality_no_updates_at_genesis);
+test_finality!(finality_rule_1);
+test_finality!(finality_rule_2);
+test_finality!(finality_rule_3);
+test_finality!(finality_rule_4);
