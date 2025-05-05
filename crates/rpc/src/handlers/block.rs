@@ -1,4 +1,5 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
+use alloy_primitives::map::{foldhash::fast::RandomState, HashMap};
 
 use actix_web::{
     HttpResponse, Responder, get,
@@ -12,7 +13,7 @@ use ream_consensus::{
         SYNC_REWARD_WEIGHT, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
         genesis_validators_root,
     },
-    electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
+    electra::{beacon_block::{BeaconBlock, SignedBeaconBlock}, beacon_state::BeaconState},
     genesis::Genesis,
 };
 use ream_network_spec::networks::network_spec;
@@ -20,6 +21,7 @@ use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
+use ream_fork_choice::store::Store;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use tree_hash::TreeHash;
@@ -205,38 +207,22 @@ pub async fn get_beacon_block_from_id(
         })
 }
 
-pub async fn get_filtered_block_tree(db: &ReamDB) -> Result<Vec<SignedBeaconBlock>, ApiError> {
+pub async fn get_filtered_block_tree(db: &ReamDB) -> Result<Vec<BeaconBlock>, ApiError> {
     let justified_checkpoint = db
         .justified_checkpoint_provider()
         .get()
-        .map_err(|_| ApiError::InternalError)?
-        .ok_or_else(|| ApiError::NotFound(String::from("Justified checkpoint not found")))?;
+        .map_err(|_| ApiError::InternalError)?;
     let root = justified_checkpoint.root;
 
-    let mut blocks: Vec<SignedBeaconBlock> = Vec::new();
-    let mut visited = HashMap::new();
-    let mut to_visit = vec![root];
+    let mut blocks = HashMap::with_hasher(RandomState::default());
+    let store = Store { db: db.clone() };
+    
+    store.filter_block_tree(root, &mut blocks).map_err(|err| {
+        error!("Failed to filter block tree, error: {err:?}");
+        ApiError::InternalError
+    })?;
 
-    while let Some(current_root) = to_visit.pop() {
-        if visited.contains_key(&current_root) {
-            continue;
-        }
-        visited.insert(current_root, true);
-
-        if let Some(block) = db
-            .beacon_block_provider()
-            .get(current_root)
-            .map_err(|_| ApiError::InternalError)?
-        {
-            blocks.push(block.clone());
-
-            if block.message.parent_root != B256::ZERO {
-                to_visit.push(block.message.parent_root);
-            }
-        }
-    }
-
-    Ok(blocks)
+    Ok(blocks.into_values().collect())
 }
 
 /// Called by `/genesis` to get the Genesis Config of Beacon Chain.
@@ -324,8 +310,8 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
     let mut beacon_heads = Vec::new();
     for block in beacon_blocks.iter() {
         beacon_heads.push(BeaconHeadResponse {
-            root: block.message.tree_hash_root(),
-            slot: block.message.slot,
+            root: block.tree_hash_root(),
+            slot: block.slot,
             execution_optimistic: false,
         });
     }
