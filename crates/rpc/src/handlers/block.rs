@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -227,19 +227,18 @@ pub fn compute_sync_committee_rewards(
     let sync_committee = &beacon_state.current_sync_committee;
 
     let mut sync_committee_indices = Vec::with_capacity(sync_committee.pubkeys.len());
-    for sync_pubkey in &sync_committee.pubkeys {
-        let index = beacon_state
-            .validators
-            .iter()
-            .position(|validator| validator.pubkey == *sync_pubkey);
-        match index {
-            Some(index) => sync_committee_indices.push(index),
-            None => {
-                return Err(ApiError::NotFound(format!(
-                    "Failed to find `sync_pubkey` from {sync_pubkey:?}"
-                )));
-            }
+    let pubkey_set: HashSet<_> = sync_committee.pubkeys.iter().collect();
+
+    for (index, validator) in beacon_state.validators.iter().enumerate() {
+        if pubkey_set.contains(&validator.pubkey) {
+            sync_committee_indices.push(index);
         }
+    }
+
+    if !sync_committee_indices.is_empty() {
+        return Err(ApiError::NotFound(
+            "Failed to find sync committee indices".to_string(),
+        ));
     }
 
     let (participant_reward, proposer_reward) = get_sync_aggregate_rewards(beacon_state);
@@ -411,8 +410,7 @@ pub async fn post_sync_committee_rewards(
     let beacon_block = get_beacon_block_from_id(block_id_value.clone(), &db).await?;
     let beacon_state = get_beacon_state(block_id_value.clone(), &db).await?;
 
-    let sync_committee_rewards =
-        compute_sync_committee_rewards(&beacon_block, &beacon_state)?;
+    let sync_committee_rewards = compute_sync_committee_rewards(&beacon_block, &beacon_state)?;
     let reward_data = if sync_committee_rewards.is_empty() {
         None
     } else if validators.is_empty() {

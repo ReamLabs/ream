@@ -3,7 +3,8 @@ use actix_web::web::ServiceConfig;
 use crate::handlers::{
     blob_sidecar::get_blob_sidecars,
     block::{
-        get_block_attestations, get_block_from_id, get_block_rewards, get_block_root, get_genesis, post_sync_committee_rewards,
+        get_block_attestations, get_block_from_id, get_block_rewards, get_block_root, get_genesis,
+        post_sync_committee_rewards,
     },
     committee::get_committees,
     header::{get_headers, get_headers_from_block},
