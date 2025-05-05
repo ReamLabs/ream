@@ -1,4 +1,4 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 
 use alloy_primitives::{Address, address, b256, fixed_bytes};
 use ream_consensus::genesis::Genesis;
@@ -27,6 +27,30 @@ impl Network {
             Network::Dev => 1,
         }
     }
+}
+
+static NETWORK_SPEC: OnceLock<Arc<NetworkSpec>> = OnceLock::new();
+
+/// MUST be called only once at the start of the application to initialize static [NetworkSpec].
+///
+/// The static `NetworkSpec` can be accessed using [network_spec].
+///
+/// # Panics
+///
+/// Panics if this function is called more than once.
+pub fn set_network_spec(network_spec: Arc<NetworkSpec>) {
+    NETWORK_SPEC
+        .set(network_spec)
+        .expect("NetworkSpec should be set only once at the start of the application");
+}
+
+/// Returns the static [NetworkSpec] initialized by [set_network_spec].
+///
+/// # Panics
+///
+/// Panics if [set_network_spec] wasn't called before this function.
+pub fn network_spec() -> Arc<NetworkSpec> {
+    NETWORK_SPEC.get().expect("NetworkSpec wasn't set").clone()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

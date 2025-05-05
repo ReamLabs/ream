@@ -16,7 +16,8 @@ use crate::{
     attester_slashing::AttesterSlashing,
     bls_to_execution_change::SignedBLSToExecutionChange,
     constants::{
-        BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH, KZG_COMMITMENTS_MERKLE_DEPTH,
+        BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH, EXECUTION_PAYLOAD_INDEX,
+        KZG_COMMITMENTS_MERKLE_DEPTH,
     },
     deposit::Deposit,
     eth_1_data::Eth1Data,
@@ -71,6 +72,11 @@ impl BeaconBlockBody {
         ]
     }
 
+    pub fn data_inclusion_proof(&self, index: u64) -> anyhow::Result<Vec<B256>> {
+        let tree = merkle_tree(&self.merkle_leaves(), BLOCK_BODY_MERKLE_DEPTH)?;
+        generate_proof(&tree, index, BLOCK_BODY_MERKLE_DEPTH)
+    }
+
     pub fn blob_kzg_commitment_inclusion_proof(&self, index: u64) -> anyhow::Result<Vec<B256>> {
         // inclusion proof for blob_kzg_commitment in blob_kzg_commitments
         let tree = merkle_tree(
@@ -92,9 +98,8 @@ impl BeaconBlockBody {
             .tree_hash_root();
 
         // inclusion proof for blob_kzg_commitments in beacon_block_body
-        let tree = merkle_tree(&self.merkle_leaves(), BLOCK_BODY_MERKLE_DEPTH)?;
         let kzg_commitments_to_block_body_proof =
-            generate_proof(&tree, BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH)?;
+            self.data_inclusion_proof(BLOB_KZG_COMMITMENTS_INDEX)?;
 
         // merge proofs data
         Ok([
@@ -103,5 +108,9 @@ impl BeaconBlockBody {
             kzg_commitments_to_block_body_proof,
         ]
         .concat())
+    }
+
+    pub fn execution_payload_inclusion_proof(&self) -> anyhow::Result<Vec<B256>> {
+        self.data_inclusion_proof(EXECUTION_PAYLOAD_INDEX)
     }
 }

@@ -1,0 +1,20 @@
+[package]
+name = "ream-light-client"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-primitives.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+ssz_types.workspace = true
+tree_hash.workspace = true
+
+# ream dependencies
+ream-consensus.workspace = true

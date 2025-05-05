@@ -16,8 +16,12 @@ ream-discv5.workspace = true
 ream-network-spec.workspace = true
 
 # misc
+alloy-primitives.workspace = true
 anyhow.workspace = true
+asynchronous-codec = "0.7.0"
 enr.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
 discv5.workspace = true
 futures.workspace = true
 libp2p-identity.workspace = true
@@ -25,5 +29,12 @@ libp2p-mplex.workspace = true
 libp2p.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
+snap.workspace = true
+ssz_types.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
+tokio-io-timeout = "1"
+tokio-util.workspace = true
 tracing.workspace = true
+unsigned-varint = { version = "0.8", features = ["codec"] }
+

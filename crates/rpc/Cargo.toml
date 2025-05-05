@@ -13,6 +13,7 @@ version.workspace = true
 #ream-dependencies
 ream-bls.workspace = true
 ream-consensus.workspace = true
+ream-light-client.workspace = true
 ream-network-spec.workspace = true
 ream-node.workspace = true
 ream-storage.workspace = true

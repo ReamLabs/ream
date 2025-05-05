@@ -157,6 +157,7 @@ impl Discovery {
                 query_type: query,
                 result,
             });
+
         self.discovery_queries.push(Box::pin(query_future));
     }
 

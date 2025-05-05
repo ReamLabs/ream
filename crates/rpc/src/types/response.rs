@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 
-pub const ELECTRA: &str = "electra";
+pub const VERSION: &str = "electra";
 pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
 const EXECUTION_OPTIMISTIC: bool = false;
 const FINALIZED: bool = false;
@@ -52,6 +52,7 @@ pub struct BeaconResponse<T> {
     pub finalized: bool,
     pub data: T,
 }
+
 impl<T: Serialize> BeaconResponse<T> {
     pub fn new(data: T) -> Self {
         Self {
@@ -62,7 +63,7 @@ impl<T: Serialize> BeaconResponse<T> {
     }
 }
 
-/// A BeaconResponse data struct that can be used to wrap data type
+/// A BeaconVersionedResponse data struct that can be used to wrap data type
 /// used for json rpc responses
 ///
 /// # Example
@@ -85,10 +86,33 @@ pub struct BeaconVersionedResponse<T> {
 impl<T: Serialize> BeaconVersionedResponse<T> {
     pub fn new(data: T) -> Self {
         Self {
-            version: String::from("electra"),
+            version: VERSION.into(),
             data,
             execution_optimistic: EXECUTION_OPTIMISTIC,
             finalized: FINALIZED,
+        }
+    }
+}
+
+/// A DataVersionedResponse data struct that can be used to wrap data type
+/// used for json rpc responses
+///
+/// # Example
+/// {
+///     "version": "electra",
+///     "data": T
+/// }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DataVersionedResponse<T> {
+    pub version: String,
+    pub data: T,
+}
+
+impl<T: Serialize> DataVersionedResponse<T> {
+    pub fn new(data: T) -> Self {
+        Self {
+            version: VERSION.into(),
+            data,
         }
     }
 }

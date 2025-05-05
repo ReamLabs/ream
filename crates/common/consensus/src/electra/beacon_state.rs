@@ -14,7 +14,7 @@ use ream_bls::{
     AggregatePubKey, BLSSignature, PubKey,
     traits::{Aggregatable, Verifiable},
 };
-use ream_merkle::is_valid_merkle_branch;
+use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -40,15 +40,16 @@ use crate::{
     checkpoint::Checkpoint,
     consolidation_request::ConsolidationRequest,
     constants::{
-        BASE_REWARD_FACTOR, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION, CHURN_LIMIT_QUOTIENT,
-        COMPOUNDING_WITHDRAWAL_PREFIX, DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER,
-        DOMAIN_BEACON_PROPOSER, DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO,
-        DOMAIN_SYNC_COMMITTEE, DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT,
-        EJECTION_BALANCE, EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR,
-        EPOCHS_PER_SLASHINGS_VECTOR, EPOCHS_PER_SYNC_COMMITTEE_PERIOD,
-        ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH, FULL_EXIT_REQUEST_AMOUNT, GENESIS_EPOCH,
-        GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT,
-        HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX, INACTIVITY_SCORE_BIAS,
+        BASE_REWARD_FACTOR, BEACON_STATE_MERKLE_DEPTH, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION,
+        CHURN_LIMIT_QUOTIENT, COMPOUNDING_WITHDRAWAL_PREFIX, CURRENT_SYNC_COMMITTEE_INDEX,
+        DEPOSIT_CONTRACT_TREE_DEPTH, DOMAIN_BEACON_ATTESTER, DOMAIN_BEACON_PROPOSER,
+        DOMAIN_BLS_TO_EXECUTION_CHANGE, DOMAIN_DEPOSIT, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
+        DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EJECTION_BALANCE,
+        EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
+        EPOCHS_PER_SYNC_COMMITTEE_PERIOD, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH,
+        FINALIZED_CHECKPOINT_INDEX, FULL_EXIT_REQUEST_AMOUNT, GENESIS_EPOCH, GENESIS_SLOT,
+        HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT, HYSTERESIS_UPWARD_MULTIPLIER,
+        INACTIVITY_PENALTY_QUOTIENT_BELLATRIX, INACTIVITY_SCORE_BIAS,
         INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_BLOBS_PER_BLOCK_ELECTRA,
         MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE_ELECTRA,
         MAX_PENDING_DEPOSITS_PER_EPOCH, MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP,
@@ -58,7 +59,7 @@ use crate::{
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
         MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA, MIN_SEED_LOOKAHEAD,
         MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
-        PARTICIPATION_FLAG_WEIGHTS, PENDING_CONSOLIDATIONS_LIMIT,
+        NEXT_SYNC_COMMITTEE_INDEX, PARTICIPATION_FLAG_WEIGHTS, PENDING_CONSOLIDATIONS_LIMIT,
         PENDING_PARTIAL_WITHDRAWALS_LIMIT, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
         PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SECONDS_PER_SLOT, SHARD_COMMITTEE_PERIOD,
         SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT,
@@ -2389,25 +2390,7 @@ impl BeaconState {
         );
 
         // Cache execution payload header
-        self.latest_execution_payload_header = ExecutionPayloadHeader {
-            parent_hash: payload.parent_hash,
-            fee_recipient: payload.fee_recipient,
-            state_root: payload.state_root,
-            receipts_root: payload.receipts_root,
-            logs_bloom: payload.logs_bloom.clone(),
-            prev_randao: payload.prev_randao,
-            block_number: payload.block_number,
-            gas_limit: payload.gas_limit,
-            gas_used: payload.gas_used,
-            timestamp: payload.timestamp,
-            extra_data: payload.extra_data.clone(),
-            base_fee_per_gas: payload.base_fee_per_gas,
-            block_hash: payload.block_hash,
-            transactions_root: payload.transactions.tree_hash_root(),
-            withdrawals_root: payload.withdrawals.tree_hash_root(),
-            blob_gas_used: payload.blob_gas_used,
-            excess_blob_gas: payload.excess_blob_gas,
-        };
+        self.latest_execution_payload_header = payload.to_execution_payload_header();
 
         Ok(())
     }
@@ -2597,6 +2580,87 @@ impl BeaconState {
         self.earliest_consolidation_epoch = earliest_consolidation_epoch;
 
         self.earliest_consolidation_epoch
+    }
+
+    pub fn merkle_leaves(&self) -> Vec<B256> {
+        vec![
+            self.genesis_time.to_le_bytes().tree_hash_root(),
+            self.genesis_validators_root.tree_hash_root(),
+            self.slot.to_le_bytes().tree_hash_root(),
+            self.fork.tree_hash_root(),
+            self.latest_block_header.tree_hash_root(),
+            self.block_roots.tree_hash_root(),
+            self.state_roots.tree_hash_root(),
+            self.historical_roots.tree_hash_root(),
+            self.eth1_data.tree_hash_root(),
+            self.eth1_data_votes.tree_hash_root(),
+            self.eth1_deposit_index.to_le_bytes().tree_hash_root(),
+            self.validators.tree_hash_root(),
+            self.balances.tree_hash_root(),
+            self.randao_mixes.tree_hash_root(),
+            self.slashings.tree_hash_root(),
+            self.previous_epoch_participation.tree_hash_root(),
+            self.current_epoch_participation.tree_hash_root(),
+            self.justification_bits.tree_hash_root(),
+            self.previous_justified_checkpoint.tree_hash_root(),
+            self.current_justified_checkpoint.tree_hash_root(),
+            self.finalized_checkpoint.tree_hash_root(),
+            self.inactivity_scores.tree_hash_root(),
+            self.current_sync_committee.tree_hash_root(),
+            self.next_sync_committee.tree_hash_root(),
+            self.latest_execution_payload_header.tree_hash_root(),
+            self.next_withdrawal_index.to_le_bytes().tree_hash_root(),
+            self.next_withdrawal_validator_index
+                .to_le_bytes()
+                .tree_hash_root(),
+            self.historical_summaries.tree_hash_root(),
+            self.deposit_requests_start_index
+                .to_le_bytes()
+                .tree_hash_root(),
+            self.deposit_balance_to_consume
+                .to_le_bytes()
+                .tree_hash_root(),
+            self.exit_balance_to_consume.to_le_bytes().tree_hash_root(),
+            self.earliest_exit_epoch.to_le_bytes().tree_hash_root(),
+            self.consolidation_balance_to_consume
+                .to_le_bytes()
+                .tree_hash_root(),
+            self.earliest_consolidation_epoch
+                .to_le_bytes()
+                .tree_hash_root(),
+            self.pending_deposits.tree_hash_root(),
+            self.pending_partial_withdrawals.tree_hash_root(),
+            self.pending_consolidations.tree_hash_root(),
+        ]
+    }
+
+    pub fn data_inclusion_proof(&self, index: u64) -> anyhow::Result<Vec<B256>> {
+        let tree = merkle_tree(&self.merkle_leaves(), BEACON_STATE_MERKLE_DEPTH)?;
+        generate_proof(&tree, index, BEACON_STATE_MERKLE_DEPTH)
+    }
+
+    pub fn current_sync_committee_inclusion_proof(&self) -> anyhow::Result<Vec<B256>> {
+        self.data_inclusion_proof(CURRENT_SYNC_COMMITTEE_INDEX)
+    }
+
+    pub fn next_sync_committee_inclusion_proof(&self) -> anyhow::Result<Vec<B256>> {
+        self.data_inclusion_proof(NEXT_SYNC_COMMITTEE_INDEX)
+    }
+
+    pub fn finalized_root_inclusion_proof(&self) -> anyhow::Result<Vec<B256>> {
+        let root_to_finalized_checkpoint_proof = vec![
+            self.finalized_checkpoint
+                .epoch
+                .to_le_bytes()
+                .tree_hash_root(),
+        ];
+        let finalized_checkpoint_to_beacon_state_proof =
+            self.data_inclusion_proof(FINALIZED_CHECKPOINT_INDEX)?;
+        Ok([
+            root_to_finalized_checkpoint_proof,
+            finalized_checkpoint_to_beacon_state_proof,
+        ]
+        .concat())
     }
 }
 

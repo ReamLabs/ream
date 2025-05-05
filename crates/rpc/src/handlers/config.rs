@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use actix_web::{HttpResponse, Responder, get, web::Data};
+use actix_web::{HttpResponse, Responder, get};
 use alloy_primitives::{Address, aliases::B32};
 use ream_consensus::constants::{
     DOMAIN_AGGREGATE_AND_PROOF, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
 };
-use ream_network_spec::networks::NetworkSpec;
+use ream_network_spec::networks::{NetworkSpec, network_spec};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{errors::ApiError, response::DataResponse};
@@ -47,17 +47,14 @@ impl From<Arc<NetworkSpec>> for SpecConfig {
 
 /// Called by `config/spec` to get specification configuration.
 #[get("config/spec")]
-pub async fn get_config_spec(network_spec: Data<NetworkSpec>) -> Result<impl Responder, ApiError> {
-    let spec_config = SpecConfig::from(network_spec.into_inner());
-
-    Ok(HttpResponse::Ok().json(DataResponse::new(spec_config)))
+pub async fn get_config_spec() -> Result<impl Responder, ApiError> {
+    Ok(HttpResponse::Ok().json(DataResponse::new(SpecConfig::from(network_spec()))))
 }
 
 /// Called by `/deposit_contract` to get the Genesis Config of Beacon Chain.
 #[get("config/deposit_contract")]
-pub async fn get_config_deposit_contract(
-    network_spec: Data<NetworkSpec>,
-) -> Result<impl Responder, ApiError> {
+pub async fn get_config_deposit_contract() -> Result<impl Responder, ApiError> {
+    let network_spec = network_spec();
     Ok(
         HttpResponse::Ok().json(DataResponse::new(DepositContract::new(
             network_spec.network.chain_id(),
@@ -68,10 +65,8 @@ pub async fn get_config_deposit_contract(
 
 /// Called by `config/fork_schedule` to get fork schedule
 #[get("config/fork_schedule")]
-pub async fn get_fork_schedule(
-    network_spec: Data<NetworkSpec>,
-) -> Result<impl Responder, ApiError> {
+pub async fn get_fork_schedule() -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::Ok().json(DataResponse::new(
-        network_spec.fork_schedule.scheduled().collect::<Vec<_>>(),
+        network_spec().fork_schedule.scheduled().collect::<Vec<_>>(),
     )))
 }
