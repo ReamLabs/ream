@@ -1,4 +1,4 @@
-use std::{env, process::exit};
+use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
@@ -15,6 +15,7 @@ use ream_p2p::{
 };
 use ream_rpc::{config::ServerConfig, start_server};
 use ream_storage::db::{ReamDB, reset_db};
+use ream_sync::initialize_db_from_checkpoint;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -78,7 +79,7 @@ async fn main() {
             };
 
             // database must be clean for checkpoint sync
-            if config.sync_mode.is_checkpoint_sync() {
+            if config.purge_db {
                 reset_db(config.data_dir.clone()).expect("Unable to delete database");
             }
 
@@ -89,19 +90,13 @@ async fn main() {
 
             let _store;
             let _slot;
-            if config.sync_mode.is_checkpoint_sync() {
-                if config.rpc_url.is_none() {
-                    error!("RPC URL is required for checkpoint sync");
-                }
-                (_store, _slot) = config
-                    .sync_mode
-                    .sync(ream_db.clone(), &config.rpc_url.unwrap())
+            (_store, _slot) =
+                initialize_db_from_checkpoint(ream_db.clone(), config.checkpoint_sync_url)
                     .await
                     .map_err(|err| panic!("{err}"))
                     .unwrap();
 
-                info!("Checkpoint Sync complete");
-            }
+            info!("Database Initialization completed");
 
             let http_future = start_server(server_config, ream_db);
 

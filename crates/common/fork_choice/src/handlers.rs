@@ -97,18 +97,6 @@ pub async fn on_block(
         .beacon_state_provider()
         .insert(block_root, state.clone())?;
 
-    // Map state root to block root
-    store
-        .db
-        .state_root_index_provider()
-        .insert(state.tree_hash_root(), block_root)?;
-
-    // Add slot to store
-    store
-        .db
-        .slot_index_provider()
-        .insert(state.slot, block_root)?;
-
     // Add block timeliness to the store
     let time_into_slot = (store.db.time_provider().get()?
         - store.db.genesis_time_provider().get()?)
@@ -193,8 +181,6 @@ pub fn on_attester_slashing(
 pub fn on_tick(store: &mut Store, time: u64) -> anyhow::Result<()> {
     // If the ``store.time`` falls behind, while loop catches up slot by slot
     // to ensure that every previous slot is processed with ``on_tick_per_slot``
-    println!("time:{}", time);
-    println!("store.time:{}", store.db.genesis_time_provider().get()?);
     let tick_slot = (time - store.db.genesis_time_provider().get()?) / SECONDS_PER_SLOT;
     while store.get_current_slot()? < tick_slot {
         let previous_time = store.db.genesis_time_provider().get()?

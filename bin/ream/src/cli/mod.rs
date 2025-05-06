@@ -8,7 +8,6 @@ use clap::{Parser, Subcommand};
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use ream_node::version::FULL_VERSION;
 use ream_p2p::bootnodes::Bootnodes;
-use ream_sync::SyncMode;
 
 const DEFAULT_DISABLE_DISCOVERY: bool = false;
 const DEFAULT_DISCOVERY_PORT: u16 = 9000;
@@ -89,17 +88,17 @@ pub struct NodeConfig {
     pub bootnodes: Bootnodes,
 
     #[arg(
-        default_value = "checkpoint-sync",
-        long = "sync-mode",
-        help = "Sync Mode for the node. Defauls to CheckpointSync"
-    )]
-    pub sync_mode: SyncMode,
-
-    #[arg(
-        long = "rpc-url",
+        long = "checkpoint-sync-url",
         help = "Trusted RPC URL to initiate Checkpoint Sync."
     )]
-    pub rpc_url: Option<String>,
+    pub checkpoint_sync_url: Option<String>,
+
+    #[arg(
+        long = "purge-db",
+        help = "Purges the database.",
+        action = clap::ArgAction::SetTrue
+    )]
+    pub purge_db: bool,
 
     #[arg(
         long = "ws-epoch",
