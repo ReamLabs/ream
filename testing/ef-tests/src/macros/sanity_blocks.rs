@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! test_sanity_blocks {
-    ($operation_name:ident, $path:expr) => {
+    ($operation_name:ident, $test_fn:ident, $path:expr) => {
         paste::paste! {
             #[cfg(test)]
             #[allow(non_snake_case)]
@@ -19,10 +19,10 @@ macro_rules! test_sanity_blocks {
                 }
 
                 #[tokio::test]
-                async fn test_sanity_blocks() {
+                async fn $test_fn() {
                     let base_path = std::env::current_dir()
                         .unwrap()
-                        .join(format!("mainnet/tests/mainnet/electra/{}/pyspec_tests", $path));
+                        .join($path);
 
                     let mock_engine = MockExecutionEngine::new();
 
@@ -50,13 +50,20 @@ macro_rules! test_sanity_blocks {
                         let mut result: Result<(), String> = Ok(());
 
                         for i in 0..meta.blocks_count {
-                            let block_path = case_dir.join(format!("blocks_{}.ssz_snappy", i));
-                            if !block_path.exists() {
-                                panic!("Test asset not found: {:?}", block_path);
-                            }
+                            let block_ssz = case_dir.join(format!("blocks_{i}.ssz_snappy"));
+                            let block_yaml = case_dir.join(format!("blocks_{i}.yaml"));
 
-                            let signed_block: SignedBeaconBlock = utils::read_ssz_snappy(&block_path)
-                                .expect(&format!("cannot find test asset (blocks_{i}.ssz_snappy)"));
+                            let signed_block: SignedBeaconBlock = if block_ssz.exists() {
+                                utils::read_ssz_snappy(&block_ssz)
+                                    .expect(&format!("cannot find test asset (blocks_{i}.ssz_snappy)"))
+                            } else if block_yaml.exists() {
+                                let yaml = fs::read_to_string(&block_yaml)
+                                    .expect(&format!("cannot read blocks_{i}.yaml"));
+                                serde_yaml::from_str(&yaml)
+                                    .expect(&format!("Failed to parse blocks_{i}.yaml"))
+                            } else {
+                                panic!("Missing test asset for block {i}");
+                            };
 
                             result = state
                                 .state_transition(&signed_block, true, &mock_engine)
@@ -64,14 +71,12 @@ macro_rules! test_sanity_blocks {
                                 .map_err(|err| err.to_string());
                         }
 
-                        let expected_post =
-                            utils::read_ssz_snappy::<BeaconState>(&case_dir.join("post.ssz_snappy"));
+                        let expected_post = utils::read_ssz_snappy::<BeaconState>(&case_dir.join("post.ssz_snappy"));
 
                         match (result, expected_post) {
                             (Ok(_), Ok(expected)) => {
-                                let locked_state = state;
                                 assert_eq!(
-                                    locked_state, expected,
+                                    state, expected,
                                     "Post state mismatch in case {}",
                                     case_name
                                 );
