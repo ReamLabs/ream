@@ -1,9 +1,10 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     io,
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -18,6 +19,7 @@ use libp2p::{
     },
     dns::Transport as DnsTransport,
     futures::StreamExt,
+    gossipsub::{self, IdentTopic as Topic},
     identify,
     multiaddr::Protocol,
     noise::Config as NoiseConfig,
@@ -27,15 +29,14 @@ use libp2p::{
 };
 use libp2p_identity::{Keypair, PublicKey, secp256k1};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
-use ream_discv5::{
-    config::NetworkConfig,
-    discovery::{DiscoveredPeers, Discovery},
-};
+use parking_lot::Mutex;
+use ream_discv5::discovery::{DiscoveredPeers, Discovery};
 use ream_executor::ReamExecutor;
-use tracing::{error, info, warn};
+use ream_gossipsub::{GossipsubBehaviour, snappy::SnappyTransform, topics::GossipTopic};
+use tracing::{error, info, trace, warn};
 use yamux::Config as YamuxConfig;
 
-use crate::req_resp::ReqResp;
+use crate::{config::NetworkConfig, req_resp::ReqResp};
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
@@ -46,6 +47,9 @@ pub(crate) struct ReamBehaviour {
 
     /// The request-response domain
     pub req_resp: ReqResp,
+
+    /// The gossip domain: gossipsub
+    pub gossipsub: GossipsubBehaviour,
 
     pub connection_registry: connection_limits::Behaviour,
 }
@@ -66,6 +70,7 @@ pub enum ReamNetworkEvent {
 pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
+    subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
 }
 
 struct Executor(ReamExecutor);
@@ -81,12 +86,25 @@ impl Network {
         let local_key = secp256k1::Keypair::generate();
 
         let discovery = {
-            let mut discovery = Discovery::new(Keypair::from(local_key.clone()), config).await?;
+            let mut discovery =
+                Discovery::new(Keypair::from(local_key.clone()), &config.disc_config).await?;
             discovery.discover_peers(16, None);
             discovery
         };
 
         let req_resp = ReqResp::new();
+
+        let gossipsub = {
+            let snappy_transform =
+                SnappyTransform::new(config.gossipsub_config.config.max_transmit_size());
+            GossipsubBehaviour::new_with_transform(
+                libp2p::gossipsub::MessageAuthenticity::Anonymous,
+                config.gossipsub_config.config.clone(),
+                None,
+                snappy_transform,
+            )
+            .map_err(|err| anyhow!("Failed to create gossipsub behaviour: {err:?}"))?
+        };
 
         let connection_limits = {
             let limits = libp2p::connection_limits::ConnectionLimits::default()
@@ -113,6 +131,7 @@ impl Network {
             ReamBehaviour {
                 discovery,
                 req_resp,
+                gossipsub,
                 identify,
                 connection_registry: connection_limits,
             }
@@ -142,6 +161,7 @@ impl Network {
         let mut network = Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
+            subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
         };
 
         network.start_network_worker(config).await?;
@@ -152,15 +172,8 @@ impl Network {
     async fn start_network_worker(&mut self, config: &NetworkConfig) -> anyhow::Result<()> {
         info!("Libp2p starting .... ");
 
-        let mut multi_addr: Multiaddr = config
-            .socket_address
-            .ok_or_else(|| anyhow!("Socket address not found"))?
-            .into();
-        multi_addr.push(Protocol::Tcp(
-            config
-                .socket_port
-                .ok_or_else(|| anyhow!("Socket port not found"))?,
-        ));
+        let mut multi_addr: Multiaddr = config.socket_address.into();
+        multi_addr.push(Protocol::Tcp(config.socket_port));
 
         match self.swarm.listen_on(multi_addr.clone()) {
             Ok(listener_id) => {
@@ -174,7 +187,7 @@ impl Network {
             }
         }
 
-        for bootnode in &config.bootnodes {
+        for bootnode in &config.disc_config.bootnodes {
             if let (Some(ipv4), Some(tcp_port)) = (bootnode.ip4(), bootnode.tcp4()) {
                 let mut multi_addr = Multiaddr::empty();
                 multi_addr.push(ipv4.into());
@@ -183,7 +196,23 @@ impl Network {
             }
         }
 
+        for topic in &config.gossipsub_config.topics {
+            if self.subscribe_to_topic(*topic) {
+                info!("Subscribed to topic: {}", topic);
+            } else {
+                error!("Failed to subscribe to topic: {}", topic);
+            }
+        }
+
         Ok(())
+    }
+
+    pub fn peer_id(&self) -> PeerId {
+        self.peer_id
+    }
+
+    pub fn enr(&self) -> Enr {
+        self.swarm.behaviour().discovery.local_enr().clone()
     }
 
     /// polling the libp2p swarm for network events.
@@ -214,6 +243,10 @@ impl Network {
                 }
                 ReamBehaviourEvent::ReqResp(message) => {
                     info!("Unhandled reqresp event {message:?}");
+                    None
+                }
+                ReamBehaviourEvent::Gossipsub(event) => {
+                    self.handle_gossipsub_event(event);
                     None
                 }
                 ream_behavior_event => {
@@ -253,6 +286,50 @@ impl Network {
             }
         }
     }
+
+    fn handle_gossipsub_event(&mut self, event: gossipsub::Event) {
+        info!("Gossipsub event: {:?}", event);
+        match event {
+            gossipsub::Event::Message {
+                propagation_source,
+                message_id: _,
+                message,
+            } => {
+                trace!(
+                    "Peer {} sent gossipsub message: {:?}",
+                    propagation_source, message
+                );
+            }
+            gossipsub::Event::Subscribed { peer_id, topic } => {
+                trace!("Peer {} subscribed to topic: {:?}", peer_id, topic);
+            }
+            gossipsub::Event::Unsubscribed { peer_id, topic } => {
+                trace!("Peer {} unsubscribed from topic: {:?}", peer_id, topic);
+            }
+            _ => {}
+        }
+    }
+
+    fn subscribe_to_topic(&mut self, topic: GossipTopic) -> bool {
+        self.subscribed_topics.lock().insert(topic);
+
+        let topic: Topic = topic.into();
+
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .subscribe(&topic)
+            .is_ok()
+    }
+
+    #[allow(dead_code)]
+    fn unsubscribe_from_topic(&mut self, topic: GossipTopic) -> bool {
+        self.subscribed_topics.lock().remove(&topic);
+
+        let topic: Topic = topic.into();
+
+        self.swarm.behaviour_mut().gossipsub.unsubscribe(&topic)
+    }
 }
 
 pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, StreamMuxerBox)>> {
@@ -273,4 +350,127 @@ pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, 
     let transport = DnsTransport::system(transport)?.boxed();
 
     Ok(transport)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::IpAddr;
+
+    use ream_discv5::{config::DiscoveryConfig, subnet::Subnets};
+    use ream_executor::ReamExecutor;
+    use ream_gossipsub::{
+        config::GossipsubConfig,
+        topics::{GossipTopic, GossipTopicKind},
+    };
+    use ream_network_spec::networks::{DEV, set_network_spec};
+    use tokio::runtime::Runtime;
+
+    use super::*;
+    use crate::config::NetworkConfig;
+
+    async fn create_network(
+        socket_address: IpAddr,
+        socket_port: u16,
+        discovery_port: u16,
+        bootnodes: Vec<Enr>,
+        disable_discovery: bool,
+        topics: Vec<GossipTopic>,
+    ) -> anyhow::Result<Network> {
+        let executor = ReamExecutor::new().unwrap();
+
+        let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
+            socket_address,
+            discovery_port,
+        ))
+        .build();
+
+        let config = NetworkConfig {
+            socket_address,
+            socket_port,
+            disc_config: DiscoveryConfig {
+                discv5_config,
+                bootnodes,
+                socket_address,
+                socket_port,
+                discovery_port,
+                disable_discovery,
+                subnets: Subnets::new(),
+            },
+            gossipsub_config: GossipsubConfig {
+                topics,
+                ..Default::default()
+            },
+        };
+
+        Network::init(executor, &config).await
+    }
+
+    #[test]
+    fn test_p2p_gossipsub() {
+        set_network_spec(DEV.clone());
+
+        let runtime = Runtime::new().unwrap();
+
+        let gossip_topics = vec![GossipTopic {
+            fork: [0; 4],
+            kind: GossipTopicKind::BeaconBlock,
+        }];
+
+        let mut network1 = runtime
+            .block_on(create_network(
+                "127.0.0.1".parse::<IpAddr>().unwrap(),
+                9000,
+                9001,
+                vec![],
+                true,
+                gossip_topics.clone(),
+            ))
+            .unwrap();
+        let network1_enr = network1.enr();
+        let mut network2 = runtime
+            .block_on(create_network(
+                "127.0.0.1".parse::<IpAddr>().unwrap(),
+                9002,
+                9003,
+                vec![network1_enr],
+                false,
+                gossip_topics.clone(),
+            ))
+            .unwrap();
+
+        runtime.block_on(async {
+            let network1_future = async {
+                while let Some(event) = network1.swarm.next().await {
+                    if let SwarmEvent::Behaviour(ReamBehaviourEvent::Gossipsub(
+                        gossipsub::Event::Subscribed { peer_id: _, topic },
+                    )) = &event
+                    {
+                        let _ = network1
+                            .swarm
+                            .behaviour_mut()
+                            .gossipsub
+                            .publish(topic.clone(), vec![]);
+                    }
+                    let _ = network1.parse_swarm_event(event);
+                }
+            };
+
+            let network2_future = async {
+                while let Some(event) = network2.swarm.next().await {
+                    if let SwarmEvent::Behaviour(ReamBehaviourEvent::Gossipsub(
+                        gossipsub::Event::Message { .. },
+                    )) = &event
+                    {
+                        break;
+                    }
+                    let _ = network2.parse_swarm_event(event);
+                }
+            };
+
+            tokio::select! {
+                _ = network1_future => {}
+                _ = network2_future => {}
+            }
+        });
+    }
 }

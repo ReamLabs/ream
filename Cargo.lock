@@ -4326,6 +4326,7 @@ dependencies = [
  "discv5",
  "ream-discv5",
  "ream-executor",
+ "ream-gossipsub",
  "ream-network-spec",
  "ream-node",
  "ream-p2p",
@@ -4393,6 +4394,7 @@ dependencies = [
  "futures",
  "libp2p",
  "ream-consensus",
+ "ream-network-spec",
  "ssz_types",
  "tokio",
  "tracing",
@@ -4457,6 +4459,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-gossipsub"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "libp2p",
+ "sha2 0.10.8",
+ "snap",
+]
+
+[[package]]
 name = "ream-light-client"
 version = "0.1.0"
 dependencies = [
@@ -4508,8 +4520,10 @@ dependencies = [
  "libp2p",
  "libp2p-identity",
  "libp2p-mplex",
+ "parking_lot",
  "ream-discv5",
  "ream-executor",
+ "ream-gossipsub",
  "ream-network-spec",
  "serde",
  "serde_yaml",

@@ -25,8 +25,8 @@ use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use crate::{
-    config::NetworkConfig,
-    eth2::{ENR_ETH2_KEY, ENRForkID},
+    config::DiscoveryConfig,
+    eth2::{ENR_ETH2_KEY, EnrForkId},
     subnet::{ATTESTATION_BITFIELD_ENR_KEY, Subnet, subnet_predicate},
 };
 
@@ -66,19 +66,18 @@ pub struct Discovery {
 impl Discovery {
     pub async fn new(
         local_key: libp2p::identity::Keypair,
-        config: &NetworkConfig,
+        config: &DiscoveryConfig,
     ) -> anyhow::Result<Self> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
+
         let mut enr_builder = Enr::builder();
-        if let Some(socket_address) = config.socket_address {
-            enr_builder.ip(socket_address);
-        }
-        if let Some(socker_port) = config.socket_port {
-            enr_builder.udp4(socker_port);
-        }
+        enr_builder.ip(config.socket_address);
+        enr_builder.tcp4(config.socket_port);
+        enr_builder.udp4(config.discovery_port);
+
         let enr = enr_builder
-            .add_value(ENR_ETH2_KEY, &ENRForkID::pectra())
+            .add_value(ENR_ETH2_KEY, &EnrForkId::electra())
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.subnets)
             .build(&enr_local)
             .map_err(|err| anyhow!("Failed to build ENR: {err}"))?;
@@ -314,14 +313,15 @@ mod tests {
     use std::net::Ipv4Addr;
 
     use libp2p::identity::Keypair;
+    use ream_network_spec::networks::{DEV, set_network_spec};
 
     use super::*;
-    use crate::{config::NetworkConfig, subnet::Subnets};
+    use crate::{config::DiscoveryConfig, subnet::Subnets};
 
     #[tokio::test]
     async fn test_initial_subnet_setup() -> anyhow::Result<()> {
         let key = Keypair::generate_secp256k1();
-        let mut config = NetworkConfig::default();
+        let mut config = DiscoveryConfig::default();
         config.subnets.enable_subnet(Subnet::Attestation(0))?; // Set subnet 0
         config.subnets.disable_subnet(Subnet::Attestation(1))?; // Set subnet 1
         config.disable_discovery = true;
@@ -340,8 +340,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_subnet_predicate() -> anyhow::Result<()> {
+        set_network_spec(DEV.clone());
+
         let key = Keypair::generate_secp256k1();
-        let mut config = NetworkConfig::default();
+        let mut config = DiscoveryConfig::default();
         config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
         config.subnets.disable_subnet(Subnet::Attestation(1))?;
         config.disable_discovery = true;
@@ -366,10 +368,10 @@ mod tests {
             .table_filter(|_| true)
             .build();
 
-        let mut config = NetworkConfig {
+        let mut config = DiscoveryConfig {
             disable_discovery: false,
             discv5_config: discv5_config.clone(),
-            ..NetworkConfig::default()
+            ..DiscoveryConfig::default()
         };
 
         config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
@@ -378,16 +380,16 @@ mod tests {
 
         // Simulate a peer with another Discovery instance
         let peer_key = Keypair::generate_secp256k1();
-        let mut peer_config = NetworkConfig {
+        let mut peer_config = DiscoveryConfig {
             subnets: Subnets::new(),
             disable_discovery: true,
             discv5_config,
-            ..NetworkConfig::default()
+            ..DiscoveryConfig::default()
         };
 
         peer_config.subnets.enable_subnet(Subnet::Attestation(0))?;
-        peer_config.socket_address = Some(Ipv4Addr::new(192, 168, 1, 100).into()); // Non-localhost IP
-        peer_config.socket_port = Some(9001); // Different port
+        peer_config.socket_address = Ipv4Addr::new(192, 168, 1, 100).into(); // Non-localhost IP
+        peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
 
         let peer_discovery = Discovery::new(peer_key, &peer_config).await.unwrap();

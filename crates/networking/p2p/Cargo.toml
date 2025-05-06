@@ -13,6 +13,7 @@ version.workspace = true
 # ream dependencies
 ream-executor.workspace = true
 ream-discv5.workspace = true
+ream-gossipsub.workspace = true
 ream-network-spec.workspace = true
 
 # misc
@@ -27,6 +28,7 @@ futures.workspace = true
 libp2p-identity.workspace = true
 libp2p-mplex.workspace = true
 libp2p.workspace = true
+parking_lot.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 snap.workspace = true
@@ -37,4 +39,3 @@ tokio-io-timeout = "1"
 tokio-util.workspace = true
 tracing.workspace = true
 unsigned-varint = { version = "0.8", features = ["codec"] }
-
