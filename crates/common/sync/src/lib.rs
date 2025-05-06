@@ -12,6 +12,7 @@ use ream_fork_choice::{
     handlers::on_tick,
     store::{Store, get_forkchoice_store},
 };
+use ream_network_spec::networks::network_spec;
 use ream_rpc::types::response::BeaconVersionedResponse;
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::{info, warn};
@@ -59,7 +60,7 @@ pub async fn initialize_db_from_checkpoint(
     let mut store = get_forkchoice_store(state.data, block.data.message, db)?;
 
     // using sepolia genesis time until pectra mainnet
-    let time = 1655733600 + SECONDS_PER_SLOT * (slot + 1);
+    let time = network_spec().genesis.genesis_time + SECONDS_PER_SLOT * (slot + 1);
     on_tick(&mut store, time)?;
     info!("Initial Sync complete");
 
