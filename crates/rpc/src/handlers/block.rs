@@ -1,11 +1,13 @@
 use std::collections::BTreeSet;
-use alloy_primitives::map::{foldhash::fast::RandomState, HashMap};
 
 use actix_web::{
     HttpResponse, Responder, get,
     web::{Data, Path},
 };
-use alloy_primitives::B256;
+use alloy_primitives::{
+    B256,
+    map::{HashMap, foldhash::fast::RandomState},
+};
 use ream_consensus::{
     attester_slashing::AttesterSlashing,
     constants::{
@@ -16,12 +18,12 @@ use ream_consensus::{
     electra::{beacon_block::{BeaconBlock, SignedBeaconBlock}, beacon_state::BeaconState},
     genesis::Genesis,
 };
+use ream_fork_choice::store::Store;
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
-use ream_fork_choice::store::Store;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use tree_hash::TreeHash;
@@ -216,7 +218,7 @@ pub async fn get_filtered_block_tree(db: &ReamDB) -> Result<Vec<BeaconBlock>, Ap
 
     let mut blocks = HashMap::with_hasher(RandomState::default());
     let store = Store { db: db.clone() };
-    
+
     store.filter_block_tree(root, &mut blocks).map_err(|err| {
         error!("Failed to filter block tree, error: {err:?}");
         ApiError::InternalError
