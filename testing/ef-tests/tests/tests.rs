@@ -1,4 +1,4 @@
-// #![cfg(feature = "ef-tests")]
+#![cfg(feature = "ef-tests")]
 
 use ef_tests::{
     test_consensus_type, test_epoch_processing, test_fork_choice, test_merkle_proof,
@@ -180,11 +180,7 @@ test_rewards!(leak, get_inactivity_penalty_deltas);
 test_rewards!(random, get_inactivity_penalty_deltas);
 
 // Testing sanity
-test_sanity_blocks!(
-    test_sanity_blocks,
-    test_sanity_blocks,
-    "mainnet/tests/mainnet/electra/sanity/blocks/pyspec_tests"
-);
+test_sanity_blocks!(test_sanity_blocks, "sanity/blocks");
 test_sanity_slots!();
 
 // Testing fork_choice
@@ -228,35 +224,7 @@ test_merkle_proof!(
 );
 
 // Testing random
-test_sanity_blocks!(
-    test_random,
-    test_sanity_blocks,
-    "mainnet/tests/mainnet/electra/random/random/pyspec_tests"
-);
+test_sanity_blocks!(test_random, "random/random");
 
 // Testing finality
-test_sanity_blocks!(
-    finality_no_updates_at_genesis,
-    test_finality,
-    "mainnet/tests/mainnet/electra/finality/finality/pyspec_tests/finality_no_updates_at_genesis"
-);
-test_sanity_blocks!(
-    finality_rule_1,
-    test_finality,
-    "mainnet/tests/mainnet/electra/finality/finality/pyspec_tests/finality_rule_1"
-);
-test_sanity_blocks!(
-    finality_rule_2,
-    test_finality,
-    "mainnet/tests/mainnet/electra/finality/finality/pyspec_tests/finality_rule_2"
-);
-test_sanity_blocks!(
-    finality_rule_3,
-    test_finality,
-    "mainnet/tests/mainnet/electra/finality/finality/pyspec_tests/finality_rule_3"
-);
-test_sanity_blocks!(
-    finality_rule_4,
-    test_finality,
-    "mainnet/tests/mainnet/electra/finality/finality/pyspec_tests/finality_rule_4"
-);
+test_sanity_blocks!(test_finality, "finality/finality");

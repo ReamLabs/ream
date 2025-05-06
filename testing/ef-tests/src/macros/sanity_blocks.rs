@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! test_sanity_blocks {
-    ($operation_name:ident, $test_fn:ident, $path:expr) => {
+    ($operation_name:ident, $path:expr) => {
         paste::paste! {
             #[cfg(test)]
             #[allow(non_snake_case)]
@@ -19,10 +19,10 @@ macro_rules! test_sanity_blocks {
                 }
 
                 #[tokio::test]
-                async fn $test_fn() {
+                async fn $operation_name() {
                     let base_path = std::env::current_dir()
                         .unwrap()
-                        .join($path);
+                        .join(format!("mainnet/tests/mainnet/electra/{}/pyspec_tests", $path));
 
                     let mock_engine = MockExecutionEngine::new();
 
