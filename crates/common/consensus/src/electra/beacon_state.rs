@@ -2663,7 +2663,7 @@ impl BeaconState {
         .concat())
     }
 
-    pub fn state_hash(&self) -> B256 {
+    pub fn state_root(&self) -> B256 {
         self.tree_hash_root()
     }
 }

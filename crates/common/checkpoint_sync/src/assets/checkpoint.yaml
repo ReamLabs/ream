@@ -1,0 +1,20 @@
+- network: "Mainnet"
+  checkpoint_urls:
+    - https://mainnet.checkpoint.sigp.io
+    - http://testing.mainnet.beacon-api.nimbus.team
+    - https://sync-mainnet.beaconcha.in
+    - https://beaconstate.ethstaker.cc
+- network: "Holesky"
+  checkpoint_urls:
+    - https://holesky.beaconstate.info
+    - https://checkpoint-sync.holesky.ethpandaops.io
+- network: "Sepolia"
+  checkpoint_urls:
+    - https://sepolia.beaconstate.info
+    - https://checkpoint-sync.sepolia.ethpandaops.io
+- network: "Hoodi"
+  checkpoint_urls:
+    - https://hoodi.beaconstate.info
+    - https://hoodi.beaconstate.ethstaker.cc
+- network: "Dev"
+  checkpoint_urls:

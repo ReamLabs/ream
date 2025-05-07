@@ -10,12 +10,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-ream-consensus.workspace = true
-ream-network-spec.workspace = true
-ream-rpc.workspace = true
-ream-storage.workspace = true
-ream-fork-choice.workspace = true
-
 alloy-primitives.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
@@ -23,3 +17,10 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 tracing.workspace = true
+
+# Ream dependencies
+ream-consensus.workspace = true
+ream-network-spec.workspace = true
+ream-rpc.workspace = true
+ream-storage.workspace = true
+ream-fork-choice.workspace = true

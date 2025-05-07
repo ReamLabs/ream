@@ -69,7 +69,7 @@ pub struct BeaconBlock {
 }
 
 impl BeaconBlock {
-    pub fn block_hash(&self) -> B256 {
+    pub fn block_root(&self) -> B256 {
         self.tree_hash_root()
     }
 }

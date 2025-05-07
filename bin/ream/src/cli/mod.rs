@@ -93,18 +93,8 @@ pub struct NodeConfig {
     )]
     pub checkpoint_sync_url: Option<String>,
 
-    #[arg(
-        long = "purge-db",
-        help = "Purges the database.",
-        action = clap::ArgAction::SetTrue
-    )]
+    #[arg(long = "purge-db", help = "Purges the database.")]
     pub purge_db: bool,
-
-    #[arg(
-        long = "ws-epoch",
-        help = "Optional epoch to start Checkpoint Sync from."
-    )]
-    pub ws_epoch: Option<u64>,
 }
 
 #[cfg(test)]

@@ -78,7 +78,6 @@ async fn main() {
                 gossipsub_config,
             };
 
-            // database must be clean for checkpoint sync
             if config.purge_db {
                 reset_db(config.data_dir.clone()).expect("Unable to delete database");
             }
@@ -88,13 +87,10 @@ async fn main() {
 
             info!("ream database initialized ");
 
-            let _store;
-            let _slot;
-            (_store, _slot) =
-                initialize_db_from_checkpoint(ream_db.clone(), config.checkpoint_sync_url)
-                    .await
-                    .map_err(|err| panic!("{err}"))
-                    .unwrap();
+            initialize_db_from_checkpoint(ream_db.clone(), config.checkpoint_sync_url)
+                .await
+                .map_err(|err| panic!("{err}"))
+                .unwrap();
 
             info!("Database Initialization completed");
 

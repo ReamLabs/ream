@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::{Result, anyhow};
 use redb::{Builder, Database};
+use tracing::info;
 
 use crate::{
     dir,
@@ -201,7 +202,7 @@ pub fn reset_db(path: Option<PathBuf>) -> anyhow::Result<()> {
     let db_path = path.clone().ok_or_else(|| anyhow!("Path does not exist"))?;
 
     if db_path.exists() {
-        println!(
+        info!(
             "Are you sure you want to remove the database at {:?}? (y/n):",
             path
         );
@@ -211,14 +212,14 @@ pub fn reset_db(path: Option<PathBuf>) -> anyhow::Result<()> {
         io::stdin().read_line(&mut input).unwrap();
         if input.trim().eq_ignore_ascii_case("y") {
             match fs::remove_dir_all(&db_path) {
-                Ok(_) => println!("Database cleared successfully."),
-                Err(e) => eprintln!("Failed to remove database: {}", e),
+                Ok(_) => info!("Database cleared successfully."),
+                Err(err) => return Err(anyhow!("Failed to remove database:{}", err)),
             }
         } else {
-            println!("Database path does not exist: {:?}", db_path);
+            info!("Database path does not exist: {:?}", db_path);
         }
     } else {
-        println!("Operation canceled.");
+        info!("Operation canceled.");
     }
     Ok(())
 }
