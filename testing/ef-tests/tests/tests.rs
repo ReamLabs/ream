@@ -184,11 +184,14 @@ test_sanity_blocks!(test_sanity_blocks, "sanity/blocks");
 test_sanity_slots!();
 
 // Testing fork_choice
-test_fork_choice!(ex_ante);
-test_fork_choice!(get_head);
-test_fork_choice!(get_proposer_head);
-test_fork_choice!(on_block);
-test_fork_choice!(should_override_forkchoice_update);
+test_fork_choice!(ex_ante, "fork_choice/ex_ante");
+test_fork_choice!(get_head, "fork_choice/get_head");
+test_fork_choice!(get_proposer_head, "fork_choice/get_proposer_head");
+test_fork_choice!(on_block, "fork_choice/on_block");
+test_fork_choice!(
+    should_override_forkchoice_update,
+    "fork_choice/should_override_forkchoice_update"
+);
 
 // Testing merkle_proof
 test_merkle_proof!(
@@ -228,3 +231,6 @@ test_sanity_blocks!(test_random, "random/random");
 
 // Testing finality
 test_sanity_blocks!(test_finality, "finality/finality");
+
+// Testing sync
+test_fork_choice!(from_syncing_to_invalid, "sync/optimistic");
