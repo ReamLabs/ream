@@ -41,8 +41,6 @@ async fn main() {
 
             set_network_spec(config.network);
 
-            println!("network spec: {:?}", network_spec());
-
             let server_config = ServerConfig::new(
                 config.http_address,
                 config.http_port,

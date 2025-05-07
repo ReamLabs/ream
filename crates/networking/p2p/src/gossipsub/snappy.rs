@@ -1,4 +1,4 @@
-use libp2p::gossipsub::DataTransform;
+use libp2p::gossipsub::{DataTransform, Message, RawMessage, TopicHash};
 use snap::raw::{Decoder, Encoder, decompress_len};
 
 pub struct SnappyTransform {
@@ -14,10 +14,7 @@ impl SnappyTransform {
 }
 
 impl DataTransform for SnappyTransform {
-    fn inbound_transform(
-        &self,
-        raw_message: libp2p::gossipsub::RawMessage,
-    ) -> Result<libp2p::gossipsub::Message, std::io::Error> {
+    fn inbound_transform(&self, raw_message: RawMessage) -> Result<Message, std::io::Error> {
         let len = decompress_len(&raw_message.data)?;
 
         if len > self.max_size_per_message {
@@ -33,7 +30,7 @@ impl DataTransform for SnappyTransform {
         let mut decoder = Decoder::new();
         let data = decoder.decompress_vec(&raw_message.data)?;
 
-        Ok(libp2p::gossipsub::Message {
+        Ok(Message {
             source: raw_message.source,
             data,
             sequence_number: raw_message.sequence_number,
@@ -43,7 +40,7 @@ impl DataTransform for SnappyTransform {
 
     fn outbound_transform(
         &self,
-        _topic: &libp2p::gossipsub::TopicHash,
+        _topic: &TopicHash,
         data: Vec<u8>,
     ) -> Result<Vec<u8>, std::io::Error> {
         if data.len() > self.max_size_per_message {

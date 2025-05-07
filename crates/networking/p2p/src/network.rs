@@ -19,7 +19,7 @@ use libp2p::{
     },
     dns::Transport as DnsTransport,
     futures::StreamExt,
-    gossipsub::{Event as GossipsubEvent, IdentTopic as Topic},
+    gossipsub::{Event as GossipsubEvent, IdentTopic as Topic, MessageAuthenticity},
     identify,
     multiaddr::Protocol,
     noise::Config as NoiseConfig,
@@ -101,7 +101,7 @@ impl Network {
             let snappy_transform =
                 SnappyTransform::new(config.gossipsub_config.config.max_transmit_size());
             GossipsubBehaviour::new_with_transform(
-                libp2p::gossipsub::MessageAuthenticity::Anonymous,
+                MessageAuthenticity::Anonymous,
                 config.gossipsub_config.config.clone(),
                 None,
                 snappy_transform,
@@ -201,9 +201,9 @@ impl Network {
 
         for topic in &config.gossipsub_config.topics {
             if self.subscribe_to_topic(*topic) {
-                info!("Subscribed to topic: {}", topic);
+                info!("Subscribed to topic: {topic}");
             } else {
-                error!("Failed to subscribe to topic: {}", topic);
+                error!("Failed to subscribe to topic: {topic}");
             }
         }
 
@@ -298,16 +298,13 @@ impl Network {
                 message_id: _,
                 message,
             } => {
-                trace!(
-                    "Peer {} sent gossipsub message: {:?}",
-                    propagation_source, message
-                );
+                trace!("Peer {propagation_source} sent gossipsub message: {message:?}");
             }
             GossipsubEvent::Subscribed { peer_id, topic } => {
-                trace!("Peer {} subscribed to topic: {:?}", peer_id, topic);
+                trace!("Peer {peer_id} subscribed to topic: {topic:?}");
             }
             GossipsubEvent::Unsubscribed { peer_id, topic } => {
-                trace!("Peer {} unsubscribed from topic: {:?}", peer_id, topic);
+                trace!("Peer {peer_id} unsubscribed from topic: {topic:?}");
             }
             _ => {}
         }

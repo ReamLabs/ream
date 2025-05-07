@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use libp2p::gossipsub::{self};
+use libp2p::gossipsub::{Config, ConfigBuilder, MessageId, ValidationMode};
 use ream_consensus::constants::{SECONDS_PER_SLOT, SLOTS_PER_EPOCH};
 use sha2::{Digest, Sha256};
 
@@ -9,14 +9,14 @@ use crate::{constants::MESSAGE_DOMAIN_VALID_SNAPPY, utils::max_message_size};
 
 #[derive(Debug, Clone)]
 pub struct GossipsubConfig {
-    pub config: gossipsub::Config,
+    pub config: Config,
     pub topics: Vec<GossipTopic>,
 }
 
 impl Default for GossipsubConfig {
     // https://ethereum.github.io/consensus-specs/specs/phase0/p2p-interface/#the-gossip-domain-gossipsub
     fn default() -> Self {
-        let config = gossipsub::ConfigBuilder::default()
+        let config = ConfigBuilder::default()
             .max_transmit_size(max_message_size() as usize)
             .heartbeat_interval(Duration::from_millis(700))
             .fanout_ttl(Duration::from_secs(60))
@@ -29,12 +29,12 @@ impl Default for GossipsubConfig {
             .max_messages_per_rpc(Some(500))
             .duplicate_cache_time(Duration::from_secs(SLOTS_PER_EPOCH * SECONDS_PER_SLOT * 2))
             .validate_messages()
-            .validation_mode(gossipsub::ValidationMode::Anonymous)
+            .validation_mode(ValidationMode::Anonymous)
             .allow_self_origin(true)
             .flood_publish(false)
             .idontwant_message_size_threshold(1000)
             .message_id_fn(move |message| {
-                gossipsub::MessageId::from(
+                MessageId::from(
                     &Sha256::digest({
                         let topic_bytes = message.topic.as_str().as_bytes();
                         let mut digest = vec![];
