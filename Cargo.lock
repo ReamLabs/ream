@@ -4489,6 +4489,8 @@ dependencies = [
 name = "ream-node"
 version = "0.1.0"
 dependencies = [
+ "libp2p",
+ "serde",
  "vergen",
  "vergen-git2",
 ]
@@ -4511,6 +4513,8 @@ dependencies = [
  "ream-discv5",
  "ream-executor",
  "ream-network-spec",
+ "ream-node",
+ "ream-peer-management",
  "serde",
  "serde_yaml",
  "snap",
@@ -4521,6 +4525,15 @@ dependencies = [
  "tokio-util",
  "tracing",
  "unsigned-varint 0.8.0",
+]
+
+[[package]]
+name = "ream-peer-management"
+version = "0.1.0"
+dependencies = [
+ "libp2p",
+ "serde",
+ "vergen",
 ]
 
 [[package]]

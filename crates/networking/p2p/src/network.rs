@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::Debug,
+    net::IpAddr,
     io,
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
@@ -32,6 +33,7 @@ use ream_discv5::{
     discovery::{DiscoveredPeers, Discovery},
 };
 use ream_executor::ReamExecutor;
+use ream_peer_management::peer::{PeerConnectionStatus, PeerInfo};
 use tracing::{error, info, warn};
 use yamux::Config as YamuxConfig;
 
@@ -61,11 +63,14 @@ pub enum ReamNetworkEvent {
     MetaData(PeerId),
     DisconnectPeer(PeerId),
     DiscoverPeers(usize),
+    Banned(PeerId, Vec<IpAddr>),
+    UnBanned(PeerId, Vec<IpAddr>),
 }
 
 pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
+    peers: HashMap<PeerId, PeerInfo>,
 }
 
 struct Executor(ReamExecutor);
@@ -142,6 +147,7 @@ impl Network {
         let mut network = Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
+            peers: HashMap::new(),
         };
 
         network.start_network_worker(config).await?;
@@ -203,7 +209,6 @@ impl Network {
         &mut self,
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {
-        // currently no-op for any network events
         info!("Event: {:?}", event);
         match event {
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -221,6 +226,40 @@ impl Network {
                     None
                 }
             },
+            SwarmEvent::ConnectionEstablished {
+                peer_id, endpoint, ..
+            } => {
+                // Update peers hashmap with new connection
+                match self.peers.get_mut(&peer_id) {
+                    Some(peer_info) => {
+                        peer_info.connection_status = PeerConnectionStatus::Connected;
+                        peer_info.update_last_seen();
+                    }
+                    None => {
+                        // Create new peer info
+                        let peer_info =
+                            PeerInfo::new(peer_id, endpoint.get_remote_address().clone());
+                        self.peers.insert(peer_id, peer_info);
+                    }
+                }
+                Some(ReamNetworkEvent::PeerConnectedIncoming(peer_id))
+            }
+            SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                // Update peer status to disconnected
+                match self.peers.get_mut(&peer_id) {
+                    Some(peer_info) => {
+                        peer_info.connection_status = PeerConnectionStatus::Disconnected;
+                        peer_info.update_last_seen();
+                    }
+                    None => {
+                        println!(
+                            "Received disconnect from a peer not present in local db {:}",
+                            peer_id
+                        );
+                    }
+                }
+                Some(ReamNetworkEvent::PeerDisconnected(peer_id))
+            }
             swarm_event => {
                 info!("Unhandled swarm event: {swarm_event:?}");
                 None

@@ -8,7 +8,7 @@ members = [
     "crates/common/fork_choice", 
     "crates/common/light_client",
     "crates/common/network_spec", 
-    "crates/common/node",
+    "crates/common/node", "crates/common/peer_management",
     "crates/common/polynomial_commitments",
     "crates/crypto/bls",
     "crates/crypto/merkle",
@@ -86,6 +86,7 @@ ream-light-client = { path = "crates/common/light_client" }
 ream-merkle = { path = "crates/crypto/merkle" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }
+ream-peer-management = { path = "crates/common/peer_management" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-p2p = { path = "crates/networking/p2p" }
 ream-rpc = { path = "crates/rpc" }
