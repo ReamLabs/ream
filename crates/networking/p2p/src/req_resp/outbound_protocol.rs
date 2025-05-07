@@ -26,8 +26,8 @@ use super::{
     inbound_protocol::ResponseCode,
     messages::{Message, meta_data::GetMetaDataV2, ping::Ping, status::Status},
     protocol_id::{ProtocolId, SupportedProtocol},
-    utils::max_message_size,
 };
+use crate::utils::max_message_size;
 
 #[derive(Debug, Clone)]
 pub struct OutboundReqRespProtocol {

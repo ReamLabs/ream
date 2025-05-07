@@ -11,9 +11,9 @@ version.workspace = true
 
 [dependencies]
 # ream dependencies
+ream-consensus.workspace = true
 ream-executor.workspace = true
 ream-discv5.workspace = true
-ream-gossipsub.workspace = true
 ream-network-spec.workspace = true
 
 # misc
@@ -31,6 +31,7 @@ libp2p.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
+sha2.workspace = true
 snap.workspace = true
 ssz_types.workspace = true
 thiserror.workspace = true

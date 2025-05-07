@@ -4,12 +4,15 @@ use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_discv5::{config::DiscoveryConfig, eth2::EnrForkId, subnet::Subnets};
 use ream_executor::ReamExecutor;
-use ream_gossipsub::{
-    config::GossipsubConfig,
-    topics::{GossipTopic, GossipTopicKind},
-};
 use ream_network_spec::networks::{network_spec, set_network_spec};
-use ream_p2p::{config::NetworkConfig, network::Network};
+use ream_p2p::{
+    config::NetworkConfig,
+    gossipsub::{
+        configurations::GossipsubConfig,
+        topics::{GossipTopic, GossipTopicKind},
+    },
+    network::Network,
+};
 use ream_rpc::{config::ServerConfig, start_server};
 use ream_storage::db::ReamDB;
 use tracing::{error, info};
@@ -53,7 +56,7 @@ async fn main() {
             .build();
 
             let bootnodes = config.bootnodes.to_enrs(network_spec().network);
-            let disc_config = DiscoveryConfig {
+            let discv5_config = DiscoveryConfig {
                 discv5_config,
                 bootnodes,
                 socket_address: config.socket_address,
@@ -65,14 +68,14 @@ async fn main() {
 
             let mut gossipsub_config = GossipsubConfig::default();
             gossipsub_config.set_topics(vec![GossipTopic {
-                fork: EnrForkId::electra().fork_digest.into(),
+                fork: EnrForkId::electra().fork_digest,
                 kind: GossipTopicKind::BeaconBlock,
             }]);
 
             let network_config = NetworkConfig {
                 socket_address: config.socket_address,
                 socket_port: config.socket_port,
-                disc_config,
+                discv5_config,
                 gossipsub_config,
             };
 

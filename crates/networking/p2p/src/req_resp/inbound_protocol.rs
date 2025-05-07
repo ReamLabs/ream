@@ -31,8 +31,8 @@ use super::{
     handler::RespMessage,
     messages::{Message, goodbye::Goodbye, meta_data::GetMetaDataV2, ping::Ping, status::Status},
     protocol_id::{ProtocolId, SupportedProtocol},
-    utils::max_message_size,
 };
+use crate::utils::max_message_size;
 
 #[derive(Debug, Clone)]
 pub struct InboundReqRespProtocol {}

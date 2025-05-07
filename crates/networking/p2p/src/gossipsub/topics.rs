@@ -1,3 +1,4 @@
+use alloy_primitives::{aliases::B32, hex::ToHexExt};
 use libp2p::gossipsub::IdentTopic as Topic;
 
 pub const TOPIC_PREFIX: &str = "eth2";
@@ -18,7 +19,7 @@ pub const BLOB_SIDECAR_PREFIX_TOPIC: &str = "blob_sidecar_";
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct GossipTopic {
-    pub fork: [u8; 4],
+    pub fork: B32,
     pub kind: GossipTopicKind,
 }
 
@@ -28,7 +29,7 @@ impl std::fmt::Display for GossipTopic {
             f,
             "/{}/{}/{}/{}",
             TOPIC_PREFIX,
-            hex::encode(self.fork),
+            self.fork.encode_hex(),
             self.kind,
             ENCODING_POSTFIX
         )

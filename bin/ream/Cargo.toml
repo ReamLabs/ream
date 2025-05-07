@@ -18,7 +18,6 @@ path = "src/main.rs"
 # ream dependencies
 ream-discv5.workspace = true
 ream-executor.workspace = true 
-ream-gossipsub.workspace = true
 ream-network-spec.workspace = true 
 ream-node.workspace = true
 ream-p2p.workspace = true 

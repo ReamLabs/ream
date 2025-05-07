@@ -1,15 +1,11 @@
-use std::{cmp::max, time::Duration};
+use std::time::Duration;
 
 use libp2p::gossipsub::{self};
+use ream_consensus::constants::{SECONDS_PER_SLOT, SLOTS_PER_EPOCH};
 use sha2::{Digest, Sha256};
 
-use crate::topics::GossipTopic;
-
-pub const SECONDS_PER_SLOT: u64 = 12;
-pub const SLOTS_PER_EPOCH: u64 = 32;
-pub const MAX_PAYLOAD_SIZE: u64 = 10485760;
-pub const MESSAGE_DOMAIN_VALID_SNAPPY: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
-pub const MESSAGE_DOMAIN_INVALID_SNAPPY: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+use super::topics::GossipTopic;
+use crate::{constants::MESSAGE_DOMAIN_VALID_SNAPPY, utils::max_message_size};
 
 #[derive(Debug, Clone)]
 pub struct GossipsubConfig {
@@ -42,7 +38,7 @@ impl Default for GossipsubConfig {
                     &Sha256::digest({
                         let topic_bytes = message.topic.as_str().as_bytes();
                         let mut digest = vec![];
-                        digest.extend_from_slice(&MESSAGE_DOMAIN_VALID_SNAPPY);
+                        digest.extend_from_slice(MESSAGE_DOMAIN_VALID_SNAPPY.as_slice());
                         digest.extend_from_slice(&topic_bytes.len().to_le_bytes());
                         digest.extend_from_slice(topic_bytes);
                         digest.extend_from_slice(&message.data);
@@ -64,12 +60,4 @@ impl GossipsubConfig {
     pub fn set_topics(&mut self, topics: Vec<GossipTopic>) {
         self.topics = topics;
     }
-}
-
-fn max_compressed_len(n: u64) -> u64 {
-    32 + n + n / 6
-}
-
-fn max_message_size() -> u64 {
-    max(max_compressed_len(MAX_PAYLOAD_SIZE) + 1024, 1024 * 1024)
 }

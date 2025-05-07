@@ -5,7 +5,6 @@ pub mod inbound_protocol;
 pub mod messages;
 pub mod outbound_protocol;
 pub mod protocol_id;
-pub mod utils;
 
 use std::task::{Context, Poll};
 

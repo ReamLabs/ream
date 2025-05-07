@@ -19,7 +19,7 @@ use libp2p::{
     },
     dns::Transport as DnsTransport,
     futures::StreamExt,
-    gossipsub::{self, IdentTopic as Topic},
+    gossipsub::{Event as GossipsubEvent, IdentTopic as Topic},
     identify,
     multiaddr::Protocol,
     noise::Config as NoiseConfig,
@@ -32,11 +32,14 @@ use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::Mutex;
 use ream_discv5::discovery::{DiscoveredPeers, Discovery};
 use ream_executor::ReamExecutor;
-use ream_gossipsub::{GossipsubBehaviour, snappy::SnappyTransform, topics::GossipTopic};
 use tracing::{error, info, trace, warn};
 use yamux::Config as YamuxConfig;
 
-use crate::{config::NetworkConfig, req_resp::ReqResp};
+use crate::{
+    config::NetworkConfig,
+    gossipsub::{GossipsubBehaviour, snappy::SnappyTransform, topics::GossipTopic},
+    req_resp::ReqResp,
+};
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
@@ -87,7 +90,7 @@ impl Network {
 
         let discovery = {
             let mut discovery =
-                Discovery::new(Keypair::from(local_key.clone()), &config.disc_config).await?;
+                Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
             discovery.discover_peers(16, None);
             discovery
         };
@@ -187,7 +190,7 @@ impl Network {
             }
         }
 
-        for bootnode in &config.disc_config.bootnodes {
+        for bootnode in &config.discv5_config.bootnodes {
             if let (Some(ipv4), Some(tcp_port)) = (bootnode.ip4(), bootnode.tcp4()) {
                 let mut multi_addr = Multiaddr::empty();
                 multi_addr.push(ipv4.into());
@@ -287,10 +290,10 @@ impl Network {
         }
     }
 
-    fn handle_gossipsub_event(&mut self, event: gossipsub::Event) {
+    fn handle_gossipsub_event(&mut self, event: GossipsubEvent) {
         info!("Gossipsub event: {:?}", event);
         match event {
-            gossipsub::Event::Message {
+            GossipsubEvent::Message {
                 propagation_source,
                 message_id: _,
                 message,
@@ -300,10 +303,10 @@ impl Network {
                     propagation_source, message
                 );
             }
-            gossipsub::Event::Subscribed { peer_id, topic } => {
+            GossipsubEvent::Subscribed { peer_id, topic } => {
                 trace!("Peer {} subscribed to topic: {:?}", peer_id, topic);
             }
-            gossipsub::Event::Unsubscribed { peer_id, topic } => {
+            GossipsubEvent::Unsubscribed { peer_id, topic } => {
                 trace!("Peer {} unsubscribed from topic: {:?}", peer_id, topic);
             }
             _ => {}
@@ -356,17 +359,17 @@ pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, 
 mod tests {
     use std::net::IpAddr;
 
+    use alloy_primitives::aliases::B32;
     use ream_discv5::{config::DiscoveryConfig, subnet::Subnets};
     use ream_executor::ReamExecutor;
-    use ream_gossipsub::{
-        config::GossipsubConfig,
-        topics::{GossipTopic, GossipTopicKind},
-    };
     use ream_network_spec::networks::{DEV, set_network_spec};
     use tokio::runtime::Runtime;
 
     use super::*;
-    use crate::config::NetworkConfig;
+    use crate::{
+        config::NetworkConfig,
+        gossipsub::{configurations::GossipsubConfig, topics::GossipTopicKind},
+    };
 
     async fn create_network(
         socket_address: IpAddr,
@@ -387,7 +390,7 @@ mod tests {
         let config = NetworkConfig {
             socket_address,
             socket_port,
-            disc_config: DiscoveryConfig {
+            discv5_config: DiscoveryConfig {
                 discv5_config,
                 bootnodes,
                 socket_address,
@@ -412,7 +415,7 @@ mod tests {
         let runtime = Runtime::new().unwrap();
 
         let gossip_topics = vec![GossipTopic {
-            fork: [0; 4],
+            fork: B32::ZERO,
             kind: GossipTopicKind::BeaconBlock,
         }];
 
@@ -442,7 +445,7 @@ mod tests {
             let network1_future = async {
                 while let Some(event) = network1.swarm.next().await {
                     if let SwarmEvent::Behaviour(ReamBehaviourEvent::Gossipsub(
-                        gossipsub::Event::Subscribed { peer_id: _, topic },
+                        GossipsubEvent::Subscribed { peer_id: _, topic },
                     )) = &event
                     {
                         let _ = network1
@@ -458,7 +461,7 @@ mod tests {
             let network2_future = async {
                 while let Some(event) = network2.swarm.next().await {
                     if let SwarmEvent::Behaviour(ReamBehaviourEvent::Gossipsub(
-                        gossipsub::Event::Message { .. },
+                        GossipsubEvent::Message { .. },
                     )) = &event
                     {
                         break;
