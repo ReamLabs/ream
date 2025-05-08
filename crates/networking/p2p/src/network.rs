@@ -396,7 +396,8 @@ mod tests {
                 socket_port,
                 discovery_port,
                 disable_discovery,
-                subnets: Subnets::new(),
+                attestation_subnets: Subnets::new(),
+                sync_committee_subnets: Subnets::new(),
             },
             gossipsub_config: GossipsubConfig {
                 topics,

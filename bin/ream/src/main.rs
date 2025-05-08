@@ -68,7 +68,8 @@ async fn main() {
                 socket_port: config.socket_port,
                 discovery_port: config.discovery_port,
                 disable_discovery: config.disable_discovery,
-                subnets: Subnets::new(),
+                attestation_subnets: Subnets::new(),
+                sync_committee_subnets: Subnets::new(),
             };
 
             let ream_dir = setup_data_dir(APP_NAME, config.data_dir.clone(), config.ephemeral)
