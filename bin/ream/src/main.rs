@@ -61,7 +61,8 @@ async fn main() {
                 socket_port: config.socket_port,
                 discovery_port: config.discovery_port,
                 disable_discovery: config.disable_discovery,
-                subnets: Subnets::new(),
+                attestation_subnets: Subnets::new(),
+                sync_committee_subnets: Subnets::new(),
             };
 
             let mut gossipsub_config = GossipsubConfig::default();

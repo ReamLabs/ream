@@ -27,7 +27,9 @@ use tracing::{error, info, warn};
 use crate::{
     config::DiscoveryConfig,
     eth2::{ENR_ETH2_KEY, EnrForkId},
-    subnet::{ATTESTATION_BITFIELD_ENR_KEY, Subnet, subnet_predicate},
+    subnet::{
+        ATTESTATION_BITFIELD_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY, Subnet, subnet_predicate,
+    },
 };
 
 #[derive(Debug)]
@@ -44,9 +46,11 @@ enum EventStream {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 enum QueryType {
-    FindPeers,
-    FindSubnetPeers(Vec<Subnet>),
+    Peers,
+    SubnetPeers(Vec<Subnet>),
+    SyncCommitteeSubnetPeers(Vec<Subnet>),
 }
 
 struct QueryResult {
@@ -78,7 +82,11 @@ impl Discovery {
 
         let enr = enr_builder
             .add_value(ENR_ETH2_KEY, &EnrForkId::electra())
-            .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.subnets)
+            .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.attestation_subnets)
+            .add_value(
+                SYNC_COMMITTEE_BITFIELD_ENR_KEY,
+                &config.sync_committee_subnets,
+            )
             .build(&enr_local)
             .map_err(|err| anyhow!("Failed to build ENR: {err}"))?;
 
@@ -132,21 +140,46 @@ impl Discovery {
         self.find_peer_active = true;
 
         let query = match subnet_id {
-            Some(id) => QueryType::FindSubnetPeers(vec![Subnet::Attestation(id)]),
-            None => QueryType::FindPeers,
+            Some(id) => QueryType::SubnetPeers(vec![Subnet::Attestation(id)]),
+            None => QueryType::Peers,
+        };
+
+        self.start_query(query, target_peers);
+    }
+
+    pub fn discover_sync_committee_peers(&mut self, target_peers: usize, subnet_id: Option<u8>) {
+        // If the discv5 service isn't running or we are in the process of a query, don't bother
+        // queuing a new one.
+        if !self.started || self.find_peer_active {
+            return;
+        }
+        self.find_peer_active = true;
+
+        let query = match subnet_id {
+            Some(id) => QueryType::SyncCommitteeSubnetPeers(vec![Subnet::SyncCommittee(id)]),
+            None => QueryType::Peers,
         };
 
         self.start_query(query, target_peers);
     }
 
     fn start_query(&mut self, query: QueryType, target_peers: usize) {
+        let _predicate = match query {
+            QueryType::Peers => subnet_predicate(vec![]),
+            QueryType::SubnetPeers(ref subnets) => subnet_predicate(subnets.clone()),
+            QueryType::SyncCommitteeSubnetPeers(ref subnets) => subnet_predicate(subnets.clone()),
+        };
+
         let query_future = self
             .discv5
             .find_node_predicate(
                 NodeId::random(),
                 match query {
-                    QueryType::FindPeers => Box::new(empty_predicate()),
-                    QueryType::FindSubnetPeers(ref subnets) => {
+                    QueryType::Peers => Box::new(empty_predicate()),
+                    QueryType::SubnetPeers(ref subnets) => {
+                        Box::new(subnet_predicate(subnets.clone()))
+                    }
+                    QueryType::SyncCommitteeSubnetPeers(ref subnets) => {
                         Box::new(subnet_predicate(subnets.clone()))
                     }
                 },
@@ -163,7 +196,7 @@ impl Discovery {
     fn process_queries(&mut self, cx: &mut Context) -> Option<HashMap<Enr, Option<Instant>>> {
         while let Poll::Ready(Some(query)) = self.discovery_queries.poll_next_unpin(cx) {
             let result = match query.query_type {
-                QueryType::FindPeers => {
+                QueryType::Peers => {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
@@ -180,7 +213,7 @@ impl Discovery {
                         }
                     }
                 }
-                QueryType::FindSubnetPeers(subnets) => {
+                QueryType::SubnetPeers(subnets) => {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
@@ -202,6 +235,32 @@ impl Discovery {
                         }
                         Err(err) => {
                             warn!("Failed to find subnet peers: {err:?}");
+                            None
+                        }
+                    }
+                }
+                QueryType::SyncCommitteeSubnetPeers(subnets) => {
+                    self.find_peer_active = false;
+                    match query.result {
+                        Ok(peers) => {
+                            let predicate = subnet_predicate(subnets.clone());
+                            let filtered_peers = peers
+                                .into_iter()
+                                .filter(|enr| predicate(enr))
+                                .collect::<Vec<_>>();
+                            info!(
+                                "Found {} peers for sync committee subnets {:?}",
+                                filtered_peers.len(),
+                                subnets
+                            );
+                            let mut peer_map = HashMap::new();
+                            for peer in filtered_peers {
+                                peer_map.insert(peer, None);
+                            }
+                            Some(peer_map)
+                        }
+                        Err(err) => {
+                            warn!("Failed to find sync committee subnet peers: {err:?}");
                             None
                         }
                     }
@@ -322,8 +381,12 @@ mod tests {
     async fn test_initial_subnet_setup() -> anyhow::Result<()> {
         let key = Keypair::generate_secp256k1();
         let mut config = DiscoveryConfig::default();
-        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Set subnet 0
-        config.subnets.disable_subnet(Subnet::Attestation(1))?; // Set subnet 1
+        config
+            .attestation_subnets
+            .enable_subnet(Subnet::Attestation(0))?; // Set subnet 0
+        config
+            .attestation_subnets
+            .disable_subnet(Subnet::Attestation(1))?; // Set subnet 1
         config.disable_discovery = true;
 
         let discovery = Discovery::new(key, &config).await.unwrap();
@@ -344,8 +407,12 @@ mod tests {
 
         let key = Keypair::generate_secp256k1();
         let mut config = DiscoveryConfig::default();
-        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
-        config.subnets.disable_subnet(Subnet::Attestation(1))?;
+        config
+            .attestation_subnets
+            .enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
+        config
+            .attestation_subnets
+            .disable_subnet(Subnet::Attestation(1))?;
         config.disable_discovery = true;
 
         let discovery = Discovery::new(key, &config).await.unwrap();
@@ -374,20 +441,25 @@ mod tests {
             ..DiscoveryConfig::default()
         };
 
-        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
+        config
+            .attestation_subnets
+            .enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
         config.disable_discovery = false;
         let mut discovery = Discovery::new(key, &config).await.unwrap();
 
         // Simulate a peer with another Discovery instance
         let peer_key = Keypair::generate_secp256k1();
         let mut peer_config = DiscoveryConfig {
-            subnets: Subnets::new(),
+            attestation_subnets: Subnets::new(),
+            sync_committee_subnets: Subnets::new(),
             disable_discovery: true,
             discv5_config,
             ..DiscoveryConfig::default()
         };
 
-        peer_config.subnets.enable_subnet(Subnet::Attestation(0))?;
+        peer_config
+            .attestation_subnets
+            .enable_subnet(Subnet::Attestation(0))?;
         peer_config.socket_address = Ipv4Addr::new(192, 168, 1, 100).into(); // Non-localhost IP
         peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
@@ -404,7 +476,7 @@ mod tests {
         // Mock the query result to bypass async polling
         discovery.discovery_queries.clear(); // Remove real query
         let query_result = QueryResult {
-            query_type: QueryType::FindSubnetPeers(vec![Subnet::Attestation(0)]),
+            query_type: QueryType::SubnetPeers(vec![Subnet::Attestation(0)]),
             result: Ok(vec![peer_enr.clone()]),
         };
         discovery
