@@ -17,6 +17,7 @@ ream-light-client.workspace = true
 ream-network-spec.workspace = true
 ream-node.workspace = true
 ream-storage.workspace = true
+ream-p2p.workspace = true
 
 #misc
 actix-web.workspace = true
@@ -29,3 +30,4 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tree_hash.workspace = true
+libp2p.workspace = true
