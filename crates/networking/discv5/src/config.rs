@@ -7,26 +7,38 @@ use crate::subnet::{Subnet, Subnets};
 
 pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
 
-pub struct NetworkConfig {
+pub struct DiscoveryConfig {
     pub discv5_config: discv5::Config,
     pub bootnodes: Vec<Enr>,
     pub socket_address: IpAddr,
     pub socket_port: u16,
     pub discovery_port: u16,
     pub disable_discovery: bool,
-    pub subnets: Subnets,
+    pub attestation_subnets: Subnets,
+    pub sync_committee_subnets: Subnets,
 }
 
-impl NetworkConfig {
+impl DiscoveryConfig {
     /// Subscribe to a sync committee subnet and update the ENR
     pub fn subscribe_to_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
-        self.subnets.enable_subnet(Subnet::SyncCommittee(subnet_id))
+        self.sync_committee_subnets
+            .enable_subnet(Subnet::SyncCommittee(subnet_id))
     }
 
     /// Unsubscribe from a sync committee subnet and update the ENR
     pub fn unsubscribe_from_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
-        self.subnets
+        self.sync_committee_subnets
             .disable_subnet(Subnet::SyncCommittee(subnet_id))
+    }
+
+    pub fn subscribe_to_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
+        self.attestation_subnets
+            .enable_subnet(Subnet::Attestation(subnet_id))
+    }
+
+    pub fn unsubscribe_from_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
+        self.attestation_subnets
+            .disable_subnet(Subnet::Attestation(subnet_id))
     }
 
     /// Calculate when to join a sync committee subnet based on the spec
@@ -58,13 +70,18 @@ impl NetworkConfig {
     }
 }
 
-impl Default for NetworkConfig {
+impl Default for DiscoveryConfig {
     fn default() -> Self {
-        let mut subnets = Subnets::new();
+        let mut attestation_subnets = Subnets::new();
+        let sync_committee_subnets = Subnets::new();
 
         // Enable attestation subnets 0 and 1 as a reasonable default
-        subnets.enable_subnet(Subnet::Attestation(0)).expect("xyz");
-        subnets.enable_subnet(Subnet::Attestation(1)).expect("xyz");
+        attestation_subnets
+            .enable_subnet(Subnet::Attestation(0))
+            .expect("xyz");
+        attestation_subnets
+            .enable_subnet(Subnet::Attestation(1))
+            .expect("xyz");
 
         let socket_address = Ipv4Addr::UNSPECIFIED;
         let socket_port = 9000;
@@ -80,7 +97,8 @@ impl Default for NetworkConfig {
             socket_port,
             discovery_port,
             disable_discovery: false,
-            subnets,
+            attestation_subnets,
+            sync_committee_subnets,
         }
     }
 }
