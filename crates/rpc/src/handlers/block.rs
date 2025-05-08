@@ -4,15 +4,22 @@ use actix_web::{
     HttpResponse, Responder, get,
     web::{Data, Path},
 };
-use alloy_primitives::B256;
+use alloy_primitives::{
+    B256,
+    map::{HashMap, foldhash::fast::RandomState},
+};
 use ream_consensus::{
     attester_slashing::AttesterSlashing,
     constants::{
         EFFECTIVE_BALANCE_INCREMENT, PROPOSER_WEIGHT, SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE,
         SYNC_REWARD_WEIGHT, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
-    electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
+    electra::{
+        beacon_block::{BeaconBlock, SignedBeaconBlock},
+        beacon_state::BeaconState,
+    },
 };
+use ream_fork_choice::store::Store;
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
@@ -20,11 +27,14 @@ use ream_storage::{
 };
 use serde::{Deserialize, Serialize};
 use tracing::error;
+use tree_hash::TreeHash;
 
 use crate::types::{
     errors::ApiError,
     id::ID,
-    response::{BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse},
+    response::{
+        BeaconHeadResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -200,6 +210,24 @@ pub async fn get_beacon_block_from_id(
         })
 }
 
+pub async fn get_filtered_block_tree(db: &ReamDB) -> Result<Vec<BeaconBlock>, ApiError> {
+    let justified_checkpoint = db
+        .justified_checkpoint_provider()
+        .get()
+        .map_err(|_| ApiError::InternalError)?;
+    let root = justified_checkpoint.root;
+
+    let mut blocks = HashMap::with_hasher(RandomState::default());
+    let store = Store { db: db.clone() };
+
+    store.filter_block_tree(root, &mut blocks).map_err(|err| {
+        error!("Failed to filter block tree, error: {err:?}");
+        ApiError::InternalError
+    })?;
+
+    Ok(blocks.into_values().collect())
+}
+
 /// Called by `/genesis` to get the Genesis Config of Beacon Chain.
 #[get("/beacon/genesis")]
 pub async fn get_genesis() -> Result<impl Responder, ApiError> {
@@ -271,4 +299,21 @@ pub async fn get_block_from_id(
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
 
     Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(beacon_block)))
+}
+
+/// Called by `/beacon/heads` to get fork choice leaves.
+#[get("/beacon/heads")]
+pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
+    let beacon_blocks = get_filtered_block_tree(&db).await?;
+
+    let mut beacon_heads = Vec::new();
+    for block in beacon_blocks.iter() {
+        beacon_heads.push(BeaconHeadResponse {
+            root: block.tree_hash_root(),
+            slot: block.slot,
+            execution_optimistic: false,
+        });
+    }
+
+    Ok(HttpResponse::Ok().json(DataResponse::new(beacon_heads)))
 }
