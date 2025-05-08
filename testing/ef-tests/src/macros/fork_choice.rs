@@ -177,15 +177,7 @@ macro_rules! test_fork_choice {
                                         }
                                     }
 
-                                    let result = on_block(&mut store, &block, &mock_engine).await.is_ok();
-                                    let expected = blocks.valid.unwrap_or(true);
-
-                                    if !expected && result {
-                                        assert_eq!(true, true, "pass true when invalid");
-                                    } else {
-                                        assert_eq!(result, expected, "Unexpected result on on_block");
-                                    }
-
+                                    assert_eq!(on_block(&mut store, &block, &mock_engine).await.is_ok(), blocks.valid.unwrap_or(true), "Unexpected result on on_block");
                                 }
                                 ForkChoiceStep::Attestation(attestations) => {
                                     let attestation_path =
