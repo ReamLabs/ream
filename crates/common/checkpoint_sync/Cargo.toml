@@ -1,5 +1,5 @@
 [package]
-name = "ream-sync"
+name = "ream-checkpoint-sync"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true

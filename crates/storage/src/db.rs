@@ -196,6 +196,13 @@ impl ReamDB {
             db: self.db.clone(),
         }
     }
+
+    pub fn is_initialized(&self) -> bool {
+        self.slot_index_provider()
+            .get_highest_slot()
+            .map_err(|err| anyhow!("Unable to fetch highest slot in db:{}", err))
+            .is_ok()
+    }
 }
 
 pub fn reset_db(path: Option<PathBuf>) -> anyhow::Result<()> {
@@ -206,7 +213,7 @@ pub fn reset_db(path: Option<PathBuf>) -> anyhow::Result<()> {
             "Are you sure you want to remove the database at {:?}? (y/n):",
             path
         );
-        io::stdout().flush().unwrap();
+        io::stdout().flush()?;
 
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();

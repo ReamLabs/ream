@@ -1,5 +1,5 @@
-use std::{error::Error, fs, path::PathBuf};
-
+use ream_network_spec::networks::{Network, network_spec};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -8,16 +8,32 @@ pub struct NetworkConfig {
     pub checkpoint_urls: Vec<String>,
 }
 
-pub fn fetch_default_checkpoint_url() -> Result<Vec<NetworkConfig>, Box<dyn Error>> {
-    let yaml_file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let yaml_file_path = format!(
-        "{}{}",
-        yaml_file_path.display(),
-        "/src/assets/checkpoint.yaml"
-    );
-    let yaml_content = fs::read_to_string(yaml_file_path)?;
+pub fn get_checkpoint_sync_sources(checkpoint_sync_url: Option<Url>) -> Vec<Url> {
+    if let Some(checkpoint_sync_url) = checkpoint_sync_url {
+        return vec![checkpoint_sync_url];
+    }
+    let raw_urls: Vec<String> = match network_spec().network {
+        Network::Mainnet => serde_yaml::from_str(include_str!(
+            "../resources/checkpoint_sync_sources/mainnet.yaml"
+        ))
+        .expect("should deserialize checkpoint sync sources"),
+        Network::Holesky => serde_yaml::from_str(include_str!(
+            "../resources/checkpoint_sync_sources/holesky.yaml"
+        ))
+        .expect("should deserialize checkpoint sync sources"),
+        Network::Sepolia => serde_yaml::from_str(include_str!(
+            "../resources/checkpoint_sync_sources/sepolia.yaml"
+        ))
+        .expect("should deserialize checkpoint sync sources"),
+        Network::Hoodi => serde_yaml::from_str(include_str!(
+            "../resources/checkpoint_sync_sources/hoodi.yaml"
+        ))
+        .expect("should deserialize checkpoint sync sources"),
+        Network::Dev => vec![],
+    };
 
-    let config: Vec<NetworkConfig> = serde_yaml::from_str(&yaml_content)?;
-
-    Ok(config)
+    raw_urls
+        .into_iter()
+        .map(|s| Url::parse(&s).expect("invalid URL in checkpoint sync YAML"))
+        .collect()
 }

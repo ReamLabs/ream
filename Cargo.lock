@@ -4324,6 +4324,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "discv5",
+ "ream-checkpoint-sync",
  "ream-discv5",
  "ream-executor",
  "ream-network-spec",
@@ -4331,7 +4332,7 @@ dependencies = [
  "ream-p2p",
  "ream-rpc",
  "ream-storage",
- "ream-sync",
+ "reqwest",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -4353,6 +4354,24 @@ dependencies = [
  "thiserror 2.0.12",
  "tree_hash",
  "tree_hash_derive",
+]
+
+[[package]]
+name = "ream-checkpoint-sync"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ream-consensus",
+ "ream-fork-choice",
+ "ream-network-spec",
+ "ream-rpc",
+ "ream-storage",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tracing",
 ]
 
 [[package]]
@@ -4595,24 +4614,6 @@ dependencies = [
  "thiserror 2.0.12",
  "tracing",
  "tree_hash",
-]
-
-[[package]]
-name = "ream-sync"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "ream-consensus",
- "ream-fork-choice",
- "ream-network-spec",
- "ream-rpc",
- "ream-storage",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "tracing",
 ]
 
 [[package]]

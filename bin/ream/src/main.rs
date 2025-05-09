@@ -2,6 +2,7 @@ use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
+use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_discv5::{config::DiscoveryConfig, eth2::EnrForkId, subnet::Subnets};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::{network_spec, set_network_spec};
@@ -15,7 +16,6 @@ use ream_p2p::{
 };
 use ream_rpc::{config::ServerConfig, start_server};
 use ream_storage::db::{ReamDB, reset_db};
-use ream_sync::initialize_db_from_checkpoint;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -89,8 +89,7 @@ async fn main() {
 
             initialize_db_from_checkpoint(ream_db.clone(), config.checkpoint_sync_url)
                 .await
-                .map_err(|err| panic!("{err}"))
-                .unwrap();
+                .expect("Unable to initialize database from checkpoint");
 
             info!("Database Initialization completed");
 

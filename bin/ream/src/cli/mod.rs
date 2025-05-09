@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use ream_node::version::FULL_VERSION;
 use ream_p2p::bootnodes::Bootnodes;
+use reqwest::Url;
 
 const DEFAULT_DISABLE_DISCOVERY: bool = false;
 const DEFAULT_DISCOVERY_PORT: u16 = 9000;
@@ -91,7 +92,7 @@ pub struct NodeConfig {
         long = "checkpoint-sync-url",
         help = "Trusted RPC URL to initiate Checkpoint Sync."
     )]
-    pub checkpoint_sync_url: Option<String>,
+    pub checkpoint_sync_url: Option<Url>,
 
     #[arg(long = "purge-db", help = "Purges the database.")]
     pub purge_db: bool,

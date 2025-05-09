@@ -1,7 +1,7 @@
 pub mod checkpoint;
 use alloy_primitives::B256;
-use anyhow::{anyhow, ensure};
-use checkpoint::fetch_default_checkpoint_url;
+use anyhow::ensure;
+use checkpoint::get_checkpoint_sync_sources;
 use ream_consensus::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
     constants::SECONDS_PER_SLOT,
@@ -12,60 +12,34 @@ use ream_fork_choice::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::network_spec;
 use ream_rpc::types::response::BeaconVersionedResponse;
 use ream_storage::{db::ReamDB, tables::Table};
+use reqwest::Url;
 use tracing::{info, warn};
 
 /// Entry point for checkpoint sync.
 pub async fn initialize_db_from_checkpoint(
     db: ReamDB,
-    checkpoint_sync_url: Option<String>,
+    checkpoint_sync_url: Option<Url>,
 ) -> anyhow::Result<()> {
-    let checkpoint_sync_url = match checkpoint_sync_url {
-        Some(url) => url,
-        // 0 for Mainnet, 1 for Sepolia
-        None => {
-            let checkpoint_urls =
-                fetch_default_checkpoint_url().expect("Unable to fetch default checkpo;int url");
-            match network_spec().network {
-                ream_network_spec::networks::Network::Mainnet => {
-                    checkpoint_urls[0].checkpoint_urls[0].clone()
-                }
-                ream_network_spec::networks::Network::Holesky => {
-                    checkpoint_urls[0].checkpoint_urls[1].clone()
-                }
-                ream_network_spec::networks::Network::Sepolia => {
-                    checkpoint_urls[0].checkpoint_urls[2].clone()
-                }
-                ream_network_spec::networks::Network::Hoodi => {
-                    checkpoint_urls[0].checkpoint_urls[3].clone()
-                }
-                ream_network_spec::networks::Network::Dev => {
-                    checkpoint_urls[0].checkpoint_urls[4].clone()
-                }
-            }
-        }
-    };
-
-    let current_slot = db
-        .slot_index_provider()
-        .get_highest_slot()
-        .map_err(|err| anyhow!("Unable to fetch highest slot in db:{}", err))?;
-
-    if current_slot.is_some() {
+    if db.is_initialized() {
         warn!("Starting Checkpoint Sync from existing DB. It is advised to start from a fresh DB");
         return Ok(());
     }
+
+    let checkpoint_sync_url = get_checkpoint_sync_sources(checkpoint_sync_url)[0].clone();
     info!("Starting Checkpoint Sync");
     let block = fetch_finalized_block(&checkpoint_sync_url).await?;
+    info!("Fetched Block Root:{}", block.data.message.block_root());
     let slot = block.data.message.slot;
-    fetch_blobs(
+    initialize_blobs_in_db(
         &checkpoint_sync_url,
         db.clone(),
         block.data.message.block_root(),
     )
     .await?;
+    info!("Received block from slot:{}", slot);
 
     let state = get_state(&checkpoint_sync_url, block.data.message.slot).await?;
-    info!("Received block from slot:{}", slot);
+    info!("Fetched State Root:{}", state.data.state_root());
     ensure!(
         block.data.message.slot == state.data.slot,
         anyhow::anyhow!("Slot mismatch")
@@ -83,7 +57,7 @@ pub async fn initialize_db_from_checkpoint(
 
 /// Fetch initial state from trusted RPC
 pub async fn get_state(
-    rpc: &str,
+    rpc: &Url,
     slot: u64,
 ) -> anyhow::Result<BeaconVersionedResponse<BeaconState>> {
     let state = reqwest::get(format!("{rpc}/eth/v2/debug/beacon/states/{slot}"))
@@ -91,27 +65,27 @@ pub async fn get_state(
         .json::<BeaconVersionedResponse<BeaconState>>()
         .await?;
 
-    info!("Fetched State Root:{}", state.data.state_root());
-
     Ok(state)
 }
 
 /// Fetch initial block from trusted RPC
 pub async fn fetch_finalized_block(
-    rpc: &str,
+    rpc: &Url,
 ) -> anyhow::Result<BeaconVersionedResponse<SignedBeaconBlock>> {
-    let block = reqwest::get(format!("{rpc}/eth/v2/beacon/blocks/finalized"))
-        .await?
-        .json::<BeaconVersionedResponse<SignedBeaconBlock>>()
-        .await?;
-
-    info!("Fetched Block Root:{}", block.data.message.block_root());
-
-    Ok(block)
+    Ok(
+        reqwest::get(format!("{rpc}/eth/v2/beacon/blocks/finalized"))
+            .await?
+            .json::<BeaconVersionedResponse<SignedBeaconBlock>>()
+            .await?,
+    )
 }
 
-// fetch blobs from trusted RPC
-pub async fn fetch_blobs(rpc: &str, store: ReamDB, beacon_block_root: B256) -> anyhow::Result<()> {
+// Fetch and initialize blobs in the DB from trusted RPC
+pub async fn initialize_blobs_in_db(
+    rpc: &Url,
+    store: ReamDB,
+    beacon_block_root: B256,
+) -> anyhow::Result<()> {
     let blob_sidecar = reqwest::get(format!(
         "{rpc}/eth/v1/beacon/blob_sidecars/{beacon_block_root}"
     ))
