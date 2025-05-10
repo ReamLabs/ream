@@ -7,7 +7,7 @@ use tree_hash_derive::TreeHash;
 use crate::misc::checksummed_address;
 
 #[derive(
-    Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, RlpEncodable,
+    Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, RlpEncodable,
 )]
 pub struct Withdrawal {
     #[serde(with = "serde_utils::quoted_u64")]

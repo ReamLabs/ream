@@ -13,7 +13,7 @@ use crate::{
     execution_engine::rpc_types::get_blobs::BlobAndProofV1,
 };
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedBeaconBlock {
     pub message: BeaconBlock,
     pub signature: BLSSignature,
@@ -57,7 +57,7 @@ impl SignedBeaconBlock {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BeaconBlock {
     #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,

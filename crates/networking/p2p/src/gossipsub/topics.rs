@@ -67,33 +67,33 @@ pub enum GossipTopicKind {
 impl std::fmt::Display for GossipTopicKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GossipTopicKind::BeaconBlock => write!(f, "{}", BEACON_BLOCK_TOPIC),
+            GossipTopicKind::BeaconBlock => write!(f, "{BEACON_BLOCK_TOPIC}"),
             GossipTopicKind::BeaconAggregateAndProof => {
-                write!(f, "{}", BEACON_AGGREGATE_AND_PROOF_TOPIC)
+                write!(f, "{BEACON_AGGREGATE_AND_PROOF_TOPIC}")
             }
-            GossipTopicKind::VoluntaryExit => write!(f, "{}", VOLUNTARY_EXIT_TOPIC),
-            GossipTopicKind::ProposerSlashing => write!(f, "{}", PROPOSER_SLASHING_TOPIC),
-            GossipTopicKind::AttesterSlashing => write!(f, "{}", ATTESTER_SLASHING_TOPIC),
+            GossipTopicKind::VoluntaryExit => write!(f, "{VOLUNTARY_EXIT_TOPIC}"),
+            GossipTopicKind::ProposerSlashing => write!(f, "{PROPOSER_SLASHING_TOPIC}"),
+            GossipTopicKind::AttesterSlashing => write!(f, "{ATTESTER_SLASHING_TOPIC}"),
             GossipTopicKind::BeaconAttestation(subnet_id) => {
-                write!(f, "{}{}", BEACON_ATTESTATION_PREFIX, subnet_id)
+                write!(f, "{BEACON_ATTESTATION_PREFIX}{subnet_id}")
             }
             GossipTopicKind::SyncCommittee(sync_subnet_id) => {
-                write!(f, "{}{}", SYNC_COMMITTEE_PREFIX_TOPIC, sync_subnet_id)
+                write!(f, "{SYNC_COMMITTEE_PREFIX_TOPIC}{sync_subnet_id}")
             }
             GossipTopicKind::SyncCommitteeContributionAndProof => {
-                write!(f, "{}", SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF_TOPIC)
+                write!(f, "{SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF_TOPIC}")
             }
             GossipTopicKind::BlsToExecutionChange => {
-                write!(f, "{}", BLS_TO_EXECUTION_CHANGE_TOPIC)
+                write!(f, "{BLS_TO_EXECUTION_CHANGE_TOPIC}")
             }
             GossipTopicKind::LightClientFinalityUpdate => {
-                write!(f, "{}", LIGHT_CLIENT_FINALITY_UPDATE_TOPIC)
+                write!(f, "{LIGHT_CLIENT_FINALITY_UPDATE_TOPIC}")
             }
             GossipTopicKind::LightClientOptimisticUpdate => {
-                write!(f, "{}", LIGHT_CLIENT_OPTIMISTIC_UPDATE_TOPIC)
+                write!(f, "{LIGHT_CLIENT_OPTIMISTIC_UPDATE_TOPIC}")
             }
             GossipTopicKind::BlobSidecar(blob_index) => {
-                write!(f, "{}{}", BLOB_SIDECAR_PREFIX_TOPIC, blob_index)
+                write!(f, "{BLOB_SIDECAR_PREFIX_TOPIC}{blob_index}")
             }
         }
     }

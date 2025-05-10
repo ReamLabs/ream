@@ -9,7 +9,7 @@ use crate::{
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
 
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Encode, Decode)]
 pub struct BlobSidecar {
     #[serde(with = "serde_utils::quoted_u64")]
     pub index: u64,
@@ -20,7 +20,7 @@ pub struct BlobSidecar {
     pub kzg_commitment_inclusion_proof: FixedVector<B256, U17>,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Deserialize, Encode, Decode, Ord, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Encode, Decode, Ord, PartialOrd)]
 pub struct BlobIdentifier {
     pub block_root: B256,
     pub index: u64,

@@ -11,7 +11,8 @@ use std::{
 use anyhow::anyhow;
 use discv5::Enr;
 use libp2p::{
-    Multiaddr, PeerId, Swarm, SwarmBuilder, Transport, connection_limits,
+    Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
+    connection_limits::{self, ConnectionLimits},
     core::{
         muxing::StreamMuxerBox,
         transport::Boxed,
@@ -23,7 +24,7 @@ use libp2p::{
     identify,
     multiaddr::Protocol,
     noise::Config as NoiseConfig,
-    swarm::{NetworkBehaviour, SwarmEvent},
+    swarm::{self, NetworkBehaviour, SwarmEvent},
     tcp::{Config as TcpConfig, tokio::Transport as TcpTransport},
     yamux,
 };
@@ -110,12 +111,12 @@ impl Network {
         };
 
         let connection_limits = {
-            let limits = libp2p::connection_limits::ConnectionLimits::default()
+            let limits = ConnectionLimits::default()
                 .with_max_pending_incoming(Some(5))
                 .with_max_pending_outgoing(Some(16))
                 .with_max_established_per_peer(Some(1));
 
-            libp2p::connection_limits::Behaviour::new(limits)
+            connection_limits::Behaviour::new(limits)
         };
 
         let identify = {
@@ -144,7 +145,7 @@ impl Network {
             .map_err(|err| anyhow!("Failed to build transport: {err:?}"))?;
 
         let swarm = {
-            let config = libp2p::swarm::Config::with_executor(Executor(executor))
+            let config = swarm::Config::with_executor(Executor(executor))
                 .with_notify_handler_buffer_size(NonZeroUsize::new(7).expect("Not zero"))
                 .with_per_connection_event_buffer_size(4)
                 .with_dial_concurrency_factor(NonZeroU8::new(1).unwrap());

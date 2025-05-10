@@ -6,7 +6,7 @@ use tree_hash_derive::TreeHash;
 
 use crate::deposit_data::DepositData;
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Deposit {
     pub proof: FixedVector<B256, U33>,
     pub data: DepositData,

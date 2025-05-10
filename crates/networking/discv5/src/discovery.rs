@@ -64,10 +64,7 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    pub async fn new(
-        local_key: libp2p::identity::Keypair,
-        config: &DiscoveryConfig,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<Self> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
 

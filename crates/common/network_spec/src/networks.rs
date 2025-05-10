@@ -1,7 +1,7 @@
 use std::sync::{Arc, LazyLock, OnceLock};
 
-use alloy_primitives::{Address, address, b256, fixed_bytes};
-use ream_consensus::genesis::Genesis;
+use alloy_primitives::{Address, address, aliases::B32, b256, fixed_bytes};
+use ream_consensus::{fork_data::ForkData, genesis::Genesis};
 
 use crate::fork_schedule::{
     DEV_FORK_SCHEDULE, ForkSchedule, HOLESKY_FORK_SCHEDULE, HOODI_FORK_SCHEDULE,
@@ -59,6 +59,19 @@ pub struct NetworkSpec {
     pub genesis: Genesis,
     pub deposit_contract_address: Address,
     pub fork_schedule: ForkSchedule,
+}
+
+impl NetworkSpec {
+    pub fn fork_digest(&self) -> B32 {
+        let Some(latest_fork) = self.fork_schedule.iter().last() else {
+            unreachable!("Fork schedule is empty");
+        };
+        ForkData {
+            current_version: latest_fork.current_version,
+            genesis_validators_root: self.genesis.genesis_validators_root,
+        }
+        .compute_fork_digest()
+    }
 }
 
 pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {

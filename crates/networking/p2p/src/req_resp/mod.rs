@@ -19,7 +19,7 @@ use libp2p::{
         NetworkBehaviour, NotifyHandler, SubstreamProtocol, THandler, THandlerInEvent, ToSwarm,
     },
 };
-use messages::Message;
+use messages::RequestMessage;
 use tracing::{debug, info};
 
 /// Maximum number of concurrent requests per protocol ID that a client may issue.
@@ -36,7 +36,7 @@ pub struct ReqRespMessage {
 pub enum ConnectionRequest {
     Request {
         request_id: u64,
-        message: Message,
+        message: RequestMessage,
     },
     Response {
         stream_id: u64,
@@ -54,7 +54,7 @@ impl ReqResp {
         ReqResp { events: vec![] }
     }
 
-    pub fn send_request(&mut self, peer_id: PeerId, request_id: u64, message: Message) {
+    pub fn send_request(&mut self, peer_id: PeerId, request_id: u64, message: RequestMessage) {
         self.events.push(ToSwarm::NotifyHandler {
             peer_id,
             handler: NotifyHandler::Any,

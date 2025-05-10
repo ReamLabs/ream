@@ -4,7 +4,7 @@ use ssz_types::{FixedVector, typenum::U131072};
 
 use crate::{constants::BYTES_PER_BLOB, polynomial_commitments::kzg_proof::KZGProof};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Decode, Encode)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[serde(transparent)]
 pub struct Blob {
     pub inner: FixedVector<u8, U131072>,

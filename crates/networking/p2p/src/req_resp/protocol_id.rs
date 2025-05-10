@@ -74,9 +74,26 @@ impl SupportedProtocol {
             SupportedProtocol::GoodbyeV1,
             SupportedProtocol::PingV1,
             SupportedProtocol::StatusV1,
+            SupportedProtocol::BeaconBlocksByRangeV2,
+            SupportedProtocol::BeaconBlocksByRootV2,
+            SupportedProtocol::BlobSidecarsByRangeV1,
+            SupportedProtocol::BlobSidecarsByRootV1,
         ]
         .into_iter()
         .map(ProtocolId::new)
         .collect()
+    }
+
+    pub fn has_context_bytes(&self) -> bool {
+        match self {
+            SupportedProtocol::GetMetaDataV2 => false,
+            SupportedProtocol::GoodbyeV1 => false,
+            SupportedProtocol::PingV1 => false,
+            SupportedProtocol::StatusV1 => false,
+            SupportedProtocol::BeaconBlocksByRangeV2 => true,
+            SupportedProtocol::BeaconBlocksByRootV2 => true,
+            SupportedProtocol::BlobSidecarsByRangeV1 => true,
+            SupportedProtocol::BlobSidecarsByRootV1 => true,
+        }
     }
 }

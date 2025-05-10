@@ -9,7 +9,7 @@ use tree_hash_derive::TreeHash;
 
 use crate::attestation_data::AttestationData;
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Attestation {
     pub aggregation_bits: BitList<U131072>,
     pub data: AttestationData,

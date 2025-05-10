@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use asynchronous_codec::BytesMut;
 use futures::{
     FutureExt, StreamExt,
     prelude::{AsyncRead, AsyncWrite},
@@ -14,6 +15,7 @@ use libp2p::{
     bytes::{Buf, BufMut},
     core::UpgradeInfo,
 };
+use ream_network_spec::networks::network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};
 use ssz::{Decode, Encode};
 use ssz_types::{VariableList, typenum::U256};
@@ -29,15 +31,23 @@ use unsigned_varint::codec::Uvi;
 use super::{
     error::ReqRespError,
     handler::RespMessage,
-    messages::{Message, goodbye::Goodbye, meta_data::GetMetaDataV2, ping::Ping, status::Status},
+    messages::{
+        RequestMessage, goodbye::Goodbye, meta_data::GetMetaDataV2, ping::Ping, status::Status,
+    },
     protocol_id::{ProtocolId, SupportedProtocol},
 };
-use crate::utils::max_message_size;
+use crate::{
+    req_resp::messages::{
+        beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+        blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
+    },
+    utils::max_message_size,
+};
 
 #[derive(Debug, Clone)]
 pub struct InboundReqRespProtocol {}
 
-pub type InboundOutput<S> = (Message, InboundFramed<S>);
+pub type InboundOutput<S> = (RequestMessage, InboundFramed<S>);
 pub type InboundFramed<S> =
     Framed<std::pin::Pin<Box<TimeoutStream<Compat<S>>>>, InboundSSZSnappyCodec>;
 
@@ -65,9 +75,10 @@ where
             );
 
             match info.protocol {
-                SupportedProtocol::GetMetaDataV2 => {
-                    Ok((Message::MetaData(GetMetaDataV2::default().into()), socket))
-                }
+                SupportedProtocol::GetMetaDataV2 => Ok((
+                    RequestMessage::MetaData(GetMetaDataV2::default().into()),
+                    socket,
+                )),
                 _ => match timeout(Duration::from_secs(15), socket.into_future()).await {
                     Ok((Some(Ok(message)), stream)) => Ok((message, stream)),
                     Ok((Some(Err(err)), _)) => Err(err),
@@ -98,15 +109,10 @@ pub struct InboundSSZSnappyCodec {
 impl Encoder<RespMessage> for InboundSSZSnappyCodec {
     type Error = ReqRespError;
 
-    fn encode(
-        &mut self,
-        item: RespMessage,
-        dst: &mut libp2p::bytes::BytesMut,
-    ) -> Result<(), Self::Error> {
+    fn encode(&mut self, item: RespMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
         dst.clear();
-        dst.put_u8(u8::from(
-            item.as_response_code().expect("EndOfStream cannot be sent"),
-        ));
+        let response_code = item.as_response_code().expect("EndOfStream cannot be sent");
+        dst.put_u8(u8::from(response_code));
 
         let bytes = match item {
             RespMessage::Response(messages) => messages.as_ssz_bytes(),
@@ -127,6 +133,10 @@ impl Encoder<RespMessage> for InboundSSZSnappyCodec {
             )));
         }
 
+        if self.protocol.protocol.has_context_bytes() && response_code == ResponseCode::Success {
+            dst.extend(network_spec().fork_digest());
+        }
+
         Uvi::<usize>::default().encode(bytes.len(), dst)?;
 
         let mut encoder = FrameEncoder::new(vec![]);
@@ -139,15 +149,14 @@ impl Encoder<RespMessage> for InboundSSZSnappyCodec {
 }
 
 impl Decoder for InboundSSZSnappyCodec {
-    type Item = Message;
+    type Item = RequestMessage;
     type Error = ReqRespError;
 
-    fn decode(
-        &mut self,
-        src: &mut libp2p::bytes::BytesMut,
-    ) -> Result<Option<Self::Item>, Self::Error> {
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if self.protocol.protocol == SupportedProtocol::GetMetaDataV2 {
-            return Ok(Some(Message::MetaData(GetMetaDataV2::default().into())));
+            return Ok(Some(RequestMessage::MetaData(
+                GetMetaDataV2::default().into(),
+            )));
         }
 
         let length = match Uvi::<usize>::default().decode(src)? {
@@ -161,16 +170,42 @@ impl Decoder for InboundSSZSnappyCodec {
             Ok(_) => {
                 src.advance(decoder.get_ref().position() as usize);
                 match self.protocol.protocol {
-                    SupportedProtocol::GoodbyeV1 => Ok(Some(Message::Goodbye(
+                    SupportedProtocol::GoodbyeV1 => Ok(Some(RequestMessage::Goodbye(
                         Goodbye::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
                     ))),
-                    SupportedProtocol::StatusV1 => Ok(Some(Message::Status(
+                    SupportedProtocol::StatusV1 => Ok(Some(RequestMessage::Status(
                         Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
                     ))),
-                    SupportedProtocol::PingV1 => Ok(Some(Message::Ping(
+                    SupportedProtocol::PingV1 => Ok(Some(RequestMessage::Ping(
                         Ping::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
                     ))),
-                    _ => unimplemented!("Decoding of protocol: {:?}", self.protocol.protocol),
+                    SupportedProtocol::BeaconBlocksByRangeV2 => {
+                        Ok(Some(RequestMessage::BeaconBlocksByRange(
+                            BeaconBlocksByRangeV2Request::from_ssz_bytes(&buf)
+                                .map_err(ReqRespError::from)?,
+                        )))
+                    }
+                    SupportedProtocol::BeaconBlocksByRootV2 => {
+                        Ok(Some(RequestMessage::BeaconBlocksByRoot(
+                            BeaconBlocksByRootV2Request::from_ssz_bytes(&buf)
+                                .map_err(ReqRespError::from)?,
+                        )))
+                    }
+                    SupportedProtocol::BlobSidecarsByRangeV1 => {
+                        Ok(Some(RequestMessage::BlobSidecarsByRange(
+                            BlobSidecarsByRangeV1Request::from_ssz_bytes(&buf)
+                                .map_err(ReqRespError::from)?,
+                        )))
+                    }
+                    SupportedProtocol::BlobSidecarsByRootV1 => {
+                        Ok(Some(RequestMessage::BlobSidecarsByRoot(
+                            BlobSidecarsByRootV1Request::from_ssz_bytes(&buf)
+                                .map_err(ReqRespError::from)?,
+                        )))
+                    }
+                    SupportedProtocol::GetMetaDataV2 => Err(ReqRespError::InvalidData(
+                        "GetMetaDataV2 is already handled above".to_string(),
+                    )),
                 }
             }
             Err(err) => Err(ReqRespError::from(err)),
