@@ -2662,6 +2662,10 @@ impl BeaconState {
         ]
         .concat())
     }
+
+    pub fn state_root(&self) -> B256 {
+        self.tree_hash_root()
+    }
 }
 
 pub fn get_validator_from_deposit(

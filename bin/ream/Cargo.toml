@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 # ream dependencies
+ream-checkpoint-sync.workspace = true
 ream-discv5.workspace = true
 ream-executor.workspace = true 
 ream-network-spec.workspace = true 
@@ -27,6 +28,7 @@ ream-storage.workspace = true
 # other dependencies
 clap = { workspace = true, features = ["derive", "env"] }
 discv5 = { workspace = true }
+reqwest = { workspace = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tokio = { workspace = true }
