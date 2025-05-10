@@ -1492,6 +1492,19 @@ impl BeaconState {
         Ok(())
     }
 
+    pub fn get_sync_committee_indices(&self, sync_committee: &SyncCommittee) -> Vec<usize> {
+        let mut sync_committee_indices = Vec::with_capacity(sync_committee.pubkeys.len());
+        let pubkey_set: HashSet<_> = sync_committee.pubkeys.iter().collect();
+
+        for (index, validator) in self.validators.iter().enumerate() {
+            if pubkey_set.contains(&validator.pubkey) {
+                sync_committee_indices.push(index);
+            }
+        }
+
+        sync_committee_indices
+    }
+
     /// Return the sync committee indices, with possible duplicates, for the next sync committee.
     pub fn get_next_sync_committee_indices(&self) -> anyhow::Result<Vec<u64>> {
         let epoch = self.get_current_epoch() + 1;

@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeSet, HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{BTreeSet, HashMap};
 
 use actix_web::{
     HttpResponse, Responder, get, post,
@@ -214,14 +211,7 @@ pub fn compute_sync_committee_rewards(
     let sync_aggregate = &beacon_block.message.body.sync_aggregate;
     let sync_committee = &beacon_state.current_sync_committee;
 
-    let mut sync_committee_indices = Vec::with_capacity(sync_committee.pubkeys.len());
-    let pubkey_set: HashSet<_> = sync_committee.pubkeys.iter().collect();
-
-    for (index, validator) in beacon_state.validators.iter().enumerate() {
-        if pubkey_set.contains(&validator.pubkey) {
-            sync_committee_indices.push(index);
-        }
-    }
+    let sync_committee_indices = beacon_state.get_sync_committee_indices(sync_committee);
 
     if !sync_committee_indices.is_empty() {
         return Err(ApiError::NotFound(
