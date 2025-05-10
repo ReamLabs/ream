@@ -1,4 +1,5 @@
 pub mod checkpoint;
+
 use alloy_primitives::B256;
 use anyhow::ensure;
 use checkpoint::get_checkpoint_sync_sources;
@@ -36,7 +37,7 @@ pub async fn initialize_db_from_checkpoint(
         block.data.message.block_root(),
     )
     .await?;
-    info!("Received block from slot: {}", slot);
+    info!("Received blobs from slot: {}", slot);
 
     let state = get_state(&checkpoint_sync_url, slot).await?;
     info!("Received State Root: {}", state.data.state_root());
@@ -69,12 +70,10 @@ pub async fn get_state(
 pub async fn fetch_finalized_block(
     rpc: &Url,
 ) -> anyhow::Result<BeaconVersionedResponse<SignedBeaconBlock>> {
-    Ok(
-        reqwest::get(format!("{rpc}/eth/v2/beacon/blocks/finalized"))
-            .await?
-            .json::<BeaconVersionedResponse<SignedBeaconBlock>>()
-            .await?,
-    )
+    Ok(reqwest::get(rpc.join("/eth/v2/beacon/blocks/finalized")?)
+        .await?
+        .json::<BeaconVersionedResponse<SignedBeaconBlock>>()
+        .await?)
 }
 
 // Fetch and initialize blobs in the DB from trusted RPC
@@ -83,7 +82,7 @@ pub async fn initialize_blobs_in_db(
     store: ReamDB,
     beacon_block_root: B256,
 ) -> anyhow::Result<()> {
-    let blob_sidecar = reqwest::get(format!(
+    let blob_sidecar = reqwest::get(&format!(
         "{rpc}/eth/v1/beacon/blob_sidecars/{beacon_block_root}"
     ))
     .await?
