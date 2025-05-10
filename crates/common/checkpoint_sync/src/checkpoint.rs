@@ -1,12 +1,5 @@
 use ream_network_spec::networks::{Network, network_spec};
 use reqwest::Url;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NetworkConfig {
-    pub network: String,
-    pub checkpoint_urls: Vec<String>,
-}
 
 pub fn get_checkpoint_sync_sources(checkpoint_sync_url: Option<Url>) -> Vec<Url> {
     if let Some(checkpoint_sync_url) = checkpoint_sync_url {
@@ -34,6 +27,6 @@ pub fn get_checkpoint_sync_sources(checkpoint_sync_url: Option<Url>) -> Vec<Url>
 
     raw_urls
         .into_iter()
-        .map(|s| Url::parse(&s).expect("invalid URL in checkpoint sync YAML"))
+        .map(|raw_url| Url::parse(&raw_url).expect("invalid URL in checkpoint sync YAML"))
         .collect()
 }

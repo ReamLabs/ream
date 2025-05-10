@@ -1,11 +1,6 @@
-use std::{
-    fs,
-    io::{self, Write},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{fs, io, path::PathBuf, sync::Arc};
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use redb::{Builder, Database};
 use tracing::info;
 
@@ -55,10 +50,7 @@ pub struct ReamDB {
 }
 
 impl ReamDB {
-    pub fn new(data_dir: Option<PathBuf>, ephemeral: bool) -> Result<Self, StoreError> {
-        let ream_dir =
-            dir::setup_data_dir(APP_NAME, data_dir, ephemeral).map_err(StoreError::Io)?;
-
+    pub fn new(ream_dir: PathBuf) -> Result<Self, StoreError> {
         let ream_file = ream_dir.join(REDB_FILE);
 
         let db = Builder::new()
@@ -198,35 +190,44 @@ impl ReamDB {
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.slot_index_provider()
-            .get_highest_slot()
-            .map_err(|err| anyhow!("Unable to fetch highest slot in db:{}", err))
-            .is_ok()
+        match self.slot_index_provider().get_highest_slot() {
+            Ok(Some(slot)) => slot > 0,
+            _ => false,
+        }
     }
 }
 
-pub fn reset_db(path: Option<PathBuf>) -> anyhow::Result<()> {
-    let db_path = path.clone().ok_or_else(|| anyhow!("Path does not exist"))?;
+pub fn reset_db(db_path: PathBuf) -> anyhow::Result<()> {
+    if fs::read_dir(&db_path)?.next().is_none() {
+        info!("Data directory at {db_path:?} is already empty.");
+        return Ok(());
+    }
 
-    if db_path.exists() {
-        info!(
-            "Are you sure you want to remove the database at {:?}? (y/n):",
-            path
-        );
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        if input.trim().eq_ignore_ascii_case("y") {
-            match fs::remove_dir_all(&db_path) {
-                Ok(_) => info!("Database cleared successfully."),
-                Err(err) => return Err(anyhow!("Failed to remove database:{}", err)),
+    info!(
+        "Are you sure you want to clear the contents of the data directory at {db_path:?}? (y/n):"
+    );
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    if input.trim().eq_ignore_ascii_case("y") {
+        for entry in fs::read_dir(&db_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                fs::remove_dir_all(&path)?;
+            } else {
+                fs::remove_file(&path)?;
             }
-        } else {
-            info!("Database path does not exist: {:?}", db_path);
         }
+        info!("Database contents cleared successfully.");
     } else {
-        info!("Operation canceled.");
+        info!("Operation canceled by user.");
     }
     Ok(())
+}
+
+pub fn initialize_db_dir(
+    data_dir: Option<PathBuf>,
+    ephemeral: bool,
+) -> Result<PathBuf, StoreError> {
+    dir::setup_data_dir(APP_NAME, data_dir, ephemeral).map_err(StoreError::Io)
 }

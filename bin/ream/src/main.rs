@@ -15,7 +15,7 @@ use ream_p2p::{
     network::Network,
 };
 use ream_rpc::{config::ServerConfig, start_server};
-use ream_storage::db::{ReamDB, reset_db};
+use ream_storage::db::{ReamDB, initialize_db_dir, reset_db};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -77,13 +77,14 @@ async fn main() {
                 discv5_config,
                 gossipsub_config,
             };
+            let ream_dir = initialize_db_dir(config.data_dir.clone(), config.ephemeral)
+                .expect("Unable to initialize database directory");
 
             if config.purge_db {
-                reset_db(config.data_dir.clone()).expect("Unable to delete database");
+                reset_db(ream_dir.clone()).expect("Unable to delete database");
             }
 
-            let ream_db = ReamDB::new(config.data_dir.clone(), config.ephemeral)
-                .expect("unable to init Ream Database");
+            let ream_db = ReamDB::new(ream_dir).expect("unable to init Ream Database");
 
             info!("ream database initialized ");
 

@@ -21,14 +21,14 @@ pub async fn initialize_db_from_checkpoint(
     checkpoint_sync_url: Option<Url>,
 ) -> anyhow::Result<()> {
     if db.is_initialized() {
-        warn!("Starting Checkpoint Sync from existing DB. It is advised to start from a fresh DB");
+        warn!("Starting Checkpoint Sync from existing DB. It is advised to start from a clean DB");
         return Ok(());
     }
 
-    let checkpoint_sync_url = get_checkpoint_sync_sources(checkpoint_sync_url)[0].clone();
-    info!("Starting Checkpoint Sync");
+    let checkpoint_sync_url = get_checkpoint_sync_sources(checkpoint_sync_url).remove(0);
+    info!("Initiating Checkpoint Sync");
     let block = fetch_finalized_block(&checkpoint_sync_url).await?;
-    info!("Fetched Block Root:{}", block.data.message.block_root());
+    info!("Received Block Root: {}", block.data.message.block_root());
     let slot = block.data.message.slot;
     initialize_blobs_in_db(
         &checkpoint_sync_url,
@@ -36,14 +36,11 @@ pub async fn initialize_db_from_checkpoint(
         block.data.message.block_root(),
     )
     .await?;
-    info!("Received block from slot:{}", slot);
+    info!("Received block from slot: {}", slot);
 
-    let state = get_state(&checkpoint_sync_url, block.data.message.slot).await?;
-    info!("Fetched State Root:{}", state.data.state_root());
-    ensure!(
-        block.data.message.slot == state.data.slot,
-        anyhow::anyhow!("Slot mismatch")
-    );
+    let state = get_state(&checkpoint_sync_url, slot).await?;
+    info!("Received State Root: {}", state.data.state_root());
+    ensure!(block.data.message.slot == state.data.slot, "Slot mismatch");
 
     ensure!(block.data.message.state_root == state.data.state_root());
     let mut store = get_forkchoice_store(state.data, block.data.message, db)?;
@@ -93,7 +90,6 @@ pub async fn initialize_blobs_in_db(
     .json::<BeaconVersionedResponse<Vec<BlobSidecar>>>()
     .await?;
 
-    info!("Got blobs len:{}", blob_sidecar.data.len());
     for blob_sidecar in blob_sidecar.data {
         store.blobs_and_proofs_provider().insert(
             BlobIdentifier::new(beacon_block_root, blob_sidecar.index),

@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 # ream dependencies
+ream-checkpoint-sync.workspace = true
 ream-discv5.workspace = true
 ream-executor.workspace = true 
 ream-network-spec.workspace = true 
@@ -23,7 +24,6 @@ ream-node.workspace = true
 ream-p2p.workspace = true 
 ream-rpc.workspace = true
 ream-storage.workspace = true
-ream-checkpoint-sync.workspace = true
 
 # other dependencies
 clap = { workspace = true, features = ["derive", "env"] }
