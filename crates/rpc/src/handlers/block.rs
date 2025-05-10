@@ -36,10 +36,13 @@ use ream_storage::{
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
-use crate::types::{
-    errors::ApiError,
-    id::{ID, ValidatorID},
-    response::{BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse},
+use crate::{
+    handlers::state::get_state_from_id,
+    types::{
+        errors::ApiError,
+        id::{ID, ValidatorID},
+        response::{BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse},
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -98,21 +101,6 @@ pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, A
     .ok_or_else(|| ApiError::NotFound(format!("Failed to find `block_root` from {block_id:?}")))?;
 
     Ok(block_root)
-}
-
-async fn get_beacon_state(block_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {
-    let block_root = get_block_root_from_id(block_id, db).await?;
-
-    db.beacon_state_provider()
-        .get(block_root)
-        .map_err(|err| {
-            ApiError::InternalError(format!(
-                "Failed to get beacon_state by block_root, error: {err:?}"
-            ))
-        })?
-        .ok_or(ApiError::NotFound(format!(
-            "Failed to find `beacon_state` from {block_root:?}"
-        )))
 }
 
 fn get_attestations_rewards(beacon_state: &BeaconState, beacon_block: &SignedBeaconBlock) -> u64 {
@@ -357,7 +345,7 @@ pub async fn get_block_rewards(
 ) -> Result<impl Responder, ApiError> {
     let block_id_value = block_id.into_inner();
     let beacon_block = get_beacon_block_from_id(block_id_value.clone(), &db).await?;
-    let beacon_state = get_beacon_state(block_id_value.clone(), &db).await?;
+    let beacon_state = get_state_from_id(block_id_value.clone(), &db).await?;
 
     let attestation_reward = get_attestations_rewards(&beacon_state, &beacon_block);
     let attester_slashing_reward = get_attester_slashing_rewards(&beacon_state, &beacon_block);
@@ -408,7 +396,7 @@ pub async fn post_sync_committee_rewards(
 ) -> Result<impl Responder, ApiError> {
     let block_id_value = block_id.into_inner();
     let beacon_block = get_beacon_block_from_id(block_id_value.clone(), &db).await?;
-    let beacon_state = get_beacon_state(block_id_value.clone(), &db).await?;
+    let beacon_state = get_state_from_id(block_id_value.clone(), &db).await?;
 
     let sync_committee_rewards = compute_sync_committee_rewards(&beacon_block, &beacon_state)?;
     let reward_data = if sync_committee_rewards.is_empty() {
