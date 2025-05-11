@@ -1,12 +1,11 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::str::FromStr;
 
 use actix_web::{
     HttpResponse, Responder, get,
     web::{Data, Path},
 };
 use libp2p::PeerId;
-use parking_lot::RwLock;
-use ream_p2p::network::CachedPeer;
+use ream_p2p::network::{CachedPeer, PeerTable};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{errors::ApiError, response::DataResponse};
@@ -39,7 +38,7 @@ impl From<&CachedPeer> for PeerData {
 /// GET /eth/v1/node/peers/{peer_id}
 #[get("/node/peers/{peer_id}")]
 pub async fn get_peer(
-    table: Data<Arc<RwLock<HashMap<PeerId, CachedPeer>>>>,
+    table: Data<PeerTable>,
     peer_id: Path<String>,
 ) -> Result<impl Responder, ApiError> {
     let id_raw = peer_id.into_inner();
