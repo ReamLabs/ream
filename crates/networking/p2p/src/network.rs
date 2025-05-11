@@ -397,7 +397,7 @@ pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, 
 
 #[cfg(test)]
 mod tests {
-    use std::net::IpAddr;
+    use std::{net::IpAddr, sync::Once};
 
     use alloy_primitives::aliases::B32;
     use ream_discv5::{config::DiscoveryConfig, subnet::Subnets};
@@ -410,6 +410,13 @@ mod tests {
         config::NetworkConfig,
         gossipsub::{configurations::GossipsubConfig, topics::GossipTopicKind},
     };
+    static INIT_NET_SPEC: Once = Once::new();
+
+    fn init_network_spec() {
+        INIT_NET_SPEC.call_once(|| {
+            set_network_spec(DEV.clone());
+        });
+    }
 
     async fn create_network(
         socket_address: IpAddr,
@@ -450,7 +457,7 @@ mod tests {
 
     #[test]
     fn insert_then_read_returns_snapshot() {
-        set_network_spec(DEV.clone());
+        init_network_spec();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
 
@@ -476,21 +483,14 @@ mod tests {
 
     #[test]
     fn update_existing_row() {
-        set_network_spec(DEV.clone());
+        init_network_spec();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
 
         let net = rt.block_on(async {
-            create_network(
-                "127.0.0.1".parse().unwrap(),
-                0,
-                0,
-                vec![],
-                true,
-                vec![],
-            )
-            .await
-            .unwrap()
+            create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
+                .await
+                .unwrap()
         });
 
         let peer_id = libp2p::PeerId::random();
@@ -506,8 +506,25 @@ mod tests {
     }
 
     #[test]
+    fn cached_peer_unknown_returns_none() {
+        init_network_spec();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        let net = rt.block_on(async {
+            create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
+                .await
+                .unwrap()
+        });
+
+        let random_id = libp2p::PeerId::random();
+
+        assert!(net.cached_peer(&random_id).is_none());
+    }
+
+    #[test]
     fn test_p2p_gossipsub() {
-        set_network_spec(DEV.clone());
+        init_network_spec();
 
         let runtime = Runtime::new().unwrap();
 
