@@ -117,23 +117,25 @@ impl Network {
         self.peer_table.read().get(id).cloned()
     }
     fn upsert_peer(
-        &self,
+        &mut self,
         peer_id: PeerId,
         addr: Option<Multiaddr>,
         state: &'static str,
         direction: &'static str,
         enr: Option<Enr>,
     ) {
-        let mut map = self.peer_table.write();
-        map.entry(peer_id)
-            .and_modify(|p| {
-                p.state = state;
-                p.direction = direction;
-                if let Some(a) = &addr {
-                    p.last_seen_p2p_address = Some(a.clone());
+        let mut table = self.peer_table.write();
+        table
+            .entry(peer_id)
+            .and_modify(|row| {
+                // update only the fields we care about
+                if addr.is_some() {
+                    row.last_seen_p2p_address = addr.clone();
                 }
-                if let Some(e) = &enr {
-                    p.enr = Some(e.clone());
+                row.state = state;
+                row.direction = direction;
+                if enr.is_some() {
+                    row.enr = enr.clone();
                 }
             })
             .or_insert(CachedPeer {
@@ -628,7 +630,7 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
 
-        let net = rt.block_on(async {
+        let mut net = rt.block_on(async {
             create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
                 .await
                 .unwrap()
@@ -654,7 +656,7 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
 
-        let net = rt.block_on(async {
+        let mut net = rt.block_on(async {
             create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
                 .await
                 .unwrap()
