@@ -142,7 +142,6 @@ impl Network {
         table
             .entry(peer_id)
             .and_modify(|row| {
-                // update only the fields we care about
                 if addr.is_some() {
                     row.last_seen_p2p_address = addr.clone();
                 }
@@ -445,6 +444,16 @@ impl Network {
     fn handle_discovered_peers(&mut self, peers: HashMap<Enr, Option<Instant>>) {
         info!("Discovered peers: {:?}", peers);
         for (enr, _) in peers {
+            if let Some(pid) = Network::peer_id_from_enr(&enr) {
+                self.upsert_peer(
+                    pid,
+                    None,
+                    "disconnected",
+                    "",
+                    Some(enr.clone()),
+                );
+            }
+
             let mut multiaddrs: Vec<Multiaddr> = Vec::new();
             if let Some(ip) = enr.ip4() {
                 if let Some(tcp) = enr.tcp4() {
