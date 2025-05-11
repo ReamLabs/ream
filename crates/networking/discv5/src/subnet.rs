@@ -36,9 +36,6 @@ pub enum Subnet {
     SyncCommittee(u8),
 }
 
-pub type AttestationBitfield = BitVector<U64>;
-pub type SyncCommitteeBitfield = BitVector<U4>;
-
 /// Represents the attestation subnets a node is subscribed to
 ///
 /// This directly wraps a BitVector<U64> for the attestation subnet bitfield
@@ -181,65 +178,36 @@ impl Decodable for SyncCommitteeSubnets {
 
 #[derive(Clone, Debug, Default)]
 pub struct Subnets {
-    attestation_bits: Option<BitVector<U64>>,
-    sync_committee_bits: Option<BitVector<U4>>,
+    pub attestation_bits: Option<BitVector<U64>>,
+    pub sync_committee_bits: Option<BitVector<U4>>,
 }
 
 impl Subnets {
     pub fn new() -> Self {
         Self {
-            attestation_bits: None,
-            sync_committee_bits: None,
-        }
-    }
-
-    /// Convert this Subnets to an AttestationSubnets type
-    pub fn to_attestation_subnets(&self) -> Option<AttestationSubnets> {
-        self.attestation_bits
-            .as_ref()
-            .map(|bits| AttestationSubnets(bits.clone()))
-    }
-
-    /// Convert this Subnets to a SyncCommitteeSubnets type
-    pub fn to_sync_committee_subnets(&self) -> Option<SyncCommitteeSubnets> {
-        self.sync_committee_bits
-            .as_ref()
-            .map(|bits| SyncCommitteeSubnets(bits.clone()))
-    }
-
-    /// Create a Subnets instance from an AttestationSubnets type
-    pub fn from_attestation_subnets(subnets: &AttestationSubnets) -> Self {
-        Self {
-            attestation_bits: Some(subnets.0.clone()),
-            sync_committee_bits: None,
-        }
-    }
-
-    /// Create a Subnets instance from a SyncCommitteeSubnets type
-    pub fn from_sync_committee_subnets(subnets: &SyncCommitteeSubnets) -> Self {
-        Self {
-            attestation_bits: None,
-            sync_committee_bits: Some(subnets.0.clone()),
+            attestation_bits: Some(BitVector::new()),
+            sync_committee_bits: Some(BitVector::new()),
         }
     }
 
     pub fn enable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
         match subnet {
-            Subnet::Attestation(id) if id < 64 => {
-                let bits = self.attestation_bits.get_or_insert(BitVector::new());
-                bits.set(id as usize, true)
-                    .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))?;
+            Subnet::Attestation(id) => {
+                if let Some(bits) = &mut self.attestation_bits {
+                    if id < 64 {
+                        bits.set(id as usize, true)
+                            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))?;
+                    }
+                }
                 Ok(())
             }
-            Subnet::Attestation(_) => Ok(()),
-            Subnet::SyncCommittee(id) if id < SYNC_COMMITTEE_SUBNET_COUNT as u8 => {
-                let bits = self.sync_committee_bits.get_or_insert(BitVector::new());
-                bits.set(id as usize, true)
-                    .map_err(|err| anyhow!("Sync committee subnet ID out of bounds: {err:?}"))?;
-                Ok(())
-            }
-            Subnet::SyncCommittee(_) => {
-                trace!("Ignoring out-of-range sync committee subnet ID");
+            Subnet::SyncCommittee(id) => {
+                if let Some(bits) = &mut self.sync_committee_bits {
+                    if id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
+                        bits.set(id as usize, true)
+                            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))?;
+                    }
+                }
                 Ok(())
             }
         }
@@ -247,80 +215,62 @@ impl Subnets {
 
     pub fn disable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
         match subnet {
-            Subnet::Attestation(id) if id < 64 => {
+            Subnet::Attestation(id) => {
                 if let Some(bits) = &mut self.attestation_bits {
-                    bits.set(id as usize, false)
-                        .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))?;
+                    if id < 64 {
+                        bits.set(id as usize, false)
+                            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))?;
+                    }
                 }
                 Ok(())
             }
-            Subnet::Attestation(_) => Ok(()),
-            Subnet::SyncCommittee(id) if id < SYNC_COMMITTEE_SUBNET_COUNT as u8 => {
+            Subnet::SyncCommittee(id) => {
                 if let Some(bits) = &mut self.sync_committee_bits {
-                    bits.set(id as usize, false).map_err(|err| {
-                        anyhow!("Sync committee subnet ID out of bounds: {err:?}")
-                    })?;
+                    if id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
+                        bits.set(id as usize, false)
+                            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))?;
+                    }
                 }
-                Ok(())
-            }
-            Subnet::SyncCommittee(_) => {
-                trace!("Ignoring out-of-range sync committee subnet ID");
                 Ok(())
             }
         }
     }
 
     pub fn is_active(&self, subnet: Subnet) -> anyhow::Result<bool> {
-        let active = match subnet {
-            Subnet::Attestation(id) if id < 64 => {
-                if let Some(ref attestation_bits) = self.attestation_bits {
-                    attestation_bits
-                        .get(id as usize)
-                        .map_err(|err| anyhow!("Couldn't get expected attestation {:?}", err))?
-                } else {
-                    false
+        match subnet {
+            Subnet::Attestation(id) => {
+                if let Some(bits) = &self.attestation_bits {
+                    if id < 64 {
+                        return bits
+                            .get(id as usize)
+                            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"));
+                    }
                 }
+                Ok(false)
             }
-            Subnet::Attestation(_) => false,
-            Subnet::SyncCommittee(id) if id < SYNC_COMMITTEE_SUBNET_COUNT as u8 => self
-                .sync_committee_bits
-                .as_ref()
-                .is_some_and(|bits| bits.get(id as usize).unwrap_or(false)),
-            Subnet::SyncCommittee(_) => false,
-        };
-        Ok(active)
+            Subnet::SyncCommittee(id) => {
+                if let Some(bits) = &self.sync_committee_bits {
+                    if id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
+                        return bits
+                            .get(id as usize)
+                            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"));
+                    }
+                }
+                Ok(false)
+            }
+        }
     }
 }
 
 impl Encodable for Subnets {
     fn encode(&self, out: &mut dyn BufMut) {
-        // For backward compatibility, we still encode both subnet types together in one Bytes
-        // This should be migrated to use the new types in future versions
-        let mut bytes = Vec::new();
-
-        // Encode attestation_bits
-        if let Some(attestation_bits) = &self.attestation_bits {
-            let attestation_bytes = attestation_bits.as_ssz_bytes();
-            bytes.extend_from_slice(&attestation_bytes);
+        if let Some(bits) = &self.attestation_bits {
+            let bytes = Bytes::from(bits.as_ssz_bytes());
+            bytes.encode(out);
         } else {
-            // Encode an empty bitvector
-            let empty: BitVector<U64> = BitVector::new();
-            bytes.extend_from_slice(&empty.as_ssz_bytes());
+            let bytes = Bytes::new();
+            bytes.encode(out);
         }
-
-        // Encode sync_committee_bits
-        if let Some(sync_committee_bits) = &self.sync_committee_bits {
-            let sync_committee_bytes = sync_committee_bits.as_ssz_bytes();
-            bytes.extend_from_slice(&sync_committee_bytes);
-        } else {
-            // Encode an empty bitvector
-            let empty: BitVector<U4> = BitVector::new();
-            bytes.extend_from_slice(&empty.as_ssz_bytes());
-        }
-
-        // Wrap in Bytes and encode
-        let bytes = Bytes::from(bytes);
-        bytes.encode(out);
     }
 }
 
@@ -328,30 +278,131 @@ impl Decodable for Subnets {
     fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
         let bytes = Bytes::decode(buf)?;
 
-        // For backward compatibility, we still decode both subnet types together from one Bytes
-        // This should be migrated to use the new types in future versions
-        if bytes.len() < 8 {
-            return Err(alloy_rlp::Error::Custom(Box::leak(
+        if bytes.len() >= 8 {
+            let attestation_bits = BitVector::<U64>::from_bytes(bytes.to_vec().into())
+                .map(Some)
+                .unwrap_or(None);
+
+            Ok(Subnets {
+                attestation_bits,
+                sync_committee_bits: None,
+            })
+        } else if !bytes.is_empty() {
+            let sync_committee_bits = BitVector::<U4>::from_bytes(bytes.to_vec().into())
+                .map(Some)
+                .unwrap_or(None);
+
+            Ok(Subnets {
+                attestation_bits: None,
+                sync_committee_bits,
+            })
+        } else {
+            Err(alloy_rlp::Error::Custom(Box::leak(
                 "Insufficient bytes for Subnets decoding"
+                    .to_string()
+                    .into_boxed_str(),
+            )))
+        }
+    }
+}
+
+impl Subnets {
+    pub fn encode_sync_committee(&self, out: &mut dyn BufMut) {
+        if let Some(bits) = &self.sync_committee_bits {
+            let bytes = Bytes::from(bits.as_ssz_bytes());
+            bytes.encode(out);
+        } else {
+            let bytes = Bytes::new();
+            bytes.encode(out);
+        }
+    }
+
+    /// Decode from sync committee field specifically
+    pub fn decode_sync_committee(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        // Decode as RLP Bytes first
+        let bytes = Bytes::decode(buf)?;
+        if bytes.is_empty() {
+            return Err(alloy_rlp::Error::Custom(Box::leak(
+                "Insufficient bytes for SyncCommitteeSubnets decoding"
                     .to_string()
                     .into_boxed_str(),
             )));
         }
 
-        let attestation_bytes = &bytes[0..8];
-        let attestation_bits = BitVector::<U64>::from_bytes(attestation_bytes.to_vec().into()).ok();
-
-        let sync_committee_bits = if bytes.len() > 8 {
-            let sync_committee_bytes = &bytes[8..];
-            BitVector::<U4>::from_bytes(sync_committee_bytes.to_vec().into()).ok()
-        } else {
-            None
-        };
+        let sync_committee_bits = BitVector::<U4>::from_bytes(bytes.to_vec().into())
+            .map(Some)
+            .unwrap_or(None);
 
         Ok(Subnets {
-            attestation_bits,
+            attestation_bits: None,
             sync_committee_bits,
         })
+    }
+}
+
+// Add enable_subnet and disable_subnet methods to AttestationSubnets
+impl AttestationSubnets {
+    /// Enable a subnet by setting its bit to true
+    pub fn enable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
+        match subnet {
+            Subnet::Attestation(id) => {
+                if id < 64 {
+                    self.set(id as usize, true)?;
+                }
+                Ok(())
+            }
+            _ => Err(anyhow!(
+                "Cannot enable non-attestation subnet in AttestationSubnets"
+            )),
+        }
+    }
+
+    /// Disable a subnet by setting its bit to false
+    pub fn disable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
+        match subnet {
+            Subnet::Attestation(id) => {
+                if id < 64 {
+                    self.set(id as usize, false)?;
+                }
+                Ok(())
+            }
+            _ => Err(anyhow!(
+                "Cannot disable non-attestation subnet in AttestationSubnets"
+            )),
+        }
+    }
+}
+
+// Add enable_subnet and disable_subnet methods to SyncCommitteeSubnets
+impl SyncCommitteeSubnets {
+    /// Enable a subnet by setting its bit to true
+    pub fn enable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
+        match subnet {
+            Subnet::SyncCommittee(id) => {
+                if id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
+                    self.set(id as usize, true)?;
+                }
+                Ok(())
+            }
+            _ => Err(anyhow!(
+                "Cannot enable non-sync committee subnet in SyncCommitteeSubnets"
+            )),
+        }
+    }
+
+    /// Disable a subnet by setting its bit to false
+    pub fn disable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
+        match subnet {
+            Subnet::SyncCommittee(id) => {
+                if id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
+                    self.set(id as usize, false)?;
+                }
+                Ok(())
+            }
+            _ => Err(anyhow!(
+                "Cannot disable non-sync committee subnet in SyncCommitteeSubnets"
+            )),
+        }
     }
 }
 
@@ -372,22 +423,16 @@ pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + 
 
         // Check for attestation subnets
         let attestation_match = if has_attestation_subnets {
-            // Try to get the new AttestationSubnets type first
+            // Get the AttestationSubnets type
             let attestation_bits =
                 match enr.get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY) {
                     Some(Ok(subnets)) => Some(subnets),
                     _ => {
-                        // Fall back to legacy Subnets type if new type decoding fails
-                        match enr.get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY) {
-                            Some(Ok(subnets)) => subnets.to_attestation_subnets(),
-                            _ => {
-                                trace!(
-                                    "Peer rejected: invalid or missing attnets field; peer_id: {}",
-                                    enr.node_id()
-                                );
-                                return false;
-                            }
-                        }
+                        trace!(
+                            "Peer rejected: invalid or missing attnets field; peer_id: {}",
+                            enr.node_id()
+                        );
+                        return false;
                     }
                 };
 
@@ -439,22 +484,15 @@ pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + 
 
         // Check for sync committee subnets
         let sync_committee_match = if has_sync_committee_subnets {
-            // Try to get the new SyncCommitteeSubnets type first
             let sync_committee_bits =
                 match enr.get_decodable::<SyncCommitteeSubnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY) {
                     Some(Ok(subnets)) => Some(subnets),
                     _ => {
-                        // Fall back to legacy Subnets type if new type decoding fails
-                        match enr.get_decodable::<Subnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY) {
-                            Some(Ok(subnets)) => subnets.to_sync_committee_subnets(),
-                            _ => {
-                                trace!(
-                                    "Peer rejected: missing syncnets field; peer_id: {}",
-                                    enr.node_id()
-                                );
-                                return false;
-                            }
-                        }
+                        trace!(
+                            "Peer rejected: missing syncnets field; peer_id: {}",
+                            enr.node_id()
+                        );
+                        return false;
                     }
                 };
 
@@ -691,10 +729,19 @@ mod tests {
         subnets.enable_subnet(Subnet::SyncCommittee(0)).unwrap();
         subnets.enable_subnet(Subnet::SyncCommittee(2)).unwrap();
 
+        // Create separate subnet objects for attestation and sync committee
+        let mut attestation_subnets = AttestationSubnets::new();
+        attestation_subnets.set(1, true).unwrap();
+        attestation_subnets.set(5, true).unwrap();
+
+        let mut sync_committee_subnets = SyncCommitteeSubnets::new();
+        sync_committee_subnets.set(0, true).unwrap();
+        sync_committee_subnets.set(2, true).unwrap();
+
         // Build ENR with both subnet fields
         let enr = Enr::builder()
-            .add_value(ATTESTATION_BITFIELD_ENR_KEY, &subnets)
-            .add_value(SYNC_COMMITTEE_BITFIELD_ENR_KEY, &subnets)
+            .add_value(ATTESTATION_BITFIELD_ENR_KEY, &attestation_subnets)
+            .add_value(SYNC_COMMITTEE_BITFIELD_ENR_KEY, &sync_committee_subnets)
             .build(&combined_key)
             .expect("Failed to build ENR");
 
@@ -712,28 +759,38 @@ mod tests {
 
         // Decode sync committee bitfield
         let decoded_syncnets = enr
-            .get_decodable::<Subnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
+            .get_decodable::<SyncCommitteeSubnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
             .expect("Failed to get sync committee bitfield")
             .expect("Failed to decode sync committee bitfield");
 
+        // Convert to our Subnets type for verification
+        let mut subnets_from_sync = Subnets::new();
+        if let Some(bits) = &mut subnets_from_sync.sync_committee_bits {
+            for i in 0..SYNC_COMMITTEE_SUBNET_COUNT {
+                if decoded_syncnets.get(i).unwrap() {
+                    bits.set(i, true).unwrap();
+                }
+            }
+        }
+
         // Verify sync committee subnets
         assert!(
-            decoded_syncnets
+            subnets_from_sync
                 .is_active(Subnet::SyncCommittee(0))
                 .unwrap()
         );
         assert!(
-            decoded_syncnets
+            subnets_from_sync
                 .is_active(Subnet::SyncCommittee(2))
                 .unwrap()
         );
         assert!(
-            !decoded_syncnets
+            !subnets_from_sync
                 .is_active(Subnet::SyncCommittee(1))
                 .unwrap()
         );
         assert!(
-            !decoded_syncnets
+            !subnets_from_sync
                 .is_active(Subnet::SyncCommittee(3))
                 .unwrap()
         );

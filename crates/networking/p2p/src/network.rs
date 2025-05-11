@@ -358,7 +358,10 @@ mod tests {
     use std::net::IpAddr;
 
     use alloy_primitives::aliases::B32;
-    use ream_discv5::{config::DiscoveryConfig, subnet::Subnets};
+    use ream_discv5::{
+        config::DiscoveryConfig,
+        subnet::{AttestationSubnets, SyncCommitteeSubnets},
+    };
     use ream_executor::ReamExecutor;
     use ream_network_spec::networks::{DEV, set_network_spec};
     use tokio::runtime::Runtime;
@@ -395,8 +398,8 @@ mod tests {
                 socket_port,
                 discovery_port,
                 disable_discovery,
-                attestation_subnets: Subnets::new(),
-                sync_committee_subnets: Subnets::new(),
+                attestation_subnets: AttestationSubnets::new(),
+                sync_committee_subnets: SyncCommitteeSubnets::new(),
             },
             gossipsub_config: GossipsubConfig {
                 topics,
