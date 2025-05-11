@@ -642,6 +642,37 @@ mod tests {
     }
 
     #[test]
+    fn update_existing_row() {
+        set_network_spec(DEV.clone());
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        let net = rt.block_on(async {
+            create_network(
+                "127.0.0.1".parse().unwrap(),
+                0,
+                0,
+                vec![],
+                true,
+                vec![],
+            )
+            .await
+            .unwrap()
+        });
+
+        let peer_id = libp2p::PeerId::random();
+
+        net.upsert_peer(peer_id, None, "connecting", "outbound", None);
+
+        net.upsert_peer(peer_id, None, "connected", "outbound", None);
+
+        let snap = net.cached_peer(&peer_id).expect("row exists");
+
+        assert_eq!(snap.state, "connected");
+        assert_eq!(snap.direction, "outbound");
+    }
+
+    #[test]
     fn test_p2p_gossipsub() {
         let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
         set_network_spec(DEV.clone());
