@@ -335,6 +335,12 @@ impl Network {
         // currently no-op for any network events
         info!("Event: {:?}", event);
         match event {
+            SwarmEvent::Dialing {
+                peer_id: Some(pid), ..
+            } => {
+                self.upsert_peer(pid, None, STATE_CONNECTING, DIR_OUTBOUND, None);
+                None
+            }
             SwarmEvent::OutgoingConnectionError {
                 peer_id: Some(pid), ..
             } => {
