@@ -88,7 +88,7 @@ pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
     subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
-    peer_table: Arc<RwLock<HashMap<PeerId, CachedPeer>>>,
+    peer_table: PeerTable,
 }
 
 struct Executor(ReamExecutor);
