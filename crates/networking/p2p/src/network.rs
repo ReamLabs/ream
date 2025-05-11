@@ -9,7 +9,7 @@ use std::{
 };
 
 use anyhow::anyhow;
-use discv5::Enr;
+use discv5::{Enr, enr::CombinedPublicKey};
 use libp2p::{
     Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
     connection_limits::{self, ConnectionLimits},
@@ -29,7 +29,9 @@ use libp2p::{
     tcp::{Config as TcpConfig, tokio::Transport as TcpTransport},
     yamux,
 };
-use libp2p_identity::{Keypair, PublicKey, secp256k1};
+use libp2p_identity::{
+    Keypair, PublicKey as LibPk, PublicKey, secp256k1, secp256k1::PublicKey as LibSecpPk,
+};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::Mutex;
 use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
@@ -114,6 +116,17 @@ impl libp2p::swarm::Executor for Executor {
 }
 
 impl Network {
+    fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
+        match enr.public_key() {
+            CombinedPublicKey::Secp256k1(pk) => {
+                let encoded = pk.to_encoded_point(true);
+                let lib_secp = LibSecpPk::try_from_bytes(encoded.as_bytes()).ok()?;
+                let lib_pk: LibPk = lib_secp.into();
+                Some(PeerId::from_public_key(&lib_pk))
+            }
+            _ => None,
+        }
+    }
     pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
         self.peer_table.read().get(id).cloned()
     }
@@ -596,12 +609,11 @@ pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, 
 mod tests {
     use std::{net::IpAddr, sync::Once};
 
-    use alloy_primitives::{B256, aliases::B32};
-    use ream_consensus::constants::GENESIS_VALIDATORS_ROOT;
-    use ream_discv5::{
-        config::DiscoveryConfig,
-        subnet::{AttestationSubnets, SyncCommitteeSubnets},
-    };
+    use alloy_primitives::aliases::B32;
+    use discv5::enr::CombinedKey;
+    use k256::ecdsa::SigningKey;
+    use libp2p_identity::{Keypair, PeerId};
+    use ream_discv5::{config::DiscoveryConfig, subnet::Subnets};
     use ream_executor::ReamExecutor;
     use ream_network_spec::networks::{DEV, set_network_spec};
     use tokio::runtime::Runtime;
@@ -611,6 +623,7 @@ mod tests {
         config::NetworkConfig,
         gossipsub::{configurations::GossipsubConfig, topics::GossipTopicKind},
     };
+
     static INIT_NET_SPEC: Once = Once::new();
 
     fn init_network_spec() {
@@ -655,6 +668,26 @@ mod tests {
         };
 
         Network::init(executor, &config).await
+    }
+
+    #[test]
+    fn peer_id_from_enr_matches_libp2p() {
+        let lp_kp = Keypair::generate_secp256k1();
+        let secret = lp_kp
+            .clone()
+            .try_into_secp256k1()
+            .unwrap()
+            .secret()
+            .to_bytes();
+        let signing = SigningKey::from_slice(&secret).unwrap();
+
+        let enr_key = CombinedKey::Secp256k1(signing);
+        let enr = Enr::builder().build(&enr_key).unwrap();
+
+        let expected = PeerId::from_public_key(&lp_kp.public());
+        let actual = Network::peer_id_from_enr(&enr).expect("peer id");
+
+        assert_eq!(expected, actual);
     }
 
     #[test]
