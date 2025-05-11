@@ -1,9 +1,13 @@
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use actix_web::{HttpResponse, Responder, get, web::Path};
+use actix_web::{
+    HttpResponse, Responder, get,
+    web::{Data, Path},
+};
 use libp2p::PeerId;
+use parking_lot::RwLock;
+use ream_p2p::network::CachedPeer;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 use crate::types::{errors::ApiError, response::DataResponse};
 
@@ -16,57 +20,37 @@ pub struct PeerData {
     direction: String,
 }
 
-impl PeerData {
-    pub fn new(
-        peer_id: String,
-        enr: Option<String>,
-        last_seen_p2p_address: String,
-        state: String,
-        direction: String,
-    ) -> Self {
+impl From<&CachedPeer> for PeerData {
+    fn from(p: &CachedPeer) -> Self {
         Self {
-            peer_id,
-            enr,
-            last_seen_p2p_address,
-            state,
-            direction,
+            peer_id: p.peer_id.to_string(),
+            enr: p.enr.as_ref().map(|e| e.to_base64()),
+            last_seen_p2p_address: p
+                .last_seen_p2p_address
+                .as_ref()
+                .map(|m| m.to_string())
+                .unwrap_or_default(),
+            state: p.state.to_string(),
+            direction: p.direction.to_string(),
         }
     }
 }
 
-/// Called by `/eth/v1/node/peers/{peer_id}` to return the current connection
+/// GET /eth/v1/node/peers/{peer_id}
 #[get("/node/peers/{peer_id}")]
-pub async fn get_peer(peer_id: Path<String>) -> Result<impl Responder, ApiError> {
-    let peer_id_raw = peer_id.into_inner();
-    PeerId::from_str(&peer_id_raw)
-        .map_err(|_| ApiError::BadRequest(format!("Invalid peer ID: {peer_id_raw}")))?;
+pub async fn get_peer(
+    table: Data<Arc<RwLock<HashMap<PeerId, CachedPeer>>>>,
+    peer_id: Path<String>,
+) -> Result<impl Responder, ApiError> {
+    let id_raw = peer_id.into_inner();
+    let peer_id = PeerId::from_str(&id_raw)
+        .map_err(|_| ApiError::BadRequest(format!("Invalid peer ID: {id_raw}")))?;
 
-    let (enr, last_seen, state, direction) = match mock_fetch_peer(&peer_id_raw).await {
-        Ok(tuple) => tuple,
-        Err(ApiError::NotFound(_)) => {
-            return Err(ApiError::NotFound(format!("Peer not found: {peer_id_raw}")));
-        }
-        Err(e) => {
-            error!("Failed to fetch peer {peer_id_raw}, err: {e:?}");
-            return Err(ApiError::InternalError);
-        }
-    };
+    let snap = table
+        .read()
+        .get(&peer_id)
+        .cloned()
+        .ok_or_else(|| ApiError::NotFound(format!("Peer not found: {id_raw}")))?;
 
-    let payload = PeerData::new(peer_id_raw, enr, last_seen, state, direction);
-    Ok(HttpResponse::Ok().json(DataResponse::new(payload)))
-}
-
-async fn mock_fetch_peer(
-    peer_id: &str,
-) -> Result<(Option<String>, String, String, String), ApiError> {
-    if peer_id != "16Uiu2HAm1oEch6uXffoGZ32kPTiyjycfX9yDuBJSWtmagBSk9HTN" {
-        return Err(ApiError::NotFound("peer".into()));
-    }
-
-    Ok((
-        None,
-        "/ip4/127.0.0.1/tcp/9000/p2p/16Uiu2HAm1oEch6uXffoGZ32kPTiyjycfX9yDuBJSWtmagBSk9HTN".into(),
-        "connected".into(),
-        "outbound".into(),
-    ))
+    Ok(HttpResponse::Ok().json(DataResponse::new(PeerData::from(&snap))))
 }
