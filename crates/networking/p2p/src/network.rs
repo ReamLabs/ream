@@ -53,6 +53,8 @@ use crate::{
     },
 };
 
+pub type PeerTable = Arc<RwLock<HashMap<PeerId, CachedPeer>>>;
+
 #[derive(Clone)]
 pub struct CachedPeer {
     pub peer_id: PeerId,
@@ -256,8 +258,8 @@ impl Network {
         self.request_id += 1;
         request_id
     }
-
-    pub fn peer_table(&self) -> Arc<RwLock<HashMap<PeerId, CachedPeer>>> {
+    
+    pub fn peer_table(&self) -> PeerTable {
         Arc::clone(&self.peer_table)
     }
 
