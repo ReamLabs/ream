@@ -335,7 +335,7 @@ impl Network {
                 };
 
                 self.upsert_peer(peer_id, addr, "connected", direction, None);
-                None // nothing to bubble up
+                None
             }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
                 ReamBehaviourEvent::Identify(_) => None,
