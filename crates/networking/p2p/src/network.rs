@@ -116,6 +116,34 @@ impl Network {
     pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
         self.peer_table.read().get(id).cloned()
     }
+    fn upsert_peer(
+        &self,
+        peer_id: PeerId,
+        addr: Option<Multiaddr>,
+        state: &'static str,
+        direction: &'static str,
+        enr: Option<Enr>,
+    ) {
+        let mut map = self.peer_table.write();
+        map.entry(peer_id)
+            .and_modify(|p| {
+                p.state = state;
+                p.direction = direction;
+                if let Some(a) = &addr {
+                    p.last_seen_p2p_address = Some(a.clone());
+                }
+                if let Some(e) = &enr {
+                    p.enr = Some(e.clone());
+                }
+            })
+            .or_insert(CachedPeer {
+                peer_id,
+                last_seen_p2p_address: addr,
+                state,
+                direction,
+                enr,
+            });
+    }
     pub async fn init(executor: ReamExecutor, config: &NetworkConfig) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
