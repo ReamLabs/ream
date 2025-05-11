@@ -621,6 +621,7 @@ mod tests {
     use super::*;
     use crate::{
         config::NetworkConfig,
+        constants::{DIR_OUTBOUND, STATE_CONNECTED, STATE_CONNECTING},
         gossipsub::{configurations::GossipsubConfig, topics::GossipTopicKind},
     };
 
