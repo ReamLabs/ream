@@ -209,24 +209,6 @@ pub async fn get_beacon_block_from_id(
         })
 }
 
-pub async fn get_filtered_block_tree(db: &ReamDB) -> Result<Vec<BeaconBlock>, ApiError> {
-    let justified_checkpoint = db
-        .justified_checkpoint_provider()
-        .get()
-        .map_err(|_| ApiError::InternalError)?;
-    let root = justified_checkpoint.root;
-
-    let mut blocks = HashMap::with_hasher(RandomState::default());
-    let store = Store { db: db.clone() };
-
-    store.filter_block_tree(root, &mut blocks).map_err(|err| {
-        error!("Failed to filter block tree, error: {err:?}");
-        ApiError::InternalError
-    })?;
-
-    Ok(blocks.into_values().collect())
-}
-
 /// Called by `/genesis` to get the Genesis Config of Beacon Chain.
 #[get("/beacon/genesis")]
 pub async fn get_genesis() -> Result<impl Responder, ApiError> {
@@ -307,16 +289,29 @@ pub async fn get_block_from_id(
 /// Called by `/beacon/heads` to get fork choice leaves.
 #[get("/beacon/heads")]
 pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
-    let beacon_blocks = get_filtered_block_tree(&db).await?;
+    let justified_checkpoint = db
+        .justified_checkpoint_provider()
+        .get()
+        .map_err(|_| ApiError::InternalError)?;
+    let root = justified_checkpoint.root;
 
-    let mut beacon_heads = Vec::new();
-    for block in beacon_blocks.iter() {
-        beacon_heads.push(BeaconHeadResponse {
+    let mut blocks = HashMap::with_hasher(RandomState::default());
+    let store = Store { db: db.get_ref().clone() };
+
+    store.filter_block_tree(root, &mut blocks).map_err(|err| {
+        error!("Failed to filter block tree, error: {err:?}");
+        ApiError::InternalError
+    })?;
+
+    let beacon_blocks: Vec<BeaconBlock> = blocks.into_values().collect();
+    let beacon_heads: Vec<BeaconHeadResponse> = beacon_blocks
+        .iter()
+        .map(|block| BeaconHeadResponse {
             root: block.tree_hash_root(),
             slot: block.slot,
             execution_optimistic: false,
-        });
-    }
+        })
+        .collect();
 
     Ok(HttpResponse::Ok().json(DataResponse::new(beacon_heads)))
 }
