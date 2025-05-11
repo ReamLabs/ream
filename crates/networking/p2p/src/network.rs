@@ -105,7 +105,7 @@ pub struct Network {
     subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
     callbacks: HashMap<u64, mpsc::Sender<anyhow::Result<P2PResponse>>>,
     request_id: u64,
-    peer_table: Arc<RwLock<HashMap<PeerId, CachedPeer>>>,
+    peer_table: PeerTable,
 }
 
 struct Executor(ReamExecutor);
