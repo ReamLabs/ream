@@ -4968,6 +4968,7 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "futures",
+ "k256",
  "libp2p",
  "libp2p-identity",
  "libp2p-mplex",
