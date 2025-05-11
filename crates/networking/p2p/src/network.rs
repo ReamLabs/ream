@@ -29,9 +29,7 @@ use libp2p::{
     tcp::{Config as TcpConfig, tokio::Transport as TcpTransport},
     yamux,
 };
-use libp2p_identity::{
-    Keypair, PublicKey as LibPk, PublicKey, secp256k1, secp256k1::PublicKey as LibSecpPk,
-};
+use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as LibSecpPk};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::Mutex;
 use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
@@ -44,6 +42,7 @@ use yamux::Config as YamuxConfig;
 use crate::{
     channel::{P2PMessages, P2PResponse},
     config::NetworkConfig,
+    constants::{DIR_INBOUND, DIR_OUTBOUND, STATE_CONNECTED, STATE_CONNECTING, STATE_DISCONNECTED},
     gossipsub::{
         GossipsubBehaviour, message::GossipsubMessage, snappy::SnappyTransform, topics::GossipTopic,
     },
@@ -58,7 +57,7 @@ use crate::{
 pub struct CachedPeer {
     pub peer_id: PeerId,
     pub last_seen_p2p_address: Option<Multiaddr>,
-    pub state: &'static str, // "connected" | "connecting" | "disconnected"
+    pub state: &'static str, // "connected" | "connecting" | "disconnected" | "disconnecting"
     pub direction: &'static str, // "inbound" | "outbound" | ""
     pub enr: Option<Enr>,
 }
@@ -121,7 +120,7 @@ impl Network {
             CombinedPublicKey::Secp256k1(pk) => {
                 let encoded = pk.to_encoded_point(true);
                 let lib_secp = LibSecpPk::try_from_bytes(encoded.as_bytes()).ok()?;
-                let lib_pk: LibPk = lib_secp.into();
+                let lib_pk: PublicKey = lib_secp.into();
                 Some(PeerId::from_public_key(&lib_pk))
             }
             _ => None,
@@ -339,33 +338,31 @@ impl Network {
             SwarmEvent::OutgoingConnectionError {
                 peer_id: Some(pid), ..
             } => {
-                self.upsert_peer(pid, None, "disconnected", "outbound", None);
+                self.upsert_peer(pid, None, STATE_DISCONNECTED, DIR_OUTBOUND, None);
                 None
             }
             SwarmEvent::ConnectionClosed {
                 peer_id, endpoint, ..
             } => {
-                use libp2p::core::ConnectedPoint;
-
                 let direction = match endpoint {
-                    ConnectedPoint::Dialer { .. } => "outbound",
-                    ConnectedPoint::Listener { .. } => "inbound",
+                    ConnectedPoint::Dialer { .. } => DIR_OUTBOUND,
+                    ConnectedPoint::Listener { .. } => DIR_INBOUND,
                 };
 
-                self.upsert_peer(peer_id, None, "disconnected", direction, None);
+                self.upsert_peer(peer_id, None, STATE_DISCONNECTED, direction, None);
                 None
             }
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
                 let (direction, addr) = match &endpoint {
-                    ConnectedPoint::Dialer { address, .. } => ("outbound", Some(address.clone())),
+                    ConnectedPoint::Dialer { address, .. } => (DIR_OUTBOUND, Some(address.clone())),
                     ConnectedPoint::Listener { send_back_addr, .. } => {
-                        ("inbound", Some(send_back_addr.clone()))
+                        (DIR_INBOUND, Some(send_back_addr.clone()))
                     }
                 };
 
-                self.upsert_peer(peer_id, addr, "connected", direction, None);
+                self.upsert_peer(peer_id, addr, STATE_CONNECTED, direction, None);
                 None
             }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -445,13 +442,7 @@ impl Network {
         info!("Discovered peers: {:?}", peers);
         for (enr, _) in peers {
             if let Some(pid) = Network::peer_id_from_enr(&enr) {
-                self.upsert_peer(
-                    pid,
-                    None,
-                    "disconnected",
-                    "",
-                    Some(enr.clone()),
-                );
+                self.upsert_peer(pid, None, STATE_DISCONNECTED, "", Some(enr.clone()));
             }
 
             let mut multiaddrs: Vec<Multiaddr> = Vec::new();
@@ -714,13 +705,19 @@ mod tests {
         let peer_id = libp2p::PeerId::random();
         let addr: libp2p::Multiaddr = "/ip4/1.2.3.4/tcp/9000".parse().unwrap();
 
-        net.upsert_peer(peer_id, Some(addr.clone()), "connecting", "outbound", None);
+        net.upsert_peer(
+            peer_id,
+            Some(addr.clone()),
+            STATE_CONNECTING,
+            DIR_OUTBOUND,
+            None,
+        );
 
         let snap = net.cached_peer(&peer_id).expect("row should exist");
 
         assert_eq!(snap.peer_id, peer_id);
-        assert_eq!(snap.state, "connecting");
-        assert_eq!(snap.direction, "outbound");
+        assert_eq!(snap.state, STATE_CONNECTING);
+        assert_eq!(snap.direction, DIR_OUTBOUND);
         assert_eq!(snap.last_seen_p2p_address, Some(addr));
         assert!(snap.enr.is_none());
     }
@@ -739,14 +736,14 @@ mod tests {
 
         let peer_id = libp2p::PeerId::random();
 
-        net.upsert_peer(peer_id, None, "connecting", "outbound", None);
+        net.upsert_peer(peer_id, None, STATE_CONNECTING, DIR_OUTBOUND, None);
 
-        net.upsert_peer(peer_id, None, "connected", "outbound", None);
+        net.upsert_peer(peer_id, None, STATE_CONNECTED, DIR_OUTBOUND, None);
 
         let snap = net.cached_peer(&peer_id).expect("row exists");
 
-        assert_eq!(snap.state, "connected");
-        assert_eq!(snap.direction, "outbound");
+        assert_eq!(snap.state, STATE_CONNECTED);
+        assert_eq!(snap.direction, DIR_OUTBOUND);
     }
 
     #[test]
