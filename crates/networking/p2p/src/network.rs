@@ -51,6 +51,15 @@ use crate::{
     },
 };
 
+#[derive(Clone)]
+pub struct CachedPeer {
+    pub peer_id: PeerId,
+    pub last_seen_p2p_address: Option<Multiaddr>,
+    pub state: &'static str, // "connected" | "connecting" | "disconnected"
+    pub direction: &'static str, // "inbound" | "outbound" | ""
+    pub enr: Option<Enr>,
+}
+
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
     pub identify: identify::Behaviour,
@@ -92,6 +101,7 @@ pub struct Network {
     subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
     callbacks: HashMap<u64, mpsc::Sender<anyhow::Result<P2PResponse>>>,
     request_id: u64,
+    peer_table: Arc<RwLock<HashMap<PeerId, CachedPeer>>>,
 }
 
 struct Executor(ReamExecutor);
@@ -103,6 +113,9 @@ impl libp2p::swarm::Executor for Executor {
 }
 
 impl Network {
+    pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
+        self.peer_table.read().get(id).cloned()
+    }
     pub async fn init(executor: ReamExecutor, config: &NetworkConfig) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
@@ -185,6 +198,7 @@ impl Network {
             subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
             callbacks: HashMap::new(),
             request_id: 0,
+            peer_table: Arc::new(RwLock::new(HashMap::new())),
         };
 
         network.start_network_worker(config).await?;
