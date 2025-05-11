@@ -341,8 +341,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_subnet_predicate() -> anyhow::Result<()> {
-        set_network_spec(DEV.clone());
-
         let key = Keypair::generate_secp256k1();
         let mut config = DiscoveryConfig::default();
         config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
@@ -364,7 +362,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_discovery_with_subnets() -> anyhow::Result<()> {
-        set_network_spec(DEV.clone());
         let key = Keypair::generate_secp256k1();
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::default())
             .table_filter(|_| true)
