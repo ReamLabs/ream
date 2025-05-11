@@ -832,4 +832,80 @@ mod tests {
             }
         });
     }
+
+    #[test]
+    fn test_peer_table_lifecycle() {
+        init_network_spec();
+
+        let rt = Runtime::new().unwrap();
+        let mut network1 = rt
+            .block_on(create_network(
+            "127.0.0.1".parse().unwrap(),
+            9300,
+            9301,
+            vec![],
+            true,
+            vec![],
+            ))
+            .unwrap();
+
+        let mut network2 = rt
+            .block_on(create_network(
+                "127.0.0.1".parse().unwrap(),
+                9302,
+                9303,
+                vec![],
+                true,
+                vec![],
+            ))
+            .unwrap();
+
+        let addr: Multiaddr = "/ip4/127.0.0.1/tcp/9300".parse().unwrap();
+        network2.swarm.dial(addr).unwrap();
+
+        let id1 = network1.peer_id();
+        let id2 = network2.peer_id();
+
+        rt.block_on(async {
+            let n1 = async {
+                while let Some(ev) = network1.swarm.next().await {
+                    network1.parse_swarm_event(ev);
+                    if matches!(
+                        network1.cached_peer(&id2),
+                        Some(row) if row.state == STATE_CONNECTED && row.direction == DIR_INBOUND
+                    ) {
+                        break;
+                    }
+                }
+            };
+
+            let n2 = async {
+                while let Some(ev) = network2.swarm.next().await {
+                    network2.parse_swarm_event(ev);
+                    if matches!(
+                        network2.cached_peer(&id1),
+                        Some(row) if row.state == STATE_CONNECTED && row.direction == DIR_OUTBOUND
+                    ) {
+                        break;
+                    }
+                }
+            };
+
+            tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                futures::future::join(n1, n2),
+            )
+            .await
+            .expect("peer-table not updated in time");
+        });
+
+        let row1 = network1.cached_peer(&id2).expect("network1 row exists");
+        let row2 = network2.cached_peer(&id1).expect("network2 row exists");
+
+        assert_eq!(row1.state, STATE_CONNECTED);
+        assert_eq!(row1.direction, DIR_INBOUND);
+
+        assert_eq!(row2.state, STATE_CONNECTED);
+        assert_eq!(row2.direction, DIR_OUTBOUND);
+    }
 }
