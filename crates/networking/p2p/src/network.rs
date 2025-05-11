@@ -616,6 +616,32 @@ mod tests {
     }
 
     #[test]
+    fn insert_then_read_returns_snapshot() {
+        set_network_spec(DEV.clone());
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        let net = rt.block_on(async {
+            create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
+                .await
+                .unwrap()
+        });
+
+        let peer_id = libp2p::PeerId::random();
+        let addr: libp2p::Multiaddr = "/ip4/1.2.3.4/tcp/9000".parse().unwrap();
+
+        net.upsert_peer(peer_id, Some(addr.clone()), "connecting", "outbound", None);
+
+        let snap = net.cached_peer(&peer_id).expect("row should exist");
+
+        assert_eq!(snap.peer_id, peer_id);
+        assert_eq!(snap.state, "connecting");
+        assert_eq!(snap.direction, "outbound");
+        assert_eq!(snap.last_seen_p2p_address, Some(addr));
+        assert!(snap.enr.is_none());
+    }
+
+    #[test]
     fn test_p2p_gossipsub() {
         let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
         set_network_spec(DEV.clone());
