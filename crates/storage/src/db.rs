@@ -5,7 +5,6 @@ use redb::{Builder, Database};
 use tracing::info;
 
 use crate::{
-    dir,
     errors::StoreError,
     tables::{
         beacon_block::{BEACON_BLOCK_TABLE, BeaconBlockTable},
@@ -223,11 +222,4 @@ pub fn reset_db(db_path: PathBuf) -> anyhow::Result<()> {
         info!("Operation canceled by user.");
     }
     Ok(())
-}
-
-pub fn initialize_db_dir(
-    data_dir: Option<PathBuf>,
-    ephemeral: bool,
-) -> Result<PathBuf, StoreError> {
-    dir::setup_data_dir(APP_NAME, data_dir, ephemeral).map_err(StoreError::Io)
 }

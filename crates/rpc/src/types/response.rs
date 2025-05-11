@@ -116,3 +116,71 @@ impl<T: Serialize> DataVersionedResponse<T> {
         }
     }
 }
+
+/// A OptionalBeaconVersionedResponse data struct that can be used to wrap data type
+/// used for json rpc responses
+///
+/// # Example
+/// {
+///  "data": json!({
+///     "version": Some("electra")
+///     "execution_optimistic" : Some("false"),
+///     "finalized" : None,
+///     "data" : T
+/// })
+/// }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OptionalBeaconVersionedResponse<T> {
+    pub version: Option<String>,
+    #[serde(default, deserialize_with = "option_bool_from_str_or_bool")]
+    pub execution_optimistic: Option<bool>,
+    #[serde(default, deserialize_with = "option_bool_from_str_or_bool")]
+    pub finalized: Option<bool>,
+    pub data: T,
+}
+
+impl<T: Serialize> OptionalBeaconVersionedResponse<T> {
+    pub fn new(data: T) -> Self {
+        Self {
+            version: Some(VERSION.into()),
+            data,
+            execution_optimistic: Some(EXECUTION_OPTIMISTIC),
+            finalized: Some(FINALIZED),
+        }
+    }
+}
+
+fn bool_from_str_or_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct BoolVisitor;
+
+    impl serde::de::Visitor<'_> for BoolVisitor {
+        type Value = bool;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a boolean or a string representing a boolean")
+        }
+
+        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E> {
+            Ok(v)
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            v.parse::<bool>().map_err(E::custom)
+        }
+    }
+
+    deserializer.deserialize_any(BoolVisitor)
+}
+
+fn option_bool_from_str_or_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(bool_from_str_or_bool(deserializer)?))
+}

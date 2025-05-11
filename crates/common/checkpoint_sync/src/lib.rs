@@ -1,5 +1,4 @@
 pub mod checkpoint;
-
 use alloy_primitives::B256;
 use anyhow::ensure;
 use checkpoint::get_checkpoint_sync_sources;
@@ -11,9 +10,13 @@ use ream_consensus::{
 };
 use ream_fork_choice::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::network_spec;
-use ream_rpc::types::response::BeaconVersionedResponse;
+use ream_rpc::types::response::{BeaconVersionedResponse, OptionalBeaconVersionedResponse};
 use ream_storage::{db::ReamDB, tables::Table};
-use reqwest::Url;
+use reqwest::{
+    Url,
+    header::{ACCEPT, HeaderValue},
+};
+use ssz::Decode;
 use tracing::{info, warn};
 
 /// Entry point for checkpoint sync.
@@ -29,7 +32,12 @@ pub async fn initialize_db_from_checkpoint(
     let checkpoint_sync_url = get_checkpoint_sync_sources(checkpoint_sync_url).remove(0);
     info!("Initiating Checkpoint Sync");
     let block = fetch_finalized_block(&checkpoint_sync_url).await?;
-    info!("Received Block Root: {}", block.data.message.block_root());
+    info!(
+        "Downloaded Block: {} with Root: {}. Slot: {}",
+        block.data.message.body.execution_payload.block_number,
+        block.data.message.block_root(),
+        block.data.message.slot
+    );
     let slot = block.data.message.slot;
     initialize_blobs_in_db(
         &checkpoint_sync_url,
@@ -37,10 +45,17 @@ pub async fn initialize_db_from_checkpoint(
         block.data.message.block_root(),
     )
     .await?;
-    info!("Received blobs from slot: {}", slot);
+    info!(
+        "Downloaded blobs for block: {}",
+        block.data.message.body.execution_payload.block_number
+    );
 
     let state = get_state(&checkpoint_sync_url, slot).await?;
-    info!("Received State Root: {}", state.data.state_root());
+    info!(
+        "Downloaded State with root: {}. Slot: {}",
+        state.data.state_root(),
+        slot
+    );
     ensure!(block.data.message.slot == state.data.slot, "Slot mismatch");
 
     ensure!(block.data.message.state_root == state.data.state_root());
@@ -58,21 +73,27 @@ pub async fn get_state(
     rpc: &Url,
     slot: u64,
 ) -> anyhow::Result<BeaconVersionedResponse<BeaconState>> {
-    let state = reqwest::get(format!("{rpc}/eth/v2/debug/beacon/states/{slot}"))
+    let client = reqwest::Client::new();
+    let state = client
+        .get(format!("{rpc}eth/v2/debug/beacon/states/{slot}"))
+        .header(ACCEPT, HeaderValue::from_static("application/octet-stream"))
+        .send()
         .await?
-        .json::<BeaconVersionedResponse<BeaconState>>()
+        .bytes()
         .await?;
 
-    Ok(state)
+    Ok(BeaconVersionedResponse::new(
+        BeaconState::from_ssz_bytes(&state).expect("Unable to decode from SSZ"),
+    ))
 }
 
 /// Fetch initial block from trusted RPC
 pub async fn fetch_finalized_block(
     rpc: &Url,
-) -> anyhow::Result<BeaconVersionedResponse<SignedBeaconBlock>> {
-    Ok(reqwest::get(rpc.join("/eth/v2/beacon/blocks/finalized")?)
+) -> anyhow::Result<OptionalBeaconVersionedResponse<SignedBeaconBlock>> {
+    Ok(reqwest::get(format!("{rpc}eth/v2/beacon/blocks/finalized"))
         .await?
-        .json::<BeaconVersionedResponse<SignedBeaconBlock>>()
+        .json::<OptionalBeaconVersionedResponse<SignedBeaconBlock>>()
         .await?)
 }
 
@@ -83,10 +104,10 @@ pub async fn initialize_blobs_in_db(
     beacon_block_root: B256,
 ) -> anyhow::Result<()> {
     let blob_sidecar = reqwest::get(&format!(
-        "{rpc}/eth/v1/beacon/blob_sidecars/{beacon_block_root}"
+        "{rpc}eth/v1/beacon/blob_sidecars/{beacon_block_root}"
     ))
     .await?
-    .json::<BeaconVersionedResponse<Vec<BlobSidecar>>>()
+    .json::<OptionalBeaconVersionedResponse<Vec<BlobSidecar>>>()
     .await?;
 
     for blob_sidecar in blob_sidecar.data {

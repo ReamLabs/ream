@@ -4362,6 +4362,8 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "ream-consensus",
  "ream-fork-choice",
  "ream-network-spec",
@@ -4581,6 +4583,8 @@ dependencies = [
  "actix-web",
  "alloy-primitives",
  "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "parking_lot",
  "ream-bls",
  "ream-consensus",

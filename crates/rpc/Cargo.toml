@@ -21,6 +21,8 @@ ream-storage.workspace = true
 #misc
 actix-web.workspace = true
 alloy-primitives.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
 parking_lot.workspace = true
 ethereum_serde_utils.workspace = true
 serde.workspace = true
