@@ -14,6 +14,7 @@ use libp2p::{
     Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
     connection_limits::{self, ConnectionLimits},
     core::{
+        ConnectedPoint,
         muxing::StreamMuxerBox,
         transport::Boxed,
         upgrade::{SelectUpgrade, Version},
@@ -323,6 +324,19 @@ impl Network {
         // currently no-op for any network events
         info!("Event: {:?}", event);
         match event {
+            SwarmEvent::ConnectionEstablished {
+                peer_id, endpoint, ..
+            } => {
+                let (direction, addr) = match &endpoint {
+                    ConnectedPoint::Dialer { address, .. } => ("outbound", Some(address.clone())),
+                    ConnectedPoint::Listener { send_back_addr, .. } => {
+                        ("inbound", Some(send_back_addr.clone()))
+                    }
+                };
+
+                self.upsert_peer(peer_id, addr, "connected", direction, None);
+                None // nothing to bubble up
+            }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
                 ReamBehaviourEvent::Identify(_) => None,
                 ReamBehaviourEvent::Discovery(DiscoveredPeers { peers }) => {
