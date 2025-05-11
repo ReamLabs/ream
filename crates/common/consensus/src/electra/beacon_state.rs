@@ -1492,17 +1492,40 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn get_sync_committee_indices(&self, sync_committee: &SyncCommittee) -> Vec<usize> {
-        let mut sync_committee_indices = Vec::with_capacity(sync_committee.pubkeys.len());
-        let pubkey_set: HashSet<_> = sync_committee.pubkeys.iter().collect();
+    pub fn get_sync_committee_indices(
+        &self,
+        sync_committee: &SyncCommittee,
+    ) -> anyhow::Result<Vec<usize>> {
+        let pubkey_to_index: HashMap<_, _> = self
+            .validators
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (&v.pubkey, i))
+            .collect();
 
-        for (index, validator) in self.validators.iter().enumerate() {
-            if pubkey_set.contains(&validator.pubkey) {
-                sync_committee_indices.push(index);
-            }
+        let mut indices = Vec::with_capacity(sync_committee.pubkeys.len());
+
+        for pubkey in &sync_committee.pubkeys {
+            let index = pubkey_to_index
+                .get(pubkey)
+                .ok_or_else(|| anyhow!("Pubkey not found in validator set."))?;
+            indices.push(*index);
         }
 
-        sync_committee_indices
+        Ok(indices)
+    }
+
+    pub fn get_proposer_and_participant_rewards(&self) -> (u64, u64) {
+        let total_active_balance = self.get_total_active_balance();
+        let total_active_increments = total_active_balance / EFFECTIVE_BALANCE_INCREMENT;
+        let total_base_rewards = self.get_base_reward_per_increment() * total_active_increments;
+        let max_participant_rewards =
+            total_base_rewards * SYNC_REWARD_WEIGHT / WEIGHT_DENOMINATOR / SLOTS_PER_EPOCH;
+        let participant_reward = max_participant_rewards / SYNC_COMMITTEE_SIZE;
+        let proposer_reward =
+            participant_reward * PROPOSER_WEIGHT / (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT);
+
+        (participant_reward, proposer_reward)
     }
 
     /// Return the sync committee indices, with possible duplicates, for the next sync committee.
@@ -1604,12 +1627,12 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn process_attester_slashing(
-        &mut self,
-        attester_slashing: &AttesterSlashing,
-    ) -> anyhow::Result<()> {
-        let attestation_1 = &attester_slashing.attestation_1;
-        let attestation_2 = &attester_slashing.attestation_2;
+    pub fn get_slashable_attester_indices(
+        &self,
+        attester_shashing: &AttesterSlashing,
+    ) -> anyhow::Result<(HashSet<u64>, HashSet<u64>)> {
+        let attestation_1 = &attester_shashing.attestation_1;
+        let attestation_2 = &attester_shashing.attestation_2;
 
         // Ensure the two attestations are slashable
         ensure!(
@@ -1627,10 +1650,26 @@ impl BeaconState {
             "Second attestation is invalid"
         );
 
-        let current_epoch = self.get_current_epoch();
-        let indices_1: HashSet<_> = attestation_1.attesting_indices.iter().cloned().collect();
-        let indices_2: HashSet<_> = attestation_2.attesting_indices.iter().cloned().collect();
+        let attestation_indices_1 = attestation_1
+            .attesting_indices
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>();
+        let attestation_indices_2 = attestation_2
+            .attesting_indices
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>();
 
+        Ok((attestation_indices_1, attestation_indices_2))
+    }
+
+    pub fn process_attester_slashing(
+        &mut self,
+        attester_slashing: &AttesterSlashing,
+    ) -> anyhow::Result<()> {
+        let (indices_1, indices_2) = self.get_slashable_attester_indices(attester_slashing)?;
+        let current_epoch = self.get_current_epoch();
         let mut slashed_any = false;
 
         // Find common attesting indices and process slashing
@@ -1678,28 +1717,10 @@ impl BeaconState {
         );
 
         // Compute participant and proposer rewards
-        let total_active_increments = self.get_total_active_balance() / EFFECTIVE_BALANCE_INCREMENT;
-        let total_base_rewards = self.get_base_reward_per_increment() * total_active_increments;
-        let max_participant_rewards =
-            total_base_rewards * SYNC_REWARD_WEIGHT / WEIGHT_DENOMINATOR / SLOTS_PER_EPOCH;
-        let participant_reward = max_participant_rewards / SYNC_COMMITTEE_SIZE;
-        let proposer_reward =
-            participant_reward * PROPOSER_WEIGHT / (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT);
+        let (participant_reward, proposer_reward) = self.get_proposer_and_participant_rewards();
 
         // Apply participant and proposer rewards
-        let mut all_public_keys = vec![];
-        for validator in &self.validators {
-            all_public_keys.push(validator.public_key.clone());
-        }
-
-        let mut committee_indices = vec![];
-        for public_key in &self.current_sync_committee.public_keys {
-            let index = all_public_keys
-                .iter()
-                .position(|r| r == public_key)
-                .ok_or_else(|| anyhow!("Public key not found in all_public_keys."))?;
-            committee_indices.push(index);
-        }
+        let committee_indices = self.get_sync_committee_indices(&self.current_sync_committee)?;
 
         for (participant_index, participation_bit) in committee_indices
             .iter()
@@ -1714,6 +1735,80 @@ impl BeaconState {
         }
 
         Ok(())
+    }
+
+    pub fn compute_sync_committee_rewards(
+        &self,
+        beacon_block: &SignedBeaconBlock,
+    ) -> anyhow::Result<HashMap<u64, u64>> {
+        let sync_aggregate = &beacon_block.message.body.sync_aggregate;
+        let sync_committee = &self.current_sync_committee;
+
+        let sync_committee_indices = self.get_sync_committee_indices(sync_committee)?;
+
+        let (participant_reward, proposer_reward) = self.get_proposer_and_participant_rewards();
+
+        let mut balances = HashMap::<usize, u64>::new();
+
+        for validator_index in &sync_committee_indices {
+            balances.insert(
+                *validator_index,
+                *self
+                    .balances
+                    .get(*validator_index)
+                    .ok_or(anyhow!(String::from("Sync Committee Rewards Sync Error",)))?,
+            );
+        }
+
+        let proposer_index = beacon_block.message.proposer_index as usize;
+        balances.insert(
+            proposer_index,
+            *self
+                .balances
+                .get(proposer_index)
+                .ok_or(anyhow!(String::from("Sync Committee Rewards Sync Error",)))?,
+        );
+
+        let mut total_proposer_rewards = 0;
+
+        for (validator_index, participant_bit) in sync_committee_indices
+            .iter()
+            .zip(sync_aggregate.sync_committee_bits.iter())
+        {
+            let participant_balance = balances
+                .get_mut(validator_index)
+                .ok_or(anyhow!(String::from("Sync Committee Rewards Sync Error",)))?;
+
+            if participant_bit {
+                *participant_balance += participant_reward;
+
+                *balances
+                    .get_mut(&proposer_index)
+                    .ok_or(anyhow!(String::from("Sync Committee Rewards Sync Error",)))? +=
+                    proposer_reward;
+                total_proposer_rewards += proposer_reward;
+            } else {
+                *participant_balance = participant_balance.saturating_sub(participant_reward);
+            }
+        }
+
+        let rewards: HashMap<u64, u64> = balances
+            .iter()
+            .filter_map(|(&index, &new_balance)| {
+                let initial_balance = *self.balances.get(index)? as i64;
+                let reward = if index != proposer_index {
+                    new_balance as i64 - initial_balance
+                } else if sync_committee_indices.contains(&index) {
+                    new_balance as i64 - initial_balance - total_proposer_rewards as i64
+                } else {
+                    return None;
+                };
+
+                Some((index as u64, reward as u64))
+            })
+            .collect();
+
+        Ok(rewards)
     }
 
     pub fn process_justification_and_finalization(&mut self) -> anyhow::Result<()> {

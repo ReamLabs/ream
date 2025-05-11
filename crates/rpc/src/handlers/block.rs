@@ -1,5 +1,3 @@
-use std::collections::{BTreeSet, HashMap};
-
 use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path},
@@ -113,50 +111,6 @@ fn get_attestations_rewards(beacon_state: &BeaconState, beacon_block: &SignedBea
     attester_reward
 }
 
-fn get_sync_aggregate_rewards(beacon_state: &BeaconState) -> (u64, u64) {
-    let total_active_balance = beacon_state.get_total_active_balance();
-    let total_active_increments = total_active_balance / EFFECTIVE_BALANCE_INCREMENT;
-    let total_base_rewards = beacon_state.get_base_reward_per_increment() * total_active_increments;
-    let max_participant_rewards =
-        total_base_rewards * SYNC_REWARD_WEIGHT / WEIGHT_DENOMINATOR / SLOTS_PER_EPOCH;
-    let participant_reward = max_participant_rewards / SYNC_COMMITTEE_SIZE;
-    let proposer_reward =
-        participant_reward * PROPOSER_WEIGHT / (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT);
-
-    (participant_reward, proposer_reward)
-}
-
-fn get_slashable_attester_indices(
-    beacon_state: &BeaconState,
-    attester_shashing: &AttesterSlashing,
-) -> Vec<u64> {
-    let attestation_1 = &attester_shashing.attestation_1;
-    let attestation_2 = &attester_shashing.attestation_2;
-
-    let attestation_indices_1 = attestation_1
-        .attesting_indices
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let attestation_indices_2 = attestation_2
-        .attesting_indices
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-
-    let mut slashing_indices = vec![];
-
-    for index in &attestation_indices_1 & &attestation_indices_2 {
-        let validator = &beacon_state.validators[index as usize];
-        let current_epoch = beacon_state.get_current_epoch();
-        if validator.is_slashable_validator(current_epoch) {
-            slashing_indices.push(index);
-        }
-    }
-
-    slashing_indices
-}
-
 fn get_proposer_slashing_rewards(
     beacon_state: &BeaconState,
     beacon_block: &SignedBeaconBlock,
@@ -177,11 +131,20 @@ fn get_attester_slashing_rewards(
 ) -> u64 {
     let mut attester_slashing_reward = 0;
     let attester_shashings = &beacon_block.message.body.attester_slashings;
+    let current_epoch = beacon_state.get_current_epoch();
+
     for attester_shashing in attester_shashings {
-        for index in get_slashable_attester_indices(beacon_state, attester_shashing) {
-            let reward = beacon_state.validators[index as usize].effective_balance
-                / WHISTLEBLOWER_REWARD_QUOTIENT;
-            attester_slashing_reward += reward;
+        if let Ok((attestation_indices_1, attestation_indices_2)) =
+            beacon_state.get_slashable_attester_indices(attester_shashing)
+        {
+            for index in &attestation_indices_1 & &attestation_indices_2 {
+                let validator = &beacon_state.validators[index as usize];
+                if validator.is_slashable_validator(current_epoch) {
+                    let reward = beacon_state.validators[index as usize].effective_balance
+                        / WHISTLEBLOWER_REWARD_QUOTIENT;
+                    attester_slashing_reward += reward;
+                }
+            }
         }
     }
 
@@ -202,95 +165,6 @@ pub async fn get_beacon_block_from_id(
         .ok_or_else(|| {
             ApiError::NotFound(format!("Failed to find `beacon block` from {block_root:?}"))
         })
-}
-
-pub fn compute_sync_committee_rewards(
-    beacon_block: &SignedBeaconBlock,
-    beacon_state: &BeaconState,
-) -> Result<Vec<ValidatorSyncCommitteeReward>, ApiError> {
-    let sync_aggregate = &beacon_block.message.body.sync_aggregate;
-    let sync_committee = &beacon_state.current_sync_committee;
-
-    let sync_committee_indices = beacon_state.get_sync_committee_indices(sync_committee);
-
-    if !sync_committee_indices.is_empty() {
-        return Err(ApiError::NotFound(
-            "Failed to find sync committee indices".to_string(),
-        ));
-    }
-
-    let (participant_reward, proposer_reward) = get_sync_aggregate_rewards(beacon_state);
-
-    let mut balances = HashMap::<usize, u64>::new();
-
-    for validator_index in &sync_committee_indices {
-        balances.insert(
-            *validator_index,
-            *beacon_state
-                .balances
-                .get(*validator_index)
-                .ok_or(ApiError::NotFound(String::from(
-                    "Sync Committee Rewards Sync Error",
-                )))?,
-        );
-    }
-
-    let proposer_index = beacon_block.message.proposer_index as usize;
-    balances.insert(
-        proposer_index,
-        *beacon_state
-            .balances
-            .get(proposer_index)
-            .ok_or(ApiError::NotFound(String::from(
-                "Sync Committee Rewards Sync Error",
-            )))?,
-    );
-
-    let mut total_proposer_rewards = 0;
-
-    for (validator_index, participant_bit) in sync_committee_indices
-        .iter()
-        .zip(sync_aggregate.sync_committee_bits.iter())
-    {
-        let participant_balance =
-            balances
-                .get_mut(validator_index)
-                .ok_or(ApiError::NotFound(String::from(
-                    "Sync Committee Rewards Sync Error",
-                )))?;
-
-        if participant_bit {
-            *participant_balance += participant_reward;
-
-            *balances
-                .get_mut(&proposer_index)
-                .ok_or(ApiError::NotFound(String::from(
-                    "Sync Committee Rewards Sync Error",
-                )))? += proposer_reward;
-            total_proposer_rewards += proposer_reward;
-        } else {
-            *participant_balance = participant_balance.saturating_sub(participant_reward);
-        }
-    }
-
-    Ok(balances
-        .iter()
-        .filter_map(|(&index, &new_balance)| {
-            let initial_balance = *beacon_state.balances.get(index)? as i64;
-            let reward = if index != proposer_index {
-                new_balance as i64 - initial_balance
-            } else if sync_committee_indices.contains(&index) {
-                new_balance as i64 - initial_balance - total_proposer_rewards as i64
-            } else {
-                return None;
-            };
-
-            Some(ValidatorSyncCommitteeReward {
-                validator_index: index as u64,
-                reward: reward as u64,
-            })
-        })
-        .collect())
 }
 
 /// Called by `/genesis` to get the Genesis Config of Beacon Chain.
@@ -340,7 +214,7 @@ pub async fn get_block_rewards(
     let attestation_reward = get_attestations_rewards(&beacon_state, &beacon_block);
     let attester_slashing_reward = get_attester_slashing_rewards(&beacon_state, &beacon_block);
     let proposer_slashing_reward = get_proposer_slashing_rewards(&beacon_state, &beacon_block);
-    let (_, proposer_reward) = get_sync_aggregate_rewards(&beacon_state);
+    let (_, proposer_reward) = beacon_state.get_proposer_and_participant_rewards();
 
     let sync_aggregate_reward = beacon_block
         .message
@@ -388,7 +262,22 @@ pub async fn post_sync_committee_rewards(
     let beacon_block = get_beacon_block_from_id(block_id_value.clone(), &db).await?;
     let beacon_state = get_state_from_id(block_id_value.clone(), &db).await?;
 
-    let sync_committee_rewards = compute_sync_committee_rewards(&beacon_block, &beacon_state)?;
+    let sync_committee_rewards_map =
+        match beacon_state.compute_sync_committee_rewards(&beacon_block) {
+            Ok(rewards) => rewards,
+            Err(err) => {
+                error!("Failed to compute sync committee rewards, error: {err:?}");
+                return Err(ApiError::InternalError);
+            }
+        };
+    let sync_committee_rewards: Vec<ValidatorSyncCommitteeReward> = sync_committee_rewards_map
+        .into_iter()
+        .map(|(validator_index, reward)| ValidatorSyncCommitteeReward {
+            validator_index,
+            reward,
+        })
+        .collect();
+
     let reward_data = if sync_committee_rewards.is_empty() {
         None
     } else if validators.is_empty() {
