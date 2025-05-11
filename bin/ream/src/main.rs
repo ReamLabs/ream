@@ -114,22 +114,26 @@ async fn main() {
                 gossipsub_config,
             };
 
-            let http_future = start_server(server_config, ream_db);
+            let mut network = match Network::init(async_executor, &network_config).await {
+                Ok(net) => net,
+                Err(e) => {
+                    error!("Failed to initialise network: {e}");
+                    return;
+                }
+            };
+
+            let peer_table = network.peer_table();
+
+            let http_future = start_server(server_config, ream_db, peer_table);
 
             let network_future = async {
-                match Network::init(async_executor, &network_config).await {
-                    Ok(mut network) => {
-                        main_executor.spawn(async move {
-                            network.polling_events().await;
-                        });
-                        tokio::signal::ctrl_c()
-                            .await
-                            .expect("Unable to terminate future");
-                    }
-                    Err(e) => {
-                        error!("Failed to initialize network: {}", e);
-                    }
-                }
+                main_executor.spawn(async move {
+                    network.polling_events().await;
+                });
+
+                tokio::signal::ctrl_c()
+                    .await
+                    .expect("Unable to terminate future");
             };
 
             tokio::select! {
