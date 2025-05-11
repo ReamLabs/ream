@@ -44,6 +44,8 @@ use crate::{
     req_resp::ReqResp,
 };
 
+pub type PeerTable = Arc<RwLock<HashMap<PeerId, CachedPeer>>>;
+
 #[derive(Clone)]
 pub struct CachedPeer {
     pub peer_id: PeerId,
@@ -232,7 +234,7 @@ impl Network {
         self.swarm.behaviour().discovery.local_enr().clone()
     }
 
-    pub fn peer_table(&self) -> Arc<RwLock<HashMap<PeerId, CachedPeer>>> {
+    pub fn peer_table(&self) -> PeerTable {
         Arc::clone(&self.peer_table)
     }
 
