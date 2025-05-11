@@ -30,7 +30,7 @@ use libp2p::{
 };
 use libp2p_identity::{Keypair, PublicKey, secp256k1};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use ream_discv5::discovery::{DiscoveredPeers, Discovery};
 use ream_executor::ReamExecutor;
 use tracing::{error, info, trace, warn};
@@ -41,6 +41,15 @@ use crate::{
     gossipsub::{GossipsubBehaviour, snappy::SnappyTransform, topics::GossipTopic},
     req_resp::ReqResp,
 };
+
+#[derive(Clone)]
+pub struct CachedPeer {
+    pub peer_id: PeerId,
+    pub last_seen_p2p_address: Option<Multiaddr>,
+    pub state: &'static str, // "connected" | "connecting" | "disconnected"
+    pub direction: &'static str, // "inbound" | "outbound" | ""
+    pub enr: Option<Enr>,
+}
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
@@ -75,6 +84,7 @@ pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
     subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
+    peer_table: Arc<RwLock<HashMap<PeerId, CachedPeer>>>,
 }
 
 struct Executor(ReamExecutor);
@@ -86,6 +96,9 @@ impl libp2p::swarm::Executor for Executor {
 }
 
 impl Network {
+    pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
+        self.peer_table.read().get(id).cloned()
+    }
     pub async fn init(executor: ReamExecutor, config: &NetworkConfig) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
@@ -166,6 +179,7 @@ impl Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
             subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
+            peer_table: Arc::new(RwLock::new(HashMap::new())),
         };
 
         network.start_network_worker(config).await?;
