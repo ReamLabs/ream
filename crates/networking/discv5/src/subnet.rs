@@ -199,144 +199,89 @@ impl SyncCommitteeSubnets {
     }
 }
 
-pub fn subnet_predicate(subnets: Vec<Subnet>) -> impl Fn(&Enr) -> bool + Send + Sync {
+pub fn attestation_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool + Send + Sync {
     move |enr: &Enr| {
-        let has_sync_committee_subnets = subnets
-            .iter()
-            .any(|subnet| matches!(subnet, Subnet::SyncCommittee(_)));
-        let has_attestation_subnets = subnets
-            .iter()
-            .any(|subnet| matches!(subnet, Subnet::Attestation(_)));
-
         if subnets.is_empty() {
             return true;
         }
 
-        let attestation_match = if has_attestation_subnets {
-            let attestation_bits =
-                match enr.get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY) {
-                    Some(Ok(subnets)) => Some(subnets),
-                    _ => {
-                        trace!(
-                            "Peer rejected: invalid or missing attnets field; peer_id: {}",
-                            enr.node_id()
-                        );
-                        return false;
-                    }
-                };
+        let attestation_bits =
+            match enr.get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY) {
+                Some(Ok(subnets)) => subnets,
+                _ => {
+                    trace!(
+                        "Peer rejected: invalid or missing attnets field; peer_id: {}",
+                        enr.node_id()
+                    );
+                    return false;
+                }
+            };
 
-            let Some(attestation_bits) = attestation_bits else {
-                trace!(
-                    "Peer rejected: invalid or missing attnets field; peer_id: {}",
+        for subnet_id in &subnets {
+            if *subnet_id >= 64 {
+                error!(
+                    "Peer rejected: subnet ID {} exceeds attestation bitfield length; peer_id: {}",
+                    subnet_id,
                     enr.node_id()
                 );
                 return false;
-            };
-
-            let mut matches_subnet = false;
-            for subnet in &subnets {
-                if let Subnet::Attestation(id) = subnet {
-                    if *id >= 64 {
-                        error!(
-                            "Peer rejected: subnet ID {} exceeds attestation bitfield length; peer_id: {}",
-                            id,
-                            enr.node_id()
-                        );
-                        return false;
-                    }
-                    matches_subnet |= match attestation_bits.get(*id as usize) {
-                        Ok(true) => true,
-                        Ok(false) => {
-                            trace!(
-                                "Peer found but not on attestation subnet {}; peer_id: {}",
-                                id,
-                                enr.node_id()
-                            );
-                            false
-                        }
-                        Err(err) => {
-                            error!(
-                                ?err,
-                                "Peer rejected: invalid attestation bitfield index; subnet_id: {}, peer_id: {}",
-                                id,
-                                enr.node_id()
-                            );
-                            false
-                        }
-                    };
-                }
             }
-            matches_subnet
-        } else {
-            true
-        };
 
-        let sync_committee_match = if has_sync_committee_subnets {
-            let sync_committee_bits =
-                match enr.get_decodable::<SyncCommitteeSubnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY) {
-                    Some(Ok(subnets)) => Some(subnets),
-                    _ => {
-                        trace!(
-                            "Peer rejected: missing syncnets field; peer_id: {}",
-                            enr.node_id()
-                        );
-                        return false;
-                    }
-                };
-
-            let Some(sync_committee_bits) = sync_committee_bits else {
+            if let Ok(true) = attestation_bits.get(*subnet_id as usize) {
+                return true;
+            } else {
                 trace!(
-                    "Peer rejected: invalid or missing syncnets field; peer_id: {}",
+                    "Peer found but not on attestation subnet {}; peer_id: {}",
+                    subnet_id,
                     enr.node_id()
                 );
-                return false;
-            };
-
-            let mut matches_subnet = false;
-            for subnet in &subnets {
-                if let Subnet::SyncCommittee(id) = subnet {
-                    if *id >= SYNC_COMMITTEE_SUBNET_COUNT as u8 {
-                        trace!(
-                            "Peer rejected: subnet ID {} exceeds sync committee bitfield length; peer_id: {}",
-                            id,
-                            enr.node_id()
-                        );
-                        return false;
-                    }
-                    matches_subnet |= match sync_committee_bits.get(*id as usize) {
-                        Ok(true) => true,
-                        Ok(false) => {
-                            trace!(
-                                "Peer found but not on sync committee subnet {}; peer_id: {}",
-                                id,
-                                enr.node_id()
-                            );
-                            false
-                        }
-                        Err(err) => {
-                            trace!(
-                                ?err,
-                                "Peer rejected: invalid sync committee bitfield index; subnet_id: {}, peer_id: {}",
-                                id,
-                                enr.node_id()
-                            );
-                            false
-                        }
-                    };
-                }
             }
-            matches_subnet
-        } else {
-            true
-        };
-
-        if has_attestation_subnets && has_sync_committee_subnets {
-            attestation_match && sync_committee_match
-        } else if has_attestation_subnets {
-            attestation_match
-        } else {
-            sync_committee_match
         }
+
+        false
+    }
+}
+
+pub fn sync_committee_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool + Send + Sync {
+    move |enr: &Enr| {
+        if subnets.is_empty() {
+            return true;
+        }
+
+        let sync_committee_bits =
+            match enr.get_decodable::<SyncCommitteeSubnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY) {
+                Some(Ok(subnets)) => subnets,
+                _ => {
+                    trace!(
+                        "Peer rejected: missing syncnets field; peer_id: {}",
+                        enr.node_id()
+                    );
+                    return false;
+                }
+            };
+
+        for subnet_id in &subnets {
+            if *subnet_id >= SYNC_COMMITTEE_SUBNET_COUNT as u8 {
+                trace!(
+                    "Peer rejected: subnet ID {} exceeds sync committee bitfield length; peer_id: {}",
+                    subnet_id,
+                    enr.node_id()
+                );
+                return false;
+            }
+
+            if let Ok(true) = sync_committee_bits.get(*subnet_id as usize) {
+                return true;
+            } else {
+                trace!(
+                    "Peer found but not on sync committee subnet {}; peer_id: {}",
+                    subnet_id,
+                    enr.node_id()
+                );
+            }
+        }
+
+        false
     }
 }
 
@@ -457,23 +402,29 @@ mod tests {
         assert!(!decoded_syncnets.get(1).unwrap());
         assert!(!decoded_syncnets.get(3).unwrap());
 
-        let attestation_subnet = Subnet::Attestation(3);
-        let sync_committee_subnet = Subnet::SyncCommittee(2);
+        let att_predicate = attestation_subnet_predicate(vec![3]);
+        assert!(att_predicate(&enr));
 
-        let predicate = subnet_predicate(vec![
-            attestation_subnet.clone(),
-            sync_committee_subnet.clone(),
-        ]);
-        assert!(predicate(&enr));
+        let att_predicate = attestation_subnet_predicate(vec![10]);
+        assert!(!att_predicate(&enr));
 
-        let predicate = subnet_predicate(vec![attestation_subnet]);
-        assert!(predicate(&enr));
+        let sync_predicate = sync_committee_subnet_predicate(vec![2]);
+        assert!(sync_predicate(&enr));
 
-        let predicate = subnet_predicate(vec![sync_committee_subnet]);
-        assert!(predicate(&enr));
+        let sync_predicate = sync_committee_subnet_predicate(vec![1]);
+        assert!(!sync_predicate(&enr));
 
-        let predicate = subnet_predicate(vec![Subnet::Attestation(10), Subnet::SyncCommittee(1)]);
-        assert!(!predicate(&enr));
+        let combined_predicate = |enr: &Enr| {
+            attestation_subnet_predicate(vec![3])(enr)
+                && sync_committee_subnet_predicate(vec![2])(enr)
+        };
+        assert!(combined_predicate(&enr));
+
+        let combined_predicate = |enr: &Enr| {
+            attestation_subnet_predicate(vec![10])(enr)
+                && sync_committee_subnet_predicate(vec![1])(enr)
+        };
+        assert!(!combined_predicate(&enr));
     }
 
     #[test]
@@ -493,22 +444,25 @@ mod tests {
             .build(&combined_key)
             .expect("Failed to build ENR");
 
-        let attestation_subnet = Subnet::Attestation(5);
-        let sync_committee_subnet = Subnet::SyncCommittee(1);
+        // Test attestation subnet predicate
+        let att_predicate = attestation_subnet_predicate(vec![5]);
+        assert!(att_predicate(&enr));
 
-        let predicate = subnet_predicate(vec![
-            attestation_subnet.clone(),
-            sync_committee_subnet.clone(),
-        ]);
-        assert!(predicate(&enr));
+        // Test sync committee subnet predicate
+        let sync_predicate = sync_committee_subnet_predicate(vec![1]);
+        assert!(sync_predicate(&enr));
 
-        let predicate = subnet_predicate(vec![attestation_subnet]);
-        assert!(predicate(&enr));
+        // Test combined predicates
+        let combined_predicate = |enr: &Enr| {
+            attestation_subnet_predicate(vec![5])(enr)
+                && sync_committee_subnet_predicate(vec![1])(enr)
+        };
+        assert!(combined_predicate(&enr));
 
-        let predicate = subnet_predicate(vec![sync_committee_subnet]);
-        assert!(predicate(&enr));
-
-        let predicate = subnet_predicate(vec![Subnet::Attestation(10), Subnet::SyncCommittee(2)]);
-        assert!(!predicate(&enr));
+        let combined_predicate = |enr: &Enr| {
+            attestation_subnet_predicate(vec![10])(enr)
+                && sync_committee_subnet_predicate(vec![2])(enr)
+        };
+        assert!(!combined_predicate(&enr));
     }
 }
