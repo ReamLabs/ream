@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use discv5::{ConfigBuilder, Enr, ListenConfig};
 use rand::{Rng, rngs::ThreadRng};
 
-use crate::subnet::{Subnet, Subnets};
+use crate::subnet::{AttestationSubnets, SyncCommitteeSubnets};
 
 pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
 
@@ -14,31 +14,27 @@ pub struct DiscoveryConfig {
     pub socket_port: u16,
     pub discovery_port: u16,
     pub disable_discovery: bool,
-    pub attestation_subnets: Subnets,
-    pub sync_committee_subnets: Subnets,
+    pub attestation_subnets: AttestationSubnets,
+    pub sync_committee_subnets: SyncCommitteeSubnets,
 }
 
 impl DiscoveryConfig {
     /// Subscribe to a sync committee subnet and update the ENR
     pub fn subscribe_to_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
-        self.sync_committee_subnets
-            .enable_subnet(Subnet::SyncCommittee(subnet_id))
+        self.sync_committee_subnets.set(subnet_id as usize, true)
     }
 
     /// Unsubscribe from a sync committee subnet and update the ENR
     pub fn unsubscribe_from_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
-        self.sync_committee_subnets
-            .disable_subnet(Subnet::SyncCommittee(subnet_id))
+        self.sync_committee_subnets.set(subnet_id as usize, false)
     }
 
     pub fn subscribe_to_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
-        self.attestation_subnets
-            .enable_subnet(Subnet::Attestation(subnet_id))
+        self.attestation_subnets.set(subnet_id as usize, true)
     }
 
     pub fn unsubscribe_from_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
-        self.attestation_subnets
-            .disable_subnet(Subnet::Attestation(subnet_id))
+        self.attestation_subnets.set(subnet_id as usize, false)
     }
 
     /// Calculate when to join a sync committee subnet based on the spec
@@ -72,16 +68,16 @@ impl DiscoveryConfig {
 
 impl Default for DiscoveryConfig {
     fn default() -> Self {
-        let mut attestation_subnets = Subnets::new();
-        let sync_committee_subnets = Subnets::new();
+        let mut attestation_subnets = AttestationSubnets::new();
+        let sync_committee_subnets = SyncCommitteeSubnets::new();
 
         // Enable attestation subnets 0 and 1 as a reasonable default
         attestation_subnets
-            .enable_subnet(Subnet::Attestation(0))
-            .expect("xyz");
+            .set(0, true)
+            .expect("Failed to set attestation subnet 0");
         attestation_subnets
-            .enable_subnet(Subnet::Attestation(1))
-            .expect("xyz");
+            .set(1, true)
+            .expect("Failed to set attestation subnet 1");
 
         let socket_address = Ipv4Addr::UNSPECIFIED;
         let socket_port = 9000;

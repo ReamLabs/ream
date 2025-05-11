@@ -378,7 +378,10 @@ mod tests {
     use ream_network_spec::networks::{DEV, set_network_spec};
 
     use super::*;
-    use crate::{config::DiscoveryConfig, subnet::Subnets};
+    use crate::{
+        config::DiscoveryConfig,
+        subnet::{AttestationSubnets, SyncCommitteeSubnets},
+    };
 
     #[tokio::test]
     async fn test_initial_subnet_setup() -> anyhow::Result<()> {
@@ -386,23 +389,19 @@ mod tests {
         set_network_spec(DEV.clone());
         let key = Keypair::generate_secp256k1();
         let mut config = DiscoveryConfig::default();
-        config
-            .attestation_subnets
-            .enable_subnet(Subnet::Attestation(0))?; // Set subnet 0
-        config
-            .attestation_subnets
-            .disable_subnet(Subnet::Attestation(1))?; // Set subnet 1
+        config.attestation_subnets.set(0, true)?; // Set subnet 0
+        config.attestation_subnets.set(1, false)?; // Set subnet 1
         config.disable_discovery = true;
 
         let discovery = Discovery::new(key, &config).await.unwrap();
         let enr: &discv5::enr::Enr<CombinedKey> = discovery.local_enr();
         // Check ENR reflects config.subnets
         let enr_subnets = enr
-            .get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY)
+            .get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .ok_or("ATTESTATION_BITFIELD_ENR_KEY not found")
             .map_err(|err| anyhow!("ATTESTATION_BITFIELD_ENR_KEY decoding failed: {err:?}"))??;
-        assert!(enr_subnets.is_active(Subnet::Attestation(0))?);
-        assert!(!enr_subnets.is_active(Subnet::Attestation(1))?);
+        assert!(enr_subnets.get(0)?);
+        assert!(!enr_subnets.get(1)?);
         Ok(())
     }
 
@@ -446,25 +445,21 @@ mod tests {
             ..DiscoveryConfig::default()
         };
 
-        config
-            .attestation_subnets
-            .enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
+        config.attestation_subnets.set(0, true)?; // Local node on subnet 0
         config.disable_discovery = false;
         let mut discovery = Discovery::new(key, &config).await.unwrap();
 
         // Simulate a peer with another Discovery instance
         let peer_key = Keypair::generate_secp256k1();
         let mut peer_config = DiscoveryConfig {
-            attestation_subnets: Subnets::new(),
-            sync_committee_subnets: Subnets::new(),
+            attestation_subnets: AttestationSubnets::new(),
+            sync_committee_subnets: SyncCommitteeSubnets::new(),
             disable_discovery: true,
             discv5_config,
             ..DiscoveryConfig::default()
         };
 
-        peer_config
-            .attestation_subnets
-            .enable_subnet(Subnet::Attestation(0))?;
+        peer_config.attestation_subnets.set(0, true)?;
         peer_config.socket_address = Ipv4Addr::new(192, 168, 1, 100).into(); // Non-localhost IP
         peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
