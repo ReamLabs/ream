@@ -324,6 +324,12 @@ impl Network {
         // currently no-op for any network events
         info!("Event: {:?}", event);
         match event {
+            SwarmEvent::OutgoingConnectionError {
+                peer_id: Some(pid), ..
+            } => {
+                self.upsert_peer(pid, None, "disconnected", "outbound", None);
+                None
+            }
             SwarmEvent::ConnectionClosed {
                 peer_id, endpoint, ..
             } => {
