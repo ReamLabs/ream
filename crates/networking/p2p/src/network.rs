@@ -615,21 +615,6 @@ mod tests {
         Network::init(executor, &config).await
     }
 
-    async fn empty_network() -> Network {
-        use std::net::IpAddr;
-        let ip: IpAddr = "127.0.0.1".parse().unwrap();
-        create_network(
-            ip, // socket_address
-            0,
-            0,      // socket_port, discovery_port  (0 = OS-choose)
-            vec![], // no boot-nodes
-            true,   // disable_discovery
-            vec![], // no gossip topics
-        )
-        .await
-        .unwrap()
-    }
-
     #[test]
     fn test_p2p_gossipsub() {
         let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
