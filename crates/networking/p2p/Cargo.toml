@@ -40,3 +40,7 @@ tokio-io-timeout = "1"
 tokio-util.workspace = true
 tracing.workspace = true
 unsigned-varint = { version = "0.8", features = ["codec"] }
+k256 = { version = "0.13", default-features = false, features = [
+    "ecdsa",
+    "arithmetic",
+] }
