@@ -324,6 +324,19 @@ impl Network {
         // currently no-op for any network events
         info!("Event: {:?}", event);
         match event {
+            SwarmEvent::ConnectionClosed {
+                peer_id, endpoint, ..
+            } => {
+                use libp2p::core::ConnectedPoint;
+
+                let direction = match endpoint {
+                    ConnectedPoint::Dialer { .. } => "outbound",
+                    ConnectedPoint::Listener { .. } => "inbound",
+                };
+
+                self.upsert_peer(peer_id, None, "disconnected", direction, None);
+                None
+            }
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
