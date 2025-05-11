@@ -296,7 +296,9 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
     let root = justified_checkpoint.root;
 
     let mut blocks = HashMap::with_hasher(RandomState::default());
-    let store = Store { db: db.get_ref().clone() };
+    let store = Store {
+        db: db.get_ref().clone(),
+    };
 
     store.filter_block_tree(root, &mut blocks).map_err(|err| {
         error!("Failed to filter block tree, error: {err:?}");
