@@ -115,49 +115,6 @@ impl libp2p::swarm::Executor for Executor {
 }
 
 impl Network {
-    fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
-        match enr.public_key() {
-            CombinedPublicKey::Secp256k1(pk) => {
-                let encoded = pk.to_encoded_point(true);
-                let lib_secp = LibSecpPk::try_from_bytes(encoded.as_bytes()).ok()?;
-                let lib_pk: PublicKey = lib_secp.into();
-                Some(PeerId::from_public_key(&lib_pk))
-            }
-            _ => None,
-        }
-    }
-    pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
-        self.peer_table.read().get(id).cloned()
-    }
-    fn upsert_peer(
-        &mut self,
-        peer_id: PeerId,
-        addr: Option<Multiaddr>,
-        state: &'static str,
-        direction: &'static str,
-        enr: Option<Enr>,
-    ) {
-        let mut table = self.peer_table.write();
-        table
-            .entry(peer_id)
-            .and_modify(|row| {
-                if addr.is_some() {
-                    row.last_seen_p2p_address = addr.clone();
-                }
-                row.state = state;
-                row.direction = direction;
-                if enr.is_some() {
-                    row.enr = enr.clone();
-                }
-            })
-            .or_insert(CachedPeer {
-                peer_id,
-                last_seen_p2p_address: addr,
-                state,
-                direction,
-                enr,
-            });
-    }
     pub async fn init(executor: ReamExecutor, config: &NetworkConfig) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
@@ -298,6 +255,56 @@ impl Network {
         let request_id = self.request_id;
         self.request_id += 1;
         request_id
+    }
+
+    pub fn peer_table(&self) -> Arc<RwLock<HashMap<PeerId, CachedPeer>>> {
+        Arc::clone(&self.peer_table)
+    }
+
+    pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
+        self.peer_table.read().get(id).cloned()
+    }
+
+    fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
+        match enr.public_key() {
+            CombinedPublicKey::Secp256k1(pk) => {
+                let encoded = pk.to_encoded_point(true);
+                let lib_secp = LibSecpPk::try_from_bytes(encoded.as_bytes()).ok()?;
+                let lib_pk: PublicKey = lib_secp.into();
+                Some(PeerId::from_public_key(&lib_pk))
+            }
+            _ => None,
+        }
+    }
+
+    fn upsert_peer(
+        &mut self,
+        peer_id: PeerId,
+        addr: Option<Multiaddr>,
+        state: &'static str,
+        direction: &'static str,
+        enr: Option<Enr>,
+    ) {
+        let mut table = self.peer_table.write();
+        table
+            .entry(peer_id)
+            .and_modify(|row| {
+                if addr.is_some() {
+                    row.last_seen_p2p_address = addr.clone();
+                }
+                row.state = state;
+                row.direction = direction;
+                if enr.is_some() {
+                    row.enr = enr.clone();
+                }
+            })
+            .or_insert(CachedPeer {
+                peer_id,
+                last_seen_p2p_address: addr,
+                state,
+                direction,
+                enr,
+            });
     }
 
     /// Starts the service
@@ -840,12 +847,12 @@ mod tests {
         let rt = Runtime::new().unwrap();
         let mut network1 = rt
             .block_on(create_network(
-            "127.0.0.1".parse().unwrap(),
-            9300,
-            9301,
-            vec![],
-            true,
-            vec![],
+                "127.0.0.1".parse().unwrap(),
+                9300,
+                9301,
+                vec![],
+                true,
+                vec![],
             ))
             .unwrap();
 
