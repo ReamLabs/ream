@@ -39,7 +39,7 @@ use yamux::Config as YamuxConfig;
 
 use crate::{
     config::NetworkConfig,
-    constants::{DIR_INBOUND, DIR_OUTBOUND, STATE_CONNECTED, STATE_CONNECTING, STATE_DISCONNECTED},
+    constants::{DIR_INBOUND, DIR_OUTBOUND, STATE_CONNECTED, STATE_DISCONNECTED},
     gossipsub::{GossipsubBehaviour, snappy::SnappyTransform, topics::GossipTopic},
     req_resp::ReqResp,
 };
@@ -459,6 +459,7 @@ mod tests {
     use super::*;
     use crate::{
         config::NetworkConfig,
+        constants::{DIR_OUTBOUND, STATE_CONNECTED, STATE_CONNECTING},
         gossipsub::{configurations::GossipsubConfig, topics::GossipTopicKind},
     };
 
