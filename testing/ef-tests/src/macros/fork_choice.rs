@@ -97,7 +97,7 @@ macro_rules! test_fork_choice {
                         stringify!($path)
                     );
 
-                    let mock_engine = MockExecutionEngine::new();
+                    let mock_engine = Some(MockExecutionEngine::new());
 
                     for entry in std::fs::read_dir(base_path).unwrap() {
                         let entry = entry.unwrap();

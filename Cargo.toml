@@ -2,6 +2,7 @@
 default-members = ["bin/ream"]
 members = [
     "bin/ream",
+    "crates/common/beacon_chain",
     "crates/common/checkpoint_sync",
     "crates/common/consensus",
     "crates/common/execution_engine",
@@ -15,7 +16,9 @@ members = [
     "crates/crypto/bls",
     "crates/crypto/merkle",
     "crates/networking/discv5",
+    "crates/networking/manager",
     "crates/networking/p2p",
+    "crates/networking/syncer",
     "crates/rpc",
     "crates/runtime",
     "crates/storage",
@@ -78,8 +81,10 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 tree_hash = "0.10"
 tree_hash_derive = "0.10"
+url = "2.5"
 
 # ream dependencies
+ream-beacon-chain = { path = "crates/common/beacon_chain" } 
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
 ream-checkpoint-sync = { path = "crates/common/checkpoint_sync" }
 ream-consensus = { path = "crates/common/consensus" }
@@ -88,6 +93,7 @@ ream-execution-engine = { path = "crates/common/execution_engine" }
 ream-executor = { path = "crates/common/executor" }
 ream-fork-choice = { path = "crates/common/fork_choice" }
 ream-light-client = { path = "crates/common/light_client" }
+ream-manager = { path = "crates/networking/manager" }
 ream-merkle = { path = "crates/crypto/merkle" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }
@@ -95,6 +101,7 @@ ream-p2p = { path = "crates/networking/p2p" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-rpc = { path = "crates/rpc" }
 ream-storage = { path = "crates/storage" }
+ream-syncer = { path = "crates/networking/syncer" }
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }

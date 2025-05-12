@@ -89,8 +89,8 @@ macro_rules! test_operation {
             #[tokio::test]
             async fn test_operation() {
                 test_operation_impl!($operation_name, $operation_object, $input_name, |state: Arc<Mutex<BeaconState>>, input: $operation_object, case_dir: PathBuf| async move {
-                    let mock_engine = MockExecutionEngine::from_file(&case_dir.as_path().join("execution.yaml"))
-                        .expect("remove result");
+                    let mock_engine = Some(MockExecutionEngine::from_file(&case_dir.as_path().join("execution.yaml"))
+                        .expect("remove result"));
                     state.lock().await.process_execution_payload(&input, &mock_engine).await
                 });
             }

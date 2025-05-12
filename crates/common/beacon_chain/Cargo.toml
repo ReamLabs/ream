@@ -1,0 +1,19 @@
+[package]
+name = "ream-beacon-chain"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+
+# ream dependencies
+ream-consensus.workspace = true
+ream-execution-engine.workspace = true
+ream-fork-choice.workspace = true
+ream-storage.workspace = true

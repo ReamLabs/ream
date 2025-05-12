@@ -3,27 +3,16 @@ use std::env;
 use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-use ream_consensus::constants::{genesis_validators_root, set_genesis_validator_root};
-use ream_discv5::{
-    config::DiscoveryConfig,
-    subnet::{AttestationSubnets, SyncCommitteeSubnets},
-};
+use ream_consensus::constants::set_genesis_validator_root;
 use ream_executor::ReamExecutor;
-use ream_network_spec::networks::{network_spec, set_network_spec};
-use ream_p2p::{
-    config::NetworkConfig,
-    gossipsub::{
-        configurations::GossipsubConfig,
-        topics::{GossipTopic, GossipTopicKind},
-    },
-    network::Network,
-};
-use ream_rpc::{config::ServerConfig, start_server};
+use ream_manager::service::ManagerService;
+use ream_network_spec::networks::set_network_spec;
+use ream_rpc::{config::RpcServerConfig, start_server};
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
 };
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 pub const APP_NAME: &str = "ream";
@@ -49,31 +38,7 @@ async fn main() {
         Commands::Node(config) => {
             info!("starting up...");
 
-            set_network_spec(config.network);
-
-            let server_config = ServerConfig::new(
-                config.http_address,
-                config.http_port,
-                config.http_allow_origin,
-            );
-
-            let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
-                config.socket_address,
-                config.discovery_port,
-            ))
-            .build();
-
-            let bootnodes = config.bootnodes.to_enrs(network_spec().network.clone());
-            let discv5_config = DiscoveryConfig {
-                discv5_config,
-                bootnodes,
-                socket_address: config.socket_address,
-                socket_port: config.socket_port,
-                discovery_port: config.discovery_port,
-                disable_discovery: config.disable_discovery,
-                attestation_subnets: AttestationSubnets::new(),
-                sync_committee_subnets: SyncCommitteeSubnets::new(),
-            };
+            set_network_spec(config.network.clone());
 
             let ream_dir = setup_data_dir(APP_NAME, config.data_dir.clone(), config.ephemeral)
                 .expect("Unable to initialize database directory");
@@ -86,7 +51,7 @@ async fn main() {
 
             info!("ream database initialized ");
 
-            initialize_db_from_checkpoint(ream_db.clone(), config.checkpoint_sync_url)
+            initialize_db_from_checkpoint(ream_db.clone(), config.checkpoint_sync_url.clone())
                 .await
                 .expect("Unable to initialize database from checkpoint");
 
@@ -101,36 +66,21 @@ async fn main() {
                     .genesis_validators_root,
             );
 
-            let mut gossipsub_config = GossipsubConfig::default();
-            gossipsub_config.set_topics(vec![GossipTopic {
-                fork: network_spec().fork_digest(genesis_validators_root()),
-                kind: GossipTopicKind::BeaconBlock,
-            }]);
+            let server_config = RpcServerConfig::new(
+                config.http_address,
+                config.http_port,
+                config.http_allow_origin,
+            );
 
-            let network_config = NetworkConfig {
-                socket_address: config.socket_address,
-                socket_port: config.socket_port,
-                discv5_config,
-                gossipsub_config,
-            };
+            let http_future = start_server(server_config, ream_db.clone());
 
-            let http_future = start_server(server_config, ream_db);
+            let network_manager = ManagerService::new(async_executor, config.into(), ream_db)
+                .await
+                .expect("Failed to create manager service");
 
-            let network_future = async {
-                match Network::init(async_executor, &network_config).await {
-                    Ok(mut network) => {
-                        main_executor.spawn(async move {
-                            network.polling_events().await;
-                        });
-                        tokio::signal::ctrl_c()
-                            .await
-                            .expect("Unable to terminate future");
-                    }
-                    Err(e) => {
-                        error!("Failed to initialize network: {}", e);
-                    }
-                }
-            };
+            let network_future = main_executor.spawn(async move {
+                network_manager.start().await;
+            });
 
             tokio::select! {
                 _ = http_future => {

@@ -24,7 +24,7 @@ use libp2p::{
     identify,
     multiaddr::Protocol,
     noise::Config as NoiseConfig,
-    swarm::{self, NetworkBehaviour, SwarmEvent},
+    swarm::{self, ConnectionId, NetworkBehaviour, SwarmEvent},
     tcp::{Config as TcpConfig, tokio::Transport as TcpTransport},
     yamux,
 };
@@ -33,13 +33,19 @@ use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::Mutex;
 use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
 use ream_executor::ReamExecutor;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tracing::{error, info, trace, warn};
 use yamux::Config as YamuxConfig;
 
 use crate::{
+    channel::{P2PMessages, P2PResponse},
     config::NetworkConfig,
     gossipsub::{GossipsubBehaviour, snappy::SnappyTransform, topics::GossipTopic},
-    req_resp::ReqResp,
+    req_resp::{
+        ReqResp, ReqRespMessage,
+        handler::ReqRespMessageReceived,
+        messages::{RequestMessage, beacon_blocks::BeaconBlocksByRangeV2Request},
+    },
 };
 
 #[derive(NetworkBehaviour)]
@@ -69,12 +75,20 @@ pub enum ReamNetworkEvent {
     MetaData(PeerId),
     DisconnectPeer(PeerId),
     DiscoverPeers(usize),
+    RequestMessage {
+        peer_id: PeerId,
+        stream_id: u64,
+        connection_id: ConnectionId,
+        message: RequestMessage,
+    },
 }
 
 pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
     subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
+    callbacks: HashMap<u64, mpsc::Sender<anyhow::Result<P2PResponse>>>,
+    request_id: u64,
 }
 
 struct Executor(ReamExecutor);
@@ -166,6 +180,8 @@ impl Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
             subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
+            callbacks: HashMap::new(),
+            request_id: 0,
         };
 
         network.start_network_worker(config).await?;
@@ -219,20 +235,41 @@ impl Network {
         self.swarm.behaviour().discovery.local_enr().clone()
     }
 
-    /// polling the libp2p swarm for network events.
-    pub async fn polling_events(&mut self) -> ReamNetworkEvent {
+    fn request_id(&mut self) -> u64 {
+        let request_id = self.request_id;
+        self.request_id += 1;
+        request_id
+    }
+
+    /// Starts the service
+    pub async fn start(
+        mut self,
+        manager_sender: UnboundedSender<ReamNetworkEvent>,
+        mut p2p_receiver: UnboundedReceiver<P2PMessages>,
+    ) {
         loop {
             tokio::select! {
                 Some(event) = self.swarm.next() => {
-                    if let Some(event) = self.parse_swarm_event(event){
-                        return event;
+                    if let Some(event) = self.parse_swarm_event(event).await {
+                        if let Err(err) = manager_sender.send(event) {
+                            warn!("Failed to send event: {err:?}");
+                        }
+                    }
+                }
+                Some(event) = p2p_receiver.recv() => {
+                    match event {
+                        P2PMessages::RequestBlockRange { peer_id, start, count, callback } => {
+                            let request_id = self.request_id();
+                            self.callbacks.insert(request_id, callback);
+                            self.swarm.behaviour_mut().req_resp.send_request(peer_id, request_id, RequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request::new(start, count)))
+                    },
                     }
                 }
             }
         }
     }
 
-    fn parse_swarm_event(
+    async fn parse_swarm_event(
         &mut self,
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {
@@ -246,8 +283,55 @@ impl Network {
                     None
                 }
                 ReamBehaviourEvent::ReqResp(message) => {
-                    info!("Unhandled reqresp event {message:?}");
-                    None
+                    let ReqRespMessage {
+                        peer_id,
+                        connection_id,
+                        message,
+                    } = message;
+
+                    let message = match message {
+                        Ok(message) => message,
+                        Err(err) => {
+                            warn!("Request Response failed: {err:?}");
+                            return None;
+                        }
+                    };
+
+                    match message {
+                        ReqRespMessageReceived::Request { stream_id, message } => {
+                            Some(ReamNetworkEvent::RequestMessage {
+                                peer_id,
+                                stream_id,
+                                connection_id,
+                                message,
+                            })
+                        }
+                        ReqRespMessageReceived::Response {
+                            request_id,
+                            message,
+                        } => {
+                            let callback = self.callbacks.get(&request_id);
+                            if let Some(callback) = callback {
+                                if let Err(err) = callback
+                                    .send(Ok(P2PResponse::ResponseMessage(message)))
+                                    .await
+                                {
+                                    warn!("Failed to send response: {err:?}");
+                                }
+                            }
+                            None
+                        }
+                        ReqRespMessageReceived::EndOfStream { request_id } => {
+                            let callback = self.callbacks.remove(&request_id);
+                            if let Some(callback) = callback {
+                                if let Err(err) = callback.send(Ok(P2PResponse::EndOfStream)).await
+                                {
+                                    warn!("Failed to send end of stream: {err:?}");
+                                }
+                            }
+                            None
+                        }
+                    }
                 }
                 ReamBehaviourEvent::Gossipsub(event) => {
                     self.handle_gossipsub_event(event);
@@ -458,7 +542,7 @@ mod tests {
                             .gossipsub
                             .publish(topic.clone(), vec![]);
                     }
-                    let _ = network1.parse_swarm_event(event);
+                    let _ = network1.parse_swarm_event(event).await;
                 }
             };
 
@@ -470,7 +554,7 @@ mod tests {
                     {
                         break;
                     }
-                    let _ = network2.parse_swarm_event(event);
+                    let _ = network2.parse_swarm_event(event).await;
                 }
             };
 

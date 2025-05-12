@@ -2374,7 +2374,7 @@ impl BeaconState {
     pub async fn process_execution_payload(
         &mut self,
         body: &BeaconBlockBody,
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
     ) -> anyhow::Result<()> {
         let payload = &body.execution_payload;
 
@@ -2393,16 +2393,19 @@ impl BeaconState {
         for commitment in body.blob_kzg_commitments.iter() {
             versioned_hashes.push(commitment.calculate_versioned_hash());
         }
-        ensure!(
-            execution_engine
-                .verify_and_notify_new_payload(NewPayloadRequest {
-                    execution_payload: payload.clone(),
-                    versioned_hashes,
-                    parent_beacon_block_root: self.latest_block_header.parent_root,
-                    execution_requests: body.execution_requests.clone()
-                })
-                .await?
-        );
+
+        if let Some(execution_engine) = execution_engine {
+            ensure!(
+                execution_engine
+                    .verify_and_notify_new_payload(NewPayloadRequest {
+                        execution_payload: payload.clone(),
+                        versioned_hashes,
+                        parent_beacon_block_root: self.latest_block_header.parent_root,
+                        execution_requests: body.execution_requests.clone()
+                    })
+                    .await?
+            );
+        }
 
         // Cache execution payload header
         self.latest_execution_payload_header = payload.to_execution_payload_header();
@@ -2413,7 +2416,7 @@ impl BeaconState {
     pub async fn process_block(
         &mut self,
         block: &BeaconBlock,
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
     ) -> anyhow::Result<()> {
         self.process_block_header(block)?;
         self.process_withdrawals(&block.body.execution_payload)?;
@@ -2431,7 +2434,7 @@ impl BeaconState {
         &mut self,
         signed_block: &SignedBeaconBlock,
         validate_result: bool,
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
     ) -> anyhow::Result<()> {
         let block = &signed_block.message;
 

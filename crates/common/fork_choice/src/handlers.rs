@@ -21,7 +21,7 @@ use crate::store::Store;
 pub async fn on_block(
     store: &mut Store,
     signed_block: &SignedBeaconBlock,
-    execution_engine: &impl ExecutionApi,
+    execution_engine: &Option<impl ExecutionApi>,
 ) -> anyhow::Result<()> {
     let block = &signed_block.message;
 

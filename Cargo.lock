@@ -4405,15 +4405,27 @@ dependencies = [
  "ream-consensus",
  "ream-discv5",
  "ream-executor",
+ "ream-manager",
  "ream-network-spec",
  "ream-node",
  "ream-p2p",
  "ream-rpc",
  "ream-storage",
- "reqwest",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "ream-beacon-chain"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ream-consensus",
+ "ream-execution-engine",
+ "ream-fork-choice",
+ "ream-storage",
 ]
 
 [[package]]
@@ -4571,6 +4583,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-manager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "discv5",
+ "ream-beacon-chain",
+ "ream-consensus",
+ "ream-discv5",
+ "ream-execution-engine",
+ "ream-executor",
+ "ream-network-spec",
+ "ream-p2p",
+ "ream-storage",
+ "ream-syncer",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "ream-merkle"
 version = "0.1.0"
 dependencies = [
@@ -4705,6 +4737,16 @@ dependencies = [
  "thiserror 2.0.12",
  "tracing",
  "tree_hash",
+]
+
+[[package]]
+name = "ream-syncer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ream-beacon-chain",
+ "ream-p2p",
+ "tokio",
 ]
 
 [[package]]
