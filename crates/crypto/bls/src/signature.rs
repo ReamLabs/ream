@@ -5,7 +5,7 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U96};
 use tree_hash_derive::TreeHash;
 
-#[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, TreeHash, Default)]
 pub struct BLSSignature {
     pub inner: FixedVector<u8, U96>,
 }

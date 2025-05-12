@@ -1,4 +1,5 @@
 pub mod checkpoint;
+
 use alloy_primitives::B256;
 use anyhow::ensure;
 use checkpoint::get_checkpoint_sync_sources;
@@ -10,14 +11,88 @@ use ream_consensus::{
 };
 use ream_fork_choice::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::network_spec;
-use ream_rpc::types::response::{BeaconVersionedResponse, OptionalBeaconVersionedResponse};
+use ream_rpc::types::response::BeaconVersionedResponse;
 use ream_storage::{db::ReamDB, tables::Table};
 use reqwest::{
     Url,
     header::{ACCEPT, HeaderValue},
 };
+use serde::{Deserialize, Serialize};
 use ssz::Decode;
 use tracing::{info, warn};
+
+pub const VERSION: &str = "electra";
+pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
+const EXECUTION_OPTIMISTIC: bool = false;
+const FINALIZED: bool = false;
+
+/// A OptionalBeaconVersionedResponse data struct that can be used to wrap data type
+/// used for json rpc responses
+///
+/// # Example
+/// {
+///  "data": json!({
+///     "version": Some("electra")
+///     "execution_optimistic" : Some("false"),
+///     "finalized" : None,
+///     "data" : T
+/// })
+/// }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OptionalBeaconVersionedResponse<T> {
+    pub version: Option<String>,
+    #[serde(default, deserialize_with = "option_bool_from_str_or_bool")]
+    pub execution_optimistic: Option<bool>,
+    #[serde(default, deserialize_with = "option_bool_from_str_or_bool")]
+    pub finalized: Option<bool>,
+    pub data: T,
+}
+
+impl<T: Serialize> OptionalBeaconVersionedResponse<T> {
+    pub fn new(data: T) -> Self {
+        Self {
+            version: Some(VERSION.into()),
+            data,
+            execution_optimistic: Some(EXECUTION_OPTIMISTIC),
+            finalized: Some(FINALIZED),
+        }
+    }
+}
+
+fn bool_from_str_or_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct BoolVisitor;
+
+    impl serde::de::Visitor<'_> for BoolVisitor {
+        type Value = bool;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a boolean or a string representing a boolean")
+        }
+
+        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E> {
+            Ok(v)
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            v.parse::<bool>().map_err(E::custom)
+        }
+    }
+
+    deserializer.deserialize_any(BoolVisitor)
+}
+
+fn option_bool_from_str_or_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(bool_from_str_or_bool(deserializer)?))
+}
 
 /// Entry point for checkpoint sync.
 pub async fn initialize_db_from_checkpoint(
@@ -90,11 +165,19 @@ pub async fn get_state(
 /// Fetch initial block from trusted RPC
 pub async fn fetch_finalized_block(
     rpc: &Url,
-) -> anyhow::Result<OptionalBeaconVersionedResponse<SignedBeaconBlock>> {
-    Ok(reqwest::get(format!("{rpc}eth/v2/beacon/blocks/finalized"))
+) -> anyhow::Result<BeaconVersionedResponse<SignedBeaconBlock>> {
+    let client = reqwest::Client::new();
+    let raw_bytes = client
+        .get(format!("{rpc}eth/v2/beacon/blocks/finalized"))
+        .header(ACCEPT, HeaderValue::from_static("application/octet-stream"))
+        .send()
         .await?
-        .json::<OptionalBeaconVersionedResponse<SignedBeaconBlock>>()
-        .await?)
+        .bytes()
+        .await?;
+
+    Ok(BeaconVersionedResponse::new(
+        SignedBeaconBlock::from_ssz_bytes(&raw_bytes).expect("Unable to decode from SSZ"),
+    ))
 }
 
 // Fetch and initialize blobs in the DB from trusted RPC

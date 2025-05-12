@@ -4,7 +4,7 @@ use ssz_types::{FixedVector, serde_utils::hex_fixed_vec, typenum::U131072};
 
 use crate::{constants::BYTES_PER_BLOB, polynomial_commitments::kzg_proof::KZGProof};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Decode, Encode)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[serde(transparent)]
 pub struct Blob {
     #[serde(with = "hex_fixed_vec")]
