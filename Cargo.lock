@@ -4367,7 +4367,6 @@ dependencies = [
  "ream-consensus",
  "ream-fork-choice",
  "ream-network-spec",
- "ream-rpc",
  "ream-storage",
  "reqwest",
  "serde",

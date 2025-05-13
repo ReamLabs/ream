@@ -23,6 +23,5 @@ tracing.workspace = true
 # Ream dependencies
 ream-consensus.workspace = true
 ream-network-spec.workspace = true
-ream-rpc.workspace = true
 ream-storage.workspace = true
 ream-fork-choice.workspace = true
