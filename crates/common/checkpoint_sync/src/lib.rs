@@ -1,7 +1,7 @@
 pub mod checkpoint;
 
 use alloy_primitives::B256;
-use anyhow::ensure;
+use anyhow::{anyhow, ensure};
 use checkpoint::get_checkpoint_sync_sources;
 use ream_consensus::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
@@ -11,20 +11,15 @@ use ream_consensus::{
 };
 use ream_fork_choice::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::network_spec;
-use ream_rpc::types::response::BeaconVersionedResponse;
 use ream_storage::{db::ReamDB, tables::Table};
 use reqwest::{
     Url,
     header::{ACCEPT, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ssz::Decode;
 use tracing::{info, warn};
-
-pub const VERSION: &str = "electra";
-pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
-const EXECUTION_OPTIMISTIC: bool = false;
-const FINALIZED: bool = false;
 
 /// A OptionalBeaconVersionedResponse data struct that can be used to wrap data type
 /// used for json rpc responses
@@ -41,57 +36,11 @@ const FINALIZED: bool = false;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OptionalBeaconVersionedResponse<T> {
     pub version: Option<String>,
-    #[serde(default, deserialize_with = "option_bool_from_str_or_bool")]
-    pub execution_optimistic: Option<bool>,
-    #[serde(default, deserialize_with = "option_bool_from_str_or_bool")]
-    pub finalized: Option<bool>,
+    #[serde(default)]
+    pub execution_optimistic: Option<Value>,
+    #[serde(default)]
+    pub finalized: Option<Value>,
     pub data: T,
-}
-
-impl<T: Serialize> OptionalBeaconVersionedResponse<T> {
-    pub fn new(data: T) -> Self {
-        Self {
-            version: Some(VERSION.into()),
-            data,
-            execution_optimistic: Some(EXECUTION_OPTIMISTIC),
-            finalized: Some(FINALIZED),
-        }
-    }
-}
-
-fn bool_from_str_or_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    struct BoolVisitor;
-
-    impl serde::de::Visitor<'_> for BoolVisitor {
-        type Value = bool;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str("a boolean or a string representing a boolean")
-        }
-
-        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E> {
-            Ok(v)
-        }
-
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            v.parse::<bool>().map_err(E::custom)
-        }
-    }
-
-    deserializer.deserialize_any(BoolVisitor)
-}
-
-fn option_bool_from_str_or_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Ok(Some(bool_from_str_or_bool(deserializer)?))
 }
 
 /// Entry point for checkpoint sync.
@@ -109,32 +58,27 @@ pub async fn initialize_db_from_checkpoint(
     let block = fetch_finalized_block(&checkpoint_sync_url).await?;
     info!(
         "Downloaded Block: {} with Root: {}. Slot: {}",
-        block.data.message.body.execution_payload.block_number,
-        block.data.message.block_root(),
-        block.data.message.slot
+        block.message.body.execution_payload.block_number,
+        block.message.block_root(),
+        block.message.slot
     );
-    let slot = block.data.message.slot;
-    initialize_blobs_in_db(
-        &checkpoint_sync_url,
-        db.clone(),
-        block.data.message.block_root(),
-    )
-    .await?;
+    let slot = block.message.slot;
+    initialize_blobs_in_db(&checkpoint_sync_url, db.clone(), block.message.block_root()).await?;
     info!(
         "Downloaded blobs for block: {}",
-        block.data.message.body.execution_payload.block_number
+        block.message.body.execution_payload.block_number
     );
 
     let state = get_state(&checkpoint_sync_url, slot).await?;
     info!(
         "Downloaded State with root: {}. Slot: {}",
-        state.data.state_root(),
+        state.state_root(),
         slot
     );
-    ensure!(block.data.message.slot == state.data.slot, "Slot mismatch");
+    ensure!(block.message.slot == state.slot, "Slot mismatch");
 
-    ensure!(block.data.message.state_root == state.data.state_root());
-    let mut store = get_forkchoice_store(state.data, block.data.message, db)?;
+    ensure!(block.message.state_root == state.state_root());
+    let mut store = get_forkchoice_store(state, block.message, db)?;
 
     let time = network_spec().genesis.genesis_time + SECONDS_PER_SLOT * (slot + 1);
     on_tick(&mut store, time)?;
@@ -144,10 +88,7 @@ pub async fn initialize_db_from_checkpoint(
 }
 
 /// Fetch initial state from trusted RPC
-pub async fn get_state(
-    rpc: &Url,
-    slot: u64,
-) -> anyhow::Result<BeaconVersionedResponse<BeaconState>> {
+pub async fn get_state(rpc: &Url, slot: u64) -> anyhow::Result<BeaconState> {
     let client = reqwest::Client::new();
     let state = client
         .get(format!("{rpc}eth/v2/debug/beacon/states/{slot}"))
@@ -157,15 +98,11 @@ pub async fn get_state(
         .bytes()
         .await?;
 
-    Ok(BeaconVersionedResponse::new(
-        BeaconState::from_ssz_bytes(&state).expect("Unable to decode from SSZ"),
-    ))
+    BeaconState::from_ssz_bytes(&state).map_err(|err| anyhow!("{:?}", err))
 }
 
 /// Fetch initial block from trusted RPC
-pub async fn fetch_finalized_block(
-    rpc: &Url,
-) -> anyhow::Result<BeaconVersionedResponse<SignedBeaconBlock>> {
+pub async fn fetch_finalized_block(rpc: &Url) -> anyhow::Result<SignedBeaconBlock> {
     let client = reqwest::Client::new();
     let raw_bytes = client
         .get(format!("{rpc}eth/v2/beacon/blocks/finalized"))
@@ -175,9 +112,12 @@ pub async fn fetch_finalized_block(
         .bytes()
         .await?;
 
-    Ok(BeaconVersionedResponse::new(
-        SignedBeaconBlock::from_ssz_bytes(&raw_bytes).expect("Unable to decode from SSZ"),
-    ))
+    SignedBeaconBlock::from_ssz_bytes(&raw_bytes).map_err(|err| anyhow!("{:?}", err))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlobSidercars {
+    pub data: Vec<BlobSidecar>,
 }
 
 // Fetch and initialize blobs in the DB from trusted RPC
@@ -190,8 +130,9 @@ pub async fn initialize_blobs_in_db(
         "{rpc}eth/v1/beacon/blob_sidecars/{beacon_block_root}"
     ))
     .await?
-    .json::<OptionalBeaconVersionedResponse<Vec<BlobSidecar>>>()
-    .await?;
+    .json::<BlobSidercars>()
+    .await
+    .unwrap();
 
     for blob_sidecar in blob_sidecar.data {
         store.blobs_and_proofs_provider().insert(

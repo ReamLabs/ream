@@ -34,8 +34,6 @@ use crate::{
     },
 };
 
-pub const APP_NAME: &str = "ream";
-
 pub const REDB_FILE: &str = "ream.redb";
 
 /// The size of the cache for the database
