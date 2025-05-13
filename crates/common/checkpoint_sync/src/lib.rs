@@ -34,7 +34,7 @@ use tracing::{info, warn};
 /// })
 /// }
 #[derive(Debug, Serialize, Deserialize)]
-pub struct OptionalBeaconVersionedResponse<T> {
+struct OptionalBeaconVersionedResponse<T> {
     pub version: Option<String>,
     pub execution_optimistic: Option<Value>,
     pub finalized: Option<Value>,
@@ -86,7 +86,7 @@ pub async fn initialize_db_from_checkpoint(
 }
 
 /// Fetch initial state from trusted RPC
-pub async fn get_state(rpc: &Url, slot: u64) -> anyhow::Result<BeaconState> {
+async fn get_state(rpc: &Url, slot: u64) -> anyhow::Result<BeaconState> {
     let client = reqwest::Client::new();
     let state = client
         .get(format!("{rpc}eth/v2/debug/beacon/states/{slot}"))
@@ -101,7 +101,7 @@ pub async fn get_state(rpc: &Url, slot: u64) -> anyhow::Result<BeaconState> {
 }
 
 /// Fetch initial block from trusted RPC
-pub async fn fetch_finalized_block(rpc: &Url) -> anyhow::Result<SignedBeaconBlock> {
+async fn fetch_finalized_block(rpc: &Url) -> anyhow::Result<SignedBeaconBlock> {
     let client = reqwest::Client::new();
     let raw_bytes = client
         .get(format!("{rpc}eth/v2/beacon/blocks/finalized"))
@@ -112,16 +112,16 @@ pub async fn fetch_finalized_block(rpc: &Url) -> anyhow::Result<SignedBeaconBloc
         .await?;
 
     SignedBeaconBlock::from_ssz_bytes(&raw_bytes)
-        .map_err(|err| anyhow!("Unable to deocde block from ssz byttes: {err:?}"))
+        .map_err(|err| anyhow!("Unable to decode block from ssz bytes: {err:?}"))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BlobSidercars {
+struct BlobSidercars {
     pub data: Vec<BlobSidecar>,
 }
 
 // Fetch and initialize blobs in the DB from trusted RPC
-pub async fn initialize_blobs_in_db(
+async fn initialize_blobs_in_db(
     rpc: &Url,
     store: ReamDB,
     beacon_block_root: B256,
