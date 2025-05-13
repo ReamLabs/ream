@@ -8,33 +8,9 @@ use ssz_types::{
 };
 use tracing::{error, trace};
 
-use crate::config::SYNC_COMMITTEE_SUBNET_COUNT;
-
 pub const ATTESTATION_BITFIELD_ENR_KEY: &str = "attnets";
 pub const SYNC_COMMITTEE_BITFIELD_ENR_KEY: &str = "syncnets";
-
-/// Represents a subnet that a validator can participate in
-///
-/// There are two types of subnets:
-/// 1. Attestation subnets - Used for validator attestations
-/// 2. Sync committee subnets - Used for sync committee duties
-///
-/// # Examples
-///
-/// ```
-/// use ream_discv5::subnet::Subnet;
-///
-/// // An attestation subnet with index 3
-/// let attestation_subnet = Subnet::Attestation(3);
-///
-/// // A sync committee subnet with index 1
-/// let sync_committee_subnet = Subnet::SyncCommittee(1);
-/// ```
-#[derive(Clone, Debug, PartialEq)]
-pub enum Subnet {
-    Attestation(u8),
-    SyncCommittee(u8),
-}
+pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
 
 /// Represents the attestation subnets a node is subscribed to
 ///
@@ -61,6 +37,20 @@ impl AttestationSubnets {
         self.0
             .get(index)
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
+    }
+
+    pub fn enable_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
+        if subnet_id < 64 {
+            self.set(subnet_id as usize, true)?;
+        }
+        Ok(())
+    }
+
+    pub fn disable_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
+        if subnet_id < 64 {
+            self.set(subnet_id as usize, false)?;
+        }
+        Ok(())
     }
 }
 
@@ -112,6 +102,20 @@ impl SyncCommitteeSubnets {
             .get(index)
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
+
+    pub fn enable_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
+        if subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
+            self.set(subnet_id as usize, true)?;
+        }
+        Ok(())
+    }
+
+    pub fn disable_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
+        if subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
+            self.set(subnet_id as usize, false)?;
+        }
+        Ok(())
+    }
 }
 
 impl From<BitVector<U4>> for SyncCommitteeSubnets {
@@ -139,67 +143,9 @@ impl Decodable for SyncCommitteeSubnets {
     }
 }
 
-impl AttestationSubnets {
-    pub fn enable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
-        match subnet {
-            Subnet::Attestation(id) => {
-                if id < 64 {
-                    self.set(id as usize, true)?;
-                }
-                Ok(())
-            }
-            _ => Err(anyhow!(
-                "Cannot enable non-attestation subnet in AttestationSubnets"
-            )),
-        }
-    }
+pub fn attestation_subnet_predicate(subnets: &[u8]) -> impl Fn(&Enr) -> bool + Send + Sync + use<> {
+    let subnets = subnets.to_vec();
 
-    pub fn disable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
-        match subnet {
-            Subnet::Attestation(id) => {
-                if id < 64 {
-                    self.set(id as usize, false)?;
-                }
-                Ok(())
-            }
-            _ => Err(anyhow!(
-                "Cannot disable non-attestation subnet in AttestationSubnets"
-            )),
-        }
-    }
-}
-
-impl SyncCommitteeSubnets {
-    pub fn enable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
-        match subnet {
-            Subnet::SyncCommittee(id) => {
-                if id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
-                    self.set(id as usize, true)?;
-                }
-                Ok(())
-            }
-            _ => Err(anyhow!(
-                "Cannot enable non-sync committee subnet in SyncCommitteeSubnets"
-            )),
-        }
-    }
-
-    pub fn disable_subnet(&mut self, subnet: Subnet) -> anyhow::Result<()> {
-        match subnet {
-            Subnet::SyncCommittee(id) => {
-                if id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
-                    self.set(id as usize, false)?;
-                }
-                Ok(())
-            }
-            _ => Err(anyhow!(
-                "Cannot disable non-sync committee subnet in SyncCommitteeSubnets"
-            )),
-        }
-    }
-}
-
-pub fn attestation_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool + Send + Sync {
     move |enr: &Enr| {
         if subnets.is_empty() {
             return true;
@@ -242,7 +188,11 @@ pub fn attestation_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool +
     }
 }
 
-pub fn sync_committee_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool + Send + Sync {
+pub fn sync_committee_subnet_predicate(
+    subnets: &[u8],
+) -> impl Fn(&Enr) -> bool + Send + Sync + use<> {
+    let subnets = subnets.to_vec();
+
     move |enr: &Enr| {
         if subnets.is_empty() {
             return true;
@@ -402,33 +352,31 @@ mod tests {
         assert!(!decoded_syncnets.get(1).unwrap());
         assert!(!decoded_syncnets.get(3).unwrap());
 
-        let att_predicate = attestation_subnet_predicate(vec![3]);
+        let att_predicate = attestation_subnet_predicate(&[3]);
         assert!(att_predicate(&enr));
 
-        let att_predicate = attestation_subnet_predicate(vec![10]);
+        let att_predicate = attestation_subnet_predicate(&[10]);
         assert!(!att_predicate(&enr));
 
-        let sync_predicate = sync_committee_subnet_predicate(vec![2]);
+        let sync_predicate = sync_committee_subnet_predicate(&[2]);
         assert!(sync_predicate(&enr));
 
-        let sync_predicate = sync_committee_subnet_predicate(vec![1]);
+        let sync_predicate = sync_committee_subnet_predicate(&[1]);
         assert!(!sync_predicate(&enr));
 
         let combined_predicate = |enr: &Enr| {
-            attestation_subnet_predicate(vec![3])(enr)
-                && sync_committee_subnet_predicate(vec![2])(enr)
+            attestation_subnet_predicate(&[3])(enr) && sync_committee_subnet_predicate(&[2])(enr)
         };
         assert!(combined_predicate(&enr));
 
         let combined_predicate = |enr: &Enr| {
-            attestation_subnet_predicate(vec![10])(enr)
-                && sync_committee_subnet_predicate(vec![1])(enr)
+            attestation_subnet_predicate(&[10])(enr) && sync_committee_subnet_predicate(&[1])(enr)
         };
         assert!(!combined_predicate(&enr));
     }
 
     #[test]
-    fn test_backward_compatibility() {
+    fn test_subnet_predicates() {
         let secret_key = SigningKey::random(&mut rand::thread_rng());
         let combined_key = CombinedKey::from(secret_key);
 
@@ -445,23 +393,21 @@ mod tests {
             .expect("Failed to build ENR");
 
         // Test attestation subnet predicate
-        let att_predicate = attestation_subnet_predicate(vec![5]);
+        let att_predicate = attestation_subnet_predicate(&[5]);
         assert!(att_predicate(&enr));
 
         // Test sync committee subnet predicate
-        let sync_predicate = sync_committee_subnet_predicate(vec![1]);
+        let sync_predicate = sync_committee_subnet_predicate(&[1]);
         assert!(sync_predicate(&enr));
 
         // Test combined predicates
         let combined_predicate = |enr: &Enr| {
-            attestation_subnet_predicate(vec![5])(enr)
-                && sync_committee_subnet_predicate(vec![1])(enr)
+            attestation_subnet_predicate(&[5])(enr) && sync_committee_subnet_predicate(&[1])(enr)
         };
         assert!(combined_predicate(&enr));
 
         let combined_predicate = |enr: &Enr| {
-            attestation_subnet_predicate(vec![10])(enr)
-                && sync_committee_subnet_predicate(vec![2])(enr)
+            attestation_subnet_predicate(&[10])(enr) && sync_committee_subnet_predicate(&[2])(enr)
         };
         assert!(!combined_predicate(&enr));
     }
