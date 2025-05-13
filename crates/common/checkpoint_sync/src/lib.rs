@@ -36,9 +36,7 @@ use tracing::{info, warn};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OptionalBeaconVersionedResponse<T> {
     pub version: Option<String>,
-    #[serde(default)]
     pub execution_optimistic: Option<Value>,
-    #[serde(default)]
     pub finalized: Option<Value>,
     pub data: T,
 }
@@ -98,7 +96,8 @@ pub async fn get_state(rpc: &Url, slot: u64) -> anyhow::Result<BeaconState> {
         .bytes()
         .await?;
 
-    BeaconState::from_ssz_bytes(&state).map_err(|err| anyhow!("{:?}", err))
+    BeaconState::from_ssz_bytes(&state)
+        .map_err(|err| anyhow!("Unable to decode state from ssz bytes: {err:?}"))
 }
 
 /// Fetch initial block from trusted RPC
@@ -112,7 +111,8 @@ pub async fn fetch_finalized_block(rpc: &Url) -> anyhow::Result<SignedBeaconBloc
         .bytes()
         .await?;
 
-    SignedBeaconBlock::from_ssz_bytes(&raw_bytes).map_err(|err| anyhow!("{:?}", err))
+    SignedBeaconBlock::from_ssz_bytes(&raw_bytes)
+        .map_err(|err| anyhow!("Unable to deocde block from ssz byttes: {err:?}"))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -131,8 +131,7 @@ pub async fn initialize_blobs_in_db(
     ))
     .await?
     .json::<BlobSidercars>()
-    .await
-    .unwrap();
+    .await?;
 
     for blob_sidecar in blob_sidecar.data {
         store.blobs_and_proofs_provider().insert(

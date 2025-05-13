@@ -22,9 +22,10 @@ use ream_storage::{
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
+pub const APP_NAME: &str = "ream";
+
 #[tokio::main]
 async fn main() {
-    pub const APP_NAME: &str = "ream";
     // Set the default log level to `info` if not set
     let rust_log = env::var(EnvFilter::DEFAULT_ENV).unwrap_or_default();
     let env_filter = match rust_log.is_empty() {
