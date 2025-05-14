@@ -1,13 +1,12 @@
 use std::vec;
 
+use actix_web::{
+    HttpResponse, Responder, get,
+    web::{Data, Path, Query},
+};
 use ream_consensus::{constants::SLOTS_PER_EPOCH, misc::compute_start_slot_at_epoch};
 use ream_storage::db::ReamDB;
 use serde::Serialize;
-use warp::{
-    http::status::StatusCode,
-    reject::Rejection,
-    reply::{Reply, with_status},
-};
 
 use super::state::get_state_from_id;
 use crate::types::{
@@ -39,14 +38,15 @@ impl CommitteeData {
 
 /// Called by `/states/<state_id>/committees` to get the Sync Committee Data of state.
 /// Optional `epoch`, `index` or `slot` can be provided.
+#[get("/beacon/states/{state_id}/committees")]
 pub async fn get_committees(
-    state_id: ID,
-    epoch: EpochQuery,
-    index: IndexQuery,
-    slot: SlotQuery,
-    db: ReamDB,
-) -> Result<impl Reply, Rejection> {
-    let state = get_state_from_id(state_id, &db).await?;
+    state_id: Path<ID>,
+    epoch: Query<EpochQuery>,
+    index: Query<IndexQuery>,
+    slot: Query<SlotQuery>,
+    db: Data<ReamDB>,
+) -> Result<impl Responder, ApiError> {
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
     let epoch = epoch.epoch.unwrap_or(state.get_current_epoch());
     let committees_per_slot = state.get_committee_count_per_slot(epoch);
 
@@ -68,9 +68,9 @@ pub async fn get_committees(
     for slot in &slots {
         for index in &indices {
             let committee = state.get_beacon_committee(*slot, *index).map_err(|_| {
-                ApiError::NotFound(
-                    "Sync Committee with slot: {slot} and index: {index} not found".to_string(),
-                )
+                ApiError::NotFound(format!(
+                    "Sync Committee with slot: {slot} and index: {index} not found"
+                ))
             })?;
             result.push(CommitteeData {
                 index: *index,
@@ -80,5 +80,5 @@ pub async fn get_committees(
         }
     }
 
-    Ok(with_status(BeaconResponse::json(result), StatusCode::OK))
+    Ok(HttpResponse::Ok().json(BeaconResponse::<Vec<CommitteeData>>::new(result)))
 }

@@ -15,7 +15,7 @@ use tree_hash::TreeHash;
 use crate::types::{
     errors::ApiError,
     id::ID,
-    query::RandaoQuery,
+    query::EpochQuery,
     response::{BeaconResponse, BeaconVersionedResponse},
 };
 
@@ -149,7 +149,7 @@ pub async fn get_state_finality_checkpoint(
 pub async fn get_state_randao(
     db: Data<ReamDB>,
     state_id: Path<ID>,
-    query: Json<RandaoQuery>,
+    query: Json<EpochQuery>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
 

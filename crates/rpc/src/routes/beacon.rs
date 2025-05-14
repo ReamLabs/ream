@@ -5,6 +5,7 @@ use crate::handlers::{
     block::{
         get_block_attestations, get_block_from_id, get_block_rewards, get_block_root, get_genesis,
     },
+    committee::get_committees,
     header::get_headers,
     state::{
         get_pending_consolidations, get_pending_deposits, get_pending_partial_withdrawals,
@@ -21,6 +22,7 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
     cfg.service(get_blob_sidecars)
         .service(get_block_rewards)
         .service(get_block_root)
+        .service(get_committees)
         .service(get_genesis)
         .service(get_headers)
         .service(get_pending_consolidations)
