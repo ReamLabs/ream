@@ -2,15 +2,12 @@ use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
-
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-
 use ream_discv5::{
     config::DiscoveryConfig,
     eth2::EnrForkId,
     subnet::{AttestationSubnets, SyncCommitteeSubnets},
 };
-
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::{network_spec, set_network_spec};
 use ream_p2p::{

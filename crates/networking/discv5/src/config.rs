@@ -22,11 +22,11 @@ impl Default for DiscoveryConfig {
 
         // Enable attestation subnets 0 and 1 as a reasonable default
         attestation_subnets
-            .set(0, true)
-            .expect("Failed to set attestation subnet 0");
+            .enable_attestation_subnet(0)
+            .expect("Failed to enable attestation subnet 0");
         attestation_subnets
-            .set(1, true)
-            .expect("Failed to set attestation subnet 1");
+            .enable_attestation_subnet(1)
+            .expect("Failed to enable attestation subnet 1");
 
         let socket_address = Ipv4Addr::UNSPECIFIED;
         let socket_port = 9000;
