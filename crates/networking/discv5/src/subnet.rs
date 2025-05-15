@@ -1,5 +1,5 @@
 use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
-use anyhow::anyhow;
+use anyhow::{anyhow, ensure};
 use discv5::Enr;
 use ssz::Encode;
 use ssz_types::{
@@ -11,6 +11,7 @@ use tracing::{error, trace};
 pub const ATTESTATION_BITFIELD_ENR_KEY: &str = "attnets";
 pub const SYNC_COMMITTEE_BITFIELD_ENR_KEY: &str = "syncnets";
 pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
+pub const ATTESTATION_SUBNET_COUNT: usize = 64;
 
 /// Represents the attestation subnets a node is subscribed to
 ///
@@ -20,37 +21,52 @@ pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
 pub struct AttestationSubnets(pub BitVector<U64>);
 
 impl AttestationSubnets {
-    /// Create a new empty attestation subnets bitfield
     pub fn new() -> Self {
         Self(BitVector::new())
     }
 
-    /// Set a specific attestation subnet bit
-    pub fn set(&mut self, index: usize, value: bool) -> anyhow::Result<()> {
+    fn set(&mut self, index: usize, value: bool) -> anyhow::Result<()> {
         self.0
             .set(index, value)
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
-    /// Get a specific attestation subnet bit
-    pub fn get(&self, index: usize) -> anyhow::Result<bool> {
+    fn get(&self, index: usize) -> anyhow::Result<bool> {
         self.0
             .get(index)
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
     pub fn enable_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
-        if subnet_id < 64 {
-            self.set(subnet_id as usize, true)?;
-        }
+        ensure!(
+            subnet_id < ATTESTATION_SUBNET_COUNT as u8,
+            "Subnet ID {} exceeds maximum attestation subnet count {}",
+            subnet_id,
+            ATTESTATION_SUBNET_COUNT
+        );
+        self.set(subnet_id as usize, true)?;
         Ok(())
     }
 
     pub fn disable_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
-        if subnet_id < 64 {
-            self.set(subnet_id as usize, false)?;
-        }
+        ensure!(
+            subnet_id < ATTESTATION_SUBNET_COUNT as u8,
+            "Subnet ID {} exceeds maximum attestation subnet count {}",
+            subnet_id,
+            ATTESTATION_SUBNET_COUNT
+        );
+        self.set(subnet_id as usize, false)?;
         Ok(())
+    }
+
+    pub fn is_attestation_subnet_enabled(&self, subnet_id: u8) -> anyhow::Result<bool> {
+        ensure!(
+            subnet_id < ATTESTATION_SUBNET_COUNT as u8,
+            "Subnet ID {} exceeds maximum attestation subnet count {}",
+            subnet_id,
+            ATTESTATION_SUBNET_COUNT
+        );
+        self.get(subnet_id as usize)
     }
 }
 
@@ -91,30 +107,48 @@ impl SyncCommitteeSubnets {
         Self(BitVector::new())
     }
 
-    pub fn set(&mut self, index: usize, value: bool) -> anyhow::Result<()> {
+    fn set(&mut self, index: usize, value: bool) -> anyhow::Result<()> {
         self.0
             .set(index, value)
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
-    pub fn get(&self, index: usize) -> anyhow::Result<bool> {
+    fn get(&self, index: usize) -> anyhow::Result<bool> {
         self.0
             .get(index)
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
     pub fn enable_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
-        if subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
-            self.set(subnet_id as usize, true)?;
-        }
+        ensure!(
+            subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
+            "Subnet ID {} exceeds maximum sync committee subnet count {}",
+            subnet_id,
+            SYNC_COMMITTEE_SUBNET_COUNT
+        );
+        self.set(subnet_id as usize, true)?;
         Ok(())
     }
 
     pub fn disable_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
-        if subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8 {
-            self.set(subnet_id as usize, false)?;
-        }
+        ensure!(
+            subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
+            "Subnet ID {} exceeds maximum sync committee subnet count {}",
+            subnet_id,
+            SYNC_COMMITTEE_SUBNET_COUNT
+        );
+        self.set(subnet_id as usize, false)?;
         Ok(())
+    }
+
+    pub fn is_sync_committee_subnet_enabled(&self, subnet_id: u8) -> anyhow::Result<bool> {
+        ensure!(
+            subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
+            "Subnet ID {} exceeds maximum sync committee subnet count {}",
+            subnet_id,
+            SYNC_COMMITTEE_SUBNET_COUNT
+        );
+        self.get(subnet_id as usize)
     }
 }
 
@@ -164,7 +198,7 @@ pub fn attestation_subnet_predicate(subnets: &[u8]) -> impl Fn(&Enr) -> bool + S
             };
 
         for subnet_id in &subnets {
-            if *subnet_id >= 64 {
+            if *subnet_id >= ATTESTATION_SUBNET_COUNT as u8 {
                 error!(
                     "Peer rejected: subnet ID {} exceeds attestation bitfield length; peer_id: {}",
                     subnet_id,
@@ -279,12 +313,16 @@ mod tests {
         let combined_key = CombinedKey::from(secret_key);
 
         let mut attestation_subnets = AttestationSubnets::new();
-        attestation_subnets.set(1, true).unwrap();
-        attestation_subnets.set(5, true).unwrap();
+        attestation_subnets.enable_attestation_subnet(1).unwrap();
+        attestation_subnets.enable_attestation_subnet(5).unwrap();
 
         let mut sync_committee_subnets = SyncCommitteeSubnets::new();
-        sync_committee_subnets.set(0, true).unwrap();
-        sync_committee_subnets.set(2, true).unwrap();
+        sync_committee_subnets
+            .enable_sync_committee_subnet(0)
+            .unwrap();
+        sync_committee_subnets
+            .enable_sync_committee_subnet(2)
+            .unwrap();
 
         let enr = Enr::builder()
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &attestation_subnets)
@@ -319,12 +357,16 @@ mod tests {
         let combined_key = CombinedKey::from(secret_key);
 
         let mut attestation_subnets = AttestationSubnets::new();
-        attestation_subnets.set(3, true).unwrap();
-        attestation_subnets.set(42, true).unwrap();
+        attestation_subnets.enable_attestation_subnet(3).unwrap();
+        attestation_subnets.enable_attestation_subnet(42).unwrap();
 
         let mut sync_committee_subnets = SyncCommitteeSubnets::new();
-        sync_committee_subnets.set(0, true).unwrap();
-        sync_committee_subnets.set(2, true).unwrap();
+        sync_committee_subnets
+            .enable_sync_committee_subnet(0)
+            .unwrap();
+        sync_committee_subnets
+            .enable_sync_committee_subnet(2)
+            .unwrap();
 
         let enr = Enr::builder()
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &attestation_subnets)
@@ -381,10 +423,12 @@ mod tests {
         let combined_key = CombinedKey::from(secret_key);
 
         let mut attestation_subnets = AttestationSubnets::new();
-        attestation_subnets.set(5, true).unwrap();
+        attestation_subnets.enable_attestation_subnet(5).unwrap();
 
         let mut sync_committee_subnets = SyncCommitteeSubnets::new();
-        sync_committee_subnets.set(1, true).unwrap();
+        sync_committee_subnets
+            .enable_sync_committee_subnet(1)
+            .unwrap();
 
         let enr = Enr::builder()
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &attestation_subnets)

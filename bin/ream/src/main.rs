@@ -2,21 +2,13 @@ use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
-
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-<<<<<<< HEAD
-use ream_consensus::constants::{genesis_validators_root, set_genesis_validator_root};
-use ream_discv5::{config::DiscoveryConfig, subnet::Subnets};
-=======
 use ream_consensus::constants::MAINNET_GENESIS_VALIDATORS_ROOT;
-
 use ream_discv5::{
     config::DiscoveryConfig,
     eth2::EnrForkId,
     subnet::{AttestationSubnets, SyncCommitteeSubnets},
 };
-
->>>>>>> bdc3357 (chore: remove unused AttestationBitfield and SyncCommitteeBitfield type aliases)
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::{network_spec, set_network_spec};
 use ream_p2p::{

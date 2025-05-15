@@ -367,8 +367,8 @@ mod tests {
         set_network_spec(DEV.clone());
         let key = Keypair::generate_secp256k1();
         let mut config = DiscoveryConfig::default();
-        config.attestation_subnets.set(0, true)?; // Set subnet 0
-        config.attestation_subnets.set(1, false)?; // Set subnet 1
+        config.attestation_subnets.enable_attestation_subnet(0)?; // Set subnet 0
+        config.attestation_subnets.disable_attestation_subnet(1)?; // Set subnet 1
         config.disable_discovery = true;
 
         let discovery = Discovery::new(key, &config).await.unwrap();
@@ -378,19 +378,17 @@ mod tests {
             .get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .ok_or("ATTESTATION_BITFIELD_ENR_KEY not found")
             .map_err(|err| anyhow!("ATTESTATION_BITFIELD_ENR_KEY decoding failed: {err:?}"))??;
-        assert!(enr_subnets.get(0)?);
-        assert!(!enr_subnets.get(1)?);
+        assert!(enr_subnets.is_attestation_subnet_enabled(0)?);
+        assert!(!enr_subnets.is_attestation_subnet_enabled(1)?);
         Ok(())
     }
 
     #[tokio::test]
     async fn test_attestation_subnet_predicate() -> anyhow::Result<()> {
-        set_network_spec(DEV.clone());
-
         let key = Keypair::generate_secp256k1();
         let mut config = DiscoveryConfig::default();
-        config.attestation_subnets.set(0, true)?; // Local node on subnet 0
-        config.attestation_subnets.set(1, false)?;
+        config.attestation_subnets.enable_attestation_subnet(0)?; // Local node on subnet 0
+        config.attestation_subnets.disable_attestation_subnet(1)?;
         config.disable_discovery = true;
 
         let discovery = Discovery::new(key, &config).await.unwrap();
@@ -420,7 +418,7 @@ mod tests {
             ..DiscoveryConfig::default()
         };
 
-        config.attestation_subnets.set(0, true)?; // Local node on subnet 0
+        config.attestation_subnets.enable_attestation_subnet(0)?; // Local node on subnet 0
         config.disable_discovery = false;
         let mut discovery = Discovery::new(key, &config).await.unwrap();
 
@@ -434,7 +432,9 @@ mod tests {
             ..DiscoveryConfig::default()
         };
 
-        peer_config.attestation_subnets.set(0, true)?;
+        peer_config
+            .attestation_subnets
+            .enable_attestation_subnet(0)?;
         peer_config.socket_address = Ipv4Addr::new(192, 168, 1, 100).into(); // Non-localhost IP
         peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
@@ -449,7 +449,7 @@ mod tests {
         discovery.discover_peers(0, Some(1));
 
         // Mock the query result to bypass async polling
-        discovery.discovery_queries.clear(); 
+        discovery.discovery_queries.clear();
         let query_result = QueryResult {
             query_type: QueryType::AttestationSubnetPeers(vec![0]),
             result: Ok(vec![peer_enr.clone()]),
