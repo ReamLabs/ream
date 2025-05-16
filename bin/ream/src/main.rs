@@ -3,7 +3,11 @@ use std::env;
 use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-use ream_discv5::{config::DiscoveryConfig, eth2::EnrForkId, subnet::Subnets};
+use ream_discv5::{
+    config::DiscoveryConfig,
+    eth2::EnrForkId,
+    subnet::{AttestationSubnets, SyncCommitteeSubnets},
+};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::{network_spec, set_network_spec};
 use ream_p2p::{
@@ -67,7 +71,8 @@ async fn main() {
                 socket_port: config.socket_port,
                 discovery_port: config.discovery_port,
                 disable_discovery: config.disable_discovery,
-                subnets: Subnets::new(),
+                attestation_subnets: AttestationSubnets::new(),
+                sync_committee_subnets: SyncCommitteeSubnets::new(),
             };
 
             let mut gossipsub_config = GossipsubConfig::default();

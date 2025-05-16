@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use discv5::{ConfigBuilder, Enr, ListenConfig};
 
-use crate::subnet::{Subnet, Subnets};
+use crate::subnet::{AttestationSubnets, SyncCommitteeSubnets};
 
 pub struct DiscoveryConfig {
     pub discv5_config: discv5::Config,
@@ -11,16 +11,22 @@ pub struct DiscoveryConfig {
     pub socket_port: u16,
     pub discovery_port: u16,
     pub disable_discovery: bool,
-    pub subnets: Subnets,
+    pub attestation_subnets: AttestationSubnets,
+    pub sync_committee_subnets: SyncCommitteeSubnets,
 }
 
 impl Default for DiscoveryConfig {
     fn default() -> Self {
-        let mut subnets = Subnets::new();
+        let mut attestation_subnets = AttestationSubnets::new();
+        let sync_committee_subnets = SyncCommitteeSubnets::new();
 
         // Enable attestation subnets 0 and 1 as a reasonable default
-        subnets.enable_subnet(Subnet::Attestation(0)).expect("xyz");
-        subnets.enable_subnet(Subnet::Attestation(1)).expect("xyz");
+        attestation_subnets
+            .enable_attestation_subnet(0)
+            .expect("Failed to enable attestation subnet 0");
+        attestation_subnets
+            .enable_attestation_subnet(1)
+            .expect("Failed to enable attestation subnet 1");
 
         let socket_address = Ipv4Addr::UNSPECIFIED;
         let socket_port = 9000;
@@ -36,7 +42,8 @@ impl Default for DiscoveryConfig {
             socket_port,
             discovery_port,
             disable_discovery: false,
-            subnets,
+            attestation_subnets,
+            sync_committee_subnets,
         }
     }
 }
