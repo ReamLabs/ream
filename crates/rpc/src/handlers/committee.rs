@@ -67,9 +67,9 @@ pub async fn get_committees(
 
     for slot in &slots {
         for index in &indices {
-            let committee = state.get_beacon_committee(*slot, *index).map_err(|_| {
+            let committee = state.get_beacon_committee(*slot, *index).map_err(|err| {
                 ApiError::NotFound(format!(
-                    "Committee with slot: {slot} and index: {index} not found"
+                    "Committee with slot: {slot} and index: {index} not found {err:?}"
                 ))
             })?;
             result.push(CommitteeData {
@@ -80,5 +80,5 @@ pub async fn get_committees(
         }
     }
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::<Vec<CommitteeData>>::new(result)))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(result)))
 }
