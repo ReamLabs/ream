@@ -12,6 +12,7 @@ pub struct EpochQuery {
 pub struct SlotQuery {
     pub slot: Option<u64>,
 }
+
 #[derive(Debug, Deserialize)]
 pub struct IndexQuery {
     pub index: Option<u64>,
