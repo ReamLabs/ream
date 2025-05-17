@@ -60,7 +60,7 @@ async fn main() {
             ))
             .build();
 
-            let bootnodes = config.bootnodes.to_enrs(network_spec().config_name.clone());
+            let bootnodes = config.bootnodes.to_enrs(network_spec().network.clone());
             let discv5_config = DiscoveryConfig {
                 discv5_config,
                 bootnodes,

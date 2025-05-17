@@ -5,7 +5,7 @@ pub fn get_checkpoint_sync_sources(checkpoint_sync_url: Option<Url>) -> Vec<Url>
     if let Some(checkpoint_sync_url) = checkpoint_sync_url {
         return vec![checkpoint_sync_url];
     }
-    let raw_urls: Vec<String> = match network_spec().config_name {
+    let raw_urls: Vec<String> = match network_spec().network {
         Network::Mainnet => serde_yaml::from_str(include_str!(
             "../resources/checkpoint_sync_sources/mainnet.yaml"
         ))

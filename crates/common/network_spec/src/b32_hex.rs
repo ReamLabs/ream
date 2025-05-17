@@ -1,5 +1,5 @@
 use alloy_primitives::aliases::B32;
-use serde::{Deserializer, Serializer, de::Error};
+use serde::{Deserializer, Serializer};
 use serde_utils::hex::{self, PrefixedHexVisitor};
 
 pub fn serialize<S>(hash: &B32, serializer: S) -> Result<S::Ok, S::Error>
@@ -14,16 +14,5 @@ where
     D: Deserializer<'de>,
 {
     let decoded = deserializer.deserialize_str(PrefixedHexVisitor)?;
-
-    if decoded.len() != 4 {
-        return Err(D::Error::custom(format!(
-            "expected {} bytes for array, got {}",
-            32,
-            decoded.len()
-        )));
-    }
-
-    let mut array = [0; 4];
-    array.copy_from_slice(&decoded);
-    Ok(array.into())
+    B32::try_from(decoded.as_slice()).map_err(serde::de::Error::custom)
 }

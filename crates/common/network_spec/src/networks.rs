@@ -63,7 +63,8 @@ pub fn network_spec() -> Arc<NetworkSpec> {
 #[serde(rename_all = "UPPERCASE")]
 pub struct NetworkSpec {
     pub preset_base: String,
-    pub config_name: Network,
+    #[serde(rename = "CONFIG_NAME")]
+    pub network: Network,
 
     // Transition
     pub terminal_total_difficulty: U256,
@@ -202,8 +203,9 @@ impl NetworkSpec {
 pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
     NetworkSpec {
         preset_base: "mainnet".to_string(),
-        config_name: Network::Mainnet,
-        terminal_total_difficulty: U256::from_str("58750000000000000000000").unwrap(),
+        network: Network::Mainnet,
+        terminal_total_difficulty: U256::from_str("58750000000000000000000")
+            .expect("Could not get U256"),
         terminal_block_hash: b256!(
             "0x0000000000000000000000000000000000000000000000000000000000000000"
         ),
@@ -270,8 +272,9 @@ pub static MAINNET: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
 pub static HOLESKY: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
     NetworkSpec {
         preset_base: "mainnet".to_string(),
-        config_name: Network::Holesky,
-        terminal_total_difficulty: U256::from_str("58750000000000000000000").unwrap(),
+        network: Network::Holesky,
+        terminal_total_difficulty: U256::from_str("58750000000000000000000")
+            .expect("Could not get U256"),
         terminal_block_hash: b256!(
             "0x0000000000000000000000000000000000000000000000000000000000000000"
         ),
@@ -338,8 +341,9 @@ pub static HOLESKY: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
 pub static SEPOLIA: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
     NetworkSpec {
         preset_base: "mainnet".to_string(),
-        config_name: Network::Sepolia,
-        terminal_total_difficulty: U256::from_str("58750000000000000000000").unwrap(),
+        network: Network::Sepolia,
+        terminal_total_difficulty: U256::from_str("58750000000000000000000")
+            .expect("Could not get U256"),
         terminal_block_hash: b256!(
             "0x0000000000000000000000000000000000000000000000000000000000000000"
         ),
@@ -406,8 +410,9 @@ pub static SEPOLIA: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
 pub static HOODI: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
     NetworkSpec {
         preset_base: "mainnet".to_string(),
-        config_name: Network::Hoodi,
-        terminal_total_difficulty: U256::from_str("58750000000000000000000").unwrap(),
+        network: Network::Hoodi,
+        terminal_total_difficulty: U256::from_str("58750000000000000000000")
+            .expect("Could not get U256"),
         terminal_block_hash: b256!(
             "0x0000000000000000000000000000000000000000000000000000000000000000"
         ),
@@ -474,8 +479,9 @@ pub static HOODI: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
 pub static DEV: LazyLock<Arc<NetworkSpec>> = LazyLock::new(|| {
     NetworkSpec {
         preset_base: "mainnet".to_string(),
-        config_name: Network::Dev,
-        terminal_total_difficulty: U256::from_str("58750000000000000000000").unwrap(),
+        network: Network::Dev,
+        terminal_total_difficulty: U256::from_str("58750000000000000000000")
+            .expect("Could not get U256"),
         terminal_block_hash: b256!(
             "0x0000000000000000000000000000000000000000000000000000000000000000"
         ),

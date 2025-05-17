@@ -121,7 +121,7 @@ mod tests {
 
         match cli.command {
             Commands::Node(config) => {
-                assert_eq!(config.network.config_name, Network::Mainnet);
+                assert_eq!(config.network.network, Network::Mainnet);
                 assert_eq!(config.verbosity, 2);
                 assert_eq!(
                     config.socket_address,
