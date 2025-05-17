@@ -289,11 +289,11 @@ pub async fn get_block_from_id(
 /// Called by `/beacon/heads` to get fork choice leaves.
 #[get("/beacon/heads")]
 pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
-    let justified_checkpoint = db
+    let base = db
         .justified_checkpoint_provider()
         .get()
         .map_err(|_| ApiError::InternalError)?;
-    let root = justified_checkpoint.root;
+    let root = base.root;
 
     let mut blocks = HashMap::with_hasher(RandomState::default());
     let store = Store {
