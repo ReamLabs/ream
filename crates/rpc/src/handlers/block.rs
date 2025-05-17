@@ -22,7 +22,7 @@ use ream_fork_choice::store::Store;
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table, MultimapTable},
+    tables::{Field, MultimapTable, Table},
 };
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -307,7 +307,7 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
 
     let mut leaves = Vec::new();
     for (block_root, block) in &blocks {
-         let children = db
+        let children = db
             .parent_root_index_multimap_provider()
             .get(*block_root)
             .map_err(|err| {
