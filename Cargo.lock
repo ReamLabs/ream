@@ -4588,6 +4588,7 @@ dependencies = [
  "parking_lot",
  "ream-bls",
  "ream-consensus",
+ "ream-fork-choice",
  "ream-light-client",
  "ream-network-spec",
  "ream-node",
