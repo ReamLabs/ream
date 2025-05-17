@@ -36,7 +36,7 @@ impl CommitteeData {
     }
 }
 
-/// Called by `/states/<state_id>/committees` to get the Sync Committee Data of state.
+/// Called by `/states/<state_id>/committees` to get the Committee Data of state.
 /// Optional `epoch`, `index` or `slot` can be provided.
 #[get("/beacon/states/{state_id}/committees")]
 pub async fn get_committees(
@@ -69,7 +69,7 @@ pub async fn get_committees(
         for index in &indices {
             let committee = state.get_beacon_committee(*slot, *index).map_err(|_| {
                 ApiError::NotFound(format!(
-                    "Sync Committee with slot: {slot} and index: {index} not found"
+                    "Committee with slot: {slot} and index: {index} not found"
                 ))
             })?;
             result.push(CommitteeData {
