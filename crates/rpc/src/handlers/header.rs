@@ -1,6 +1,6 @@
 use actix_web::{
     HttpResponse, Responder, get,
-    web::{Data, Json},
+    web::{Data, Query},
 };
 use alloy_primitives::B256;
 use ream_consensus::beacon_block_header::SignedBeaconBlockHeader;
@@ -39,8 +39,8 @@ impl HeaderData {
 #[get("/beacon/headers")]
 pub async fn get_headers(
     db: Data<ReamDB>,
-    slot: Json<SlotQuery>,
-    parent_root: Json<ParentRootQuery>,
+    slot: Query<SlotQuery>,
+    parent_root: Query<ParentRootQuery>,
 ) -> Result<impl Responder, ApiError> {
     let (header, root) = match (slot.slot, parent_root.parent_root) {
         (None, None) => {
