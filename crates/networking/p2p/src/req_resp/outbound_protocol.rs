@@ -11,6 +11,7 @@ use futures::{
     prelude::{AsyncRead, AsyncWrite},
 };
 use libp2p::{OutboundUpgrade, bytes::Buf, core::UpgradeInfo};
+use ream_consensus::constants::MAINNET_GENESIS_VALIDATORS_ROOT;
 use ream_network_spec::networks::network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};
 use ssz::{Decode, Encode};
@@ -144,7 +145,7 @@ impl Decoder for OutboundSSZSnappyCodec {
         }
 
         if let Some(context_bytes) = self.context_bytes {
-            if context_bytes != network_spec().fork_digest() {
+            if context_bytes != network_spec().fork_digest(MAINNET_GENESIS_VALIDATORS_ROOT) {
                 return Ok(Some(RespMessage::Error(ReqRespError::InvalidData(
                     "Invalid context bytes, we only support Electra".to_string(),
                 ))));

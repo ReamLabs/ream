@@ -1,4 +1,4 @@
-use alloy_primitives::{aliases::B32, fixed_bytes};
+use alloy_primitives::{B256, aliases::B32, b256, fixed_bytes};
 
 pub const BASE_REWARDS_PER_EPOCH: u64 = 4;
 pub const BASE_REWARD_FACTOR: u64 = 64;
@@ -126,3 +126,8 @@ pub const PARTICIPATION_FLAG_WEIGHTS: [u64; NUM_FLAG_INDICES] = [
     TIMELY_TARGET_WEIGHT,
     TIMELY_HEAD_WEIGHT,
 ];
+
+/// todo: genesis validators root is apart of the state, refactor the code to dynamically determine
+/// this on startup
+pub const MAINNET_GENESIS_VALIDATORS_ROOT: B256 =
+    b256!("0x4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95");

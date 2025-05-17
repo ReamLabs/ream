@@ -21,6 +21,7 @@ use libp2p::{
         THandlerOutEvent, ToSwarm, dummy::ConnectionHandler,
     },
 };
+use ream_consensus::constants::MAINNET_GENESIS_VALIDATORS_ROOT;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
@@ -74,7 +75,10 @@ impl Discovery {
         enr_builder.udp4(config.discovery_port);
 
         let enr = enr_builder
-            .add_value(ENR_ETH2_KEY, &EnrForkId::electra())
+            .add_value(
+                ENR_ETH2_KEY,
+                &EnrForkId::electra(MAINNET_GENESIS_VALIDATORS_ROOT),
+            )
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.subnets)
             .build(&enr_local)
             .map_err(|err| anyhow!("Failed to build ENR: {err}"))?;

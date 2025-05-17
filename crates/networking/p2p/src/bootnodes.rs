@@ -48,7 +48,7 @@ impl Bootnodes {
                 serde_yaml::from_str(include_str!("../resources/bootnodes_hoodi.yaml"))
                     .expect("should deserialize bootnodes")
             }
-            Network::Dev => vec![],
+            Network::Dev | Network::Custom(_) => vec![],
         };
 
         match self {

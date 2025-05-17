@@ -78,7 +78,7 @@ pub async fn initialize_db_from_checkpoint(
     ensure!(block.message.state_root == state.state_root());
     let mut store = get_forkchoice_store(state, block.message, db)?;
 
-    let time = network_spec().genesis.genesis_time + SECONDS_PER_SLOT * (slot + 1);
+    let time = network_spec().min_genesis_time + SECONDS_PER_SLOT * (slot + 1);
     on_tick(&mut store, time)?;
     info!("Initial Sync complete");
 

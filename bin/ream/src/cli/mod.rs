@@ -41,7 +41,7 @@ pub struct NodeConfig {
 
     #[arg(
         long,
-        help = "Choose mainnet, holesky, sepolia, hoodi or dev",
+        help = "Choose mainnet, holesky, sepolia, hoodi, dev or provide a path to a YAML config file",
         default_value = DEFAULT_NETWORK,
         value_parser = network_parser
     )]
@@ -121,7 +121,7 @@ mod tests {
 
         match cli.command {
             Commands::Node(config) => {
-                assert_eq!(config.network.network, Network::Mainnet);
+                assert_eq!(config.network.config_name, Network::Mainnet);
                 assert_eq!(config.verbosity, 2);
                 assert_eq!(
                     config.socket_address,

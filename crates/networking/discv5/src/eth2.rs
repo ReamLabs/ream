@@ -1,4 +1,4 @@
-use alloy_primitives::{Bytes, aliases::B32, bytes};
+use alloy_primitives::{B256, Bytes, aliases::B32, bytes};
 use alloy_rlp::{Decodable, Encodable};
 use ream_consensus::{constants::FAR_FUTURE_EPOCH, fork_data::ForkData};
 use ream_network_spec::networks::network_spec;
@@ -15,14 +15,14 @@ pub struct EnrForkId {
 }
 
 impl EnrForkId {
-    pub fn electra() -> Self {
-        let current_fork_version = network_spec().fork_schedule.0[0].current_version;
+    pub fn electra(genesis_validators_root: B256) -> Self {
+        let current_fork_version = network_spec().electra_fork_version;
         let next_fork_version = current_fork_version;
         let next_fork_epoch = FAR_FUTURE_EPOCH;
 
         let fork_digest = ForkData {
             current_version: current_fork_version,
-            genesis_validators_root: network_spec().genesis.genesis_validators_root,
+            genesis_validators_root,
         }
         .compute_fork_digest();
 

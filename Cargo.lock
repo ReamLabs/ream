@@ -4325,6 +4325,7 @@ dependencies = [
  "clap",
  "discv5",
  "ream-checkpoint-sync",
+ "ream-consensus",
  "ream-discv5",
  "ream-executor",
  "ream-network-spec",
@@ -4504,7 +4505,12 @@ name = "ream-network-spec"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "anyhow",
+ "ethereum_serde_utils",
  "ream-consensus",
+ "serde",
+ "serde_yaml",
+ "tracing",
 ]
 
 [[package]]

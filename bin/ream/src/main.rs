@@ -3,7 +3,8 @@ use std::env;
 use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-use ream_discv5::{config::DiscoveryConfig, eth2::EnrForkId, subnet::Subnets};
+use ream_consensus::constants::MAINNET_GENESIS_VALIDATORS_ROOT;
+use ream_discv5::{config::DiscoveryConfig, subnet::Subnets};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::{network_spec, set_network_spec};
 use ream_p2p::{
@@ -59,7 +60,7 @@ async fn main() {
             ))
             .build();
 
-            let bootnodes = config.bootnodes.to_enrs(network_spec().network);
+            let bootnodes = config.bootnodes.to_enrs(network_spec().config_name.clone());
             let discv5_config = DiscoveryConfig {
                 discv5_config,
                 bootnodes,
@@ -72,7 +73,7 @@ async fn main() {
 
             let mut gossipsub_config = GossipsubConfig::default();
             gossipsub_config.set_topics(vec![GossipTopic {
-                fork: EnrForkId::electra().fork_digest,
+                fork: network_spec().fork_digest(MAINNET_GENESIS_VALIDATORS_ROOT),
                 kind: GossipTopicKind::BeaconBlock,
             }]);
 

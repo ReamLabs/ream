@@ -38,7 +38,7 @@ impl From<Arc<NetworkSpec>> for SpecConfig {
     fn from(network_spec: Arc<NetworkSpec>) -> Self {
         Self {
             deposit_contract_address: network_spec.deposit_contract_address,
-            deposit_network_id: network_spec.network.chain_id(),
+            deposit_network_id: network_spec.deposit_chain_id,
             domain_aggregate_and_proof: DOMAIN_AGGREGATE_AND_PROOF,
             inactivity_penalty_quotient: INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
         }
@@ -57,7 +57,7 @@ pub async fn get_config_deposit_contract() -> Result<impl Responder, ApiError> {
     let network_spec = network_spec();
     Ok(
         HttpResponse::Ok().json(DataResponse::new(DepositContract::new(
-            network_spec.network.chain_id(),
+            network_spec.deposit_chain_id,
             network_spec.deposit_contract_address,
         ))),
     )
@@ -66,7 +66,5 @@ pub async fn get_config_deposit_contract() -> Result<impl Responder, ApiError> {
 /// Called by `config/fork_schedule` to get fork schedule
 #[get("config/fork_schedule")]
 pub async fn get_fork_schedule() -> Result<impl Responder, ApiError> {
-    Ok(HttpResponse::Ok().json(DataResponse::new(
-        network_spec().fork_schedule.scheduled().collect::<Vec<_>>(),
-    )))
+    Ok(HttpResponse::Ok().json(DataResponse::new(network_spec().fork_schedule())))
 }

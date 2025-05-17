@@ -5,7 +5,7 @@ pub fn get_checkpoint_sync_sources(checkpoint_sync_url: Option<Url>) -> Vec<Url>
     if let Some(checkpoint_sync_url) = checkpoint_sync_url {
         return vec![checkpoint_sync_url];
     }
-    let raw_urls: Vec<String> = match network_spec().network {
+    let raw_urls: Vec<String> = match network_spec().config_name {
         Network::Mainnet => serde_yaml::from_str(include_str!(
             "../resources/checkpoint_sync_sources/mainnet.yaml"
         ))
@@ -22,7 +22,7 @@ pub fn get_checkpoint_sync_sources(checkpoint_sync_url: Option<Url>) -> Vec<Url>
             "../resources/checkpoint_sync_sources/hoodi.yaml"
         ))
         .expect("should deserialize checkpoint sync sources"),
-        Network::Dev => vec![],
+        Network::Dev | Network::Custom(_) => vec![],
     };
 
     raw_urls
