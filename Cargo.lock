@@ -4510,7 +4510,6 @@ dependencies = [
  "ream-consensus",
  "serde",
  "serde_yaml",
- "tracing",
 ]
 
 [[package]]

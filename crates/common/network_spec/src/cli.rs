@@ -1,7 +1,5 @@
 use std::{fs, sync::Arc};
 
-use tracing::info;
-
 use crate::networks::{DEV, HOLESKY, HOODI, MAINNET, NetworkSpec, SEPOLIA};
 
 pub fn network_parser(network_string: &str) -> Result<Arc<NetworkSpec>, String> {
