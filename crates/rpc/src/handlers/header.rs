@@ -1,10 +1,13 @@
 use actix_web::{
     HttpResponse, Responder, get,
-    web::{Data, Query},
+    web::{Data, Path, Query},
 };
 use alloy_primitives::B256;
 use ream_consensus::beacon_block_header::SignedBeaconBlockHeader;
-use ream_storage::{db::ReamDB, tables::Table};
+use ream_storage::{
+    db::ReamDB,
+    tables::{Field, Table},
+};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use tree_hash::TreeHash;
@@ -90,6 +93,69 @@ pub async fn get_headers(
             }
         }
     };
+
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(HeaderData::new(root, true, header))))
+}
+
+/// Called using `/eth/v1/beacon/headers/{block_id}`
+#[get("/beacon/headers/{block_id}")]
+pub async fn get_headers_from_block(
+    block_id: Path<ID>,
+    db: Data<ReamDB>,
+) -> Result<impl Responder, ApiError> {
+    let slot = match block_id.into_inner() {
+        ID::Finalized => {
+            let finalized_checkpoint = db.finalized_checkpoint_provider().get().map_err(|err| {
+                error!("Failed to get block by block_root, error: {err:?}");
+                ApiError::InternalError
+            })?;
+
+            db.beacon_block_provider()
+                .get(finalized_checkpoint.root)
+                .map_err(|err| {
+                    error!("Failed to get headers, error: {err:?}");
+                    ApiError::InternalError
+                })?
+                .ok_or_else(|| ApiError::NotFound(String::from("Unable to fetch parent block")))?
+                .message
+                .slot
+        }
+        ID::Justified => {
+            let justified_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
+                error!("Failed to get block by block_root, error: {err:?}");
+                ApiError::InternalError
+            })?;
+
+            db.beacon_block_provider()
+                .get(justified_checkpoint.root)
+                .map_err(|err| {
+                    error!("Failed to get headers, error: {err:?}");
+                    ApiError::InternalError
+                })?
+                .ok_or_else(|| ApiError::NotFound(String::from("Unable to fetch parent block")))?
+                .message
+                .slot
+        }
+        ID::Head | ID::Genesis => {
+            return Err(ApiError::NotFound(
+                "This ID type is currently not supported: genesis".to_string(),
+            ));
+        }
+        ID::Slot(slot) => slot,
+        ID::Root(root) => {
+            db.beacon_block_provider()
+                .get(root)
+                .map_err(|err| {
+                    error!("Failed to get headers, error: {err:?}");
+                    ApiError::InternalError
+                })?
+                .ok_or_else(|| ApiError::NotFound(String::from("Unable to fetch parent block")))?
+                .message
+                .slot
+        }
+    };
+
+    let (header, root) = get_header_from_slot(slot, &db).await?;
 
     Ok(HttpResponse::Ok().json(BeaconResponse::new(HeaderData::new(root, true, header))))
 }
