@@ -1,6 +1,6 @@
 use actix_web::{
     HttpResponse, Responder, get,
-    web::{Data, Json, Path},
+    web::{Data, Path, Query},
 };
 use alloy_primitives::B256;
 use ream_consensus::{checkpoint::Checkpoint, electra::beacon_state::BeaconState};
@@ -149,7 +149,7 @@ pub async fn get_state_finality_checkpoint(
 pub async fn get_state_randao(
     db: Data<ReamDB>,
     state_id: Path<ID>,
-    query: Json<EpochQuery>,
+    query: Query<EpochQuery>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
 
