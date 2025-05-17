@@ -14,16 +14,13 @@ use ream_consensus::{
         EFFECTIVE_BALANCE_INCREMENT, PROPOSER_WEIGHT, SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE,
         SYNC_REWARD_WEIGHT, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
-    electra::{
-        beacon_block::{BeaconBlock, SignedBeaconBlock},
-        beacon_state::BeaconState,
-    },
+    electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
 };
 use ream_fork_choice::store::Store;
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table, MultimapTable},
+    tables::{Field, MultimapTable, Table},
 };
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -304,7 +301,7 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
 
     let mut leaves = Vec::new();
     for (block_root, block) in &blocks {
-         let children = db
+        let children = db
             .parent_root_index_multimap_provider()
             .get(*block_root)
             .map_err(|err| {
