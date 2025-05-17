@@ -22,7 +22,7 @@ use ream_fork_choice::store::Store;
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table},
+    tables::{Field, Table, MultimapTable},
 };
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -305,15 +305,26 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
         ApiError::InternalError
     })?;
 
-    let beacon_blocks: Vec<BeaconBlock> = blocks.into_values().collect();
-    let beacon_heads: Vec<BeaconHeadResponse> = beacon_blocks
-        .iter()
-        .map(|block| BeaconHeadResponse {
-            root: block.tree_hash_root(),
-            slot: block.slot,
-            execution_optimistic: false,
-        })
-        .collect();
+    let mut leaves = Vec::new();
+    for (block_root, block) in &blocks {
+         let children = db
+            .parent_root_index_multimap_provider()
+            .get(*block_root)
+            .map_err(|err| {
+                error!("Failed to get children, error: {err:?}");
+                ApiError::InternalError
+            })?
+            .unwrap_or_default();
 
-    Ok(HttpResponse::Ok().json(DataResponse::new(beacon_heads)))
+        let is_leaf = children.iter().all(|child| !blocks.contains_key(child));
+        if is_leaf {
+            leaves.push(BeaconHeadResponse {
+                root: block.tree_hash_root(),
+                slot: block.slot,
+                execution_optimistic: false,
+            });
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(DataResponse::new(leaves)))
 }
