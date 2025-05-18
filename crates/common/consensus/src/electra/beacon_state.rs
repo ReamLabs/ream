@@ -1646,7 +1646,7 @@ impl BeaconState {
                 *self
                     .balances
                     .get(*validator_index)
-                    .ok_or(anyhow!(String::from("Sync Committee Rewards Sync Error",)))?,
+                    .ok_or(anyhow!("Sync Committee Rewards Sync Error"))?,
             );
         }
 
@@ -1656,7 +1656,7 @@ impl BeaconState {
             *self
                 .balances
                 .get(proposer_index)
-                .ok_or(anyhow!(String::from("Sync Committee Rewards Sync Error",)))?,
+                .ok_or(anyhow!("Sync Committee Rewards Sync Error"))?,
         );
 
         let mut total_proposer_rewards = 0;
@@ -1667,15 +1667,14 @@ impl BeaconState {
         {
             let participant_balance = balances
                 .get_mut(validator_index)
-                .ok_or(anyhow!(String::from("Sync Committee Rewards Sync Error",)))?;
+                .ok_or(anyhow!("Sync Committee Rewards Sync Error"))?;
 
             if participant_bit {
                 *participant_balance += participant_reward;
 
                 *balances
                     .get_mut(&proposer_index)
-                    .ok_or(anyhow!(String::from("Sync Committee Rewards Sync Error",)))? +=
-                    proposer_reward;
+                    .ok_or(anyhow!("Sync Committee Rewards Sync Error"))? += proposer_reward;
                 total_proposer_rewards += proposer_reward;
             } else {
                 *participant_balance = participant_balance.saturating_sub(participant_reward);
