@@ -12,12 +12,7 @@ use ream_beacon_api_types::{
     },
 };
 use ream_consensus::{
-    attester_slashing::AttesterSlashing,
-    constants::{
-        EFFECTIVE_BALANCE_INCREMENT, PROPOSER_WEIGHT, SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE,
-        SYNC_REWARD_WEIGHT, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
-        genesis_validators_root,
-    },
+    constants::{MAINNET_GENESIS_VALIDATORS_ROOT, WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root},
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     genesis::Genesis,
 };
