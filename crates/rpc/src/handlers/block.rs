@@ -58,7 +58,9 @@ pub struct BlockRewards {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ValidatorSyncCommitteeReward {
+    #[serde(with = "serde_utils::quoted_u64")]
     pub validator_index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub reward: u64,
 }
 
