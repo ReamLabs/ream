@@ -1,12 +1,57 @@
-use std::fmt;
-
 use alloy_primitives::B256;
-use serde::{
-    Deserialize, Deserializer, Serialize,
-    de::{MapAccess, Visitor},
-};
+use serde::{Deserialize, Serialize};
 
 use super::id::ValidatorID;
+
+macro_rules! impl_repeated_param_query {
+    ($name:ident, $field:ident, $ty:ty) => {
+        impl<'de> serde::Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct VisitorImpl;
+
+                impl<'de> serde::de::Visitor<'de> for VisitorImpl {
+                    type Value = $name;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        formatter.write_str(concat!(
+                            "a map with zero or more ",
+                            stringify!($field),
+                            " fields"
+                        ))
+                    }
+
+                    fn visit_map<M>(self, mut map: M) -> Result<$name, M::Error>
+                    where
+                        M: serde::de::MapAccess<'de>,
+                    {
+                        let mut values = Vec::new();
+
+                        while let Some(key) = map.next_key::<String>()? {
+                            if key == stringify!($field) {
+                                values.push(map.next_value::<$ty>()?);
+                            } else {
+                                let _ = map.next_value::<serde::de::IgnoredAny>()?;
+                            }
+                        }
+
+                        Ok($name {
+                            $field: if values.is_empty() {
+                                None
+                            } else {
+                                Some(values)
+                            },
+                        })
+                    }
+                }
+
+                deserializer.deserialize_map(VisitorImpl)
+            }
+        }
+    };
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EpochQuery {
@@ -33,20 +78,26 @@ pub struct ParentRootQuery {
     pub parent_root: Option<B256>,
 }
 
-#[derive(Default, Debug, Deserialize)]
+#[derive(Default, Debug)]
 pub struct IdQuery {
     pub id: Option<Vec<ValidatorID>>,
 }
+
+impl_repeated_param_query!(IdQuery, id, ValidatorID);
 
 #[derive(Default, Debug)]
 pub struct BlobSidecarQuery {
     pub indices: Option<Vec<u64>>,
 }
 
-#[derive(Default, Debug, Deserialize)]
+impl_repeated_param_query!(BlobSidecarQuery, indices, u64);
+
+#[derive(Default, Debug)]
 pub struct StatusQuery {
     pub status: Option<Vec<String>>,
 }
+
+impl_repeated_param_query!(StatusQuery, status, String);
 
 impl StatusQuery {
     pub fn has_status(&self) -> bool {
@@ -61,50 +112,5 @@ impl StatusQuery {
             Some(statuses) => statuses.contains(status),
             None => true, // If no statuses specified, accept all
         }
-    }
-}
-
-impl<'de> Deserialize<'de> for BlobSidecarQuery {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct BlobSidecarQueryVisitor;
-
-        impl<'de> Visitor<'de> for BlobSidecarQueryVisitor {
-            type Value = BlobSidecarQuery;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a map with zero or more indices fields")
-            }
-
-            fn visit_map<M>(self, mut map: M) -> Result<BlobSidecarQuery, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                let mut indices = Vec::new();
-
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "indices" => {
-                            indices.push(map.next_value()?);
-                        }
-                        _ => {
-                            let _ = map.next_value::<serde::de::IgnoredAny>()?;
-                        }
-                    }
-                }
-
-                Ok(BlobSidecarQuery {
-                    indices: if indices.is_empty() {
-                        None
-                    } else {
-                        Some(indices)
-                    },
-                })
-            }
-        }
-
-        deserializer.deserialize_map(BlobSidecarQueryVisitor)
     }
 }
