@@ -158,10 +158,10 @@ impl Discovery {
                 match query {
                     QueryType::Peers => Box::new(empty_predicate()),
                     QueryType::AttestationSubnetPeers(ref subnet_ids) => {
-                        Box::new(attestation_subnet_predicate(subnet_ids))
+                        Box::new(attestation_subnet_predicate(subnet_ids.clone()))
                     }
                     QueryType::SyncCommitteeSubnetPeers(ref subnet_ids) => {
-                        Box::new(sync_committee_subnet_predicate(subnet_ids))
+                        Box::new(sync_committee_subnet_predicate(subnet_ids.clone()))
                     }
                 },
                 target_peers,
@@ -200,7 +200,7 @@ impl Discovery {
                         Ok(peers) => {
                             let filtered_peers = peers
                                 .into_iter()
-                                .filter(|enr| attestation_subnet_predicate(&subnet_ids)(enr))
+                                .filter(|enr| attestation_subnet_predicate(subnet_ids.clone())(enr))
                                 .collect::<Vec<_>>();
                             info!(
                                 "Found {} peers for subnets {:?}",
@@ -225,7 +225,9 @@ impl Discovery {
                         Ok(peers) => {
                             let filtered_peers = peers
                                 .into_iter()
-                                .filter(|enr| sync_committee_subnet_predicate(&subnet_ids)(enr))
+                                .filter(|enr| {
+                                    sync_committee_subnet_predicate(subnet_ids.clone())(enr)
+                                })
                                 .collect::<Vec<_>>();
                             info!(
                                 "Found {} peers for sync committee subnets {:?}",
@@ -395,11 +397,11 @@ mod tests {
         let local_enr = discovery.local_enr();
 
         // Predicate for subnet 0 should match
-        let predicate = attestation_subnet_predicate(&[0]);
+        let predicate = attestation_subnet_predicate(vec![0]);
         assert!(predicate(local_enr));
 
         // Predicate for subnet 1 should not match
-        let predicate = attestation_subnet_predicate(&[1]);
+        let predicate = attestation_subnet_predicate(vec![1]);
         assert!(!predicate(local_enr));
         Ok(())
     }

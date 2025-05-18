@@ -6,7 +6,6 @@ use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus::constants::MAINNET_GENESIS_VALIDATORS_ROOT;
 use ream_discv5::{
     config::DiscoveryConfig,
-    eth2::EnrForkId,
     subnet::{AttestationSubnets, SyncCommitteeSubnets},
 };
 use ream_executor::ReamExecutor;
