@@ -4,12 +4,7 @@ use actix_web::{
 };
 use alloy_primitives::B256;
 use ream_consensus::{
-    attester_slashing::AttesterSlashing,
-    constants::{
-        EFFECTIVE_BALANCE_INCREMENT, MAINNET_GENESIS_VALIDATORS_ROOT, PROPOSER_WEIGHT,
-        SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT, WEIGHT_DENOMINATOR,
-        WHISTLEBLOWER_REWARD_QUOTIENT,
-    },
+    constants::{MAINNET_GENESIS_VALIDATORS_ROOT, WHISTLEBLOWER_REWARD_QUOTIENT},
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     genesis::Genesis,
 };
