@@ -11,7 +11,7 @@ use ssz_types::VariableList;
 use ssz::Decode;
 use anyhow::{ Result, anyhow };
 
-fn get_execution_requests(execution_requests_list: Vec<Bytes>) -> Result<ExecutionRequests> {
+pub fn get_execution_requests(execution_requests_list: Vec<Bytes>) -> Result<ExecutionRequests> {
     let mut deposits: Vec<DepositRequest> = vec![];
     let mut withdrawals: Vec<WithdrawalRequest> = vec![];
     let mut consolidations: Vec<ConsolidationRequest> = vec![];
