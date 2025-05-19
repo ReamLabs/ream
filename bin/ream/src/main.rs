@@ -3,7 +3,7 @@ use std::env;
 use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-use ream_consensus::constants::MAINNET_GENESIS_VALIDATORS_ROOT;
+use ream_consensus::constants::{genesis_validator_spec, set_genesis_validator_root};
 use ream_discv5::{config::DiscoveryConfig, subnet::Subnets};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::{network_spec, set_network_spec};
@@ -71,19 +71,6 @@ async fn main() {
                 subnets: Subnets::new(),
             };
 
-            let mut gossipsub_config = GossipsubConfig::default();
-            gossipsub_config.set_topics(vec![GossipTopic {
-                fork: network_spec().fork_digest(MAINNET_GENESIS_VALIDATORS_ROOT),
-                kind: GossipTopicKind::BeaconBlock,
-            }]);
-
-            let network_config = NetworkConfig {
-                socket_address: config.socket_address,
-                socket_port: config.socket_port,
-                discv5_config,
-                gossipsub_config,
-            };
-
             let ream_dir = setup_data_dir(APP_NAME, config.data_dir.clone(), config.ephemeral)
                 .expect("Unable to initialize database directory");
 
@@ -100,6 +87,28 @@ async fn main() {
                 .expect("Unable to initialize database from checkpoint");
 
             info!("Database Initialization completed");
+
+            set_genesis_validator_root(
+                ream_db
+                    .beacon_state_provider()
+                    .first()
+                    .expect("Failed to access beacon state provider")
+                    .expect("No beacon state found")
+                    .genesis_validators_root,
+            );
+
+            let mut gossipsub_config = GossipsubConfig::default();
+            gossipsub_config.set_topics(vec![GossipTopic {
+                fork: network_spec().fork_digest(genesis_validator_spec()),
+                kind: GossipTopicKind::BeaconBlock,
+            }]);
+
+            let network_config = NetworkConfig {
+                socket_address: config.socket_address,
+                socket_port: config.socket_port,
+                discv5_config,
+                gossipsub_config,
+            };
 
             let http_future = start_server(server_config, ream_db);
 

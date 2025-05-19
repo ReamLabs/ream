@@ -1,4 +1,6 @@
-use alloy_primitives::{B256, aliases::B32, b256, fixed_bytes};
+use std::sync::OnceLock;
+
+use alloy_primitives::{B256, aliases::B32, fixed_bytes};
 
 pub const BASE_REWARDS_PER_EPOCH: u64 = 4;
 pub const BASE_REWARD_FACTOR: u64 = 64;
@@ -127,7 +129,29 @@ pub const PARTICIPATION_FLAG_WEIGHTS: [u64; NUM_FLAG_INDICES] = [
     TIMELY_HEAD_WEIGHT,
 ];
 
-/// todo: genesis validators root is apart of the state, refactor the code to dynamically determine
-/// this on startup
-pub const MAINNET_GENESIS_VALIDATORS_ROOT: B256 =
-    b256!("0x4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95");
+pub static GENESIS_VALIDATORS_ROOT: OnceLock<B256> = OnceLock::new();
+
+/// MUST be called only once at the start of the application to initialize static
+/// [B256].
+///
+/// The static `B256` can be accessed using [genesis_validator_spec].
+///
+/// # Panics
+///
+/// Panics if this function is called more than once.
+pub fn set_genesis_validator_root(genesis_validator_root: B256) {
+    GENESIS_VALIDATORS_ROOT
+        .set(genesis_validator_root)
+        .expect("NetworkSpec should be set only once at the start of the application");
+}
+
+/// Returns the static [B256] initialized by [set_genesis_validator_root].
+///
+/// # Panics
+///
+/// Panics if [set_genesis_validator_root] wasn't called before this function.
+pub fn genesis_validator_spec() -> B256 {
+    *GENESIS_VALIDATORS_ROOT
+        .get()
+        .expect("NetworkSpec wasn't set")
+}
