@@ -217,9 +217,15 @@ impl BeaconState {
     }
 
     pub fn get_eth1_pending_deposit_count(&self) -> u64 {
-        let eth1_deposit_index_limit = min(self.eth1_data.deposit_count, self.deposit_requests_start_index);
+        let eth1_deposit_index_limit = min(
+            self.eth1_data.deposit_count,
+            self.deposit_requests_start_index,
+        );
         if self.eth1_deposit_index < eth1_deposit_index_limit {
-            min(MAX_DEPOSITS, eth1_deposit_index_limit - self.eth1_deposit_index)
+            min(
+                MAX_DEPOSITS,
+                eth1_deposit_index_limit - self.eth1_deposit_index,
+            )
         } else {
             0
         }

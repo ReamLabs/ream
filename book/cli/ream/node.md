@@ -12,7 +12,7 @@ Options:
   -v, --verbosity <VERBOSITY>
           Verbosity level [default: 3]
       --network <NETWORK>
-          Choose mainnet, holesky, sepolia, hoodi or dev [default: mainnet]
+          Choose mainnet, holesky, sepolia, hoodi, dev or provide a path to a YAML config file [default: mainnet]
       --http-address <HTTP_ADDRESS>
           Set HTTP address [default: 127.0.0.1]
       --http-port <HTTP_PORT>
