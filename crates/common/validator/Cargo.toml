@@ -20,7 +20,9 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 ssz_types.workspace = true
+tree_hash.workspace = true
 
 # ream dependencies
 ream-bls.workspace = true
 ream-consensus.workspace = true
+ream-execution-engine.workspace = true

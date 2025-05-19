@@ -4714,10 +4714,12 @@ dependencies = [
  "ethereum_ssz_derive",
  "ream-bls",
  "ream-consensus",
+ "ream-execution-engine",
  "serde",
  "serde_json",
  "serde_yaml",
  "ssz_types",
+ "tree_hash",
 ]
 
 [[package]]

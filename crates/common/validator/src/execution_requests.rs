@@ -1,19 +1,30 @@
-use alloy_primitives::Bytes;
-use anyhow::{Result, anyhow, bail, ensure};
+use alloy_primitives::{Address, B256, Bytes};
+use anyhow::{anyhow, bail, ensure};
 use ream_consensus::{
     consolidation_request::ConsolidationRequest,
     constants::{CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE},
     deposit_request::DepositRequest,
+    electra::beacon_state::BeaconState,
     execution_requests::ExecutionRequests,
+    withdrawal::Withdrawal,
     withdrawal_request::WithdrawalRequest,
+};
+use ream_execution_engine::{
+    ExecutionEngine,
+    rpc_types::forkchoice_update::{
+        ForkchoiceStateV1, ForkchoiceUpdateResult, PayloadAttributesV3,
+    },
 };
 use ssz::Decode;
 use ssz_types::{
     VariableList,
     typenum::{U2, U16, U8192},
 };
+use tree_hash::TreeHash;
 
-pub fn get_execution_requests(execution_requests_list: Vec<Bytes>) -> Result<ExecutionRequests> {
+pub fn get_execution_requests(
+    execution_requests_list: Vec<Bytes>,
+) -> anyhow::Result<ExecutionRequests> {
     let mut deposits = None;
     let mut withdrawals = None;
     let mut consolidations = None;
@@ -71,4 +82,30 @@ pub fn get_execution_requests(execution_requests_list: Vec<Bytes>) -> Result<Exe
         withdrawals: withdrawals.unwrap_or_default(),
         consolidations: consolidations.unwrap_or_default(),
     })
+}
+
+pub async fn prepare_execution_payload(
+    state: BeaconState,
+    safe_block_hash: B256,
+    finalized_block_hash: B256,
+    suggested_fee_recipient: Address,
+    execution_engine: ExecutionEngine,
+) -> anyhow::Result<ForkchoiceUpdateResult> {
+    let parent_hash: B256 = state.latest_execution_payload_header.block_hash;
+    let execution_requests_list: Vec<Withdrawal> = state.get_expected_withdrawals()?.0;
+    let payload_attributes: PayloadAttributesV3 = PayloadAttributesV3 {
+        timestamp: state.compute_timestamp_at_slot(state.slot),
+        prev_randao: state.get_randao_mix(state.get_current_epoch()),
+        suggested_fee_recipient,
+        withdrawals: VariableList::from(execution_requests_list),
+        parent_beacon_block_root: state.latest_block_header.tree_hash_root(),
+    };
+    let fork_choice_state = ForkchoiceStateV1 {
+        head_block_hash: parent_hash,
+        safe_block_hash,
+        finalized_block_hash,
+    };
+    execution_engine
+        .engine_forkchoice_updated_v3(fork_choice_state, Some(payload_attributes))
+        .await
 }
