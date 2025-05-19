@@ -216,6 +216,15 @@ impl BeaconState {
         compute_epoch_at_slot(self.slot)
     }
 
+    pub fn get_eth1_pending_deposit_count(&self) -> u64 {
+        let eth1_deposit_index_limit = min(self.eth1_data.deposit_count, self.deposit_requests_start_index);
+        if self.eth1_deposit_index < eth1_deposit_index_limit {
+            min(MAX_DEPOSITS, eth1_deposit_index_limit - self.eth1_deposit_index)
+        } else {
+            0
+        }
+    }
+
     /// Return the previous epoch (unless the current epoch is ``GENESIS_EPOCH``).
     pub fn get_previous_epoch(&self) -> u64 {
         let current_epoch = self.get_current_epoch();
