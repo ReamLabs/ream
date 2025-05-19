@@ -155,13 +155,15 @@ impl Discovery {
             .discv5
             .find_node_predicate(
                 NodeId::random(),
-                match query {
+                match query.clone() {
                     QueryType::Peers => Box::new(empty_predicate()),
-                    QueryType::AttestationSubnetPeers(ref subnet_ids) => {
-                        Box::new(attestation_subnet_predicate(subnet_ids.clone()))
+                    QueryType::AttestationSubnetPeers(subnet_ids) => {
+                        let subnet_ids_clone = subnet_ids.clone();
+                        Box::new(move |enr| attestation_subnet_predicate(&subnet_ids_clone)(enr))
                     }
-                    QueryType::SyncCommitteeSubnetPeers(ref subnet_ids) => {
-                        Box::new(sync_committee_subnet_predicate(subnet_ids.clone()))
+                    QueryType::SyncCommitteeSubnetPeers(subnet_ids) => {
+                        let subnet_ids_clone = subnet_ids.clone();
+                        Box::new(move |enr| sync_committee_subnet_predicate(&subnet_ids_clone)(enr))
                     }
                 },
                 target_peers,
@@ -198,9 +200,10 @@ impl Discovery {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
+                            let predicate = attestation_subnet_predicate(&subnet_ids);
                             let filtered_peers = peers
                                 .into_iter()
-                                .filter(|enr| attestation_subnet_predicate(subnet_ids.clone())(enr))
+                                .filter(|enr| predicate(enr))
                                 .collect::<Vec<_>>();
                             info!(
                                 "Found {} peers for subnets {:?}",
@@ -223,11 +226,10 @@ impl Discovery {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
+                            let predicate = sync_committee_subnet_predicate(&subnet_ids);
                             let filtered_peers = peers
                                 .into_iter()
-                                .filter(|enr| {
-                                    sync_committee_subnet_predicate(subnet_ids.clone())(enr)
-                                })
+                                .filter(|enr| predicate(enr))
                                 .collect::<Vec<_>>();
                             info!(
                                 "Found {} peers for sync committee subnets {:?}",
@@ -397,11 +399,11 @@ mod tests {
         let local_enr = discovery.local_enr();
 
         // Predicate for subnet 0 should match
-        let predicate = attestation_subnet_predicate(vec![0]);
+        let predicate = attestation_subnet_predicate(&[0]);
         assert!(predicate(local_enr));
 
         // Predicate for subnet 1 should not match
-        let predicate = attestation_subnet_predicate(vec![1]);
+        let predicate = attestation_subnet_predicate(&[1]);
         assert!(!predicate(local_enr));
         Ok(())
     }
