@@ -1,7 +1,8 @@
 use actix_web::{
     HttpResponse, Responder, get,
-    web::{Data, Path, Query},
+    web::{Data, Path},
 };
+use actix_web_lab::extract::Query;
 use ream_consensus::blob_sidecar::BlobIdentifier;
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::error;

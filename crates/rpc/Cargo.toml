@@ -20,6 +20,7 @@ ream-storage.workspace = true
 
 #misc
 actix-web.workspace = true
+actix-web-lab.workspace = true
 alloy-primitives.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
