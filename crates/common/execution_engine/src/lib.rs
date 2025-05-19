@@ -225,8 +225,8 @@ fn get_execution_requests_list(execution_requests: &ExecutionRequests) -> Vec<By
     if !execution_requests.deposits.is_empty() {
         requests_list.push(Bytes::from(
             [
-                DEPOSIT_REQUEST_TYPE,
-                &execution_requests.deposits.as_ssz_bytes(),
+                vec![DEPOSIT_REQUEST_TYPE],
+                execution_requests.deposits.as_ssz_bytes(),
             ]
             .concat(),
         ));
@@ -234,8 +234,8 @@ fn get_execution_requests_list(execution_requests: &ExecutionRequests) -> Vec<By
     if !execution_requests.withdrawals.is_empty() {
         requests_list.push(Bytes::from(
             [
-                WITHDRAWAL_REQUEST_TYPE,
-                &execution_requests.withdrawals.as_ssz_bytes(),
+                vec![WITHDRAWAL_REQUEST_TYPE],
+                execution_requests.withdrawals.as_ssz_bytes(),
             ]
             .concat(),
         ));
@@ -243,8 +243,8 @@ fn get_execution_requests_list(execution_requests: &ExecutionRequests) -> Vec<By
     if !execution_requests.consolidations.is_empty() {
         requests_list.push(Bytes::from(
             [
-                CONSOLIDATION_REQUEST_TYPE,
-                &execution_requests.consolidations.as_ssz_bytes(),
+                vec![CONSOLIDATION_REQUEST_TYPE],
+                execution_requests.consolidations.as_ssz_bytes(),
             ]
             .concat(),
         ));

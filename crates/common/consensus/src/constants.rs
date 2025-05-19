@@ -88,9 +88,9 @@ pub const COMPOUNDING_WITHDRAWAL_PREFIX: &[u8] = &[2];
 pub const ETH1_ADDRESS_WITHDRAWAL_PREFIX: &[u8] = &[1];
 
 // Execution layer triggered requests
-pub const CONSOLIDATION_REQUEST_TYPE: &[u8] = &[2];
-pub const DEPOSIT_REQUEST_TYPE: &[u8] = &[0];
-pub const WITHDRAWAL_REQUEST_TYPE: &[u8] = &[1];
+pub const CONSOLIDATION_REQUEST_TYPE: u8 = 2;
+pub const DEPOSIT_REQUEST_TYPE: u8 = 0;
+pub const WITHDRAWAL_REQUEST_TYPE: u8 = 1;
 
 // Rewards and penalties
 pub const MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA: u64 = 4096;

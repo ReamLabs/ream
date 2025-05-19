@@ -1,53 +1,74 @@
 use alloy_primitives::Bytes;
+use anyhow::{Result, anyhow, bail, ensure};
 use ream_consensus::{
-    constants::{CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE}, 
-    execution_requests::ExecutionRequests,
     consolidation_request::ConsolidationRequest,
+    constants::{CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE},
+    deposit_request::DepositRequest,
+    execution_requests::ExecutionRequests,
     withdrawal_request::WithdrawalRequest,
-    deposit_request::DepositRequest
 };
-use serde_yaml::with;
-use ssz_types::VariableList;
 use ssz::Decode;
-use anyhow::{ Result, anyhow };
+use ssz_types::{
+    VariableList,
+    typenum::{U2, U16, U8192},
+};
 
 pub fn get_execution_requests(execution_requests_list: Vec<Bytes>) -> Result<ExecutionRequests> {
-    let mut deposits: Vec<DepositRequest> = vec![];
-    let mut withdrawals: Vec<WithdrawalRequest> = vec![];
-    let mut consolidations: Vec<ConsolidationRequest> = vec![];
-
-    let mut prev_req_type: Option<u8> = None;
+    let mut deposits = None;
+    let mut withdrawals = None;
+    let mut consolidations = None;
+    let mut previous_request_type: Option<u8> = None;
     for request_bytes in execution_requests_list.into_iter() {
-        let request: &[u8] = request_bytes.as_ref();
-        if request.len() >= 2 {
-            let req_type: u8 = request[0];
-            let request_data: &[u8] = &request[1..];
-
-            if let Some(prev_type_unwrapped) = prev_req_type {
-                if prev_type_unwrapped >= req_type {
-                    return Err(anyhow!("Invalid request type order"));
-                }
+        ensure!(request_bytes.len() >= 2, "Invalid request length");
+        let request_type = request_bytes[0];
+        ensure!(
+            previous_request_type.is_none() || previous_request_type < Some(request_type),
+            "Duplicate request type found or list wasn't in strictly ascending order  in execution requests"
+        );
+        previous_request_type = Some(request_type);
+        match request_type {
+            DEPOSIT_REQUEST_TYPE => {
+                ensure!(
+                    deposits.is_none(),
+                    "Multiple deposit requests found in execution requests"
+                );
+                deposits = Some(
+                    VariableList::<DepositRequest, U8192>::from_ssz_bytes(&request_bytes[1..])
+                        .map_err(|err| anyhow!("Failed to deserialize DepositRequest: {err:?}"))?,
+                );
             }
-            prev_req_type = Some(req_type);
-            if req_type == DEPOSIT_REQUEST_TYPE[0] {
-                match DepositRequest::from_ssz_bytes(request_data) {
-                    Ok(deposit) => deposits.push(deposit),
-                    Err(e) => return Err(anyhow!("Failed to deserialize DepositRequest: {:?}", e)),
-                }
-            } else if req_type == WITHDRAWAL_REQUEST_TYPE[0] {
-                match WithdrawalRequest::from_ssz_bytes(request_data) {
-                    Ok(withdrawal) => withdrawals.push(withdrawal),
-                    Err(e) => return Err(anyhow!("Failed to deserialize WithdrawalRequest: {:?}", e)),
-                }
-            } else if req_type == CONSOLIDATION_REQUEST_TYPE[0] {
-                match ConsolidationRequest::from_ssz_bytes(request_data) {
-                    Ok(consolidation) => consolidations.push(consolidation),
-                    Err(e) => return Err(anyhow!("Failed to deserialize ConsolidationRequest: {:?}", e)),
-                }
+            WITHDRAWAL_REQUEST_TYPE => {
+                ensure!(
+                    withdrawals.is_none(),
+                    "Multiple withdrawal requests found in execution requests"
+                );
+                withdrawals = Some(
+                    VariableList::<WithdrawalRequest, U16>::from_ssz_bytes(&request_bytes[1..])
+                        .map_err(|err| {
+                            anyhow!("Failed to deserialize WithdrawalRequest: {err:?}")
+                        })?,
+                );
             }
-        } else {
-            return Err(anyhow!("Invalid request length"));
+            CONSOLIDATION_REQUEST_TYPE => {
+                ensure!(
+                    consolidations.is_none(),
+                    "Multiple consolidation requests found in execution requests"
+                );
+                consolidations = Some(
+                    VariableList::<ConsolidationRequest, U2>::from_ssz_bytes(&request_bytes[1..])
+                        .map_err(|err| {
+                        anyhow!("Failed to deserialize ConsolidationRequest: {err:?}")
+                    })?,
+                );
+            }
+            _ => {
+                bail!("Invalid request type");
+            }
         }
     }
-    Ok(ExecutionRequests { deposits: VariableList::from(deposits), withdrawals: VariableList::from(withdrawals), consolidations: VariableList::from(consolidations) })
+    Ok(ExecutionRequests {
+        deposits: deposits.unwrap_or_default(),
+        withdrawals: withdrawals.unwrap_or_default(),
+        consolidations: consolidations.unwrap_or_default(),
+    })
 }
