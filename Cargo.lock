@@ -4621,6 +4621,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-validator"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_hashing",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "ream-consensus",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "ssz_types",
+]
+
+[[package]]
 name = "redb"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5947,23 +5964,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
 dependencies = [
  "getrandom 0.3.2",
-]
-
-[[package]]
-name = "validator"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "ethereum_hashing",
- "ethereum_serde_utils",
- "ethereum_ssz",
- "ethereum_ssz_derive",
- "ream-consensus",
- "serde",
- "serde_json",
- "serde_yaml",
- "ssz_types",
 ]
 
 [[package]]

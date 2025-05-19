@@ -33,6 +33,10 @@ Options:
           Use new data directory, located in OS temporary directory. If used together with --data-dir, new directory will be created there instead.
       --bootnodes <BOOTNODES>
           One or more comma-delimited base64-encoded ENR's of peers to initially connect to. Use 'default' to use the default bootnodes for the network. Use 'none' to disable bootnodes. [default: default]
+      --checkpoint-sync-url <CHECKPOINT_SYNC_URL>
+          Trusted RPC URL to initiate Checkpoint Sync.
+      --purge-db
+          Purges the database.
   -h, --help
           Print help
 ```
