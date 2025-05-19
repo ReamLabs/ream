@@ -62,7 +62,7 @@ pub fn get_execution_requests(execution_requests_list: Vec<Bytes>) -> Result<Exe
                 );
             }
             _ => {
-                bail!("Invalid request type");
+                bail!("Invalid request type: {request_type}");
             }
         }
     }
