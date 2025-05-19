@@ -27,8 +27,7 @@ pub async fn get_blob_sidecars(
         for index in indices {
             if index >= &max_index {
                 return Err(ApiError::BadRequest(format!(
-                    "Invalid blob index: {index}, max index is {}",
-                    max_index
+                    "Invalid blob index: {index}, max index is {max_index}"
                 )));
             }
         }
