@@ -10,7 +10,7 @@ use ream_consensus::{
     constants::{
         EFFECTIVE_BALANCE_INCREMENT, PROPOSER_WEIGHT, SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE,
         SYNC_REWARD_WEIGHT, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
-        genesis_validator_spec,
+        genesis_validators_root,
     },
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     genesis::Genesis,
@@ -207,7 +207,7 @@ pub async fn get_beacon_block_from_id(
 pub async fn get_genesis() -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::Ok().json(DataResponse::new(Genesis {
         genesis_time: network_spec().min_genesis_time,
-        genesis_validators_root: genesis_validator_spec(),
+        genesis_validators_root: genesis_validators_root(),
         genesis_fork_version: network_spec().genesis_fork_version,
     })))
 }

@@ -3,7 +3,7 @@ use std::env;
 use clap::Parser;
 use ream::cli::{Cli, Commands};
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-use ream_consensus::constants::{genesis_validator_spec, set_genesis_validator_root};
+use ream_consensus::constants::{genesis_validators_root, set_genesis_validator_root};
 use ream_discv5::{config::DiscoveryConfig, subnet::Subnets};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::{network_spec, set_network_spec};
@@ -99,7 +99,7 @@ async fn main() {
 
             let mut gossipsub_config = GossipsubConfig::default();
             gossipsub_config.set_topics(vec![GossipTopic {
-                fork: network_spec().fork_digest(genesis_validator_spec()),
+                fork: network_spec().fork_digest(genesis_validators_root()),
                 kind: GossipTopicKind::BeaconBlock,
             }]);
 

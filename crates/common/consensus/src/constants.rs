@@ -134,14 +134,14 @@ pub static GENESIS_VALIDATORS_ROOT: OnceLock<B256> = OnceLock::new();
 /// MUST be called only once at the start of the application to initialize static
 /// [B256].
 ///
-/// The static `B256` can be accessed using [genesis_validator_spec].
+/// The static `B256` can be accessed using [genesis_validators_root].
 ///
 /// # Panics
 ///
 /// Panics if this function is called more than once.
-pub fn set_genesis_validator_root(genesis_validator_root: B256) {
+pub fn set_genesis_validator_root(genesis_validators_root: B256) {
     GENESIS_VALIDATORS_ROOT
-        .set(genesis_validator_root)
+        .set(genesis_validators_root)
         .expect("GENESIS_VALIDATORS_ROOT should be set only once at the start of the application");
 }
 
@@ -150,7 +150,7 @@ pub fn set_genesis_validator_root(genesis_validator_root: B256) {
 /// # Panics
 ///
 /// Panics if [set_genesis_validator_root] wasn't called before this function.
-pub fn genesis_validator_spec() -> B256 {
+pub fn genesis_validators_root() -> B256 {
     *GENESIS_VALIDATORS_ROOT
         .get()
         .expect("GENESIS_VALIDATORS_ROOT wasn't set")
