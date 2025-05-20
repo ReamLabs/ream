@@ -22,5 +22,5 @@ serde_yaml.workspace = true
 ssz_types.workspace = true
 
 # ream dependencies
-ream-consensus.workspace = true
 ream-bls.workspace = true
+ream-consensus.workspace = true
