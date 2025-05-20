@@ -310,7 +310,9 @@ fn convert_to_enr(key: Keypair) -> anyhow::Result<CombinedKey> {
 mod tests {
     use std::net::Ipv4Addr;
 
+    use alloy_primitives::B256;
     use libp2p::identity::Keypair;
+    use ream_consensus::constants::GENESIS_VALIDATORS_ROOT;
     use ream_network_spec::networks::{DEV, set_network_spec};
 
     use super::*;
@@ -318,6 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_initial_subnet_setup() -> anyhow::Result<()> {
+        let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
         set_network_spec(DEV.clone());
         let key = Keypair::generate_secp256k1();
         let mut config = DiscoveryConfig::default();
@@ -339,6 +342,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_subnet_predicate() -> anyhow::Result<()> {
+        let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
         let key = Keypair::generate_secp256k1();
         let mut config = DiscoveryConfig::default();
         config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
@@ -360,6 +364,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_discovery_with_subnets() -> anyhow::Result<()> {
+        let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
         let key = Keypair::generate_secp256k1();
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::default())
             .table_filter(|_| true)
