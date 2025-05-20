@@ -25,48 +25,34 @@ impl AttestationSubnets {
         Self(BitVector::new())
     }
 
-    fn set(&mut self, index: usize, value: bool) -> anyhow::Result<()> {
-        self.0
-            .set(index, value)
-            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
-    }
-
-    fn get(&self, index: usize) -> anyhow::Result<bool> {
-        self.0
-            .get(index)
-            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
-    }
-
     pub fn enable_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
         ensure!(
             subnet_id < ATTESTATION_SUBNET_COUNT as u8,
-            "Subnet ID {} exceeds maximum attestation subnet count {}",
-            subnet_id,
-            ATTESTATION_SUBNET_COUNT
+            "Subnet ID {subnet_id} exceeds maximum attestation subnet count {ATTESTATION_SUBNET_COUNT}",
         );
-        self.set(subnet_id as usize, true)?;
-        Ok(())
+        self.0
+            .set(subnet_id as usize, true)
+            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
     pub fn disable_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
         ensure!(
             subnet_id < ATTESTATION_SUBNET_COUNT as u8,
-            "Subnet ID {} exceeds maximum attestation subnet count {}",
-            subnet_id,
-            ATTESTATION_SUBNET_COUNT
+            "Subnet ID {subnet_id} exceeds maximum attestation subnet count {ATTESTATION_SUBNET_COUNT}",
         );
-        self.set(subnet_id as usize, false)?;
-        Ok(())
+        self.0
+            .set(subnet_id as usize, false)
+            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
     pub fn is_attestation_subnet_enabled(&self, subnet_id: u8) -> anyhow::Result<bool> {
         ensure!(
             subnet_id < ATTESTATION_SUBNET_COUNT as u8,
-            "Subnet ID {} exceeds maximum attestation subnet count {}",
-            subnet_id,
-            ATTESTATION_SUBNET_COUNT
+            "Subnet ID {subnet_id} exceeds maximum attestation subnet count {ATTESTATION_SUBNET_COUNT}",
         );
-        self.get(subnet_id as usize)
+        self.0
+            .get(subnet_id as usize)
+            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 }
 
@@ -101,48 +87,34 @@ impl SyncCommitteeSubnets {
         Self(BitVector::new())
     }
 
-    fn set(&mut self, index: usize, value: bool) -> anyhow::Result<()> {
-        self.0
-            .set(index, value)
-            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
-    }
-
-    fn get(&self, index: usize) -> anyhow::Result<bool> {
-        self.0
-            .get(index)
-            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
-    }
-
     pub fn enable_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
         ensure!(
             subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
-            "Subnet ID {} exceeds maximum sync committee subnet count {}",
-            subnet_id,
-            SYNC_COMMITTEE_SUBNET_COUNT
+            "Subnet ID {subnet_id} exceeds maximum sync committee subnet count {SYNC_COMMITTEE_SUBNET_COUNT}",
         );
-        self.set(subnet_id as usize, true)?;
-        Ok(())
+        self.0
+            .set(subnet_id as usize, true)
+            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
     pub fn disable_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
         ensure!(
             subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
-            "Subnet ID {} exceeds maximum sync committee subnet count {}",
-            subnet_id,
-            SYNC_COMMITTEE_SUBNET_COUNT
+            "Subnet ID {subnet_id} exceeds maximum sync committee subnet count {SYNC_COMMITTEE_SUBNET_COUNT}",
         );
-        self.set(subnet_id as usize, false)?;
-        Ok(())
+        self.0
+            .set(subnet_id as usize, false)
+            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
     pub fn is_sync_committee_subnet_enabled(&self, subnet_id: u8) -> anyhow::Result<bool> {
         ensure!(
             subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
-            "Subnet ID {} exceeds maximum sync committee subnet count {}",
-            subnet_id,
-            SYNC_COMMITTEE_SUBNET_COUNT
+            "Subnet ID {subnet_id} exceeds maximum sync committee subnet count {SYNC_COMMITTEE_SUBNET_COUNT}",
         );
-        self.get(subnet_id as usize)
+        self.0
+            .get(subnet_id as usize)
+            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 }
 
@@ -193,7 +165,7 @@ pub fn attestation_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool +
                 return false;
             }
 
-            if let Ok(true) = attestation_bits.get(*subnet_id as usize) {
+            if let Ok(true) = attestation_bits.is_attestation_subnet_enabled(*subnet_id) {
                 return true;
             } else {
                 trace!(
@@ -236,7 +208,7 @@ pub fn sync_committee_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> boo
                 return false;
             }
 
-            if let Ok(true) = sync_committee_bits.get(*subnet_id as usize) {
+            if let Ok(true) = sync_committee_bits.is_sync_committee_subnet_enabled(*subnet_id) {
                 return true;
             } else {
                 trace!(
@@ -261,18 +233,6 @@ mod tests {
     };
 
     use super::*;
-
-    // Helper function to assert on Result<bool, anyhow::Error> values
-    fn assert_subnet_value(result: Result<bool, anyhow::Error>, expected: bool, subnet_id: usize) {
-        match result {
-            Ok(value) => assert_eq!(
-                value, expected,
-                "Subnet {} value should be {}",
-                subnet_id, expected
-            ),
-            Err(e) => panic!("Failed to get value for subnet {}: {:?}", subnet_id, e),
-        }
-    }
 
     #[test]
     fn test_decodes_subnets() {
@@ -349,10 +309,22 @@ mod tests {
         );
         let decoded_attestation_subnets = attestation_result.unwrap().unwrap();
 
-        assert_subnet_value(decoded_attestation_subnets.get(1), true, 1);
-        assert_subnet_value(decoded_attestation_subnets.get(5), true, 5);
-        assert_subnet_value(decoded_attestation_subnets.get(0), false, 0);
-        assert_subnet_value(decoded_attestation_subnets.get(10), false, 10);
+        assert!(matches!(
+            decoded_attestation_subnets.is_attestation_subnet_enabled(1),
+            Ok(true)
+        ));
+        assert!(matches!(
+            decoded_attestation_subnets.is_attestation_subnet_enabled(5),
+            Ok(true)
+        ));
+        assert!(matches!(
+            decoded_attestation_subnets.is_attestation_subnet_enabled(0),
+            Ok(false)
+        ));
+        assert!(matches!(
+            decoded_attestation_subnets.is_attestation_subnet_enabled(10),
+            Ok(false)
+        ));
 
         let sync_committee_result =
             enr.get_decodable::<SyncCommitteeSubnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY);
@@ -362,10 +334,22 @@ mod tests {
         );
         let decoded_sync_committee_subnets = sync_committee_result.unwrap().unwrap();
 
-        assert_subnet_value(decoded_sync_committee_subnets.get(0), true, 0);
-        assert_subnet_value(decoded_sync_committee_subnets.get(2), true, 2);
-        assert_subnet_value(decoded_sync_committee_subnets.get(1), false, 1);
-        assert_subnet_value(decoded_sync_committee_subnets.get(3), false, 3);
+        assert!(matches!(
+            decoded_sync_committee_subnets.is_sync_committee_subnet_enabled(0),
+            Ok(true)
+        ));
+        assert!(matches!(
+            decoded_sync_committee_subnets.is_sync_committee_subnet_enabled(2),
+            Ok(true)
+        ));
+        assert!(matches!(
+            decoded_sync_committee_subnets.is_sync_committee_subnet_enabled(1),
+            Ok(false)
+        ));
+        assert!(matches!(
+            decoded_sync_committee_subnets.is_sync_committee_subnet_enabled(3),
+            Ok(false)
+        ));
     }
 
     #[test]
@@ -399,10 +383,22 @@ mod tests {
         );
         let decoded_attestation_subnets = attestation_result.unwrap().unwrap();
 
-        assert_subnet_value(decoded_attestation_subnets.get(3), true, 3);
-        assert_subnet_value(decoded_attestation_subnets.get(42), true, 42);
-        assert_subnet_value(decoded_attestation_subnets.get(0), false, 0);
-        assert_subnet_value(decoded_attestation_subnets.get(10), false, 10);
+        assert!(matches!(
+            decoded_attestation_subnets.is_attestation_subnet_enabled(3),
+            Ok(true)
+        ));
+        assert!(matches!(
+            decoded_attestation_subnets.is_attestation_subnet_enabled(42),
+            Ok(true)
+        ));
+        assert!(matches!(
+            decoded_attestation_subnets.is_attestation_subnet_enabled(0),
+            Ok(false)
+        ));
+        assert!(matches!(
+            decoded_attestation_subnets.is_attestation_subnet_enabled(10),
+            Ok(false)
+        ));
 
         let sync_committee_result =
             enr.get_decodable::<SyncCommitteeSubnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY);
@@ -412,10 +408,22 @@ mod tests {
         );
         let decoded_sync_committee_subnets = sync_committee_result.unwrap().unwrap();
 
-        assert_subnet_value(decoded_sync_committee_subnets.get(0), true, 0);
-        assert_subnet_value(decoded_sync_committee_subnets.get(2), true, 2);
-        assert_subnet_value(decoded_sync_committee_subnets.get(1), false, 1);
-        assert_subnet_value(decoded_sync_committee_subnets.get(3), false, 3);
+        assert!(matches!(
+            decoded_sync_committee_subnets.is_sync_committee_subnet_enabled(0),
+            Ok(true)
+        ));
+        assert!(matches!(
+            decoded_sync_committee_subnets.is_sync_committee_subnet_enabled(2),
+            Ok(true)
+        ));
+        assert!(matches!(
+            decoded_sync_committee_subnets.is_sync_committee_subnet_enabled(1),
+            Ok(false)
+        ));
+        assert!(matches!(
+            decoded_sync_committee_subnets.is_sync_committee_subnet_enabled(3),
+            Ok(false)
+        ));
 
         let attestation_subnet_predicate_fn = attestation_subnet_predicate(vec![3]);
         assert!(attestation_subnet_predicate_fn(&enr));
