@@ -81,10 +81,7 @@ impl Discovery {
         enr_builder.udp4(config.discovery_port);
 
         let enr = enr_builder
-            .add_value(
-                ENR_ETH2_KEY,
-                &EnrForkId::electra(MAINNET_GENESIS_VALIDATORS_ROOT),
-            )
+            .add_value(ENR_ETH2_KEY, &EnrForkId::electra(genesis_validators_root()))
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.attestation_subnets)
             .add_value(
                 SYNC_COMMITTEE_BITFIELD_ENR_KEY,
@@ -158,12 +155,10 @@ impl Discovery {
                 match query.clone() {
                     QueryType::Peers => Box::new(empty_predicate()),
                     QueryType::AttestationSubnetPeers(subnet_ids) => {
-                        let subnet_ids_clone = subnet_ids.clone();
-                        Box::new(move |enr| attestation_subnet_predicate(&subnet_ids_clone)(enr))
+                        Box::new(attestation_subnet_predicate(subnet_ids))
                     }
                     QueryType::SyncCommitteeSubnetPeers(subnet_ids) => {
-                        let subnet_ids_clone = subnet_ids.clone();
-                        Box::new(move |enr| sync_committee_subnet_predicate(&subnet_ids_clone)(enr))
+                        Box::new(sync_committee_subnet_predicate(subnet_ids))
                     }
                 },
                 target_peers,
@@ -200,16 +195,12 @@ impl Discovery {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
-                            let predicate = attestation_subnet_predicate(&subnet_ids);
+                            let predicate = attestation_subnet_predicate(subnet_ids);
                             let filtered_peers = peers
                                 .into_iter()
                                 .filter(|enr| predicate(enr))
                                 .collect::<Vec<_>>();
-                            info!(
-                                "Found {} peers for subnets {:?}",
-                                filtered_peers.len(),
-                                subnet_ids
-                            );
+                            info!("Found {} peers for subnets", filtered_peers.len());
                             let mut peer_map = HashMap::new();
                             for peer in filtered_peers {
                                 peer_map.insert(peer, None);
@@ -226,15 +217,14 @@ impl Discovery {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
-                            let predicate = sync_committee_subnet_predicate(&subnet_ids);
+                            let predicate = sync_committee_subnet_predicate(subnet_ids);
                             let filtered_peers = peers
                                 .into_iter()
                                 .filter(|enr| predicate(enr))
                                 .collect::<Vec<_>>();
                             info!(
-                                "Found {} peers for sync committee subnets {:?}",
+                                "Found {} peers for sync committee subnets",
                                 filtered_peers.len(),
-                                subnet_ids
                             );
                             let mut peer_map = HashMap::new();
                             for peer in filtered_peers {
@@ -399,11 +389,11 @@ mod tests {
         let local_enr = discovery.local_enr();
 
         // Predicate for subnet 0 should match
-        let predicate = attestation_subnet_predicate(&[0]);
+        let predicate = attestation_subnet_predicate(vec![0]);
         assert!(predicate(local_enr));
 
         // Predicate for subnet 1 should not match
-        let predicate = attestation_subnet_predicate(&[1]);
+        let predicate = attestation_subnet_predicate(vec![1]);
         assert!(!predicate(local_enr));
         Ok(())
     }
