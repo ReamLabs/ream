@@ -142,7 +142,7 @@ pub static GENESIS_VALIDATORS_ROOT: OnceLock<B256> = OnceLock::new();
 pub fn set_genesis_validator_root(genesis_validator_root: B256) {
     GENESIS_VALIDATORS_ROOT
         .set(genesis_validator_root)
-        .expect("NetworkSpec should be set only once at the start of the application");
+        .expect("GENESIS_VALIDATORS_ROOT should be set only once at the start of the application");
 }
 
 /// Returns the static [B256] initialized by [set_genesis_validator_root].
@@ -153,5 +153,5 @@ pub fn set_genesis_validator_root(genesis_validator_root: B256) {
 pub fn genesis_validator_spec() -> B256 {
     *GENESIS_VALIDATORS_ROOT
         .get()
-        .expect("NetworkSpec wasn't set")
+        .expect("GENESIS_VALIDATORS_ROOT wasn't set")
 }
