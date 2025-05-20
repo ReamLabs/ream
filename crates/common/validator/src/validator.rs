@@ -21,7 +21,9 @@ pub fn get_committee_assignment(
     let next_epoch = state.get_current_epoch() + 1;
     ensure!(
         epoch <= next_epoch,
-        "Epoch can not be greater than next epoch."
+   "Requested epoch {} is beyond the allowed maximum (next epoch: {})",
+    epoch,
+    next_epoch
     );
 
     let start_slot = compute_start_slot_at_epoch(epoch);
