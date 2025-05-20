@@ -17,7 +17,7 @@ pub const ATTESTATION_SUBNET_COUNT: usize = 64;
 ///
 /// This directly wraps a BitVector<U64> for the attestation subnet bitfield
 /// and handles encoding/decoding to raw bytes for ENR records.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct AttestationSubnets(pub BitVector<U64>);
 
 impl AttestationSubnets {
@@ -70,12 +70,6 @@ impl AttestationSubnets {
     }
 }
 
-impl From<BitVector<U64>> for AttestationSubnets {
-    fn from(bits: BitVector<U64>) -> Self {
-        Self(bits)
-    }
-}
-
 impl Encodable for AttestationSubnets {
     fn encode(&self, out: &mut dyn BufMut) {
         let bytes = Bytes::from(self.0.as_ssz_bytes());
@@ -99,7 +93,7 @@ impl Decodable for AttestationSubnets {
 ///
 /// This directly wraps a BitVector<U4> for the sync committee subnet bitfield
 /// and handles encoding/decoding to raw bytes for ENR records.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct SyncCommitteeSubnets(pub BitVector<U4>);
 
 impl SyncCommitteeSubnets {
@@ -149,12 +143,6 @@ impl SyncCommitteeSubnets {
             SYNC_COMMITTEE_SUBNET_COUNT
         );
         self.get(subnet_id as usize)
-    }
-}
-
-impl From<BitVector<U4>> for SyncCommitteeSubnets {
-    fn from(bits: BitVector<U4>) -> Self {
-        Self(bits)
     }
 }
 
@@ -278,27 +266,26 @@ mod tests {
     fn test_decodes_subnets() {
         let enr = Enr::from_str("enr:-LS4QLe5eq5PFn1ZynqkrF6yg6ZGoplSDSNEPXtXfQh0vqhrDBQZICVoQu-AdeBOmtOFcAO7a0tJLdSlqStkdxkXnwaCCKSHYXR0bmV0c4gAAAAAAAAAMIRldGgykGqVoakEAAAA__________-CaWSCdjSCaXCEywwIqolzZWNwMjU2azGhA2JDBvnFqwtkUx34b_OdHXN1eO2JBMLWbzZXfGksk3YRg3RjcIIjkYN1ZHCCI5E").unwrap();
 
-        let expected = BitVector::<U64>::from_bytes(vec![0, 0, 0, 0, 0, 0, 0, 48].into()).unwrap();
-        let attnets = enr
+        let expected_attestation_subnets = AttestationSubnets(
+            BitVector::<U64>::from_bytes(vec![0, 0, 0, 0, 0, 0, 0, 48].into()).unwrap(),
+        );
+        let attestation_subnets = enr
             .get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .unwrap()
             .unwrap();
 
-        for i in 0..64 {
-            assert_eq!(attnets.get(i).unwrap(), expected.get(i).unwrap());
-        }
+        assert_eq!(attestation_subnets, expected_attestation_subnets);
 
         let enr = Enr::from_str("enr:-Ly4QHiJW24IzegmekAp3SRXhmopPLG-6PI7e-poXLDeaTcJC0yUtwg3XYELsw8v1-GkBByYpw6IaYDbtiaZLbwaOXUeh2F0dG5ldHOI__________-EZXRoMpBqlaGpBAAAAP__________gmlkgnY0gmlwhMb05QKJc2VjcDI1NmsxoQIMnwShvit2bpXbH0iPB3uyaPYTQ_dYOFl6TNp2h01zZohzeW5jbmV0cw-DdGNwgiMog3VkcIIjKA").unwrap();
 
-        let expected = BitVector::<U64>::from_bytes(vec![255; 8].into()).unwrap();
-        let attnets = enr
+        let expected_attestation_subnets =
+            AttestationSubnets(BitVector::<U64>::from_bytes(vec![255; 8].into()).unwrap());
+        let attestation_subnets = enr
             .get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .unwrap()
             .unwrap();
 
-        for i in 0..64 {
-            assert_eq!(attnets.get(i).unwrap(), expected.get(i).unwrap());
-        }
+        assert_eq!(attestation_subnets, expected_attestation_subnets);
     }
 
     #[test]
@@ -324,25 +311,57 @@ mod tests {
             .build(&combined_key)
             .expect("Failed to build ENR");
 
-        let decoded_attnets = enr
+        let decoded_attestation_subnets = enr
             .get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .expect("Failed to get attestation bitfield")
             .expect("Failed to decode attestation bitfield");
 
-        assert!(decoded_attnets.get(1).unwrap());
-        assert!(decoded_attnets.get(5).unwrap());
-        assert!(!decoded_attnets.get(0).unwrap());
-        assert!(!decoded_attnets.get(10).unwrap());
+        assert!(
+            decoded_attestation_subnets
+                .get(1)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            decoded_attestation_subnets
+                .get(5)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            !decoded_attestation_subnets
+                .get(0)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            !decoded_attestation_subnets
+                .get(10)
+                .expect("Error getting subnet value")
+        );
 
-        let decoded_syncnets = enr
+        let decoded_sync_committee_subnets = enr
             .get_decodable::<SyncCommitteeSubnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
             .expect("Failed to get sync committee bitfield")
             .expect("Failed to decode sync committee bitfield");
 
-        assert!(decoded_syncnets.get(0).unwrap());
-        assert!(decoded_syncnets.get(2).unwrap());
-        assert!(!decoded_syncnets.get(1).unwrap());
-        assert!(!decoded_syncnets.get(3).unwrap());
+        assert!(
+            decoded_sync_committee_subnets
+                .get(0)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            decoded_sync_committee_subnets
+                .get(2)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            !decoded_sync_committee_subnets
+                .get(1)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            !decoded_sync_committee_subnets
+                .get(3)
+                .expect("Error getting subnet value")
+        );
     }
 
     #[test]
@@ -368,47 +387,81 @@ mod tests {
             .build(&combined_key)
             .expect("Failed to build ENR");
 
-        let decoded_attnets = enr
+        let decoded_attestation_subnets = enr
             .get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .expect("Failed to get attestation subnets")
             .expect("Failed to decode attestation subnets");
 
-        assert!(decoded_attnets.get(3).unwrap());
-        assert!(decoded_attnets.get(42).unwrap());
-        assert!(!decoded_attnets.get(0).unwrap());
-        assert!(!decoded_attnets.get(10).unwrap());
+        assert!(
+            decoded_attestation_subnets
+                .get(3)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            decoded_attestation_subnets
+                .get(42)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            !decoded_attestation_subnets
+                .get(0)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            !decoded_attestation_subnets
+                .get(10)
+                .expect("Error getting subnet value")
+        );
 
-        let decoded_syncnets = enr
+        let decoded_sync_committee_subnets = enr
             .get_decodable::<SyncCommitteeSubnets>(SYNC_COMMITTEE_BITFIELD_ENR_KEY)
             .expect("Failed to get sync committee subnets")
             .expect("Failed to decode sync committee subnets");
 
-        assert!(decoded_syncnets.get(0).unwrap());
-        assert!(decoded_syncnets.get(2).unwrap());
-        assert!(!decoded_syncnets.get(1).unwrap());
-        assert!(!decoded_syncnets.get(3).unwrap());
+        assert!(
+            decoded_sync_committee_subnets
+                .get(0)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            decoded_sync_committee_subnets
+                .get(2)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            !decoded_sync_committee_subnets
+                .get(1)
+                .expect("Error getting subnet value")
+        );
+        assert!(
+            !decoded_sync_committee_subnets
+                .get(3)
+                .expect("Error getting subnet value")
+        );
 
-        let att_predicate = attestation_subnet_predicate(&[3]);
-        assert!(att_predicate(&enr));
+        let attestation_subnet_predicate_fn = attestation_subnet_predicate(&[3]);
+        assert!(attestation_subnet_predicate_fn(&enr));
 
-        let att_predicate = attestation_subnet_predicate(&[10]);
-        assert!(!att_predicate(&enr));
+        let attestation_subnet_predicate_fn = attestation_subnet_predicate(&[10]);
+        assert!(!attestation_subnet_predicate_fn(&enr));
 
-        let sync_predicate = sync_committee_subnet_predicate(&[2]);
-        assert!(sync_predicate(&enr));
+        let sync_committee_subnet_predicate_fn = sync_committee_subnet_predicate(&[2]);
+        assert!(sync_committee_subnet_predicate_fn(&enr));
 
-        let sync_predicate = sync_committee_subnet_predicate(&[1]);
-        assert!(!sync_predicate(&enr));
+        let sync_committee_subnet_predicate_fn = sync_committee_subnet_predicate(&[1]);
+        assert!(!sync_committee_subnet_predicate_fn(&enr));
 
-        let combined_predicate = |enr: &Enr| {
-            attestation_subnet_predicate(&[3])(enr) && sync_committee_subnet_predicate(&[2])(enr)
+        let combined_subnet_predicate_fn = |test_enr: &Enr| {
+            attestation_subnet_predicate(&[3])(test_enr)
+                && sync_committee_subnet_predicate(&[2])(test_enr)
         };
-        assert!(combined_predicate(&enr));
+        assert!(combined_subnet_predicate_fn(&enr));
 
-        let combined_predicate = |enr: &Enr| {
-            attestation_subnet_predicate(&[10])(enr) && sync_committee_subnet_predicate(&[1])(enr)
+        let combined_subnet_predicate_fn = |test_enr: &Enr| {
+            attestation_subnet_predicate(&[10])(test_enr)
+                && sync_committee_subnet_predicate(&[1])(test_enr)
         };
-        assert!(!combined_predicate(&enr));
+        assert!(!combined_subnet_predicate_fn(&enr));
     }
 
     #[test]
@@ -431,22 +484,22 @@ mod tests {
             .expect("Failed to build ENR");
 
         // Test attestation subnet predicate
-        let att_predicate = attestation_subnet_predicate(&[5]);
-        assert!(att_predicate(&enr));
+        let attestation_subnet_predicate_fn = attestation_subnet_predicate(&[5]);
+        assert!(attestation_subnet_predicate_fn(&enr));
 
         // Test sync committee subnet predicate
-        let sync_predicate = sync_committee_subnet_predicate(&[1]);
-        assert!(sync_predicate(&enr));
+        let sync_committee_subnet_predicate_fn = sync_committee_subnet_predicate(&[1]);
+        assert!(sync_committee_subnet_predicate_fn(&enr));
 
         // Test combined predicates
-        let combined_predicate = |enr: &Enr| {
+        let combined_subnet_predicate_fn = |enr: &Enr| {
             attestation_subnet_predicate(&[5])(enr) && sync_committee_subnet_predicate(&[1])(enr)
         };
-        assert!(combined_predicate(&enr));
+        assert!(combined_subnet_predicate_fn(&enr));
 
-        let combined_predicate = |enr: &Enr| {
+        let combined_subnet_predicate_fn = |enr: &Enr| {
             attestation_subnet_predicate(&[10])(enr) && sync_committee_subnet_predicate(&[2])(enr)
         };
-        assert!(!combined_predicate(&enr));
+        assert!(!combined_subnet_predicate_fn(&enr));
     }
 }
