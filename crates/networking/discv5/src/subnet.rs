@@ -8,8 +8,8 @@ use ssz_types::{
 };
 use tracing::{error, trace};
 
-pub const ATTESTATION_SUBNET_COUNT: usize = 64;
 pub const ATTESTATION_BITFIELD_ENR_KEY: &str = "attnets";
+pub const ATTESTATION_SUBNET_COUNT: usize = 64;
 pub const SYNC_COMMITTEE_BITFIELD_ENR_KEY: &str = "syncnets";
 pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
 
