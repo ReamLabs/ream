@@ -47,29 +47,34 @@ pub async fn initialize_db_from_checkpoint(
     checkpoint_sync_url: Option<Url>,
 ) -> anyhow::Result<()> {
     if db.is_initialized() {
-        warn!("Starting Checkpoint Sync from existing DB. It is advised to start from a clean DB");
+        warn!("Starting checkpoint sync from existing DB. It is advised to start from a clean DB");
         return Ok(());
     }
 
     let checkpoint_sync_url = get_checkpoint_sync_sources(checkpoint_sync_url).remove(0);
-    info!("Initiating Checkpoint Sync");
+    info!("Initiating checkpoint sync");
+
+    info!("Fetching finalized block...");
     let block = fetch_finalized_block(&checkpoint_sync_url).await?;
     info!(
-        "Downloaded Block: {} with Root: {}. Slot: {}",
+        "Downloaded block: {} with root: {}. Slot: {}",
         block.message.body.execution_payload.block_number,
         block.message.block_root(),
         block.message.slot
     );
     let slot = block.message.slot;
+
+    info!("Fetching blobs...");
     initialize_blobs_in_db(&checkpoint_sync_url, db.clone(), block.message.block_root()).await?;
     info!(
         "Downloaded blobs for block: {}",
         block.message.body.execution_payload.block_number
     );
 
+    info!("Fetching initial state...");
     let state = get_state(&checkpoint_sync_url, slot).await?;
     info!(
-        "Downloaded State with root: {}. Slot: {}",
+        "Downloaded state with root: {}. Slot: {}",
         state.state_root(),
         slot
     );
@@ -80,7 +85,7 @@ pub async fn initialize_db_from_checkpoint(
 
     let time = network_spec().min_genesis_time + SECONDS_PER_SLOT * (slot + 1);
     on_tick(&mut store, time)?;
-    info!("Initial Sync complete");
+    info!("Initial sync complete");
 
     Ok(())
 }
