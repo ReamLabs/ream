@@ -1,12 +1,11 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use actix_web::{
     HttpResponse, Responder, get,
     web::{Data, Path},
 };
 use alloy_primitives::{
-    B256,
-    map::{HashMap, foldhash::fast::RandomState},
+    map::{foldhash::fast::RandomState, HashMap}, B256
 };
 use ream_consensus::{
     attester_slashing::AttesterSlashing,
@@ -22,7 +21,7 @@ use ream_fork_choice::store::Store;
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, MultimapTable, Table},
+    tables::{Field, Table},
 };
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -289,35 +288,30 @@ pub async fn get_block_from_id(
 /// Called by `/beacon/heads` to get fork choice leaves.
 #[get("/beacon/heads")]
 pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
-    let base = db
+    let justified_checkpoint = db
         .justified_checkpoint_provider()
         .get()
         .map_err(|_| ApiError::InternalError)?;
-    let root = base.root;
 
     let mut blocks = HashMap::with_hasher(RandomState::default());
     let store = Store {
         db: db.get_ref().clone(),
     };
 
-    store.filter_block_tree(root, &mut blocks).map_err(|err| {
+    store.filter_block_tree(justified_checkpoint.root, &mut blocks).map_err(|err| {
         error!("Failed to filter block tree, error: {err:?}");
         ApiError::InternalError
     })?;
 
-    let mut leaves = Vec::new();
-    for (block_root, block) in &blocks {
-        let children = db
-            .parent_root_index_multimap_provider()
-            .get(*block_root)
-            .map_err(|err| {
-                error!("Failed to get children, error: {err:?}");
-                ApiError::InternalError
-            })?
-            .unwrap_or_default();
+    let mut leaves = vec![];
+    let mut referenced_parents = HashSet::new();
+    
+    for block in blocks.values() {
+        referenced_parents.insert(block.parent_root);
+    }
 
-        let is_leaf = children.iter().all(|child| !blocks.contains_key(child));
-        if is_leaf {
+    for (block_root, block) in &blocks {
+        if !referenced_parents.contains(block_root) {
             leaves.push(BeaconHeadResponse {
                 root: block.tree_hash_root(),
                 slot: block.slot,
