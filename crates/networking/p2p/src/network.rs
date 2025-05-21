@@ -31,7 +31,7 @@ use libp2p::{
 };
 use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as LibSecpPk};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
 use ream_executor::ReamExecutor;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
