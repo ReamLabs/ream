@@ -47,7 +47,7 @@ pub async fn initialize_db_from_checkpoint(
     checkpoint_sync_url: Option<Url>,
 ) -> anyhow::Result<()> {
     if db.is_initialized() {
-        warn!("Starting checkpoint sync from existing DB. It is advised to start from a clean DB");
+        warn!("DB is already initialized. Skipping checkpoint sync.");
         return Ok(());
     }
 
