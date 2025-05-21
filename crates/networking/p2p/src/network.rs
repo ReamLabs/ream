@@ -39,12 +39,45 @@ use yamux::Config as YamuxConfig;
 
 use crate::{
     config::NetworkConfig,
-    constants::{DIR_INBOUND, DIR_OUTBOUND, STATE_CONNECTED, STATE_DISCONNECTED},
     gossipsub::{GossipsubBehaviour, snappy::SnappyTransform, topics::GossipTopic},
     req_resp::ReqResp,
 };
 
 pub type PeerTable = Arc<RwLock<HashMap<PeerId, CachedPeer>>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionState {
+    Connected,
+    Connecting,
+    Disconnected,
+    Disconnecting,
+}
+
+impl ConnectionState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Connected => "connected",
+            Self::Connecting => "connecting",
+            Self::Disconnected => "disconnected",
+            Self::Disconnecting => "disconnecting",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Inbound,
+    Outbound,
+}
+
+impl Direction {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Inbound => "inbound",
+            Self::Outbound => "outbound",
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct CachedPeer {
@@ -307,31 +340,51 @@ impl Network {
             SwarmEvent::OutgoingConnectionError {
                 peer_id: Some(pid), ..
             } => {
-                self.upsert_peer(pid, None, STATE_DISCONNECTED, DIR_OUTBOUND, None);
+                self.upsert_peer(
+                    pid,
+                    None,
+                    ConnectionState::Connected.as_str(),
+                    Direction::Outbound.as_str(),
+                    None,
+                );
                 None
             }
             SwarmEvent::ConnectionClosed {
                 peer_id, endpoint, ..
             } => {
                 let direction = match endpoint {
-                    ConnectedPoint::Dialer { .. } => DIR_OUTBOUND,
-                    ConnectedPoint::Listener { .. } => DIR_INBOUND,
+                    ConnectedPoint::Dialer { .. } => Direction::Outbound.as_str(),
+                    ConnectedPoint::Listener { .. } => Direction::Inbound.as_str(),
                 };
 
-                self.upsert_peer(peer_id, None, STATE_DISCONNECTED, direction, None);
+                self.upsert_peer(
+                    peer_id,
+                    None,
+                    ConnectionState::Disconnected.as_str(),
+                    direction,
+                    None,
+                );
                 None
             }
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
                 let (direction, addr) = match &endpoint {
-                    ConnectedPoint::Dialer { address, .. } => (DIR_OUTBOUND, Some(address.clone())),
+                    ConnectedPoint::Dialer { address, .. } => {
+                        (Direction::Outbound.as_str(), Some(address.clone()))
+                    }
                     ConnectedPoint::Listener { send_back_addr, .. } => {
-                        (DIR_INBOUND, Some(send_back_addr.clone()))
+                        (Direction::Inbound.as_str(), Some(send_back_addr.clone()))
                     }
                 };
 
-                self.upsert_peer(peer_id, addr, STATE_CONNECTED, direction, None);
+                self.upsert_peer(
+                    peer_id,
+                    addr,
+                    ConnectionState::Connected.as_str(),
+                    direction,
+                    None,
+                );
                 None
             }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -364,7 +417,13 @@ impl Network {
         info!("Discovered peers: {:?}", peers);
         for (enr, _) in peers {
             if let Some(pid) = Network::peer_id_from_enr(&enr) {
-                self.upsert_peer(pid, None, STATE_DISCONNECTED, "", Some(enr.clone()));
+                self.upsert_peer(
+                    pid,
+                    None,
+                    ConnectionState::Disconnected.as_str(),
+                    "",
+                    Some(enr.clone()),
+                );
             }
 
             let mut multiaddrs: Vec<Multiaddr> = Vec::new();
@@ -468,7 +527,6 @@ mod tests {
     use super::*;
     use crate::{
         config::NetworkConfig,
-        constants::{DIR_OUTBOUND, STATE_CONNECTED, STATE_CONNECTING},
         gossipsub::{configurations::GossipsubConfig, topics::GossipTopicKind},
     };
 
@@ -556,16 +614,16 @@ mod tests {
         net.upsert_peer(
             peer_id,
             Some(addr.clone()),
-            STATE_CONNECTING,
-            DIR_OUTBOUND,
+            ConnectionState::Connecting.as_str(),
+            Direction::Outbound.as_str(),
             None,
         );
 
         let snap = net.cached_peer(&peer_id).expect("row should exist");
 
         assert_eq!(snap.peer_id, peer_id);
-        assert_eq!(snap.state, STATE_CONNECTING);
-        assert_eq!(snap.direction, DIR_OUTBOUND);
+        assert_eq!(snap.state, ConnectionState::Connecting.as_str());
+        assert_eq!(snap.direction, Direction::Outbound.as_str());
         assert_eq!(snap.last_seen_p2p_address, Some(addr));
         assert!(snap.enr.is_none());
     }
@@ -584,14 +642,26 @@ mod tests {
 
         let peer_id = libp2p::PeerId::random();
 
-        net.upsert_peer(peer_id, None, STATE_CONNECTING, DIR_OUTBOUND, None);
+        net.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connecting.as_str(),
+            Direction::Outbound.as_str(),
+            None,
+        );
 
-        net.upsert_peer(peer_id, None, STATE_CONNECTED, DIR_OUTBOUND, None);
+        net.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected.as_str(),
+            Direction::Outbound.as_str(),
+            None,
+        );
 
         let snap = net.cached_peer(&peer_id).expect("row exists");
 
-        assert_eq!(snap.state, STATE_CONNECTED);
-        assert_eq!(snap.direction, DIR_OUTBOUND);
+        assert_eq!(snap.state, ConnectionState::Connected.as_str());
+        assert_eq!(snap.direction, Direction::Outbound.as_str());
     }
 
     #[test]
@@ -719,7 +789,7 @@ mod tests {
                     network1.parse_swarm_event(ev);
                     if matches!(
                         network1.cached_peer(&id2),
-                        Some(row) if row.state == STATE_CONNECTED && row.direction == DIR_INBOUND
+                        Some(row) if row.state == ConnectionState::Connected.as_str() && row.direction == Direction::Inbound.as_str()
                     ) {
                         break;
                     }
@@ -731,7 +801,7 @@ mod tests {
                     network2.parse_swarm_event(ev);
                     if matches!(
                         network2.cached_peer(&id1),
-                        Some(row) if row.state == STATE_CONNECTED && row.direction == DIR_OUTBOUND
+                        Some(row) if row.state == ConnectionState::Connected.as_str() && row.direction == Direction::Outbound.as_str()
                     ) {
                         break;
                     }
@@ -749,10 +819,10 @@ mod tests {
         let row1 = network1.cached_peer(&id2).expect("network1 row exists");
         let row2 = network2.cached_peer(&id1).expect("network2 row exists");
 
-        assert_eq!(row1.state, STATE_CONNECTED);
-        assert_eq!(row1.direction, DIR_INBOUND);
+        assert_eq!(row1.state, ConnectionState::Connected.as_str());
+        assert_eq!(row1.direction, Direction::Inbound.as_str());
 
-        assert_eq!(row2.state, STATE_CONNECTED);
-        assert_eq!(row2.direction, DIR_OUTBOUND);
+        assert_eq!(row2.state, ConnectionState::Connected.as_str());
+        assert_eq!(row2.direction, Direction::Outbound.as_str());
     }
 }
