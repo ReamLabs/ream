@@ -48,9 +48,7 @@ enum EventStream {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::enum_variant_names)]
-#[allow(dead_code)]
-enum QueryType {
+pub enum QueryType {
     Peers,
     AttestationSubnetPeers(Vec<u8>),
     SyncCommitteeSubnetPeers(Vec<u8>),
@@ -131,18 +129,13 @@ impl Discovery {
         &self.local_enr
     }
 
-    pub fn discover_peers(&mut self, target_peers: usize, subnet_id: Option<u8>) {
+    pub fn discover_peers(&mut self, query: QueryType, target_peers: usize) {
         // If the discv5 service isn't running or we are in the process of a query, don't bother
         // queuing a new one.
         if !self.started || self.find_peer_active {
             return;
         }
         self.find_peer_active = true;
-
-        let query = match subnet_id {
-            Some(id) => QueryType::AttestationSubnetPeers(vec![id]),
-            None => QueryType::Peers,
-        };
 
         self.start_query(query, target_peers);
     }
@@ -438,9 +431,6 @@ mod tests {
 
         // Add peer to discv5
         discovery.discv5.add_enr(peer_enr.clone()).unwrap();
-
-        // Discover peers on subnet 0
-        discovery.discover_peers(0, Some(1));
 
         // Mock the query result to bypass async polling
         discovery.discovery_queries.clear();
