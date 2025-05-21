@@ -5,7 +5,8 @@ use actix_web::{
     web::{Data, Path},
 };
 use alloy_primitives::{
-    map::{foldhash::fast::RandomState, HashMap}, B256
+    B256,
+    map::{HashMap, foldhash::fast::RandomState},
 };
 use ream_consensus::{
     attester_slashing::AttesterSlashing,
@@ -298,14 +299,16 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
         db: db.get_ref().clone(),
     };
 
-    store.filter_block_tree(justified_checkpoint.root, &mut blocks).map_err(|err| {
-        error!("Failed to filter block tree, error: {err:?}");
-        ApiError::InternalError
-    })?;
+    store
+        .filter_block_tree(justified_checkpoint.root, &mut blocks)
+        .map_err(|err| {
+            error!("Failed to filter block tree, error: {err:?}");
+            ApiError::InternalError
+        })?;
 
     let mut leaves = vec![];
     let mut referenced_parents = HashSet::new();
-    
+
     for block in blocks.values() {
         referenced_parents.insert(block.parent_root);
     }
