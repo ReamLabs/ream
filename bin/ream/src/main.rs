@@ -114,13 +114,9 @@ async fn main() {
                 gossipsub_config,
             };
 
-            let mut network = match Network::init(async_executor, &network_config).await {
-                Ok(net) => net,
-                Err(e) => {
-                    error!("Failed to initialise network: {e}");
-                    return;
-                }
-            };
+            let mut network = Network::init(async_executor, &network_config)
+                .await
+                .expect("Failed to initialize P2P Network");
 
             let peer_table = network.peer_table();
 
