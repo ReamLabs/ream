@@ -6,7 +6,6 @@ use ream_consensus::{
     deposit_request::DepositRequest,
     electra::beacon_state::BeaconState,
     execution_requests::ExecutionRequests,
-    withdrawal::Withdrawal,
     withdrawal_request::WithdrawalRequest,
 };
 use ream_execution_engine::{
@@ -91,21 +90,21 @@ pub async fn prepare_execution_payload(
     suggested_fee_recipient: Address,
     execution_engine: ExecutionEngine,
 ) -> anyhow::Result<ForkchoiceUpdateResult> {
-    let parent_hash: B256 = state.latest_execution_payload_header.block_hash;
-    let execution_requests_list: Vec<Withdrawal> = state.get_expected_withdrawals()?.0;
-    let payload_attributes: PayloadAttributesV3 = PayloadAttributesV3 {
-        timestamp: state.compute_timestamp_at_slot(state.slot),
-        prev_randao: state.get_randao_mix(state.get_current_epoch()),
-        suggested_fee_recipient,
-        withdrawals: VariableList::from(execution_requests_list),
-        parent_beacon_block_root: state.latest_block_header.tree_hash_root(),
-    };
-    let fork_choice_state = ForkchoiceStateV1 {
-        head_block_hash: parent_hash,
-        safe_block_hash,
-        finalized_block_hash,
-    };
+    let (withdrawals, _) = state.get_expected_withdrawals()?;
     execution_engine
-        .engine_forkchoice_updated_v3(fork_choice_state, Some(payload_attributes))
+        .engine_forkchoice_updated_v3(
+            ForkchoiceStateV1 {
+                head_block_hash: state.latest_execution_payload_header.block_hash,
+                safe_block_hash,
+                finalized_block_hash,
+            },
+            Some(PayloadAttributesV3 {
+                timestamp: state.compute_timestamp_at_slot(state.slot),
+                prev_randao: state.get_randao_mix(state.get_current_epoch()),
+                suggested_fee_recipient,
+                withdrawals: withdrawals.into(),
+                parent_beacon_block_root: state.latest_block_header.tree_hash_root(),
+            }),
+        )
         .await
 }
