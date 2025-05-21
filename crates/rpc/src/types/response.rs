@@ -123,6 +123,7 @@ pub struct BeaconHeadResponse {
     pub slot: u64,
     pub execution_optimistic: bool,
 }
+
 impl BeaconHeadResponse {
     pub fn new(root: B256, slot: u64) -> Self {
         Self {
