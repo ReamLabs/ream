@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use alloy_primitives::{B256, map::HashMap};
 use anyhow::{anyhow, bail, ensure};
 use ream_bls::BLSSignature;
@@ -138,11 +140,8 @@ impl Store {
     /// whose leaf state's justified/finalized info agrees with that in ``store``.
     pub fn get_filtered_block_tree(&self) -> anyhow::Result<HashMap<B256, BeaconBlock>> {
         let base = self.db.justified_checkpoint_provider().get()?.root;
-
-        let mut blocks: HashMap<B256, BeaconBlock> = HashMap::default();
-
+        let mut blocks = HashMap::default();
         self.filter_block_tree(base, &mut blocks)?;
-
         Ok(blocks)
     }
 
@@ -153,34 +152,36 @@ impl Store {
         let mut head = self.db.justified_checkpoint_provider().get()?.root;
 
         loop {
-            let children = self
-                .db
-                .parent_root_index_multimap_provider()
-                .get(head)?
-                .unwrap_or_default();
+            let mut children = vec![];
+            for root in blocks.keys() {
+                if blocks[root].parent_root == head {
+                    children.push(root);
+                }
+            }
 
             if children.is_empty() {
                 return Ok(head);
             }
 
+            let mut weighted_children = children
+                .into_iter()
+                .map(|child| Ok((*child, self.get_weight(*child)?)))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+
             // Sort by latest attesting balance with ties broken lexicographically
             // Ties broken by favoring block with lexicographically higher root
-            if let Some(new_head) = children
-                .into_iter()
-                .filter(|child| {
-                    blocks
-                        .get(child)
-                        .is_some_and(|block| block.parent_root == head)
-                })
-                .max_by_key(|child| {
-                    let weight = self.get_weight(*child).unwrap_or_default();
-                    (weight, *child)
-                })
-            {
-                head = new_head;
-            } else {
-                return Ok(head);
-            }
+            weighted_children.sort_by(|(a, weight_a), (b, weight_b)| {
+                match weight_a.cmp(weight_b) {
+                    Ordering::Equal => a.cmp(b),
+                    other => other,
+                }
+            });
+
+            let Some((best_child, _)) = weighted_children.last() else {
+                bail!("Children should always be present");
+            };
+
+            head = *best_child;
         }
     }
 
