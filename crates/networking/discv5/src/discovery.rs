@@ -29,8 +29,8 @@ use crate::{
     config::DiscoveryConfig,
     eth2::{ENR_ETH2_KEY, EnrForkId},
     subnet::{
-        ATTESTATION_BITFIELD_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
-        attestation_subnet_predicate, sync_committee_subnet_predicate,
+        ATTESTATION_BITFIELD_ENR_KEY, AttestationSubnets, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
+        SyncCommitteeSubnets, attestation_subnet_predicate, sync_committee_subnet_predicate,
     },
 };
 
@@ -69,6 +69,25 @@ pub struct Discovery {
 }
 
 impl Discovery {
+    pub fn update_subnet_enrs(
+        &self,
+        attestation_subnets: &AttestationSubnets,
+        sync_committee_subnets: &SyncCommitteeSubnets,
+    ) -> anyhow::Result<()> {
+        info!("Updating ENR with attestation subnet subscriptions");
+        self.discv5
+            .enr_insert(ATTESTATION_BITFIELD_ENR_KEY, attestation_subnets)
+            .map_err(|err| anyhow!("Failed to update ENR with attestation subnets: {err:?}"))?;
+
+        // Update ENR with sync committee subnet subscriptions
+        info!("Updating ENR with sync committee subnet subscriptions");
+        self.discv5
+            .enr_insert(SYNC_COMMITTEE_BITFIELD_ENR_KEY, sync_committee_subnets)
+            .map_err(|err| anyhow!("Failed to update ENR with sync committee subnets: {err:?}"))?;
+
+        Ok(())
+    }
+
     pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<Self> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
@@ -127,6 +146,11 @@ impl Discovery {
 
     pub fn local_enr(&self) -> &Enr {
         &self.local_enr
+    }
+
+    /// Get a reference to the underlying Discv5 service
+    pub fn discv5(&self) -> &Discv5 {
+        &self.discv5
     }
 
     pub fn discover_peers(&mut self, query: QueryType, target_peers: usize) {

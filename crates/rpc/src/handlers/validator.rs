@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use actix_web::{
     HttpResponse, Responder, get, post,
@@ -8,41 +11,77 @@ use ream_beacon_api_types::{
     error::ApiError,
     id::{ID, ValidatorID},
     query::{IdQuery, StatusQuery},
-    request::ValidatorsPostRequest,
+    request::{SyncCommitteeSubscription, ValidatorsPostRequest},
     responses::BeaconResponse,
-    validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
+    validator::ValidatorStatus,
 };
 use ream_bls::PublicKey;
 use ream_consensus::validator::Validator;
+use ream_discv5::subnet::SyncCommitteeSubnets;
 use ream_storage::db::ReamDB;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
+use tracing::info;
 
 use super::state::get_state_from_id;
 
 const MAX_VALIDATOR_COUNT: usize = 100;
 
-fn build_validator_balances(
-    validators: &[(Validator, u64)],
-    filter_ids: Option<&Vec<ValidatorID>>,
-) -> Vec<ValidatorBalance> {
-    // Turn the optional Vec<ValidatorID> into an optional HashSet for O(1) lookups
-    let filtered_ids = filter_ids.map(|ids| ids.iter().collect::<HashSet<_>>());
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ValidatorData {
+    #[serde(with = "serde_utils::quoted_u64")]
+    index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    balance: u64,
+    status: ValidatorStatus,
+    validator: Validator,
+}
 
-    validators
-        .iter()
-        .enumerate()
-        .filter(|(idx, (validator, _))| match &filtered_ids {
-            Some(ids) => {
-                ids.contains(&ValidatorID::Index(*idx as u64))
-                    || ids.contains(&ValidatorID::Address(validator.public_key.clone()))
+impl ValidatorData {
+    pub fn new(index: u64, balance: u64, status: ValidatorStatus, validator: Validator) -> Self {
+        Self {
+            index,
+            balance,
+            status,
+            validator,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ValidatorBalance {
+    #[serde(with = "serde_utils::quoted_u64")]
+    index: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    balance: u64,
+}
+
+fn build_validator_balances(
+    validators_with_balances: &[(Validator, u64)],
+    validator_ids: Option<&Vec<ValidatorID>>,
+) -> Vec<ValidatorBalance> {
+    let mut result = Vec::new();
+
+    for (index, (validator, balance)) in validators_with_balances.iter().enumerate() {
+        // If specific validator IDs are requested, filter by them
+        if let Some(ids) = validator_ids {
+            let should_include = ids.iter().any(|id| match id {
+                ValidatorID::Index(i) => *i == index as u64,
+                ValidatorID::Address(public_key) => validator.public_key == *public_key,
+            });
+
+            if !should_include {
+                continue;
             }
-            None => true,
-        })
-        .map(|(idx, (_, balance))| ValidatorBalance {
-            index: idx as u64,
+        }
+
+        result.push(ValidatorBalance {
+            index: index as u64,
             balance: *balance,
-        })
-        .collect()
+        });
+    }
+
+    result
 }
 
 #[get("/beacon/states/{state_id}/validator/{validator_id}")]
@@ -347,4 +386,100 @@ pub async fn post_validator_balances_from_state(
             body.id.as_ref(),
         ))),
     )
+}
+
+async fn process_sync_committee_subscriptions(
+    subscriptions: &[SyncCommitteeSubscription],
+    sync_committee_subscriptions: &Arc<RwLock<HashMap<u8, u64>>>,
+    sync_committee_subnets: &Arc<RwLock<SyncCommitteeSubnets>>,
+) -> Result<(), ApiError> {
+    let mut subscription_map = sync_committee_subscriptions.write().await;
+    let mut subnet_manager = sync_committee_subnets.write().await;
+    for subscription in subscriptions.iter() {
+        // Parse until_epoch
+        let until_epoch: u64 = subscription.until_epoch;
+        // Parse and validate sync_committee_indices
+        for &index in &subscription.sync_committee_indices {
+            let subnet_id: u8 = match index {
+                id if id < 4 => id as u8,
+                _ => {
+                    return Err(ApiError::BadRequest(format!(
+                        "Invalid sync_committee_index: {}",
+                        index
+                    )));
+                }
+            };
+            subscription_map.insert(subnet_id, until_epoch);
+            // Enable the subnet in networking
+            if let Err(err) = subnet_manager.enable_sync_committee_subnet(subnet_id) {
+                return Err(ApiError::InternalError(format!(
+                    "Failed to enable subnet: {err}"
+                )));
+            }
+        }
+    }
+    info!("Sync committee subnet subscriptions processed successfully");
+    Ok(())
+}
+
+#[post("/validator/sync_committee_subscriptions")]
+pub async fn post_sync_committee_subscriptions(
+    subscriptions: Json<Vec<SyncCommitteeSubscription>>,
+    sync_committee_subscriptions: Data<Arc<RwLock<HashMap<u8, u64>>>>,
+    sync_committee_subnets: Data<Arc<RwLock<SyncCommitteeSubnets>>>,
+) -> Result<impl Responder, ApiError> {
+    process_sync_committee_subscriptions(
+        &subscriptions,
+        &sync_committee_subscriptions,
+        &sync_committee_subnets,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json("ok"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use tokio::sync::RwLock;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_process_sync_committee_subscriptions_valid() {
+        let subscriptions = vec![SyncCommitteeSubscription {
+            validator_index: 1,
+            sync_committee_indices: vec![0, 1],
+            until_epoch: 10,
+        }];
+        let sync_committee_subscriptions = Arc::new(RwLock::new(HashMap::new()));
+        let sync_committee_subnets = Arc::new(RwLock::new(SyncCommitteeSubnets::new()));
+
+        let result = process_sync_committee_subscriptions(
+            &subscriptions,
+            &sync_committee_subscriptions,
+            &sync_committee_subnets,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_sync_committee_subscriptions_invalid_index() {
+        let subscriptions = vec![SyncCommitteeSubscription {
+            validator_index: 1,
+            sync_committee_indices: vec![5],
+            until_epoch: 10,
+        }];
+        let sync_committee_subscriptions = Arc::new(RwLock::new(HashMap::new()));
+        let sync_committee_subnets = Arc::new(RwLock::new(SyncCommitteeSubnets::new()));
+
+        let result = process_sync_committee_subscriptions(
+            &subscriptions,
+            &sync_committee_subscriptions,
+            &sync_committee_subnets,
+        )
+        .await;
+        assert!(result.is_err());
+    }
 }
