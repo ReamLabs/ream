@@ -5514,6 +5514,7 @@ dependencies = [
  "ream-consensus",
  "ream-execution-engine",
  "ream-fork-choice",
+ "ream-discv5",
  "ream-light-client",
  "ream-network-spec",
  "ream-node",
@@ -5523,7 +5524,9 @@ dependencies = [
  "serde",
  "serde_json",
  "ssz_types",
+ "tempfile",
  "thiserror 2.0.12",
+ "tokio",
  "tracing",
  "tree_hash",
 ]

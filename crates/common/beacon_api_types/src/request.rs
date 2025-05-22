@@ -18,4 +18,9 @@ pub struct SyncCommitteeRequestItem {
     #[serde(with = "serde_utils::quoted_u64")]
     pub validator_index: u64,
     pub signature: BLSSignature,
+#[derive(Debug, Deserialize)]
+pub struct SyncCommitteeSubscription {
+    pub validator_index: String,
+    pub sync_committee_indices: Vec<String>,
+    pub until_epoch: String,
 }
