@@ -77,6 +77,7 @@ impl ConnectionState {
 pub enum Direction {
     Inbound,
     Outbound,
+    Unknown,
 }
 
 impl Direction {
@@ -84,6 +85,7 @@ impl Direction {
         match self {
             Self::Inbound => "inbound",
             Self::Outbound => "outbound",
+            Self::Unknown => "",
         }
     }
 }
@@ -93,7 +95,7 @@ pub struct CachedPeer {
     pub peer_id: PeerId,
     pub last_seen_p2p_address: Option<Multiaddr>,
     pub state: ConnectionState,
-    pub direction: Option<Direction>,
+    pub direction: Direction,
     pub enr: Option<Enr>,
 }
 
@@ -316,8 +318,8 @@ impl Network {
         &mut self,
         peer_id: PeerId,
         addr: Option<Multiaddr>,
-        state: &'static str,
-        direction: &'static str,
+        state: ConnectionState,
+        direction: Direction,
         enr: Option<Enr>,
     ) {
         let mut table = self.peer_table.write();
@@ -383,8 +385,8 @@ impl Network {
                 self.upsert_peer(
                     pid,
                     None,
-                    ConnectionState::Connected.as_str(),
-                    Direction::Outbound.as_str(),
+                    ConnectionState::Connected,
+                    Direction::Outbound,
                     None,
                 );
                 None
@@ -393,14 +395,14 @@ impl Network {
                 peer_id, endpoint, ..
             } => {
                 let direction = match endpoint {
-                    ConnectedPoint::Dialer { .. } => Direction::Outbound.as_str(),
-                    ConnectedPoint::Listener { .. } => Direction::Inbound.as_str(),
+                    ConnectedPoint::Dialer { .. } => Direction::Outbound,
+                    ConnectedPoint::Listener { .. } => Direction::Inbound,
                 };
 
                 self.upsert_peer(
                     peer_id,
                     None,
-                    ConnectionState::Disconnected.as_str(),
+                    ConnectionState::Disconnected,
                     direction,
                     None,
                 );
@@ -411,20 +413,14 @@ impl Network {
             } => {
                 let (direction, addr) = match &endpoint {
                     ConnectedPoint::Dialer { address, .. } => {
-                        (Direction::Outbound.as_str(), Some(address.clone()))
+                        (Direction::Outbound, Some(address.clone()))
                     }
                     ConnectedPoint::Listener { send_back_addr, .. } => {
-                        (Direction::Inbound.as_str(), Some(send_back_addr.clone()))
+                        (Direction::Inbound, Some(send_back_addr.clone()))
                     }
                 };
 
-                self.upsert_peer(
-                    peer_id,
-                    addr,
-                    ConnectionState::Connected.as_str(),
-                    direction,
-                    None,
-                );
+                self.upsert_peer(peer_id, addr, ConnectionState::Connected, direction, None);
                 None
             }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -507,8 +503,8 @@ impl Network {
                 self.upsert_peer(
                     pid,
                     None,
-                    ConnectionState::Disconnected.as_str(),
-                    "",
+                    ConnectionState::Disconnected,
+                    Direction::Unknown,
                     Some(enr.clone()),
                 );
             }
@@ -776,16 +772,16 @@ mod tests {
         net.upsert_peer(
             peer_id,
             Some(addr.clone()),
-            ConnectionState::Connecting.as_str(),
-            Direction::Outbound.as_str(),
+            ConnectionState::Connecting,
+            Direction::Outbound,
             None,
         );
 
         let snap = net.cached_peer(&peer_id).expect("row should exist");
 
         assert_eq!(snap.peer_id, peer_id);
-        assert_eq!(snap.state, ConnectionState::Connecting.as_str());
-        assert_eq!(snap.direction, Direction::Outbound.as_str());
+        assert_eq!(snap.state, ConnectionState::Connecting);
+        assert_eq!(snap.direction, Direction::Outbound);
         assert_eq!(snap.last_seen_p2p_address, Some(addr));
         assert!(snap.enr.is_none());
     }
@@ -807,23 +803,23 @@ mod tests {
         net.upsert_peer(
             peer_id,
             None,
-            ConnectionState::Connecting.as_str(),
-            Direction::Outbound.as_str(),
+            ConnectionState::Connecting,
+            Direction::Outbound,
             None,
         );
 
         net.upsert_peer(
             peer_id,
             None,
-            ConnectionState::Connected.as_str(),
-            Direction::Outbound.as_str(),
+            ConnectionState::Connected,
+            Direction::Outbound,
             None,
         );
 
         let snap = net.cached_peer(&peer_id).expect("row exists");
 
-        assert_eq!(snap.state, ConnectionState::Connected.as_str());
-        assert_eq!(snap.direction, Direction::Outbound.as_str());
+        assert_eq!(snap.state, ConnectionState::Connected);
+        assert_eq!(snap.direction, Direction::Outbound);
     }
 
     #[test]
@@ -951,7 +947,7 @@ mod tests {
                     network1.parse_swarm_event(ev);
                     if matches!(
                         network1.cached_peer(&id2),
-                        Some(row) if row.state == ConnectionState::Connected.as_str() && row.direction == Direction::Inbound.as_str()
+                        Some(row) if row.state == ConnectionState::Connected && row.direction == Direction::Inbound
                     ) {
                         break;
                     }
@@ -963,7 +959,7 @@ mod tests {
                     network2.parse_swarm_event(ev);
                     if matches!(
                         network2.cached_peer(&id1),
-                        Some(row) if row.state == ConnectionState::Connected.as_str() && row.direction == Direction::Outbound.as_str()
+                        Some(row) if row.state == ConnectionState::Connected && row.direction == Direction::Outbound
                     ) {
                         break;
                     }
@@ -981,10 +977,10 @@ mod tests {
         let row1 = network1.cached_peer(&id2).expect("network1 row exists");
         let row2 = network2.cached_peer(&id1).expect("network2 row exists");
 
-        assert_eq!(row1.state, ConnectionState::Connected.as_str());
-        assert_eq!(row1.direction, Direction::Inbound.as_str());
+        assert_eq!(row1.state, ConnectionState::Connected);
+        assert_eq!(row1.direction, Direction::Inbound);
 
-        assert_eq!(row2.state, ConnectionState::Connected.as_str());
-        assert_eq!(row2.direction, Direction::Outbound.as_str());
+        assert_eq!(row2.state, ConnectionState::Connected);
+        assert_eq!(row2.direction, Direction::Outbound);
     }
 }
