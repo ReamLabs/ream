@@ -92,8 +92,8 @@ impl Direction {
 pub struct CachedPeer {
     pub peer_id: PeerId,
     pub last_seen_p2p_address: Option<Multiaddr>,
-    pub state: &'static str, // "connected" | "connecting" | "disconnected" | "disconnecting"
-    pub direction: &'static str, // "inbound" | "outbound" | ""
+    pub state: ConnectionState,
+    pub direction: Option<Direction>,
     pub enr: Option<Enr>,
 }
 
