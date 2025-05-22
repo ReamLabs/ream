@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Arc};
+
 use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path},
@@ -6,8 +8,10 @@ use actix_web_lab::extract::Query;
 use alloy_primitives::map::HashSet;
 use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
+use ream_discv5::subnet::SyncCommitteeSubnets;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 use tracing::error;
 
 use super::state::get_state_from_id;
@@ -15,11 +19,13 @@ use crate::types::{
     errors::ApiError,
     id::{ID, ValidatorID},
     query::{IdQuery, StatusQuery},
-    request::ValidatorsPostRequest,
+    request::{SyncCommitteeSubscription, ValidatorsPostRequest},
     response::BeaconResponse,
 };
 
 const MAX_VALIDATOR_COUNT: usize = 100;
+
+pub type SyncCommitteeSubscriptionMap = Arc<RwLock<HashMap<u8, u64>>>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ValidatorData {
@@ -304,4 +310,125 @@ pub async fn post_validator_identities_from_state(
         .collect();
 
     Ok(HttpResponse::Ok().json(BeaconResponse::new(validator_identities)))
+}
+
+pub async fn process_sync_committee_subscriptions(
+    _db: &ReamDB,
+    subscriptions: &[SyncCommitteeSubscription],
+    sync_committee_subscriptions: &SyncCommitteeSubscriptionMap,
+    sync_committee_subnets: &Arc<RwLock<SyncCommitteeSubnets>>,
+) -> Result<(), ApiError> {
+    let mut map = sync_committee_subscriptions.write().await;
+    let mut subnets = sync_committee_subnets.write().await;
+    for sub in subscriptions.iter() {
+        // Parse validator_index
+        let _validator_index: u64 = match sub.validator_index.parse() {
+            Ok(idx) => idx,
+            Err(_) => {
+                return Err(ApiError::BadRequest(format!(
+                    "Invalid validator_index: {}",
+                    sub.validator_index
+                )));
+            }
+        };
+        // Parse until_epoch
+        let until_epoch: u64 = match sub.until_epoch.parse() {
+            Ok(epoch) => epoch,
+            Err(_) => {
+                return Err(ApiError::BadRequest(format!(
+                    "Invalid until_epoch: {}",
+                    sub.until_epoch
+                )));
+            }
+        };
+        // Parse and validate sync_committee_indices
+        for idx_str in &sub.sync_committee_indices {
+            let subnet_id: u8 = match idx_str.parse() {
+                Ok(id) if id < 4 => id,
+                _ => {
+                    return Err(ApiError::BadRequest(format!(
+                        "Invalid sync_committee_index: {}",
+                        idx_str
+                    )));
+                }
+            };
+            map.insert(subnet_id, until_epoch);
+            // Enable the subnet in networking
+            if let Err(_e) = subnets.enable_sync_committee_subnet(subnet_id) {
+                return Err(ApiError::InternalError);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[post("/validator/sync_committee_subscriptions")]
+pub async fn post_sync_committee_subscriptions(
+    db: Data<ReamDB>,
+    subscriptions: Json<Vec<SyncCommitteeSubscription>>,
+    sync_committee_subscriptions: Data<SyncCommitteeSubscriptionMap>,
+    sync_committee_subnets: Data<Arc<RwLock<SyncCommitteeSubnets>>>,
+) -> Result<impl Responder, ApiError> {
+    process_sync_committee_subscriptions(
+        &db,
+        &subscriptions,
+        &sync_committee_subscriptions,
+        &sync_committee_subnets,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json("ok"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use tempfile::tempdir;
+    use tokio::sync::RwLock;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_process_sync_committee_subscriptions_valid() {
+        let temp_dir = tempdir().unwrap();
+        let db = ReamDB::new(temp_dir.path().to_path_buf()).unwrap();
+        let subscriptions = vec![SyncCommitteeSubscription {
+            validator_index: "1".to_string(),
+            sync_committee_indices: vec!["0".to_string(), "1".to_string()],
+            until_epoch: "10".to_string(),
+        }];
+        let sync_committee_subscriptions = Arc::new(RwLock::new(HashMap::new()));
+        let sync_committee_subnets = Arc::new(RwLock::new(SyncCommitteeSubnets::new()));
+
+        let result = process_sync_committee_subscriptions(
+            &db,
+            &subscriptions,
+            &sync_committee_subscriptions,
+            &sync_committee_subnets,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_sync_committee_subscriptions_invalid_index() {
+        let temp_dir = tempdir().unwrap();
+        let db = ReamDB::new(temp_dir.path().to_path_buf()).unwrap();
+        let subscriptions = vec![SyncCommitteeSubscription {
+            validator_index: "notanumber".to_string(),
+            sync_committee_indices: vec!["0".to_string()],
+            until_epoch: "10".to_string(),
+        }];
+        let sync_committee_subscriptions = Arc::new(RwLock::new(HashMap::new()));
+        let sync_committee_subnets = Arc::new(RwLock::new(SyncCommitteeSubnets::new()));
+
+        let result = process_sync_committee_subscriptions(
+            &db,
+            &subscriptions,
+            &sync_committee_subscriptions,
+            &sync_committee_subnets,
+        )
+        .await;
+        assert!(result.is_err());
+    }
 }
