@@ -134,6 +134,56 @@ impl Store {
         Ok(false)
     }
 
+    /// Retrieve a filtered block tree from ``store``, only returning branches
+    /// whose leaf state's justified/finalized info agrees with that in ``store``.
+    pub fn get_filtered_block_tree(&self) -> anyhow::Result<HashMap<B256, BeaconBlock>> {
+        let base = self.db.justified_checkpoint_provider().get()?.root;
+
+        let mut blocks: HashMap<B256, BeaconBlock> = HashMap::default();
+
+        self.filter_block_tree(base, &mut blocks)?;
+
+        Ok(blocks)
+    }
+
+    pub fn get_head(&self) -> anyhow::Result<B256> {
+        // Get filtered block tree that only includes viable branches
+        let blocks = self.get_filtered_block_tree()?;
+        // Execute the LMD-GHOST fork choice
+        let mut head = self.db.justified_checkpoint_provider().get()?.root;
+
+        loop {
+            let children = self
+                .db
+                .parent_root_index_multimap_provider()
+                .get(head)?
+                .unwrap_or_default();
+
+            if children.is_empty() {
+                return Ok(head);
+            }
+
+            // Sort by latest attesting balance with ties broken lexicographically
+            // Ties broken by favoring block with lexicographically higher root
+            if let Some(new_head) = children
+                .into_iter()
+                .filter(|child| {
+                    blocks
+                        .get(child)
+                        .is_some_and(|block| block.parent_root == head)
+                })
+                .max_by_key(|child| {
+                    let weight = self.get_weight(*child).unwrap_or_default();
+                    (weight, *child)
+                })
+            {
+                head = new_head;
+            } else {
+                return Ok(head);
+            }
+        }
+    }
+
     /// Update checkpoints in store if necessary
     pub fn update_checkpoints(
         &mut self,
