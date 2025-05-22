@@ -4,10 +4,8 @@ use actix_web::{
     HttpResponse, Responder, get,
     web::{Data, Path},
 };
-use alloy_primitives::{
-    B256,
-    map::{HashMap, foldhash::fast::RandomState},
-};
+use alloy_primitives::B256;
+use hashbrown::HashMap;
 use ream_consensus::{
     attester_slashing::AttesterSlashing,
     constants::{
@@ -15,7 +13,7 @@ use ream_consensus::{
         SYNC_REWARD_WEIGHT, WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT,
         genesis_validators_root,
     },
-    electra::{beacon_block::{BeaconBlock, SignedBeaconBlock}, beacon_state::BeaconState},
+    electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     genesis::Genesis,
 };
 use ream_fork_choice::store::Store;
@@ -294,7 +292,7 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
         .get()
         .map_err(|_| ApiError::InternalError)?;
 
-    let mut blocks = HashMap::with_hasher(RandomState::default());
+    let mut blocks = HashMap::new();
     let store = Store {
         db: db.get_ref().clone(),
     };

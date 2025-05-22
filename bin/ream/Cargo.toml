@@ -33,3 +33,4 @@ reqwest = { workspace = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tokio = { workspace = true }
+hashbrown.workspace = true

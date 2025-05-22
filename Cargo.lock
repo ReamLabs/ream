@@ -405,7 +405,7 @@ dependencies = [
  "const-hex",
  "derive_more",
  "foldhash",
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
  "indexmap",
  "itoa",
  "k256",
@@ -2256,9 +2256,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.15.2"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf151400ff0baff5465007dd2f3e717f3fe502074ca563069ce3a6629d07b289"
+checksum = "84b26c544d002229e640969970a2e74021aadf6e2f96372b9c58eff97de08eb3"
 dependencies = [
  "allocator-api2",
  "equivalent",
@@ -2767,7 +2767,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
  "serde",
 ]
 
@@ -2910,7 +2910,7 @@ name = "kzg"
 version = "0.1.0"
 source = "git+https://github.com/grandinetech/rust-kzg#20ab11604e7c6747f0bc8ab404d324c35ef74fed"
 dependencies = [
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
  "sha2 0.10.8",
  "siphasher",
 ]
@@ -3497,7 +3497,7 @@ version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 dependencies = [
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
 ]
 
 [[package]]
@@ -4400,6 +4400,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "discv5",
+ "hashbrown 0.15.3",
  "ream-checkpoint-sync",
  "ream-consensus",
  "ream-discv5",
@@ -4540,6 +4541,7 @@ dependencies = [
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
+ "hashbrown 0.15.3",
  "itertools 0.14.0",
  "kzg",
  "ream-bls",
@@ -4668,6 +4670,7 @@ dependencies = [
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
+ "hashbrown 0.15.3",
  "parking_lot",
  "ream-bls",
  "ream-consensus",

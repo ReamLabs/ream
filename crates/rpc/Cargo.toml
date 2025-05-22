@@ -33,3 +33,4 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tree_hash.workspace = true
+hashbrown.workspace = true

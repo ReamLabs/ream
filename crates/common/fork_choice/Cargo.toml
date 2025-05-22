@@ -35,3 +35,4 @@ ream-bls.workspace = true
 ream-consensus.workspace = true
 ream-polynomial-commitments.workspace = true
 ream-storage.workspace = true
+hashbrown.workspace = true
