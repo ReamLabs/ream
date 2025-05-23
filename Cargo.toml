@@ -38,7 +38,7 @@ version = "0.1.0"
 [workspace.dependencies]
 actix-web = "4.10.2"
 actix-web-lab = "0.24.1"
-alloy-consensus = { version = "0.15", default-features = false }
+alloy-consensus = { version = "1.0", default-features = false }
 alloy-primitives = { version = "1.1", features = ['serde'] }
 alloy-rlp = { version = "0.3.8", default-features = false, features = ["derive"] }
 anyhow = "1.0"

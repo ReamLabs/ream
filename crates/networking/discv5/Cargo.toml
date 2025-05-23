@@ -13,15 +13,15 @@ version.workspace = true
 alloy-primitives.workspace = true
 alloy-rlp.workspace = true
 anyhow.workspace = true
+discv5.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
-discv5.workspace = true
 futures.workspace = true
 libp2p.workspace = true
 rand = "0.8.5"
+ssz_types.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-ssz_types.workspace = true
 
 # ream dependencies
 ream-consensus.workspace = true

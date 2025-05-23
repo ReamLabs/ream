@@ -10,16 +10,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-#ream-dependencies
-ream-bls.workspace = true
-ream-consensus.workspace = true
-ream-fork-choice.workspace = true
-ream-light-client.workspace = true
-ream-network-spec.workspace = true
-ream-node.workspace = true
-ream-storage.workspace = true
-
-#misc
 actix-web.workspace = true
 actix-web-lab.workspace = true
 alloy-primitives.workspace = true
@@ -34,3 +24,12 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tree_hash.workspace = true
+
+#ream-dependencies
+ream-bls.workspace = true
+ream-consensus.workspace = true
+ream-fork-choice.workspace = true
+ream-light-client.workspace = true
+ream-network-spec.workspace = true
+ream-node.workspace = true
+ream-storage.workspace = true

@@ -43,7 +43,7 @@ lint: # Run `clippy` and `rustfmt`.
 	cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings
 
 	# cargo sort
-	cargo sort --grouped
+	cargo sort --grouped --workspace
 
 .PHONY: build-debug
 build-debug: ## Build the ream binary into `target/debug` directory.
