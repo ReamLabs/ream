@@ -765,7 +765,7 @@ mod tests {
 
         let tokio_runtime = Runtime::new().unwrap();
 
-        let mut net = tokio_runtime.block_on(async {
+        let mut network = tokio_runtime.block_on(async {
             create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
                 .await
                 .unwrap()
@@ -774,7 +774,7 @@ mod tests {
         let peer_id = libp2p::PeerId::random();
         let addr: libp2p::Multiaddr = "/ip4/1.2.3.4/tcp/9000".parse().unwrap();
 
-        net.upsert_peer(
+        network.upsert_peer(
             peer_id,
             Some(addr.clone()),
             ConnectionState::Connecting,
@@ -782,13 +782,13 @@ mod tests {
             None,
         );
 
-        let snap = net.cached_peer(&peer_id).expect("row should exist");
+        let cached_peer_snapshot = network.cached_peer(&peer_id).expect("peer should exist");
 
-        assert_eq!(snap.peer_id, peer_id);
-        assert_eq!(snap.state, ConnectionState::Connecting);
-        assert_eq!(snap.direction, Direction::Outbound);
-        assert_eq!(snap.last_seen_p2p_address, Some(addr));
-        assert!(snap.enr.is_none());
+        assert_eq!(cached_peer_snapshot.peer_id, peer_id);
+        assert_eq!(cached_peer_snapshot.state, ConnectionState::Connecting);
+        assert_eq!(cached_peer_snapshot.direction, Direction::Outbound);
+        assert_eq!(cached_peer_snapshot.last_seen_p2p_address, Some(addr));
+        assert!(cached_peer_snapshot.enr.is_none());
     }
 
     #[test]
@@ -797,7 +797,7 @@ mod tests {
 
         let tokio_runtime = Runtime::new().unwrap();
 
-        let mut net = tokio_runtime.block_on(async {
+        let mut network = tokio_runtime.block_on(async {
             create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
                 .await
                 .unwrap()
@@ -805,7 +805,7 @@ mod tests {
 
         let peer_id = libp2p::PeerId::random();
 
-        net.upsert_peer(
+        network.upsert_peer(
             peer_id,
             None,
             ConnectionState::Connecting,
@@ -813,7 +813,7 @@ mod tests {
             None,
         );
 
-        net.upsert_peer(
+        network.upsert_peer(
             peer_id,
             None,
             ConnectionState::Connected,
@@ -821,10 +821,10 @@ mod tests {
             None,
         );
 
-        let snap = net.cached_peer(&peer_id).expect("row exists");
+        let cached_peer_snapshot = network.cached_peer(&peer_id).expect("row exists");
 
-        assert_eq!(snap.state, ConnectionState::Connected);
-        assert_eq!(snap.direction, Direction::Outbound);
+        assert_eq!(cached_peer_snapshot.state, ConnectionState::Connected);
+        assert_eq!(cached_peer_snapshot.direction, Direction::Outbound);
     }
 
     #[test]
@@ -833,7 +833,7 @@ mod tests {
 
         let tokio_runtime = Runtime::new().unwrap();
 
-        let net = tokio_runtime.block_on(async {
+        let network = tokio_runtime.block_on(async {
             create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
                 .await
                 .unwrap()
@@ -841,7 +841,7 @@ mod tests {
 
         let random_id = libp2p::PeerId::random();
 
-        assert!(net.cached_peer(&random_id).is_none());
+        assert!(network.cached_peer(&random_id).is_none());
     }
 
     #[test]
@@ -943,15 +943,15 @@ mod tests {
         let addr: Multiaddr = "/ip4/127.0.0.1/tcp/9300".parse().unwrap();
         network2.swarm.dial(addr).unwrap();
 
-        let id1 = network1.peer_id();
-        let id2 = network2.peer_id();
+        let peer_id_network1 = network1.peer_id();
+        let peer_id_network2 = network2.peer_id();
 
         tokio_runtime.block_on(async {
-            let n1 = async {
+            let network1_poll_task = async {
                 while let Some(ev) = network1.swarm.next().await {
                     network1.parse_swarm_event(ev);
                     if matches!(
-                        network1.cached_peer(&id2),
+                        network1.cached_peer(&peer_id_network2),
                         Some(row) if row.state == ConnectionState::Connected && row.direction == Direction::Inbound
                     ) {
                         break;
@@ -959,11 +959,11 @@ mod tests {
                 }
             };
 
-            let n2 = async {
+            let network2_poll_task = async {
                 while let Some(ev) = network2.swarm.next().await {
                     network2.parse_swarm_event(ev);
                     if matches!(
-                        network2.cached_peer(&id1),
+                        network2.cached_peer(&peer_id_network1),
                         Some(row) if row.state == ConnectionState::Connected && row.direction == Direction::Outbound
                     ) {
                         break;
@@ -973,14 +973,18 @@ mod tests {
 
             tokio::time::timeout(
                 std::time::Duration::from_secs(10),
-                futures::future::join(n1, n2),
+                futures::future::join(network1_poll_task, network2_poll_task),
             )
             .await
             .expect("peer-table not updated in time");
         });
 
-        let row1 = network1.cached_peer(&id2).expect("network1 row exists");
-        let row2 = network2.cached_peer(&id1).expect("network2 row exists");
+        let row1 = network1
+            .cached_peer(&peer_id_network2)
+            .expect("network1 row exists");
+        let row2 = network2
+            .cached_peer(&peer_id_network1)
+            .expect("network2 row exists");
 
         assert_eq!(row1.state, ConnectionState::Connected);
         assert_eq!(row1.direction, Direction::Inbound);
