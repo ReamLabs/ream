@@ -673,10 +673,11 @@ pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, 
 mod tests {
     use std::{net::IpAddr, sync::Once};
 
-    use alloy_primitives::aliases::B32;
+    use alloy_primitives::{B256, aliases::B32};
     use discv5::enr::CombinedKey;
     use k256::ecdsa::SigningKey;
     use libp2p_identity::{Keypair, PeerId};
+    use ream_consensus::constants::GENESIS_VALIDATORS_ROOT;
     use ream_discv5::{
         config::DiscoveryConfig,
         subnet::{AttestationSubnets, SyncCommitteeSubnets},
@@ -694,6 +695,7 @@ mod tests {
     static INIT_NET_SPEC: Once = Once::new();
 
     fn init_network_spec() {
+        let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
         INIT_NET_SPEC.call_once(|| {
             set_network_spec(DEV.clone());
         });
