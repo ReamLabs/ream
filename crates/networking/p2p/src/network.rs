@@ -735,9 +735,9 @@ mod tests {
     }
 
     #[test]
-    fn peer_id_from_enr_matches_libp2p() {
-        let lp_kp = Keypair::generate_secp256k1();
-        let secret = lp_kp
+    fn peer_id_derived_from_enr_matches_libp2p() {
+        let libp2p_keypair = Keypair::generate_secp256k1();
+        let secret = libp2p_keypair
             .clone()
             .try_into_secp256k1()
             .unwrap()
@@ -748,7 +748,7 @@ mod tests {
         let enr_key = CombinedKey::Secp256k1(signing);
         let enr = Enr::builder().build(&enr_key).unwrap();
 
-        let expected = PeerId::from_public_key(&lp_kp.public());
+        let expected = PeerId::from_public_key(&libp2p_keypair.public());
         let actual = Network::peer_id_from_enr(&enr).expect("peer id");
 
         assert_eq!(expected, actual);
