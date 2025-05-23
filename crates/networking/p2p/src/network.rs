@@ -771,7 +771,7 @@ mod tests {
                 .unwrap()
         });
 
-        let peer_id = libp2p::PeerId::random();
+        let peer_id = PeerId::random();
         let addr: libp2p::Multiaddr = "/ip4/1.2.3.4/tcp/9000".parse().unwrap();
 
         network.upsert_peer(
@@ -803,7 +803,7 @@ mod tests {
                 .unwrap()
         });
 
-        let peer_id = libp2p::PeerId::random();
+        let peer_id = PeerId::random();
 
         network.upsert_peer(
             peer_id,
@@ -839,7 +839,7 @@ mod tests {
                 .unwrap()
         });
 
-        let random_id = libp2p::PeerId::random();
+        let random_id = PeerId::random();
 
         assert!(network.cached_peer(&random_id).is_none());
     }
