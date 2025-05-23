@@ -1,4 +1,5 @@
 use blst::{BLST_ERROR, min_pk::Signature as BlstSignature};
+use ssz_types::FixedVector;
 
 use crate::{
     constants::DST,
@@ -11,6 +12,14 @@ use crate::{
 impl BLSSignature {
     pub fn to_blst_signature(&self) -> Result<BlstSignature, BLSError> {
         BlstSignature::from_bytes(&self.inner).map_err(|e| BLSError::BlstError(e.into()))
+    }
+}
+
+impl From<BlstSignature> for BLSSignature {
+    fn from(value: BlstSignature) -> Self {
+        BLSSignature {
+            inner: FixedVector::from(value.to_bytes().to_vec()),
+        }
     }
 }
 

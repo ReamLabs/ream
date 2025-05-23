@@ -6,10 +6,11 @@ use crate::{
     traits::{Aggregatable, SupranationalAggregatable},
 };
 
-impl Aggregatable for AggregatePubKey {
+impl Aggregatable<PubKey> for AggregatePubKey {
     type Error = anyhow::Error;
+    type Output = AggregatePubKey;
 
-    fn aggregate(pubkeys: &[&PubKey]) -> anyhow::Result<Self> {
+    fn aggregate(pubkeys: &[&PubKey]) -> anyhow::Result<Self::Output> {
         let blst_pubkeys = pubkeys
             .iter()
             .map(|pk| pk.to_blst_pubkey())
@@ -25,4 +26,4 @@ impl Aggregatable for AggregatePubKey {
     }
 }
 
-impl SupranationalAggregatable for AggregatePubKey {}
+impl SupranationalAggregatable<PubKey, AggregatePubKey> for AggregatePubKey {}

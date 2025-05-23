@@ -4,6 +4,7 @@
 //! - "zkcrypto": Uses the zkcrypto/bls12_381 library implementation, optimized for zkVMs
 
 pub mod aggregate_pubkey;
+pub mod aggregate_signature;
 pub mod constants;
 pub mod errors;
 pub mod pubkey;
@@ -11,6 +12,7 @@ pub mod signature;
 pub mod traits;
 
 pub use aggregate_pubkey::AggregatePubKey;
+pub use aggregate_signature::AggregateSignature;
 pub use pubkey::PubKey;
 pub use signature::BLSSignature;
 

@@ -6,10 +6,11 @@ use crate::{
     traits::{Aggregatable, ZkcryptoAggregatable},
 };
 
-impl Aggregatable for AggregatePubKey {
+impl Aggregatable<PubKey> for AggregatePubKey {
     type Error = BLSError;
+    type Output = AggregatePubKey;
 
-    fn aggregate(pubkeys: &[&PubKey]) -> Result<Self, Self::Error> {
+    fn aggregate(pubkeys: &[&PubKey]) -> Result<Self::Output, Self::Error> {
         let agg_point = pubkeys
             .iter()
             .try_fold(G1Projective::identity(), |acc, pubkey| {
@@ -22,4 +23,4 @@ impl Aggregatable for AggregatePubKey {
     }
 }
 
-impl ZkcryptoAggregatable for AggregatePubKey {}
+impl ZkcryptoAggregatable<PubKey, AggregatePubKey> for AggregatePubKey {}

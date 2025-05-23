@@ -29,6 +29,14 @@ impl TryFrom<&BLSSignature> for G2Affine {
     }
 }
 
+impl From<G2Projective> for BLSSignature {
+    fn from(value: G2Projective) -> Self {
+        Self {
+            inner: G2Affine::from(value).to_compressed().to_vec().into(),
+        }
+    }
+}
+
 impl Verifiable for BLSSignature {
     type Error = BLSError;
 
