@@ -43,11 +43,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # Install this commit as there isn't a release yet which works for workspace's
     - name: Install cargo sort
-      run: cargo install cargo-sort
+      run: cargo install --git https://github.com/DevinR528/cargo-sort.git --rev 25a60ad860ce7cd0055abf4b69c18285cb07ab41 cargo-sort
 
     - name: Run cargo sort
-      run: cargo sort --grouped --check
+      run: cargo sort --grouped --check --workspace
 
   build:
     runs-on: ubuntu-latest

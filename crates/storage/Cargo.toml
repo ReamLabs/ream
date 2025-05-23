@@ -20,5 +20,5 @@ thiserror.workspace = true
 tracing.workspace = true
 tree_hash.workspace = true
 
-# Ream dependencies
+# ream dependencies
 ream-consensus.workspace = true

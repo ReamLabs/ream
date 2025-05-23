@@ -9,6 +9,10 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+supranational = ["blst"]
+zkcrypto = ["bls12_381", "sha2"]
+
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
@@ -22,7 +26,3 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
-
-[features]
-supranational = ["blst"]
-zkcrypto = ["bls12_381", "sha2"]
