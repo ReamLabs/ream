@@ -7,11 +7,13 @@ pub mod aggregate_pubkey;
 pub mod constants;
 pub mod errors;
 pub mod pubkey;
+pub mod secret_key;
 pub mod signature;
 pub mod traits;
 
 pub use aggregate_pubkey::AggregatePubKey;
 pub use pubkey::PubKey;
+pub use secret_key::SecretKey;
 pub use signature::BLSSignature;
 
 #[cfg(feature = "supranational")]

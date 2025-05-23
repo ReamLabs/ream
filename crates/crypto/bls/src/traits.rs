@@ -63,3 +63,25 @@ pub trait ZkcryptoVerifiable: Verifiable<Error = BLSError> {}
 
 /// Marker trait for supranational/blst BLS signature verification implementation
 pub trait SupranationalVerifiable: Verifiable<Error = BLSError> {}
+
+/// Trait for BLS message signing.
+///
+/// This trait provides functionality to sign messages using a BLS secret key.
+pub trait Signable {
+    type Error;
+
+    /// Signs a message using the secret key.
+    ///
+    /// # Arguments
+    /// * `message` - The message bytes to sign
+    ///
+    /// # Returns
+    /// * `Result<BLSSignature, Self::Error>` - The BLS signature or an error
+    fn sign(&self, message: &[u8]) -> Result<crate::BLSSignature, Self::Error>;
+}
+
+/// Marker trait for zkcrypto/bls12_381 BLS signing implementation
+pub trait ZkcryptoSignable: Signable<Error = BLSError> {}
+
+/// Marker trait for supranational/blst BLS signing implementation
+pub trait SupranationalSignable: Signable<Error = BLSError> {}
