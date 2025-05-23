@@ -116,3 +116,20 @@ impl<T: Serialize> DataVersionedResponse<T> {
         }
     }
 }
+
+#[derive(Debug, Serialize)]
+pub struct BeaconHeadResponse {
+    pub root: B256,
+    pub slot: u64,
+    pub execution_optimistic: bool,
+}
+
+impl BeaconHeadResponse {
+    pub fn new(root: B256, slot: u64) -> Self {
+        Self {
+            root,
+            slot,
+            execution_optimistic: EXECUTION_OPTIMISTIC,
+        }
+    }
+}

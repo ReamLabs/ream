@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
 
-use alloy_primitives::{B256, map::HashMap};
+use alloy_primitives::B256;
 use anyhow::{anyhow, bail, ensure};
+use hashbrown::HashMap;
 use ream_bls::BLSSignature;
 use ream_consensus::{
     attestation::Attestation,

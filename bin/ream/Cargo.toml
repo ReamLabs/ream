@@ -29,6 +29,7 @@ ream-storage.workspace = true
 # other dependencies
 clap = { workspace = true, features = ["derive", "env"] }
 discv5 = { workspace = true }
+hashbrown.workspace = true
 reqwest = { workspace = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
