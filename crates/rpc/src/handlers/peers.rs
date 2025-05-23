@@ -29,8 +29,8 @@ impl From<&CachedPeer> for PeerData {
                 .as_ref()
                 .map(|m| m.to_string())
                 .unwrap_or_default(),
-            state: p.state.to_string(),
-            direction: p.direction.to_string(),
+            state: p.state.as_str().to_string(),
+            direction: p.direction.as_str().to_string(),
         }
     }
 }
