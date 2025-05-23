@@ -57,6 +57,12 @@ pub fn spawn_sync_committee_expiry_task(
                     }
                     map.remove(subnet_id);
                 }
+
+                if !expired.is_empty() {
+                    tracing::info!(
+                        "Marked that ENR needs to be updated after sync committee subnet expiry"
+                    );
+                }
             }
             tokio::time::sleep(Duration::from_secs(12 * 32)).await; // One epoch (customize as needed)
         }
