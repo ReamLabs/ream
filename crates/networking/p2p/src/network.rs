@@ -530,11 +530,11 @@ mod tests {
         gossipsub::{configurations::GossipsubConfig, topics::GossipTopicKind},
     };
 
-    static INIT_NET_SPEC: Once = Once::new();
+    static HAS_NETWORK_SPEC_BEEN_INITIALIZED: Once = Once::new();
 
-    fn init_network_spec() {
+    fn initialize_network_spec() {
         let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
-        INIT_NET_SPEC.call_once(|| {
+        HAS_NETWORK_SPEC_BEEN_INITIALIZED.call_once(|| {
             set_network_spec(DEV.clone());
         });
     }
@@ -599,7 +599,7 @@ mod tests {
 
     #[test]
     fn insert_then_read_returns_snapshot() {
-        init_network_spec();
+        initialize_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
 
@@ -631,7 +631,7 @@ mod tests {
 
     #[test]
     fn update_existing_row() {
-        init_network_spec();
+        initialize_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
 
@@ -667,7 +667,7 @@ mod tests {
 
     #[test]
     fn cached_peer_unknown_returns_none() {
-        init_network_spec();
+        initialize_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
 
@@ -684,7 +684,7 @@ mod tests {
 
     #[test]
     fn test_p2p_gossipsub() {
-        init_network_spec();
+        initialize_network_spec();
 
         let runtime = Runtime::new().unwrap();
 
@@ -753,7 +753,7 @@ mod tests {
 
     #[test]
     fn test_peer_table_lifecycle() {
-        init_network_spec();
+        initialize_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
         let mut network1 = tokio_runtime
