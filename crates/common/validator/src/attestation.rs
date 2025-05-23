@@ -37,7 +37,7 @@ pub fn compute_on_chain_aggregate(mut aggregates: Vec<Attestation>) -> anyhow::R
 
     let aggregation_bits_size = (MAX_VALIDATORS_PER_COMMITTEE * MAX_COMMITTEES_PER_SLOT) as usize;
     let mut aggregation_bits = BitList::<U131072>::with_capacity(aggregation_bits_size)
-        .map_err(|_| anyhow::anyhow!("Failed to create BitList for aggregation_bits"))?;
+        .map_err(|err| anyhow!("Failed to create BitList for aggregation_bits {err:?}"))?;
 
     for aggregate in &aggregates {
         for bit in aggregate.aggregation_bits.iter() {
