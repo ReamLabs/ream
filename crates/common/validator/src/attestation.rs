@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 
-use anyhow::anyhow;
-use ream_bls::{
-    aggregate_signature::AggregateSignature, signature::BLSSignature, traits::Aggregatable,
-};
+use anyhow::{anyhow, ensure};
+use ream_bls::{signature::BLSSignature, traits::Aggregatable};
 use ream_consensus::{
     attestation::Attestation,
     constants::{MAX_COMMITTEES_PER_SLOT, MAX_VALIDATORS_PER_COMMITTEE, SLOTS_PER_EPOCH},
@@ -29,11 +27,8 @@ pub fn compute_subnet_for_attestation(
     (committee_since_epoch_start + committee_index) % ATTESTATION_SUBNET_COUNT
 }
 
-pub fn compute_on_chain_aggregate(
-    network_aggregates: Vec<Attestation>,
-) -> anyhow::Result<Attestation> {
-    let mut aggregates = network_aggregates.clone();
-
+pub fn compute_on_chain_aggregate(mut aggregates: Vec<Attestation>) -> anyhow::Result<Attestation> {
+    ensure!(!aggregates.is_empty(), "Attestation list is empty");
     aggregates.sort_by(|a, b| {
         let a_index = get_committee_indices(&a.committee_bits)[0];
         let b_index = get_committee_indices(&b.committee_bits)[0];
@@ -44,19 +39,23 @@ pub fn compute_on_chain_aggregate(
     let mut aggregation_bits = BitList::<U131072>::with_capacity(aggregation_bits_size)
         .map_err(|_| anyhow::anyhow!("Failed to create BitList for aggregation_bits"))?;
 
-    for a in &aggregates {
-        for b in a.aggregation_bits.iter() {
-            let bit_index: usize = aggregation_bits.len();
+    for aggregate in &aggregates {
+        for bit in aggregate.aggregation_bits.iter() {
             aggregation_bits
-                .set(bit_index, b)
-                .map_err(|err| anyhow!("Failed to set bit {bit_index}: {err:?}"))?;
+                .set(aggregation_bits.len(), bit)
+                .map_err(|err| anyhow!("Failed to set bit: {err:?}"))?;
         }
     }
-    let signature_list: Vec<&BLSSignature> = aggregates.iter().map(|a| &a.signature).collect();
-    let committee_indices: HashSet<u64> = aggregates
+    let signatures: Vec<&BLSSignature> = aggregates.iter().map(|a| &a.signature).collect();
+    let committee_indices = aggregates
         .iter()
-        .map(|a: &Attestation| get_committee_indices(&a.committee_bits)[0])
-        .collect();
+        .map(|a: &Attestation| {
+            get_committee_indices(&a.committee_bits)
+                .into_iter()
+                .next()
+                .ok_or_else(|| anyhow!("Committee bits must have at least one bit set"))
+        })
+        .collect::<Result<HashSet<u64>, _>>()?;
     let mut committee_bits = BitVector::<U64>::new();
     for index in 0..MAX_COMMITTEES_PER_SLOT {
         committee_bits
@@ -66,7 +65,7 @@ pub fn compute_on_chain_aggregate(
     Ok(Attestation {
         aggregation_bits,
         data: aggregates[0].data.clone(),
-        signature: AggregateSignature::aggregate(&signature_list)?.inner,
+        signature: BLSSignature::aggregate(&signatures)?,
         committee_bits,
     })
 }

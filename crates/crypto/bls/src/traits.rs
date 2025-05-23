@@ -6,7 +6,6 @@ use crate::{PubKey, errors::BLSError};
 /// aggregate public key. This is useful for signature verification of messages signed
 /// by multiple parties.
 pub trait Aggregatable<T> {
-    type Output;
     type Error;
 
     /// Aggregates multiple BLS items into a single aggregate item.
@@ -16,20 +15,14 @@ pub trait Aggregatable<T> {
     ///
     /// # Returns
     /// * `Result<Self::Output, Self::Error>` - The aggregated item or an error
-    fn aggregate(items: &[&T]) -> Result<Self::Output, Self::Error>;
+    fn aggregate(items: &[&T]) -> Result<T, Self::Error>;
 }
 
 /// Marker trait for zkcrypto/bls12_381 BLS aggregation implementation
-pub trait ZkcryptoAggregatable<T, Output>:
-    Aggregatable<T, Error = BLSError, Output = Output>
-{
-}
+pub trait ZkcryptoAggregatable<T>: Aggregatable<T, Error = BLSError> {}
 
 /// Marker trait for supranational/blst BLS aggregation implementation
-pub trait SupranationalAggregatable<T, Output>:
-    Aggregatable<T, Error = anyhow::Error, Output = Output>
-{
-}
+pub trait SupranationalAggregatable<T>: Aggregatable<T, Error = anyhow::Error> {}
 
 /// Trait for verifying BLS signatures.
 ///

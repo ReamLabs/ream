@@ -1,4 +1,8 @@
-use blst::{BLST_ERROR, min_pk::Signature as BlstSignature};
+use anyhow::anyhow;
+use blst::{
+    BLST_ERROR,
+    min_pk::{AggregateSignature as BlstAggregateSignature, Signature as BlstSignature},
+};
 use ssz_types::FixedVector;
 
 use crate::{
@@ -6,7 +10,7 @@ use crate::{
     errors::BLSError,
     pubkey::PubKey,
     signature::BLSSignature,
-    traits::{SupranationalVerifiable, Verifiable},
+    traits::{Aggregatable, SupranationalAggregatable, SupranationalVerifiable, Verifiable},
 };
 
 impl BLSSignature {
@@ -15,11 +19,14 @@ impl BLSSignature {
     }
 }
 
-impl From<BlstSignature> for BLSSignature {
-    fn from(value: BlstSignature) -> Self {
-        BLSSignature {
-            inner: FixedVector::from(value.to_bytes().to_vec()),
-        }
+impl TryFrom<BlstSignature> for BLSSignature {
+    type Error = BLSError;
+
+    fn try_from(value: BlstSignature) -> Result<Self, Self::Error> {
+        Ok(BLSSignature {
+            inner: FixedVector::new(value.to_bytes().to_vec())
+                .map_err(|_| BLSError::InvalidSignature)?,
+        })
     }
 }
 
@@ -55,5 +62,24 @@ impl Verifiable for BLSSignature {
         ) == BLST_ERROR::BLST_SUCCESS)
     }
 }
+
+impl Aggregatable<BLSSignature> for BLSSignature {
+    type Error = anyhow::Error;
+
+    fn aggregate(signatures: &[&BLSSignature]) -> anyhow::Result<BLSSignature> {
+        let signatures = signatures
+            .iter()
+            .map(|signature| signature.to_blst_signature())
+            .collect::<Result<Vec<_>, _>>()?;
+        let aggregate_signature =
+            BlstAggregateSignature::aggregate(&signatures.iter().collect::<Vec<_>>(), true)
+                .map_err(|err| {
+                    anyhow!("Failed to aggregate and validate BLST signatures {err:?}")
+                })?;
+        Ok(BLSSignature::try_from(aggregate_signature.to_signature())?)
+    }
+}
+
+impl SupranationalAggregatable<BLSSignature> for BLSSignature {}
 
 impl SupranationalVerifiable for BLSSignature {}

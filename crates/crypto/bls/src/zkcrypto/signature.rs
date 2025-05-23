@@ -5,10 +5,10 @@ use bls12_381::{
 };
 
 use crate::{
-    AggregatePubKey, BLSSignature, PubKey,
+    BLSSignature, PubKey,
     constants::DST,
     errors::BLSError,
-    traits::{Aggregatable, Verifiable, ZkcryptoVerifiable},
+    traits::{Aggregatable, Verifiable, ZkcryptoAggregatable, ZkcryptoVerifiable},
 };
 
 impl TryFrom<&BLSSignature> for G2Affine {
@@ -56,20 +56,33 @@ impl Verifiable for BLSSignature {
     where
         P: AsRef<[&'a PubKey]>,
     {
-        let aggregate_pubkey = AggregatePubKey::aggregate(pubkeys.as_ref())?;
+        let aggregate_pubkey = PubKey::aggregate(pubkeys.as_ref())?;
         let h = <G2Projective as HashToCurve<ExpandMsgXmd<sha2::Sha256>>>::hash_to_curve(
             [message],
             DST,
         );
 
-        let gt1 = pairing(
-            &G1Affine::try_from(&aggregate_pubkey.to_pubkey())?,
-            &G2Affine::from(h),
-        );
+        let gt1 = pairing(&G1Affine::try_from(&aggregate_pubkey)?, &G2Affine::from(h));
         let gt2 = pairing(&G1Affine::generator(), &G2Affine::try_from(self)?);
 
         Ok(gt1 == gt2)
     }
 }
+
+impl Aggregatable<BLSSignature> for BLSSignature {
+    type Error = BLSError;
+
+    fn aggregate(signatures: &[&BLSSignature]) -> Result<BLSSignature, Self::Error> {
+        let aggregate_point = signatures
+            .iter()
+            .try_fold(G2Projective::identity(), |acc, signature| {
+                Ok(acc.add(&G2Projective::from(G2Affine::try_from(*signature)?)))
+            })?;
+
+        Ok(BLSSignature::from(aggregate_point))
+    }
+}
+
+impl ZkcryptoAggregatable<BLSSignature> for BLSSignature {}
 
 impl ZkcryptoVerifiable for BLSSignature {}

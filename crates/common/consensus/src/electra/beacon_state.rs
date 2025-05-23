@@ -11,7 +11,7 @@ use anyhow::{anyhow, bail, ensure};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
 use ream_bls::{
-    AggregatePubKey, BLSSignature, PubKey,
+    BLSSignature, PubKey,
     traits::{Aggregatable, Verifiable},
 };
 use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
@@ -2731,8 +2731,8 @@ pub fn eth_fast_aggregate_verify(
 pub fn eth_aggregate_pubkeys(pubkeys: &[&PubKey]) -> anyhow::Result<PubKey> {
     ensure!(!pubkeys.is_empty(), "Public keys list cannot be empty");
 
-    let aggregate_pubkey = AggregatePubKey::aggregate(pubkeys)?;
-    Ok(aggregate_pubkey.to_pubkey())
+    let aggregate_pubkey = PubKey::aggregate(pubkeys)?;
+    Ok(aggregate_pubkey)
 }
 
 /// Return the largest integer ``x`` such that ``x**2 <= n``.

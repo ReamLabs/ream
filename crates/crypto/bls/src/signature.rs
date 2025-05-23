@@ -37,16 +37,6 @@ impl BLSSignature {
         self.inner.iter().as_slice()
     }
 
-    pub fn aggregate(aggregation_list: Vec<BLSSignature>) -> Self {
-        Self {
-            inner: FixedVector::from(Vec::<u8>::from_iter(
-                aggregation_list
-                    .iter()
-                    .flat_map(|a: &BLSSignature| a.inner.iter().cloned()),
-            )),
-        }
-    }
-
     pub fn infinity() -> Self {
         Self {
             inner: FixedVector::from(vec![
