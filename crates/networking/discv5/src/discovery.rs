@@ -22,15 +22,15 @@ use libp2p::{
     },
 };
 use ream_consensus::constants::genesis_validators_root;
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, mpsc};
 use tracing::{error, info, warn};
 
 use crate::{
     config::DiscoveryConfig,
     eth2::{ENR_ETH2_KEY, EnrForkId},
     subnet::{
-        ATTESTATION_BITFIELD_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
-        attestation_subnet_predicate, sync_committee_subnet_predicate,
+        ATTESTATION_BITFIELD_ENR_KEY, AttestationSubnets, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
+        SyncCommitteeSubnets, attestation_subnet_predicate, sync_committee_subnet_predicate,
     },
 };
 
@@ -66,9 +66,31 @@ pub struct Discovery {
     discovery_queries: FuturesUnordered<Pin<Box<dyn Future<Output = QueryResult> + Send>>>,
     find_peer_active: bool,
     pub started: bool,
+    attestation_subnets: RwLock<AttestationSubnets>,
+    sync_committee_subnets: RwLock<SyncCommitteeSubnets>,
 }
 
 impl Discovery {
+    pub fn get_attestation_subnets(&self) -> &RwLock<AttestationSubnets> {
+        &self.attestation_subnets
+    }
+
+    pub fn get_sync_committee_subnets(&self) -> &RwLock<SyncCommitteeSubnets> {
+        &self.sync_committee_subnets
+    }
+
+    pub fn update_subnet_enrs(
+        &self,
+        _attestation_subnets: &AttestationSubnets,
+        sync_committee_subnets: &SyncCommitteeSubnets,
+    ) -> anyhow::Result<()> {
+        if sync_committee_subnets.needs_enr_update() {
+            info!("Updating ENR with sync committee subnet subscriptions");
+            sync_committee_subnets.update_enr(&self.discv5)?;
+        }
+        Ok(())
+    }
+
     pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<Self> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
@@ -92,6 +114,10 @@ impl Discovery {
 
         let mut discv5 = Discv5::new(enr.clone(), enr_local, config.discv5_config.clone())
             .map_err(|err| anyhow!("Failed to create discv5: {err:?}"))?;
+
+        // Store the subnet bitfields
+        let attestation_subnets = RwLock::new(config.attestation_subnets.clone());
+        let sync_committee_subnets = RwLock::new(config.sync_committee_subnets.clone());
 
         // adding bootnodes to discv5
         for enr in config.bootnodes.clone() {
@@ -122,11 +148,18 @@ impl Discovery {
             discovery_queries: FuturesUnordered::new(),
             find_peer_active: false,
             started: !config.disable_discovery,
+            attestation_subnets,
+            sync_committee_subnets,
         })
     }
 
     pub fn local_enr(&self) -> &Enr {
         &self.local_enr
+    }
+
+    /// Get a reference to the underlying Discv5 service
+    pub fn discv5(&self) -> &Discv5 {
+        &self.discv5
     }
 
     pub fn discover_peers(&mut self, query: QueryType, target_peers: usize) {
