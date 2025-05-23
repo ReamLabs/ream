@@ -677,7 +677,7 @@ mod tests {
     use discv5::enr::CombinedKey;
     use k256::ecdsa::SigningKey;
     use libp2p_identity::{Keypair, PeerId};
-    use ream_discv5::{config::DiscoveryConfig, subnet::Subnets};
+    use ream_discv5::config::DiscoveryConfig;
     use ream_executor::ReamExecutor;
     use ream_network_spec::networks::{DEV, set_network_spec};
     use tokio::runtime::Runtime;
