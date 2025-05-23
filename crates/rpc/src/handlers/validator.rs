@@ -10,7 +10,7 @@ use ream_discv5::subnet::SyncCommitteeSubnets;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::error;
+use tracing::{error, info};
 
 use super::state::get_state_from_id;
 use crate::types::{
@@ -426,6 +426,7 @@ pub async fn process_sync_committee_subscriptions(
             }
         }
     }
+    info!("Sync committee subnet subscriptions processed successfully");
     Ok(())
 }
 
