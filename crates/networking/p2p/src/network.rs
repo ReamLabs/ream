@@ -763,9 +763,9 @@ mod tests {
     fn insert_then_read_returns_snapshot() {
         init_network_spec();
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let tokio_runtime = Runtime::new().unwrap();
 
-        let mut net = rt.block_on(async {
+        let mut net = tokio_runtime.block_on(async {
             create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
                 .await
                 .unwrap()
@@ -795,9 +795,9 @@ mod tests {
     fn update_existing_row() {
         init_network_spec();
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let tokio_runtime = Runtime::new().unwrap();
 
-        let mut net = rt.block_on(async {
+        let mut net = tokio_runtime.block_on(async {
             create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
                 .await
                 .unwrap()
@@ -831,9 +831,9 @@ mod tests {
     fn cached_peer_unknown_returns_none() {
         init_network_spec();
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let tokio_runtime = Runtime::new().unwrap();
 
-        let net = rt.block_on(async {
+        let net = tokio_runtime.block_on(async {
             create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
                 .await
                 .unwrap()
@@ -917,8 +917,8 @@ mod tests {
     fn test_peer_table_lifecycle() {
         init_network_spec();
 
-        let rt = Runtime::new().unwrap();
-        let mut network1 = rt
+        let tokio_runtime = Runtime::new().unwrap();
+        let mut network1 = tokio_runtime
             .block_on(create_network(
                 "127.0.0.1".parse().unwrap(),
                 9300,
@@ -929,7 +929,7 @@ mod tests {
             ))
             .unwrap();
 
-        let mut network2 = rt
+        let mut network2 = tokio_runtime
             .block_on(create_network(
                 "127.0.0.1".parse().unwrap(),
                 9302,
@@ -946,7 +946,7 @@ mod tests {
         let id1 = network1.peer_id();
         let id2 = network2.peer_id();
 
-        rt.block_on(async {
+        tokio_runtime.block_on(async {
             let n1 = async {
                 while let Some(ev) = network1.swarm.next().await {
                     network1.parse_swarm_event(ev);
