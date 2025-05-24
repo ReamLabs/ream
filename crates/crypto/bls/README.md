@@ -14,7 +14,7 @@ This crate provides BLS (Boneh-Lynn-Shacham) signature functionality with suppor
 - ✅ SSZ encoding/decoding
 - ✅ Tree hashing support
 - ✅ Signing
-- ❌ Secret key
+- ✅ Secret key
 - ❌ Signature aggregation
 
 ## Usage

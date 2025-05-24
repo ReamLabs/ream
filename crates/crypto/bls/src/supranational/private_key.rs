@@ -11,6 +11,7 @@ use crate::{
 
 impl Signable for PrivateKey {
     type Error = anyhow::Error;
+
     fn sign(&self, message: &[u8]) -> Result<BLSSignature, Self::Error> {
         let private_key = BlstSecretKey::from_bytes(self.inner.as_slice())
             .map_err(|err| anyhow!("Failed to convert to BlstSecretKey: {err:?}"))?;

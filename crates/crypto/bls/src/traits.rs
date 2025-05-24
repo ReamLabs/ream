@@ -30,7 +30,7 @@ pub trait SupranationalAggregatable: Aggregatable<Error = anyhow::Error> {}
 pub trait Signable {
     type Error;
 
-    /// Signs a message using the secret key.
+    /// Signs a message using the private key.
     ///
     /// # Arguments
     /// * `message` - The message bytes to sign
