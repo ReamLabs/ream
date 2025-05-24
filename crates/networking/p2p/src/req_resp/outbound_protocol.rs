@@ -11,7 +11,10 @@ use futures::{
     prelude::{AsyncRead, AsyncWrite},
 };
 use libp2p::{OutboundUpgrade, bytes::Buf, core::UpgradeInfo};
-use ream_consensus::constants::genesis_validators_root;
+use ream_consensus::{
+    blob_sidecar::BlobSidecar, constants::genesis_validators_root,
+    electra::beacon_block::SignedBeaconBlock,
+};
 use ream_network_spec::networks::network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};
 use ssz::{Decode, Encode};
@@ -30,12 +33,7 @@ use super::{
     messages::{RequestMessage, meta_data::GetMetaDataV2, ping::Ping, status::Status},
     protocol_id::{ProtocolId, SupportedProtocol},
 };
-use crate::{
-    req_resp::messages::{
-        ResponseMessage, beacon_blocks::BeaconBlocksResponse, blob_sidecars::BlobSidecarsResponse,
-    },
-    utils::max_message_size,
-};
+use crate::{req_resp::messages::ResponseMessage, utils::max_message_size};
 
 #[derive(Debug, Clone)]
 pub struct OutboundReqRespProtocol {
@@ -177,46 +175,44 @@ impl Decoder for OutboundSSZSnappyCodec {
                         SupportedProtocol::GoodbyeV1 => Ok(Some(RespMessage::Error(
                             ReqRespError::InvalidData("Goodbye has no response".to_string()),
                         ))),
-                        SupportedProtocol::GetMetaDataV2 => {
-                            Ok(Some(RespMessage::Response(ResponseMessage::MetaData(
+                        SupportedProtocol::GetMetaDataV2 => Ok(Some(RespMessage::Response(
+                            Box::new(ResponseMessage::MetaData(
                                 GetMetaDataV2::from_ssz_bytes(&buf)
                                     .map_err(ReqRespError::from)?
                                     .into(),
-                            ))))
-                        }
-                        SupportedProtocol::StatusV1 => {
-                            Ok(Some(RespMessage::Response(ResponseMessage::Status(
-                                Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
-                            ))))
-                        }
-                        SupportedProtocol::PingV1 => {
-                            Ok(Some(RespMessage::Response(ResponseMessage::Ping(
-                                Ping::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
-                            ))))
-                        }
-                        SupportedProtocol::BeaconBlocksByRangeV2 => Ok(Some(
-                            RespMessage::Response(ResponseMessage::BeaconBlocksByRange(
-                                BeaconBlocksResponse::from_ssz_bytes(&buf)
-                                    .map_err(ReqRespError::from)?,
                             )),
+                        ))),
+                        SupportedProtocol::StatusV1 => Ok(Some(RespMessage::Response(Box::new(
+                            ResponseMessage::Status(
+                                Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                            ),
+                        )))),
+                        SupportedProtocol::PingV1 => Ok(Some(RespMessage::Response(Box::new(
+                            ResponseMessage::Ping(
+                                Ping::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                            ),
+                        )))),
+                        SupportedProtocol::BeaconBlocksByRangeV2 => Ok(Some(
+                            RespMessage::Response(Box::new(ResponseMessage::BeaconBlocksByRange(
+                                SignedBeaconBlock::from_ssz_bytes(&buf)
+                                    .map_err(ReqRespError::from)?,
+                            ))),
                         )),
                         SupportedProtocol::BeaconBlocksByRootV2 => Ok(Some(RespMessage::Response(
-                            ResponseMessage::BeaconBlocksByRoot(
-                                BeaconBlocksResponse::from_ssz_bytes(&buf)
-                                    .map_err(ReqRespError::from)?,
-                            ),
-                        ))),
-                        SupportedProtocol::BlobSidecarsByRangeV1 => Ok(Some(
-                            RespMessage::Response(ResponseMessage::BlobSidecarsByRange(
-                                BlobSidecarsResponse::from_ssz_bytes(&buf)
+                            Box::new(ResponseMessage::BeaconBlocksByRoot(
+                                SignedBeaconBlock::from_ssz_bytes(&buf)
                                     .map_err(ReqRespError::from)?,
                             )),
+                        ))),
+                        SupportedProtocol::BlobSidecarsByRangeV1 => Ok(Some(
+                            RespMessage::Response(Box::new(ResponseMessage::BlobSidecarsByRange(
+                                BlobSidecar::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                            ))),
                         )),
                         SupportedProtocol::BlobSidecarsByRootV1 => Ok(Some(RespMessage::Response(
-                            ResponseMessage::BlobSidecarsByRoot(
-                                BlobSidecarsResponse::from_ssz_bytes(&buf)
-                                    .map_err(ReqRespError::from)?,
-                            ),
+                            Box::new(ResponseMessage::BlobSidecarsByRoot(
+                                BlobSidecar::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                            )),
                         ))),
                     }
                 } else {

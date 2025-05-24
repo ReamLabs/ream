@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::{net::IpAddr, path::PathBuf};
 
 use ream_discv5::config::DiscoveryConfig;
 
@@ -12,4 +12,6 @@ pub struct NetworkConfig {
     pub discv5_config: DiscoveryConfig,
 
     pub gossipsub_config: GossipsubConfig,
+
+    pub data_dir: PathBuf,
 }

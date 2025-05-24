@@ -35,7 +35,7 @@ pub enum ReqRespMessageReceived {
     },
     Response {
         request_id: u64,
-        message: ResponseMessage,
+        message: Box<ResponseMessage>,
     },
     EndOfStream {
         request_id: u64,
@@ -44,7 +44,7 @@ pub enum ReqRespMessageReceived {
 
 #[derive(Debug)]
 pub enum RespMessage {
-    Response(ResponseMessage),
+    Response(Box<ResponseMessage>),
     Error(ReqRespError),
     EndOfStream,
 }
@@ -70,7 +70,7 @@ impl RespMessage {
 
 #[derive(Debug)]
 pub enum HandlerEvent {
-    Ok(ReqRespMessageReceived),
+    Ok(Box<ReqRespMessageReceived>),
     Err(ReqRespError),
     Close,
 }
@@ -154,11 +154,12 @@ impl ReqRespConnectionHandler {
             },
         );
 
-        self.behaviour_events
-            .push(HandlerEvent::Ok(ReqRespMessageReceived::Request {
+        self.behaviour_events.push(HandlerEvent::Ok(Box::new(
+            ReqRespMessageReceived::Request {
                 stream_id: self.inbound_stream_id,
                 message,
-            }));
+            },
+        )));
 
         self.inbound_stream_id += 1;
     }
@@ -368,9 +369,11 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                                 streams_to_remove.push(*stream_id);
 
                                 return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
-                                    HandlerEvent::Ok(ReqRespMessageReceived::EndOfStream {
-                                        request_id: outbound_stream.request_id,
-                                    }),
+                                    HandlerEvent::Ok(Box::new(
+                                        ReqRespMessageReceived::EndOfStream {
+                                            request_id: outbound_stream.request_id,
+                                        },
+                                    )),
                                 ));
                             };
 
@@ -393,12 +396,12 @@ impl ConnectionHandler for ReqRespConnectionHandler {
 
                             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
                                 match response_message {
-                                    RespMessage::Response(messages) => {
-                                        HandlerEvent::Ok(ReqRespMessageReceived::Response {
+                                    RespMessage::Response(message) => HandlerEvent::Ok(Box::new(
+                                        ReqRespMessageReceived::Response {
                                             request_id: outbound_stream.request_id,
-                                            message: messages,
-                                        })
-                                    }
+                                            message,
+                                        },
+                                    )),
                                     RespMessage::Error(req_resp_error) => {
                                         HandlerEvent::Err(req_resp_error)
                                     }
@@ -460,7 +463,9 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                 request_id,
                 message,
             } => self.request(request_id, message),
-            ConnectionRequest::Response { stream_id, message } => self.response(stream_id, message),
+            ConnectionRequest::Response { stream_id, message } => {
+                self.response(stream_id, *message)
+            }
             ConnectionRequest::Shutdown => self.shutdown(),
         }
     }

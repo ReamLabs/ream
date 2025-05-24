@@ -7,15 +7,12 @@ pub mod status;
 
 use std::sync::Arc;
 
-use beacon_blocks::{
-    BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request, BeaconBlocksResponse,
-};
-use blob_sidecars::{
-    BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request, BlobSidecarsResponse,
-};
+use beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request};
+use blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request};
 use goodbye::Goodbye;
 use meta_data::GetMetaDataV2;
 use ping::Ping;
+use ream_consensus::{blob_sidecar::BlobSidecar, electra::beacon_block::SignedBeaconBlock};
 use ssz_derive::{Decode, Encode};
 use status::Status;
 
@@ -39,8 +36,8 @@ pub enum ResponseMessage {
     Goodbye(Goodbye),
     Status(Status),
     Ping(Ping),
-    BeaconBlocksByRange(BeaconBlocksResponse),
-    BeaconBlocksByRoot(BeaconBlocksResponse),
-    BlobSidecarsByRange(BlobSidecarsResponse),
-    BlobSidecarsByRoot(BlobSidecarsResponse),
+    BeaconBlocksByRange(SignedBeaconBlock),
+    BeaconBlocksByRoot(SignedBeaconBlock),
+    BlobSidecarsByRange(BlobSidecar),
+    BlobSidecarsByRoot(BlobSidecar),
 }

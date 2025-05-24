@@ -1,4 +1,4 @@
-use ream_consensus::blob_sidecar::{BlobIdentifier, BlobSidecar};
+use ream_consensus::blob_sidecar::BlobIdentifier;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     VariableList,
@@ -26,10 +26,4 @@ pub struct BlobSidecarsByRangeV1Request {
 #[ssz(struct_behaviour = "transparent")]
 pub struct BlobSidecarsByRootV1Request {
     pub inner: VariableList<BlobIdentifier, MaxRequestBlobSidecarsElectra>,
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Eq, Encode, Decode)]
-#[ssz(struct_behaviour = "transparent")]
-pub struct BlobSidecarsResponse {
-    pub inner: VariableList<BlobSidecar, MaxRequestBlobSidecarsElectra>,
 }

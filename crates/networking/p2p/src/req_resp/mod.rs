@@ -40,7 +40,7 @@ pub enum ConnectionRequest {
     },
     Response {
         stream_id: u64,
-        message: RespMessage,
+        message: Box<RespMessage>,
     },
     Shutdown,
 }
@@ -75,7 +75,10 @@ impl ReqResp {
         self.events.push(ToSwarm::NotifyHandler {
             peer_id,
             handler: NotifyHandler::One(connection_id),
-            event: ConnectionRequest::Response { stream_id, message },
+            event: ConnectionRequest::Response {
+                stream_id,
+                message: Box::new(message),
+            },
         });
     }
 }
@@ -140,7 +143,7 @@ impl NetworkBehaviour for ReqResp {
             HandlerEvent::Ok(message) => self.events.push(ToSwarm::GenerateEvent(ReqRespMessage {
                 peer_id,
                 connection_id,
-                message: Ok(message),
+                message: Ok(*message),
             })),
             HandlerEvent::Err(err) => self.events.push(ToSwarm::GenerateEvent(ReqRespMessage {
                 peer_id,

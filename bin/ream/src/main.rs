@@ -61,7 +61,7 @@ pub async fn run_beacon_node(
         reset_db(ream_dir.clone()).expect("Unable to delete database");
     }
 
-    let ream_db = ReamDB::new(ream_dir).expect("unable to init Ream Database");
+    let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
 
     info!("ream database initialized ");
 
@@ -90,17 +90,18 @@ pub async fn run_beacon_node(
         config.http_allow_origin,
     );
 
-    let network_manager = ManagerService::new(async_executor, config.into(), ream_db.clone())
-        .await
-        .expect("Failed to create manager service");
+    let network_manager =
+        ManagerService::new(async_executor, config.into(), ream_db.clone(), ream_dir)
+            .await
+            .expect("Failed to create manager service");
 
-    let peer_table = network_manager.peer_table().clone();
+    let network_state = network_manager.network_state.clone();
 
     let network_future = main_executor.spawn(async move {
         network_manager.start().await;
     });
 
-    let http_future = start_server(server_config, ream_db, peer_table);
+    let http_future = start_server(server_config, ream_db, network_state);
 
     tokio::select! {
         _ = http_future => {

@@ -5074,6 +5074,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "discv5",
+ "libp2p",
  "ream-beacon-chain",
  "ream-consensus",
  "ream-discv5",

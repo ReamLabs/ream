@@ -34,63 +34,29 @@ use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
 use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
 use ream_executor::ReamExecutor;
-use serde::Serialize;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 use yamux::Config as YamuxConfig;
 
 use crate::{
-    channel::{P2PMessages, P2PResponse},
+    channel::{P2PCallbackResponse, P2PMessage, P2PRequest, P2PResponse},
     config::NetworkConfig,
     gossipsub::{
         GossipsubBehaviour, message::GossipsubMessage, snappy::SnappyTransform, topics::GossipTopic,
     },
+    network_state::NetworkState,
+    peer::{CachedPeer, ConnectionState, Direction},
     req_resp::{
         ReqResp, ReqRespMessage,
-        handler::ReqRespMessageReceived,
-        messages::{RequestMessage, beacon_blocks::BeaconBlocksByRangeV2Request},
+        handler::{ReqRespMessageReceived, RespMessage},
+        messages::{
+            RequestMessage, ResponseMessage, beacon_blocks::BeaconBlocksByRangeV2Request,
+            meta_data::GetMetaDataV2, ping::Ping,
+        },
     },
+    utils::read_meta_data_from_disk,
 };
-
-pub type PeerTable = Arc<RwLock<HashMap<PeerId, CachedPeer>>>;
-
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ConnectionState {
-    Connected,
-    Connecting,
-    Disconnected,
-    Disconnecting,
-}
-
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Direction {
-    Inbound,
-    Outbound,
-    Unknown,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct CachedPeer {
-    /// libp2p peer ID
-    pub peer_id: PeerId,
-
-    /// Last known multiaddress observed for the peer
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_seen_p2p_address: Option<Multiaddr>,
-
-    /// Current known connection state
-    pub state: ConnectionState,
-
-    /// Direction of the most recent connection (inbound/outbound)
-    pub direction: Direction,
-
-    /// Ethereum Node Record (ENR), if known
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub enr: Option<Enr>,
-}
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
@@ -127,21 +93,21 @@ pub enum ReamNetworkEvent {
     },
 }
 
-pub struct Network {
-    peer_id: PeerId,
-    swarm: Swarm<ReamBehaviour>,
-    subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
-    callbacks: HashMap<u64, mpsc::Sender<anyhow::Result<P2PResponse>>>,
-    request_id: u64,
-    peer_table: PeerTable,
-}
-
 struct Executor(ReamExecutor);
 
 impl libp2p::swarm::Executor for Executor {
     fn exec(&self, f: Pin<Box<dyn futures::Future<Output = ()> + Send>>) {
         self.0.spawn(f);
     }
+}
+
+pub struct Network {
+    peer_id: PeerId,
+    swarm: Swarm<ReamBehaviour>,
+    subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
+    callbacks: HashMap<u64, mpsc::Sender<anyhow::Result<P2PCallbackResponse>>>,
+    request_id: u64,
+    network_state: Arc<NetworkState>,
 }
 
 impl Network {
@@ -221,13 +187,24 @@ impl Network {
                 .build()
         };
 
+        let network_state = Arc::new(NetworkState {
+            peer_table: RwLock::new(HashMap::new()),
+            meta_data: RwLock::new(
+                read_meta_data_from_disk(config.data_dir.clone()).unwrap_or_else(|err| {
+                    error!("Failed to read meta data from disk: {err:?}");
+                    GetMetaDataV2::default()
+                }),
+            ),
+            data_dir: config.data_dir.clone(),
+        });
+
         let mut network = Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
             subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
             callbacks: HashMap::new(),
             request_id: 0,
-            peer_table: Arc::new(RwLock::new(HashMap::new())),
+            network_state,
         };
 
         network.start_network_worker(config).await?;
@@ -287,12 +264,12 @@ impl Network {
         request_id
     }
 
-    pub fn peer_table(&self) -> PeerTable {
-        Arc::clone(&self.peer_table)
+    pub fn network_state(&self) -> Arc<NetworkState> {
+        self.network_state.clone()
     }
 
     pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
-        self.peer_table.read().get(id).cloned()
+        self.network_state.peer_table.read().get(id).cloned()
     }
 
     fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
@@ -308,41 +285,11 @@ impl Network {
         }
     }
 
-    fn upsert_peer(
-        &mut self,
-        peer_id: PeerId,
-        address: Option<Multiaddr>,
-        state: ConnectionState,
-        direction: Direction,
-        enr: Option<Enr>,
-    ) {
-        let mut peer_table = self.peer_table.write();
-        peer_table
-            .entry(peer_id)
-            .and_modify(|cached_peer| {
-                if let Some(address_ref) = &address {
-                    cached_peer.last_seen_p2p_address = Some(address_ref.clone());
-                }
-                cached_peer.state = state;
-                cached_peer.direction = direction;
-                if let Some(enr_ref) = &enr {
-                    cached_peer.enr = Some(enr_ref.clone());
-                }
-            })
-            .or_insert(CachedPeer {
-                peer_id,
-                last_seen_p2p_address: address,
-                state,
-                direction,
-                enr,
-            });
-    }
-
     /// Starts the service
     pub async fn start(
         mut self,
         manager_sender: UnboundedSender<ReamNetworkEvent>,
-        mut p2p_receiver: UnboundedReceiver<P2PMessages>,
+        mut p2p_receiver: UnboundedReceiver<P2PMessage>,
     ) {
         loop {
             tokio::select! {
@@ -355,11 +302,16 @@ impl Network {
                 }
                 Some(event) = p2p_receiver.recv() => {
                     match event {
-                        P2PMessages::RequestBlockRange { peer_id, start, count, callback } => {
-                            let request_id = self.request_id();
-                            self.callbacks.insert(request_id, callback);
-                            self.swarm.behaviour_mut().req_resp.send_request(peer_id, request_id, RequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request::new(start, count)))
-                    },
+                        P2PMessage::Request(request) => match request {
+                            P2PRequest::BlockRange { peer_id, start, count, callback } => {
+                                let request_id = self.request_id();
+                                self.callbacks.insert(request_id, callback);
+                                self.swarm.behaviour_mut().req_resp.send_request(peer_id, request_id, RequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request::new(start, count)))
+                        },
+                        },
+                        P2PMessage::Response(P2PResponse {peer_id, connection_id, stream_id, message}) => {
+                            self.swarm.behaviour_mut().req_resp.send_response(peer_id, connection_id, stream_id, message)
+                        },
                     }
                 }
             }
@@ -377,7 +329,7 @@ impl Network {
                 peer_id: Some(peer_id),
                 ..
             } => {
-                self.upsert_peer(
+                self.network_state.upsert_peer(
                     peer_id,
                     None,
                     ConnectionState::Disconnected,
@@ -394,7 +346,7 @@ impl Network {
                     ConnectedPoint::Listener { .. } => Direction::Inbound,
                 };
 
-                self.upsert_peer(
+                self.network_state.upsert_peer(
                     peer_id,
                     None,
                     ConnectionState::Disconnected,
@@ -415,7 +367,7 @@ impl Network {
                     }
                 };
 
-                self.upsert_peer(
+                self.network_state.upsert_peer(
                     peer_id,
                     address,
                     ConnectionState::Connected,
@@ -431,55 +383,7 @@ impl Network {
                     None
                 }
                 ReamBehaviourEvent::ReqResp(message) => {
-                    let ReqRespMessage {
-                        peer_id,
-                        connection_id,
-                        message,
-                    } = message;
-
-                    let message = match message {
-                        Ok(message) => message,
-                        Err(err) => {
-                            warn!("Request Response failed: {err:?}");
-                            return None;
-                        }
-                    };
-
-                    match message {
-                        ReqRespMessageReceived::Request { stream_id, message } => {
-                            Some(ReamNetworkEvent::RequestMessage {
-                                peer_id,
-                                stream_id,
-                                connection_id,
-                                message,
-                            })
-                        }
-                        ReqRespMessageReceived::Response {
-                            request_id,
-                            message,
-                        } => {
-                            let callback = self.callbacks.get(&request_id);
-                            if let Some(callback) = callback {
-                                if let Err(err) = callback
-                                    .send(Ok(P2PResponse::ResponseMessage(message)))
-                                    .await
-                                {
-                                    warn!("Failed to send response: {err:?}");
-                                }
-                            }
-                            None
-                        }
-                        ReqRespMessageReceived::EndOfStream { request_id } => {
-                            let callback = self.callbacks.remove(&request_id);
-                            if let Some(callback) = callback {
-                                if let Err(err) = callback.send(Ok(P2PResponse::EndOfStream)).await
-                                {
-                                    warn!("Failed to send end of stream: {err:?}");
-                                }
-                            }
-                            None
-                        }
-                    }
+                    self.handle_request_response_event(message).await
                 }
                 ReamBehaviourEvent::Gossipsub(event) => {
                     self.handle_gossipsub_event(event);
@@ -501,7 +405,7 @@ impl Network {
         info!("Discovered peers: {:?}", peers);
         for (enr, _) in peers {
             if let Some(peer_id) = Network::peer_id_from_enr(&enr) {
-                self.upsert_peer(
+                self.network_state.upsert_peer(
                     peer_id,
                     None,
                     ConnectionState::Disconnected,
@@ -529,6 +433,106 @@ impl Network {
                 if let Err(err) = self.swarm.dial(multiaddr) {
                     warn!("Failed to dial peer: {err:?}");
                 }
+            }
+        }
+    }
+
+    async fn handle_request_response_event(
+        &mut self,
+        message: ReqRespMessage,
+    ) -> Option<ReamNetworkEvent> {
+        let ReqRespMessage {
+            peer_id,
+            connection_id,
+            message,
+        } = message;
+
+        let message = match message {
+            Ok(message) => message,
+            Err(err) => {
+                warn!("Request Response failed: {err:?}");
+                return None;
+            }
+        };
+
+        match message {
+            ReqRespMessageReceived::Request { stream_id, message } => match message {
+                RequestMessage::MetaData(get_meta_data_v2) => {
+                    info!(
+                        ?peer_id,
+                        ?stream_id,
+                        ?connection_id,
+                        ?get_meta_data_v2,
+                        "Received GetMetaDataV2 request"
+                    );
+                    self.swarm.behaviour_mut().req_resp.send_response(
+                        peer_id,
+                        connection_id,
+                        stream_id,
+                        RespMessage::Response(Box::new(ResponseMessage::MetaData(
+                            self.network_state.meta_data.read().clone().into(),
+                        ))),
+                    );
+                    None
+                }
+                RequestMessage::Ping(ping) => {
+                    trace!(
+                        ?peer_id,
+                        ?stream_id,
+                        ?connection_id,
+                        ?ping,
+                        "Received Ping request"
+                    );
+                    self.swarm.behaviour_mut().req_resp.send_response(
+                        peer_id,
+                        connection_id,
+                        stream_id,
+                        RespMessage::Response(Box::new(ResponseMessage::Ping(Ping::new(
+                            self.network_state.meta_data.read().seq_number,
+                        )))),
+                    );
+                    None
+                }
+                RequestMessage::Goodbye(goodbye) => {
+                    trace!(
+                        ?peer_id,
+                        ?stream_id,
+                        ?connection_id,
+                        ?goodbye,
+                        "Received Goodbye message"
+                    );
+                    None
+                }
+                _ => Some(ReamNetworkEvent::RequestMessage {
+                    peer_id,
+                    stream_id,
+                    connection_id,
+                    message,
+                }),
+            },
+            ReqRespMessageReceived::Response {
+                request_id,
+                message,
+            } => {
+                let callback = self.callbacks.get(&request_id);
+                if let Some(callback) = callback {
+                    if let Err(err) = callback
+                        .send(Ok(P2PCallbackResponse::ResponseMessage(message)))
+                        .await
+                    {
+                        warn!("Failed to send response: {err:?}");
+                    }
+                }
+                None
+            }
+            ReqRespMessageReceived::EndOfStream { request_id } => {
+                let callback = self.callbacks.remove(&request_id);
+                if let Some(callback) = callback {
+                    if let Err(err) = callback.send(Ok(P2PCallbackResponse::EndOfStream)).await {
+                        warn!("Failed to send end of stream: {err:?}");
+                    }
+                }
+                None
             }
         }
     }
@@ -735,6 +739,7 @@ mod tests {
                 topics,
                 ..Default::default()
             },
+            data_dir: std::env::temp_dir().join("ream_network_test"),
         };
 
         Network::init(executor, &config).await
@@ -766,7 +771,7 @@ mod tests {
 
         let tokio_runtime = Runtime::new().unwrap();
 
-        let mut network = tokio_runtime.block_on(async {
+        let network = tokio_runtime.block_on(async {
             create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
                 .await
                 .unwrap()
@@ -775,7 +780,7 @@ mod tests {
         let peer_id = PeerId::random();
         let address: Multiaddr = "/ip4/1.2.3.4/tcp/9000".parse().unwrap();
 
-        network.upsert_peer(
+        network.network_state.upsert_peer(
             peer_id,
             Some(address.clone()),
             ConnectionState::Connecting,
@@ -798,7 +803,7 @@ mod tests {
 
         let tokio_runtime = Runtime::new().unwrap();
 
-        let mut network = tokio_runtime.block_on(async {
+        let network = tokio_runtime.block_on(async {
             create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
                 .await
                 .unwrap()
@@ -806,7 +811,7 @@ mod tests {
 
         let peer_id = PeerId::random();
 
-        network.upsert_peer(
+        network.network_state.upsert_peer(
             peer_id,
             None,
             ConnectionState::Connecting,
@@ -814,7 +819,7 @@ mod tests {
             None,
         );
 
-        network.upsert_peer(
+        network.network_state.upsert_peer(
             peer_id,
             None,
             ConnectionState::Connected,

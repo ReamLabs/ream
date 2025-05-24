@@ -7,5 +7,5 @@ pub struct Status {
     pub finalized_root: B256,
     pub finalized_epoch: u64,
     pub head_root: B256,
-    pub head_epoch: u64,
+    pub head_slot: u64,
 }

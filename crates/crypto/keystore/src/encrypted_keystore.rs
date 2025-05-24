@@ -123,7 +123,6 @@ mod tests {
         let keystore_as_string = r#"{"crypto":{"kdf":{"function":"scrypt","params":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"12345678"},"message":"90abcdef"},"checksum":{"function":"sha256","params":{},"message":"01020304"},"cipher":{"function":"aes-128-ctr","params":{"iv":"aabbccdd"},"message":"11223344"}},"description":"Test Keystore","pubkey":"0x121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212","path":"m/44'/60'/0'/0/0","uuid":"123e4567-e89b-12d3-a456-426614174000","version":4}"#;
 
         let serialized = serde_json::to_string(&keystore).expect("Failed to serialize keystore");
-        println!("{}", serialized);
         assert_eq!(serialized, keystore_as_string);
     }
 

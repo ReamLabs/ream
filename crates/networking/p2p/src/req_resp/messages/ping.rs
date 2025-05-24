@@ -6,6 +6,12 @@ pub struct Ping {
     pub sequence_number: u64,
 }
 
+impl Ping {
+    pub fn new(sequence_number: u64) -> Self {
+        Self { sequence_number }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ssz::{Decode, Encode};
