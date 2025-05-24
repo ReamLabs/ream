@@ -15,16 +15,6 @@ use crate::{
 };
 
 impl PrivateKey {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, BLSError> {
-        if bytes.len() != 32 {
-            return Err(BLSError::InvalidByteLength);
-        }
-
-        Ok(Self {
-            inner: B256::from_slice(bytes),
-        })
-    }
-
     fn as_scalar(&self) -> Result<Scalar, BLSError> {
         Scalar::from_bytes(self.inner.as_ref())
             .into_option()
