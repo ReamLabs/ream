@@ -216,6 +216,12 @@ impl BeaconState {
         compute_epoch_at_slot(self.slot)
     }
 
+    pub fn voting_period_start_time(&self) -> u64 {
+        let eth1_voting_period_start_slot =
+            self.slot - self.slot % (EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH);
+        self.compute_timestamp_at_slot(eth1_voting_period_start_slot)
+    }
+
     pub fn get_eth1_pending_deposit_count(&self) -> u64 {
         let eth1_deposit_index_limit = min(
             self.eth1_data.deposit_count,
@@ -2374,7 +2380,7 @@ impl BeaconState {
     pub async fn process_execution_payload(
         &mut self,
         body: &BeaconBlockBody,
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
     ) -> anyhow::Result<()> {
         let payload = &body.execution_payload;
 
@@ -2393,16 +2399,19 @@ impl BeaconState {
         for commitment in body.blob_kzg_commitments.iter() {
             versioned_hashes.push(commitment.calculate_versioned_hash());
         }
-        ensure!(
-            execution_engine
-                .verify_and_notify_new_payload(NewPayloadRequest {
-                    execution_payload: payload.clone(),
-                    versioned_hashes,
-                    parent_beacon_block_root: self.latest_block_header.parent_root,
-                    execution_requests: body.execution_requests.clone()
-                })
-                .await?
-        );
+
+        if let Some(execution_engine) = execution_engine {
+            ensure!(
+                execution_engine
+                    .verify_and_notify_new_payload(NewPayloadRequest {
+                        execution_payload: payload.clone(),
+                        versioned_hashes,
+                        parent_beacon_block_root: self.latest_block_header.parent_root,
+                        execution_requests: body.execution_requests.clone()
+                    })
+                    .await?
+            );
+        }
 
         // Cache execution payload header
         self.latest_execution_payload_header = payload.to_execution_payload_header();
@@ -2413,7 +2422,7 @@ impl BeaconState {
     pub async fn process_block(
         &mut self,
         block: &BeaconBlock,
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
     ) -> anyhow::Result<()> {
         self.process_block_header(block)?;
         self.process_withdrawals(&block.body.execution_payload)?;
@@ -2431,7 +2440,7 @@ impl BeaconState {
         &mut self,
         signed_block: &SignedBeaconBlock,
         validate_result: bool,
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
     ) -> anyhow::Result<()> {
         let block = &signed_block.message;
 

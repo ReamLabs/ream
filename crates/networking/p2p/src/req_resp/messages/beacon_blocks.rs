@@ -8,7 +8,17 @@ pub struct BeaconBlocksByRangeV2Request {
     pub start_slot: u64,
     pub count: u64,
     /// Deprecated, must be set to 1
-    pub step: u64,
+    step: u64,
+}
+
+impl BeaconBlocksByRangeV2Request {
+    pub fn new(start_slot: u64, count: u64) -> Self {
+        Self {
+            start_slot,
+            count,
+            step: 1,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Encode, Decode)]

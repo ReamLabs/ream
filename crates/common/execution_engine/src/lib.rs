@@ -1,6 +1,8 @@
 pub mod rpc_types;
 pub mod utils;
 
+use std::path::PathBuf;
+
 use alloy_primitives::{B64, B256, Bytes, hex};
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -14,7 +16,7 @@ use ream_consensus::{
     },
     execution_requests::ExecutionRequests,
 };
-use reqwest::{Client, Request};
+use reqwest::{Client, Request, Url};
 use rpc_types::{
     eth_syncing::EthSyncing,
     execution_payload::ExecutionPayloadV3,
@@ -27,14 +29,15 @@ use ssz::Encode;
 use ssz_types::VariableList;
 use utils::{Claims, JsonRpcRequest, JsonRpcResponse, blob_versioned_hashes, strip_prefix};
 
+#[derive(Clone)]
 pub struct ExecutionEngine {
     http_client: Client,
     jwt_encoding_key: EncodingKey,
-    engine_api_url: String,
+    engine_api_url: Url,
 }
 
 impl ExecutionEngine {
-    pub fn new(jwt_path: &str, engine_api_url: String) -> anyhow::Result<ExecutionEngine> {
+    pub fn new(engine_api_url: Url, jwt_path: PathBuf) -> anyhow::Result<ExecutionEngine> {
         let jwt_file = std::fs::read_to_string(jwt_path)?;
         let jwt_private_key = hex::decode(strip_prefix(jwt_file.trim_end()))?;
         Ok(ExecutionEngine {
@@ -93,7 +96,7 @@ impl ExecutionEngine {
     pub fn build_request(&self, rpc_request: JsonRpcRequest) -> anyhow::Result<Request> {
         Ok(self
             .http_client
-            .post(&self.engine_api_url)
+            .post(self.engine_api_url.clone())
             .json(&rpc_request)
             .bearer_auth(self.create_jwt_token()?)
             .build()?)

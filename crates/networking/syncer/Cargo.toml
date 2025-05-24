@@ -1,0 +1,18 @@
+[package]
+name = "ream-syncer"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+
+# ream dependencies
+ream-beacon-chain.workspace = true
+ream-p2p.workspace = true

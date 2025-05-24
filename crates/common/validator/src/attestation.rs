@@ -1,16 +1,19 @@
 use std::collections::HashSet;
 
 use anyhow::{anyhow, ensure};
-use ream_bls::{signature::BLSSignature, traits::Aggregatable};
+use ream_bls::{signature::BLSSignature, PrivateKey, traits::{Signable, Aggregatable}};
 use ream_consensus::{
+    attestation_data::AttestationData,
+    electra::beacon_state::BeaconState,
     attestation::Attestation,
-    constants::{MAX_COMMITTEES_PER_SLOT, MAX_VALIDATORS_PER_COMMITTEE, SLOTS_PER_EPOCH},
-    misc::get_committee_indices,
+    constants::{MAX_COMMITTEES_PER_SLOT, MAX_VALIDATORS_PER_COMMITTEE, SLOTS_PER_EPOCH, DOMAIN_BEACON_ATTESTER},
+    misc::{get_committee_indices, compute_signing_root},
 };
 use ssz_types::{
     BitList, BitVector,
     typenum::{U64, U131072},
 };
+
 
 use crate::constants::ATTESTATION_SUBNET_COUNT;
 
@@ -68,4 +71,14 @@ pub fn compute_on_chain_aggregate(mut aggregates: Vec<Attestation>) -> anyhow::R
         signature: BLSSignature::aggregate(&signatures)?,
         committee_bits,
     })
+}
+
+pub fn get_attestation_signature(
+    state: &BeaconState,
+    attestation_data: AttestationData,
+    private_key: PrivateKey,
+) -> anyhow::Result<BLSSignature> {
+    let domain = state.get_domain(DOMAIN_BEACON_ATTESTER, Some(attestation_data.target.epoch));
+    let signing_root = compute_signing_root(attestation_data, domain);
+    Ok(private_key.sign(signing_root.as_ref())?)
 }

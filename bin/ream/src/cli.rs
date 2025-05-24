@@ -5,10 +5,11 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
+use ream_manager::config::ManagerConfig;
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use ream_node::version::FULL_VERSION;
 use ream_p2p::bootnodes::Bootnodes;
-use reqwest::Url;
+use url::Url;
 
 const DEFAULT_DISABLE_DISCOVERY: bool = false;
 const DEFAULT_DISCOVERY_PORT: u16 = 9000;
@@ -83,19 +84,51 @@ pub struct NodeConfig {
 
     #[arg(
         default_value = "default",
-        long = "bootnodes",
+        long,
         help = "One or more comma-delimited base64-encoded ENR's of peers to initially connect to. Use 'default' to use the default bootnodes for the network. Use 'none' to disable bootnodes."
     )]
     pub bootnodes: Bootnodes,
 
-    #[arg(
-        long = "checkpoint-sync-url",
-        help = "Trusted RPC URL to initiate Checkpoint Sync."
-    )]
+    #[arg(long, help = "Trusted RPC URL to initiate Checkpoint Sync.")]
     pub checkpoint_sync_url: Option<Url>,
 
-    #[arg(long = "purge-db", help = "Purges the database.")]
+    #[arg(long, help = "Purges the database.")]
     pub purge_db: bool,
+
+    #[arg(
+        long,
+        help = "The URL of the execution endpoint. This is used to send requests to the engine api.",
+        requires = "execution_jwt_secret"
+    )]
+    pub execution_endpoint: Option<Url>,
+
+    #[arg(
+        long,
+        help = "The JWT secret used to authenticate with the execution endpoint. This is used to send requests to the engine api.",
+        requires = "execution_endpoint"
+    )]
+    pub execution_jwt_secret: Option<PathBuf>,
+}
+
+impl From<NodeConfig> for ManagerConfig {
+    fn from(config: NodeConfig) -> Self {
+        Self {
+            http_address: config.http_address,
+            http_port: config.http_port,
+            http_allow_origin: config.http_allow_origin,
+            socket_address: config.socket_address,
+            socket_port: config.socket_port,
+            discovery_port: config.discovery_port,
+            disable_discovery: config.disable_discovery,
+            data_dir: config.data_dir,
+            ephemeral: config.ephemeral,
+            bootnodes: config.bootnodes,
+            checkpoint_sync_url: config.checkpoint_sync_url,
+            purge_db: config.purge_db,
+            execution_endpoint: config.execution_endpoint,
+            execution_jwt_secret: config.execution_jwt_secret,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -39,6 +39,10 @@ pub struct Store {
 }
 
 impl Store {
+    pub fn new(db: ReamDB) -> Self {
+        Self { db }
+    }
+
     pub fn is_previous_epoch_justified(&self) -> anyhow::Result<bool> {
         let current_epoch = self.get_current_store_epoch()?;
         Ok(self.db.justified_checkpoint_provider().get()?.epoch + 1 == current_epoch)
@@ -637,7 +641,7 @@ impl Store {
     pub async fn is_data_available(
         &self,
         blob_kzg_commitments: &[KZGCommitment],
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
         beacon_block_root: B256,
     ) -> anyhow::Result<bool> {
         // `retrieve_blobs_and_proofs` is implementation and context dependent
@@ -656,31 +660,33 @@ impl Store {
         }
 
         // Fallback to trying engine api
-        if blobs_and_proofs.contains(&None) {
-            let indexed_blob_versioned_hashes = blobs_and_proofs
-                .iter()
-                .enumerate()
-                .filter_map(|(index, blob_and_proof)| {
-                    if blob_and_proof.is_none() {
-                        Some((
-                            index,
-                            blob_kzg_commitments[index].calculate_versioned_hash(),
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            let (indices, blob_versioned_hashes): (Vec<_>, Vec<_>) =
-                indexed_blob_versioned_hashes.into_iter().unzip();
-            let execution_blobs_and_proofs = execution_engine
-                .engine_get_blobs_v1(blob_versioned_hashes)
-                .await?;
-            for (index, blob_and_proof) in indices
-                .into_iter()
-                .zip(execution_blobs_and_proofs.into_iter())
-            {
-                blobs_and_proofs[index] = blob_and_proof;
+        if let Some(execution_engine) = execution_engine {
+            if blobs_and_proofs.contains(&None) {
+                let indexed_blob_versioned_hashes = blobs_and_proofs
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, blob_and_proof)| {
+                        if blob_and_proof.is_none() {
+                            Some((
+                                index,
+                                blob_kzg_commitments[index].calculate_versioned_hash(),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let (indices, blob_versioned_hashes): (Vec<_>, Vec<_>) =
+                    indexed_blob_versioned_hashes.into_iter().unzip();
+                let execution_blobs_and_proofs = execution_engine
+                    .engine_get_blobs_v1(blob_versioned_hashes)
+                    .await?;
+                for (index, blob_and_proof) in indices
+                    .into_iter()
+                    .zip(execution_blobs_and_proofs.into_iter())
+                {
+                    blobs_and_proofs[index] = blob_and_proof;
+                }
             }
         }
 

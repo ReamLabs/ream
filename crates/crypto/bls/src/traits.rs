@@ -1,4 +1,4 @@
-use crate::{PubKey, errors::BLSError};
+use crate::{PubKey, BLSSignature, errors::BLSError};
 
 /// Trait for aggregating BLS public keys.
 ///
@@ -23,6 +23,28 @@ pub trait ZkcryptoAggregatable<T>: Aggregatable<T, Error = BLSError> {}
 
 /// Marker trait for supranational/blst BLS aggregation implementation
 pub trait SupranationalAggregatable<T>: Aggregatable<T, Error = anyhow::Error> {}
+
+/// Trait for BLS message signing.
+///
+/// This trait provides functionality to sign messages using a BLS private key.
+pub trait Signable {
+    type Error;
+
+    /// Signs a message using the private key.
+    ///
+    /// # Arguments
+    /// * `message` - The message bytes to sign
+    ///
+    /// # Returns
+    /// * `Result<BLSSignature, Self::Error>` - The BLS signature or an error
+    fn sign(&self, message: &[u8]) -> Result<BLSSignature, Self::Error>;
+}
+
+/// Marker trait for zkcrypto/bls12_381 BLS signing implementation
+pub trait ZkcryptoSignable: Signable<Error = BLSError> {}
+
+/// Marker trait for supranational/blst BLS signing implementation
+pub trait SupranationalSignable: Signable<Error = anyhow::Error> {}
 
 /// Trait for verifying BLS signatures.
 ///

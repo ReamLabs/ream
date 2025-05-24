@@ -1,5 +1,5 @@
 use actix_web::{App, HttpServer, dev::ServerHandle, middleware, web::Data};
-use config::ServerConfig;
+use config::RpcServerConfig;
 use ream_storage::db::ReamDB;
 use tracing::info;
 
@@ -11,7 +11,7 @@ pub mod routes;
 pub mod types;
 
 /// Start the Beacon API server.
-pub async fn start_server(server_config: ServerConfig, db: ReamDB) -> std::io::Result<()> {
+pub async fn start_server(server_config: RpcServerConfig, db: ReamDB) -> std::io::Result<()> {
     info!(
         "starting HTTP server on {:?}",
         server_config.http_socket_address

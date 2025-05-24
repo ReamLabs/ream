@@ -1,0 +1,28 @@
+[package]
+name = "ream-manager"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+discv5.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+# ream dependencies
+ream-beacon-chain.workspace = true
+ream-consensus.workspace = true
+ream-discv5.workspace = true
+ream-execution-engine.workspace = true
+ream-executor.workspace = true
+ream-network-spec.workspace = true
+ream-p2p.workspace = true
+ream-storage.workspace = true
+ream-syncer.workspace = true
