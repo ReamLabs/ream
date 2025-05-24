@@ -6,9 +6,3 @@ use tree_hash_derive::TreeHash;
 pub struct PrivateKey {
     pub inner: B256,
 }
-
-impl PrivateKey {
-    pub fn to_bytes(&self) -> &[u8] {
-        self.inner.as_slice()
-    }
-}
