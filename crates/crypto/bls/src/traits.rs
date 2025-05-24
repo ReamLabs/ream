@@ -26,7 +26,7 @@ pub trait SupranationalAggregatable: Aggregatable<Error = anyhow::Error> {}
 
 /// Trait for BLS message signing.
 ///
-/// This trait provides functionality to sign messages using a BLS secret key.
+/// This trait provides functionality to sign messages using a BLS private key.
 pub trait Signable {
     type Error;
 
