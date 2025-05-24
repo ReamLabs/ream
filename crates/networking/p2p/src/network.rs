@@ -385,9 +385,15 @@ impl Network {
                 message_id: _,
                 message,
             } => match GossipsubMessage::decode(&message.topic, &message.data) {
-                Ok(gossip_message) => {
-                    info!("Gossip message: {gossip_message:?}");
-                }
+                Ok(gossip_message) => match gossip_message {
+                    GossipsubMessage::BeaconBlock(signed_block) => {
+                        info!(
+                            "Beacon block received over gossipsub: slot: {}, root: {}",
+                            signed_block.message.slot,
+                            signed_block.message.block_root()
+                        );
+                    }
+                },
                 Err(err) => {
                     trace!("Failed to decode gossip message: {err:?}");
                 }
