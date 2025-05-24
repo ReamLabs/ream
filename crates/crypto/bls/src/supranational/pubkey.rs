@@ -27,14 +27,13 @@ impl PubKey {
 
 impl Aggregatable<PubKey> for PubKey {
     type Error = anyhow::Error;
-
-    fn aggregate(pubkeys: &[&PubKey]) -> anyhow::Result<PubKey> {
-        let blst_pubkeys = pubkeys
+    fn aggregate(public_keys: &[&PubKey]) -> anyhow::Result<PubKey> {
+        let public_keys = public_keys
             .iter()
-            .map(|pk| pk.to_blst_pubkey())
+            .map(|public_key| public_key.to_blst_pubkey())
             .collect::<Result<Vec<_>, _>>()?;
-        let aggregate_pubkey =
-            BlstAggregatePublicKey::aggregate(&blst_pubkeys.iter().collect::<Vec<_>>(), true)
+        let aggregate_public_key =
+            BlstAggregatePublicKey::aggregate(&public_keys.iter().collect::<Vec<_>>(), true)
                 .map_err(|err| anyhow!("Failed to aggregate and validate public keys {err:?}"))?;
         Ok(PubKey::try_from(aggregate_pubkey.to_public_key())?)
     }

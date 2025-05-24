@@ -75,8 +75,8 @@ impl Aggregatable<BLSSignature> for BLSSignature {
     fn aggregate(signatures: &[&BLSSignature]) -> Result<BLSSignature, Self::Error> {
         let aggregate_point = signatures
             .iter()
-            .try_fold(G2Projective::identity(), |acc, signature| {
-                Ok(acc.add(&G2Projective::from(G2Affine::try_from(*signature)?)))
+            .try_fold(G2Projective::identity(), |accumulator, signature| {
+                Ok(accumulator.add(&G2Projective::from(G2Affine::try_from(*signature)?)))
             })?;
 
         Ok(BLSSignature::from(aggregate_point))
