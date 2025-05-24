@@ -216,6 +216,12 @@ impl BeaconState {
         compute_epoch_at_slot(self.slot)
     }
 
+    pub fn voting_period_start_time(&self) -> u64 {
+        let eth1_voting_period_start_slot =
+            self.slot - self.slot % (EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH);
+        self.compute_timestamp_at_slot(eth1_voting_period_start_slot)
+    }
+
     pub fn get_eth1_pending_deposit_count(&self) -> u64 {
         let eth1_deposit_index_limit = min(
             self.eth1_data.deposit_count,
