@@ -27,6 +27,7 @@ impl PubKey {
 
 impl Aggregatable<PubKey> for PubKey {
     type Error = anyhow::Error;
+    
     fn aggregate(public_keys: &[&PubKey]) -> anyhow::Result<PubKey> {
         let public_keys = public_keys
             .iter()
