@@ -1,37 +1,41 @@
+use alloy_primitives::B256;
 use blst::min_pk::SecretKey as BlstSecretKey;
 
 use crate::{
+    SecretKey,
     constants::DST,
     errors::BLSError,
     signature::BLSSignature,
     traits::{Signable, SupranationalSignable},
 };
 
-#[derive(Clone)]
-pub struct SecretKey {
-    pub(crate) inner: BlstSecretKey,
-}
-
 impl SecretKey {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, BLSError> {
         let key = BlstSecretKey::key_gen(bytes, &[]).map_err(|e| BLSError::BlstError(e.into()))?;
-        Ok(Self { inner: key })
+        let key_bytes = key.to_bytes();
+        Ok(Self {
+            inner: B256::from_slice(&key_bytes),
+        })
     }
 
-    pub fn sign(&self, message: &[u8]) -> BLSSignature {
-        let sig = self.inner.sign(message, DST, &[]);
-        let bytes = sig.serialize();
-        BLSSignature {
-            inner: ssz_types::FixedVector::from(bytes.to_vec()),
-        }
+    fn to_blst_secret_key(&self) -> Result<BlstSecretKey, BLSError> {
+        let bytes = self.inner.as_slice();
+        BlstSecretKey::from_bytes(bytes).map_err(|e| BLSError::BlstError(e.into()))
     }
 }
 
 impl Signable for SecretKey {
-    type Error = BLSError;
+    type Error = anyhow::Error;
 
     fn sign(&self, message: &[u8]) -> Result<BLSSignature, Self::Error> {
-        Ok(self.sign(message))
+        let blst_key = self
+            .to_blst_secret_key()
+            .map_err(|e| anyhow::anyhow!("Failed to convert to BlstSecretKey: {}", e))?;
+        let sig = blst_key.sign(message, DST, &[]);
+        let bytes = sig.serialize();
+        Ok(BLSSignature {
+            inner: FixedVector::from(bytes.to_vec()),
+        })
     }
 }
 
