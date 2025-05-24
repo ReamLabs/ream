@@ -7,14 +7,14 @@ use group::Curve;
 use ssz_types::FixedVector;
 
 use crate::{
-    SecretKey,
+    PrivateKey,
     constants::DST,
     errors::BLSError,
     signature::BLSSignature,
     traits::{Signable, ZkcryptoSignable},
 };
 
-impl SecretKey {
+impl PrivateKey {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, BLSError> {
         if bytes.len() != 32 {
             return Err(BLSError::InvalidByteLength);
@@ -29,26 +29,18 @@ impl SecretKey {
                 inner: B256::from_slice(&key_bytes),
             })
         } else {
-            Err(BLSError::InvalidSecretKey)
+            Err(BLSError::InvalidPrivateKey)
         }
     }
 
     fn as_scalar(&self) -> Result<Scalar, BLSError> {
-        let bytes = self.inner.as_slice();
-        if bytes.len() != 32 {
-            return Err(BLSError::InvalidByteLength);
-        }
-
-        let mut key_bytes = [0u8; 32];
-        key_bytes.copy_from_slice(bytes);
-
-        Scalar::from_bytes(&key_bytes)
+        Scalar::from_bytes(self.inner.as_ref())
             .into_option()
-            .ok_or(BLSError::InvalidSecretKey)
+            .ok_or(BLSError::InvalidPrivateKey)
     }
 }
 
-impl Signable for SecretKey {
+impl Signable for PrivateKey {
     type Error = BLSError;
 
     fn sign(&self, message: &[u8]) -> Result<BLSSignature, Self::Error> {
@@ -68,4 +60,4 @@ impl Signable for SecretKey {
     }
 }
 
-impl ZkcryptoSignable for SecretKey {}
+impl ZkcryptoSignable for PrivateKey {}

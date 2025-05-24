@@ -10,10 +10,10 @@ pub enum BLSError {
     BlstError(#[from] BlstError),
     #[error("invalid byte length")]
     InvalidByteLength,
+    #[error("invalid private key")]
+    InvalidPrivateKey,
     #[error("invalid public key")]
     InvalidPublicKey,
-    #[error("invalid secret key")]
-    InvalidSecretKey,
     #[error("invalid signature")]
     InvalidSignature,
     #[error("invalid hex string")]

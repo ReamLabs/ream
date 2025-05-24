@@ -1,15 +1,16 @@
 use alloy_primitives::B256;
 use blst::min_pk::SecretKey as BlstSecretKey;
+use ssz_types::FixedVector;
 
 use crate::{
-    SecretKey,
+    PrivateKey,
     constants::DST,
     errors::BLSError,
     signature::BLSSignature,
     traits::{Signable, SupranationalSignable},
 };
 
-impl SecretKey {
+impl PrivateKey {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, BLSError> {
         let key = BlstSecretKey::key_gen(bytes, &[]).map_err(|e| BLSError::BlstError(e.into()))?;
         let key_bytes = key.to_bytes();
@@ -24,7 +25,7 @@ impl SecretKey {
     }
 }
 
-impl Signable for SecretKey {
+impl Signable for PrivateKey {
     type Error = anyhow::Error;
 
     fn sign(&self, message: &[u8]) -> Result<BLSSignature, Self::Error> {
@@ -39,4 +40,4 @@ impl Signable for SecretKey {
     }
 }
 
-impl SupranationalSignable for SecretKey {}
+impl SupranationalSignable for PrivateKey {}

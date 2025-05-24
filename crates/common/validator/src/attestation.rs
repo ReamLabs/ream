@@ -1,4 +1,4 @@
-use ream_bls::{BLSSignature, SecretKey, traits::Signable};
+use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
 use ream_consensus::{
     attestation_data::AttestationData,
     constants::{DOMAIN_BEACON_ATTESTER, SLOTS_PER_EPOCH},
@@ -24,7 +24,7 @@ pub fn compute_subnet_for_attestation(
 pub fn get_attestation_signature(
     state: &BeaconState,
     attestation_data: AttestationData,
-    private_key: SecretKey,
+    private_key: PrivateKey,
 ) -> anyhow::Result<BLSSignature> {
     let domain = state.get_domain(DOMAIN_BEACON_ATTESTER, Some(attestation_data.target.epoch));
     let signing_root = compute_signing_root(attestation_data, domain);
