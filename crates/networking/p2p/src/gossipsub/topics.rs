@@ -62,8 +62,9 @@ impl GossipTopic {
             }
         };
 
-        let fork = B32::from_hex(topic_parts[1])
-            .map_err(|_| GossipsubError::InvalidTopic(format!("Invalid topic fork: {topic:?}")))?;
+        let fork = B32::from_hex(topic_parts[1]).map_err(|err| {
+            GossipsubError::InvalidTopic(format!("Invalid topic fork: {topic:?} {err:?}"))
+        })?;
         let kind = match topic_parts[2] {
             BEACON_BLOCK_TOPIC => GossipTopicKind::BeaconBlock,
             BEACON_AGGREGATE_AND_PROOF_TOPIC => GossipTopicKind::BeaconAggregateAndProof,
