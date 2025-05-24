@@ -1,4 +1,3 @@
-use alloy_primitives::B256;
 use bls12_381::{
     G2Projective, Scalar,
     hash_to_curve::{ExpandMsgXmd, HashToCurve},
@@ -14,7 +13,6 @@ use crate::{
     traits::{Signable, ZkcryptoSignable},
 };
 
-impl PrivateKey {
 impl Signable for PrivateKey {
     type Error = BLSError;
 
@@ -27,11 +25,12 @@ impl Signable for PrivateKey {
         let scalar = Scalar::from_bytes(self.inner.as_ref())
             .into_option()
             .ok_or(BLSError::InvalidPrivateKey)?;
-        let signature_point = hash_point * scalar
+        let signature_point = hash_point * scalar;
         let signature_bytes = signature_point.to_affine().to_compressed();
 
         Ok(BLSSignature {
-            inner: FixedVector::new(signature_bytes.to_vec()).map_err(|err| xyz)?,
+            inner: FixedVector::new(signature_bytes.to_vec())
+                .map_err(|_| BLSError::InvalidSignature)?,
         })
     }
 }
