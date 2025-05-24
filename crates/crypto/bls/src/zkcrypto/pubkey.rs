@@ -36,11 +36,12 @@ impl Aggregatable<PubKey> for PubKey {
     type Error = BLSError;
 
     fn aggregate(public_keys: &[&PubKey]) -> Result<PubKey, Self::Error> {
-        let aggregate_point = public_keys
-            .iter()
-            .try_fold(G1Projective::identity(), |accumulator, public_key| {
-                Ok(accumulator.add(&G1Projective::from(G1Affine::try_from(*public_key)?)))
-            })?;
+        let aggregate_point =
+            public_keys
+                .iter()
+                .try_fold(G1Projective::identity(), |accumulator, public_key| {
+                    Ok(accumulator.add(&G1Projective::from(G1Affine::try_from(*public_key)?)))
+                })?;
 
         Ok(PubKey::from(aggregate_point))
     }

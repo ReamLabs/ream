@@ -35,7 +35,7 @@ impl Aggregatable<PubKey> for PubKey {
         let aggregate_public_key =
             BlstAggregatePublicKey::aggregate(&public_keys.iter().collect::<Vec<_>>(), true)
                 .map_err(|err| anyhow!("Failed to aggregate and validate public keys {err:?}"))?;
-        Ok(PubKey::try_from(aggregate_pubkey.to_public_key())?)
+        Ok(PubKey::try_from(aggregate_public_key.to_public_key())?)
     }
 }
 
