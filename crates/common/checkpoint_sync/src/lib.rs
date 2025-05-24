@@ -1,10 +1,12 @@
 pub mod checkpoint;
+pub mod weak_subjectivity;
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 use checkpoint::get_checkpoint_sync_sources;
 use ream_consensus::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
+    checkpoint::Checkpoint,
     constants::SECONDS_PER_SLOT,
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     execution_engine::rpc_types::get_blobs::BlobAndProofV1,
@@ -20,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ssz::Decode;
 use tracing::{info, warn};
+use weak_subjectivity::verify_state_from_ws_checkpoint;
 
 /// A OptionalBeaconVersionedResponse data struct that can be used to wrap data type
 /// used for json rpc responses
@@ -45,10 +48,11 @@ struct OptionalBeaconVersionedResponse<T> {
 pub async fn initialize_db_from_checkpoint(
     db: ReamDB,
     checkpoint_sync_url: Option<Url>,
-) -> anyhow::Result<()> {
+    ws_checkpoint: Option<Checkpoint>,
+) -> anyhow::Result<bool> {
     if db.is_initialized() {
         warn!("DB is already initialized. Skipping checkpoint sync.");
-        return Ok(());
+        return Ok(true);
     }
 
     let checkpoint_sync_url = get_checkpoint_sync_sources(checkpoint_sync_url).remove(0);
@@ -78,6 +82,19 @@ pub async fn initialize_db_from_checkpoint(
         state.state_root(),
         slot
     );
+
+    let mut ws_verified = true;
+    if let Some(ws_checkpoint_data) = ws_checkpoint {
+        if ws_checkpoint_data.epoch < state.get_current_epoch() {
+            ensure!(
+                verify_state_from_ws_checkpoint(&state, &ws_checkpoint_data)?,
+                "Weak subjectivity checkpoint not found"
+            );
+            ws_verified = true;
+        } else {
+            ws_verified = false;
+        }
+    }
     ensure!(block.message.slot == state.slot, "Slot mismatch");
 
     ensure!(block.message.state_root == state.state_root());
@@ -87,7 +104,7 @@ pub async fn initialize_db_from_checkpoint(
     on_tick(&mut store, time)?;
     info!("Initial sync complete");
 
-    Ok(())
+    Ok(ws_verified)
 }
 
 /// Fetch initial state from trusted RPC

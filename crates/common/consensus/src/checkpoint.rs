@@ -1,3 +1,5 @@
+use std::{fmt, str::FromStr};
+
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -24,3 +26,46 @@ pub struct Checkpoint {
     pub epoch: u64,
     pub root: B256,
 }
+
+impl FromStr for Checkpoint {
+    type Err = CheckpointParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (root_str, epoch_str) = s
+            .split_once(':')
+            .ok_or(CheckpointParseError::InvalidFormat)?;
+
+        let root = root_str
+            .strip_prefix("0x")
+            .ok_or(CheckpointParseError::MissingHexPrefix)
+            .and_then(|hex| B256::from_str(hex).map_err(|_| CheckpointParseError::InvalidHex))?;
+
+        let epoch = epoch_str
+            .parse::<u64>()
+            .map_err(|_| CheckpointParseError::InvalidEpoch)?;
+
+        Ok(Self { epoch, root })
+    }
+}
+
+#[derive(Debug)]
+pub enum CheckpointParseError {
+    InvalidFormat,
+    MissingHexPrefix,
+    InvalidHex,
+    InvalidEpoch,
+}
+
+impl fmt::Display for CheckpointParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use CheckpointParseError::*;
+        match self {
+            InvalidFormat => write!(f, "Expected format: 0x<block_root>:<epoch>"),
+            MissingHexPrefix => write!(f, "Missing '0x' prefix on block_root"),
+            InvalidHex => write!(f, "Invalid hex block_root (expected 32 bytes)"),
+            InvalidEpoch => write!(f, "Epoch must be a valid u64 integer"),
+        }
+    }
+}
+
+impl std::error::Error for CheckpointParseError {}

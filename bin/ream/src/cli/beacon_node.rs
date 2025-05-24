@@ -1,6 +1,7 @@
 use std::{net::IpAddr, path::PathBuf, sync::Arc};
 
 use clap::Parser;
+use ream_consensus::checkpoint::Checkpoint;
 use ream_manager::config::ManagerConfig;
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
@@ -69,6 +70,12 @@ pub struct BeaconNodeConfig {
 
     #[arg(long, help = "Trusted RPC URL to initiate Checkpoint Sync.")]
     pub checkpoint_sync_url: Option<Url>,
+
+    #[arg(
+        long,
+        help = "Weak subjectivity checkpoint in format <0xblock_root>:<epoch>"
+    )]
+    pub ws_checkpoint: Option<Checkpoint>,
 
     #[arg(long, help = "Purges the database.")]
     pub purge_db: bool,
