@@ -12,10 +12,12 @@ use crate::{
 
 impl PrivateKey {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, BLSError> {
-        let key = BlstSecretKey::key_gen(bytes, &[]).map_err(|e| BLSError::BlstError(e.into()))?;
-        let key_bytes = key.to_bytes();
+        if bytes.len() != 32 {
+            return Err(BLSError::InvalidByteLength);
+        }
+
         Ok(Self {
-            inner: B256::from_slice(&key_bytes),
+            inner: B256::from_slice(bytes),
         })
     }
 

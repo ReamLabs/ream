@@ -20,17 +20,9 @@ impl PrivateKey {
             return Err(BLSError::InvalidByteLength);
         }
 
-        let mut key_bytes = [0u8; 32];
-        key_bytes.copy_from_slice(bytes);
-
-        let scalar = Scalar::from_bytes(&key_bytes);
-        if scalar.is_some().into() {
-            Ok(Self {
-                inner: B256::from_slice(&key_bytes),
-            })
-        } else {
-            Err(BLSError::InvalidPrivateKey)
-        }
+        Ok(Self {
+            inner: B256::from_slice(bytes),
+        })
     }
 
     fn as_scalar(&self) -> Result<Scalar, BLSError> {
