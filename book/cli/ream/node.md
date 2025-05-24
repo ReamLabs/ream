@@ -37,6 +37,10 @@ Options:
           Trusted RPC URL to initiate Checkpoint Sync.
       --purge-db
           Purges the database.
+      --execution-endpoint <EXECUTION_ENDPOINT>
+          The URL of the execution endpoint. This is used to send requests to the engine api.
+      --execution-jwt-secret <EXECUTION_JWT_SECRET>
+          The JWT secret used to authenticate with the execution endpoint. This is used to send requests to the engine api.
   -h, --help
           Print help
 ```
