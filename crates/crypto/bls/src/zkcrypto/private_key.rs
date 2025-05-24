@@ -15,13 +15,6 @@ use crate::{
 };
 
 impl PrivateKey {
-    fn as_scalar(&self) -> Result<Scalar, BLSError> {
-        Scalar::from_bytes(self.inner.as_ref())
-            .into_option()
-            .ok_or(BLSError::InvalidPrivateKey)
-    }
-}
-
 impl Signable for PrivateKey {
     type Error = BLSError;
 
@@ -31,13 +24,14 @@ impl Signable for PrivateKey {
             DST,
         );
 
-        let scalar = self.as_scalar()?;
-        let signature_point = hash_point * scalar;
-
+        let scalar = Scalar::from_bytes(self.inner.as_ref())
+            .into_option()
+            .ok_or(BLSError::InvalidPrivateKey)?;
+        let signature_point = hash_point * scalar
         let signature_bytes = signature_point.to_affine().to_compressed();
 
         Ok(BLSSignature {
-            inner: FixedVector::from(signature_bytes.to_vec()),
+            inner: FixedVector::new(signature_bytes.to_vec()).map_err(|err| xyz)?,
         })
     }
 }
