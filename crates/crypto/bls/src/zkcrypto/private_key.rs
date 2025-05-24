@@ -30,7 +30,7 @@ impl Signable for PrivateKey {
 
         Ok(BLSSignature {
             inner: FixedVector::new(signature_bytes.to_vec())
-                .map_err(|_| BLSError::InvalidSignature)?,
+                .map_err(|_| BLSError::InvalidPrivateKey)?,
         })
     }
 }
