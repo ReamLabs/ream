@@ -1,6 +1,7 @@
 use libp2p::gossipsub::TopicHash;
 use ream_consensus::{
-    constants::genesis_validators_root, electra::beacon_block::SignedBeaconBlock,
+    attester_slashing::AttesterSlashing, constants::genesis_validators_root,
+    electra::beacon_block::SignedBeaconBlock,
 };
 use ream_network_spec::networks::network_spec;
 use ssz::Decode;
@@ -12,7 +13,8 @@ use super::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GossipsubMessage {
-    BeaconBlock(SignedBeaconBlock),
+    BeaconBlock(Box<SignedBeaconBlock>),
+    AttesterSlashing(Box<AttesterSlashing>),
 }
 
 impl GossipsubMessage {
@@ -26,9 +28,12 @@ impl GossipsubMessage {
         }
 
         match gossip_topic.kind {
-            GossipTopicKind::BeaconBlock => {
-                Ok(Self::BeaconBlock(SignedBeaconBlock::from_ssz_bytes(data)?))
-            }
+            GossipTopicKind::BeaconBlock => Ok(Self::BeaconBlock(Box::new(
+                SignedBeaconBlock::from_ssz_bytes(data)?,
+            ))),
+            GossipTopicKind::AttesterSlashing => Ok(Self::AttesterSlashing(Box::new(
+                AttesterSlashing::from_ssz_bytes(data)?,
+            ))),
             _ => Err(GossipsubError::InvalidTopic(format!(
                 "Topic not supported: {topic:?}"
             ))),

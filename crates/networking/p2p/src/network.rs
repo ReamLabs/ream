@@ -35,6 +35,7 @@ use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
 use ream_executor::ReamExecutor;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tracing::{error, info, trace, warn};
+use tree_hash::TreeHash;
 use yamux::Config as YamuxConfig;
 
 use crate::{
@@ -391,6 +392,12 @@ impl Network {
                             "Beacon block received over gossipsub: slot: {}, root: {}",
                             signed_block.message.slot,
                             signed_block.message.block_root()
+                        );
+                    }
+                    GossipsubMessage::AttesterSlashing(attester_slashing) => {
+                        info!(
+                            "Attester Slashing received over gossipsub: root: {}",
+                            attester_slashing.tree_hash_root()
                         );
                     }
                 },

@@ -4663,6 +4663,7 @@ dependencies = [
  "tokio-io-timeout",
  "tokio-util",
  "tracing",
+ "tree_hash",
  "unsigned-varint 0.8.0",
 ]
 
