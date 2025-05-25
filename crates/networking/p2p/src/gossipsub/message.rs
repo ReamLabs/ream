@@ -6,7 +6,7 @@ use ream_consensus::{
 };
 use ream_network_spec::networks::network_spec;
 use ream_validator::{
-    aggregate_and_proof::AggregateAndProof, contribution_and_proof::ContributionAndProof,
+    aggregate_and_proof::AggregateAndProof, contribution_and_proof::SignedContributionAndProof,
 };
 use ssz::Decode;
 
@@ -24,7 +24,7 @@ pub enum GossipsubMessage {
     BeaconAttestation(Box<Attestation>),
     SyncCommittee(Box<SyncCommittee>),
     BlsToExecutionChange(Box<BLSToExecutionChange>),
-    SyncCommitteeContributionAndProof(Box<ContributionAndProof>),
+    SyncCommitteeContributionAndProof(Box<SignedContributionAndProof>),
 }
 
 impl GossipsubMessage {
@@ -46,7 +46,7 @@ impl GossipsubMessage {
             ))),
             GossipTopicKind::SyncCommitteeContributionAndProof => {
                 Ok(Self::SyncCommitteeContributionAndProof(Box::new(
-                    ContributionAndProof::from_ssz_bytes(data)?,
+                    SignedContributionAndProof::from_ssz_bytes(data)?,
                 )))
             }
             GossipTopicKind::AggregateAndProof => Ok(Self::AggregateAndProof(Box::new(

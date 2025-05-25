@@ -7,8 +7,10 @@ use tree_hash_derive::TreeHash;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SyncCommitteeContribution {
+    #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,
     pub beacon_block_root: B256,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub subcommittee_index: u64,
     pub aggregation_bits: BitVector<U128>,
     pub signature: BLSSignature,
@@ -20,4 +22,10 @@ pub struct ContributionAndProof {
     pub aggregator_index: u64,
     pub contribution: SyncCommitteeContribution,
     pub selection_proof: BLSSignature,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+pub struct SignedContributionAndProof {
+    pub message: ContributionAndProof,
+    pub signature: BLSSignature,
 }
