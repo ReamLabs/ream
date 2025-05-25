@@ -1,13 +1,25 @@
 use std::collections::HashSet;
 
+use alloy_primitives::B256;
 use anyhow::{bail, ensure};
+use ream_bls::{BLSSignature, traits::Aggregatable};
 use ream_consensus::{
     constants::{EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SYNC_COMMITTEE_SIZE},
-    electra::beacon_state::BeaconState,
+    electra::{beacon_block::BeaconBlock, beacon_state::BeaconState},
     misc::compute_epoch_at_slot,
+    sync_aggregate::SyncAggregate,
 };
+use ssz_types::{BitVector, typenum::U64};
 
 use crate::constants::SYNC_COMMITTEE_SUBNET_COUNT;
+
+pub struct SyncCommitteeContribution {
+    pub slot: u64,
+    pub beacon_block_root: B256,
+    pub subcommittee_index: u64,
+    pub aggregation_bits: BitVector<U64>,
+    pub signature: BLSSignature,
+}
 
 pub fn compute_sync_committee_period(epoch: u64) -> u64 {
     epoch / EPOCHS_PER_SYNC_COMMITTEE_PERIOD
@@ -74,4 +86,33 @@ pub fn compute_subnets_for_sync_committee(
         .into_iter()
         .map(|index| index as u64 / (SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT))
         .collect())
+}
+
+pub fn process_sync_committee_contributions(
+    block: &mut BeaconBlock,
+    contributions: HashSet<SyncCommitteeContribution>,
+) -> anyhow::Result<()> {
+    let mut sync_aggregate = SyncAggregate {
+        sync_committee_bits: BitVector::new(),
+        sync_committee_signature: BLSSignature::infinity(),
+    };
+    let mut signatures: Vec<BLSSignature> = Vec::new();
+    for contribution in contributions {
+        for (index, participated) in contribution.aggregation_bits.iter().enumerate() {
+            if participated {
+                let participant_index = (SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT)
+                    * contribution.subcommittee_index
+                    + index as u64;
+                sync_aggregate
+                    .sync_committee_bits
+                    .set(participant_index as usize, true)
+                    .map_err(|err| anyhow::anyhow!("Failed to set sync committee bit: {err:?}"))?;
+            }
+        }
+        signatures.push(contribution.signature);
+    }
+    sync_aggregate.sync_committee_signature =
+        BLSSignature::aggregate(&signatures.iter().collect::<Vec<&BLSSignature>>())?;
+    block.body.sync_aggregate = sync_aggregate;
+    Ok(())
 }
