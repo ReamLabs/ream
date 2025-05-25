@@ -4,6 +4,7 @@ use ream_consensus::{
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_network_spec::networks::network_spec;
+use ream_validator::aggregate_and_proof::AggregateAndProof;
 use ssz::Decode;
 
 use super::{
@@ -15,6 +16,7 @@ use super::{
 pub enum GossipsubMessage {
     BeaconBlock(Box<SignedBeaconBlock>),
     AttesterSlashing(Box<AttesterSlashing>),
+    AggregateAndProof(Box<AggregateAndProof>),
 }
 
 impl GossipsubMessage {
@@ -30,6 +32,9 @@ impl GossipsubMessage {
         match gossip_topic.kind {
             GossipTopicKind::BeaconBlock => Ok(Self::BeaconBlock(Box::new(
                 SignedBeaconBlock::from_ssz_bytes(data)?,
+            ))),
+            GossipTopicKind::AggregateAndProof => Ok(Self::AggregateAndProof(Box::new(
+                AggregateAndProof::from_ssz_bytes(data)?,
             ))),
             GossipTopicKind::AttesterSlashing => Ok(Self::AttesterSlashing(Box::new(
                 AttesterSlashing::from_ssz_bytes(data)?,

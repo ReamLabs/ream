@@ -102,6 +102,7 @@ ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-rpc = { path = "crates/rpc" }
 ream-storage = { path = "crates/storage" }
 ream-syncer = { path = "crates/networking/syncer" }
+ream-validator = { path = "crates/common/validator" }
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }

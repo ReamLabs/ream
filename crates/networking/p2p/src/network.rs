@@ -394,6 +394,12 @@ impl Network {
                             signed_block.message.block_root()
                         );
                     }
+                    GossipsubMessage::AggregateAndProof(aggregate_and_proof) => {
+                        info!(
+                            "Aggregate And Proof received over gossipsub: root: {}",
+                            aggregate_and_proof.tree_hash_root()
+                        );
+                    }
                     GossipsubMessage::AttesterSlashing(attester_slashing) => {
                         info!(
                             "Attester Slashing received over gossipsub: root: {}",

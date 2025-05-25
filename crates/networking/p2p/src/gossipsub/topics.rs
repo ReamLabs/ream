@@ -67,7 +67,7 @@ impl GossipTopic {
         })?;
         let kind = match topic_parts[2] {
             BEACON_BLOCK_TOPIC => GossipTopicKind::BeaconBlock,
-            BEACON_AGGREGATE_AND_PROOF_TOPIC => GossipTopicKind::BeaconAggregateAndProof,
+            BEACON_AGGREGATE_AND_PROOF_TOPIC => GossipTopicKind::AggregateAndProof,
             VOLUNTARY_EXIT_TOPIC => GossipTopicKind::VoluntaryExit,
             PROPOSER_SLASHING_TOPIC => GossipTopicKind::ProposerSlashing,
             ATTESTER_SLASHING_TOPIC => GossipTopicKind::AttesterSlashing,
@@ -114,7 +114,7 @@ impl From<GossipTopic> for String {
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 pub enum GossipTopicKind {
     BeaconBlock,
-    BeaconAggregateAndProof,
+    AggregateAndProof,
     VoluntaryExit,
     ProposerSlashing,
     AttesterSlashing,
@@ -131,7 +131,7 @@ impl std::fmt::Display for GossipTopicKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GossipTopicKind::BeaconBlock => write!(f, "{BEACON_BLOCK_TOPIC}"),
-            GossipTopicKind::BeaconAggregateAndProof => {
+            GossipTopicKind::AggregateAndProof => {
                 write!(f, "{BEACON_AGGREGATE_AND_PROOF_TOPIC}")
             }
             GossipTopicKind::VoluntaryExit => write!(f, "{VOLUNTARY_EXIT_TOPIC}"),

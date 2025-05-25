@@ -4653,6 +4653,7 @@ dependencies = [
  "ream-discv5",
  "ream-executor",
  "ream-network-spec",
+ "ream-validator",
  "serde",
  "serde_yaml",
  "sha2 0.10.8",
@@ -4769,6 +4770,7 @@ dependencies = [
  "serde_yaml",
  "ssz_types",
  "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
