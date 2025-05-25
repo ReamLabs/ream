@@ -432,6 +432,12 @@ impl Network {
                             attester_slashing.tree_hash_root()
                         );
                     }
+                    GossipsubMessage::ProposerSlashing(proposer_slashing) => {
+                        info!(
+                            "Proposer Slashing received over gossipsub: root: {}",
+                            proposer_slashing.tree_hash_root()
+                        );
+                    }
                     GossipsubMessage::BlobSidecar(blob_sidecar) => {
                         info!(
                             "Blob Sidecar received over gossipsub: root: {}",
