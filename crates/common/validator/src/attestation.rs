@@ -14,14 +14,14 @@ use ream_consensus::{
         SLOTS_PER_EPOCH,
     },
     electra::beacon_state::BeaconState,
-    misc::{compute_signing_root, get_committee_indices},
+    misc::{compute_epoch_at_slot, compute_signing_root, get_committee_indices},
 };
 use ssz_types::{
     BitList, BitVector,
     typenum::{U64, U131072},
 };
 
-use crate::constants::ATTESTATION_SUBNET_COUNT;
+use crate::constants::{ATTESTATION_SUBNET_COUNT, DOMAIN_SELECTION_PROOF};
 
 /// Compute the correct subnet for an attestation for Phase 0.
 /// Note, this mimics expected future behavior where attestations will be mapped to their shard
@@ -86,5 +86,15 @@ pub fn get_attestation_signature(
 ) -> anyhow::Result<BLSSignature> {
     let domain = state.get_domain(DOMAIN_BEACON_ATTESTER, Some(attestation_data.target.epoch));
     let signing_root = compute_signing_root(attestation_data, domain);
+    Ok(private_key.sign(signing_root.as_ref())?)
+}
+
+pub fn get_slot_signature(
+    state: &BeaconState,
+    slot: u64,
+    private_key: PrivateKey,
+) -> anyhow::Result<BLSSignature> {
+    let domain = state.get_domain(DOMAIN_SELECTION_PROOF, Some(compute_epoch_at_slot(slot)));
+    let signing_root = compute_signing_root(slot, domain);
     Ok(private_key.sign(signing_root.as_ref())?)
 }
