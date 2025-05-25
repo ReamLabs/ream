@@ -438,6 +438,12 @@ impl Network {
                             blob_sidecar.tree_hash_root()
                         );
                     }
+                    GossipsubMessage::LightClientFinalityUpdate(light_client_finality_update) => {
+                        info!(
+                            "Light Client Finality Update received over gossipsub: root: {}",
+                            light_client_finality_update.tree_hash_root()
+                        );
+                    }
                 },
                 Err(err) => {
                     trace!("Failed to decode gossip message: {err:?}");

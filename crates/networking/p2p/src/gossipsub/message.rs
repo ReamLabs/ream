@@ -4,6 +4,7 @@ use ream_consensus::{
     bls_to_execution_change::BLSToExecutionChange, constants::genesis_validators_root,
     electra::beacon_block::SignedBeaconBlock, sync_committee::SyncCommittee,
 };
+use ream_light_client::light_client_finality_update::LightClientFinalityUpdate;
 use ream_network_spec::networks::network_spec;
 use ream_validator::{
     aggregate_and_proof::AggregateAndProof, contribution_and_proof::SignedContributionAndProof,
@@ -25,6 +26,7 @@ pub enum GossipsubMessage {
     SyncCommittee(Box<SyncCommittee>),
     BlsToExecutionChange(Box<BLSToExecutionChange>),
     SyncCommitteeContributionAndProof(Box<SignedContributionAndProof>),
+    LightClientFinalityUpdate(Box<LightClientFinalityUpdate>),
 }
 
 impl GossipsubMessage {
@@ -64,6 +66,9 @@ impl GossipsubMessage {
             GossipTopicKind::BlobSidecar(_) => Ok(Self::BlobSidecar(Box::new(
                 BlobSidecar::from_ssz_bytes(data)?,
             ))),
+            GossipTopicKind::LightClientFinalityUpdate => Ok(Self::LightClientFinalityUpdate(
+                Box::new(LightClientFinalityUpdate::from_ssz_bytes(data)?),
+            )),
             _ => Err(GossipsubError::InvalidTopic(format!(
                 "Topic not supported: {topic:?}"
             ))),
