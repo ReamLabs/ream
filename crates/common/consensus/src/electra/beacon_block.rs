@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use anyhow::ensure;
+use anyhow::{anyhow, ensure};
 use ream_bls::BLSSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -10,7 +10,8 @@ use super::beacon_block_body::BeaconBlockBody;
 use crate::{
     beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
     blob_sidecar::BlobSidecar,
-    execution_engine::rpc_types::get_blobs::BlobAndProofV1,
+    execution_engine::rpc_types::get_blobs::{Blob, BlobAndProofV1},
+    polynomial_commitments::kzg_proof::KZGProof,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
@@ -54,6 +55,29 @@ impl SignedBeaconBlock {
                 .blob_kzg_commitment_inclusion_proof(index)?
                 .into(),
         })
+    }
+
+    pub fn get_blob_sidecars(
+        signed_block: SignedBeaconBlock,
+        blobs: Vec<Blob>,
+        blob_kzg_proofs: Vec<KZGProof>,
+    ) -> anyhow::Result<Vec<BlobSidecar>> {
+        let mut blob_sidecars = Vec::with_capacity(blobs.len());
+
+        for (index, blob) in blobs.into_iter().enumerate() {
+            let blob_and_proof = BlobAndProofV1 {
+                blob,
+                proof: *blob_kzg_proofs
+                    .get(index)
+                    .ok_or_else(|| anyhow!("Kzg_proof not available for blob at index: {index}"))?,
+            };
+
+            let blob_sidecar = signed_block.blob_sidecar(blob_and_proof, index as u64)?;
+
+            blob_sidecars.push(blob_sidecar);
+        }
+
+        Ok(blob_sidecars)
     }
 }
 
