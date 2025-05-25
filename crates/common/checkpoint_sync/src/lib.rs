@@ -52,6 +52,15 @@ pub async fn initialize_db_from_checkpoint(
 ) -> anyhow::Result<bool> {
     if db.is_initialized() {
         warn!("DB is already initialized. Skipping checkpoint sync.");
+
+        let state = db
+            .beacon_state_provider()
+            .last()?
+            .ok_or_else(|| anyhow!("Unable to fetch latest state"))?;
+
+        if !verify_state_from_ws_checkpoint(&state, &ws_checkpoint)? {
+            return Ok(false);
+        }
         return Ok(true);
     }
 
@@ -83,18 +92,10 @@ pub async fn initialize_db_from_checkpoint(
         slot
     );
 
-    let mut ws_verified = true;
-    if let Some(ws_checkpoint_data) = ws_checkpoint {
-        if ws_checkpoint_data.epoch < state.get_current_epoch() {
-            ensure!(
-                verify_state_from_ws_checkpoint(&state, &ws_checkpoint_data)?,
-                "Weak subjectivity checkpoint not found"
-            );
-            ws_verified = true;
-        } else {
-            ws_verified = false;
-        }
+    if !verify_state_from_ws_checkpoint(&state, &ws_checkpoint)? {
+        return Ok(false);
     }
+
     ensure!(block.message.slot == state.slot, "Slot mismatch");
 
     ensure!(block.message.state_root == state.state_root());
@@ -104,7 +105,7 @@ pub async fn initialize_db_from_checkpoint(
     on_tick(&mut store, time)?;
     info!("Initial sync complete");
 
-    Ok(ws_verified)
+    Ok(true)
 }
 
 /// Fetch initial state from trusted RPC

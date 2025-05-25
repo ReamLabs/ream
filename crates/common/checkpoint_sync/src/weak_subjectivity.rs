@@ -29,7 +29,18 @@ pub fn is_within_weak_subjectivity_period(
 /// Check whether a `state` contains the `ws_checkpoint_root`.
 pub fn verify_state_from_ws_checkpoint(
     state: &BeaconState,
-    ws_checkpoint: &Checkpoint,
+    ws_checkpoint: &Option<Checkpoint>,
 ) -> anyhow::Result<bool> {
-    Ok(state.get_block_root(ws_checkpoint.epoch)? == ws_checkpoint.root)
+    if let Some(ws_checkpoint_data) = ws_checkpoint {
+        if ws_checkpoint_data.epoch < state.get_current_epoch() {
+            ensure!(
+                state.get_block_root(ws_checkpoint_data.epoch)? == ws_checkpoint_data.root,
+                "Weak subjectivity checkpoint not found"
+            );
+            return Ok(true);
+        } else {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
