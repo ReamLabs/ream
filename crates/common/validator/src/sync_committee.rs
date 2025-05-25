@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use alloy_primitives::B256;
 use anyhow::{bail, ensure};
 use ream_bls::{BLSSignature, traits::Aggregatable};
 use ream_consensus::{
@@ -9,8 +8,11 @@ use ream_consensus::{
     misc::compute_epoch_at_slot,
     sync_aggregate::SyncAggregate,
 };
+use ssz_types::BitVector;
 
-use crate::constants::SYNC_COMMITTEE_SUBNET_COUNT;
+use crate::{
+    constants::SYNC_COMMITTEE_SUBNET_COUNT, contribution_and_proof::SyncCommitteeContribution,
+};
 
 pub fn compute_sync_committee_period(epoch: u64) -> u64 {
     epoch / EPOCHS_PER_SYNC_COMMITTEE_PERIOD
