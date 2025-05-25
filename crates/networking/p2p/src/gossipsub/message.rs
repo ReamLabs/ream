@@ -2,6 +2,7 @@ use libp2p::gossipsub::TopicHash;
 use ream_consensus::{
     attestation::Attestation, attester_slashing::AttesterSlashing, blob_sidecar::BlobSidecar,
     constants::genesis_validators_root, electra::beacon_block::SignedBeaconBlock,
+    sync_committee::SyncCommittee,
 };
 use ream_network_spec::networks::network_spec;
 use ream_validator::aggregate_and_proof::AggregateAndProof;
@@ -19,6 +20,7 @@ pub enum GossipsubMessage {
     AggregateAndProof(Box<AggregateAndProof>),
     BlobSidecar(Box<BlobSidecar>),
     BeaconAttestation(Box<Attestation>),
+    SyncCommittee(Box<SyncCommittee>),
 }
 
 impl GossipsubMessage {
@@ -34,6 +36,9 @@ impl GossipsubMessage {
         match gossip_topic.kind {
             GossipTopicKind::BeaconBlock => Ok(Self::BeaconBlock(Box::new(
                 SignedBeaconBlock::from_ssz_bytes(data)?,
+            ))),
+            GossipTopicKind::SyncCommittee(_) => Ok(Self::SyncCommittee(Box::new(
+                SyncCommittee::from_ssz_bytes(data)?,
             ))),
             GossipTopicKind::AggregateAndProof => Ok(Self::AggregateAndProof(Box::new(
                 AggregateAndProof::from_ssz_bytes(data)?,

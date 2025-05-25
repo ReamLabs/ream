@@ -406,6 +406,12 @@ impl Network {
                             aggregate_and_proof.tree_hash_root()
                         );
                     }
+                    GossipsubMessage::SyncCommittee(sync_committee) => {
+                        info!(
+                            "Sync Committee received over gossipsub: root: {}",
+                            sync_committee.tree_hash_root()
+                        );
+                    }
                     GossipsubMessage::AttesterSlashing(attester_slashing) => {
                         info!(
                             "Attester Slashing received over gossipsub: root: {}",
