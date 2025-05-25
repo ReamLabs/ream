@@ -9,17 +9,8 @@ use ream_consensus::{
     misc::compute_epoch_at_slot,
     sync_aggregate::SyncAggregate,
 };
-use ssz_types::{BitVector, typenum::U128};
 
 use crate::constants::SYNC_COMMITTEE_SUBNET_COUNT;
-
-pub struct SyncCommitteeContribution {
-    pub slot: u64,
-    pub beacon_block_root: B256,
-    pub subcommittee_index: u64,
-    pub aggregation_bits: BitVector<U128>,
-    pub signature: BLSSignature,
-}
 
 pub fn compute_sync_committee_period(epoch: u64) -> u64 {
     epoch / EPOCHS_PER_SYNC_COMMITTEE_PERIOD
