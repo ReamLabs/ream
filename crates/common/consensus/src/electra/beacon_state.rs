@@ -1,6 +1,6 @@
 use std::{
     cmp::{max, min},
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     mem::take,
     ops::Deref,
     sync::Arc,
@@ -70,6 +70,7 @@ use crate::{
     deposit::Deposit,
     deposit_message::DepositMessage,
     deposit_request::DepositRequest,
+    eth_1_block::Eth1Block,
     eth_1_data::Eth1Data,
     execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
     fork::Fork,
@@ -214,6 +215,43 @@ impl BeaconState {
     /// Return the current epoch.
     pub fn get_current_epoch(&self) -> u64 {
         compute_epoch_at_slot(self.slot)
+    }
+
+    pub fn get_eth1_vote(&self, eth1_chain: &[&Eth1Block]) -> Eth1Data {
+        if self.eth1_deposit_index == self.deposit_requests_start_index {
+            return self.eth1_data.clone();
+        }
+        let period_start = self.voting_period_start_time();
+        let votes_to_consider = eth1_chain
+            .iter()
+            .filter_map(|block| {
+                if block.is_candidate_block(period_start)
+                    && block.eth1_data.deposit_count >= self.eth1_data.deposit_count
+                {
+                    Some(&block.eth1_data)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let valid_votes = self
+            .eth1_data_votes
+            .iter()
+            .filter(|vote| votes_to_consider.contains(vote))
+            .collect::<Vec<_>>();
+        let frequencies = valid_votes.iter().fold(HashMap::new(), |mut map, val| {
+            map.entry(*val).and_modify(|frq| *frq += 1).or_insert(1);
+            map
+        });
+        valid_votes
+            .into_iter()
+            .enumerate()
+            .max_by_key(|(index, vote)| (frequencies[*vote], -(*index as i64)))
+            .map(|(_, vote)| vote.clone())
+            .unwrap_or(match votes_to_consider.last() {
+                Some(vote) => (*vote).clone(),
+                None => self.eth1_data.clone(),
+            })
     }
 
     pub fn voting_period_start_time(&self) -> u64 {
