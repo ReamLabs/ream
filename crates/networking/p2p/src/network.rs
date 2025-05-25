@@ -400,6 +400,12 @@ impl Network {
                             attestation.tree_hash_root()
                         );
                     }
+                    GossipsubMessage::BlsToExecutionChange(bls_to_execution_change) => {
+                        info!(
+                            "Bls To Execution Change received over gossipsub: root: {}",
+                            bls_to_execution_change.tree_hash_root()
+                        );
+                    }
                     GossipsubMessage::AggregateAndProof(aggregate_and_proof) => {
                         info!(
                             "Aggregate And Proof received over gossipsub: root: {}",

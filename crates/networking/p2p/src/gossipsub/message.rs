@@ -1,8 +1,8 @@
 use libp2p::gossipsub::TopicHash;
 use ream_consensus::{
     attestation::Attestation, attester_slashing::AttesterSlashing, blob_sidecar::BlobSidecar,
-    constants::genesis_validators_root, electra::beacon_block::SignedBeaconBlock,
-    sync_committee::SyncCommittee,
+    bls_to_execution_change::BLSToExecutionChange, constants::genesis_validators_root,
+    electra::beacon_block::SignedBeaconBlock, sync_committee::SyncCommittee,
 };
 use ream_network_spec::networks::network_spec;
 use ream_validator::aggregate_and_proof::AggregateAndProof;
@@ -21,6 +21,7 @@ pub enum GossipsubMessage {
     BlobSidecar(Box<BlobSidecar>),
     BeaconAttestation(Box<Attestation>),
     SyncCommittee(Box<SyncCommittee>),
+    BlsToExecutionChange(Box<BLSToExecutionChange>),
 }
 
 impl GossipsubMessage {
@@ -45,6 +46,9 @@ impl GossipsubMessage {
             ))),
             GossipTopicKind::BeaconAttestation(_) => Ok(Self::BeaconAttestation(Box::new(
                 Attestation::from_ssz_bytes(data)?,
+            ))),
+            GossipTopicKind::BlsToExecutionChange => Ok(Self::BlsToExecutionChange(Box::new(
+                BLSToExecutionChange::from_ssz_bytes(data)?,
             ))),
             GossipTopicKind::AttesterSlashing => Ok(Self::AttesterSlashing(Box::new(
                 AttesterSlashing::from_ssz_bytes(data)?,
