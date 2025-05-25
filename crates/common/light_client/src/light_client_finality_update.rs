@@ -13,12 +13,12 @@ pub struct LightClientHeader {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct LightClientFinalityUpdate {
     pub attested_header: LightClientHeader,
-    // Finalized header corresponding to `attested_header.beacon.state_root`
+    /// Finalized header corresponding to `attested_header.beacon.state_root`
     pub finalized_header: LightClientHeader,
     pub finality_branch: FixedVector<B256, U6>,
-    // Sync committee aggregate signature
+    /// Sync committee aggregate signature
     pub sync_aggregate: SyncAggregate,
-    // Slot at which the aggregate signature was created (untrusted)
+    /// Slot at which the aggregate signature was created (untrusted)
     #[serde(with = "serde_utils::quoted_u64")]
     pub signature_slot: u64,
 }
