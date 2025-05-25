@@ -224,8 +224,8 @@ impl BeaconState {
         let period_start = self.voting_period_start_time();
         let votes_to_consider = eth1_chain
             .iter()
-            .filter(|block| block.is_candidate_block(period_start) && block.eth1_data.deposit_count >= self.eth1_data.deposit_count)
-            .map(|block| &block.eth1_data) 
+            .filter(|block| block.is_candidate_block(period_start) && block.deposit_count >= self.eth1_data.deposit_count)
+            .map(|block| block.eth1_data()) 
             .collect::<Vec<_>>();
         let valid_votes = self
             .eth1_data_votes
@@ -233,7 +233,7 @@ impl BeaconState {
             .filter(|vote| votes_to_consider.contains(vote))
             .collect::<Vec<_>>();
         let vote_counts = valid_votes.iter().fold(HashMap::new(), |mut map, vote| {
-            map.entry(*vote).and_modify(|frq| *frq += 1).or_insert(1);
+            map.entry(*vote).and_modify(|count| *count += 1).or_insert(1);
             map
         });
         valid_votes
