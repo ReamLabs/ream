@@ -58,26 +58,18 @@ impl SignedBeaconBlock {
     }
 
     pub fn get_blob_sidecars(
-        signed_block: SignedBeaconBlock,
+        &self,
         blobs: Vec<Blob>,
         blob_kzg_proofs: Vec<KZGProof>,
     ) -> anyhow::Result<Vec<BlobSidecar>> {
-        let mut blob_sidecars = Vec::with_capacity(blobs.len());
-
-        for (index, blob) in blobs.into_iter().enumerate() {
-            let blob_and_proof = BlobAndProofV1 {
-                blob,
-                proof: *blob_kzg_proofs
-                    .get(index)
-                    .ok_or_else(|| anyhow!("Kzg_proof not available for blob at index: {index}"))?,
-            };
-
-            let blob_sidecar = signed_block.blob_sidecar(blob_and_proof, index as u64)?;
-
-            blob_sidecars.push(blob_sidecar);
-        }
-
-        Ok(blob_sidecars)
+        blobs
+            .into_iter()
+            .zip(blob_kzg_proofs.into_iter())
+            .enumerate()
+            .map(|(index, (blob, proof))| {
+                self.blob_sidecar(BlobAndProofV1 { blob, proof }, index as u64)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()
     }
 }
 
