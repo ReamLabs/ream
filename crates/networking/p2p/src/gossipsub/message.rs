@@ -4,7 +4,7 @@ use ream_consensus::{
     bls_to_execution_change::BLSToExecutionChange, constants::genesis_validators_root,
     electra::beacon_block::SignedBeaconBlock, sync_committee::SyncCommittee,
 };
-use ream_light_client::light_client_finality_update::LightClientFinalityUpdate;
+use ream_light_client::finality_update::LightClientFinalityUpdate;
 use ream_network_spec::networks::network_spec;
 use ream_validator::{
     aggregate_and_proof::AggregateAndProof, contribution_and_proof::SignedContributionAndProof,

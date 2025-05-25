@@ -1,14 +1,11 @@
 use alloy_primitives::B256;
-use ream_consensus::{beacon_block_header::BeaconBlockHeader, sync_aggregate::SyncAggregate};
+use ream_consensus::sync_aggregate::SyncAggregate;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U6};
 use tree_hash_derive::TreeHash;
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct LightClientHeader {
-    pub beacon: BeaconBlockHeader,
-}
+use crate::header::LightClientHeader;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct LightClientFinalityUpdate {
