@@ -2,6 +2,7 @@ use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U17};
+use tree_hash_derive::TreeHash;
 
 use crate::{
     beacon_block_header::SignedBeaconBlockHeader,
@@ -9,7 +10,7 @@ use crate::{
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Encode, Decode, TreeHash)]
 pub struct BlobSidecar {
     #[serde(with = "serde_utils::quoted_u64")]
     pub index: u64,

@@ -406,6 +406,12 @@ impl Network {
                             attester_slashing.tree_hash_root()
                         );
                     }
+                    GossipsubMessage::BlobSidecar(blob_sidecar) => {
+                        info!(
+                            "Blob Sidecar received over gossipsub: root: {}",
+                            blob_sidecar.tree_hash_root()
+                        );
+                    }
                 },
                 Err(err) => {
                     trace!("Failed to decode gossip message: {err:?}");
