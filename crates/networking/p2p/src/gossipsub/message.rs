@@ -5,7 +5,9 @@ use ream_consensus::{
     electra::beacon_block::SignedBeaconBlock, sync_committee::SyncCommittee,
 };
 use ream_network_spec::networks::network_spec;
-use ream_validator::aggregate_and_proof::AggregateAndProof;
+use ream_validator::{
+    aggregate_and_proof::AggregateAndProof, contribution_and_proof::ContributionAndProof,
+};
 use ssz::Decode;
 
 use super::{
@@ -22,6 +24,7 @@ pub enum GossipsubMessage {
     BeaconAttestation(Box<Attestation>),
     SyncCommittee(Box<SyncCommittee>),
     BlsToExecutionChange(Box<BLSToExecutionChange>),
+    SyncCommitteeContributionAndProof(Box<ContributionAndProof>),
 }
 
 impl GossipsubMessage {
@@ -41,6 +44,11 @@ impl GossipsubMessage {
             GossipTopicKind::SyncCommittee(_) => Ok(Self::SyncCommittee(Box::new(
                 SyncCommittee::from_ssz_bytes(data)?,
             ))),
+            GossipTopicKind::SyncCommitteeContributionAndProof => {
+                Ok(Self::SyncCommitteeContributionAndProof(Box::new(
+                    ContributionAndProof::from_ssz_bytes(data)?,
+                )))
+            }
             GossipTopicKind::AggregateAndProof => Ok(Self::AggregateAndProof(Box::new(
                 AggregateAndProof::from_ssz_bytes(data)?,
             ))),
