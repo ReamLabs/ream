@@ -70,5 +70,12 @@ jobs:
     - name: Test
       run: cargo test --release --workspace -- --nocapture
 
+  ef-tests:
+    runs-on: ubuntu-latest
+    needs: [cargo-fmt, cargo-clippy]
+
+    steps:
+    - uses: actions/checkout@v4
+
     - name: Test consensus spec tests
       run: cd testing/ef-tests && make test
