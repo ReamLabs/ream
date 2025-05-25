@@ -29,7 +29,7 @@ use libp2p::{
     tcp::{Config as TcpConfig, tokio::Transport as TcpTransport},
     yamux,
 };
-use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as LibSecpPk};
+use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Secp256k1PublicKey};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
 use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
@@ -288,11 +288,12 @@ impl Network {
 
     fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
         match enr.public_key() {
-            CombinedPublicKey::Secp256k1(pk) => {
-                let encoded = pk.to_encoded_point(true);
-                let lib_secp = LibSecpPk::try_from_bytes(encoded.as_bytes()).ok()?;
-                let lib_pk: PublicKey = lib_secp.into();
-                Some(PeerId::from_public_key(&lib_pk))
+            CombinedPublicKey::Secp256k1(public_key) => {
+                let encoded_public_key = public_key.to_encoded_point(true);
+                let public_key = Secp256k1PublicKey::try_from_bytes(encoded_public_key.as_bytes())
+                    .ok()?
+                    .into();
+                Some(PeerId::from_public_key(&public_key))
             }
             _ => None,
         }
@@ -301,7 +302,7 @@ impl Network {
     fn upsert_peer(
         &mut self,
         peer_id: PeerId,
-        addr: Option<Multiaddr>,
+        address: Option<Multiaddr>,
         state: ConnectionState,
         direction: Direction,
         enr: Option<Enr>,
@@ -310,8 +311,8 @@ impl Network {
         table
             .entry(peer_id)
             .and_modify(|row| {
-                if addr.is_some() {
-                    row.last_seen_p2p_address = addr.clone();
+                if address.is_some() {
+                    row.last_seen_p2p_address = address.clone();
                 }
                 row.state = state.clone();
                 row.direction = direction.clone();
@@ -321,7 +322,7 @@ impl Network {
             })
             .or_insert(CachedPeer {
                 peer_id,
-                last_seen_p2p_address: addr,
+                last_seen_p2p_address: address,
                 state,
                 direction,
                 enr,
@@ -395,7 +396,7 @@ impl Network {
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
-                let (direction, addr) = match &endpoint {
+                let (direction, address) = match &endpoint {
                     ConnectedPoint::Dialer { address, .. } => {
                         (Direction::Outbound, Some(address.clone()))
                     }
@@ -404,7 +405,13 @@ impl Network {
                     }
                 };
 
-                self.upsert_peer(peer_id, addr, ConnectionState::Connected, direction, None);
+                self.upsert_peer(
+                    peer_id,
+                    address,
+                    ConnectionState::Connected,
+                    direction,
+                    None,
+                );
                 None
             }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -756,11 +763,11 @@ mod tests {
         });
 
         let peer_id = PeerId::random();
-        let addr: libp2p::Multiaddr = "/ip4/1.2.3.4/tcp/9000".parse().unwrap();
+        let address: Multiaddr = "/ip4/1.2.3.4/tcp/9000".parse().unwrap();
 
         network.upsert_peer(
             peer_id,
-            Some(addr.clone()),
+            Some(address.clone()),
             ConnectionState::Connecting,
             Direction::Outbound,
             None,
@@ -771,7 +778,7 @@ mod tests {
         assert_eq!(cached_peer_snapshot.peer_id, peer_id);
         assert_eq!(cached_peer_snapshot.state, ConnectionState::Connecting);
         assert_eq!(cached_peer_snapshot.direction, Direction::Outbound);
-        assert_eq!(cached_peer_snapshot.last_seen_p2p_address, Some(addr));
+        assert_eq!(cached_peer_snapshot.last_seen_p2p_address, Some(address));
         assert!(cached_peer_snapshot.enr.is_none());
     }
 
@@ -823,9 +830,9 @@ mod tests {
                 .unwrap()
         });
 
-        let random_id = PeerId::random();
+        let peer_id = PeerId::random();
 
-        assert!(network.cached_peer(&random_id).is_none());
+        assert!(network.cached_peer(&peer_id).is_none());
     }
 
     #[test]
@@ -924,16 +931,16 @@ mod tests {
             ))
             .unwrap();
 
-        let addr: Multiaddr = "/ip4/127.0.0.1/tcp/9300".parse().unwrap();
-        network2.swarm.dial(addr).unwrap();
+        let address: Multiaddr = "/ip4/127.0.0.1/tcp/9300".parse().unwrap();
+        network2.swarm.dial(address).unwrap();
 
         let peer_id_network1 = network1.peer_id();
         let peer_id_network2 = network2.peer_id();
 
         tokio_runtime.block_on(async {
             let network1_poll_task = async {
-                while let Some(ev) = network1.swarm.next().await {
-                    network1.parse_swarm_event(ev);
+                while let Some(event) = network1.swarm.next().await {
+                    network1.parse_swarm_event(event);
                     if matches!(
                         network1.cached_peer(&peer_id_network2),
                         Some(row) if row.state == ConnectionState::Connected && row.direction == Direction::Inbound
@@ -944,8 +951,8 @@ mod tests {
             };
 
             let network2_poll_task = async {
-                while let Some(ev) = network2.swarm.next().await {
-                    network2.parse_swarm_event(ev);
+                while let Some(event) = network2.swarm.next().await {
+                    network2.parse_swarm_event(event);
                     if matches!(
                         network2.cached_peer(&peer_id_network1),
                         Some(row) if row.state == ConnectionState::Connected && row.direction == Direction::Outbound
