@@ -3,6 +3,7 @@ name: Conventional Commits
 on:
   pull_request:
     branches: [ "master" ]
+  merge_group:
 
 jobs:
   conventional-commits:
