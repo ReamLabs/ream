@@ -23,6 +23,7 @@ use ream_consensus::{
         execution_payload::ExecutionPayload,
         execution_payload_header::ExecutionPayloadHeader,
     },
+    eth_1_block::Eth1Block,
     eth_1_data::Eth1Data,
     execution_requests::ExecutionRequests,
     fork::Fork,
@@ -60,6 +61,7 @@ test_consensus_type!(Deposit);
 test_consensus_type!(DepositData);
 test_consensus_type!(ExecutionPayload);
 test_consensus_type!(ExecutionPayloadHeader);
+//test_consensus_type!(Eth1Block); // Originally planned, but the tests don't include the timestamp. Similarly other clients also avoid this test.
 test_consensus_type!(Eth1Data);
 test_consensus_type!(Fork);
 test_consensus_type!(ForkData);
