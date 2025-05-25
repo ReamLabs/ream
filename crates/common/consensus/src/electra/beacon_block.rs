@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use anyhow::{anyhow, ensure};
+use anyhow::ensure;
 use ream_bls::BLSSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -64,7 +64,7 @@ impl SignedBeaconBlock {
     ) -> anyhow::Result<Vec<BlobSidecar>> {
         blobs
             .into_iter()
-            .zip(blob_kzg_proofs.into_iter())
+            .zip(blob_kzg_proofs)
             .enumerate()
             .map(|(index, (blob, proof))| {
                 self.blob_sidecar(BlobAndProofV1 { blob, proof }, index as u64)
