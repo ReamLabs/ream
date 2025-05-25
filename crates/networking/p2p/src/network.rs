@@ -396,7 +396,7 @@ impl Network {
                     }
                     GossipsubMessage::BeaconAttestation(attestation) => {
                         info!(
-                            "Aggregate And Proof received over gossipsub: root: {}",
+                            "Beacon Attestation received over gossipsub: root: {}",
                             attestation.tree_hash_root()
                         );
                     }
