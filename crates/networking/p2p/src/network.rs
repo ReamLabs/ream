@@ -35,6 +35,7 @@ use parking_lot::{Mutex, RwLock};
 use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
 use ream_executor::ReamExecutor;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use serde::Serialize;
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 use yamux::Config as YamuxConfig;
@@ -54,7 +55,8 @@ use crate::{
 
 pub type PeerTable = Arc<RwLock<HashMap<PeerId, CachedPeer>>>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ConnectionState {
     Connected,
     Connecting,
@@ -62,40 +64,22 @@ pub enum ConnectionState {
     Disconnecting,
 }
 
-impl ConnectionState {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Connected => "connected",
-            Self::Connecting => "connecting",
-            Self::Disconnected => "disconnected",
-            Self::Disconnecting => "disconnecting",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Direction {
     Inbound,
     Outbound,
     Unknown,
 }
 
-impl Direction {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Inbound => "inbound",
-            Self::Outbound => "outbound",
-            Self::Unknown => "",
-        }
-    }
-}
-
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct CachedPeer {
     pub peer_id: PeerId,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_seen_p2p_address: Option<Multiaddr>,
     pub state: ConnectionState,
     pub direction: Direction,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub enr: Option<Enr>,
 }
 
@@ -329,8 +313,8 @@ impl Network {
                 if addr.is_some() {
                     row.last_seen_p2p_address = addr.clone();
                 }
-                row.state = state;
-                row.direction = direction;
+                row.state = state.clone();
+                row.direction = direction.clone();
                 if enr.is_some() {
                     row.enr = enr.clone();
                 }
