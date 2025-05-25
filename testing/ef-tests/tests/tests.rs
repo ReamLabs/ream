@@ -61,6 +61,7 @@ test_consensus_type!(Deposit);
 test_consensus_type!(DepositData);
 test_consensus_type!(ExecutionPayload);
 test_consensus_type!(ExecutionPayloadHeader);
+//test_consensus_type!(Eth1Block); // Originally planned, but the tests don't include the timestamp. Similarly other clients also avoid this test.
 test_consensus_type!(Eth1Data);
 test_consensus_type!(Fork);
 test_consensus_type!(ForkData);
