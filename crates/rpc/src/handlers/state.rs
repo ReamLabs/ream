@@ -3,7 +3,10 @@ use actix_web::{
     web::{Data, Path, Query},
 };
 use alloy_primitives::B256;
-use ream_consensus::{checkpoint::Checkpoint, electra::beacon_state::BeaconState};
+use ream_consensus::{
+    checkpoint::Checkpoint, constants::SYNC_COMMITTEE_SIZE, electra::beacon_state::BeaconState,
+    misc::compute_start_slot_at_epoch,
+};
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
@@ -18,6 +21,8 @@ use crate::types::{
     query::EpochQuery,
     response::{BeaconResponse, BeaconVersionedResponse},
 };
+
+pub const SYNC_COMMITTEE_SUBNET_COUNT: u64 = 4;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckpointData {
@@ -49,6 +54,12 @@ impl RandaoResponse {
     pub fn new(randao: B256) -> Self {
         Self { randao }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SyncCommitteeResponse {
+    pub validators: Vec<u64>,
+    pub validator_aggregates: Vec<Vec<u64>>,
 }
 
 pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {
@@ -206,5 +217,46 @@ pub async fn get_pending_partial_withdrawals(
         HttpResponse::Ok().json(BeaconVersionedResponse::new(Vec::from(
             state.pending_partial_withdrawals,
         ))),
+    )
+}
+
+/// Called by `/states/{state_id}/sync_committees` to get sync_committees
+/// for state with given `stateId`.
+/// will use `epoch` if provided.
+#[get("/beacon/states/{state_id}/sync_committees")]
+pub async fn get_sync_committees(
+    db: Data<ReamDB>,
+    state_id: Path<ID>,
+    epoch: Query<EpochQuery>,
+) -> Result<impl Responder, ApiError> {
+    let state = if let Some(epoch) = epoch.epoch {
+        get_state_from_id(ID::Slot(compute_start_slot_at_epoch(epoch)), &db).await?
+    } else {
+        get_state_from_id(state_id.into_inner(), &db).await?
+    };
+
+    let validators = state
+        .current_sync_committee
+        .pubkeys
+        .iter()
+        .filter_map(|pubkey| {
+            state
+                .validators
+                .iter()
+                .position(|v| v.pubkey == *pubkey)
+                .map(|pos| pos as u64)
+        })
+        .collect::<Vec<u64>>();
+
+    let validator_aggregates: Vec<Vec<u64>> = validators
+        .chunks_exact((SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT) as usize)
+        .map(|chunk| chunk.to_vec())
+        .collect();
+
+    Ok(
+        HttpResponse::Ok().json(BeaconVersionedResponse::new(SyncCommitteeResponse {
+            validators,
+            validator_aggregates,
+        })),
     )
 }
