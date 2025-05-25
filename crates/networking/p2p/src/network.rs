@@ -444,6 +444,14 @@ impl Network {
                             light_client_finality_update.tree_hash_root()
                         );
                     }
+                    GossipsubMessage::LightClientOptimisticUpdate(
+                        light_client_optimistic_update,
+                    ) => {
+                        info!(
+                            "Light Client Optimistic Update received over gossipsub: root: {}",
+                            light_client_optimistic_update.tree_hash_root()
+                        );
+                    }
                 },
                 Err(err) => {
                     trace!("Failed to decode gossip message: {err:?}");
