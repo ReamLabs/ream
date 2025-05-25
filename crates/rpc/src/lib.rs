@@ -23,16 +23,14 @@ pub async fn start_server(
     );
     // create the stop handle container
     let stop_handle = Data::new(StopHandle::default());
-    let peer_table_data = Data::new(peer_table);
 
     let server = HttpServer::new(move || {
         let stop_handle = stop_handle.clone();
-        let peer_table = peer_table_data.clone();
         App::new()
             .wrap(middleware::Logger::default())
             .app_data(stop_handle)
             .app_data(Data::new(db.clone()))
-            .app_data(peer_table.clone())
+            .app_data(Data::new(peer_table.clone()))
             .configure(register_routers)
     })
     .bind(server_config.http_socket_address)?
