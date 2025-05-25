@@ -4770,6 +4770,7 @@ dependencies = [
  "ream-bls",
  "ream-consensus",
  "ream-execution-engine",
+ "ream-network-spec",
  "serde",
  "serde_json",
  "serde_yaml",
