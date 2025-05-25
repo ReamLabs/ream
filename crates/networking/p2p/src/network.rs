@@ -55,7 +55,7 @@ use crate::{
 
 pub type PeerTable = Arc<RwLock<HashMap<PeerId, CachedPeer>>>;
 
-#[derive(Clone, Serialize)]
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectionState {
     Connected,
@@ -64,7 +64,7 @@ pub enum ConnectionState {
     Disconnecting,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
     Inbound,
@@ -970,17 +970,17 @@ mod tests {
             .expect("peer-table not updated in time");
         });
 
-        let row1 = network1
+        let peer_from_network_1 = network1
             .cached_peer(&peer_id_network2)
             .expect("network1 row exists");
-        let row2 = network2
+        let peer_from_network_2 = network2
             .cached_peer(&peer_id_network1)
             .expect("network2 row exists");
 
-        assert_eq!(row1.state, ConnectionState::Connected);
-        assert_eq!(row1.direction, Direction::Inbound);
+        assert_eq!(peer_from_network_1.state, ConnectionState::Connected);
+        assert_eq!(peer_from_network_1.direction, Direction::Inbound);
 
-        assert_eq!(row2.state, ConnectionState::Connected);
-        assert_eq!(row2.direction, Direction::Outbound);
+        assert_eq!(peer_from_network_2.state, ConnectionState::Connected);
+        assert_eq!(peer_from_network_2.direction, Direction::Outbound);
     }
 }
