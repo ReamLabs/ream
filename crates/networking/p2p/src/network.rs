@@ -72,13 +72,22 @@ pub enum Direction {
     Unknown,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct CachedPeer {
+    /// libp2p peer ID
     pub peer_id: PeerId,
+
+    /// Last known multiaddress observed for the peer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_seen_p2p_address: Option<Multiaddr>,
+
+    /// Current known connection state
     pub state: ConnectionState,
+
+    /// Direction of the most recent connection (inbound/outbound)
     pub direction: Direction,
+
+    /// Ethereum Node Record (ENR), if known
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enr: Option<Enr>,
 }
