@@ -2,21 +2,19 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
-use actix_web_lab::extract::Query;
-use alloy_primitives::map::HashSet;
+use std::collections::HashSet;
 use ream_bls::PubKey;
 
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 use tracing::error;
 
 use super::state::get_state_from_id;
 use crate::types::{
     errors::ApiError,
     id::{ID, ValidatorID},
-    query::{IdQuery, StatusQuery, ValidatorBalanceQuery},
+    query::{IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
     response::BeaconResponse,
 };
@@ -52,6 +50,48 @@ struct ValidatorBalance {
     index: u64,
     #[serde(with = "serde_utils::quoted_u64")]
     balance: u64,
+}
+
+fn build_validator_balances(
+    validators: &[Validator],
+    filter_ids: Option<&Vec<ValidatorID>>,
+) -> Vec<ValidatorBalance> {
+    let mut allowed_indices: HashSet<u64> = HashSet::new();
+    let mut allowed_addresses: HashSet<PubKey> = HashSet::new();
+
+    if let Some(ids) = filter_ids {
+        for id in ids {
+            match id {
+                ValidatorID::Index(idx) => {
+                    allowed_indices.insert(*idx);
+                }
+                ValidatorID::Address(pk) => {
+                    if validators.iter().any(|v| &v.pubkey == pk) {
+                        allowed_addresses.insert(pk.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut seen: HashSet<u64> = HashSet::new();
+    let mut balances = Vec::new();
+
+    for (i, validator) in validators.iter().enumerate() {
+        let idx = i as u64;
+        let include = filter_ids.is_none()
+            || allowed_indices.contains(&idx)
+            || allowed_addresses.contains(&validator.pubkey);
+
+        if include && seen.insert(idx) {
+            balances.push(ValidatorBalance {
+                index: idx,
+                balance: validator.effective_balance,
+            });
+        }
+    }
+
+    balances
 }
 
 #[get("/beacon/states/{state_id}/validator/{validator_id}")]
@@ -321,7 +361,7 @@ pub async fn post_validator_identities_from_state(
 #[get("/beacon/states/{state_id}/validator_balances")]
 pub async fn get_validator_balances_from_state(
     state_id: Path<ID>,
-    query: Query<ValidatorBalanceQuery>,
+    query: Query<IdQuery>,
     db: Data<ReamDB>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
@@ -333,45 +373,7 @@ pub async fn get_validator_balances_from_state(
         }
     }
 
-    let filter: Option<HashSet<PubKey>> = match &query.id {
-        Some(ids) if !ids.is_empty() => {
-            let mut addrs = HashSet::default();
-            for id in ids {
-                match id {
-                    ValidatorID::Address(pk) => {
-                        if state.validators.iter().any(|v| &v.pubkey == pk) {
-                            addrs.insert(pk.clone());
-                        }
-                    }
-                    ValidatorID::Index(idx) => {
-                        if let Some(validator) = state.validators.get(*idx as usize) {
-                            addrs.insert(validator.pubkey.clone());
-                        }
-                    }
-                }
-            }
-            Some(addrs)
-        }
-        _ => None,
-    };
-
-    let mut validator_balances = Vec::new();
-
-    for (i, validator) in state.validators.iter().enumerate() {
-        if let Some(ref allowed) = filter {
-            if !allowed.contains(&validator.pubkey) {
-                continue;
-            }
-        }
-
-        let balance = validator
-            .effective_balance;
-
-        validator_balances.push(ValidatorBalance {
-            index: i as u64,
-            balance,
-        });
-    }
+    let validator_balances = build_validator_balances(&state.validators, query.id.as_ref());
 
     Ok(HttpResponse::Ok().json(BeaconResponse::new(
         validator_balances,
@@ -381,56 +383,21 @@ pub async fn get_validator_balances_from_state(
 #[post("/beacon/states/{state_id}/validator_balances")]
 pub async fn post_validator_balances_from_state(
     state_id: Path<ID>,
-    body: Json<ValidatorBalanceQuery>,
+    body: Json<IdQuery>,
     db: Data<ReamDB>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
-    let query = body.into_inner();
+    let body = body.into_inner();
 
-    if let Some(ref ids) = query.id {
+    if let Some(ref ids) = body.id {
         if ids.len() > MAX_REQUEST_LENGTH {
             return Err(ApiError::TooManyValidatorsIds)?;
         }
     }
 
-    let filter: Option<HashSet<PubKey>> = match &query.id {
-        Some(ids) if !ids.is_empty() => {
-            let mut addrs = HashSet::default();
-            for id in ids {
-                match id {
-                    ValidatorID::Address(pk) => {
-                        if state.validators.iter().any(|v| &v.pubkey == pk) {
-                            addrs.insert(pk.clone());
-                        }
-                    }
-                    ValidatorID::Index(idx) => {
-                        if let Some(validator) = state.validators.get(*idx as usize) {
-                            addrs.insert(validator.pubkey.clone());
-                        }
-                    }
-                }
-            }
-            Some(addrs)
-        }
-        _ => None,
-    };
+    let validator_balances = build_validator_balances(&state.validators, body.id.as_ref());
 
-    let mut validator_balances = Vec::new();
-
-    for (i, validator) in state.validators.iter().enumerate() {
-        if let Some(ref allowed) = filter {
-            if !allowed.contains(&validator.pubkey) {
-                continue;
-            }
-        }
-
-        let balance = validator.effective_balance;
-
-        validator_balances.push(ValidatorBalance {
-            index: i as u64,
-            balance,
-        });
-    }
-
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(validator_balances)))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(
+        validator_balances,
+    )))
 }
