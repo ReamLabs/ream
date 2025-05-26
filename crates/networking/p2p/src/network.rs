@@ -316,17 +316,17 @@ impl Network {
         direction: Direction,
         enr: Option<Enr>,
     ) {
-        let mut table = self.peer_table.write();
-        table
+        let mut peer_table = self.peer_table.write();
+        peer_table
             .entry(peer_id)
-            .and_modify(|row| {
-                if address.is_some() {
-                    row.last_seen_p2p_address = address.clone();
+            .and_modify(|cached_peer| {
+                if let Some(address_ref) = &address {
+                    cached_peer.last_seen_p2p_address = Some(address_ref.clone());
                 }
-                row.state = state.clone();
-                row.direction = direction.clone();
-                if enr.is_some() {
-                    row.enr = enr.clone();
+                cached_peer.state = state.clone();
+                cached_peer.direction = direction.clone();
+                if let Some(enr_ref) = &enr {
+                    cached_peer.enr = Some(enr_ref.clone());
                 }
             })
             .or_insert(CachedPeer {
