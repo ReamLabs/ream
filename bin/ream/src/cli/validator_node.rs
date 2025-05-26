@@ -4,7 +4,7 @@ use clap::Parser;
 use url::Url;
 
 use crate::cli::constants::{
-    DEFAULT_BEACON_API_ENDPOINT, DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_PORT, DEFAULT_REQUEST_TIMEOUT,
+    DEFAULT_BEACON_API_ENDPOINT, DEFAULT_HTTP_ADDRESS, DEFAULT_KEY_MANAGER_HTTP_PORT, DEFAULT_REQUEST_TIMEOUT
 };
 
 #[derive(Debug, Parser)]
@@ -22,7 +22,7 @@ pub struct ValidatorNodeConfig {
     #[arg(long, help = "Set HTTP address of the key manager server", default_value_t = DEFAULT_HTTP_ADDRESS)]
     pub key_manager_http_address: IpAddr,
 
-    #[arg(long, help = "Set HTTP Port of the key manager server", default_value_t = DEFAULT_HTTP_PORT)]
+    #[arg(long, help = "Set HTTP Port of the key manager server", default_value_t = DEFAULT_KEY_MANAGER_HTTP_PORT)]
     pub key_manager_http_port: u16,
 }
 
