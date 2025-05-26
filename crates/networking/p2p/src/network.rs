@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
     fmt::Debug,
-    net::IpAddr,
     io,
+    net::IpAddr,
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
     time::{Duration, Instant},

@@ -66,8 +66,8 @@ async fn main() {
             let network_future = async {
                 match Network::init(async_executor, &binding).await {
                     Ok(mut network) => {
-                        let (tx, mut rx) = mpsc::channel(1);
-                        
+                        let (tx, _rx) = mpsc::channel(1);
+
                         // Spawn the network polling task
                         let network_task = main_executor.spawn(async move {
                             loop {
