@@ -5,7 +5,7 @@ use actix_web::{
 use alloy_primitives::B256;
 use ream_consensus::{
     checkpoint::Checkpoint, constants::SYNC_COMMITTEE_SIZE, electra::beacon_state::BeaconState,
-    misc::compute_start_slot_at_epoch,
+    misc::compute_sync_committee_period,
 };
 use ream_storage::{
     db::ReamDB,
@@ -229,14 +229,23 @@ pub async fn get_sync_committees(
     state_id: Path<ID>,
     epoch: Query<EpochQuery>,
 ) -> Result<impl Responder, ApiError> {
-    let state = if let Some(epoch) = epoch.epoch {
-        get_state_from_id(ID::Slot(compute_start_slot_at_epoch(epoch)), &db).await?
+    let state = get_state_from_id(state_id.into_inner(), &db).await?;
+    let current_epoch = state.get_current_epoch();
+    let epoch = epoch.epoch.unwrap_or(current_epoch);
+    let sync_committee_period = compute_sync_committee_period(epoch);
+    let current_sync_committee_period = compute_sync_committee_period(current_epoch);
+
+    let sync_committee = if sync_committee_period == current_sync_committee_period {
+        &state.current_sync_committee
+    } else if sync_committee_period == current_sync_committee_period + 1 {
+        &state.next_sync_committee
     } else {
-        get_state_from_id(state_id.into_inner(), &db).await?
+        return Err(ApiError::BadRequest(format!(
+            "state at epoch {current_epoch} has no sync committee for epoch {epoch}"
+        )));
     };
 
-    let validators = state
-        .current_sync_committee
+    let validators = sync_committee
         .pubkeys
         .iter()
         .filter_map(|pubkey| {

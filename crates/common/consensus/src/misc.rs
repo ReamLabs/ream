@@ -8,8 +8,8 @@ use tree_hash::TreeHash;
 
 use crate::{
     constants::{
-        COMPOUNDING_WITHDRAWAL_PREFIX, GENESIS_FORK_VERSION, MAX_SEED_LOOKAHEAD,
-        SHUFFLE_ROUND_COUNT, SLOTS_PER_EPOCH,
+        COMPOUNDING_WITHDRAWAL_PREFIX, EPOCHS_PER_SYNC_COMMITTEE_PERIOD, GENESIS_FORK_VERSION,
+        MAX_SEED_LOOKAHEAD, SHUFFLE_ROUND_COUNT, SLOTS_PER_EPOCH,
     },
     fork_data::ForkData,
     signing_data::SigningData,
@@ -148,4 +148,8 @@ pub fn get_committee_indices(commitee_bits: &BitVector<U64>) -> Vec<u64> {
         .enumerate()
         .filter_map(|(i, bit)| bit.then_some(i as u64))
         .collect()
+}
+
+pub fn compute_sync_committee_period(epoch: u64) -> u64 {
+    epoch / EPOCHS_PER_SYNC_COMMITTEE_PERIOD
 }
