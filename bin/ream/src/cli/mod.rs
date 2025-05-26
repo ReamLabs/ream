@@ -31,7 +31,6 @@ mod tests {
     };
 
     use ream_network_spec::networks::Network;
-    use ream_validator::beacon_api_client::http_client::ContentType;
     use url::Url;
 
     use super::*;
@@ -78,8 +77,6 @@ mod tests {
             "http://localhost:5052",
             "--request-timeout",
             "3",
-            "--beacon-api-content-type",
-            "json",
         ]);
 
         match cli.command {
@@ -90,7 +87,6 @@ mod tests {
                     Url::parse(DEFAULT_BEACON_API_ENDPOINT).expect("Invalid URL")
                 );
                 assert_eq!(config.request_timeout, Duration::from_secs(3));
-                assert_eq!(config.beacon_api_content_type, ContentType::Json);
             }
             _ => unreachable!("This test should only validate the validator node cli"),
         }

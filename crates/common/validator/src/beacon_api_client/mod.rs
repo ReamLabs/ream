@@ -14,13 +14,12 @@ impl BeaconApiClient {
     pub fn new(
         beacon_api_endpoint: Url,
         request_timeout: Duration,
-        api_content_type: ContentType,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             http_client: ClientWithBaseUrl::new(
                 beacon_api_endpoint,
                 request_timeout,
-                api_content_type,
+                ContentType::Ssz,
             )?,
         })
     }
