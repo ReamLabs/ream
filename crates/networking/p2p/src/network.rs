@@ -374,12 +374,13 @@ impl Network {
         info!("Event: {:?}", event);
         match event {
             SwarmEvent::OutgoingConnectionError {
-                peer_id: Some(pid), ..
+                peer_id: Some(peer_id),
+                ..
             } => {
                 self.upsert_peer(
-                    pid,
+                    peer_id,
                     None,
-                    ConnectionState::Connected,
+                    ConnectionState::Disconnected,
                     Direction::Outbound,
                     None,
                 );
@@ -499,9 +500,9 @@ impl Network {
     fn handle_discovered_peers(&mut self, peers: HashMap<Enr, Option<Instant>>) {
         info!("Discovered peers: {:?}", peers);
         for (enr, _) in peers {
-            if let Some(pid) = Network::peer_id_from_enr(&enr) {
+            if let Some(peer_id) = Network::peer_id_from_enr(&enr) {
                 self.upsert_peer(
-                    pid,
+                    peer_id,
                     None,
                     ConnectionState::Disconnected,
                     Direction::Unknown,
