@@ -1,51 +1,29 @@
-use std::{
-    net::{IpAddr, Ipv4Addr},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{net::IpAddr, path::PathBuf, sync::Arc};
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use ream_manager::config::ManagerConfig;
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
-use ream_node::version::FULL_VERSION;
 use ream_p2p::bootnodes::Bootnodes;
 use url::Url;
 
-const DEFAULT_DISABLE_DISCOVERY: bool = false;
-const DEFAULT_DISCOVERY_PORT: u16 = 9000;
-const DEFAULT_HTTP_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-const DEFAULT_HTTP_ALLOW_ORIGIN: bool = false;
-const DEFAULT_HTTP_PORT: u16 = 5052;
-const DEFAULT_NETWORK: &str = "mainnet";
-const DEFAULT_SOCKET_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
-const DEFAULT_SOCKET_PORT: u16 = 9000;
+use crate::cli::constants::{
+    DEFAULT_DISABLE_DISCOVERY, DEFAULT_DISCOVERY_PORT, DEFAULT_HTTP_ADDRESS,
+    DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_NETWORK, DEFAULT_SOCKET_ADDRESS,
+    DEFAULT_SOCKET_PORT,
+};
 
 #[derive(Debug, Parser)]
-#[command(author, version = FULL_VERSION, about, long_about = None)]
-pub struct Cli {
-    #[command(subcommand)]
-    pub command: Commands,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum Commands {
-    /// Start the node
-    #[command(name = "node")]
-    Node(NodeConfig),
-}
-
-#[derive(Debug, Parser)]
-pub struct NodeConfig {
+pub struct BeaconNodeConfig {
     /// Verbosity level
     #[arg(short, long, default_value_t = 3)]
     pub verbosity: u8,
 
     #[arg(
-        long,
-        help = "Choose mainnet, holesky, sepolia, hoodi, dev or provide a path to a YAML config file",
-        default_value = DEFAULT_NETWORK,
-        value_parser = network_parser
-    )]
+      long,
+      help = "Choose mainnet, holesky, sepolia, hoodi, dev or provide a path to a YAML config file",
+      default_value = DEFAULT_NETWORK,
+      value_parser = network_parser
+  )]
     pub network: Arc<NetworkSpec>,
 
     #[arg(long, help = "Set HTTP address", default_value_t = DEFAULT_HTTP_ADDRESS)]
@@ -110,8 +88,8 @@ pub struct NodeConfig {
     pub execution_jwt_secret: Option<PathBuf>,
 }
 
-impl From<NodeConfig> for ManagerConfig {
-    fn from(config: NodeConfig) -> Self {
+impl From<BeaconNodeConfig> for ManagerConfig {
+    fn from(config: BeaconNodeConfig) -> Self {
         Self {
             http_address: config.http_address,
             http_port: config.http_port,
@@ -127,42 +105,6 @@ impl From<NodeConfig> for ManagerConfig {
             purge_db: config.purge_db,
             execution_endpoint: config.execution_endpoint,
             execution_jwt_secret: config.execution_jwt_secret,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use ream_network_spec::networks::Network;
-
-    use super::*;
-
-    #[test]
-    fn test_cli_node_command() {
-        let cli = Cli::parse_from([
-            "program",
-            "node",
-            "--verbosity",
-            "2",
-            "--socket-address",
-            "127.0.0.1",
-            "--socket-port",
-            "9001",
-            "--discovery-port",
-            "9002",
-        ]);
-
-        match cli.command {
-            Commands::Node(config) => {
-                assert_eq!(config.network.network, Network::Mainnet);
-                assert_eq!(config.verbosity, 2);
-                assert_eq!(
-                    config.socket_address,
-                    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
-                );
-                assert_eq!(config.socket_port, 9001);
-                assert_eq!(config.discovery_port, 9002);
-            }
         }
     }
 }

@@ -1,3 +1,4 @@
 - [`ream`](./ream.md)
-  - [`ream node`](./ream/node.md)
+  - [`ream beacon_node`](./ream/beacon_node.md)
+  - [`ream validator_node`](./ream/validator_node.md)
 

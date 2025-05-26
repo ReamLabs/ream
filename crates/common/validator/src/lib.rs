@@ -1,5 +1,6 @@
 pub mod aggregate_and_proof;
 pub mod attestation;
+pub mod beacon_api_client;
 pub mod blob_sidecars;
 pub mod constants;
 pub mod contribution_and_proof;
