@@ -61,7 +61,7 @@ pub async fn initialize_db_from_checkpoint(
         if let Some(weak_subjectivity_checkpoint) = &weak_subjectivity_checkpoint {
             if !verify_state_from_weak_subjectivity_checkpoint(
                 &state,
-                &weak_subjectivity_checkpoint,
+                weak_subjectivity_checkpoint,
             )? {
                 return Ok(false);
             }
@@ -98,7 +98,7 @@ pub async fn initialize_db_from_checkpoint(
     );
 
     if let Some(weak_subjectivity_checkpoint) = &weak_subjectivity_checkpoint {
-        if !verify_state_from_weak_subjectivity_checkpoint(&state, &weak_subjectivity_checkpoint)? {
+        if !verify_state_from_weak_subjectivity_checkpoint(&state, weak_subjectivity_checkpoint)? {
             return Ok(false);
         }
     }
