@@ -793,7 +793,7 @@ mod tests {
     }
 
     #[test]
-    fn update_existing_row() {
+    fn update_existing_peer() {
         initialize_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
@@ -822,7 +822,7 @@ mod tests {
             None,
         );
 
-        let cached_peer_snapshot = network.cached_peer(&peer_id).expect("row exists");
+        let cached_peer_snapshot = network.cached_peer(&peer_id).expect("peer exists in cache");
 
         assert_eq!(cached_peer_snapshot.state, ConnectionState::Connected);
         assert_eq!(cached_peer_snapshot.direction, Direction::Outbound);
@@ -953,7 +953,7 @@ mod tests {
                     network1.parse_swarm_event(event);
                     if matches!(
                         network1.cached_peer(&peer_id_network2),
-                        Some(row) if row.state == ConnectionState::Connected && row.direction == Direction::Inbound
+                        Some(peer) if peer.state == ConnectionState::Connected && peer.direction == Direction::Inbound
                     ) {
                         break;
                     }
@@ -965,7 +965,7 @@ mod tests {
                     network2.parse_swarm_event(event);
                     if matches!(
                         network2.cached_peer(&peer_id_network1),
-                        Some(row) if row.state == ConnectionState::Connected && row.direction == Direction::Outbound
+                        Some(peer) if peer.state == ConnectionState::Connected && peer.direction == Direction::Outbound
                     ) {
                         break;
                     }
@@ -982,10 +982,10 @@ mod tests {
 
         let peer_from_network_1 = network1
             .cached_peer(&peer_id_network2)
-            .expect("network1 row exists");
+            .expect("network1 peer exists");
         let peer_from_network_2 = network2
             .cached_peer(&peer_id_network1)
-            .expect("network2 row exists");
+            .expect("network2 peer exists");
 
         assert_eq!(peer_from_network_1.state, ConnectionState::Connected);
         assert_eq!(peer_from_network_1.direction, Direction::Inbound);
