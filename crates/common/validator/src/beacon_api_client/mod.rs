@@ -11,10 +11,7 @@ pub struct BeaconApiClient {
 }
 
 impl BeaconApiClient {
-    pub fn new(
-        beacon_api_endpoint: Url,
-        request_timeout: Duration,
-    ) -> anyhow::Result<Self> {
+    pub fn new(beacon_api_endpoint: Url, request_timeout: Duration) -> anyhow::Result<Self> {
         Ok(Self {
             http_client: ClientWithBaseUrl::new(
                 beacon_api_endpoint,

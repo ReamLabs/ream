@@ -31,4 +31,3 @@ pub fn duration_parser(duration_string: &str) -> Result<Duration, String> {
         |err| format!("Could not parse the request timeout: {err:?}"),
     )?))
 }
-
