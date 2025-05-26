@@ -18,7 +18,7 @@ Options:
       --key-manager-http-address <KEY_MANAGER_HTTP_ADDRESS>
           Set HTTP address of the key manager server [default: 127.0.0.1]
       --key-manager-http-port <KEY_MANAGER_HTTP_PORT>
-          Set HTTP Port of the key manager server [default: 5052]
+          Set HTTP Port of the key manager server [default: 8008]
   -h, --help
           Print help
 ```
