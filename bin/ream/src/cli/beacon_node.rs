@@ -75,7 +75,7 @@ pub struct BeaconNodeConfig {
         long,
         help = "Weak subjectivity checkpoint in format <0xblock_root>:<epoch>"
     )]
-    pub ws_checkpoint: Option<Checkpoint>,
+    pub weak_subjectivity_checkpoint: Option<Checkpoint>,
 
     #[arg(long, help = "Purges the database.")]
     pub purge_db: bool,

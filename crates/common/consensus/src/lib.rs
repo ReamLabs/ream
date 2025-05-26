@@ -40,6 +40,5 @@ pub mod sync_aggregate;
 pub mod sync_committee;
 pub mod validator;
 pub mod voluntary_exit;
-pub mod weak_subjectivity;
 pub mod withdrawal;
 pub mod withdrawal_request;

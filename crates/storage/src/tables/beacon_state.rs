@@ -50,6 +50,7 @@ impl BeaconStateTable {
         let result = table.first()?;
         Ok(result.map(|res| res.1.value()))
     }
+
     pub fn last(&self) -> Result<Option<BeaconState>, StoreError> {
         let read_txn = self.db.begin_read()?;
 

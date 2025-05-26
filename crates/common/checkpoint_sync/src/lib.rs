@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ssz::Decode;
 use tracing::{info, warn};
-use weak_subjectivity::verify_state_from_ws_checkpoint;
+use weak_subjectivity::verify_state_from_weak_subjectivity_checkpoint;
 
 /// A OptionalBeaconVersionedResponse data struct that can be used to wrap data type
 /// used for json rpc responses
@@ -48,7 +48,7 @@ struct OptionalBeaconVersionedResponse<T> {
 pub async fn initialize_db_from_checkpoint(
     db: ReamDB,
     checkpoint_sync_url: Option<Url>,
-    ws_checkpoint: Option<Checkpoint>,
+    weak_subjectivity_checkpoint: Option<Checkpoint>,
 ) -> anyhow::Result<bool> {
     if db.is_initialized() {
         warn!("DB is already initialized. Skipping checkpoint sync.");
@@ -58,8 +58,13 @@ pub async fn initialize_db_from_checkpoint(
             .last()?
             .ok_or_else(|| anyhow!("Unable to fetch latest state"))?;
 
-        if !verify_state_from_ws_checkpoint(&state, &ws_checkpoint)? {
-            return Ok(false);
+        if let Some(weak_subjectivity_checkpoint) = &weak_subjectivity_checkpoint {
+            if !verify_state_from_weak_subjectivity_checkpoint(
+                &state,
+                &weak_subjectivity_checkpoint,
+            )? {
+                return Ok(false);
+            }
         }
         return Ok(true);
     }
@@ -92,8 +97,10 @@ pub async fn initialize_db_from_checkpoint(
         slot
     );
 
-    if !verify_state_from_ws_checkpoint(&state, &ws_checkpoint)? {
-        return Ok(false);
+    if let Some(weak_subjectivity_checkpoint) = &weak_subjectivity_checkpoint {
+        if !verify_state_from_weak_subjectivity_checkpoint(&state, &weak_subjectivity_checkpoint)? {
+            return Ok(false);
+        }
     }
 
     ensure!(block.message.slot == state.slot, "Slot mismatch");

@@ -61,11 +61,12 @@ use crate::{
         MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
         NEXT_SYNC_COMMITTEE_INDEX, PARTICIPATION_FLAG_WEIGHTS, PENDING_CONSOLIDATIONS_LIMIT,
         PENDING_PARTIAL_WITHDRAWALS_LIMIT, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
-        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SECONDS_PER_SLOT, SHARD_COMMITTEE_PERIOD,
-        SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT,
-        TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
-        TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT, UNSET_DEPOSIT_REQUESTS_START_INDEX,
-        WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA,
+        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SAFETY_DECAY, SECONDS_PER_SLOT,
+        SHARD_COMMITTEE_PERIOD, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE,
+        SYNC_REWARD_WEIGHT, TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX,
+        TIMELY_SOURCE_FLAG_INDEX, TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT,
+        UNSET_DEPOSIT_REQUESTS_START_INDEX, WEIGHT_DENOMINATOR,
+        WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA,
     },
     deposit::Deposit,
     deposit_message::DepositMessage,
@@ -2640,6 +2641,16 @@ impl BeaconState {
         self.earliest_consolidation_epoch = earliest_consolidation_epoch;
 
         self.earliest_consolidation_epoch
+    }
+
+    /// Returns the weak subjectivity period for the current ``state``.
+    /// This computation takes into account the effect of:
+    /// - validator set churn (bounded by ``get_balance_churn_limit()`` per epoch).
+    pub fn compute_weak_subjectivity_period(&self) -> u64 {
+        let active_balance_eth = self.get_total_active_balance();
+        let delta = self.get_balance_churn_limit();
+        let epochs_for_validator_set_churn = SAFETY_DECAY * active_balance_eth / (2 * delta * 100);
+        MIN_VALIDATOR_WITHDRAWABILITY_DELAY + epochs_for_validator_set_churn
     }
 
     pub fn merkle_leaves(&self) -> Vec<B256> {

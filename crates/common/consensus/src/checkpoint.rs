@@ -1,8 +1,9 @@
-use std::{fmt, str::FromStr};
+use std::str::FromStr;
 
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
+use thiserror::Error;
 use tree_hash_derive::TreeHash;
 
 #[derive(
@@ -48,24 +49,14 @@ impl FromStr for Checkpoint {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum CheckpointParseError {
+    #[error("Expected format: 0x<block_root>:<epoch>")]
     InvalidFormat,
+    #[error("Missing '0x' prefix on block_root")]
     MissingHexPrefix,
+    #[error("Invalid hex block_root (expected 32 bytes)")]
     InvalidHex,
+    #[error("Epoch must be a valid u64 integer")]
     InvalidEpoch,
 }
-
-impl fmt::Display for CheckpointParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use CheckpointParseError::*;
-        match self {
-            InvalidFormat => write!(f, "Expected format: 0x<block_root>:<epoch>"),
-            MissingHexPrefix => write!(f, "Missing '0x' prefix on block_root"),
-            InvalidHex => write!(f, "Invalid hex block_root (expected 32 bytes)"),
-            InvalidEpoch => write!(f, "Epoch must be a valid u64 integer"),
-        }
-    }
-}
-
-impl std::error::Error for CheckpointParseError {}

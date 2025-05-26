@@ -1,46 +1,43 @@
 use anyhow::ensure;
 use ream_consensus::{
     checkpoint::Checkpoint, electra::beacon_state::BeaconState, misc::compute_epoch_at_slot,
-    weak_subjectivity::compute_weak_subjectivity_period,
 };
 use ream_fork_choice::store::Store;
 
-/// Check whether the `state` recovered from the `ws_checkpoint` is not stale.
+/// Check whether the `state` recovered from the `weak_subjectivity_checkpoint` is not stale.
 pub fn is_within_weak_subjectivity_period(
     store: &Store,
-    ws_state: BeaconState,
-    ws_checkpoint: Checkpoint,
+    weak_subjectivity_state: BeaconState,
+    weak_subjectivity_checkpoint: Checkpoint,
 ) -> anyhow::Result<bool> {
     ensure!(
-        ws_state.latest_block_header.state_root == ws_checkpoint.root,
+        weak_subjectivity_state.latest_block_header.state_root == weak_subjectivity_checkpoint.root,
         "State root must be equal to checkpoint root"
     );
     ensure!(
-        compute_epoch_at_slot(ws_state.slot) == ws_checkpoint.epoch,
+        compute_epoch_at_slot(weak_subjectivity_state.slot) == weak_subjectivity_checkpoint.epoch,
         "State epoch must be equal to checkpoint epoch"
     );
 
-    let ws_period = compute_weak_subjectivity_period(&ws_state);
-    let ws_state_epoch = compute_epoch_at_slot(ws_state.slot);
+    let weak_subjectivity_period = weak_subjectivity_state.compute_weak_subjectivity_period();
+    let weak_subjectivity_state_epoch = compute_epoch_at_slot(weak_subjectivity_state.slot);
     let current_epoch = compute_epoch_at_slot(store.get_current_slot()?);
-    Ok(current_epoch <= ws_state_epoch + ws_period)
+    Ok(current_epoch <= weak_subjectivity_state_epoch + weak_subjectivity_period)
 }
 
-/// Check whether a `state` contains the `ws_checkpoint_root`.
-pub fn verify_state_from_ws_checkpoint(
+/// Check whether a `state` contains the Weak Subjectivity Root.
+pub fn verify_state_from_weak_subjectivity_checkpoint(
     state: &BeaconState,
-    ws_checkpoint: &Option<Checkpoint>,
+    weak_subjectivity_checkpoint: &Checkpoint,
 ) -> anyhow::Result<bool> {
-    if let Some(ws_checkpoint_data) = ws_checkpoint {
-        if ws_checkpoint_data.epoch < state.get_current_epoch() {
-            ensure!(
-                state.get_block_root(ws_checkpoint_data.epoch)? == ws_checkpoint_data.root,
-                "Weak subjectivity checkpoint not found"
-            );
-            return Ok(true);
-        } else {
-            return Ok(false);
-        }
+    if weak_subjectivity_checkpoint.epoch < state.get_current_epoch() {
+        ensure!(
+            state.get_block_root(weak_subjectivity_checkpoint.epoch)?
+                == weak_subjectivity_checkpoint.root,
+            "Weak subjectivity checkpoint not found"
+        );
+        Ok(true)
+    } else {
+        Ok(false)
     }
-    Ok(true)
 }
