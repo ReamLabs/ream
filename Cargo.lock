@@ -4518,8 +4518,6 @@ dependencies = [
 name = "ream-node"
 version = "0.1.0"
 dependencies = [
- "libp2p",
- "serde",
  "vergen",
  "vergen-git2",
 ]
