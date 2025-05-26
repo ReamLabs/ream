@@ -44,16 +44,15 @@ pub fn get_contribution_and_proof(
     contribution: SyncCommitteeContribution,
     private_key: PrivateKey,
 ) -> anyhow::Result<ContributionAndProof> {
-    let selection_proof = get_sync_committee_selection_proof(
-        state,
-        contribution.slot,
-        contribution.subcommittee_index,
-        private_key,
-    )?;
     Ok(ContributionAndProof {
+        selection_proof: get_sync_committee_selection_proof(
+            state,
+            contribution.slot,
+            contribution.subcommittee_index,
+            private_key,
+        )?,
         aggregator_index,
         contribution,
-        selection_proof,
     })
 }
 
