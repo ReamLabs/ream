@@ -86,15 +86,17 @@ pub async fn run_beacon_node(
         config.http_allow_origin,
     );
 
-    let http_future = start_server(server_config, ream_db.clone());
-
-    let network_manager = ManagerService::new(async_executor, config.into(), ream_db)
+    let network_manager = ManagerService::new(async_executor, config.into(), ream_db.clone())
         .await
         .expect("Failed to create manager service");
+
+    let peer_table = network_manager.peer_table().clone();
 
     let network_future = main_executor.spawn(async move {
         network_manager.start().await;
     });
+
+    let http_future = start_server(server_config, ream_db, peer_table);
 
     tokio::select! {
         _ = http_future => {

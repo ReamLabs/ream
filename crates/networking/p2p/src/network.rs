@@ -34,8 +34,8 @@ use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
 use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
 use ream_executor::ReamExecutor;
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use serde::Serialize;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 use yamux::Config as YamuxConfig;
@@ -286,7 +286,7 @@ impl Network {
         self.request_id += 1;
         request_id
     }
-    
+
     pub fn peer_table(&self) -> PeerTable {
         Arc::clone(&self.peer_table)
     }
@@ -950,7 +950,7 @@ mod tests {
         tokio_runtime.block_on(async {
             let network1_poll_task = async {
                 while let Some(event) = network1.swarm.next().await {
-                    network1.parse_swarm_event(event);
+                    network1.parse_swarm_event(event).await;
                     if matches!(
                         network1.cached_peer(&peer_id_network2),
                         Some(peer) if peer.state == ConnectionState::Connected && peer.direction == Direction::Inbound
@@ -962,7 +962,7 @@ mod tests {
 
             let network2_poll_task = async {
                 while let Some(event) = network2.swarm.next().await {
-                    network2.parse_swarm_event(event);
+                    network2.parse_swarm_event(event).await;
                     if matches!(
                         network2.cached_peer(&peer_id_network1),
                         Some(peer) if peer.state == ConnectionState::Connected && peer.direction == Direction::Outbound

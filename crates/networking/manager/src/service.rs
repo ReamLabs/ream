@@ -16,7 +16,7 @@ use ream_p2p::{
         configurations::GossipsubConfig,
         topics::{GossipTopic, GossipTopicKind},
     },
-    network::{Network, ReamNetworkEvent},
+    network::{Network, PeerTable, ReamNetworkEvent},
 };
 use ream_storage::db::ReamDB;
 use ream_syncer::block_range::BlockRangeSyncer;
@@ -29,6 +29,7 @@ pub struct ManagerService {
     pub manager_receiver: mpsc::UnboundedReceiver<ReamNetworkEvent>,
     pub p2p_sender: mpsc::UnboundedSender<P2PMessages>,
     pub network_handle: JoinHandle<()>,
+    pub peer_table: PeerTable,
     pub block_range_syncer: BlockRangeSyncer,
 }
 
@@ -73,6 +74,7 @@ impl ManagerService {
         let (p2p_sender, p2p_receiver) = mpsc::unbounded_channel();
 
         let network = Network::init(async_executor, &network_config).await?;
+        let peer_table = network.peer_table().clone();
         let network_handle = tokio::spawn(async move {
             network.start(manager_sender, p2p_receiver).await;
         });
@@ -91,6 +93,7 @@ impl ManagerService {
             manager_receiver,
             p2p_sender,
             network_handle,
+            peer_table,
             block_range_syncer,
         })
     }
@@ -104,5 +107,9 @@ impl ManagerService {
                 }
             }
         }
+    }
+
+    pub fn peer_table(&self) -> &PeerTable {
+        &self.peer_table
     }
 }
