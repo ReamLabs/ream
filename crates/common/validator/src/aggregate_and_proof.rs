@@ -24,10 +24,11 @@ pub fn get_aggregate_and_proof(
     aggregate: Attestation,
     private_key: PrivateKey,
 ) -> anyhow::Result<AggregateAndProof> {
+    let slot = aggregate.data.slot;
     Ok(AggregateAndProof {
         aggregator_index,
-        aggregate: aggregate.clone(),
-        selection_proof: get_slot_signature(state, aggregate.data.slot, private_key)?,
+        aggregate,
+        selection_proof: get_slot_signature(state, slot, private_key)?,
     })
 }
 
