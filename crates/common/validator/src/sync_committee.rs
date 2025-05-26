@@ -1,18 +1,30 @@
 use std::collections::HashSet;
 
 use anyhow::{anyhow, bail, ensure};
-use ream_bls::{BLSSignature, traits::Aggregatable};
+use ream_bls::{
+    BLSSignature, PrivateKey,
+    traits::{Aggregatable, Signable},
+};
 use ream_consensus::{
     constants::{EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SYNC_COMMITTEE_SIZE},
     electra::{beacon_block::BeaconBlock, beacon_state::BeaconState},
-    misc::compute_epoch_at_slot,
+    misc::{compute_epoch_at_slot, compute_signing_root},
     sync_aggregate::SyncAggregate,
 };
+use serde::{Deserialize, Serialize};
 use ssz_types::{BitVector, typenum::U512};
+use tree_hash_derive::TreeHash;
 
 use crate::{
-    constants::SYNC_COMMITTEE_SUBNET_COUNT, contribution_and_proof::SyncCommitteeContribution,
+    constants::{DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF, SYNC_COMMITTEE_SUBNET_COUNT},
+    contribution_and_proof::SyncCommitteeContribution,
 };
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, TreeHash)]
+pub struct SyncAggregatorSelectionData {
+    slot: u64,
+    subcommittee_index: u64,
+}
 
 pub fn compute_sync_committee_period(epoch: u64) -> u64 {
     epoch / EPOCHS_PER_SYNC_COMMITTEE_PERIOD
@@ -109,4 +121,24 @@ pub fn process_sync_committee_contributions(
         )?,
     };
     Ok(())
+}
+
+pub fn get_sync_committee_selection_proof(
+    state: &BeaconState,
+    slot: u64,
+    subcommittee_index: u64,
+    private_key: PrivateKey,
+) -> anyhow::Result<BLSSignature> {
+    let domain = state.get_domain(
+        DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF,
+        Some(compute_epoch_at_slot(slot)),
+    );
+    let signing_root = compute_signing_root(
+        SyncAggregatorSelectionData {
+            slot,
+            subcommittee_index,
+        },
+        domain,
+    );
+    Ok(private_key.sign(signing_root.as_ref())?)
 }
