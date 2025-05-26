@@ -1,7 +1,8 @@
 use actix_web::{
     HttpResponse, Responder, get,
-    web::{Data, Json, Path},
+    web::{Data, Path},
 };
+use actix_web_lab::extract::Query;
 use ream_consensus::blob_sidecar::BlobIdentifier;
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::error;
@@ -16,7 +17,7 @@ use crate::{
 pub async fn get_blob_sidecars(
     db: Data<ReamDB>,
     block_id: Path<ID>,
-    query: Json<BlobSidecarQuery>,
+    query: Query<BlobSidecarQuery>,
 ) -> Result<impl Responder, ApiError> {
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
     let block_root = beacon_block.message.tree_hash_root();
@@ -26,8 +27,7 @@ pub async fn get_blob_sidecars(
         for index in indices {
             if index >= &max_index {
                 return Err(ApiError::BadRequest(format!(
-                    "Invalid blob index: {index}, max index is {}",
-                    max_index - 1
+                    "Invalid blob index: {index}, max index is {max_index}"
                 )));
             }
         }

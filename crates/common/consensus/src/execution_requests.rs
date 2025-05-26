@@ -11,7 +11,7 @@ use crate::{
     withdrawal_request::WithdrawalRequest,
 };
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct ExecutionRequests {
     pub deposits: VariableList<DepositRequest, U8192>,
     pub withdrawals: VariableList<WithdrawalRequest, U16>,

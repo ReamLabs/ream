@@ -1,19 +1,15 @@
 //! https://ethereum.github.io/consensus-specs/ssz/merkle-proofs
 
+pub mod multiproof;
+
 use alloy_primitives::B256;
 use anyhow::ensure;
 
-fn get_generalized_index_bit(index: u64, position: u64) -> bool {
-    (index & (1 << position)) > 0
-}
+mod hash;
+mod index;
 
-fn get_generalized_index_child(index: u64, right_side: bool) -> u64 {
-    index * 2 + right_side as u64
-}
-
-fn get_subtree_index(generalized_index: u64) -> u64 {
-    generalized_index % (1 << (generalized_index as f64).log2().floor() as u64)
-}
+use hash::hash_concat;
+use index::{generalized_index_child, get_generalized_index_bit, get_subtree_index};
 
 pub fn merkle_tree(leaves: &[B256], depth: u64) -> anyhow::Result<Vec<B256>> {
     let num_of_leaves = leaves.len();
@@ -30,7 +26,7 @@ pub fn merkle_tree(leaves: &[B256], depth: u64) -> anyhow::Result<Vec<B256>> {
     for i in (1..bottom_length).rev() {
         let left = tree[i * 2].as_slice();
         let right = tree[i * 2 + 1].as_slice();
-        tree[i] = ethereum_hashing::hash32_concat(left, right).into();
+        tree[i] = hash_concat(left, right);
     }
 
     Ok(tree)
@@ -46,8 +42,8 @@ pub fn generate_proof(tree: &[B256], index: u64, depth: u64) -> anyhow::Result<V
 
     while current_depth > 0 {
         let (left_child_index, right_child_index) = (
-            get_generalized_index_child(current_index, false),
-            get_generalized_index_child(current_index, true),
+            generalized_index_child(current_index, false),
+            generalized_index_child(current_index, true),
         );
 
         if get_generalized_index_bit(index, current_depth - 1) {
@@ -76,13 +72,9 @@ pub fn is_valid_merkle_branch(
     let mut value = leaf;
     for i in 0..depth {
         if get_generalized_index_bit(index, i) {
-            value =
-                ethereum_hashing::hash32_concat(branch[i as usize].as_slice(), value.as_slice())
-                    .into();
+            value = hash_concat(branch[i as usize].as_slice(), value.as_slice());
         } else {
-            value =
-                ethereum_hashing::hash32_concat(value.as_slice(), branch[i as usize].as_slice())
-                    .into();
+            value = hash_concat(value.as_slice(), branch[i as usize].as_slice());
         }
     }
     value == root
@@ -118,15 +110,12 @@ mod tests {
             B256::from_slice(&[0xDD; 32]),
         ];
 
-        let depth = (leaves.len() as f64).log2().floor() as u64;
+        let depth = (leaves.len() as f64).log2().ceil() as u64;
 
-        let node_2: B256 =
-            ethereum_hashing::hash32_concat(leaves[0].as_slice(), leaves[1].as_slice()).into();
-        let node_3: B256 =
-            ethereum_hashing::hash32_concat(leaves[2].as_slice(), leaves[3].as_slice()).into();
+        let node_2 = hash_concat(leaves[0].as_slice(), leaves[1].as_slice());
+        let node_3 = hash_concat(leaves[2].as_slice(), leaves[3].as_slice());
 
-        let root: B256 =
-            ethereum_hashing::hash32_concat(node_2.as_slice(), node_3.as_slice()).into();
+        let root = hash_concat(node_2.as_slice(), node_3.as_slice());
 
         let tree = merkle_tree(&leaves, depth).unwrap();
 
@@ -145,25 +134,25 @@ mod tests {
         assert!(is_valid_normalized_merkle_branch(
             leaves[0],
             &proof_0,
-            2 * depth,
+            1 << depth,
             root
         ));
         assert!(is_valid_normalized_merkle_branch(
             leaves[1],
             &proof_1,
-            2 * depth + 1,
+            (1 << depth) + 1,
             root
         ));
         assert!(is_valid_normalized_merkle_branch(
             leaves[2],
             &proof_2,
-            2 * depth + 2,
+            (1 << depth) + 2,
             root
         ));
         assert!(is_valid_normalized_merkle_branch(
             leaves[3],
             &proof_3,
-            2 * depth + 3,
+            (1 << depth) + 3,
             root
         ));
     }

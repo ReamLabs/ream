@@ -11,6 +11,7 @@ use tracing::debug;
 /// - Otherwise, it uses `data_dir` if set.
 /// - Lastly, if neither are set, it will use operating system default application local data
 ///   directory.
+#[allow(deprecated)]
 pub fn setup_data_dir(
     app_name: &str,
     data_dir: Option<PathBuf>,

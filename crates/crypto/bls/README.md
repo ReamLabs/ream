@@ -13,9 +13,9 @@ This crate provides BLS (Boneh-Lynn-Shacham) signature functionality with suppor
 - ✅ Serialization/deserialization support
 - ✅ SSZ encoding/decoding
 - ✅ Tree hashing support
-- ❌ Secret key
-- ❌ Signing
-- ❌ Signature aggregation
+- ✅ Signing
+- ✅ Private key
+- ✅ Signature aggregation
 
 ## Usage
 
@@ -47,6 +47,17 @@ use ream_bls::{AggregatePubKey, PubKey};
 
 let pubkeys: &[&PubKey] = &[..];
 let agg_pubkey = AggregatePubKey::aggregate(pubkeys).unwrap();
+```
+
+### Signing
+
+```rust
+use ream_bls::{PrivateKey};
+
+let private_key: PrivateKey =  ..;
+let message = b"Hello, world!";
+
+let signature = private_key.sign(message);
 ```
 
 ### Signature Verification

@@ -3,11 +3,13 @@ use ream_consensus::{
     beacon_block_header::BeaconBlockHeader,
     electra::{beacon_block::SignedBeaconBlock, execution_payload_header::ExecutionPayloadHeader},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U3};
 use tree_hash::TreeHash;
+use tree_hash_derive::TreeHash;
 
-#[derive(Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct LightClientHeader {
     pub beacon: BeaconBlockHeader,
     pub execution: ExecutionPayloadHeader,

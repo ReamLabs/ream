@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fs, sync::Arc};
 
 use crate::networks::{DEV, HOLESKY, HOODI, MAINNET, NetworkSpec, SEPOLIA};
 
@@ -9,8 +9,12 @@ pub fn network_parser(network_string: &str) -> Result<Arc<NetworkSpec>, String> 
         "sepolia" => Ok(SEPOLIA.clone()),
         "hoodi" => Ok(HOODI.clone()),
         "dev" => Ok(DEV.clone()),
-        _ => Err(format!(
-            "Not a valid network: {network_string}, try mainnet, holesky, sepolia, hoodi, or dev"
-        )),
+        _ => {
+            let contents = fs::read_to_string(network_string)
+                .map_err(|err| format!("Failed to read file: {err}"))?;
+            Ok(Arc::new(serde_yaml::from_str(&contents).map_err(
+                |err| format!("Failed to parse YAML from: {err}"),
+            )?))
+        }
     }
 }

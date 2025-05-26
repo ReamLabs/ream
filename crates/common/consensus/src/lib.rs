@@ -14,6 +14,7 @@ pub mod deposit_data;
 pub mod deposit_message;
 pub mod deposit_request;
 pub mod electra;
+pub mod eth_1_block;
 pub mod eth_1_data;
 pub mod execution_engine;
 pub mod execution_requests;

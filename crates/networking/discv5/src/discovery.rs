@@ -21,13 +21,17 @@ use libp2p::{
         THandlerOutEvent, ToSwarm, dummy::ConnectionHandler,
     },
 };
+use ream_consensus::constants::genesis_validators_root;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use crate::{
-    config::NetworkConfig,
-    eth2::{ENR_ETH2_KEY, ENRForkID},
-    subnet::{ATTESTATION_BITFIELD_ENR_KEY, Subnet, subnet_predicate},
+    config::DiscoveryConfig,
+    eth2::{ENR_ETH2_KEY, EnrForkId},
+    subnet::{
+        ATTESTATION_BITFIELD_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
+        attestation_subnet_predicate, sync_committee_subnet_predicate,
+    },
 };
 
 #[derive(Debug)]
@@ -44,9 +48,10 @@ enum EventStream {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum QueryType {
-    FindPeers,
-    FindSubnetPeers(Vec<Subnet>),
+pub enum QueryType {
+    Peers,
+    AttestationSubnetPeers(Vec<u8>),
+    SyncCommitteeSubnetPeers(Vec<u8>),
 }
 
 struct QueryResult {
@@ -64,22 +69,22 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    pub async fn new(
-        local_key: libp2p::identity::Keypair,
-        config: &NetworkConfig,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<Self> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
+
         let mut enr_builder = Enr::builder();
-        if let Some(socket_address) = config.socket_address {
-            enr_builder.ip(socket_address);
-        }
-        if let Some(socker_port) = config.socket_port {
-            enr_builder.udp4(socker_port);
-        }
+        enr_builder.ip(config.socket_address);
+        enr_builder.tcp4(config.socket_port);
+        enr_builder.udp4(config.discovery_port);
+
         let enr = enr_builder
-            .add_value(ENR_ETH2_KEY, &ENRForkID::pectra())
-            .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.subnets)
+            .add_value(ENR_ETH2_KEY, &EnrForkId::electra(genesis_validators_root()))
+            .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.attestation_subnets)
+            .add_value(
+                SYNC_COMMITTEE_BITFIELD_ENR_KEY,
+                &config.sync_committee_subnets,
+            )
             .build(&enr_local)
             .map_err(|err| anyhow!("Failed to build ENR: {err}"))?;
 
@@ -124,18 +129,13 @@ impl Discovery {
         &self.local_enr
     }
 
-    pub fn discover_peers(&mut self, target_peers: usize, subnet_id: Option<u8>) {
+    pub fn discover_peers(&mut self, query: QueryType, target_peers: usize) {
         // If the discv5 service isn't running or we are in the process of a query, don't bother
         // queuing a new one.
         if !self.started || self.find_peer_active {
             return;
         }
         self.find_peer_active = true;
-
-        let query = match subnet_id {
-            Some(id) => QueryType::FindSubnetPeers(vec![Subnet::Attestation(id)]),
-            None => QueryType::FindPeers,
-        };
 
         self.start_query(query, target_peers);
     }
@@ -145,10 +145,13 @@ impl Discovery {
             .discv5
             .find_node_predicate(
                 NodeId::random(),
-                match query {
-                    QueryType::FindPeers => Box::new(empty_predicate()),
-                    QueryType::FindSubnetPeers(ref subnets) => {
-                        Box::new(subnet_predicate(subnets.clone()))
+                match query.clone() {
+                    QueryType::Peers => Box::new(empty_predicate()),
+                    QueryType::AttestationSubnetPeers(subnet_ids) => {
+                        Box::new(attestation_subnet_predicate(subnet_ids))
+                    }
+                    QueryType::SyncCommitteeSubnetPeers(subnet_ids) => {
+                        Box::new(sync_committee_subnet_predicate(subnet_ids))
                     }
                 },
                 target_peers,
@@ -164,7 +167,7 @@ impl Discovery {
     fn process_queries(&mut self, cx: &mut Context) -> Option<HashMap<Enr, Option<Instant>>> {
         while let Poll::Ready(Some(query)) = self.discovery_queries.poll_next_unpin(cx) {
             let result = match query.query_type {
-                QueryType::FindPeers => {
+                QueryType::Peers => {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
@@ -181,20 +184,16 @@ impl Discovery {
                         }
                     }
                 }
-                QueryType::FindSubnetPeers(subnets) => {
+                QueryType::AttestationSubnetPeers(subnet_ids) => {
                     self.find_peer_active = false;
                     match query.result {
                         Ok(peers) => {
-                            let predicate = subnet_predicate(subnets.clone());
+                            let predicate = attestation_subnet_predicate(subnet_ids);
                             let filtered_peers = peers
                                 .into_iter()
                                 .filter(|enr| predicate(enr))
                                 .collect::<Vec<_>>();
-                            info!(
-                                "Found {} peers for subnets {:?}",
-                                filtered_peers.len(),
-                                subnets
-                            );
+                            info!("Found {} peers for subnets", filtered_peers.len());
                             let mut peer_map = HashMap::new();
                             for peer in filtered_peers {
                                 peer_map.insert(peer, None);
@@ -203,6 +202,31 @@ impl Discovery {
                         }
                         Err(err) => {
                             warn!("Failed to find subnet peers: {err:?}");
+                            None
+                        }
+                    }
+                }
+                QueryType::SyncCommitteeSubnetPeers(subnet_ids) => {
+                    self.find_peer_active = false;
+                    match query.result {
+                        Ok(peers) => {
+                            let predicate = sync_committee_subnet_predicate(subnet_ids);
+                            let filtered_peers = peers
+                                .into_iter()
+                                .filter(|enr| predicate(enr))
+                                .collect::<Vec<_>>();
+                            info!(
+                                "Found {} peers for sync committee subnets",
+                                filtered_peers.len(),
+                            );
+                            let mut peer_map = HashMap::new();
+                            for peer in filtered_peers {
+                                peer_map.insert(peer, None);
+                            }
+                            Some(peer_map)
+                        }
+                        Err(err) => {
+                            warn!("Failed to find sync committee subnet peers: {err:?}");
                             None
                         }
                     }
@@ -313,81 +337,93 @@ fn convert_to_enr(key: Keypair) -> anyhow::Result<CombinedKey> {
 mod tests {
     use std::net::Ipv4Addr;
 
+    use alloy_primitives::B256;
     use libp2p::identity::Keypair;
+    use ream_consensus::constants::GENESIS_VALIDATORS_ROOT;
+    use ream_network_spec::networks::{DEV, set_network_spec};
 
     use super::*;
-    use crate::{config::NetworkConfig, subnet::Subnets};
+    use crate::{
+        config::DiscoveryConfig,
+        subnet::{AttestationSubnets, SyncCommitteeSubnets},
+    };
 
     #[tokio::test]
     async fn test_initial_subnet_setup() -> anyhow::Result<()> {
+        let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
+        set_network_spec(DEV.clone());
         let key = Keypair::generate_secp256k1();
-        let mut config = NetworkConfig::default();
-        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Set subnet 0
-        config.subnets.disable_subnet(Subnet::Attestation(1))?; // Set subnet 1
+        let mut config = DiscoveryConfig::default();
+        config.attestation_subnets.enable_attestation_subnet(0)?; // Set subnet 0
+        config.attestation_subnets.disable_attestation_subnet(1)?; // Set subnet 1
         config.disable_discovery = true;
 
         let discovery = Discovery::new(key, &config).await.unwrap();
         let enr: &discv5::enr::Enr<CombinedKey> = discovery.local_enr();
         // Check ENR reflects config.subnets
         let enr_subnets = enr
-            .get_decodable::<Subnets>(ATTESTATION_BITFIELD_ENR_KEY)
+            .get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .ok_or("ATTESTATION_BITFIELD_ENR_KEY not found")
             .map_err(|err| anyhow!("ATTESTATION_BITFIELD_ENR_KEY decoding failed: {err:?}"))??;
-        assert!(enr_subnets.is_active(Subnet::Attestation(0))?);
-        assert!(!enr_subnets.is_active(Subnet::Attestation(1))?);
+        assert!(enr_subnets.is_attestation_subnet_enabled(0)?);
+        assert!(!enr_subnets.is_attestation_subnet_enabled(1)?);
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_subnet_predicate() -> anyhow::Result<()> {
+    async fn test_attestation_subnet_predicate() -> anyhow::Result<()> {
         let key = Keypair::generate_secp256k1();
-        let mut config = NetworkConfig::default();
-        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
-        config.subnets.disable_subnet(Subnet::Attestation(1))?;
+        let mut config = DiscoveryConfig::default();
+        config.attestation_subnets.enable_attestation_subnet(0)?; // Local node on subnet 0
+        config.attestation_subnets.disable_attestation_subnet(1)?;
         config.disable_discovery = true;
 
         let discovery = Discovery::new(key, &config).await.unwrap();
         let local_enr = discovery.local_enr();
 
         // Predicate for subnet 0 should match
-        let predicate = subnet_predicate(vec![Subnet::Attestation(0)]);
+        let predicate = attestation_subnet_predicate(vec![0]);
         assert!(predicate(local_enr));
 
         // Predicate for subnet 1 should not match
-        let predicate = subnet_predicate(vec![Subnet::Attestation(1)]);
+        let predicate = attestation_subnet_predicate(vec![1]);
         assert!(!predicate(local_enr));
         Ok(())
     }
 
     #[tokio::test]
     async fn test_discovery_with_subnets() -> anyhow::Result<()> {
+        let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
         let key = Keypair::generate_secp256k1();
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::default())
             .table_filter(|_| true)
             .build();
 
-        let mut config = NetworkConfig {
+        let mut config = DiscoveryConfig {
             disable_discovery: false,
             discv5_config: discv5_config.clone(),
-            ..NetworkConfig::default()
+            ..DiscoveryConfig::default()
         };
 
-        config.subnets.enable_subnet(Subnet::Attestation(0))?; // Local node on subnet 0
+        config.attestation_subnets.enable_attestation_subnet(0)?; // Local node on subnet 0
         config.disable_discovery = false;
         let mut discovery = Discovery::new(key, &config).await.unwrap();
 
         // Simulate a peer with another Discovery instance
         let peer_key = Keypair::generate_secp256k1();
-        let mut peer_config = NetworkConfig {
-            subnets: Subnets::new(),
+        let mut peer_config = DiscoveryConfig {
+            attestation_subnets: AttestationSubnets::new(),
+            sync_committee_subnets: SyncCommitteeSubnets::new(),
             disable_discovery: true,
             discv5_config,
-            ..NetworkConfig::default()
+            ..DiscoveryConfig::default()
         };
 
-        peer_config.subnets.enable_subnet(Subnet::Attestation(0))?;
-        peer_config.socket_address = Some(Ipv4Addr::new(192, 168, 1, 100).into()); // Non-localhost IP
-        peer_config.socket_port = Some(9001); // Different port
+        peer_config
+            .attestation_subnets
+            .enable_attestation_subnet(0)?;
+        peer_config.socket_address = Ipv4Addr::new(192, 168, 1, 100).into(); // Non-localhost IP
+        peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
 
         let peer_discovery = Discovery::new(peer_key, &peer_config).await.unwrap();
@@ -396,13 +432,10 @@ mod tests {
         // Add peer to discv5
         discovery.discv5.add_enr(peer_enr.clone()).unwrap();
 
-        // Discover peers on subnet 0
-        discovery.discover_peers(0, Some(1));
-
         // Mock the query result to bypass async polling
-        discovery.discovery_queries.clear(); // Remove real query
+        discovery.discovery_queries.clear();
         let query_result = QueryResult {
-            query_type: QueryType::FindSubnetPeers(vec![Subnet::Attestation(0)]),
+            query_type: QueryType::AttestationSubnetPeers(vec![0]),
             result: Ok(vec![peer_enr.clone()]),
         };
         discovery

@@ -1,10 +1,10 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{fs, io, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
 use redb::{Builder, Database};
+use tracing::info;
 
 use crate::{
-    dir,
     errors::StoreError,
     tables::{
         beacon_block::{BEACON_BLOCK_TABLE, BeaconBlockTable},
@@ -34,8 +34,6 @@ use crate::{
     },
 };
 
-pub const APP_NAME: &str = "ream";
-
 pub const REDB_FILE: &str = "ream.redb";
 
 /// The size of the cache for the database
@@ -49,10 +47,7 @@ pub struct ReamDB {
 }
 
 impl ReamDB {
-    pub fn new(data_dir: Option<PathBuf>, ephemeral: bool) -> Result<Self, StoreError> {
-        let ream_dir =
-            dir::setup_data_dir(APP_NAME, data_dir, ephemeral).map_err(StoreError::Io)?;
-
+    pub fn new(ream_dir: PathBuf) -> Result<Self, StoreError> {
         let ream_file = ream_dir.join(REDB_FILE);
 
         let db = Builder::new()
@@ -190,4 +185,39 @@ impl ReamDB {
             db: self.db.clone(),
         }
     }
+
+    pub fn is_initialized(&self) -> bool {
+        match self.slot_index_provider().get_highest_slot() {
+            Ok(Some(slot)) => slot > 0,
+            _ => false,
+        }
+    }
+}
+
+pub fn reset_db(db_path: PathBuf) -> anyhow::Result<()> {
+    if fs::read_dir(&db_path)?.next().is_none() {
+        info!("Data directory at {db_path:?} is already empty.");
+        return Ok(());
+    }
+
+    info!(
+        "Are you sure you want to clear the contents of the data directory at {db_path:?}? (y/n):"
+    );
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    if input.trim().eq_ignore_ascii_case("y") {
+        for entry in fs::read_dir(&db_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                fs::remove_dir_all(&path)?;
+            } else {
+                fs::remove_file(&path)?;
+            }
+        }
+        info!("Database contents cleared successfully.");
+    } else {
+        info!("Operation canceled by user.");
+    }
+    Ok(())
 }

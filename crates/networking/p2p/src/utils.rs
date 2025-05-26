@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use super::configurations::MAX_PAYLOAD_SIZE;
+use crate::constants::MAX_PAYLOAD_SIZE;
 
 /// Worst-case compressed length for a given payload of size n when using snappy:
 /// https://github.com/google/snappy/blob/32ded457c0b1fe78ceb8397632c416568d6714a0/snappy.cc#L218C1-L218C47

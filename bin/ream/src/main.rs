@@ -2,15 +2,20 @@ use std::env;
 
 use clap::Parser;
 use ream::cli::{Cli, Commands};
-use ream_discv5::{config::NetworkConfig, subnet::Subnets};
+use ream_checkpoint_sync::initialize_db_from_checkpoint;
+use ream_consensus::constants::set_genesis_validator_root;
 use ream_executor::ReamExecutor;
-use ream_network_spec::networks::{network_spec, set_network_spec};
-use ream_p2p::network::Network;
-use ream_rpc::{config::ServerConfig, start_server};
-use ream_storage::db::ReamDB;
-use tokio::sync::mpsc;
-use tracing::{error, info};
+use ream_manager::service::ManagerService;
+use ream_network_spec::networks::set_network_spec;
+use ream_rpc::{config::RpcServerConfig, start_server};
+use ream_storage::{
+    db::{ReamDB, reset_db},
+    dir::setup_data_dir,
+};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
+
+pub const APP_NAME: &str = "ream";
 
 #[tokio::main]
 async fn main() {
@@ -26,72 +31,56 @@ async fn main() {
     let cli = Cli::parse();
 
     let async_executor = ReamExecutor::new().expect("unable to create executor");
+
     let main_executor = ReamExecutor::new().expect("unable to create executor");
 
     match cli.command {
         Commands::Node(config) => {
             info!("starting up...");
 
-            set_network_spec(config.network);
+            set_network_spec(config.network.clone());
 
-            let server_config = ServerConfig::new(
+            let ream_dir = setup_data_dir(APP_NAME, config.data_dir.clone(), config.ephemeral)
+                .expect("Unable to initialize database directory");
+
+            if config.purge_db {
+                reset_db(ream_dir.clone()).expect("Unable to delete database");
+            }
+
+            let ream_db = ReamDB::new(ream_dir).expect("unable to init Ream Database");
+
+            info!("ream database initialized ");
+
+            initialize_db_from_checkpoint(ream_db.clone(), config.checkpoint_sync_url.clone())
+                .await
+                .expect("Unable to initialize database from checkpoint");
+
+            info!("Database Initialization completed");
+
+            set_genesis_validator_root(
+                ream_db
+                    .beacon_state_provider()
+                    .first()
+                    .expect("Failed to access beacon state provider")
+                    .expect("No beacon state found")
+                    .genesis_validators_root,
+            );
+
+            let server_config = RpcServerConfig::new(
                 config.http_address,
                 config.http_port,
                 config.http_allow_origin,
             );
 
-            let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
-                config.socket_address,
-                config.discovery_port,
-            ))
-            .build();
+            let http_future = start_server(server_config, ream_db.clone());
 
-            let bootnodes = config.bootnodes.to_enrs(network_spec().network);
-            let binding = NetworkConfig {
-                discv5_config,
-                bootnodes,
-                socket_address: Some(config.socket_address),
-                socket_port: Some(config.socket_port),
-                disable_discovery: config.disable_discovery,
-                subnets: Subnets::new(),
-            };
+            let network_manager = ManagerService::new(async_executor, config.into(), ream_db)
+                .await
+                .expect("Failed to create manager service");
 
-            let ream_db = ReamDB::new(config.data_dir, config.ephemeral)
-                .expect("unable to init Ream Database");
-
-            info!("ream database initialized ");
-
-            let http_future = start_server(server_config, ream_db);
-
-            let network_future = async {
-                match Network::init(async_executor, &binding).await {
-                    Ok(mut network) => {
-                        let (tx, _rx) = mpsc::channel(1);
-
-                        // Spawn the network polling task
-                        let network_task = main_executor.spawn(async move {
-                            loop {
-                                let event = network.polling_events().await;
-                                info!("Network event: {:?}", event);
-                            }
-                        });
-
-                        // Wait for Ctrl+C or network task completion
-                        tokio::select! {
-                            _ = tokio::signal::ctrl_c() => {
-                                info!("Received Ctrl+C, shutting down...");
-                                let _ = tx.send(()).await;
-                            }
-                            _ = network_task => {
-                                info!("Network task completed");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to initialize network: {}", e);
-                    }
-                }
-            };
+            let network_future = main_executor.spawn(async move {
+                network_manager.start().await;
+            });
 
             tokio::select! {
                 _ = http_future => {

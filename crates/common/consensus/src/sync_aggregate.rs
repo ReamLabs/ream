@@ -4,7 +4,7 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::{BitVector, typenum::U512};
 use tree_hash_derive::TreeHash;
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SyncAggregate {
     pub sync_committee_bits: BitVector<U512>,
     pub sync_committee_signature: BLSSignature,

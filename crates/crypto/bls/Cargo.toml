@@ -9,6 +9,10 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+supranational = ["blst"]
+zkcrypto = ["bls12_381", "sha2"]
+
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
@@ -16,13 +20,10 @@ bls12_381 = { git = "https://github.com/zkcrypto/bls12_381", rev = "9ea427c0eb1a
 blst = { version = "0.3", optional = true }
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
+group = "0.13.0"
 serde.workspace = true
 sha2 = { workspace = true, optional = true }
 ssz_types.workspace = true
 thiserror.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
-
-[features]
-supranational = ["blst"]
-zkcrypto = ["bls12_381", "sha2"]

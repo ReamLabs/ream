@@ -1,6 +1,6 @@
 use std::{
     cmp::{max, min},
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     mem::take,
     ops::Deref,
     sync::Arc,
@@ -11,7 +11,7 @@ use anyhow::{anyhow, bail, ensure};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
 use ream_bls::{
-    AggregatePubKey, BLSSignature, PubKey,
+    BLSSignature, PubKey,
     traits::{Aggregatable, Verifiable},
 };
 use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
@@ -70,6 +70,7 @@ use crate::{
     deposit::Deposit,
     deposit_message::DepositMessage,
     deposit_request::DepositRequest,
+    eth_1_block::Eth1Block,
     eth_1_data::Eth1Data,
     execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
     fork::Fork,
@@ -214,6 +215,62 @@ impl BeaconState {
     /// Return the current epoch.
     pub fn get_current_epoch(&self) -> u64 {
         compute_epoch_at_slot(self.slot)
+    }
+
+    pub fn get_eth1_vote(&self, eth1_chain: &[&Eth1Block]) -> Eth1Data {
+        if self.eth1_deposit_index == self.deposit_requests_start_index {
+            return self.eth1_data.clone();
+        }
+        let period_start = self.voting_period_start_time();
+        let votes_to_consider = eth1_chain
+            .iter()
+            .filter(|block| {
+                block.is_candidate_block(period_start)
+                    && block.deposit_count >= self.eth1_data.deposit_count
+            })
+            .map(|block| block.eth1_data())
+            .collect::<Vec<_>>();
+        let valid_votes = self
+            .eth1_data_votes
+            .iter()
+            .filter(|vote| votes_to_consider.contains(vote))
+            .collect::<Vec<_>>();
+        let vote_counts = valid_votes.iter().fold(HashMap::new(), |mut map, vote| {
+            map.entry(*vote)
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
+            map
+        });
+        valid_votes
+            .into_iter()
+            .enumerate()
+            .max_by_key(|(index, vote)| (vote_counts[*vote], -(*index as i64)))
+            .map(|(_, vote)| vote.clone())
+            .unwrap_or(match votes_to_consider.last() {
+                Some(vote) => (*vote).clone(),
+                None => self.eth1_data.clone(),
+            })
+    }
+
+    pub fn voting_period_start_time(&self) -> u64 {
+        let eth1_voting_period_start_slot =
+            self.slot - self.slot % (EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH);
+        self.compute_timestamp_at_slot(eth1_voting_period_start_slot)
+    }
+
+    pub fn get_eth1_pending_deposit_count(&self) -> u64 {
+        let eth1_deposit_index_limit = min(
+            self.eth1_data.deposit_count,
+            self.deposit_requests_start_index,
+        );
+        if self.eth1_deposit_index < eth1_deposit_index_limit {
+            min(
+                MAX_DEPOSITS,
+                eth1_deposit_index_limit - self.eth1_deposit_index,
+            )
+        } else {
+            0
+        }
     }
 
     /// Return the previous epoch (unless the current epoch is ``GENESIS_EPOCH``).
@@ -2359,7 +2416,7 @@ impl BeaconState {
     pub async fn process_execution_payload(
         &mut self,
         body: &BeaconBlockBody,
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
     ) -> anyhow::Result<()> {
         let payload = &body.execution_payload;
 
@@ -2378,16 +2435,19 @@ impl BeaconState {
         for commitment in body.blob_kzg_commitments.iter() {
             versioned_hashes.push(commitment.calculate_versioned_hash());
         }
-        ensure!(
-            execution_engine
-                .verify_and_notify_new_payload(NewPayloadRequest {
-                    execution_payload: payload.clone(),
-                    versioned_hashes,
-                    parent_beacon_block_root: self.latest_block_header.parent_root,
-                    execution_requests: body.execution_requests.clone()
-                })
-                .await?
-        );
+
+        if let Some(execution_engine) = execution_engine {
+            ensure!(
+                execution_engine
+                    .verify_and_notify_new_payload(NewPayloadRequest {
+                        execution_payload: payload.clone(),
+                        versioned_hashes,
+                        parent_beacon_block_root: self.latest_block_header.parent_root,
+                        execution_requests: body.execution_requests.clone()
+                    })
+                    .await?
+            );
+        }
 
         // Cache execution payload header
         self.latest_execution_payload_header = payload.to_execution_payload_header();
@@ -2398,7 +2458,7 @@ impl BeaconState {
     pub async fn process_block(
         &mut self,
         block: &BeaconBlock,
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
     ) -> anyhow::Result<()> {
         self.process_block_header(block)?;
         self.process_withdrawals(&block.body.execution_payload)?;
@@ -2416,7 +2476,7 @@ impl BeaconState {
         &mut self,
         signed_block: &SignedBeaconBlock,
         validate_result: bool,
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
     ) -> anyhow::Result<()> {
         let block = &signed_block.message;
 
@@ -2662,6 +2722,10 @@ impl BeaconState {
         ]
         .concat())
     }
+
+    pub fn state_root(&self) -> B256 {
+        self.tree_hash_root()
+    }
 }
 
 pub fn get_validator_from_deposit(
@@ -2711,9 +2775,7 @@ pub fn eth_fast_aggregate_verify(
 /// Refer to the BLS signature draft standard for more information.
 pub fn eth_aggregate_pubkeys(pubkeys: &[&PubKey]) -> anyhow::Result<PubKey> {
     ensure!(!pubkeys.is_empty(), "Public keys list cannot be empty");
-
-    let aggregate_pubkey = AggregatePubKey::aggregate(pubkeys)?;
-    Ok(aggregate_pubkey.to_pubkey())
+    Ok(PubKey::aggregate(pubkeys)?)
 }
 
 /// Return the largest integer ``x`` such that ``x**2 <= n``.

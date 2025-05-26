@@ -1,28 +1,50 @@
-use crate::{AggregatePubKey, PubKey, errors::BLSError};
+use crate::{BLSSignature, PubKey, errors::BLSError};
 
 /// Trait for aggregating BLS public keys.
 ///
 /// This trait provides functionality to combine multiple BLS public keys into a single
 /// aggregate public key. This is useful for signature verification of messages signed
 /// by multiple parties.
-pub trait Aggregatable {
+pub trait Aggregatable<T> {
     type Error;
 
-    /// Aggregates multiple BLS public keys into a single aggregate public key.
+    /// Aggregates multiple BLS items into a single aggregate item.
     ///
     /// # Arguments
-    /// * `pubkeys` - Slice of public key references to aggregate
+    /// * `items` - Slice of references to the items to aggregate
     ///
     /// # Returns
-    /// * `Result<AggregatePubKey, Self::Error>` - The aggregated public key or an error
-    fn aggregate(pubkeys: &[&PubKey]) -> Result<AggregatePubKey, Self::Error>;
+    /// * `Result<Self::Output, Self::Error>` - The aggregated item or an error
+    fn aggregate(items: &[&T]) -> Result<T, Self::Error>;
 }
 
-/// Marker trait for zkcrypto/bls12_381 BLS public key aggregation implementation
-pub trait ZkcryptoAggregatable: Aggregatable<Error = BLSError> {}
+/// Marker trait for zkcrypto/bls12_381 BLS aggregation implementation
+pub trait ZkcryptoAggregatable<T>: Aggregatable<T, Error = BLSError> {}
 
-/// Marker trait for supranational/blst BLS public key aggregation implementation
-pub trait SupranationalAggregatable: Aggregatable<Error = anyhow::Error> {}
+/// Marker trait for supranational/blst BLS aggregation implementation
+pub trait SupranationalAggregatable<T>: Aggregatable<T, Error = anyhow::Error> {}
+
+/// Trait for BLS message signing.
+///
+/// This trait provides functionality to sign messages using a BLS private key.
+pub trait Signable {
+    type Error;
+
+    /// Signs a message using the private key.
+    ///
+    /// # Arguments
+    /// * `message` - The message bytes to sign
+    ///
+    /// # Returns
+    /// * `Result<BLSSignature, Self::Error>` - The BLS signature or an error
+    fn sign(&self, message: &[u8]) -> Result<BLSSignature, Self::Error>;
+}
+
+/// Marker trait for zkcrypto/bls12_381 BLS signing implementation
+pub trait ZkcryptoSignable: Signable<Error = BLSError> {}
+
+/// Marker trait for supranational/blst BLS signing implementation
+pub trait SupranationalSignable: Signable<Error = anyhow::Error> {}
 
 /// Trait for verifying BLS signatures.
 ///

@@ -12,7 +12,7 @@ Options:
   -v, --verbosity <VERBOSITY>
           Verbosity level [default: 3]
       --network <NETWORK>
-          Choose mainnet, holesky, sepolia, hoodi or dev [default: mainnet]
+          Choose mainnet, holesky, sepolia, hoodi, dev or provide a path to a YAML config file [default: mainnet]
       --http-address <HTTP_ADDRESS>
           Set HTTP address [default: 127.0.0.1]
       --http-port <HTTP_PORT>
@@ -33,6 +33,14 @@ Options:
           Use new data directory, located in OS temporary directory. If used together with --data-dir, new directory will be created there instead.
       --bootnodes <BOOTNODES>
           One or more comma-delimited base64-encoded ENR's of peers to initially connect to. Use 'default' to use the default bootnodes for the network. Use 'none' to disable bootnodes. [default: default]
+      --checkpoint-sync-url <CHECKPOINT_SYNC_URL>
+          Trusted RPC URL to initiate Checkpoint Sync.
+      --purge-db
+          Purges the database.
+      --execution-endpoint <EXECUTION_ENDPOINT>
+          The URL of the execution endpoint. This is used to send requests to the engine api.
+      --execution-jwt-secret <EXECUTION_JWT_SECRET>
+          The JWT secret used to authenticate with the execution endpoint. This is used to send requests to the engine api.
   -h, --help
           Print help
 ```

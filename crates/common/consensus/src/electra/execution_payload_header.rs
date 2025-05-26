@@ -10,7 +10,7 @@ use tree_hash_derive::TreeHash;
 
 use crate::misc::checksummed_address;
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct ExecutionPayloadHeader {
     // Execution block header fields
     pub parent_hash: B256,

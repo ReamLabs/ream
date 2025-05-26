@@ -10,10 +10,11 @@ use super::beacon_block_body::BeaconBlockBody;
 use crate::{
     beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
     blob_sidecar::BlobSidecar,
-    execution_engine::rpc_types::get_blobs::BlobAndProofV1,
+    execution_engine::rpc_types::get_blobs::{Blob, BlobAndProofV1},
+    polynomial_commitments::kzg_proof::KZGProof,
 };
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedBeaconBlock {
     pub message: BeaconBlock,
     pub signature: BLSSignature,
@@ -55,9 +56,24 @@ impl SignedBeaconBlock {
                 .into(),
         })
     }
+
+    pub fn get_blob_sidecars(
+        &self,
+        blobs: Vec<Blob>,
+        blob_kzg_proofs: Vec<KZGProof>,
+    ) -> anyhow::Result<Vec<BlobSidecar>> {
+        blobs
+            .into_iter()
+            .zip(blob_kzg_proofs)
+            .enumerate()
+            .map(|(index, (blob, proof))| {
+                self.blob_sidecar(BlobAndProofV1 { blob, proof }, index as u64)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()
+    }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BeaconBlock {
     #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,
@@ -66,4 +82,10 @@ pub struct BeaconBlock {
     pub parent_root: B256,
     pub state_root: B256,
     pub body: BeaconBlockBody,
+}
+
+impl BeaconBlock {
+    pub fn block_root(&self) -> B256 {
+        self.tree_hash_root()
+    }
 }

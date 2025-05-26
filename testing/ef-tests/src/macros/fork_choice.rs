@@ -18,6 +18,7 @@ macro_rules! test_fork_choice {
                 use ream_storage::{
                     db::ReamDB,
                     tables::{Table, Field},
+                    dir::setup_data_dir
                 };
                 use rstest::rstest;
                 use serde::Deserialize;
@@ -96,7 +97,7 @@ macro_rules! test_fork_choice {
                         stringify!($path)
                     );
 
-                    let mock_engine = MockExecutionEngine::new();
+                    let mock_engine = Some(MockExecutionEngine::new());
 
                     for entry in std::fs::read_dir(base_path).unwrap() {
                         let entry = entry.unwrap();
@@ -124,7 +125,8 @@ macro_rules! test_fork_choice {
                             utils::read_ssz_snappy(&case_dir.join("anchor_block.ssz_snappy"))
                                 .expect("Failed to read anchor_block.ssz_snappy");
 
-                        let reamdb = ReamDB::new(None, true).expect("count not find reabdb");
+                        let ream_dir = setup_data_dir("ream", None, true).expect("Failed to create data dir");
+                        let reamdb = ReamDB::new(ream_dir).expect("count not find reabdb");
                         let mut store = get_forkchoice_store(anchor_state, anchor_block, reamdb)
                             .expect("get_forkchoice_store failed");
 

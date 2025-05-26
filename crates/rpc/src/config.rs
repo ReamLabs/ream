@@ -1,12 +1,12 @@
 use std::net::{IpAddr, SocketAddr};
 
 #[derive(Debug, Clone)]
-pub struct ServerConfig {
+pub struct RpcServerConfig {
     pub http_socket_address: SocketAddr,
     pub http_allow_origin: bool,
 }
 
-impl ServerConfig {
+impl RpcServerConfig {
     /// Creates a new instance from CLI arguments
     pub fn new(http_address: IpAddr, http_port: u16, http_allow_origin: bool) -> Self {
         Self {

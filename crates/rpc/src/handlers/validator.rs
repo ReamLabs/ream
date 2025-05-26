@@ -2,6 +2,7 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path},
 };
+use actix_web_lab::extract::Query;
 use alloy_primitives::map::HashSet;
 use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
@@ -117,8 +118,8 @@ pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<Stri
 pub async fn get_validators_from_state(
     db: Data<ReamDB>,
     state_id: Path<ID>,
-    id_query: Json<IdQuery>,
-    status_query: Json<StatusQuery>,
+    id_query: Query<IdQuery>,
+    status_query: Query<StatusQuery>,
 ) -> Result<impl Responder, ApiError> {
     if let Some(validator_ids) = &id_query.id {
         if validator_ids.len() >= MAX_VALIDATOR_COUNT {

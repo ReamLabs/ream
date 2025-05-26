@@ -11,6 +11,10 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
+anyhow.workspace = true
+ethereum_serde_utils.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
 
 # ream-dependencies
 ream-consensus.workspace = true

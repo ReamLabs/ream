@@ -6,13 +6,13 @@ use tree_hash_derive::TreeHash;
 
 use crate::misc::checksummed_address;
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedBLSToExecutionChange {
     pub message: BLSToExecutionChange,
     pub signature: BLSSignature,
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BLSToExecutionChange {
     #[serde(with = "serde_utils::quoted_u64")]
     pub validator_index: u64,

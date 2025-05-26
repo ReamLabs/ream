@@ -22,21 +22,29 @@ use tracing::{debug, error};
 use super::{
     error::ReqRespError,
     inbound_protocol::{InboundFramed, InboundOutput, InboundReqRespProtocol, ResponseCode},
-    messages::Message,
+    messages::{RequestMessage, ResponseMessage},
     outbound_protocol::{OutboundFramed, OutboundReqRespProtocol},
 };
 use crate::req_resp::ConnectionRequest;
 
 #[derive(Debug)]
 pub enum ReqRespMessageReceived {
-    Request { stream_id: u64, message: Message },
-    Response { request_id: u64, message: Message },
-    EndOfStream { request_id: u64 },
+    Request {
+        stream_id: u64,
+        message: RequestMessage,
+    },
+    Response {
+        request_id: u64,
+        message: ResponseMessage,
+    },
+    EndOfStream {
+        request_id: u64,
+    },
 }
 
 #[derive(Debug)]
 pub enum RespMessage {
-    Response(Message),
+    Response(ResponseMessage),
     Error(ReqRespError),
     EndOfStream,
 }
@@ -83,7 +91,7 @@ struct InboundStream {
 enum OutboundStreamState {
     PendingResponse {
         stream: Box<OutboundFramed<Stream>>,
-        message: Message,
+        message: RequestMessage,
     },
     Closing(Box<OutboundFramed<Stream>>),
 }
@@ -96,7 +104,7 @@ struct OutboundStream {
 #[derive(Debug)]
 pub struct OutboundOpenInfo {
     pub request_id: u64,
-    pub message: Message,
+    pub message: RequestMessage,
 }
 
 enum ConnectionState {
@@ -133,7 +141,7 @@ impl ReqRespConnectionHandler {
     fn on_fully_negotiated_inbound(&mut self, inbound_output: InboundOutput<Stream>, _info: ()) {
         let (message, inbound_framed) = inbound_output;
 
-        if let Message::Goodbye(_) = message {
+        if let RequestMessage::Goodbye(_) = message {
             self.shutdown();
             return;
         }
@@ -187,7 +195,7 @@ impl ReqRespConnectionHandler {
         error!("REQRESP: Dial upgrade error: {:?}", error);
     }
 
-    fn request(&mut self, request_id: u64, message: Message) {
+    fn request(&mut self, request_id: u64, message: RequestMessage) {
         if let ConnectionState::Live = self.connection_state {
             self.pending_outbound_streams.push(OutboundOpenInfo {
                 request_id,

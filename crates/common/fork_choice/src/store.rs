@@ -1,5 +1,8 @@
-use alloy_primitives::{B256, map::HashMap};
+use std::cmp::Ordering;
+
+use alloy_primitives::B256;
 use anyhow::{anyhow, bail, ensure};
+use hashbrown::HashMap;
 use ream_bls::BLSSignature;
 use ream_consensus::{
     attestation::Attestation,
@@ -36,6 +39,10 @@ pub struct Store {
 }
 
 impl Store {
+    pub fn new(db: ReamDB) -> Self {
+        Self { db }
+    }
+
     pub fn is_previous_epoch_justified(&self) -> anyhow::Result<bool> {
         let current_epoch = self.get_current_store_epoch()?;
         Ok(self.db.justified_checkpoint_provider().get()?.epoch + 1 == current_epoch)
@@ -132,6 +139,55 @@ impl Store {
 
         // Otherwise, branch not viable
         Ok(false)
+    }
+
+    /// Retrieve a filtered block tree from ``store``, only returning branches
+    /// whose leaf state's justified/finalized info agrees with that in ``store``.
+    pub fn get_filtered_block_tree(&self) -> anyhow::Result<HashMap<B256, BeaconBlock>> {
+        let base = self.db.justified_checkpoint_provider().get()?.root;
+        let mut blocks = HashMap::default();
+        self.filter_block_tree(base, &mut blocks)?;
+        Ok(blocks)
+    }
+
+    pub fn get_head(&self) -> anyhow::Result<B256> {
+        // Get filtered block tree that only includes viable branches
+        let blocks = self.get_filtered_block_tree()?;
+        // Execute the LMD-GHOST fork choice
+        let mut head = self.db.justified_checkpoint_provider().get()?.root;
+
+        loop {
+            let mut children = vec![];
+            for root in blocks.keys() {
+                if blocks[root].parent_root == head {
+                    children.push(root);
+                }
+            }
+
+            if children.is_empty() {
+                return Ok(head);
+            }
+
+            let mut weighted_children = children
+                .into_iter()
+                .map(|child| Ok((*child, self.get_weight(*child)?)))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+
+            // Sort by latest attesting balance with ties broken lexicographically
+            // Ties broken by favoring block with lexicographically higher root
+            weighted_children.sort_by(|(a, weight_a), (b, weight_b)| {
+                match weight_a.cmp(weight_b) {
+                    Ordering::Equal => a.cmp(b),
+                    other => other,
+                }
+            });
+
+            let Some((best_child, _)) = weighted_children.last() else {
+                bail!("Children should always be present");
+            };
+
+            head = *best_child;
+        }
     }
 
     /// Update checkpoints in store if necessary
@@ -585,7 +641,7 @@ impl Store {
     pub async fn is_data_available(
         &self,
         blob_kzg_commitments: &[KZGCommitment],
-        execution_engine: &impl ExecutionApi,
+        execution_engine: &Option<impl ExecutionApi>,
         beacon_block_root: B256,
     ) -> anyhow::Result<bool> {
         // `retrieve_blobs_and_proofs` is implementation and context dependent
@@ -604,31 +660,33 @@ impl Store {
         }
 
         // Fallback to trying engine api
-        if blobs_and_proofs.contains(&None) {
-            let indexed_blob_versioned_hashes = blobs_and_proofs
-                .iter()
-                .enumerate()
-                .filter_map(|(index, blob_and_proof)| {
-                    if blob_and_proof.is_none() {
-                        Some((
-                            index,
-                            blob_kzg_commitments[index].calculate_versioned_hash(),
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            let (indices, blob_versioned_hashes): (Vec<_>, Vec<_>) =
-                indexed_blob_versioned_hashes.into_iter().unzip();
-            let execution_blobs_and_proofs = execution_engine
-                .engine_get_blobs_v1(blob_versioned_hashes)
-                .await?;
-            for (index, blob_and_proof) in indices
-                .into_iter()
-                .zip(execution_blobs_and_proofs.into_iter())
-            {
-                blobs_and_proofs[index] = blob_and_proof;
+        if let Some(execution_engine) = execution_engine {
+            if blobs_and_proofs.contains(&None) {
+                let indexed_blob_versioned_hashes = blobs_and_proofs
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, blob_and_proof)| {
+                        if blob_and_proof.is_none() {
+                            Some((
+                                index,
+                                blob_kzg_commitments[index].calculate_versioned_hash(),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let (indices, blob_versioned_hashes): (Vec<_>, Vec<_>) =
+                    indexed_blob_versioned_hashes.into_iter().unzip();
+                let execution_blobs_and_proofs = execution_engine
+                    .engine_get_blobs_v1(blob_versioned_hashes)
+                    .await?;
+                for (index, blob_and_proof) in indices
+                    .into_iter()
+                    .zip(execution_blobs_and_proofs.into_iter())
+                {
+                    blobs_and_proofs[index] = blob_and_proof;
+                }
             }
         }
 
@@ -730,6 +788,10 @@ pub fn get_forkchoice_store(
         .insert(anchor_root, signed_anchor_block)?;
     db.beacon_state_provider()
         .insert(anchor_root, anchor_state.clone())?;
+    db.state_root_index_provider()
+        .insert(anchor_state.tree_hash_root(), anchor_root)?;
+    db.slot_index_provider()
+        .insert(anchor_state.slot, anchor_root)?;
     db.checkpoint_states_provider()
         .insert(justified_checkpoint, anchor_state)?;
     db.unrealized_justifications_provider()

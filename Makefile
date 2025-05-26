@@ -43,6 +43,7 @@ lint: # Run `clippy` and `rustfmt`.
 	cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings
 
 	# cargo sort
+	# removed workspace flag as <property>.workspace = true is not supported in cargo sort.
 	cargo sort --grouped
 
 .PHONY: build-debug
