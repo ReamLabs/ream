@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use actix_web::{App, HttpServer, dev::ServerHandle, middleware, web::Data};
-use config::{RpcServerConfig, ServerConfig};
+use config::RpcServerConfig;
 use ream_discv5::subnet::SyncCommitteeSubnets;
 use ream_p2p::network_state::NetworkState;
 use ream_storage::db::ReamDB;
