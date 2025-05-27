@@ -62,6 +62,7 @@ ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }
 ethereum_serde_utils = "0.8"
 ethereum_ssz = "0.9"
 ethereum_ssz_derive = "0.9"
+eventsource-client = "0.15.0"
 futures = "0.3"
 hashbrown = "0.15.3"
 itertools = "0.14"
