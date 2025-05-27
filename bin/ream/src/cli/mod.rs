@@ -18,9 +18,9 @@ pub struct Cli {
 pub enum Commands {
     /// Start the node
     #[command(name = "beacon_node")]
-    BeaconNode(BeaconNodeConfig),
+    BeaconNode(Box<BeaconNodeConfig>),
     #[command(name = "validator_node")]
-    ValidatorNode(ValidatorNodeConfig),
+    ValidatorNode(Box<ValidatorNodeConfig>),
 }
 
 #[cfg(test)]

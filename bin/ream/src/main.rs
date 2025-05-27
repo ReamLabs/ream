@@ -39,9 +39,9 @@ async fn main() {
 
     match cli.command {
         Commands::BeaconNode(config) => {
-            run_beacon_node(config, async_executor, main_executor).await
+            run_beacon_node(*config, async_executor, main_executor).await
         }
-        Commands::ValidatorNode(config) => run_validator_node(config).await,
+        Commands::ValidatorNode(config) => run_validator_node(*config).await,
     }
 }
 
@@ -65,13 +65,13 @@ pub async fn run_beacon_node(
 
     info!("ream database initialized ");
 
-            let _is_ws_verified = initialize_db_from_checkpoint(
-                ream_db.clone(),
-                config.checkpoint_sync_url.clone(),
-                config.weak_subjectivity_checkpoint,
-            )
-            .await
-            .expect("Unable to initialize database from checkpoint");
+    let _is_ws_verified = initialize_db_from_checkpoint(
+        ream_db.clone(),
+        config.checkpoint_sync_url.clone(),
+        config.weak_subjectivity_checkpoint,
+    )
+    .await
+    .expect("Unable to initialize database from checkpoint");
 
     info!("Database Initialization completed");
 
