@@ -1,8 +1,13 @@
 # Context on this file: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
-# The basic jist is that this file is used to automatically request reviews from the people listed in the file when a PR is opened.
-*                               @KolbyML @syjn99
-crates/common/consensus/        @KolbyML @Kayden-ML @syjn99 @varun-doshi
-crates/common/execution_engine/ @KolbyML @Kayden-ML @syjn99
-crates/crypto/                  @KolbyML @syjn99
-crates/rpc/                     @KolbyML @varun-doshi
-crates/testing/                 @KolbyML @Kayden-ML @syjn99
+# The basic gist is that this file is used to automatically request reviews from the people listed in the file when a PR is opened.
+*                                     @KolbyML
+crates/common/beacon_chain/           @KolbyML @Kayden-ML
+crates/common/checkpoint_sync/        @KolbyML @varun-doshi
+crates/common/consensus/              @KolbyML @Kayden-ML @varun-doshi
+crates/common/execution_engine/       @KolbyML @Kayden-ML
+crates/common/fork_choice/            @KolbyML @Kayden-ML
+crates/common/network_spec/           @KolbyML @Kayden-ML
+crates/common/polynomial_commitments/ @KolbyML @Kayden-ML
+crates/crypto/                        @KolbyML @syjn99
+crates/rpc/                           @KolbyML @varun-doshi
+testing/                              @KolbyML @Kayden-ML @syjn99
