@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     io,
+    net::IpAddr,
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
     sync::Arc,
@@ -33,6 +34,7 @@ use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::Mutex;
 use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
 use ream_executor::ReamExecutor;
+use ream_peer_management::peer::{PeerConnectionStatus, PeerInfo};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
@@ -78,6 +80,8 @@ pub enum ReamNetworkEvent {
     MetaData(PeerId),
     DisconnectPeer(PeerId),
     DiscoverPeers(usize),
+    Banned(PeerId, Vec<IpAddr>),
+    UnBanned(PeerId, Vec<IpAddr>),
     RequestMessage {
         peer_id: PeerId,
         stream_id: u64,
@@ -89,6 +93,7 @@ pub enum ReamNetworkEvent {
 pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
+    peers: HashMap<PeerId, PeerInfo>,
     subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
     callbacks: HashMap<u64, mpsc::Sender<anyhow::Result<P2PResponse>>>,
     request_id: u64,
@@ -182,6 +187,7 @@ impl Network {
         let mut network = Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
+            peers: HashMap::new(),
             subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
             callbacks: HashMap::new(),
             request_id: 0,
@@ -276,7 +282,6 @@ impl Network {
         &mut self,
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {
-        // currently no-op for any network events
         info!("Event: {:?}", event);
         match event {
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -345,6 +350,40 @@ impl Network {
                     None
                 }
             },
+            SwarmEvent::ConnectionEstablished {
+                peer_id, endpoint, ..
+            } => {
+                // Update peers hashmap with new connection
+                match self.peers.get_mut(&peer_id) {
+                    Some(peer_info) => {
+                        peer_info.connection_status = PeerConnectionStatus::Connected;
+                        peer_info.update_last_seen();
+                    }
+                    None => {
+                        // Create new peer info
+                        let peer_info =
+                            PeerInfo::new(peer_id, endpoint.get_remote_address().clone());
+                        self.peers.insert(peer_id, peer_info);
+                    }
+                }
+                Some(ReamNetworkEvent::PeerConnectedIncoming(peer_id))
+            }
+            SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                // Update peer status to disconnected
+                match self.peers.get_mut(&peer_id) {
+                    Some(peer_info) => {
+                        peer_info.connection_status = PeerConnectionStatus::Disconnected;
+                        peer_info.update_last_seen();
+                    }
+                    None => {
+                        println!(
+                            "Received disconnect from a peer not present in local db {:}",
+                            peer_id
+                        );
+                    }
+                }
+                Some(ReamNetworkEvent::PeerDisconnected(peer_id))
+            }
             swarm_event => {
                 info!("Unhandled swarm event: {swarm_event:?}");
                 None

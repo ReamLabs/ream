@@ -41,4 +41,5 @@ ream-discv5.workspace = true
 ream-executor.workspace = true
 ream-light-client.workspace = true
 ream-network-spec.workspace = true
+ream-peer-management.workspace = true
 ream-validator.workspace = true

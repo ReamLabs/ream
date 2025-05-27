@@ -1,5 +1,5 @@
 [package]
-name = "ream-node"
+name = "ream-peer-management"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -9,6 +9,6 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
-[build-dependencies]
-vergen = { version = "9.0", features = ["build", "cargo", "emit_and_set", "rustc"] }
-vergen-git2 = "1.0"
+[dependencies]
+libp2p.workspace = true
+

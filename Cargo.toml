@@ -18,6 +18,7 @@ members = [
     "crates/networking/discv5",
     "crates/networking/manager",
     "crates/networking/p2p",
+    "crates/networking/peer_management",
     "crates/networking/syncer",
     "crates/rpc",
     "crates/runtime",
@@ -98,6 +99,7 @@ ream-merkle = { path = "crates/crypto/merkle" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }
 ream-p2p = { path = "crates/networking/p2p" }
+ream-peer-management = { path = "crates/networking/peer_management" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-rpc = { path = "crates/rpc" }
 ream-storage = { path = "crates/storage" }

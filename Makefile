@@ -45,6 +45,9 @@ lint: # Run `clippy` and `rustfmt`.
 	# cargo sort
 	cargo sort --grouped --workspace
 
+	# cargo udeps
+	cargo +nightly udeps --workspace --tests --all-targets --release --exclude ef-tests
+
 .PHONY: build-debug
 build-debug: ## Build the ream binary into `target/debug` directory.
 	cargo build --bin ream --features "$(FEATURES)"
