@@ -323,8 +323,8 @@ impl Network {
                 if let Some(address_ref) = &address {
                     cached_peer.last_seen_p2p_address = Some(address_ref.clone());
                 }
-                cached_peer.state = state.clone();
-                cached_peer.direction = direction.clone();
+                cached_peer.state = state;
+                cached_peer.direction = direction;
                 if let Some(enr_ref) = &enr {
                     cached_peer.enr = Some(enr_ref.clone());
                 }
