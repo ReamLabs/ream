@@ -1,6 +1,6 @@
 [package]
 name = "ream-p2p"
-authors.workspace = true
+authors = { workspace = true }
 edition.workspace = true
 keywords.workspace = true
 license.workspace = true

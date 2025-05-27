@@ -387,6 +387,7 @@ impl Network {
                 }
             }
         }
+    }
     /// polling the libp2p swarm for network events.
     pub async fn polling_events(&mut self) {
         let mut check_enr_interval = tokio::time::interval(tokio::time::Duration::from_secs(12));
@@ -394,7 +395,7 @@ impl Network {
         loop {
             tokio::select! {
                 Some(event) = self.swarm.next() => {
-                    if let Some(event) = self.parse_swarm_event(event) {
+                    if let Some(event) = self.parse_swarm_event(event).await {
                         self.handle_network_event(event).await;
                     }
                 },
@@ -463,10 +464,22 @@ impl Network {
                     .discovery
                     .discover_peers(QueryType::Peers, target_peers);
             }
+            ReamNetworkEvent::RequestMessage {
+                peer_id,
+                stream_id: _,
+                connection_id: _,
+                message,
+            } => {
+                info!(
+                    "Received request message from peer {}: {:?}",
+                    peer_id, message
+                );
+                // Handle the request message here
+            }
         }
     }
 
-    fn parse_swarm_event(
+    async fn parse_swarm_event(
         &mut self,
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {

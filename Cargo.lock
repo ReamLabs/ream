@@ -5515,6 +5515,7 @@ dependencies = [
  "ream-execution-engine",
  "ream-fork-choice",
  "ream-discv5",
+ "ream-fork-choice",
  "ream-light-client",
  "ream-network-spec",
  "ream-node",
