@@ -44,6 +44,7 @@ actix-web-lab = "0.24.1"
 alloy-consensus = { version = "1.0", default-features = false }
 alloy-primitives = { version = "1.1", features = ['serde'] }
 alloy-rlp = { version = "0.3.8", default-features = false, features = ["derive"] }
+alloy-rpc-types-eth = "1.0.7"
 anyhow = "1.0"
 async-trait = "0.1.86"
 clap = "4"

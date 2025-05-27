@@ -120,6 +120,24 @@ impl ExecutionEngine {
             .to_result()
     }
 
+    pub async fn eth_block_number(&self) -> anyhow::Result<String> {
+        let request_body = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".to_string(),
+            method: "eth_blockNumber ".to_string(),
+            params: vec![],
+        };
+
+        let http_post_request = self.build_request(request_body)?;
+
+        self.http_client
+            .execute(http_post_request)
+            .await?
+            .json::<JsonRpcResponse<String>>()
+            .await?
+            .to_result()
+    }
+
     pub async fn engine_exchange_capabilities(&self) -> anyhow::Result<Vec<String>> {
         let capabilities: Vec<String> = vec![
             "engine_forkchoiceUpdatedV3".to_string(),
