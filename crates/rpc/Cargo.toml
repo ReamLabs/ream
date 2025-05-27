@@ -36,7 +36,9 @@ parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ssz_types.workspace = true
+tempfile = "3"
 thiserror.workspace = true
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 tracing.workspace = true
 tree_hash.workspace = true
 
