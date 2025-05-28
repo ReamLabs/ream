@@ -1,5 +1,5 @@
-pub mod http_client;
 pub mod event;
+pub mod http_client;
 
 use std::{pin::Pin, time::Duration};
 
@@ -17,10 +17,7 @@ pub struct BeaconApiClient {
 }
 
 impl BeaconApiClient {
-    pub fn new(
-        beacon_api_endpoint: Url,
-        request_timeout: Duration,
-    ) -> anyhow::Result<Self> {
+    pub fn new(beacon_api_endpoint: Url, request_timeout: Duration) -> anyhow::Result<Self> {
         Ok(Self {
             http_client: ClientWithBaseUrl::new(
                 beacon_api_endpoint,

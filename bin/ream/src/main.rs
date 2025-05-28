@@ -111,10 +111,6 @@ pub async fn run_beacon_node(
 pub async fn run_validator_node(config: ValidatorNodeConfig) {
     info!("starting up validator node...");
 
-    BeaconApiClient::new(
-        config.beacon_api_endpoint,
-        config.request_timeout,
-
-    )
-    .expect("Failed to create beacon api client");
+    BeaconApiClient::new(config.beacon_api_endpoint, config.request_timeout)
+        .expect("Failed to create beacon api client");
 }
