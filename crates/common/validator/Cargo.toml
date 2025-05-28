@@ -11,6 +11,7 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
+alloy-rpc-types-beacon.workspace = true
 anyhow.workspace = true
 ethereum_hashing.workspace = true
 ethereum_serde_utils.workspace = true

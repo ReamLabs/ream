@@ -41,7 +41,7 @@ async fn main() {
         Commands::BeaconNode(config) => {
             run_beacon_node(config, async_executor, main_executor).await
         }
-        Commands::ValidatorNode(config) => run_validator_node(config, async_executor).await,
+        Commands::ValidatorNode(config) => run_validator_node(config).await,
     }
 }
 
@@ -108,15 +108,13 @@ pub async fn run_beacon_node(
     }
 }
 
-pub async fn run_validator_node(config: ValidatorNodeConfig, async_executor: ReamExecutor) {
+pub async fn run_validator_node(config: ValidatorNodeConfig) {
     info!("starting up validator node...");
 
-    let validator = BeaconApiClient::new(
+    BeaconApiClient::new(
         config.beacon_api_endpoint,
         config.request_timeout,
-        async_executor,
+
     )
     .expect("Failed to create beacon api client");
-
-    validator.start();
 }

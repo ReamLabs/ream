@@ -1,24 +1,25 @@
 pub mod http_client;
+pub mod event;
 
 use std::{pin::Pin, time::Duration};
 
-use eventsource_client::{Client, ClientBuilder, Event, SSE};
+use alloy_rpc_types_beacon::events::BeaconNodeEventTopic;
+use event::BeaconEvent;
+use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
-use ream_executor::ReamExecutor;
 use reqwest::Url;
 use tracing::{error, info};
 
+#[derive(Clone)]
 pub struct BeaconApiClient {
     http_client: ClientWithBaseUrl,
-    async_executor: ReamExecutor,
 }
 
 impl BeaconApiClient {
     pub fn new(
         beacon_api_endpoint: Url,
         request_timeout: Duration,
-        async_executor: ReamExecutor,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             http_client: ClientWithBaseUrl::new(
@@ -26,91 +27,50 @@ impl BeaconApiClient {
                 request_timeout,
                 ContentType::Ssz,
             )?,
-            async_executor,
         })
     }
 
-    pub fn get_event_stream(
+    pub fn get_events_stream(
         &self,
-        topics: Vec<String>,
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = Event> + Send>>> {
-        let client_builder = ClientBuilder::for_url(
-            Url::parse_with_params(
-                self.http_client.base_url().join("/eth/v1/events")?.as_str(),
-                topics.iter().map(|topic| ("topics", topic.as_str())),
-            )?
-            .as_str(),
-        )?;
+        topics: &[BeaconNodeEventTopic],
+        stream_tag: &'static str,
+    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = BeaconEvent> + Send>>> {
+        let endpoint = self.http_client.base_url().join(&format!(
+            "/eth/v1/events?topics={}",
+            topics
+                .iter()
+                .map(|topic| topic.query_value())
+                .collect::<Vec<_>>()
+                .join(",")
+        ))?;
 
-        Ok(client_builder
+        Ok(ClientBuilder::for_url(endpoint.as_str())?
             .build()
             .stream()
             .filter_map(move |event| async move {
-                match event {
-                    Ok(SSE::Event(event)) => Some(event),
+                let event = match event {
+                    Ok(SSE::Event(event)) => event,
                     Ok(SSE::Connected(connection_details)) => {
-                        info!("Connected to SSE stream: {connection_details:?}");
-                        None
+                        info!("{stream_tag}: Connected to SSE stream: {connection_details:?}");
+                        return None;
                     }
                     Ok(SSE::Comment(comment)) => {
-                        info!("Received comment: {comment:?}");
-                        None
+                        info!("{stream_tag}: Received comment: {comment:?}");
+                        return None;
                     }
                     Err(err) => {
-                        error!("Error receiving event: {err:?}");
+                        error!("{stream_tag}: Error receiving event: {err:?}");
+                        return None;
+                    }
+                };
+                match BeaconEvent::try_from(event) {
+                    Ok(event) => Some(event),
+                    Err(err) => {
+                        error!("{stream_tag}: Failed to decode event: {err:?}");
                         None
                     }
                 }
             })
             .boxed())
-    }
-
-    pub fn start_event_handler(&self) {
-        let topics = vec![
-            "chain_reorg",
-            "attester_slashing",
-            "proposer_slashing",
-            "voluntary_exit",
-        ]
-        .into_iter()
-        .map(|topic| topic.to_string())
-        .collect::<Vec<_>>();
-        let stream_result = self.get_event_stream(topics);
-
-        self.async_executor.spawn(async move {
-            if let Ok(mut stream) = stream_result {
-                while let Some(event) = stream.next().await {
-                    match &event.event_type as &str {
-                        "chain_reorg" => {
-                            info!("Received chain reorg: {event:?}");
-                            // TODO
-                        }
-                        "attester_slashing" => {
-                            info!("Received attester slashing: {event:?}");
-                            // TODO
-                        }
-                        "proposer_slashing" => {
-                            info!("Received proposer slashing: {event:?}");
-                            // TODO
-                        }
-                        "voluntary_exit" => {
-                            info!("Received voluntary exit: {event:?}");
-                            // TODO
-                        }
-                        _ => {
-                            info!("Received an unknown event type");
-                        }
-                    }
-                }
-            } else {
-                error!("Failed to get event stream");
-            }
-        });
-    }
-
-    pub fn start(self) {
-        // TODO: add clock for epochs
-        // TODO: add the initialization of the key manager server
-        self.start_event_handler();
     }
 }

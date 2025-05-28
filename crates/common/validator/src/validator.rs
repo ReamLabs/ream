@@ -4,6 +4,8 @@ use ream_consensus::{
     misc::compute_start_slot_at_epoch,
 };
 
+
+
 pub fn check_if_validator_active(
     state: &BeaconState,
     validator_index: u64,
