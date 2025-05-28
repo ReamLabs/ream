@@ -3,7 +3,6 @@ use std::str::FromStr;
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use thiserror::Error;
 use tree_hash_derive::TreeHash;
 
 #[derive(
@@ -49,7 +48,7 @@ impl FromStr for Checkpoint {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum CheckpointParseError {
     #[error("Expected format: 0x<block_root>:<epoch>")]
     InvalidFormat,

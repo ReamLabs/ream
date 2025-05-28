@@ -4,6 +4,17 @@ use ream_consensus::{
 };
 use ream_fork_choice::store::Store;
 
+/// The state of the weak subjectivity verification.
+#[derive(Debug)]
+pub enum WeakSubjectivityState {
+    /// The state is verified to be within the weak subjectivity period.
+    CheckpointAlreadyVerified,
+    /// The state is pending verification.
+    CheckpointPendingVerification,
+    /// No weak subjectivity checkpoint was provided.
+    None,
+}
+
 /// Check whether the `state` recovered from the `weak_subjectivity_checkpoint` is not stale.
 pub fn is_within_weak_subjectivity_period(
     store: &Store,

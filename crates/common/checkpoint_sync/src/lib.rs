@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ssz::Decode;
 use tracing::{info, warn};
-use weak_subjectivity::verify_state_from_weak_subjectivity_checkpoint;
+use weak_subjectivity::{WeakSubjectivityState, verify_state_from_weak_subjectivity_checkpoint};
 
 /// A OptionalBeaconVersionedResponse data struct that can be used to wrap data type
 /// used for json rpc responses
@@ -49,7 +49,7 @@ pub async fn initialize_db_from_checkpoint(
     db: ReamDB,
     checkpoint_sync_url: Option<Url>,
     weak_subjectivity_checkpoint: Option<Checkpoint>,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<WeakSubjectivityState> {
     if db.is_initialized() {
         warn!("DB is already initialized. Skipping checkpoint sync.");
 
@@ -63,10 +63,12 @@ pub async fn initialize_db_from_checkpoint(
                 &state,
                 weak_subjectivity_checkpoint,
             )? {
-                return Ok(false);
+                return Ok(WeakSubjectivityState::CheckpointPendingVerification);
             }
+        } else {
+            return Ok(WeakSubjectivityState::None);
         }
-        return Ok(true);
+        return Ok(WeakSubjectivityState::CheckpointAlreadyVerified);
     }
 
     let checkpoint_sync_url = get_checkpoint_sync_sources(checkpoint_sync_url).remove(0);
@@ -97,22 +99,23 @@ pub async fn initialize_db_from_checkpoint(
         slot
     );
 
-    if let Some(weak_subjectivity_checkpoint) = &weak_subjectivity_checkpoint {
-        if !verify_state_from_weak_subjectivity_checkpoint(&state, weak_subjectivity_checkpoint)? {
-            return Ok(false);
-        }
-    }
-
     ensure!(block.message.slot == state.slot, "Slot mismatch");
 
     ensure!(block.message.state_root == state.state_root());
-    let mut store = get_forkchoice_store(state, block.message, db)?;
+    let mut store = get_forkchoice_store(state.clone(), block.message, db)?;
 
     let time = network_spec().min_genesis_time + SECONDS_PER_SLOT * (slot + 1);
     on_tick(&mut store, time)?;
     info!("Initial sync complete");
 
-    Ok(true)
+    if let Some(weak_subjectivity_checkpoint) = &weak_subjectivity_checkpoint {
+        if !verify_state_from_weak_subjectivity_checkpoint(&state, weak_subjectivity_checkpoint)? {
+            return Ok(WeakSubjectivityState::CheckpointPendingVerification);
+        }
+    } else {
+        return Ok(WeakSubjectivityState::None);
+    }
+    Ok(WeakSubjectivityState::CheckpointAlreadyVerified)
 }
 
 /// Fetch initial state from trusted RPC
