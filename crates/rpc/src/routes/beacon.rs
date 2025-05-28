@@ -40,7 +40,6 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(post_validators_from_state)
         .service(get_validator_balances_from_state)
         .service(post_validator_balances_from_state);
-
 }
 pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {
     cfg.service(get_block_attestations)

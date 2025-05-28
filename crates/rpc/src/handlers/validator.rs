@@ -1,10 +1,10 @@
+use std::collections::HashSet;
+
 use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
-use std::collections::HashSet;
 use ream_bls::PubKey;
-
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
@@ -373,9 +373,7 @@ pub async fn get_validator_balances_from_state(
 
     let validator_balances = build_validator_balances(&state.validators, query.id.as_ref());
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(
-        validator_balances,
-    )))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(validator_balances)))
 }
 
 #[post("/beacon/states/{state_id}/validator_balances")]
@@ -395,7 +393,5 @@ pub async fn post_validator_balances_from_state(
 
     let validator_balances = build_validator_balances(&state.validators, body.id.as_ref());
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(
-        validator_balances,
-    )))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(validator_balances)))
 }
