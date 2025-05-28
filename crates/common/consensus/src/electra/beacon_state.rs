@@ -383,6 +383,20 @@ impl BeaconState {
         self.compute_proposer_index(&indices, seed)
     }
 
+    /// Return the beacon proposer index at the given slot.
+    pub fn get_beacon_proposer_index_at_slot(&self, slot: u64) -> anyhow::Result<u64> {
+        let epoch = compute_epoch_at_slot(slot);
+        let seed = B256::from(hash_fixed(
+            &[
+                self.get_seed(epoch, DOMAIN_BEACON_PROPOSER).as_slice(),
+                &slot.to_le_bytes(),
+            ]
+            .concat(),
+        ));
+        let indices = self.get_active_validator_indices(epoch);
+        self.compute_proposer_index(&indices, seed)
+    }
+
     /// Return the combined effective balance of the ``indices``.
     /// ``EFFECTIVE_BALANCE_INCREMENT`` Gwei minimum to avoid divisions by zero.
     /// Math safe up to ~10B ETH, after which this overflows uint64.

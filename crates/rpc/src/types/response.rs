@@ -117,6 +117,32 @@ impl<T: Serialize> DataVersionedResponse<T> {
     }
 }
 
+/// A DutiesResponse data struct that can be used to wrap duty data
+/// used for json rpc responses
+///
+/// # Example
+/// {
+///     "dependent_root": "0x...",
+///     "execution_optimistic": false,
+///     "data": [T]
+/// }
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DutiesResponse<T> {
+    pub dependent_root: B256,
+    pub execution_optimistic: bool,
+    pub data: Vec<T>,
+}
+
+impl<T: Serialize> DutiesResponse<T> {
+    pub fn new(dependent_root: B256, data: Vec<T>) -> Self {
+        Self {
+            dependent_root,
+            execution_optimistic: EXECUTION_OPTIMISTIC,
+            data,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct BeaconHeadResponse {
     pub root: B256,
