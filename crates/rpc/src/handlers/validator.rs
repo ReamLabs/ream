@@ -31,8 +31,6 @@ pub struct ValidatorData {
     validator: Validator,
 }
 
-pub const MAX_REQUEST_LENGTH: usize = 1000;
-
 impl ValidatorData {
     pub fn new(index: u64, balance: u64, status: String, validator: Validator) -> Self {
         Self {
@@ -368,7 +366,7 @@ pub async fn get_validator_balances_from_state(
     let query = query.into_inner();
 
     if let Some(ref ids) = query.id {
-        if ids.len() > MAX_REQUEST_LENGTH {
+        if ids.len() > MAX_VALIDATOR_COUNT {
             return Err(ApiError::TooManyValidatorsIds)?;
         }
     }
@@ -390,7 +388,7 @@ pub async fn post_validator_balances_from_state(
     let body = body.into_inner();
 
     if let Some(ref ids) = body.id {
-        if ids.len() > MAX_REQUEST_LENGTH {
+        if ids.len() > MAX_VALIDATOR_COUNT {
             return Err(ApiError::TooManyValidatorsIds)?;
         }
     }
