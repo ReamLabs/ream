@@ -856,7 +856,7 @@ mod tests {
             kind: GossipTopicKind::BeaconBlock,
         }];
 
-        let mut network1 = runtime
+        let mut network_1 = runtime
             .block_on(create_network(
                 "127.0.0.1".parse::<IpAddr>().unwrap(),
                 9000,
@@ -866,50 +866,50 @@ mod tests {
                 gossip_topics.clone(),
             ))
             .unwrap();
-        let network1_enr = network1.enr();
-        let mut network2 = runtime
+        let network_1_enr = network_1.enr();
+        let mut network_2 = runtime
             .block_on(create_network(
                 "127.0.0.1".parse::<IpAddr>().unwrap(),
                 9002,
                 9003,
-                vec![network1_enr],
+                vec![network_1_enr],
                 false,
                 gossip_topics.clone(),
             ))
             .unwrap();
 
         runtime.block_on(async {
-            let network1_future = async {
-                while let Some(event) = network1.swarm.next().await {
+            let network_1_future = async {
+                while let Some(event) = network_1.swarm.next().await {
                     if let SwarmEvent::Behaviour(ReamBehaviourEvent::Gossipsub(
                         GossipsubEvent::Subscribed { peer_id: _, topic },
                     )) = &event
                     {
-                        let _ = network1
+                        let _ = network_1
                             .swarm
                             .behaviour_mut()
                             .gossipsub
                             .publish(topic.clone(), vec![]);
                     }
-                    let _ = network1.parse_swarm_event(event).await;
+                    let _ = network_1.parse_swarm_event(event).await;
                 }
             };
 
-            let network2_future = async {
-                while let Some(event) = network2.swarm.next().await {
+            let network_2_future = async {
+                while let Some(event) = network_2.swarm.next().await {
                     if let SwarmEvent::Behaviour(ReamBehaviourEvent::Gossipsub(
                         GossipsubEvent::Message { .. },
                     )) = &event
                     {
                         break;
                     }
-                    let _ = network2.parse_swarm_event(event).await;
+                    let _ = network_2.parse_swarm_event(event).await;
                 }
             };
 
             tokio::select! {
-                _ = network1_future => {}
-                _ = network2_future => {}
+                _ = network_1_future => {}
+                _ = network_2_future => {}
             }
         });
     }
@@ -919,7 +919,7 @@ mod tests {
         initialize_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
-        let mut network1 = tokio_runtime
+        let mut network_1 = tokio_runtime
             .block_on(create_network(
                 "127.0.0.1".parse().unwrap(),
                 9300,
@@ -930,7 +930,7 @@ mod tests {
             ))
             .unwrap();
 
-        let mut network2 = tokio_runtime
+        let mut network_2 = tokio_runtime
             .block_on(create_network(
                 "127.0.0.1".parse().unwrap(),
                 9302,
@@ -942,17 +942,17 @@ mod tests {
             .unwrap();
 
         let address: Multiaddr = "/ip4/127.0.0.1/tcp/9300".parse().unwrap();
-        network2.swarm.dial(address).unwrap();
+        network_2.swarm.dial(address).unwrap();
 
-        let peer_id_network1 = network1.peer_id();
-        let peer_id_network2 = network2.peer_id();
+        let peer_id_network_1 = network_1.peer_id();
+        let peer_id_network_2 = network_2.peer_id();
 
         tokio_runtime.block_on(async {
-            let network1_poll_task = async {
-                while let Some(event) = network1.swarm.next().await {
-                    network1.parse_swarm_event(event).await;
+            let network_1_poll_task = async {
+                while let Some(event) = network_1.swarm.next().await {
+                    network_1.parse_swarm_event(event).await;
                     if matches!(
-                        network1.cached_peer(&peer_id_network2),
+                        network_1.cached_peer(&peer_id_network_2),
                         Some(peer) if peer.state == ConnectionState::Connected && peer.direction == Direction::Inbound
                     ) {
                         break;
@@ -960,11 +960,11 @@ mod tests {
                 }
             };
 
-            let network2_poll_task = async {
-                while let Some(event) = network2.swarm.next().await {
-                    network2.parse_swarm_event(event).await;
+            let network_2_poll_task = async {
+                while let Some(event) = network_2.swarm.next().await {
+                    network_2.parse_swarm_event(event).await;
                     if matches!(
-                        network2.cached_peer(&peer_id_network1),
+                        network_2.cached_peer(&peer_id_network_1),
                         Some(peer) if peer.state == ConnectionState::Connected && peer.direction == Direction::Outbound
                     ) {
                         break;
@@ -974,18 +974,18 @@ mod tests {
 
             tokio::time::timeout(
                 std::time::Duration::from_secs(10),
-                futures::future::join(network1_poll_task, network2_poll_task),
+                futures::future::join(network_1_poll_task, network_2_poll_task),
             )
             .await
             .expect("peer-table not updated in time");
         });
 
-        let peer_from_network_1 = network1
-            .cached_peer(&peer_id_network2)
-            .expect("network1 peer exists");
-        let peer_from_network_2 = network2
-            .cached_peer(&peer_id_network1)
-            .expect("network2 peer exists");
+        let peer_from_network_1 = network_1
+            .cached_peer(&peer_id_network_2)
+            .expect("network_1 peer exists");
+        let peer_from_network_2 = network_2
+            .cached_peer(&peer_id_network_1)
+            .expect("network_2 peer exists");
 
         assert_eq!(peer_from_network_1.state, ConnectionState::Connected);
         assert_eq!(peer_from_network_1.direction, Direction::Inbound);
