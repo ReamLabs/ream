@@ -3,8 +3,7 @@ pub mod http_client;
 
 use std::{pin::Pin, time::Duration};
 
-use alloy_rpc_types_beacon::events::BeaconNodeEventTopic;
-use event::BeaconEvent;
+use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
@@ -29,14 +28,14 @@ impl BeaconApiClient {
 
     pub fn get_events_stream(
         &self,
-        topics: &[BeaconNodeEventTopic],
+        topics: &[EventTopic],
         stream_tag: &'static str,
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = BeaconEvent> + Send>>> {
         let endpoint = self.http_client.base_url().join(&format!(
             "/eth/v1/events?topics={}",
             topics
                 .iter()
-                .map(|topic| topic.query_value())
+                .map(|topic| topic.to_string())
                 .collect::<Vec<_>>()
                 .join(",")
         ))?;
