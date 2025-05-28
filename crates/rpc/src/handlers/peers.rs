@@ -15,15 +15,16 @@ pub async fn get_peer(
     peer_table: Data<PeerTable>,
     peer_id: Path<String>,
 ) -> Result<impl Responder, ApiError> {
-    let peer_id_str = peer_id.into_inner();
-    let peer_id = PeerId::from_str(&peer_id_str)
-        .map_err(|_| ApiError::BadRequest(format!("Invalid PeerId format: {}", peer_id_str)))?;
+    let peer_id = peer_id.into_inner();
+    let peer_id = PeerId::from_str(&peer_id).map_err(|err| {
+        ApiError::BadRequest(format!("Invalid PeerId format: {peer_id}, {err:?}"))
+    })?;
 
     let cached_peer = peer_table
         .read()
         .get(&peer_id)
         .cloned()
-        .ok_or_else(|| ApiError::NotFound(format!("Peer not found: {peer_id_str}")))?;
+        .ok_or_else(|| ApiError::NotFound(format!("Peer not found: {peer_id}")))?;
 
     Ok(HttpResponse::Ok().json(DataResponse::new(&cached_peer)))
 }
