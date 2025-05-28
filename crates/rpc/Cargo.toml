@@ -33,5 +33,5 @@ ream-fork-choice.workspace = true
 ream-light-client.workspace = true
 ream-network-spec.workspace = true
 ream-node.workspace = true
-ream-storage.workspace = true
 ream-p2p.workspace = true
+ream-storage.workspace = true
