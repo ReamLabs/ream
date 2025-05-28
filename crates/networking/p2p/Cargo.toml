@@ -18,10 +18,7 @@ enr.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
 futures.workspace = true
-k256 = { version = "0.13", default-features = false, features = [
-    "ecdsa",
-    "arithmetic",
-] }
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
 libp2p.workspace = true
 libp2p-identity.workspace = true
 libp2p-mplex.workspace = true
