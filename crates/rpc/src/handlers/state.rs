@@ -12,7 +12,6 @@ use ream_storage::{
     tables::{Field, Table},
 };
 use serde::{Deserialize, Serialize};
-use serde_with::{DisplayFromStr, serde_as};
 use tracing::error;
 use tree_hash::TreeHash;
 
@@ -57,13 +56,15 @@ impl RandaoResponse {
     }
 }
 
-#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
+struct QuotedU64Vec(#[serde(with = "serde_utils::quoted_u64_vec")] Vec<u64>);
+
 #[derive(Serialize, Deserialize)]
 struct SyncCommitteeResponse {
     #[serde(with = "serde_utils::quoted_u64_vec")]
     pub validators: Vec<u64>,
-    #[serde_as(as = "Vec<Vec<DisplayFromStr>>")]
-    pub validator_aggregates: Vec<Vec<u64>>,
+    pub validator_aggregates: Vec<QuotedU64Vec>,
 }
 
 pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState, ApiError> {
@@ -263,8 +264,8 @@ pub async fn get_sync_committees(
 
     let validator_aggregates = validators
         .chunks_exact((SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT) as usize)
-        .map(|chunk| chunk.to_vec())
-        .collect::<Vec<Vec<_>>>();
+        .map(|chunk| QuotedU64Vec(chunk.to_vec()))
+        .collect::<Vec<QuotedU64Vec>>();
 
     Ok(
         HttpResponse::Ok().json(BeaconVersionedResponse::new(SyncCommitteeResponse {
