@@ -51,45 +51,27 @@ struct ValidatorBalance {
 }
 
 fn build_validator_balances(
-    validators: &[Validator],
+    validators: &[(Validator, u64)],
     filter_ids: Option<&Vec<ValidatorID>>,
 ) -> Vec<ValidatorBalance> {
-    let mut allowed_indices: HashSet<u64> = HashSet::new();
-    let mut allowed_addresses: HashSet<PubKey> = HashSet::new();
+    // Turn the optional Vec<ValidatorID> into an optional HashSet for O(1) lookups
+    let filtered_ids = filter_ids.map(|ids| ids.iter().collect::<HashSet<_>>());
 
-    if let Some(ids) = filter_ids {
-        for id in ids {
-            match id {
-                ValidatorID::Index(idx) => {
-                    allowed_indices.insert(*idx);
-                }
-                ValidatorID::Address(pk) => {
-                    if validators.iter().any(|v| &v.pubkey == pk) {
-                        allowed_addresses.insert(pk.clone());
-                    }
-                }
+    validators
+        .iter()
+        .enumerate()
+        .filter(|(idx, (validator, _))| match &filtered_ids {
+            Some(ids) => {
+                ids.contains(&ValidatorID::Index(*idx as u64))
+                    || ids.contains(&ValidatorID::Address(validator.pubkey.clone()))
             }
-        }
-    }
-
-    let mut seen: HashSet<u64> = HashSet::new();
-    let mut balances = Vec::new();
-
-    for (i, validator) in validators.iter().enumerate() {
-        let idx = i as u64;
-        let include = filter_ids.is_none()
-            || allowed_indices.contains(&idx)
-            || allowed_addresses.contains(&validator.pubkey);
-
-        if include && seen.insert(idx) {
-            balances.push(ValidatorBalance {
-                index: idx,
-                balance: validator.effective_balance,
-            });
-        }
-    }
-
-    balances
+            None => true,
+        })
+        .map(|(idx, (_, balance))| ValidatorBalance {
+            index: idx as u64,
+            balance: *balance,
+        })
+        .collect()
 }
 
 #[get("/beacon/states/{state_id}/validator/{validator_id}")]
@@ -363,15 +345,13 @@ pub async fn get_validator_balances_from_state(
     db: Data<ReamDB>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
-    let query = query.into_inner();
+    let pairs: Vec<(Validator, u64)> = state
+        .validators
+        .into_iter()
+        .zip(state.balances.into_iter())
+        .collect();
 
-    if let Some(ref ids) = query.id {
-        if ids.len() > MAX_VALIDATOR_COUNT {
-            return Err(ApiError::TooManyValidatorsIds)?;
-        }
-    }
-
-    let validator_balances = build_validator_balances(&state.validators, query.id.as_ref());
+    let validator_balances = build_validator_balances(&pairs, query.id.as_ref());
 
     Ok(HttpResponse::Ok().json(BeaconResponse::new(validator_balances)))
 }
@@ -383,15 +363,13 @@ pub async fn post_validator_balances_from_state(
     db: Data<ReamDB>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
-    let body = body.into_inner();
+    let pairs: Vec<(Validator, u64)> = state
+        .validators
+        .into_iter()
+        .zip(state.balances.into_iter())
+        .collect();
 
-    if let Some(ref ids) = body.id {
-        if ids.len() > MAX_VALIDATOR_COUNT {
-            return Err(ApiError::TooManyValidatorsIds)?;
-        }
-    }
-
-    let validator_balances = build_validator_balances(&state.validators, body.id.as_ref());
+    let validator_balances = build_validator_balances(&pairs, body.id.as_ref());
 
     Ok(HttpResponse::Ok().json(BeaconResponse::new(validator_balances)))
 }
