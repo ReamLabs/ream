@@ -16,7 +16,7 @@ pub fn check_if_validator_active(
 }
 
 pub fn is_proposer(state: &BeaconState, validator_index: u64) -> anyhow::Result<bool> {
-    Ok(state.get_beacon_proposer_index()? == validator_index)
+    Ok(state.get_beacon_proposer_index(None)? == validator_index)
 }
 
 /// Return the committee assignment in the ``epoch`` for ``validator_index``.

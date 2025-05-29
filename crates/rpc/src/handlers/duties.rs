@@ -34,20 +34,17 @@ pub async fn get_proposer_duties(
 
     let start_slot = compute_start_slot_at_epoch(epoch);
     let end_slot = start_slot + SLOTS_PER_EPOCH;
-
-    let mut duties = Vec::new();
-
+    let mut duties = vec![];
     for slot in start_slot..end_slot {
-        let proposer_index = state
-            .get_beacon_proposer_index_at_slot(slot)
-            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-        let Some(validator) = state.validators.get(proposer_index as usize) else {
-            return Err(ApiError::ValidatorNotFound(format!("{proposer_index}")));
+        let validator_index = state
+            .get_beacon_proposer_index(Some(slot))
+            .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+        let Some(validator) = state.validators.get(validator_index as usize) else {
+            return Err(ApiError::ValidatorNotFound(format!("{validator_index}")));
         };
-
         duties.push(ProposerDuty {
             pubkey: validator.pubkey.clone(),
-            validator_index: proposer_index,
+            validator_index,
             slot,
         });
     }
