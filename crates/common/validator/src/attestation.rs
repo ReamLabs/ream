@@ -1,6 +1,7 @@
-use std::collections::HashSet;
+use std::{cmp::max, collections::HashSet};
 
 use anyhow::{anyhow, ensure};
+use ethereum_hashing::hash;
 use ream_bls::{
     PrivateKey,
     signature::BLSSignature,
@@ -22,7 +23,28 @@ use ssz_types::{
     typenum::{U64, U131072},
 };
 
-use crate::constants::DOMAIN_SELECTION_PROOF;
+use crate::constants::{DOMAIN_SELECTION_PROOF, TARGET_AGGREGATORS_PER_COMMITTEE};
+
+pub fn is_aggregator(
+    state: &BeaconState,
+    slot: u64,
+    committee_index: u64,
+    slot_signature: BLSSignature,
+) -> anyhow::Result<bool> {
+    let committee = state.get_beacon_committee(slot, committee_index)?;
+    let modulo = max(
+        1,
+        committee.len() / TARGET_AGGREGATORS_PER_COMMITTEE as usize,
+    );
+
+    let hash = usize::from_le_bytes(
+        hash(slot_signature.to_bytes())[0..8]
+            .try_into()
+            .map_err(|_| anyhow!("Failed to convert hash bytes to u64"))?,
+    );
+
+    Ok(hash % modulo == 0)
+}
 
 /// Compute the correct subnet for an attestation for Phase 0.
 /// Note, this mimics expected future behavior where attestations will be mapped to their shard
@@ -98,4 +120,12 @@ pub fn get_slot_signature(
     let domain = state.get_domain(DOMAIN_SELECTION_PROOF, Some(compute_epoch_at_slot(slot)));
     let signing_root = compute_signing_root(slot, domain);
     Ok(private_key.sign(signing_root.as_ref())?)
+}
+
+pub fn get_aggregate_signature(attestations: Vec<Attestation>) -> anyhow::Result<BLSSignature> {
+    let signatures: Vec<&BLSSignature> = attestations
+        .iter()
+        .map(|attestation| &attestation.signature)
+        .collect();
+    Ok(BLSSignature::aggregate(&signatures)?)
 }
