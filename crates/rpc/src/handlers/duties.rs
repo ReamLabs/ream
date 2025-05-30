@@ -66,7 +66,7 @@ pub async fn get_proposer_duties(
     Ok(HttpResponse::Ok().json(DutiesResponse::new(dependent_root, duties)))
 }
 
-#[post("/validator/duties/proposer/{epoch}")]
+#[post("/validator/duties/attester/{epoch}")]
 pub async fn get_attester_duties(
     db: Data<ReamDB>,
     epoch: Path<u64>,
