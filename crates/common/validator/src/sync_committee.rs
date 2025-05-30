@@ -1,6 +1,7 @@
-use std::collections::HashSet;
+use std::{cmp::max, collections::HashSet};
 
 use anyhow::{anyhow, bail, ensure};
+use ethereum_hashing::hash;
 use ream_bls::{
     BLSSignature, PrivateKey,
     traits::{Aggregatable, Signable},
@@ -16,7 +17,10 @@ use ssz_types::{BitVector, typenum::U512};
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    constants::{DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF, SYNC_COMMITTEE_SUBNET_COUNT},
+    constants::{
+        DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF, SYNC_COMMITTEE_SUBNET_COUNT,
+        TARGET_AGGREGATORS_PER_COMMITTEE,
+    },
     contribution_and_proof::SyncCommitteeContribution,
 };
 
@@ -141,4 +145,17 @@ pub fn get_sync_committee_selection_proof(
         domain,
     );
     Ok(private_key.sign(signing_root.as_ref())?)
+}
+
+pub fn is_sync_committee_aggregator(signature: BLSSignature) -> bool {
+    let hash = u64::from_le_bytes(
+        hash(signature.to_bytes())[0..8]
+            .try_into()
+            .expect("Failed to convert hash bytes to u64"),
+    );
+
+    hash % max(
+        1,
+        SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT / TARGET_AGGREGATORS_PER_COMMITTEE,
+    ) == 0
 }
