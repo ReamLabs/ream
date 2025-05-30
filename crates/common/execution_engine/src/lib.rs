@@ -139,6 +139,24 @@ impl ExecutionEngine {
             .to_result()
     }
 
+    pub async fn eth_chain_id(&self) -> anyhow::Result<B64> {
+        let request_body = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".to_string(),
+            method: "eth_chainId".to_string(),
+            params: vec![],
+        };
+
+        let http_post_request = self.build_request(request_body)?;
+
+        self.http_client
+            .execute(http_post_request)
+            .await?
+            .json::<JsonRpcResponse<B64>>()
+            .await?
+            .to_result()
+    }
+
     pub async fn eth_get_block_by_number(
         &self,
         block_number_or_tag: BlockNumberOrTag,
