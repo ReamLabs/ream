@@ -14,6 +14,17 @@ pub struct EncryptedKeystore {
     pub version: u64,
 }
 
+impl EncryptedKeystore {
+    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Ok(serde_json::from_str(fs::read_to_string(path)?.as_str())?)
+    }
+
+    pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        fs::write(path, serde_json::to_string(self)?)?;
+        Ok(())
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Crypto {
     pub kdf: FunctionBlock<KdfParams>,
@@ -81,17 +92,6 @@ mod hex_serde {
     {
         let s = String::deserialize(deserializer)?;
         Vec::<u8>::from_hex(&s).map_err(|err| de::Error::custom(err.to_string()))
-    }
-}
-
-impl EncryptedKeystore {
-    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Ok(serde_json::from_str(fs::read_to_string(path)?.as_str())?)
-    }
-
-    pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        fs::write(path, serde_json::to_string(self)?)?;
-        Ok(())
     }
 }
 
