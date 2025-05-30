@@ -222,8 +222,8 @@ impl ExecutionEngine {
     pub async fn eth_call(
         &self,
         transaction: TransactionRequest,
-        block: BlockNumberOrTag,
-    ) -> anyhow::Result<String> {
+        block: Option<BlockNumberOrTag>,
+    ) -> anyhow::Result<B64> {
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
@@ -236,7 +236,7 @@ impl ExecutionEngine {
         self.http_client
             .execute(http_post_request)
             .await?
-            .json::<JsonRpcResponse<String>>()
+            .json::<JsonRpcResponse<B64>>()
             .await?
             .to_result()
     }
