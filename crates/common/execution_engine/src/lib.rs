@@ -223,7 +223,7 @@ impl ExecutionEngine {
         &self,
         transaction: TransactionRequest,
         block: Option<BlockNumberOrTag>,
-    ) -> anyhow::Result<B64> {
+    ) -> anyhow::Result<Bytes> {
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
@@ -236,7 +236,7 @@ impl ExecutionEngine {
         self.http_client
             .execute(http_post_request)
             .await?
-            .json::<JsonRpcResponse<B64>>()
+            .json::<JsonRpcResponse<Bytes>>()
             .await?
             .to_result()
     }
