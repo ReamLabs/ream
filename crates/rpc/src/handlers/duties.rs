@@ -45,7 +45,7 @@ pub async fn get_proposer_duties(
     let state = get_state_from_id(ID::Slot(compute_start_slot_at_epoch(epoch)), &db).await?;
     let dependent_root = state
         .get_block_root_at_slot(compute_start_slot_at_epoch(epoch) - 1)
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+        .map_err(|err| ApiError::BadRequest(format!("Failed to get dependent root {err:?}")))?;
 
     let start_slot = compute_start_slot_at_epoch(epoch);
     let end_slot = start_slot + SLOTS_PER_EPOCH;
@@ -76,7 +76,7 @@ pub async fn get_attester_duties(
     let state = get_state_from_id(ID::Slot(compute_start_slot_at_epoch(epoch)), &db).await?;
     let dependent_root = state
         .get_block_root_at_slot(compute_start_slot_at_epoch(epoch) - 1)
-        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+        .map_err(|err| ApiError::BadRequest(format!("Failed to get dependent root {err:?}")))?;
 
     let validator_indices = validator_indices.into_inner();
     let committees_at_slot = state.get_committee_count_per_slot(epoch);
@@ -84,16 +84,22 @@ pub async fn get_attester_duties(
 
     for validator_index in validator_indices {
         let Some(validator) = state.validators.get(validator_index as usize) else {
-            return Err(ApiError::ValidatorNotFound(format!("{validator_index}")));
+            return Err(ApiError::ValidatorNotFound(format!(
+                "Validator with index {validator_index} not found in state at epoch {epoch}"
+            )));
         };
 
         if let Some((committee, committee_index, slot)) = state
             .get_committee_assignment(epoch, validator_index)
-            .map_err(|err| ApiError::BadRequest(err.to_string()))?
+            .map_err(|err| {
+                ApiError::BadRequest(format!(
+                    "Failed to get committee assignment for validator {validator_index}: {err}"
+                ))
+            })?
         {
             let validator_committee_index = committee
                 .iter()
-                .position(|&v| v == validator_index)
+                .position(|&index| index == validator_index)
                 .ok_or_else(|| {
                     ApiError::BadRequest("Validator not found in assigned committee".to_string())
                 })?;
