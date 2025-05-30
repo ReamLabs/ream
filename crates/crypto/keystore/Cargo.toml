@@ -10,7 +10,11 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+alloy-primitives.workspace = true
+anyhow.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+ssz_types.workspace = true
 
 # ream dependencies
 ream-bls.workspace = true

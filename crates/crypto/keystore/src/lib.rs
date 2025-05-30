@@ -1,2 +1,1 @@
-pub mod decrypt;
-pub mod keystore;
+pub mod encrypted_keystore;

@@ -3306,8 +3306,12 @@ dependencies = [
 name = "keystore"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
+ "anyhow",
  "ream-bls",
  "serde",
+ "serde_json",
+ "ssz_types",
 ]
 
 [[package]]
