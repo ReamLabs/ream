@@ -1,9 +1,9 @@
-use ream_bls::PubKey;
-use alloy_primitives::hex::{FromHex,ToHexExt};
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use std::fs;
-use std::path::Path;
+use std::{fs, path::Path};
+
+use alloy_primitives::hex::{FromHex, ToHexExt};
 use anyhow::Result;
+use ream_bls::PubKey;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct EncryptedKeystore {
@@ -81,15 +81,16 @@ fn hex_to_buffer<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    String::deserialize(deserializer)
-        .and_then(|string| <Vec<u8>>::from_hex(&string).map_err(|err| de::Error::custom(err.to_string())))
+    String::deserialize(deserializer).and_then(|string| {
+        <Vec<u8>>::from_hex(&string).map_err(|err| de::Error::custom(err.to_string()))
+    })
 }
 
 impl EncryptedKeystore {
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file_contents = fs::read_to_string(path)?;
         let keystore: EncryptedKeystore = serde_json::from_str(&file_contents)?;
-        
+
         Ok(keystore)
     }
 
@@ -102,10 +103,11 @@ impl EncryptedKeystore {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloy_primitives::hex;
     use serde_json;
     use ssz_types::FixedVector;
+
+    use super::*;
 
     #[test]
     fn test_serialization() {
@@ -140,11 +142,11 @@ mod tests {
             uuid: "123e4567-e89b-12d3-a456-426614174000".to_string(),
             version: 4,
         };
-        
+
         let keystore_as_string = r#"{"crypto":{"kdf":{"function":"scrypt","params":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"12345678"},"message":"90abcdef"},"checksum":{"function":"sha256","params":{},"message":"01020304"},"cipher":{"function":"aes-128-ctr","params":{"iv":"aabbccdd"},"message":"11223344"}},"description":"Test Keystore","pubkey":"0x121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212","path":"m/44'/60'/0'/0/0","uuid":"123e4567-e89b-12d3-a456-426614174000","version":4}"#;
 
         let serialized = serde_json::to_string(&keystore).expect("Failed to serialize keystore");
-        println!("{}",serialized);
+        println!("{}", serialized);
         assert_eq!(serialized, keystore_as_string);
     }
 
@@ -201,6 +203,4 @@ mod tests {
             }
         }
     }
-
-    
 }
