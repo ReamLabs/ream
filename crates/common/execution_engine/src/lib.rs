@@ -246,6 +246,26 @@ impl ExecutionEngine {
             .to_result()
     }
 
+    pub async fn eth_send_raw_transaction(&self, transaction: Bytes) -> anyhow::Result<B256> {
+        let hex = format!("0x{}", hex::encode(transaction));
+
+        let request_body = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".to_string(),
+            method: "eth_sendRawTransaction".to_string(),
+            params: vec![json!(hex)],
+        };
+
+        let http_post_request = self.build_request(request_body)?;
+
+        self.http_client
+            .execute(http_post_request)
+            .await?
+            .json::<JsonRpcResponse<B256>>()
+            .await?
+            .to_result()
+    }
+
     pub async fn engine_exchange_capabilities(&self) -> anyhow::Result<Vec<String>> {
         let capabilities: Vec<String> = vec![
             "engine_forkchoiceUpdatedV3".to_string(),
