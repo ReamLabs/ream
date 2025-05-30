@@ -17,11 +17,11 @@ fn pbkdf2_helper(password: &[u8], salt: &[u8], iterations: u32, index: u32) -> B
     block
 }
 
-pub fn pbkdf2(password: &[u8], salt: &[u8], iterations: u32, dk_len: u32) -> Vec<u8> {
-    let num_blocks = (dk_len as f64 / 32.0).ceil() as u32;
-    let last_block_size = dk_len - (num_blocks - 1) * 32;
+pub fn pbkdf2(password: &[u8], salt: &[u8], iterations: u32, derived_key_length: u32) -> Vec<u8> {
+    let num_blocks = (derived_key_length as f64 / 32.0).ceil() as u32;
+    let last_block_size = derived_key_length - (num_blocks - 1) * 32;
 
-    let mut derived_key = Vec::with_capacity(dk_len as usize);
+    let mut derived_key = Vec::with_capacity(derived_key_length as usize);
 
     for block_index in 1..=num_blocks {
         let block = pbkdf2_helper(password, salt, iterations, block_index);
@@ -46,9 +46,9 @@ mod tests {
         let password = b"passwordPASSWORDpassword";
         let salt = b"saltSALTsaltSALTsaltSALTsaltSALTsalt";
         let c = 4096;
-        let dk_len = 32;
+        let derived_key_length = 32;
 
-        let derived_key = pbkdf2(password, salt, c, dk_len);
+        let derived_key = pbkdf2(password, salt, c, derived_key_length);
         let expected_key = hex!("348c89dbcbd32b2f32d814b8116e84cf2b17347ebc1800181c4e2a1fb8dd53e1");
 
         assert_eq!(derived_key, expected_key);
