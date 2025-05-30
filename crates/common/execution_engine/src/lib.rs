@@ -224,11 +224,16 @@ impl ExecutionEngine {
         transaction: TransactionRequest,
         block: Option<BlockNumberOrTag>,
     ) -> anyhow::Result<Bytes> {
+        let mut params = vec![json!(transaction)];
+        if let Some(block) = block {
+            params.push(json!(block));
+        }
+
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
             method: "eth_call".to_string(),
-            params: vec![json!(transaction), json!(block)],
+            params,
         };
 
         let http_post_request = self.build_request(request_body)?;
