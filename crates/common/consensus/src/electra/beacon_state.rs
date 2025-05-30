@@ -444,6 +444,35 @@ impl BeaconState {
         )
     }
 
+    /// Return the committee assignment in the ``epoch`` for ``validator_index``.
+    /// ``assignment`` returned is a tuple of the following form:
+    ///     * ``assignment[0]`` is the list of validators in the committee
+    ///     * ``assignment[1]`` is the index to which the committee is assigned
+    ///     * ``assignment[2]`` is the slot at which the committee is assigned
+    /// Return None if no assignment.
+    pub fn get_committee_assignment(
+        &self,
+        epoch: u64,
+        validator_index: u64,
+    ) -> anyhow::Result<Option<(Vec<u64>, u64, u64)>> {
+        let next_epoch = self.get_current_epoch() + 1;
+        ensure!(
+            epoch <= next_epoch,
+            "Requested epoch {epoch} is beyond the allowed maximum (next epoch: {next_epoch})",
+        );
+        let start_slot = compute_start_slot_at_epoch(epoch);
+        let committee_count_per_slot = self.get_committee_count_per_slot(epoch);
+        for slot in start_slot..start_slot + SLOTS_PER_EPOCH {
+            for index in 0..committee_count_per_slot {
+                let committee = self.get_beacon_committee(slot, index)?;
+                if committee.contains(&validator_index) {
+                    return Ok(Some((committee, index, slot)));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// Check if ``indexed_attestation`` is not empty, has sorted and unique indices and has a valid
     /// aggregate signature.
     pub fn is_valid_indexed_attestation(
