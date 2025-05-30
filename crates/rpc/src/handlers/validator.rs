@@ -345,15 +345,11 @@ pub async fn get_validator_balances_from_state(
     db: Data<ReamDB>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
-    let pairs: Vec<(Validator, u64)> = state
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(build_validator_balances(&state
         .validators
         .into_iter()
         .zip(state.balances.into_iter())
-        .collect();
-
-    let validator_balances = build_validator_balances(&pairs, query.id.as_ref());
-
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(validator_balances)))
+        .collect(), query.id.as_ref())))
 }
 
 #[post("/beacon/states/{state_id}/validator_balances")]
@@ -363,13 +359,9 @@ pub async fn post_validator_balances_from_state(
     db: Data<ReamDB>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
-    let pairs: Vec<(Validator, u64)> = state
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(build_validator_balances(&state
         .validators
         .into_iter()
         .zip(state.balances.into_iter())
-        .collect();
-
-    let validator_balances = build_validator_balances(&pairs, body.id.as_ref());
-
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(validator_balances)))
+        .collect(), body.id.as_ref()))))
 }
