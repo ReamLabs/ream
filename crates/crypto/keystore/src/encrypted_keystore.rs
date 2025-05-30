@@ -1,9 +1,8 @@
 use std::{fs, path::Path};
 
-use alloy_primitives::hex::{FromHex, ToHexExt};
 use anyhow::Result;
 use ream_bls::PubKey;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct EncryptedKeystore {
@@ -26,28 +25,26 @@ pub struct Crypto {
 pub struct FunctionBlock<ParamType> {
     #[serde(flatten)]
     pub params: ParamType,
-    #[serde(serialize_with = "buffer_to_hex", deserialize_with = "hex_to_buffer")]
+    #[serde(with = "hex_serde")]
     pub message: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-#[serde(tag = "function", content = "params")]
+#[serde(tag = "function", content = "params", rename_all = "lowercase")]
 pub enum KdfParams {
-    #[serde(rename = "pbkdf2")]
     Pbkdf2 {
         c: u32,
         dklen: u8,
         prf: String,
-        #[serde(serialize_with = "buffer_to_hex", deserialize_with = "hex_to_buffer")]
+        #[serde(with = "hex_serde")]
         salt: Vec<u8>,
     },
-    #[serde(rename = "scrypt")]
     Scrypt {
         dklen: u8,
         n: u32,
         p: u32,
         r: u32,
-        #[serde(serialize_with = "buffer_to_hex", deserialize_with = "hex_to_buffer")]
+        #[serde(with = "hex_serde")]
         salt: Vec<u8>,
     },
 }
@@ -57,46 +54,43 @@ pub enum KdfParams {
 pub enum CipherParams {
     #[serde(rename = "aes-128-ctr")]
     Aes128Ctr {
-        #[serde(serialize_with = "buffer_to_hex", deserialize_with = "hex_to_buffer")]
+        #[serde(with = "hex_serde")]
         iv: Vec<u8>,
     },
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-#[serde(tag = "function", content = "params")]
+#[serde(tag = "function", content = "params", rename_all = "lowercase")]
 pub enum ChecksumParams {
-    #[serde(rename = "sha256")]
     Sha256 {},
 }
 
-fn buffer_to_hex<T, S>(buffer: &T, serializer: S) -> Result<S::Ok, S::Error>
-where
-    T: AsRef<[u8]>,
-    S: Serializer,
-{
-    serializer.serialize_str(&buffer.encode_hex())
-}
-
-fn hex_to_buffer<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    String::deserialize(deserializer).and_then(|string| {
-        <Vec<u8>>::from_hex(&string).map_err(|err| de::Error::custom(err.to_string()))
-    })
+mod hex_serde {
+    use alloy_primitives::hex::{FromHex, ToHexExt};
+    use serde::{Deserialize, Deserializer, Serializer, de};
+    pub fn serialize<T, S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        T: AsRef<[u8]>,
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.encode_hex())
+    }
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Vec::<u8>::from_hex(&s).map_err(|err| de::Error::custom(err.to_string()))
+    }
 }
 
 impl EncryptedKeystore {
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file_contents = fs::read_to_string(path)?;
-        let keystore: EncryptedKeystore = serde_json::from_str(&file_contents)?;
-
-        Ok(keystore)
+        Ok(serde_json::from_str(fs::read_to_string(path)?.as_str())?)
     }
 
     pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let serialized = serde_json::to_string(self)?;
-        fs::write(path, serialized)?;
+        fs::write(path, serde_json::to_string(self)?)?;
         Ok(())
     }
 }
