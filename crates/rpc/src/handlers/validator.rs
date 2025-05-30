@@ -345,11 +345,16 @@ pub async fn get_validator_balances_from_state(
     db: Data<ReamDB>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(build_validator_balances(&state
-        .validators
-        .into_iter()
-        .zip(state.balances.into_iter())
-        .collect(), query.id.as_ref())))
+    Ok(
+        HttpResponse::Ok().json(BeaconResponse::new(build_validator_balances(
+            &state
+                .validators
+                .into_iter()
+                .zip(state.balances.into_iter())
+                .collect::<Vec<_>>(),
+            query.id.as_ref(),
+        ))),
+    )
 }
 
 #[post("/beacon/states/{state_id}/validator_balances")]
@@ -359,9 +364,14 @@ pub async fn post_validator_balances_from_state(
     db: Data<ReamDB>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(build_validator_balances(&state
-        .validators
-        .into_iter()
-        .zip(state.balances.into_iter())
-        .collect(), body.id.as_ref()))))
+    Ok(
+        HttpResponse::Ok().json(BeaconResponse::new(build_validator_balances(
+            &state
+                .validators
+                .into_iter()
+                .zip(state.balances.into_iter())
+                .collect::<Vec<_>>(),
+            body.id.as_ref(),
+        ))),
+    )
 }
