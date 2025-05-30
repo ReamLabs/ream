@@ -4,7 +4,7 @@ pub mod utils;
 use std::path::PathBuf;
 
 use alloy_primitives::{B64, B256, Bytes, hex};
-use alloy_rpc_types_eth::{Block, BlockNumberOrTag, Filter, Log, TransactionRequest};
+use alloy_rpc_types_eth::{Block, BlockId, BlockNumberOrTag, Filter, Log, TransactionRequest};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use jsonwebtoken::{EncodingKey, Header, encode, get_current_timestamp};
@@ -222,7 +222,7 @@ impl ExecutionEngine {
     pub async fn eth_call(
         &self,
         transaction: TransactionRequest,
-        block: Option<BlockNumberOrTag>,
+        block: Option<BlockId>,
     ) -> anyhow::Result<Bytes> {
         let mut params = vec![json!(transaction)];
         if let Some(block) = block {
