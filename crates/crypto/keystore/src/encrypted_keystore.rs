@@ -47,7 +47,7 @@ pub struct FunctionBlock<ParamType> {
 pub enum KdfParams {
     Pbkdf2 {
         c: u32,
-        dklen: u8,
+        dklen: u32,
         prf: String,
         #[serde(with = "hex_serde")]
         salt: Vec<u8>,
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn test_deserialization() {
         // The keystore password here is 'password123' for future tests
-        let keystore_result = EncryptedKeystore::load_from_file("./assets/TestKeystore.json");
+        let keystore_result = EncryptedKeystore::load_from_file("./assets/ScryptKeystore.json");
         match keystore_result {
             Ok(keystore_deserialized) => {
                 let keystore = EncryptedKeystore {
