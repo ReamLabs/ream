@@ -2,7 +2,6 @@ pub mod event;
 pub mod http_client;
 use std::{pin::Pin, time::Duration};
 
-use alloy_rpc_types_beacon::node::SyncStatus;
 use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
@@ -11,6 +10,7 @@ use ream_beacon_api_types::{
     duties::ProposerDuty,
     error::ValidatorError,
     responses::{DataResponse, DutiesResponse},
+    sync::SyncStatus,
 };
 use reqwest::Url;
 use tracing::{error, info};
