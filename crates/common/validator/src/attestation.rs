@@ -1,7 +1,6 @@
 use std::{cmp::max, collections::HashSet};
 
 use anyhow::{anyhow, ensure};
-use ethereum_hashing::hash;
 use ream_bls::{
     PrivateKey,
     signature::BLSSignature,
