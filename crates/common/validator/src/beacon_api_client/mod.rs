@@ -1,12 +1,16 @@
 pub mod event;
 pub mod http_client;
+pub mod produce_block;
 
 use std::{pin::Pin, time::Duration};
 
+use alloy_primitives::{B256, hex};
 use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
+use produce_block::ProduceBlock;
+use ream_bls::BLSSignature;
 use reqwest::Url;
 use tracing::{error, info};
 
@@ -68,5 +72,41 @@ impl BeaconApiClient {
                 }
             })
             .boxed())
+    }
+
+    pub async fn produce_block(
+        &self,
+        slot: u64,
+        randao_reveal: BLSSignature,
+        graffiti: Option<B256>,
+        skip_randao_verification: Option<bool>,
+        builder_boost_factor: Option<u64>,
+    ) -> anyhow::Result<ProduceBlock> {
+        let mut request_builder = self
+            .http_client
+            .get(format!("/eth/v3/validator/blocks/{slot}"))?
+            .query(&[("randao_reveal", format!("{:?}", randao_reveal))]);
+
+        if let Some(graffiti_value) = graffiti {
+            request_builder = request_builder.query(&[("graffiti", format!("0x{}", hex::encode(graffiti_value)))]);
+        }
+
+        if let Some(skip_randao) = skip_randao_verification {
+            request_builder =
+                request_builder.query(&[("skip_randao_verification", skip_randao.to_string())]);
+        }
+
+        if let Some(boost_factor) = builder_boost_factor {
+            request_builder =
+                request_builder.query(&[("builder_boost_factor", boost_factor.to_string())]);
+        }
+
+        let response = self.http_client.execute(request_builder.build()?).await?;
+
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            anyhow::bail!("Failed to produce block: {}", response.status())
+        }
     }
 }
