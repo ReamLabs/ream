@@ -14,8 +14,9 @@ use reqwest::Url;
 use ssz::Decode;
 use tracing::{error, info};
 
+#[derive(Clone)]
 pub struct BeaconApiClient {
-    pub http_client: ClientWithBaseUrl,
+    http_client: ClientWithBaseUrl,
 }
 
 impl BeaconApiClient {
