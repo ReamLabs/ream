@@ -247,13 +247,11 @@ impl ExecutionEngine {
     }
 
     pub async fn eth_send_raw_transaction(&self, transaction: Bytes) -> anyhow::Result<B256> {
-        let hex = format!("0x{}", hex::encode(transaction));
-
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
             method: "eth_sendRawTransaction".to_string(),
-            params: vec![json!(hex)],
+            params: vec![json!(transaction)],
         };
 
         let http_post_request = self.build_request(request_body)?;
