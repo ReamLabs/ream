@@ -6,6 +6,13 @@ use actix_web::{
 };
 use alloy_primitives::B256;
 use hashbrown::HashMap;
+use ream_beacon_api_types::{
+    error::ApiError,
+    id::ID,
+    responses::{
+        BeaconHeadResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse,
+    },
+};
 use ream_consensus::{
     attester_slashing::AttesterSlashing,
     constants::{
@@ -25,14 +32,6 @@ use ream_storage::{
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use tree_hash::TreeHash;
-
-use crate::types::{
-    errors::ApiError,
-    id::ID,
-    response::{
-        BeaconHeadResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse,
-    },
-};
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct BlockRewards {

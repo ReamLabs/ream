@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::types::id::ValidatorID;
+use crate::id::ValidatorID;
 
 #[derive(Debug, Deserialize)]
 pub struct ValidatorsPostRequest {

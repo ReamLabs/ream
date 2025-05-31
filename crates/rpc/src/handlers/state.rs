@@ -3,6 +3,12 @@ use actix_web::{
     web::{Data, Path, Query},
 };
 use alloy_primitives::B256;
+use ream_beacon_api_types::{
+    error::ApiError,
+    id::ID,
+    query::EpochQuery,
+    responses::{BeaconResponse, BeaconVersionedResponse},
+};
 use ream_consensus::{
     checkpoint::Checkpoint, constants::SYNC_COMMITTEE_SIZE, electra::beacon_state::BeaconState,
     misc::compute_sync_committee_period,
@@ -14,13 +20,6 @@ use ream_storage::{
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use tree_hash::TreeHash;
-
-use crate::types::{
-    errors::ApiError,
-    id::ID,
-    query::EpochQuery,
-    response::{BeaconResponse, BeaconVersionedResponse},
-};
 
 pub const SYNC_COMMITTEE_SUBNET_COUNT: u64 = 4;
 

@@ -4,17 +4,17 @@ use actix_web::{
     HttpResponse, Responder, get,
     web::{Data, Path, Query},
 };
+use ream_beacon_api_types::{
+    error::ApiError,
+    id::ID,
+    query::{EpochQuery, IndexQuery, SlotQuery},
+    responses::BeaconResponse,
+};
 use ream_consensus::{constants::SLOTS_PER_EPOCH, misc::compute_start_slot_at_epoch};
 use ream_storage::db::ReamDB;
 use serde::Serialize;
 
 use super::state::get_state_from_id;
-use crate::types::{
-    errors::ApiError,
-    id::ID,
-    query::{EpochQuery, IndexQuery, SlotQuery},
-    response::BeaconResponse,
-};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct CommitteeData {

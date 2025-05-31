@@ -3,15 +3,15 @@ use actix_web::{
     web::{Data, Path},
 };
 use actix_web_lab::extract::Query;
+use ream_beacon_api_types::{
+    error::ApiError, id::ID, query::BlobSidecarQuery, responses::BeaconVersionedResponse,
+};
 use ream_consensus::blob_sidecar::BlobIdentifier;
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::error;
 use tree_hash::TreeHash;
 
-use crate::{
-    handlers::block::get_beacon_block_from_id,
-    types::{errors::ApiError, id::ID, query::BlobSidecarQuery, response::BeaconVersionedResponse},
-};
+use crate::handlers::block::get_beacon_block_from_id;
 
 #[get("/beacon/blob_sidecars/{block_id}")]
 pub async fn get_blob_sidecars(

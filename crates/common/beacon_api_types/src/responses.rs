@@ -1,5 +1,7 @@
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, Encode};
+use ssz_derive::{Decode, Encode};
 
 pub const VERSION: &str = "electra";
 pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
@@ -126,14 +128,14 @@ impl<T: Serialize> DataVersionedResponse<T> {
 ///     "execution_optimistic": false,
 ///     "data": [T]
 /// }
-#[derive(Debug, Deserialize, Serialize)]
-pub struct DutiesResponse<T> {
+#[derive(Debug, Deserialize, Serialize, Encode, Decode)]
+pub struct DutiesResponse<T: Encode + Decode> {
     pub dependent_root: B256,
     pub execution_optimistic: bool,
     pub data: Vec<T>,
 }
 
-impl<T: Serialize> DutiesResponse<T> {
+impl<T: Serialize + Encode + Decode> DutiesResponse<T> {
     pub fn new(dependent_root: B256, data: Vec<T>) -> Self {
         Self {
             dependent_root,

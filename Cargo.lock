@@ -1066,6 +1066,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "ream-beacon-api-types",
  "ream-consensus",
  "ream-rpc",
  "serde",
@@ -4898,6 +4899,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-beacon-api-types"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "ream-bls",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "url",
+]
+
+[[package]]
 name = "ream-beacon-chain"
 version = "0.1.0"
 dependencies = [
@@ -5197,6 +5216,7 @@ dependencies = [
  "hashbrown 0.15.3",
  "libp2p",
  "parking_lot",
+ "ream-beacon-api-types",
  "ream-bls",
  "ream-consensus",
  "ream-fork-choice",
@@ -5256,6 +5276,7 @@ dependencies = [
  "ethereum_ssz_derive",
  "eventsource-client",
  "futures",
+ "ream-beacon-api-types",
  "ream-bls",
  "ream-consensus",
  "ream-execution-engine",

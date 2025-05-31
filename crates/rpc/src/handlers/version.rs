@@ -1,8 +1,7 @@
 use actix_web::{HttpResponse, Responder, get};
+use ream_beacon_api_types::{error::ApiError, responses::DataResponse};
 use ream_node::version::ream_node_version;
 use serde::{Deserialize, Serialize};
-
-use crate::types::{errors::ApiError, response::DataResponse};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Version {

@@ -2,13 +2,12 @@ use std::sync::Arc;
 
 use actix_web::{HttpResponse, Responder, get};
 use alloy_primitives::{Address, aliases::B32};
+use ream_beacon_api_types::{error::ApiError, responses::DataResponse};
 use ream_consensus::constants::{
     DOMAIN_AGGREGATE_AND_PROOF, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
 };
 use ream_network_spec::networks::{NetworkSpec, network_spec};
 use serde::{Deserialize, Serialize};
-
-use crate::types::{errors::ApiError, response::DataResponse};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct DepositContract {

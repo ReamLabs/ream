@@ -4,6 +4,13 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
+use ream_beacon_api_types::{
+    error::ApiError,
+    id::{ID, ValidatorID},
+    query::{IdQuery, StatusQuery},
+    request::ValidatorsPostRequest,
+    responses::BeaconResponse,
+};
 use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
@@ -11,13 +18,6 @@ use serde::{Deserialize, Serialize};
 use tracing::error;
 
 use super::state::get_state_from_id;
-use crate::types::{
-    errors::ApiError,
-    id::{ID, ValidatorID},
-    query::{IdQuery, StatusQuery},
-    request::ValidatorsPostRequest,
-    response::BeaconResponse,
-};
 
 const MAX_VALIDATOR_COUNT: usize = 100;
 

@@ -3,11 +3,10 @@ use actix_web::{
     web::{Data, Path},
 };
 use alloy_primitives::B256;
+use ream_beacon_api_types::{error::ApiError, responses::DataVersionedResponse};
 use ream_light_client::bootstrap::LightClientBootstrap;
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::error;
-
-use crate::types::{errors::ApiError, response::DataVersionedResponse};
 
 #[get("/beacon/light_client/bootstrap/{block_root}")]
 pub async fn get_light_client_bootstrap(

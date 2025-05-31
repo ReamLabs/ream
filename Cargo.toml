@@ -2,6 +2,7 @@
 default-members = ["bin/ream"]
 members = [
     "bin/ream",
+    "crates/common/beacon_api_types",
     "crates/common/beacon_chain",
     "crates/common/checkpoint_sync",
     "crates/common/consensus",
@@ -95,6 +96,7 @@ tree_hash_derive = "0.10"
 url = "2.5"
 
 # ream dependencies
+ream-beacon-api-types = { path = "crates/common/beacon_api_types" }
 ream-beacon-chain = { path = "crates/common/beacon_chain" }
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
 ream-checkpoint-sync = { path = "crates/common/checkpoint_sync" }

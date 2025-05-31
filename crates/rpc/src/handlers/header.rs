@@ -3,6 +3,12 @@ use actix_web::{
     web::{Data, Path, Query},
 };
 use alloy_primitives::B256;
+use ream_beacon_api_types::{
+    error::ApiError,
+    id::ID,
+    query::{ParentRootQuery, SlotQuery},
+    responses::BeaconResponse,
+};
 use ream_consensus::beacon_block_header::SignedBeaconBlockHeader;
 use ream_storage::{db::ReamDB, tables::Table};
 use serde::{Deserialize, Serialize};
@@ -10,12 +16,6 @@ use tracing::error;
 use tree_hash::TreeHash;
 
 use super::block::get_beacon_block_from_id;
-use crate::types::{
-    errors::ApiError,
-    id::ID,
-    query::{ParentRootQuery, SlotQuery},
-    response::BeaconResponse,
-};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HeaderData {

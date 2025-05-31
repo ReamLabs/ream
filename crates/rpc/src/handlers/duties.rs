@@ -2,39 +2,16 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path},
 };
-use ream_bls::PubKey;
+use ream_beacon_api_types::{
+    duties::{AttesterDuty, ProposerDuty},
+    error::ApiError,
+    id::ID,
+    responses::DutiesResponse,
+};
 use ream_consensus::{constants::SLOTS_PER_EPOCH, misc::compute_start_slot_at_epoch};
 use ream_storage::db::ReamDB;
-use serde::{Deserialize, Serialize};
 
-use crate::{
-    handlers::state::get_state_from_id,
-    types::{errors::ApiError, id::ID, response::DutiesResponse},
-};
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ProposerDuty {
-    pub pubkey: PubKey,
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub validator_index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub slot: u64,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct AttesterDuty {
-    pub pubkey: PubKey,
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub validator_index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub committee_index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub committees_at_slot: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub validator_committee_index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub slot: u64,
-}
+use crate::handlers::state::get_state_from_id;
 
 #[get("/validator/duties/proposer/{epoch}")]
 pub async fn get_proposer_duties(

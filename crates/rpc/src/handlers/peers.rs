@@ -5,9 +5,8 @@ use actix_web::{
     web::{Data, Path},
 };
 use libp2p::PeerId;
+use ream_beacon_api_types::{error::ApiError, responses::DataResponse};
 use ream_p2p::network_state::NetworkState;
-
-use crate::types::{errors::ApiError, response::DataResponse};
 
 /// GET /eth/v1/node/peers/{peer_id}
 #[get("/node/peers/{peer_id}")]

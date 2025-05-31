@@ -11,7 +11,6 @@ use crate::routes::register_routers;
 pub mod config;
 pub mod handlers;
 pub mod routes;
-pub mod types;
 
 /// Start the Beacon API server.
 pub async fn start_server(
