@@ -21,7 +21,7 @@ use crate::{
         TARGET_AGGREGATORS_PER_COMMITTEE,
     },
     contribution_and_proof::SyncCommitteeContribution,
-    signature_to_hash,
+    hash_signature_prefix_to_u64,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, TreeHash)]
@@ -148,7 +148,7 @@ pub fn get_sync_committee_selection_proof(
 }
 
 pub fn is_sync_committee_aggregator(signature: BLSSignature) -> bool {
-    signature_to_hash(signature)
+    hash_signature_prefix_to_u64(signature)
         % max(
             1,
             SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT / TARGET_AGGREGATORS_PER_COMMITTEE,

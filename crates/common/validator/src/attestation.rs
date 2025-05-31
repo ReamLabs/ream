@@ -24,7 +24,7 @@ use ssz_types::{
 
 use crate::{
     constants::{DOMAIN_SELECTION_PROOF, TARGET_AGGREGATORS_PER_COMMITTEE},
-    signature_to_hash,
+    hash_signature_prefix_to_u64,
 };
 
 pub fn is_aggregator(
@@ -33,7 +33,7 @@ pub fn is_aggregator(
     committee_index: u64,
     slot_signature: BLSSignature,
 ) -> anyhow::Result<bool> {
-    Ok(signature_to_hash(slot_signature) as usize
+    Ok(hash_signature_prefix_to_u64(slot_signature) as usize
         % max(
             1,
             state.get_beacon_committee(slot, committee_index)?.len()
