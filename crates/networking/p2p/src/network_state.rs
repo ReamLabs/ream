@@ -46,6 +46,7 @@ impl NetworkState {
                 state,
                 direction,
                 enr,
+                meta_data: None,
             });
     }
 

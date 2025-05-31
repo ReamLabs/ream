@@ -13,6 +13,7 @@ version.workspace = true
 alloy-primitives.workspace = true
 anyhow.workspace = true
 asynchronous-codec = "0.7.0"
+delay_map.workspace = true
 discv5.workspace = true
 enr.workspace = true
 ethereum_ssz.workspace = true

@@ -2,6 +2,8 @@ use discv5::Enr;
 use libp2p::{Multiaddr, PeerId};
 use serde::Serialize;
 
+use crate::req_resp::messages::meta_data::GetMetaDataV2;
+
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectionState {
@@ -19,13 +21,12 @@ pub enum Direction {
     Unknown,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct CachedPeer {
     /// libp2p peer ID
     pub peer_id: PeerId,
 
     /// Last known multiaddress observed for the peer
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_seen_p2p_address: Option<Multiaddr>,
 
     /// Current known connection state
@@ -35,6 +36,7 @@ pub struct CachedPeer {
     pub direction: Direction,
 
     /// Ethereum Node Record (ENR), if known
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub enr: Option<Enr>,
+
+    pub meta_data: Option<GetMetaDataV2>,
 }

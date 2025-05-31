@@ -9,6 +9,7 @@ use std::{
 };
 
 use anyhow::anyhow;
+use delay_map::HashSetDelay;
 use discv5::{Enr, enr::CombinedPublicKey};
 use libp2p::{
     Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
@@ -42,6 +43,7 @@ use yamux::Config as YamuxConfig;
 use crate::{
     channel::{P2PCallbackResponse, P2PMessage, P2PRequest, P2PResponse},
     config::NetworkConfig,
+    constants::{PING_INTERVAL_DURATION, TARGET_PEER_COUNT},
     gossipsub::{
         GossipsubBehaviour, message::GossipsubMessage, snappy::SnappyTransform, topics::GossipTopic,
     },
@@ -108,6 +110,7 @@ pub struct Network {
     callbacks: HashMap<u64, mpsc::Sender<anyhow::Result<P2PCallbackResponse>>>,
     request_id: u64,
     network_state: Arc<NetworkState>,
+    peers_to_ping: HashSetDelay<PeerId>,
 }
 
 impl Network {
@@ -205,6 +208,7 @@ impl Network {
             callbacks: HashMap::new(),
             request_id: 0,
             network_state,
+            peers_to_ping: HashSetDelay::new(PING_INTERVAL_DURATION),
         };
 
         network.start_network_worker(config).await?;
@@ -314,6 +318,14 @@ impl Network {
                         },
                     }
                 }
+                Some(Ok(peer_id)) = self.peers_to_ping.next() => {
+                    let request_id = self.request_id();
+                    self.swarm.behaviour_mut().req_resp.send_request(
+                        peer_id,
+                        request_id,
+                        RequestMessage::Ping(Ping::new(self.network_state.meta_data.read().seq_number)),
+                    );
+                }
             }
         }
     }
@@ -338,21 +350,19 @@ impl Network {
                 );
                 None
             }
-            SwarmEvent::ConnectionClosed {
-                peer_id, endpoint, ..
-            } => {
-                let direction = match endpoint {
-                    ConnectedPoint::Dialer { .. } => Direction::Outbound,
-                    ConnectedPoint::Listener { .. } => Direction::Inbound,
-                };
+            SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                self.network_state.peer_table.write().remove(&peer_id);
+                let peer_count = self.network_state.peer_table.read().len();
+                if peer_count < TARGET_PEER_COUNT {
+                    info!(
+                        "Peer count is below target: {peer_count}, attempting to discover more peers"
+                    );
+                    self.swarm
+                        .behaviour_mut()
+                        .discovery
+                        .discover_peers(QueryType::Peers, 16);
+                }
 
-                self.network_state.upsert_peer(
-                    peer_id,
-                    None,
-                    ConnectionState::Disconnected,
-                    direction,
-                    None,
-                );
                 None
             }
             SwarmEvent::ConnectionEstablished {
@@ -408,10 +418,11 @@ impl Network {
                 self.network_state.upsert_peer(
                     peer_id,
                     None,
-                    ConnectionState::Disconnected,
-                    Direction::Unknown,
+                    ConnectionState::Connecting,
+                    Direction::Outbound,
                     Some(enr.clone()),
                 );
+                self.peers_to_ping.insert(peer_id);
             }
 
             let mut multiaddrs: Vec<Multiaddr> = Vec::new();
@@ -514,8 +525,59 @@ impl Network {
                 request_id,
                 message,
             } => {
-                let callback = self.callbacks.get(&request_id);
-                if let Some(callback) = callback {
+                match *message.clone() {
+                    ResponseMessage::MetaData(meta_data) => {
+                        trace!(
+                            ?peer_id,
+                            ?request_id,
+                            "Received MetaData response: seq_number: {}",
+                            meta_data.seq_number
+                        );
+
+                        self.network_state
+                            .peer_table
+                            .write()
+                            .entry(peer_id)
+                            .and_modify(|cached_peer| {
+                                cached_peer.meta_data = Some(meta_data.as_ref().clone());
+                            });
+                    }
+                    ResponseMessage::Ping(ping) => {
+                        trace!(
+                            ?peer_id,
+                            ?request_id,
+                            "Received Ping response: seq_number: {}",
+                            ping.sequence_number
+                        );
+
+                        let cached_peer =
+                            self.network_state.peer_table.read().get(&peer_id).cloned();
+                        if let Some(cached_peer) = cached_peer {
+                            if cached_peer.meta_data.is_none()
+                                || ping.sequence_number
+                                    != cached_peer
+                                        .meta_data
+                                        .as_ref()
+                                        .map_or(0, |meta_data| meta_data.seq_number)
+                            {
+                                let request_id = self.request_id();
+
+                                self.swarm.behaviour_mut().req_resp.send_request(
+                                    peer_id,
+                                    request_id,
+                                    RequestMessage::MetaData(
+                                        self.network_state.meta_data.read().clone().into(),
+                                    ),
+                                );
+                            }
+
+                            self.peers_to_ping.insert(peer_id);
+                        }
+                    }
+                    _ => {}
+                }
+
+                if let Some(callback) = self.callbacks.get(&request_id) {
                     if let Err(err) = callback
                         .send(Ok(P2PCallbackResponse::ResponseMessage(message)))
                         .await
@@ -523,6 +585,7 @@ impl Network {
                         warn!("Failed to send response: {err:?}");
                     }
                 }
+
                 None
             }
             ReqRespMessageReceived::EndOfStream { request_id } => {

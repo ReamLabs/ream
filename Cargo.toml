@@ -58,6 +58,7 @@ alloy-rpc-types-eth = "1.0.7"
 anyhow = "1.0"
 async-trait = "0.1.86"
 clap = "4"
+delay_map = "0.4.1"
 directories = { version = "6.0.0" }
 discv5 = { version = "0.9.0", features = ["libp2p"] }
 enr = "0.13.0"
