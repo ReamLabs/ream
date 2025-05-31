@@ -46,17 +46,17 @@ pub struct FunctionBlock<ParamType> {
 #[serde(tag = "function", content = "params", rename_all = "lowercase")]
 pub enum KdfParams {
     Pbkdf2 {
-        c: u32,
-        dklen: u32,
+        c: u64,
+        dklen: u64,
         prf: String,
         #[serde(with = "hex_serde")]
         salt: Vec<u8>,
     },
     Scrypt {
-        dklen: u8,
-        n: u32,
-        p: u32,
-        r: u32,
+        dklen: u64,
+        n: u64,
+        p: u64,
+        r: u64,
         #[serde(with = "hex_serde")]
         salt: Vec<u8>,
     },

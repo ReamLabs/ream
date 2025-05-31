@@ -1,12 +1,19 @@
-use ssz_types::{FixedVector, typenum::U16};
-
+#[inline(always)]
 fn rotate(value: u32, shift: u32) -> u32 {
     (value << shift) | (value >> (32 - shift))
 }
 
 /// Based on https://datatracker.ietf.org/doc/html/rfc7914#page-4
-pub fn salsa20_8_core(input: &[u32; 16]) -> FixedVector<u32, U16> {
-    let mut state = *input;
+pub fn salsa20_8_core(byte_stream: &mut [u8; 64]) {
+    let mut state = [0u32; 16];
+    let mut original = [0u32; 16];
+
+    for i in 0..16 {
+        let word = u32::from_le_bytes(byte_stream[i * 4..i * 4 + 4].try_into().unwrap());
+        state[i] = word;
+        original[i] = word;
+    }
+
     for _ in 0..4 {
         state[4] ^= rotate(state[0].wrapping_add(state[12]), 7);
         state[8] ^= rotate(state[4].wrapping_add(state[0]), 9);
@@ -41,47 +48,38 @@ pub fn salsa20_8_core(input: &[u32; 16]) -> FixedVector<u32, U16> {
         state[14] ^= rotate(state[13].wrapping_add(state[12]), 13);
         state[15] ^= rotate(state[14].wrapping_add(state[13]), 18);
     }
-    FixedVector::from(
-        state
-            .iter()
-            .zip(input.iter())
-            .map(|(&state_item, &input_item)| state_item.wrapping_add(input_item))
-            .collect::<Vec<u32>>(),
-    )
+
+    for i in 0..16 {
+        byte_stream[i * 4..(i + 1) * 4]
+            .copy_from_slice(&(state[i].wrapping_add(original[i])).to_le_bytes());
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Endian issue
-    // See https://crypto.stackexchange.com/questions/95460/how-to-test-salsa20-8-core-rfc-7914-implementation-with-the-test-vectors
-    // in regards to why we need to shift the test vectors
-    fn shift(x: u32) -> u32 {
-        (x << 24) | ((x & 0x0000ff00) << 8) | ((x & 0x00ff0000) >> 8) | ((x & 0xff000000) >> 24)
-    }
-
     // See https://datatracker.ietf.org/doc/html/draft-josefsson-scrypt-kdf-02#page-3
     // for test vector
     #[test]
     fn test_salsa20_8_core() {
-        let input = [
-            0x7e879a21, 0x4f3ec986, 0x7ca940e6, 0x41718f26, 0xbaee555b, 0x8c61c1b5, 0x0df84611,
-            0x6dcd3b1d, 0xee24f319, 0xdf9b3d85, 0x14121e4b, 0x5ac5aa32, 0x76021d29, 0x09c74829,
-            0xedebc68d, 0xb8b8c25e,
-        ]
-        .map(shift);
+        let mut stream = [
+            0x7e, 0x87, 0x9a, 0x21, 0x4f, 0x3e, 0xc9, 0x86, 0x7c, 0xa9, 0x40, 0xe6, 0x41, 0x71,
+            0x8f, 0x26, 0xba, 0xee, 0x55, 0x5b, 0x8c, 0x61, 0xc1, 0xb5, 0x0d, 0xf8, 0x46, 0x11,
+            0x6d, 0xcd, 0x3b, 0x1d, 0xee, 0x24, 0xf3, 0x19, 0xdf, 0x9b, 0x3d, 0x85, 0x14, 0x12,
+            0x1e, 0x4b, 0x5a, 0xc5, 0xaa, 0x32, 0x76, 0x02, 0x1d, 0x29, 0x09, 0xc7, 0x48, 0x29,
+            0xed, 0xeb, 0xc6, 0x8d, 0xb8, 0xb8, 0xc2, 0x5e,
+        ];
 
         let expected_output = [
-            0xa41f859c, 0x6608cc99, 0x3b81cacb, 0x020cef05, 0x044b2181, 0xa2fd337d, 0xfd7b1c63,
-            0x96682f29, 0xb4393168, 0xe3c9e6bc, 0xfe6bc5b7, 0xa06d96ba, 0xe424cc10, 0x2c91745c,
-            0x24ad673d, 0xc7618f81,
-        ]
-        .map(shift);
+            0xa4, 0x1f, 0x85, 0x9c, 0x66, 0x08, 0xcc, 0x99, 0x3b, 0x81, 0xca, 0xcb, 0x02, 0x0c,
+            0xef, 0x05, 0x04, 0x4b, 0x21, 0x81, 0xa2, 0xfd, 0x33, 0x7d, 0xfd, 0x7b, 0x1c, 0x63,
+            0x96, 0x68, 0x2f, 0x29, 0xb4, 0x39, 0x31, 0x68, 0xe3, 0xc9, 0xe6, 0xbc, 0xfe, 0x6b,
+            0xc5, 0xb7, 0xa0, 0x6d, 0x96, 0xba, 0xe4, 0x24, 0xcc, 0x10, 0x2c, 0x91, 0x74, 0x5c,
+            0x24, 0xad, 0x67, 0x3d, 0xc7, 0x61, 0x8f, 0x81,
+        ];
 
-        assert_eq!(
-            salsa20_8_core(&input),
-            FixedVector::from(expected_output.to_vec())
-        );
+        salsa20_8_core(&mut stream);
+        assert_eq!(stream, expected_output);
     }
 }
