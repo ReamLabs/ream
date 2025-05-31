@@ -1,5 +1,7 @@
 use std::thread;
+
 use anyhow::ensure;
+
 use crate::{pbkdf2::pbkdf2, salsa::salsa20_8_core};
 
 fn scrypt_block_mix(block_size: usize, input_output: &mut [u8]) {
@@ -41,7 +43,8 @@ fn scrypt_romix(block_size: usize, input_output: &mut [u8], cost_parameter: usiz
     for _ in 0..cost_parameter {
         let memory_index = {
             let mut last_eight_bytes_array = [0u8; 8];
-            last_eight_bytes_array.copy_from_slice(&input_output[block_size_in_bytes - 64..block_size_in_bytes - 56]);
+            last_eight_bytes_array
+                .copy_from_slice(&input_output[block_size_in_bytes - 64..block_size_in_bytes - 56]);
             (u64::from_le_bytes(last_eight_bytes_array) & (cost_parameter as u64 - 1)) as usize
         };
 

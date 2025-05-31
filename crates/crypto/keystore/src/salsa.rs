@@ -9,7 +9,11 @@ pub fn salsa20_8_core(byte_stream: &mut [u8; 64]) {
     let mut original = [0u32; 16];
 
     for i in 0..16 {
-        let word = u32::from_le_bytes(byte_stream[i * 4..i * 4 + 4].try_into().unwrap());
+        let word = {
+            let mut last_four_bytes_array = [0u8; 4];
+            last_four_bytes_array.copy_from_slice(&byte_stream[i * 4..i * 4 + 4]);
+            u32::from_le_bytes(last_four_bytes_array)
+        };
         state[i] = word;
         original[i] = word;
     }
