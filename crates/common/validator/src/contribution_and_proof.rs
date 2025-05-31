@@ -56,7 +56,7 @@ pub fn get_contribution_and_proof(
     })
 }
 
-pub fn get_contribution_proof_and_signature(
+pub fn get_contribution_and_proof_signature(
     state: &BeaconState,
     contribution_and_proof: ContributionAndProof,
     private_key: PrivateKey,

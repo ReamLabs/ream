@@ -1,12 +1,13 @@
 use std::{cmp::max, collections::HashSet};
 
+use alloy_primitives::B256;
 use anyhow::{anyhow, bail, ensure};
 use ream_bls::{
     BLSSignature, PrivateKey,
     traits::{Aggregatable, Signable},
 };
 use ream_consensus::{
-    constants::{EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SYNC_COMMITTEE_SIZE},
+    constants::{DOMAIN_SYNC_COMMITTEE, EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SYNC_COMMITTEE_SIZE},
     electra::{beacon_block::BeaconBlock, beacon_state::BeaconState},
     misc::{compute_epoch_at_slot, compute_signing_root},
     sync_aggregate::SyncAggregate,
@@ -28,6 +29,13 @@ use crate::{
 pub struct SyncAggregatorSelectionData {
     slot: u64,
     subcommittee_index: u64,
+}
+
+pub struct SyncCommitteeMessage {
+    pub slot: u64,
+    pub beacon_block_root: B256,
+    pub validator_index: u64,
+    pub signature: BLSSignature,
 }
 
 pub fn compute_sync_committee_period(epoch: u64) -> u64 {
@@ -154,4 +162,22 @@ pub fn is_sync_committee_aggregator(signature: BLSSignature) -> bool {
             SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT / TARGET_AGGREGATORS_PER_COMMITTEE,
         )
         == 0
+}
+
+pub fn get_sync_committee_message(
+    state: &BeaconState,
+    beacon_block_root: B256,
+    validator_index: u64,
+    private_key: PrivateKey,
+) -> anyhow::Result<SyncCommitteeMessage> {
+    let epoch = state.get_current_epoch();
+    let domain = state.get_domain(DOMAIN_SYNC_COMMITTEE, Some(epoch));
+    let signing_root = compute_signing_root(beacon_block_root, domain);
+
+    Ok(SyncCommitteeMessage {
+        slot: state.slot,
+        beacon_block_root,
+        validator_index,
+        signature: private_key.sign(signing_root.as_ref())?,
+    })
 }
