@@ -21,7 +21,7 @@ pub fn get_epoch_signature(
     private_key: PrivateKey,
 ) -> anyhow::Result<BLSSignature> {
     let domain = state.get_domain(DOMAIN_RANDAO, Some(compute_epoch_at_slot(block.slot)));
-    let signing_root = compute_signing_root(block.slot, domain);
+    let signing_root = compute_signing_root(compute_epoch_at_slot(block.slot), domain);
     Ok(private_key.sign(signing_root.as_ref())?)
 }
 
