@@ -93,21 +93,9 @@ impl BeaconApiClient {
             });
         }
 
-        let proposer_duties = if response
-            .headers()
-            .get("content-type")
-            .and_then(|content_type| content_type.to_str().ok())
-            .is_some_and(|content_type| content_type.contains("application/octet-stream"))
-        {
-            DutiesResponse::from_ssz_bytes(&response.bytes().await?)
-                .map_err(|err| ValidatorError::SszDecodeError(format!("{:?}", err)))?
-        } else {
-            response
-                .json()
-                .await
-                .map_err(|err| ValidatorError::JsonDecodeError(err.to_string()))?
-        };
-
-        Ok(proposer_duties)
+        Ok(response
+            .json()
+            .await
+            .map_err(|err| ValidatorError::JsonDecodeError(err.to_string()))?)
     }
 }
