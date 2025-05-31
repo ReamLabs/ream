@@ -39,6 +39,3 @@ thiserror.workspace = true
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 tracing.workspace = true
 tree_hash.workspace = true
-
-tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
-tempfile = "3"
