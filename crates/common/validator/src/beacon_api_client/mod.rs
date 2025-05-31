@@ -93,10 +93,7 @@ impl BeaconApiClient {
             });
         }
 
-        response
-            .json()
-            .await
-            .map_err(|err| ValidatorError::JsonDecodeError(err.to_string()))
+        Ok(response.json().await?)
     }
 
     pub async fn get_proposer_duties(
@@ -118,9 +115,6 @@ impl BeaconApiClient {
             });
         }
 
-        response
-            .json()
-            .await
-            .map_err(|err| ValidatorError::JsonDecodeError(err.to_string()))
+        Ok(response.json().await?)
     }
 }
