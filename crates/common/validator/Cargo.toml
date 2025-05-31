@@ -11,11 +11,14 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
+alloy-rpc-types-beacon.workspace = true
 anyhow.workspace = true
 ethereum_hashing.workspace = true
 ethereum_serde_utils.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
+eventsource-client.workspace = true
+futures.workspace = true
 ream-beacon-api-types.workspace = true
 reqwest.workspace = true
 serde.workspace = true
