@@ -264,16 +264,12 @@ impl ExecutionEngine {
             .to_result()
     }
 
-    pub async fn eth_get_code(
-        &self,
-        address: Address,
-        block_number: BlockId,
-    ) -> anyhow::Result<Bytes> {
+    pub async fn eth_get_code(&self, address: Address, block_id: BlockId) -> anyhow::Result<Bytes> {
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
             method: "eth_getCode".to_string(),
-            params: vec![json!(address), json!(block_number)],
+            params: vec![json!(address), json!(block_id)],
         };
 
         let http_post_request = self.build_request(request_body)?;
