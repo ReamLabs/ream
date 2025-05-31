@@ -19,4 +19,3 @@ tokio.workspace = true
 # ream
 ream-beacon-api-types.workspace = true
 ream-consensus.workspace = true
-ream-rpc.workspace = true
