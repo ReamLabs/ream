@@ -4,7 +4,7 @@ fn rotate(value: u32, shift: u32) -> u32 {
     (value << shift) | (value >> (32 - shift))
 }
 
-// Based on https://datatracker.ietf.org/doc/html/rfc7914#page-4
+/// Based on https://datatracker.ietf.org/doc/html/rfc7914#page-4
 pub fn salsa20_8_core(input: &[u32; 16]) -> FixedVector<u32, U16> {
     let mut state = *input;
     for _ in 0..4 {
