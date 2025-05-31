@@ -33,7 +33,7 @@ impl<'de> Deserialize<'de> for BLSSignature {
 }
 
 impl BLSSignature {
-    pub fn to_bytes(&self) -> &[u8] {
+    pub fn to_slice(&self) -> &[u8] {
         self.inner.iter().as_slice()
     }
 

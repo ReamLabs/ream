@@ -1846,7 +1846,7 @@ impl BeaconState {
             // Mix in RANDAO reveal
             let mix = xor(
                 self.get_randao_mix(epoch).as_slice(),
-                hash(body.randao_reveal.to_bytes()).as_slice(),
+                hash(body.randao_reveal.to_slice()).as_slice(),
             );
             self.randao_mixes[(epoch % EPOCHS_PER_HISTORICAL_VECTOR) as usize] = mix;
         }

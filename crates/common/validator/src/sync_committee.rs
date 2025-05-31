@@ -1,7 +1,6 @@
 use std::{cmp::max, collections::HashSet};
 
 use anyhow::{anyhow, bail, ensure};
-use ethereum_hashing::hash;
 use ream_bls::{
     BLSSignature, PrivateKey,
     traits::{Aggregatable, Signable},
@@ -22,6 +21,7 @@ use crate::{
         TARGET_AGGREGATORS_PER_COMMITTEE,
     },
     contribution_and_proof::SyncCommitteeContribution,
+    signature_to_hash,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, TreeHash)]
@@ -148,14 +148,10 @@ pub fn get_sync_committee_selection_proof(
 }
 
 pub fn is_sync_committee_aggregator(signature: BLSSignature) -> bool {
-    let hash = u64::from_le_bytes(
-        hash(signature.to_bytes())[0..8]
-            .try_into()
-            .expect("Failed to convert hash bytes to u64"),
-    );
-
-    hash % max(
-        1,
-        SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT / TARGET_AGGREGATORS_PER_COMMITTEE,
-    ) == 0
+    signature_to_hash(signature)
+        % max(
+            1,
+            SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT / TARGET_AGGREGATORS_PER_COMMITTEE,
+        )
+        == 0
 }

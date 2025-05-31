@@ -17,7 +17,7 @@ impl TryFrom<&BLSSignature> for G2Affine {
     fn try_from(value: &BLSSignature) -> Result<Self, Self::Error> {
         match G2Affine::from_compressed(
             &value
-                .to_bytes()
+                .to_slice()
                 .try_into()
                 .map_err(|_| BLSError::InvalidByteLength)?,
         )

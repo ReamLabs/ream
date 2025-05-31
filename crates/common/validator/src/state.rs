@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
 use ream_consensus::{
-    constants::{DOMAIN_RANDAO, SECONDS_PER_SLOT},
+    constants::DOMAIN_RANDAO,
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
@@ -10,10 +10,6 @@ use ream_consensus::{
     misc::{compute_epoch_at_slot, compute_signing_root},
 };
 use tree_hash::TreeHash;
-
-pub fn compute_timestamp_at_slot(state: &BeaconState, slot: u64) -> u64 {
-    state.genesis_time + slot * SECONDS_PER_SLOT
-}
 
 pub fn get_epoch_signature(
     state: &BeaconState,

@@ -23,7 +23,10 @@ use ssz_types::{
     typenum::{U64, U131072},
 };
 
-use crate::constants::{DOMAIN_SELECTION_PROOF, TARGET_AGGREGATORS_PER_COMMITTEE};
+use crate::{
+    constants::{DOMAIN_SELECTION_PROOF, TARGET_AGGREGATORS_PER_COMMITTEE},
+    signature_to_hash,
+};
 
 pub fn is_aggregator(
     state: &BeaconState,
@@ -31,19 +34,13 @@ pub fn is_aggregator(
     committee_index: u64,
     slot_signature: BLSSignature,
 ) -> anyhow::Result<bool> {
-    let committee = state.get_beacon_committee(slot, committee_index)?;
-    let modulo = max(
-        1,
-        committee.len() / TARGET_AGGREGATORS_PER_COMMITTEE as usize,
-    );
-
-    let hash = usize::from_le_bytes(
-        hash(slot_signature.to_bytes())[0..8]
-            .try_into()
-            .map_err(|_| anyhow!("Failed to convert hash bytes to u64"))?,
-    );
-
-    Ok(hash % modulo == 0)
+    Ok(signature_to_hash(slot_signature) as usize
+        % max(
+            1,
+            state.get_beacon_committee(slot, committee_index)?.len()
+                / TARGET_AGGREGATORS_PER_COMMITTEE as usize,
+        )
+        == 0)
 }
 
 /// Compute the correct subnet for an attestation for Phase 0.
