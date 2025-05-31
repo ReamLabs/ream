@@ -3,7 +3,7 @@ pub mod utils;
 
 use std::path::PathBuf;
 
-use alloy_primitives::{B64, B256, Bytes, hex};
+use alloy_primitives::{Address, B64, B256, Bytes, hex};
 use alloy_rpc_types_eth::{Block, BlockId, BlockNumberOrTag, Filter, Log, TransactionRequest};
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -260,6 +260,28 @@ impl ExecutionEngine {
             .execute(http_post_request)
             .await?
             .json::<JsonRpcResponse<B256>>()
+            .await?
+            .to_result()
+    }
+
+    pub async fn eth_get_code(
+        &self,
+        address: Address,
+        block_number: BlockId,
+    ) -> anyhow::Result<Bytes> {
+        let request_body = JsonRpcRequest {
+            id: 1,
+            jsonrpc: "2.0".to_string(),
+            method: "eth_getCode".to_string(),
+            params: vec![json!(address), json!(block_number)],
+        };
+
+        let http_post_request = self.build_request(request_body)?;
+
+        self.http_client
+            .execute(http_post_request)
+            .await?
+            .json::<JsonRpcResponse<Bytes>>()
             .await?
             .to_result()
     }
