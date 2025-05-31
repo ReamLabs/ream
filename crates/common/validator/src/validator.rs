@@ -1,8 +1,5 @@
-use anyhow::{anyhow, ensure};
-use ream_consensus::{
-    constants::SLOTS_PER_EPOCH, electra::beacon_state::BeaconState,
-    misc::compute_start_slot_at_epoch,
-};
+use anyhow::anyhow;
+use ream_consensus::electra::beacon_state::BeaconState;
 
 pub fn check_if_validator_active(
     state: &BeaconState,
