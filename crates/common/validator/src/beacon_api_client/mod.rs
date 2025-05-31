@@ -11,6 +11,7 @@ use ream_beacon_api_types::{
     duties::ProposerDuty, error::ValidatorError, responses::DutiesResponse,
 };
 use reqwest::Url;
+use ssz::Decode;
 use tracing::{error, info};
 
 #[derive(Clone)]
