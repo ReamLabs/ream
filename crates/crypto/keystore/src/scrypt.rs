@@ -42,7 +42,7 @@ fn scrypt_romix(block_size: usize, input_output: &mut [u8], cost_parameter: usiz
         let memory_index = {
             let mut last_eight_bytes_array = [0u8; 8];
             last_eight_bytes_array.copy_from_slice(&input_output[block_size_in_bytes - 64..block_size_in_bytes - 56]);
-            usize::from_le_bytes(last_eight_bytes_array) & (cost_parameter - 1)
+            (u64::from_le_bytes(last_eight_bytes_array) & (cost_parameter as u64 - 1)) as usize
         };
 
         let memory_block = &memory_space
