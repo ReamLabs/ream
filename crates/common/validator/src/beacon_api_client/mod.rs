@@ -92,9 +92,9 @@ impl BeaconApiClient {
             });
         }
 
-        Ok(response
+        response
             .json()
             .await
-            .map_err(|err| ValidatorError::JsonDecodeError(err.to_string()))?)
+            .map_err(|err| ValidatorError::JsonDecodeError(err.to_string()))
     }
 }
