@@ -7,12 +7,13 @@ use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
 use ream_beacon_api_types::{
-    duties::ProposerDuty,
+    duties::{AttesterDuty, ProposerDuty},
     error::ValidatorError,
     responses::{DataResponse, DutiesResponse},
     sync::SyncStatus,
 };
 use reqwest::Url;
+use serde_json::json;
 use tracing::{error, info};
 
 #[derive(Clone)]
@@ -105,6 +106,35 @@ impl BeaconApiClient {
             .execute(
                 self.http_client
                     .get(format!("eth/v1/validator/duties/proposer/{epoch}"))?
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(response.json().await?)
+    }
+
+    pub async fn get_attester_duties(
+        &self,
+        epoch: u64,
+        validator_indices: &[u64],
+    ) -> Result<DutiesResponse<AttesterDuty>, ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post(format!("/eth/v1/validator/duties/attester/{epoch}"))?
+                    .json(&json!(
+                        validator_indices
+                            .iter()
+                            .map(|i| i.to_string())
+                            .collect::<Vec<_>>()
+                    ))
                     .build()?,
             )
             .await?;
