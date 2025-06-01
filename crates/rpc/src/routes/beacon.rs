@@ -23,7 +23,7 @@ use crate::handlers::{
     validator::{
         get_validator_balances_from_state, get_validator_from_state, get_validators_from_state,
         post_validator_balances_from_state, post_validator_identities_from_state,
-        post_validators_from_state,
+        post_validator_liveness, post_validators_from_state,
     },
 };
 
@@ -58,7 +58,8 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(get_light_client_bootstrap)
         .service(get_light_client_updates)
         .service(get_light_client_finality_update)
-        .service(get_blind_block);
+        .service(get_blind_block)
+        .service(post_validator_liveness);
 }
 
 pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {
