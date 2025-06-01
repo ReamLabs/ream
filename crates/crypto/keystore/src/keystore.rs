@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use alloy_primitives::B256;
-use anyhow::{Result, ensure, anyhow};
+use anyhow::{Result, anyhow, ensure};
 use ream_bls::{PrivateKey, PubKey as PublicKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
