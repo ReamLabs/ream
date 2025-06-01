@@ -132,7 +132,7 @@ impl ManagerService {
                                 RequestMessage::Status(status) => {
                                     trace!(?peer_id, ?stream_id, ?connection_id, ?status, "Received Status request");
                                     let Ok(finalized_checkpoint) = self.ream_db.finalized_checkpoint_provider().get() else {
-                                        trace!("Failed to get finalized checkpoint");
+                                        warn!("Failed to get finalized checkpoint");
                                         self.p2p_sender.send_error_response(
                                             peer_id,
                                             connection_id,
@@ -145,21 +145,15 @@ impl ManagerService {
                                     let head_root = match self.beacon_chain.store.get_head() {
                                         Ok(head) => head,
                                         Err(err) => {
-                                            info!("Failed to get head root: {err}");
-                                            self.p2p_sender.send_error_response(
-                                                peer_id,
-                                                connection_id,
-                                                stream_id,
-                                                &format!("Failed to get head root: {err}"),
-                                            );
-                                            continue;
+                                            warn!("Failed to get head root: {err}, falling back to finalized root");
+                                            finalized_checkpoint.root
                                         }
                                     };
 
                                     let head_slot = match self.ream_db.beacon_block_provider().get(head_root) {
                                         Ok(Some(block)) => block.message.slot,
                                         err => {
-                                            info!("Failed to get block for head root {head_root}: {err:?}");
+                                            warn!("Failed to get block for head root {head_root}: {err:?}");
                                             self.p2p_sender.send_error_response(
                                                 peer_id,
                                                 connection_id,
