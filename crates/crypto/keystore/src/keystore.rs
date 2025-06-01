@@ -1,8 +1,8 @@
 use std::{fs, path::Path};
 
 use alloy_primitives::B256;
-use anyhow::{Result, ensure};
-use ream_bls::{PrivateKey, PubKey};
+use anyhow::{Result, ensure, anyhow};
+use ream_bls::{PrivateKey, PubKey as PublicKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -12,14 +12,14 @@ use crate::{decrypt::aes128_ctr, hex_serde, pbkdf2::pbkdf2, scrypt::scrypt};
 pub struct EncryptedKeystore {
     pub crypto: Crypto,
     pub description: String,
-    pub pubkey: PubKey,
+    pub pubkey: PublicKey,
     pub path: String,
     pub uuid: String,
     pub version: u64,
 }
 
 pub struct Keystore {
-    pub public_key: PubKey,
+    pub public_key: PublicKey,
     pub private_key: PrivateKey,
 }
 
@@ -86,12 +86,12 @@ impl EncryptedKeystore {
         match &self.crypto.cipher.params {
             CipherParams::Aes128Ctr { iv } => {
                 let key_param: [u8; 16] = derived_key[0..16].try_into().map_err(|err| {
-                    anyhow::anyhow!(format!(
+                    anyhow!(format!(
                         "Failed to convert derived key into 16 byte array: {err:?}"
                     ))
                 })?;
                 let iv_param: &[u8; 16] = iv.as_slice().try_into().map_err(|err| {
-                    anyhow::anyhow!(format!(
+                    anyhow!(format!(
                         "Failed to convert derived key into 16 byte array: {err:?}"
                     ))
                 })?;
@@ -196,7 +196,7 @@ mod tests {
                 },
             },
             description: "Test Keystore".to_string(),
-            pubkey: PubKey {
+            pubkey: PublicKey {
                 inner: FixedVector::from(vec![0x12; 48]),
             },
             path: "m/44'/60'/0'/0/0".to_string(),
@@ -243,7 +243,7 @@ mod tests {
                         },
                     },
                     description: "".to_string(),
-                    pubkey: PubKey {
+                    pubkey: PublicKey {
                         inner: FixedVector::from(
                             hex::decode(
                                 "b69dfa082ca75d4e50ed4da8fa07d550ba9ec4019815409f42a98b79861d7ad96633a2476594b94c8a6e3048e1b2623e",
