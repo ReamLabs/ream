@@ -3306,6 +3306,7 @@ dependencies = [
 name = "keystore"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "alloy-primitives",
  "anyhow",
  "ream-bls",
