@@ -3,16 +3,16 @@ use aes::{
     cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray},
 };
 
-pub fn aes128_ctr(buf: &mut [u8], key: [u8; 16], iv: &[u8; 16]) {
+pub fn aes128_ctr(buffer: &mut [u8], key: [u8; 16], initial_vector: &[u8; 16]) {
     let cipher = Aes128::new(&key.into());
-    let mut ctr = u128::from_be_bytes(*iv);
+    let mut counter = u128::from_be_bytes(*initial_vector);
 
-    for chunk in buf.chunks_mut(16) {
-        let mut block = GenericArray::from(ctr.to_be_bytes());
+    for chunk in buffer.chunks_mut(16) {
+        let mut block = GenericArray::from(counter.to_be_bytes());
         cipher.encrypt_block(&mut block);
-        for (b, k) in chunk.iter_mut().zip(block.iter()) {
-            *b ^= k;
+        for (chunk_byte, block_byte) in chunk.iter_mut().zip(block.iter()) {
+            *chunk_byte ^= block_byte;
         }
-        ctr = ctr.wrapping_add(1);
+        counter = counter.wrapping_add(1);
     }
 }
