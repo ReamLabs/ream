@@ -1,6 +1,6 @@
 use aes::{
-    cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray},
     Aes128,
+    cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray},
 };
 
 pub fn aes128_ctr(buf: &mut [u8], key: [u8; 16], iv: &[u8; 16]) {

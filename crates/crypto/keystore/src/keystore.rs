@@ -1,11 +1,12 @@
 use std::{fs, path::Path};
+
 use alloy_primitives::B256;
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 use ream_bls::{PrivateKey, PubKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{hex_serde, pbkdf2::pbkdf2, scrypt::scrypt, decrypt::aes128_ctr};
+use crate::{decrypt::aes128_ctr, hex_serde, pbkdf2::pbkdf2, scrypt::scrypt};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct EncryptedKeystore {
@@ -19,7 +20,7 @@ pub struct EncryptedKeystore {
 
 pub struct Keystore {
     pub public_key: PubKey,
-    pub private_key: PrivateKey
+    pub private_key: PrivateKey,
 }
 
 impl EncryptedKeystore {
@@ -74,19 +75,33 @@ impl EncryptedKeystore {
         let derived_key_slice = &derived_key[16..32];
         let pre_image = [derived_key_slice, &self.crypto.cipher.message].concat();
         let checksum = Sha256::digest(&pre_image);
-        ensure!(checksum.as_slice() == self.crypto.checksum.message.as_slice(), "Password provided is invalid!");
+        ensure!(
+            checksum.as_slice() == self.crypto.checksum.message.as_slice(),
+            "Password provided is invalid!"
+        );
 
-        let mut private_key = PrivateKey{ inner: B256::from_slice(self.crypto.cipher.message.as_slice()) };
-        match &self.crypto.cipher.params {
-            CipherParams::Aes128Ctr {
-                iv
-            } => {
-                let key_param: [u8; 16] = derived_key[0..16].try_into().map_err(|err| anyhow::anyhow!(format!("Failed to convert derived key into 16 byte array: {err:?}")))?;
-                let iv_param: &[u8; 16] = iv.as_slice().try_into().map_err(|err| anyhow::anyhow!(format!("Failed to convert derived key into 16 byte array: {err:?}")))?;
-                aes128_ctr(private_key.inner.as_mut_slice(), key_param , iv_param);
-            },
+        let mut private_key = PrivateKey {
+            inner: B256::from_slice(self.crypto.cipher.message.as_slice()),
         };
-        Ok(Keystore{ public_key: self.pubkey.clone(), private_key: private_key })
+        match &self.crypto.cipher.params {
+            CipherParams::Aes128Ctr { iv } => {
+                let key_param: [u8; 16] = derived_key[0..16].try_into().map_err(|err| {
+                    anyhow::anyhow!(format!(
+                        "Failed to convert derived key into 16 byte array: {err:?}"
+                    ))
+                })?;
+                let iv_param: &[u8; 16] = iv.as_slice().try_into().map_err(|err| {
+                    anyhow::anyhow!(format!(
+                        "Failed to convert derived key into 16 byte array: {err:?}"
+                    ))
+                })?;
+                aes128_ctr(private_key.inner.as_mut_slice(), key_param, iv_param);
+            }
+        };
+        Ok(Keystore {
+            public_key: self.pubkey.clone(),
+            private_key,
+        })
     }
 }
 
@@ -128,7 +143,7 @@ pub enum KdfParams {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Prf {
-    HmacSha256
+    HmacSha256,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -279,18 +294,35 @@ mod tests {
     fn decrypt_pbkdf2() {
         let keystore =
             EncryptedKeystore::load_from_file("./assets/Pbkdf2TestKeystore.json").unwrap();
-            let password = hex!("7465737470617373776f7264f09f9491");
-
-            let private_key = hex!("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
-            assert_eq!(keystore.decrypt(&password).unwrap().private_key.inner.as_slice(), private_key);
-        }
-
-    #[test]
-    fn decrypt_scrypt() {
-        let keystore = EncryptedKeystore::load_from_file("./assets/ScryptDecryptionTest.json").unwrap();
         let password = hex!("7465737470617373776f7264f09f9491");
 
         let private_key = hex!("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
-        assert_eq!(keystore.decrypt(&password).unwrap().private_key.inner.as_slice(), private_key);
+        assert_eq!(
+            keystore
+                .decrypt(&password)
+                .unwrap()
+                .private_key
+                .inner
+                .as_slice(),
+            private_key
+        );
+    }
+
+    #[test]
+    fn decrypt_scrypt() {
+        let keystore =
+            EncryptedKeystore::load_from_file("./assets/ScryptDecryptionTest.json").unwrap();
+        let password = hex!("7465737470617373776f7264f09f9491");
+
+        let private_key = hex!("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+        assert_eq!(
+            keystore
+                .decrypt(&password)
+                .unwrap()
+                .private_key
+                .inner
+                .as_slice(),
+            private_key
+        );
     }
 }
