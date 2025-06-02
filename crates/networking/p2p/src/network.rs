@@ -361,9 +361,10 @@ impl Network {
                     }
                     None => {
                         // Create new peer info
-                        let peer_info =
-                            PeerInfo::new(peer_id, endpoint.get_remote_address().clone());
-                        self.peers.insert(peer_id, peer_info);
+                        self.peers.insert(
+                            peer_id,
+                            PeerInfo::new(peer_id, endpoint.get_remote_address().clone()),
+                        );
                     }
                 }
                 Some(ReamNetworkEvent::PeerConnectedIncoming(peer_id))
