@@ -1,6 +1,6 @@
 pub mod event;
 pub mod http_client;
-use std::{pin::Pin, time::Duration};
+use std::{any, pin::Pin, time::Duration};
 
 use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
@@ -12,6 +12,7 @@ use ream_beacon_api_types::{
     responses::{DataResponse, DutiesResponse, SyncCommitteeDutiesResponse},
     sync::SyncStatus,
 };
+use ream_consensus::genesis::Genesis;
 use ream_network_spec::networks::NetworkSpec;
 use reqwest::Url;
 use serde_json::json;
@@ -75,6 +76,25 @@ impl BeaconApiClient {
                 }
             })
             .boxed())
+    }
+
+    pub async fn get_genesis(&self) -> anyhow::Result<DataResponse<Genesis>, ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .get("/eth/v1/beacon/genesis".to_string())?
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(response.json().await?)
     }
 
     pub async fn get_config_spec(
