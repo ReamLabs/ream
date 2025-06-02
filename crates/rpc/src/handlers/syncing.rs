@@ -4,10 +4,8 @@ use ream_beacon_api_types::{
     responses::{DataResponse, EXECUTION_OPTIMISTIC},
     sync::SyncStatus,
 };
-use ream_beacon_chain::beacon_chain::BeaconChain;
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice::store::Store;
-use ream_p2p::network_state::NetworkState;
 use ream_storage::{db::ReamDB, tables::Table};
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -47,6 +45,7 @@ pub async fn get_syncing_status(
         error!("Failed to get current slot, error: {err:?}");
         ApiError::InternalError
     })?;
+
     let head_slot = match db.beacon_block_provider().get(head) {
         Ok(Some(block)) => block.message.slot,
         err => {

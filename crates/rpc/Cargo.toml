@@ -39,4 +39,3 @@ ream-operation-pool.workspace = true
 ream-p2p.workspace = true
 ream-storage.workspace = true
 ream-execution-engine.workspace = true
-ream-beacon-chain.workspace = true

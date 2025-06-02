@@ -5510,7 +5510,6 @@ dependencies = [
  "libp2p",
  "parking_lot",
  "ream-beacon-api-types",
- "ream-beacon-chain",
  "ream-bls",
  "ream-consensus",
  "ream-execution-engine",
