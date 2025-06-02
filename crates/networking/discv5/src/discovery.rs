@@ -22,7 +22,7 @@ use libp2p::{
     },
 };
 use ream_consensus::constants::genesis_validators_root;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use crate::{
@@ -66,19 +66,9 @@ pub struct Discovery {
     discovery_queries: FuturesUnordered<Pin<Box<dyn Future<Output = QueryResult> + Send>>>,
     find_peer_active: bool,
     pub started: bool,
-    attestation_subnets: RwLock<AttestationSubnets>,
-    sync_committee_subnets: RwLock<SyncCommitteeSubnets>,
 }
 
 impl Discovery {
-    pub fn get_attestation_subnets(&self) -> &RwLock<AttestationSubnets> {
-        &self.attestation_subnets
-    }
-
-    pub fn get_sync_committee_subnets(&self) -> &RwLock<SyncCommitteeSubnets> {
-        &self.sync_committee_subnets
-    }
-
     pub fn update_subnet_enrs(
         &self,
         _attestation_subnets: &AttestationSubnets,
@@ -115,10 +105,6 @@ impl Discovery {
         let mut discv5 = Discv5::new(enr.clone(), enr_local, config.discv5_config.clone())
             .map_err(|err| anyhow!("Failed to create discv5: {err:?}"))?;
 
-        // Store the subnet bitfields
-        let attestation_subnets = RwLock::new(config.attestation_subnets.clone());
-        let sync_committee_subnets = RwLock::new(config.sync_committee_subnets.clone());
-
         // adding bootnodes to discv5
         for enr in config.bootnodes.clone() {
             // Skip adding ourselves to the routing table if we are a bootnode
@@ -148,8 +134,6 @@ impl Discovery {
             discovery_queries: FuturesUnordered::new(),
             find_peer_active: false,
             started: !config.disable_discovery,
-            attestation_subnets,
-            sync_committee_subnets,
         })
     }
 

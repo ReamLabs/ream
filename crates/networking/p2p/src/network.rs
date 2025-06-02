@@ -34,7 +34,10 @@ use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Sec
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
 use ream_consensus::constants::genesis_validators_root;
-use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
+use ream_discv5::{
+    discovery::{DiscoveredPeers, Discovery, QueryType},
+    subnet::{AttestationSubnets, SyncCommitteeSubnets},
+};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::network_spec;
 use tokio::{
@@ -212,11 +215,12 @@ impl Network {
             ),
             status: RwLock::new(status),
             data_dir: config.data_dir.clone(),
+            attestation_subnets: RwLock::new(AttestationSubnets::new()),
+            sync_committee_subnets: RwLock::new(SyncCommitteeSubnets::new()),
         });
-        let peer_id = PeerId::from_public_key(&PublicKey::from(local_key.public().clone()));
 
         let mut network = Self {
-            peer_id,
+            peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
             subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
             callbacks: HashMap::new(),
@@ -315,15 +319,28 @@ impl Network {
     /// The network worker will then route each event to the appropriate handler. The handlers are
     /// defined in `NetworkManagerService`.
     pub async fn start(
-        mut self,
+        self,
         manager_sender: UnboundedSender<ReamNetworkEvent>,
         mut p2p_receiver: UnboundedReceiver<P2PMessage>,
     ) {
         let mut status_interval = interval(Duration::from_secs(30));
+        use tokio::sync::mpsc;
+        let (enr_tx, mut enr_rx) = mpsc::unbounded_channel();
+        // Spawn the periodic ENR update trigger
+        tokio::spawn(async move {
+            let mut check_enr_interval =
+                tokio::time::interval(tokio::time::Duration::from_secs(12));
+            loop {
+                check_enr_interval.tick().await;
+                // Ignore send errors (main loop may have exited)
+                let _ = enr_tx.send(());
+            }
+        });
+        let mut network = self;
         loop {
             tokio::select! {
-                Some(event) = self.swarm.next() => {
-                    if let Some(event) = self.parse_swarm_event(event).await {
+                Some(event) = network.swarm.next() => {
+                    if let Some(event) = network.parse_swarm_event(event).await {
                         if let Err(err) = manager_sender.send(event) {
                             warn!("Failed to send event: {err:?}");
                         }
@@ -347,10 +364,11 @@ impl Network {
                             }
                         },
                         P2PMessage::Response(P2PResponse {peer_id, connection_id, stream_id, message}) => {
-                            self.swarm.behaviour_mut().req_resp.send_response(peer_id, connection_id, stream_id, message)
+                            network.swarm.behaviour_mut().req_resp.send_response(peer_id, connection_id, stream_id, message)
                         },
                     }
                 }
+<<<<<<< HEAD
                 Some(Ok(peer_id)) = self.peers_to_ping.next() => {
                     if self.network_state.peer_table.read().get(&peer_id).is_none() {
                         warn!("Peer {peer_id} is not connected, skipping ping");
@@ -362,7 +380,7 @@ impl Network {
                     self.swarm.behaviour_mut().req_resp.send_request(
                         peer_id,
                         request_id,
-                        RequestMessage::Ping(Ping::new(self.network_state.meta_data.read().seq_number)),
+                        RequestMessage::Ping(Ping::new(network.network_state.meta_data.read().seq_number)),
                     );
                     self.peers_to_ping.insert(peer_id);
                 }
@@ -402,38 +420,24 @@ impl Network {
                             .discover_peers(QueryType::Peers, 16);
                     }
                 }
+                Some(_) = enr_rx.recv() => {
+                    network.check_and_update_enr().await;
+                }
             }
         }
     }
     /// polling the libp2p swarm for network events.
     pub async fn polling_events(&mut self) {
-        let mut check_enr_interval = tokio::time::interval(tokio::time::Duration::from_secs(12));
-
-        loop {
-            tokio::select! {
-                Some(event) = self.swarm.next() => {
-                    if let Some(event) = self.parse_swarm_event(event).await {
-                        self.handle_network_event(event).await;
-                    }
-                },
-                _ = check_enr_interval.tick() => {
-                    // Check if any ENR updates are needed
-                    self.check_and_update_enr().await;
-                }
+        while let Some(event) = self.swarm.next().await {
+            if let Some(event) = self.parse_swarm_event(event).await {
+                self.handle_network_event(event).await;
             }
         }
     }
 
     async fn check_and_update_enr(&mut self) {
-        let attestation_subnets_lock = self.swarm.behaviour().discovery.get_attestation_subnets();
-        let sync_committee_subnets_lock = self
-            .swarm
-            .behaviour()
-            .discovery
-            .get_sync_committee_subnets();
-
-        let attestation_subnets = attestation_subnets_lock.read().await;
-        let mut sync_subnets = sync_committee_subnets_lock.write().await;
+        let attestation_subnets = self.network_state.attestation_subnets.read();
+        let mut sync_subnets = self.network_state.sync_committee_subnets.write();
 
         if sync_subnets.needs_enr_update() {
             if let Err(e) = self
