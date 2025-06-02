@@ -25,3 +25,11 @@ pub struct AttesterDuty {
     #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,
 }
+
+#[derive(Debug, Deserialize, Serialize, Encode, Decode)]
+pub struct SyncCommitteeDuty {
+    pub pubkey: PubKey,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub validator_index: u64,
+    pub validator_sync_committee_indices: Vec<u64>,
+}
