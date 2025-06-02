@@ -11,14 +11,13 @@ use tracing::debug;
 /// - Otherwise, it uses `data_dir` if set.
 /// - Lastly, if neither are set, it will use operating system default application local data
 ///   directory.
-#[allow(deprecated)]
 pub fn setup_data_dir(
     app_name: &str,
     data_dir: Option<PathBuf>,
     ephemeral: bool,
 ) -> io::Result<PathBuf> {
     if ephemeral {
-        return create_temp_dir(app_name, data_dir).map(TempDir::into_path);
+        return create_temp_dir(app_name, data_dir).map(TempDir::keep);
     }
     let data_dir = match data_dir {
         Some(data_dir) => data_dir,

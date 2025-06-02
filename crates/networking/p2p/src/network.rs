@@ -376,7 +376,7 @@ impl Network {
                         peer_info.update_last_seen();
                     }
                     None => {
-                        println!(
+                        warn!(
                             "Received disconnect from a peer not present in local db {:}",
                             peer_id
                         );
