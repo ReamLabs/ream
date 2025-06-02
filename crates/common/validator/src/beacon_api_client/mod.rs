@@ -1,6 +1,6 @@
 pub mod event;
 pub mod http_client;
-use std::{any, pin::Pin, time::Duration};
+use std::{pin::Pin, time::Duration};
 
 use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
