@@ -395,34 +395,16 @@ pub async fn process_sync_committee_subscriptions(
     let mut map = sync_committee_subscriptions.write().await;
     let mut subnets = sync_committee_subnets.write().await;
     for sub in subscriptions.iter() {
-        // Parse validator_index
-        let _validator_index: u64 = match sub.validator_index.parse() {
-            Ok(idx) => idx,
-            Err(_) => {
-                return Err(ApiError::BadRequest(format!(
-                    "Invalid validator_index: {}",
-                    sub.validator_index
-                )));
-            }
-        };
         // Parse until_epoch
-        let until_epoch: u64 = match sub.until_epoch.parse() {
-            Ok(epoch) => epoch,
-            Err(_) => {
-                return Err(ApiError::BadRequest(format!(
-                    "Invalid until_epoch: {}",
-                    sub.until_epoch
-                )));
-            }
-        };
+        let until_epoch: u64 = sub.until_epoch;
         // Parse and validate sync_committee_indices
-        for idx_str in &sub.sync_committee_indices {
-            let subnet_id: u8 = match idx_str.parse() {
-                Ok(id) if id < 4 => id,
+        for &idx in &sub.sync_committee_indices {
+            let subnet_id: u8 = match idx {
+                id if id < 4 => id as u8,
                 _ => {
                     return Err(ApiError::BadRequest(format!(
                         "Invalid sync_committee_index: {}",
-                        idx_str
+                        idx
                     )));
                 }
             };
@@ -468,9 +450,9 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let db = ReamDB::new(temp_dir.path().to_path_buf()).unwrap();
         let subscriptions = vec![SyncCommitteeSubscription {
-            validator_index: "1".to_string(),
-            sync_committee_indices: vec!["0".to_string(), "1".to_string()],
-            until_epoch: "10".to_string(),
+            validator_index: 1,
+            sync_committee_indices: vec![0, 1],
+            until_epoch: 10,
         }];
         let sync_committee_subscriptions = Arc::new(RwLock::new(HashMap::new()));
         let sync_committee_subnets = Arc::new(RwLock::new(SyncCommitteeSubnets::new()));
@@ -490,9 +472,9 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let db = ReamDB::new(temp_dir.path().to_path_buf()).unwrap();
         let subscriptions = vec![SyncCommitteeSubscription {
-            validator_index: "notanumber".to_string(),
-            sync_committee_indices: vec!["0".to_string()],
-            until_epoch: "10".to_string(),
+            validator_index: 1,
+            sync_committee_indices: vec![5],
+            until_epoch: 10,
         }];
         let sync_committee_subscriptions = Arc::new(RwLock::new(HashMap::new()));
         let sync_committee_subnets = Arc::new(RwLock::new(SyncCommitteeSubnets::new()));

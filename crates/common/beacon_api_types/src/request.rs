@@ -10,7 +10,7 @@ pub struct ValidatorsPostRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct SyncCommitteeSubscription {
-    pub validator_index: String,
-    pub sync_committee_indices: Vec<String>,
-    pub until_epoch: String,
+    pub validator_index: u64,
+    pub sync_committee_indices: Vec<u64>,
+    pub until_epoch: u64,
 }

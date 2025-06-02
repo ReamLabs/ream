@@ -67,7 +67,9 @@ pub fn spawn_sync_committee_expiry_task(
 }
 
 async fn get_current_epoch_from_db(db: &ReamDB) -> Result<u64, ()> {
-    use crate::{handlers::state::get_state_from_id, types::id::ID};
+    use ream_beacon_api_types::id::ID;
+
+    use crate::handlers::state::get_state_from_id;
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
