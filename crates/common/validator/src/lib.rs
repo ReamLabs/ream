@@ -11,6 +11,7 @@ pub mod contribution_and_proof;
 pub mod execution_requests;
 pub mod state;
 pub mod sync_committee;
+pub mod ticker;
 pub mod validator;
 
 pub fn hash_signature_prefix_to_u64(signature: BLSSignature) -> u64 {

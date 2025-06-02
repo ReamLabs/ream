@@ -5282,6 +5282,7 @@ dependencies = [
  "ream-bls",
  "ream-consensus",
  "ream-execution-engine",
+ "ream-executor",
  "ream-network-spec",
  "reqwest",
  "serde",
