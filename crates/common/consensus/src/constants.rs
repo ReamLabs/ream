@@ -34,6 +34,7 @@ pub const EXECUTION_PAYLOAD_INDEX: u64 = 9;
 pub const FAR_FUTURE_EPOCH: u64 = 18446744073709551615;
 pub const FIELD_ELEMENTS_PER_BLOB: usize = 4096;
 pub const FINALIZED_CHECKPOINT_INDEX: u64 = 20;
+pub const FINALIZED_ROOT_INDEX: u64 = 105;
 pub const GENESIS_SLOT: u64 = 0;
 pub const GENESIS_EPOCH: u64 = 0;
 pub const GENESIS_FORK_VERSION: B32 = fixed_bytes!("0x00000000");
@@ -87,6 +88,7 @@ pub const UINT64_MAX: u64 = u64::MAX;
 pub const UINT64_MAX_SQRT: u64 = 4294967295;
 pub const WEIGHT_DENOMINATOR: u64 = 64;
 pub const WHISTLEBLOWER_REWARD_QUOTIENT: u64 = 512;
+pub const MIN_SYNC_COMMITTEE_PARTICIPANTS: u64 = 1;
 
 // Withdrawal prefixes
 pub const BLS_WITHDRAWAL_PREFIX: &[u8] = &[0];

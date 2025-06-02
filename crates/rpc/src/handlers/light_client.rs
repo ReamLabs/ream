@@ -41,3 +41,12 @@ pub async fn get_light_client_bootstrap(
 
     Ok(HttpResponse::Ok().json(DataVersionedResponse::new(light_client_bootstrap)))
 }
+
+#[get("/beacon/light_client/updates")]
+pub async fn get_light_client_updates(
+    _db: Data<ReamDB>,
+    _start_period: String,
+    _count: String,
+) -> Result<impl Responder, ApiError> {
+    Ok(HttpResponse::NotImplemented().body("Not implemented"))
+}
