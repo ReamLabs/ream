@@ -1,10 +1,14 @@
 use actix_web::{HttpResponse, Responder, get, web::Data};
-use ream_beacon_api_types::{error::ApiError, responses::DataResponse, sync::SyncStatus};
-use ream_fork_choice::store::Store;
-use ream_storage::{
-    db::ReamDB,
-    tables::{Table},
+use ream_beacon_api_types::{
+    error::ApiError,
+    responses::{DataResponse, EXECUTION_OPTIMISTIC},
+    sync::SyncStatus,
 };
+use ream_beacon_chain::beacon_chain::BeaconChain;
+use ream_execution_engine::ExecutionEngine;
+use ream_fork_choice::store::Store;
+use ream_p2p::network_state::NetworkState;
+use ream_storage::{db::ReamDB, tables::Table};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
@@ -14,17 +18,15 @@ pub struct Syncing {
 }
 
 impl Syncing {
-    pub fn new(head_slot: u64, sync_distance: u64) -> Self {
+    pub fn new(head_slot: u64, sync_distance: u64, el_offline: bool, is_syncing: bool) -> Self {
         Self {
             sync_status: SyncStatus {
                 head_slot,
                 sync_distance,
+                is_syncing,
+                el_offline,
                 // TODO
-                is_syncing: true,
-                // TODO
-                is_optimistic: true,
-                // TODO
-                el_offline: true,
+                is_optimistic: EXECUTION_OPTIMISTIC,
             },
         }
     }
@@ -32,7 +34,10 @@ impl Syncing {
 
 /// Called by `eth/v1/node/syncing` to get the Node Version.
 #[get("/node/syncing")]
-pub async fn get_syncing_status(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
+pub async fn get_syncing_status(
+    db: Data<ReamDB>,
+    execution_engine: Data<ExecutionEngine>,
+) -> Result<impl Responder, ApiError> {
     let store = Store {
         db: db.get_ref().clone(),
     };
@@ -56,7 +61,24 @@ pub async fn get_syncing_status(db: Data<ReamDB>) -> Result<impl Responder, ApiE
         ApiError::InternalError
     })?;
 
-    let sync_distance = head_slot - current_slot;
+    let sync_distance = current_slot.saturating_sub(head_slot);
 
-    Ok(HttpResponse::Ok().json(DataResponse::new(Syncing::new(head_slot, sync_distance))))
+    // get el_offline
+    let el_offline = match execution_engine.eth_chain_id().await {
+        Ok(_) => false,
+        Err(err) => {
+            error!("Execution engine is offline or erroring, error: {err:?}");
+            true
+        }
+    };
+
+    // get is_syncing
+    let is_syncing = sync_distance > 1;
+
+    Ok(HttpResponse::Ok().json(DataResponse::new(Syncing::new(
+        head_slot,
+        sync_distance,
+        el_offline,
+        is_syncing,
+    ))))
 }

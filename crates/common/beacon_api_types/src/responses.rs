@@ -5,7 +5,7 @@ use ssz_derive::{Decode, Encode};
 
 pub const VERSION: &str = "electra";
 pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
-const EXECUTION_OPTIMISTIC: bool = false;
+pub const EXECUTION_OPTIMISTIC: bool = false;
 const FINALIZED: bool = false;
 
 /// A DataResponse data struct that can be used to wrap data type
