@@ -4909,6 +4909,7 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "ream-bls",
+ "ream-consensus",
  "reqwest",
  "serde",
  "serde_json",

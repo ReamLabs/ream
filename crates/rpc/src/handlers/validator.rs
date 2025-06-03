@@ -10,45 +10,17 @@ use ream_beacon_api_types::{
     query::{IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
     responses::BeaconResponse,
+    validator::{ValidatorBalance, ValidatorData},
 };
 use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tracing::error;
 
 use super::state::get_state_from_id;
 
 const MAX_VALIDATOR_COUNT: usize = 100;
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ValidatorData {
-    #[serde(with = "serde_utils::quoted_u64")]
-    index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    balance: u64,
-    status: String,
-    validator: Validator,
-}
-
-impl ValidatorData {
-    pub fn new(index: u64, balance: u64, status: String, validator: Validator) -> Self {
-        Self {
-            index,
-            balance,
-            status,
-            validator,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct ValidatorBalance {
-    #[serde(with = "serde_utils::quoted_u64")]
-    index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    balance: u64,
-}
 
 fn build_validator_balances(
     validators: &[(Validator, u64)],

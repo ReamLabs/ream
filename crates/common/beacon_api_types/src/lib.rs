@@ -5,3 +5,4 @@ pub mod query;
 pub mod request;
 pub mod responses;
 pub mod sync;
+pub mod validator;
