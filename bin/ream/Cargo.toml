@@ -35,6 +35,7 @@ ream-keystore.workspace = true
 ream-manager.workspace = true
 ream-network-spec.workspace = true 
 ream-node.workspace = true
+ream-operation-pool.workspace = true
 ream-p2p.workspace = true 
 ream-rpc.workspace = true
 ream-storage.workspace = true

@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use ream_consensus::electra::beacon_block::SignedBeaconBlock;
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice::{handlers::on_block, store::Store};
+use ream_operation_pool::OperationPool;
 use ream_storage::db::ReamDB;
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
@@ -11,9 +14,13 @@ pub struct BeaconChain {
 
 impl BeaconChain {
     /// Creates a new instance of `BeaconChain`.
-    pub fn new(db: ReamDB, execution_engine: Option<ExecutionEngine>) -> Self {
+    pub fn new(
+        db: ReamDB,
+        operation_pool: Arc<OperationPool>,
+        execution_engine: Option<ExecutionEngine>,
+    ) -> Self {
         Self {
-            store: Store::new(db),
+            store: Store::new(db, operation_pool),
             execution_engine,
         }
     }
