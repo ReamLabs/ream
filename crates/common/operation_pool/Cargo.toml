@@ -1,5 +1,5 @@
 [package]
-name = "ream-beacon-chain"
+name = "ream-operation-pool"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -10,12 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-anyhow.workspace = true
-tokio.workspace = true
+parking_lot.workspace = true
 
 # ream dependencies
 ream-consensus.workspace = true
-ream-execution-engine.workspace = true
-ream-fork-choice.workspace = true
-ream-operation-pool.workspace = true
-ream-storage.workspace = true

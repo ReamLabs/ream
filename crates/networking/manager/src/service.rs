@@ -16,6 +16,7 @@ use ream_discv5::{
 use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::network_spec;
+use ream_operation_pool::OperationPool;
 use ream_p2p::{
     channel::{P2PMessage, P2PResponse},
     config::NetworkConfig,
@@ -64,6 +65,7 @@ impl ManagerService {
         config: ManagerConfig,
         ream_db: ReamDB,
         ream_dir: PathBuf,
+        operation_pool: Arc<OperationPool>,
     ) -> anyhow::Result<Self> {
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
             config.socket_address,
@@ -159,7 +161,11 @@ impl ManagerService {
         } else {
             None
         };
-        let beacon_chain = Arc::new(BeaconChain::new(ream_db.clone(), execution_engine));
+        let beacon_chain = Arc::new(BeaconChain::new(
+            ream_db.clone(),
+            operation_pool,
+            execution_engine,
+        ));
         let block_range_syncer = BlockRangeSyncer::new(beacon_chain.clone(), p2p_sender.clone());
 
         Ok(Self {

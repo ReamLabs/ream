@@ -35,4 +35,5 @@ tree_hash_derive.workspace = true
 ream-bls.workspace = true
 ream-consensus.workspace = true
 ream-polynomial-commitments.workspace = true
+ream-operation-pool.workspace = true
 ream-storage.workspace = true

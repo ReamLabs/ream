@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ream_consensus::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     electra::beacon_block::SignedBeaconBlock,
@@ -7,6 +9,7 @@ use ream_fork_choice::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
     store::Store,
 };
+use ream_operation_pool::OperationPool;
 use ream_storage::db::ReamDB;
 use tokio::sync::Mutex;
 
@@ -18,9 +21,13 @@ pub struct BeaconChain {
 
 impl BeaconChain {
     /// Creates a new instance of `BeaconChain`.
-    pub fn new(db: ReamDB, execution_engine: Option<ExecutionEngine>) -> Self {
+    pub fn new(
+        db: ReamDB,
+        operation_pool: Arc<OperationPool>,
+        execution_engine: Option<ExecutionEngine>,
+    ) -> Self {
         Self {
-            store: Mutex::new(Store::new(db)),
+            store: Mutex::new(Store::new(db, operation_pool)),
             execution_engine,
         }
     }
