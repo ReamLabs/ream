@@ -5286,7 +5286,6 @@ dependencies = [
  "ream-bls",
  "ream-consensus",
  "ream-execution-engine",
- "ream-executor",
  "ream-keystore",
  "ream-network-spec",
  "reqwest",
