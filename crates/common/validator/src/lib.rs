@@ -12,6 +12,7 @@ pub mod execution_requests;
 pub mod state;
 pub mod sync_committee;
 pub mod validator;
+pub mod validator_statuses;
 
 pub fn hash_signature_prefix_to_u64(signature: BLSSignature) -> u64 {
     let mut hash_prefix_bytes = [0u8; 8];

@@ -1,5 +1,5 @@
 [package]
-name = "keystore"
+name = "ream-keystore"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true

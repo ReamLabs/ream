@@ -34,4 +34,6 @@ tree_hash_derive.workspace = true
 ream-bls.workspace = true
 ream-consensus.workspace = true
 ream-execution-engine.workspace = true
+ream-executor.workspace = true
+ream-keystore.workspace = true
 ream-network-spec.workspace = true

@@ -1,5 +1,6 @@
 pub mod beacon_node;
 pub mod constants;
+pub mod import_keystores;
 pub mod validator_node;
 
 use clap::{Parser, Subcommand};
@@ -77,6 +78,12 @@ mod tests {
             "http://localhost:5052",
             "--request-timeout",
             "3",
+            "--import-keystores",
+            "./assets/keystore_dir/",
+            "--suggested-fee-recipient",
+            "0x003Fb16e421E42084EBC54bcdc7F0fa344cF9316",
+            "--password",
+            "𝔱𝔢𝔰𝔱𝔭𝔞𝔰𝔰𝔴𝔬𝔯𝔡🔑", // Taken directly from EIP-2335's test keystores
         ]);
 
         match cli.command {
