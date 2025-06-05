@@ -5,6 +5,7 @@ use std::{
 
 use alloy_primitives::Address;
 use anyhow::anyhow;
+use ream_beacon_api_types::validator::ValidatorStatus;
 use ream_bls::{PrivateKey, PubKey};
 use ream_consensus::{electra::beacon_state::BeaconState, misc::compute_epoch_at_slot};
 use ream_executor::ReamExecutor;
@@ -14,7 +15,7 @@ use reqwest::Url;
 use tokio::time::{Instant, MissedTickBehavior, interval_at};
 use tracing::info;
 
-use crate::{beacon_api_client::BeaconApiClient, validator_statuses::ValidatorStatus};
+use crate::beacon_api_client::BeaconApiClient;
 
 pub fn check_if_validator_active(
     state: &BeaconState,
