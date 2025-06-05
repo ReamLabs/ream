@@ -12,6 +12,7 @@ use ream_keystore::keystore::Keystore;
 use ream_network_spec::networks::network_spec;
 use reqwest::Url;
 use tokio::time::{Instant, MissedTickBehavior, interval_at};
+use tracing::info;
 
 use crate::{beacon_api_client::BeaconApiClient, validator_statuses::ValidatorStatus};
 
@@ -117,10 +118,10 @@ impl ValidatorService {
     }
 
     pub fn on_slot(&self, slot: u64) {
-        println!("Current Slot: {}", slot);
+        info!("Current Slot: {}", slot);
     }
 
     pub fn on_epoch(&self, epoch: u64) {
-        println!("Current Epoch: {}", epoch);
+        info!("Current Epoch: {}", epoch);
     }
 }

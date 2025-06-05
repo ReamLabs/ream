@@ -1,7 +1,7 @@
 use std::{net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use alloy_primitives::Address;
-use clap::{ArgGroup, Parser};
+use clap::Parser;
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use url::Url;
 
@@ -11,11 +11,6 @@ use crate::cli::constants::{
 };
 
 #[derive(Debug, Parser)]
-#[clap(group(
-    ArgGroup::new("password_source")
-        .required(true)
-        .args(&["password", "password_file"]),
-))]
 pub struct ValidatorNodeConfig {
     /// Verbosity level
     #[arg(short, long, default_value_t = 3)]
@@ -50,11 +45,16 @@ pub struct ValidatorNodeConfig {
     )]
     pub suggested_fee_recipient: Address,
 
-    #[arg(long, help = "The plaintext password file to use for keystores")]
+    #[arg(
+        long,
+        group = "password_source",
+        help = "The plaintext password file to use for keystores"
+    )]
     pub password_file: Option<PathBuf>,
 
     #[arg(
         long,
+        group = "password_source",
         help = "The password to use for keystores. It's recommended to use password-file over this in order to prevent your keystore password from appearing in the shell history"
     )]
     pub password: Option<String>,
