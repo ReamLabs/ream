@@ -79,7 +79,7 @@ impl ValidatorService {
         })
     }
 
-    pub async fn start(&self) {
+    pub async fn start(self) {
         let genesis_info = self
             .beacon_api_client
             .get_genesis()
@@ -119,10 +119,10 @@ impl ValidatorService {
     }
 
     pub fn on_slot(&self, slot: u64) {
-        info!("Current Slot: {}", slot);
+        info!("Current Slot: {slot}");
     }
 
     pub fn on_epoch(&self, epoch: u64) {
-        info!("Current Epoch: {}", epoch);
+        info!("Current Epoch: {epoch}");
     }
 }
