@@ -1,6 +1,5 @@
 pub mod event;
 pub mod http_client;
-pub mod validator_query;
 use std::{pin::Pin, time::Duration};
 
 use event::{BeaconEvent, EventTopic};
@@ -11,16 +10,16 @@ use ream_beacon_api_types::{
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     error::ValidatorError,
     id::{ID, ValidatorID},
+    request::ValidatorsPostRequest,
     responses::{BeaconResponse, DataResponse, DutiesResponse, SyncCommitteeDutiesResponse},
     sync::SyncStatus,
-    validator::{ValidatorStatus, ValidatorData},
+    validator::{ValidatorData, ValidatorStatus},
 };
 use ream_consensus::{fork::Fork, genesis::Genesis};
 use ream_network_spec::networks::NetworkSpec;
 use reqwest::Url;
 use serde_json::json;
 use tracing::{error, info};
-use validator_query::ValidatorQuery;
 
 #[derive(Clone)]
 pub struct BeaconApiClient {
@@ -154,10 +153,11 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post(format!(
-                        "/eth/v1/beacon/states/{state_id}/validators"
-                    ))?
-                    .json(&ValidatorQuery{ ids: validator_ids, statuses: validator_statuses })
+                    .post(format!("/eth/v1/beacon/states/{state_id}/validators"))?
+                    .json(&ValidatorsPostRequest {
+                        ids: validator_ids,
+                        statuses: validator_statuses,
+                    })
                     .build()?,
             )
             .await?;

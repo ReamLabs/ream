@@ -1,7 +1,6 @@
 use ream_consensus::validator::Validator;
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ValidatorStatus {
@@ -18,7 +17,7 @@ pub enum ValidatorStatus {
     Withdrawal,
     WithdrawalPossible,
     WithdrawalDone,
-    Offline
+    Offline,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

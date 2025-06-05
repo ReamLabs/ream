@@ -2,6 +2,7 @@ use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 
 use super::id::ValidatorID;
+use crate::validator::ValidatorStatus;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EpochQuery {
@@ -40,7 +41,7 @@ pub struct BlobSidecarQuery {
 
 #[derive(Default, Debug, Deserialize)]
 pub struct StatusQuery {
-    pub status: Option<Vec<String>>,
+    pub status: Option<Vec<ValidatorStatus>>,
 }
 
 impl StatusQuery {
@@ -51,7 +52,7 @@ impl StatusQuery {
         }
     }
 
-    pub fn contains_status(&self, status: &String) -> bool {
+    pub fn contains_status(&self, status: &ValidatorStatus) -> bool {
         match &self.status {
             Some(statuses) => statuses.contains(status),
             None => true, // If no statuses specified, accept all

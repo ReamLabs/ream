@@ -98,7 +98,10 @@ pub async fn get_validator_from_state(
     )
 }
 
-pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<ValidatorStatus, ApiError> {
+pub async fn validator_status(
+    validator: &Validator,
+    db: &ReamDB,
+) -> Result<ValidatorStatus, ApiError> {
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
@@ -202,8 +205,8 @@ pub async fn post_validators_from_state(
     request: Json<ValidatorsPostRequest>,
     _status_query: Json<StatusQuery>,
 ) -> Result<impl Responder, ApiError> {
-    let ValidatorsPostRequest { ids, status, .. } = request.into_inner();
-    let status_query = StatusQuery { status };
+    let ValidatorsPostRequest { ids, statuses, .. } = request.into_inner();
+    let status_query = StatusQuery { status: statuses };
 
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
     let mut validators_data = Vec::new();
