@@ -86,14 +86,10 @@ impl EncryptedKeystore {
         match &self.crypto.cipher.params {
             CipherParams::Aes128Ctr { iv } => {
                 let key_param: [u8; 16] = derived_key[0..16].try_into().map_err(|err| {
-                    anyhow!(format!(
-                        "Failed to convert derived key into 16 byte array: {err:?}"
-                    ))
+                    anyhow!("Failed to convert derived key into 16 byte array: {err:?}")
                 })?;
                 let iv_param: &[u8; 16] = iv.as_slice().try_into().map_err(|err| {
-                    anyhow!(format!(
-                        "Failed to convert derived key into 16 byte array: {err:?}"
-                    ))
+                    anyhow!("Failed to convert derived key into 16 byte array: {err:?}")
                 })?;
                 aes128_ctr(private_key.inner.as_mut_slice(), key_param, iv_param);
             }

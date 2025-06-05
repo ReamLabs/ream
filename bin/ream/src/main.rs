@@ -119,13 +119,15 @@ pub async fn run_beacon_node(
 pub async fn run_validator_node(config: ValidatorNodeConfig, async_executor: ReamExecutor) {
     info!("starting up validator node...");
 
+    set_network_spec(config.network.clone());
+
     let password = process_password({
         if let Some(ref password_file) = config.password_file {
             load_password_file(password_file).expect("Failed to read password from password file")
         } else if let Some(password_str) = config.password {
             password_str
         } else {
-            panic!("Must set either password or password-file")
+            panic!("Expected either password or password-file to be set")
         }
     });
 
@@ -142,7 +144,6 @@ pub async fn run_validator_node(config: ValidatorNodeConfig, async_executor: Rea
     let validator_service = ValidatorService::new(
         key_stores,
         config.suggested_fee_recipient,
-        config.network,
         config.beacon_api_endpoint,
         config.request_timeout,
         async_executor,

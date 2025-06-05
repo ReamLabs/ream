@@ -6,7 +6,7 @@
 $ ream validator_node --help
 ```
 ```txt
-Usage: ream validator_node [OPTIONS] --import-keystores <IMPORT_KEYSTORES> --suggested-fee-recipient <SUGGESTED_FEE_RECIPIENT>
+Usage: ream validator_node [OPTIONS] --import-keystores <IMPORT_KEYSTORES> --suggested-fee-recipient <SUGGESTED_FEE_RECIPIENT> <--password <PASSWORD>|--password-file <PASSWORD_FILE>>
 
 Options:
   -v, --verbosity <VERBOSITY>

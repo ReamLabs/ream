@@ -1,7 +1,7 @@
 use std::{net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use alloy_primitives::Address;
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use url::Url;
 
@@ -11,6 +11,11 @@ use crate::cli::constants::{
 };
 
 #[derive(Debug, Parser)]
+#[clap(group(
+    ArgGroup::new("password_source")
+        .required(true)
+        .args(&["password", "password_file"]),
+))]
 pub struct ValidatorNodeConfig {
     /// Verbosity level
     #[arg(short, long, default_value_t = 3)]

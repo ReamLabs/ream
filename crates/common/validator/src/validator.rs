@@ -9,13 +9,9 @@ use ream_bls::{PrivateKey, PubKey};
 use ream_consensus::{electra::beacon_state::BeaconState, misc::compute_epoch_at_slot};
 use ream_executor::ReamExecutor;
 use ream_keystore::keystore::Keystore;
-use ream_network_spec::networks::NetworkSpec;
+use ream_network_spec::networks::network_spec;
 use reqwest::Url;
-use tokio::{
-    task::JoinHandle,
-    time::{Instant, MissedTickBehavior, interval_at},
-};
-use tracing::info;
+use tokio::time::{Instant, MissedTickBehavior, interval_at};
 
 use crate::{beacon_api_client::BeaconApiClient, validator_statuses::ValidatorStatus};
 
@@ -56,7 +52,6 @@ pub struct ValidatorService {
     pub beacon_api_client: Arc<BeaconApiClient>,
     pub validators: Vec<Arc<ValidatorInfo>>,
     pub suggested_fee_recipient: Arc<Address>,
-    pub network: Arc<NetworkSpec>,
     pub executor: ReamExecutor,
 }
 
@@ -64,7 +59,6 @@ impl ValidatorService {
     pub fn new(
         keystores: Vec<Keystore>,
         suggested_fee_recipient: Address,
-        network: Arc<NetworkSpec>,
         beacon_api_endpoint: Url,
         request_timeout: Duration,
         executor: ReamExecutor,
@@ -79,14 +73,19 @@ impl ValidatorService {
                 .map(|keystore| Arc::new(ValidatorInfo::from_keystore(keystore)))
                 .collect::<Vec<_>>(),
             suggested_fee_recipient: Arc::new(suggested_fee_recipient),
-            network,
             executor,
         })
     }
 
-    pub fn start_clock(&self, genesis_time: u64) -> JoinHandle<()> {
-        let seconds_per_slot = self.network.seconds_per_slot;
-        let genesis_instant = UNIX_EPOCH + Duration::from_secs(genesis_time);
+    pub async fn start(&self) {
+        let genesis_info = self
+            .beacon_api_client
+            .get_genesis()
+            .await
+            .expect("Could not retrieve genesis information");
+
+        let seconds_per_slot = network_spec().seconds_per_slot;
+        let genesis_instant = UNIX_EPOCH + Duration::from_secs(genesis_info.data.genesis_time);
         let elapsed = SystemTime::now()
             .duration_since(genesis_instant)
             .expect("System Time is before the genesis time");
@@ -101,44 +100,27 @@ impl ValidatorService {
         };
         interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
 
-        self.executor.spawn(async move {
-            Self::on_epoch(epoch);
-            Self::on_slot(slot);
-            loop {
-                interval.tick().await;
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    slot += 1;
+                    let current_epoch = compute_epoch_at_slot(slot);
 
-                slot += 1;
-                let current_epoch = compute_epoch_at_slot(slot);
-
-                if current_epoch != epoch {
-                    epoch = current_epoch;
-                    Self::on_epoch(epoch);
+                    if current_epoch != epoch {
+                        epoch = current_epoch;
+                        self.on_epoch(epoch);
+                    }
+                    self.on_slot(slot);
                 }
-                Self::on_slot(slot);
             }
-        })
-    }
-
-    pub async fn start(&self) {
-        let genesis_info = self
-            .beacon_api_client
-            .get_genesis()
-            .await
-            .expect("Could not retrieve genesis information");
-        let clock_handle = self.start_clock(genesis_info.data.genesis_time);
-
-        tokio::select! {
-            _ = clock_handle => {
-                info!("Clock Service stopped!");
-            },
         }
     }
 
-    pub fn on_slot(slot: u64) {
+    pub fn on_slot(&self, slot: u64) {
         println!("Current Slot: {}", slot);
     }
 
-    pub fn on_epoch(epoch: u64) {
+    pub fn on_epoch(&self, epoch: u64) {
         println!("Current Epoch: {}", epoch);
     }
 }

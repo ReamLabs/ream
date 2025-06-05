@@ -8,19 +8,14 @@ use ream_keystore::keystore::EncryptedKeystore;
 use unicode_normalization::UnicodeNormalization;
 
 pub fn load_password_file(path: &PathBuf) -> anyhow::Result<String> {
-    let contents = read_to_string(path)
-        .map_err(|err| anyhow!(format!("Unable to load password file: {err:?}")))?;
+    let contents =
+        read_to_string(path).map_err(|err| anyhow!("Unable to load password file: {err:?}"))?;
     Ok(contents.trim_end_matches(&['\n', '\r'][..]).to_string())
 }
 
 pub fn load_keystore_directory(config: &PathBuf) -> anyhow::Result<Vec<EncryptedKeystore>> {
     Ok(read_dir(config)
-        .map_err(|err| {
-            anyhow!(format!(
-                "Failed to read directory {}: {err:?}",
-                config.display()
-            ))
-        })?
+        .map_err(|err| anyhow!("Failed to read directory {}: {err:?}", config.display()))?
         .filter_map(|entry| {
             let path = entry.ok()?.path();
             if path.is_file()
@@ -41,7 +36,7 @@ pub fn process_password(password: String) -> String {
             let character = character_unprocessed as u32;
             !((character == 0x7F) || (character <= 0x1F) || (0x80..=0x9F).contains(&character))
         })
-        .collect::<String>()
+        .collect()
 }
 
 #[cfg(test)]
