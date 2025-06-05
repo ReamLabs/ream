@@ -10,7 +10,7 @@ use ream_beacon_api_types::{
     query::{IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
     responses::BeaconResponse,
-    validator::{ValidatorBalance, ValidatorData},
+    validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
@@ -98,7 +98,7 @@ pub async fn get_validator_from_state(
     )
 }
 
-pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<String, ApiError> {
+pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<ValidatorStatus, ApiError> {
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
@@ -112,9 +112,9 @@ pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<Stri
     let state = get_state_from_id(ID::Slot(highest_slot), db).await?;
 
     if validator.exit_epoch < state.get_current_epoch() {
-        Ok("offline".to_string())
+        Ok(ValidatorStatus::Offline)
     } else {
-        Ok("active_ongoing".to_string())
+        Ok(ValidatorStatus::ActiveOngoing)
     }
 }
 
