@@ -23,6 +23,7 @@ hashbrown.workspace = true
 tokio.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+unicode-normalization.workspace = true
 url.workspace = true
 
 # ream dependencies
