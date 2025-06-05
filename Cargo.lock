@@ -4925,6 +4925,7 @@ dependencies = [
  "ream-execution-engine",
  "ream-fork-choice",
  "ream-storage",
+ "tokio",
 ]
 
 [[package]]
@@ -5100,12 +5101,14 @@ dependencies = [
  "ream-discv5",
  "ream-execution-engine",
  "ream-executor",
+ "ream-fork-choice",
  "ream-network-spec",
  "ream-p2p",
  "ream-storage",
  "ream-syncer",
  "tokio",
  "tracing",
+ "tree_hash",
  "url",
 ]
 

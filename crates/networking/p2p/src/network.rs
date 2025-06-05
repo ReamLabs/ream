@@ -22,7 +22,7 @@ use libp2p::{
     },
     dns::Transport as DnsTransport,
     futures::StreamExt,
-    gossipsub::{Event as GossipsubEvent, IdentTopic as Topic, MessageAuthenticity},
+    gossipsub::{Event as GossipsubEvent, IdentTopic as Topic, Message, MessageAuthenticity},
     identify,
     multiaddr::Protocol,
     noise::Config as NoiseConfig,
@@ -37,16 +37,13 @@ use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
 use ream_executor::ReamExecutor;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tracing::{error, info, trace, warn};
-use tree_hash::TreeHash;
 use yamux::Config as YamuxConfig;
 
 use crate::{
     channel::{P2PCallbackResponse, P2PMessage, P2PRequest, P2PResponse},
     config::NetworkConfig,
     constants::{PING_INTERVAL_DURATION, TARGET_PEER_COUNT},
-    gossipsub::{
-        GossipsubBehaviour, message::GossipsubMessage, snappy::SnappyTransform, topics::GossipTopic,
-    },
+    gossipsub::{GossipsubBehaviour, snappy::SnappyTransform, topics::GossipTopic},
     network_state::NetworkState,
     peer::{CachedPeer, ConnectionState, Direction},
     req_resp::{
@@ -92,6 +89,9 @@ pub enum ReamNetworkEvent {
         stream_id: u64,
         connection_id: ConnectionId,
         message: RequestMessage,
+    },
+    GossipsubMessage {
+        message: Message,
     },
 }
 
@@ -395,10 +395,7 @@ impl Network {
                 ReamBehaviourEvent::ReqResp(message) => {
                     self.handle_request_response_event(message).await
                 }
-                ReamBehaviourEvent::Gossipsub(event) => {
-                    self.handle_gossipsub_event(event);
-                    None
-                }
+                ReamBehaviourEvent::Gossipsub(event) => self.handle_gossipsub_event(event),
                 ream_behavior_event => {
                     info!("Unhandled behaviour event: {ream_behavior_event:?}");
                     None
@@ -600,98 +597,23 @@ impl Network {
         }
     }
 
-    fn handle_gossipsub_event(&mut self, event: GossipsubEvent) {
+    fn handle_gossipsub_event(&mut self, event: GossipsubEvent) -> Option<ReamNetworkEvent> {
         info!("Gossipsub event: {:?}", event);
         match event {
             GossipsubEvent::Message {
                 propagation_source: _,
                 message_id: _,
                 message,
-            } => match GossipsubMessage::decode(&message.topic, &message.data) {
-                Ok(gossip_message) => match gossip_message {
-                    GossipsubMessage::BeaconBlock(signed_block) => {
-                        info!(
-                            "Beacon block received over gossipsub: slot: {}, root: {}",
-                            signed_block.message.slot,
-                            signed_block.message.block_root()
-                        );
-                    }
-                    GossipsubMessage::BeaconAttestation(attestation) => {
-                        info!(
-                            "Beacon Attestation received over gossipsub: root: {}",
-                            attestation.tree_hash_root()
-                        );
-                    }
-                    GossipsubMessage::BlsToExecutionChange(bls_to_execution_change) => {
-                        info!(
-                            "Bls To Execution Change received over gossipsub: root: {}",
-                            bls_to_execution_change.tree_hash_root()
-                        );
-                    }
-                    GossipsubMessage::AggregateAndProof(aggregate_and_proof) => {
-                        info!(
-                            "Aggregate And Proof received over gossipsub: root: {}",
-                            aggregate_and_proof.tree_hash_root()
-                        );
-                    }
-                    GossipsubMessage::SyncCommittee(sync_committee) => {
-                        info!(
-                            "Sync Committee received over gossipsub: root: {}",
-                            sync_committee.tree_hash_root()
-                        );
-                    }
-                    GossipsubMessage::SyncCommitteeContributionAndProof(
-                        sync_committee_contribution_and_proof,
-                    ) => {
-                        info!(
-                            "Sync Committee Contribution And Proof received over gossipsub: root: {}",
-                            sync_committee_contribution_and_proof.tree_hash_root()
-                        );
-                    }
-                    GossipsubMessage::AttesterSlashing(attester_slashing) => {
-                        info!(
-                            "Attester Slashing received over gossipsub: root: {}",
-                            attester_slashing.tree_hash_root()
-                        );
-                    }
-                    GossipsubMessage::ProposerSlashing(proposer_slashing) => {
-                        info!(
-                            "Proposer Slashing received over gossipsub: root: {}",
-                            proposer_slashing.tree_hash_root()
-                        );
-                    }
-                    GossipsubMessage::BlobSidecar(blob_sidecar) => {
-                        info!(
-                            "Blob Sidecar received over gossipsub: root: {}",
-                            blob_sidecar.tree_hash_root()
-                        );
-                    }
-                    GossipsubMessage::LightClientFinalityUpdate(light_client_finality_update) => {
-                        info!(
-                            "Light Client Finality Update received over gossipsub: root: {}",
-                            light_client_finality_update.tree_hash_root()
-                        );
-                    }
-                    GossipsubMessage::LightClientOptimisticUpdate(
-                        light_client_optimistic_update,
-                    ) => {
-                        info!(
-                            "Light Client Optimistic Update received over gossipsub: root: {}",
-                            light_client_optimistic_update.tree_hash_root()
-                        );
-                    }
-                },
-                Err(err) => {
-                    trace!("Failed to decode gossip message: {err:?}");
-                }
-            },
+            } => Some(ReamNetworkEvent::GossipsubMessage { message }),
             GossipsubEvent::Subscribed { peer_id, topic } => {
                 trace!("Peer {peer_id} subscribed to topic: {topic:?}");
+                None
             }
             GossipsubEvent::Unsubscribed { peer_id, topic } => {
                 trace!("Peer {peer_id} unsubscribed from topic: {topic:?}");
+                None
             }
-            _ => {}
+            _ => None,
         }
     }
 
