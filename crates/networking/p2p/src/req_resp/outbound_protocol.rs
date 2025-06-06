@@ -78,7 +78,7 @@ impl UpgradeInfo for OutboundReqRespProtocol {
     type InfoIter = Vec<Self::Info>;
 
     fn protocol_info(&self) -> Self::InfoIter {
-        SupportedProtocol::supported_protocols()
+        self.request.supported_protocols()
     }
 }
 

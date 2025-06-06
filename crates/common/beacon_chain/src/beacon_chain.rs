@@ -1,17 +1,24 @@
 use std::sync::Arc;
 
+use anyhow::bail;
 use ream_consensus::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
-    electra::beacon_block::SignedBeaconBlock,
+    constants::genesis_validators_root, electra::beacon_block::SignedBeaconBlock,
 };
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
     store::Store,
 };
+use ream_network_spec::networks::network_spec;
 use ream_operation_pool::OperationPool;
-use ream_storage::db::ReamDB;
+use ream_p2p::req_resp::messages::status::Status;
+use ream_storage::{
+    db::ReamDB,
+    tables::{Field, Table},
+};
 use tokio::sync::Mutex;
+use tracing::warn;
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
@@ -61,5 +68,48 @@ impl BeaconChain {
         let mut store = self.store.lock().await;
         on_tick(&mut store, time)?;
         Ok(())
+    }
+
+    pub async fn build_status_request(&self) -> anyhow::Result<Status> {
+        let Ok(finalized_checkpoint) = self
+            .store
+            .lock()
+            .await
+            .db
+            .finalized_checkpoint_provider()
+            .get()
+        else {
+            bail!("Failed to get finalized checkpoint");
+        };
+
+        let head_root = match self.store.lock().await.get_head() {
+            Ok(head) => head,
+            Err(err) => {
+                warn!("Failed to get head root: {err}, falling back to finalized root");
+                finalized_checkpoint.root
+            }
+        };
+
+        let head_slot = match self
+            .store
+            .lock()
+            .await
+            .db
+            .beacon_block_provider()
+            .get(head_root)
+        {
+            Ok(Some(block)) => block.message.slot,
+            err => {
+                bail!("Failed to get block for head root {head_root}: {err:?}");
+            }
+        };
+
+        Ok(Status {
+            fork_digest: network_spec().fork_digest(genesis_validators_root()),
+            finalized_root: finalized_checkpoint.root,
+            finalized_epoch: finalized_checkpoint.epoch,
+            head_root,
+            head_slot,
+        })
     }
 }

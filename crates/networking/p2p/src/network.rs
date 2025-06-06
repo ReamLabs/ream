@@ -33,9 +33,14 @@ use libp2p::{
 use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Secp256k1PublicKey};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
+use ream_consensus::constants::genesis_validators_root;
 use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
 use ream_executor::ReamExecutor;
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use ream_network_spec::networks::network_spec;
+use tokio::{
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    time::interval,
+};
 use tracing::{error, info, trace, warn};
 use yamux::Config as YamuxConfig;
 
@@ -51,7 +56,7 @@ use crate::{
         handler::{ReqRespMessageReceived, RespMessage},
         messages::{
             RequestMessage, ResponseMessage, beacon_blocks::BeaconBlocksByRangeV2Request,
-            meta_data::GetMetaDataV2, ping::Ping,
+            meta_data::GetMetaDataV2, ping::Ping, status::Status,
         },
     },
     utils::read_meta_data_from_disk,
@@ -79,11 +84,7 @@ pub enum ReamNetworkEvent {
     PeerConnectedIncoming(PeerId),
     PeerConnectedOutgoing(PeerId),
     PeerDisconnected(PeerId),
-    Status(PeerId),
-    Ping(PeerId),
-    MetaData(PeerId),
     DisconnectPeer(PeerId),
-    DiscoverPeers(usize),
     RequestMessage {
         peer_id: PeerId,
         stream_id: u64,
@@ -114,7 +115,11 @@ pub struct Network {
 }
 
 impl Network {
-    pub async fn init(executor: ReamExecutor, config: &NetworkConfig) -> anyhow::Result<Self> {
+    pub async fn init(
+        executor: ReamExecutor,
+        config: &NetworkConfig,
+        status: Status,
+    ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
         let discovery = {
@@ -198,6 +203,7 @@ impl Network {
                     GetMetaDataV2::default()
                 }),
             ),
+            status: RwLock::new(status),
             data_dir: config.data_dir.clone(),
         });
 
@@ -234,14 +240,11 @@ impl Network {
             }
         }
 
-        for bootnode in &config.discv5_config.bootnodes {
-            if let (Some(ipv4), Some(tcp_port)) = (bootnode.ip4(), bootnode.tcp4()) {
-                let mut multi_addr = Multiaddr::empty();
-                multi_addr.push(ipv4.into());
-                multi_addr.push(Protocol::Tcp(tcp_port));
-                self.swarm.dial(multi_addr).unwrap();
-            }
+        let mut bootnodes = HashMap::new();
+        for bootnode in config.discv5_config.bootnodes.clone() {
+            bootnodes.insert(bootnode, None);
         }
+        self.handle_discovered_peers(bootnodes);
 
         for topic in &config.gossipsub_config.topics {
             if self.subscribe_to_topic(*topic) {
@@ -295,6 +298,7 @@ impl Network {
         manager_sender: UnboundedSender<ReamNetworkEvent>,
         mut p2p_receiver: UnboundedReceiver<P2PMessage>,
     ) {
+        let mut status_interval = interval(Duration::from_secs(30));
         loop {
             tokio::select! {
                 Some(event) = self.swarm.next() => {
@@ -311,7 +315,15 @@ impl Network {
                                 let request_id = self.request_id();
                                 self.callbacks.insert(request_id, callback);
                                 self.swarm.behaviour_mut().req_resp.send_request(peer_id, request_id, RequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request::new(start, count)))
-                        },
+                            },
+                            P2PRequest::Status { peer_id, status } => {
+                                let request_id = self.request_id();
+                                self.swarm.behaviour_mut().req_resp.send_request(
+                                    peer_id,
+                                    request_id,
+                                    RequestMessage::Status(status),
+                                );
+                            }
                         },
                         P2PMessage::Response(P2PResponse {peer_id, connection_id, stream_id, message}) => {
                             self.swarm.behaviour_mut().req_resp.send_response(peer_id, connection_id, stream_id, message)
@@ -319,12 +331,36 @@ impl Network {
                     }
                 }
                 Some(Ok(peer_id)) = self.peers_to_ping.next() => {
+                    if self.network_state.peer_table.read().get(&peer_id).is_none() {
+                        warn!("Peer {peer_id} is not connected, skipping ping");
+                        continue;
+                    }
+
                     let request_id = self.request_id();
+
                     self.swarm.behaviour_mut().req_resp.send_request(
                         peer_id,
                         request_id,
                         RequestMessage::Ping(Ping::new(self.network_state.meta_data.read().seq_number)),
                     );
+                    self.peers_to_ping.insert(peer_id);
+                }
+                _ = status_interval.tick() => {
+                    let peers_to_ping_count = self.peers_to_ping.len();
+                    let mut counts: HashMap<ConnectionState, usize> = HashMap::new();
+                    for peer in self.network_state.peer_table.read().values() {
+                        *counts.entry(peer.state).or_insert(0) += 1;
+                    }
+                    info!(
+                        "Peer statuses: {counts:?}, Peers to ping: {peers_to_ping_count}, MetaData seq_number: {}",
+                        self.network_state.meta_data.read().seq_number
+                    );
+
+                    // remove all peers that have not been seen for more than 6 minutes
+                    let now = Instant::now();
+                    self.network_state.peer_table.write().retain(|_, peer| {
+                        now.duration_since(peer.last_seen) < Duration::from_secs(360)
+                    });
                 }
             }
         }
@@ -365,25 +401,28 @@ impl Network {
 
                 None
             }
+            // We only handle this for incoming connections
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
-                let (direction, address) = match &endpoint {
-                    ConnectedPoint::Dialer { address, .. } => {
-                        (Direction::Outbound, Some(address.clone()))
-                    }
-                    ConnectedPoint::Listener { send_back_addr, .. } => {
-                        (Direction::Inbound, Some(send_back_addr.clone()))
-                    }
-                };
+                if let ConnectedPoint::Listener { send_back_addr, .. } = &endpoint {
+                    self.network_state.upsert_peer(
+                        peer_id,
+                        Some(send_back_addr.clone()),
+                        ConnectionState::Connecting,
+                        Direction::Inbound,
+                        None,
+                    );
+                } else {
+                    // send status request to the peer
+                    let request_id = self.request_id();
+                    self.swarm.behaviour_mut().req_resp.send_request(
+                        peer_id,
+                        request_id,
+                        RequestMessage::Status(self.network_state.status.read().clone()),
+                    );
+                }
 
-                self.network_state.upsert_peer(
-                    peer_id,
-                    address,
-                    ConnectionState::Connected,
-                    direction,
-                    None,
-                );
                 None
             }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -409,19 +448,8 @@ impl Network {
     }
 
     fn handle_discovered_peers(&mut self, peers: HashMap<Enr, Option<Instant>>) {
-        info!("Discovered peers: {:?}", peers);
+        info!("Discovered peers: {peers:?}");
         for (enr, _) in peers {
-            if let Some(peer_id) = Network::peer_id_from_enr(&enr) {
-                self.network_state.upsert_peer(
-                    peer_id,
-                    None,
-                    ConnectionState::Connecting,
-                    Direction::Outbound,
-                    Some(enr.clone()),
-                );
-                self.peers_to_ping.insert(peer_id);
-            }
-
             let mut multiaddrs: Vec<Multiaddr> = Vec::new();
             if let Some(ip) = enr.ip4() {
                 if let Some(tcp) = enr.tcp4() {
@@ -437,10 +465,30 @@ impl Network {
                     multiaddrs.push(multiaddr);
                 }
             }
+
+            let mut successfully_dialed = false;
             for multiaddr in multiaddrs {
                 if let Err(err) = self.swarm.dial(multiaddr) {
                     warn!("Failed to dial peer: {err:?}");
+                } else {
+                    successfully_dialed = true;
                 }
+            }
+
+            if !successfully_dialed {
+                warn!("Failed to dial any multiaddr for peer: {:?}", enr);
+                continue;
+            }
+
+            if let Some(peer_id) = Network::peer_id_from_enr(&enr) {
+                self.network_state.upsert_peer(
+                    peer_id,
+                    None,
+                    ConnectionState::Connecting,
+                    Direction::Outbound,
+                    Some(enr.clone()),
+                );
+                self.peers_to_ping.insert_at(peer_id, Duration::ZERO);
             }
         }
     }
@@ -454,6 +502,15 @@ impl Network {
             connection_id,
             message,
         } = message;
+
+        // update last seen time for the peer
+        self.network_state
+            .peer_table
+            .write()
+            .entry(peer_id)
+            .and_modify(|cached_peer| {
+                cached_peer.update_last_seen();
+            });
 
         let message = match message {
             Ok(message) => message,
@@ -511,6 +568,24 @@ impl Network {
                     );
                     None
                 }
+                RequestMessage::Status(status) => {
+                    info!(
+                        ?peer_id,
+                        ?stream_id,
+                        ?connection_id,
+                        ?status,
+                        "Received Status request"
+                    );
+
+                    self.handle_status_req_resp_event(peer_id, status.clone());
+
+                    Some(ReamNetworkEvent::RequestMessage {
+                        peer_id,
+                        stream_id,
+                        connection_id,
+                        message: RequestMessage::Status(status),
+                    })
+                }
                 _ => Some(ReamNetworkEvent::RequestMessage {
                     peer_id,
                     stream_id,
@@ -540,7 +615,7 @@ impl Network {
                             });
                     }
                     ResponseMessage::Ping(ping) => {
-                        trace!(
+                        info!(
                             ?peer_id,
                             ?request_id,
                             "Received Ping response: seq_number: {}",
@@ -567,9 +642,18 @@ impl Network {
                                     ),
                                 );
                             }
-
-                            self.peers_to_ping.insert(peer_id);
                         }
+                    }
+                    ResponseMessage::Status(status) => {
+                        info!(
+                            ?peer_id,
+                            ?request_id,
+                            "Received Status response: fork_digest: {}, head_slot: {}",
+                            status.fork_digest,
+                            status.head_slot
+                        );
+
+                        self.handle_status_req_resp_event(peer_id, status);
                     }
                     _ => {}
                 }
@@ -593,6 +677,29 @@ impl Network {
                     }
                 }
                 None
+            }
+        }
+    }
+
+    fn handle_status_req_resp_event(&mut self, peer_id: PeerId, status: Status) {
+        if self.network_state.peer_table.read().get(&peer_id).is_some() {
+            // We only want to have peers on the same network as us
+            let fork_digest = network_spec().fork_digest(genesis_validators_root());
+            if status.fork_digest != fork_digest {
+                warn!(
+                    "Peer {peer_id} is not on the same network as us, removing from peer table, fork_digest: {}, our fork_digest: {fork_digest}",
+                    status.fork_digest,
+                );
+                self.network_state.peer_table.write().remove(&peer_id);
+            } else {
+                self.network_state
+                    .peer_table
+                    .write()
+                    .entry(peer_id)
+                    .and_modify(|cached_peer| {
+                        cached_peer.state = ConnectionState::Connected;
+                        cached_peer.status = Some(status);
+                    });
             }
         }
     }
@@ -674,7 +781,7 @@ mod tests {
     };
     use ream_executor::ReamExecutor;
     use ream_network_spec::networks::{DEV, set_network_spec};
-    use tokio::runtime::Runtime;
+    use tokio::{runtime::Runtime, time::sleep};
 
     use super::*;
     use crate::{
@@ -727,7 +834,15 @@ mod tests {
             data_dir: std::env::temp_dir().join("ream_network_test"),
         };
 
-        Network::init(executor, &config).await
+        Network::init(
+            executor,
+            &config,
+            Status {
+                fork_digest: network_spec().fork_digest(genesis_validators_root()),
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     #[test]
@@ -909,6 +1024,7 @@ mod tests {
         initialize_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
+
         let mut network_1 = tokio_runtime
             .block_on(create_network(
                 "127.0.0.1".parse().unwrap(),
@@ -931,26 +1047,37 @@ mod tests {
             ))
             .unwrap();
 
-        let address: Multiaddr = "/ip4/127.0.0.1/tcp/9300".parse().unwrap();
-        network_2.swarm.dial(address).unwrap();
-
         let peer_id_network_1 = network_1.peer_id();
         let peer_id_network_2 = network_2.peer_id();
 
         tokio_runtime.block_on(async {
-            let network_1_poll_task = async {
-                while let Some(event) = network_1.swarm.next().await {
-                    network_1.parse_swarm_event(event).await;
-                    if matches!(
-                        network_1.cached_peer(&peer_id_network_2),
-                        Some(peer) if peer.state == ConnectionState::Connected && peer.direction == Direction::Inbound
-                    ) {
-                        break;
-                    }
-                }
-            };
+            let peers = HashMap::from([(network_1.enr(), None)]);
+            network_2.handle_discovered_peers(peers);
 
-            let network_2_poll_task = async {
+            let network_1_poll_task =  async   {
+                while let Some(event) = network_1.swarm.next().await {
+                    if let Some(ReamNetworkEvent::RequestMessage {
+                        peer_id,
+                        stream_id,
+                        connection_id,
+                        message: RequestMessage::Status(status),
+                    }) = network_1.parse_swarm_event(event).await {
+                                network_1
+                                    .swarm
+                                    .behaviour_mut()
+                                    .req_resp
+                                    .send_response(
+                                        peer_id,
+                                        connection_id,
+                                        stream_id,
+                                        RespMessage::Response(Box::new(ResponseMessage::Status(
+                                            status,
+                                        ))),
+                                    );
+                    }
+                }};
+
+            let network_2_poll_task =  async   {
                 while let Some(event) = network_2.swarm.next().await {
                     network_2.parse_swarm_event(event).await;
                     if matches!(
@@ -962,13 +1089,14 @@ mod tests {
                 }
             };
 
-            tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                futures::future::join(network_1_poll_task, network_2_poll_task),
-            )
-            .await
-            .expect("peer-table not updated in time");
-        });
+
+            tokio::select! {
+                _ = network_1_poll_task => {}
+                _ = network_2_poll_task => {}
+                _ = sleep(Duration::from_secs(10)) => {}
+            }
+        }
+       );
 
         let peer_from_network_1 = network_1
             .cached_peer(&peer_id_network_2)

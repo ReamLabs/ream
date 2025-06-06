@@ -17,7 +17,7 @@ use libp2p::{
         },
     },
 };
-use tracing::{debug, error};
+use tracing::{error, info};
 
 use super::{
     error::ReqRespError,
@@ -107,6 +107,7 @@ pub struct OutboundOpenInfo {
     pub message: RequestMessage,
 }
 
+#[derive(Debug)]
 enum ConnectionState {
     Live,
     ShuttingDown,
@@ -464,6 +465,7 @@ impl ConnectionHandler for ReqRespConnectionHandler {
     }
 
     fn on_behaviour_event(&mut self, event: ConnectionRequest) {
+        info!("REQRESP: On behaviour event: {event:?}");
         match event {
             ConnectionRequest::Request {
                 request_id,
@@ -485,7 +487,7 @@ impl ConnectionHandler for ReqRespConnectionHandler {
             Self::OutboundOpenInfo,
         >,
     ) {
-        debug!("REQRESP: On connection event: {event:?}");
+        info!("REQRESP: On connection event: {event:?}");
         match event {
             ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound { protocol, info }) => {
                 self.on_fully_negotiated_inbound(protocol, info)

@@ -4916,9 +4916,12 @@ dependencies = [
  "ream-consensus",
  "ream-execution-engine",
  "ream-fork-choice",
+ "ream-network-spec",
  "ream-operation-pool",
+ "ream-p2p",
  "ream-storage",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
