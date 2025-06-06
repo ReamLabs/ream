@@ -11,11 +11,17 @@ use ream_beacon_api_types::{
     error::ValidatorError,
     id::{ID, ValidatorID},
     request::ValidatorsPostRequest,
-    responses::{BeaconResponse, DataResponse, DutiesResponse, SyncCommitteeDutiesResponse},
+    responses::{
+        BeaconResponse, DataResponse, DutiesResponse, ETH_CONSENSUS_VERSION_HEADER,
+        SyncCommitteeDutiesResponse, VERSION,
+    },
     sync::SyncStatus,
     validator::{ValidatorData, ValidatorStatus},
 };
-use ream_consensus::{fork::Fork, genesis::Genesis};
+use ream_consensus::{
+    attestation_data::AttestationData, fork::Fork, genesis::Genesis,
+    single_attestation::SingleAttestation,
+};
 use ream_network_spec::networks::NetworkSpec;
 use reqwest::Url;
 use serde_json::json;
@@ -295,5 +301,52 @@ impl BeaconApiClient {
         }
 
         Ok(response.json().await?)
+    }
+
+    pub async fn get_attestation_data(
+        &self,
+        slot: u64,
+        committee_index: u64,
+    ) -> Result<DataResponse<AttestationData>, ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .get(format!("/eth/v1/validator/attestation_data?slot={slot}&committee_index={committee_index}"))?
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(response.json().await?)
+    }
+
+    pub async fn submit_attestation(
+        &self,
+        single_attestation: Vec<SingleAttestation>,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post("/eth/v2/beacon/pool/attestations".to_string())?
+                    .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
+                    .json(&single_attestation)
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
     }
 }
