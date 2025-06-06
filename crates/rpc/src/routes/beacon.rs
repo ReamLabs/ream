@@ -15,7 +15,7 @@ use crate::handlers::{
     validator::{
         get_validator_balances_from_state, get_validator_from_state, get_validators_from_state,
         post_validator_balances_from_state, post_validator_identities_from_state,
-        post_validators_from_state,
+        post_validators_from_state, post_validator_liveness,
     },
 };
 
@@ -41,7 +41,8 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(post_validator_identities_from_state)
         .service(post_validators_from_state)
         .service(get_validator_balances_from_state)
-        .service(post_validator_balances_from_state);
+        .service(post_validator_balances_from_state)
+        .service(post_validator_liveness);
 }
 
 pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {
