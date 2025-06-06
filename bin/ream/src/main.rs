@@ -100,11 +100,17 @@ pub async fn run_beacon_node(
 
     let network_state = network_manager.network_state.clone();
 
+    let execution_engine = network_manager
+        .beacon_chain
+        .execution_engine
+        .clone()
+        .expect("Execution engine must be initialized for API server");
+
     let network_future = main_executor.spawn(async move {
         network_manager.start().await;
     });
 
-    let http_future = start_server(server_config, ream_db, network_state);
+    let http_future = start_server(server_config, ream_db, network_state, execution_engine);
 
     tokio::select! {
         _ = http_future => {

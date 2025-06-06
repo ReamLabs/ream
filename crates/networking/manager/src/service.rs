@@ -107,6 +107,7 @@ impl ManagerService {
         } else {
             None
         };
+
         let beacon_chain = Arc::new(BeaconChain::new(ream_db.clone(), execution_engine));
         let block_range_syncer = BlockRangeSyncer::new(beacon_chain.clone(), p2p_sender.clone());
 
