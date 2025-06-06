@@ -1,4 +1,7 @@
-use std::collections::{BTreeSet, HashSet};
+use std::{
+    collections::{BTreeSet, HashSet},
+    sync::Arc,
+};
 
 use actix_web::{
     HttpResponse, Responder, get,
@@ -25,6 +28,7 @@ use ream_consensus::{
 };
 use ream_fork_choice::store::Store;
 use ream_network_spec::networks::network_spec;
+use ream_operation_pool::OperationPool;
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
@@ -294,6 +298,7 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
     let mut blocks = HashMap::new();
     let store = Store {
         db: db.get_ref().clone(),
+        operation_pool: Arc::new(OperationPool::default()),
     };
 
     store

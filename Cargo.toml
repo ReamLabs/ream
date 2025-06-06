@@ -12,6 +12,7 @@ members = [
     "crates/common/light_client",
     "crates/common/network_spec",
     "crates/common/node",
+    "crates/common/operation_pool",
     "crates/common/polynomial_commitments",
     "crates/common/validator",
     "crates/crypto/bls",
@@ -114,6 +115,7 @@ ream-manager = { path = "crates/networking/manager" }
 ream-merkle = { path = "crates/crypto/merkle" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }
+ream-operation-pool = { path = "crates/common/operation_pool" }
 ream-p2p = { path = "crates/networking/p2p" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-rpc = { path = "crates/rpc" }

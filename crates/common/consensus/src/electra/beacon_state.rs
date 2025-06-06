@@ -1146,8 +1146,8 @@ impl BeaconState {
         self.genesis_time + slots_since_genesis * SECONDS_PER_SLOT
     }
 
-    pub fn process_voluntary_exit(
-        &mut self,
+    pub fn validate_voluntary_exit(
+        &self,
         signed_voluntary_exit: &SignedVoluntaryExit,
     ) -> anyhow::Result<()> {
         let voluntary_exit = &signed_voluntary_exit.message;
@@ -1207,8 +1207,17 @@ impl BeaconState {
             "BLS Signature verification failed!"
         );
 
+        Ok(())
+    }
+
+    pub fn process_voluntary_exit(
+        &mut self,
+        signed_voluntary_exit: &SignedVoluntaryExit,
+    ) -> anyhow::Result<()> {
+        self.validate_voluntary_exit(signed_voluntary_exit)?;
+
         // Initiate exit
-        self.initiate_validator_exit(validator_index as u64)?;
+        self.initiate_validator_exit(signed_voluntary_exit.message.validator_index)?;
 
         Ok(())
     }
