@@ -1,12 +1,13 @@
 use std::{
+    collections::{HashMap, hash_map::Entry},
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use alloy_primitives::Address;
 use anyhow::anyhow;
-use ream_beacon_api_types::validator::ValidatorStatus;
-use ream_bls::{PrivateKey, PubKey};
+use ream_beacon_api_types::id::{ID, ValidatorID};
+use ream_bls::PubKey;
 use ream_consensus::{electra::beacon_state::BeaconState, misc::compute_epoch_at_slot};
 use ream_executor::ReamExecutor;
 use ream_keystore::keystore::Keystore;
@@ -32,29 +33,13 @@ pub fn is_proposer(state: &BeaconState, validator_index: u64) -> anyhow::Result<
     Ok(state.get_beacon_proposer_index(None)? == validator_index)
 }
 
-pub struct ValidatorInfo {
-    pub private_key: PrivateKey,
-    pub public_key: PubKey,
-    pub validator_index: Option<u64>,
-    pub validator_status: Option<ValidatorStatus>,
-}
-
-impl ValidatorInfo {
-    pub fn from_keystore(keystore: Keystore) -> Self {
-        Self {
-            private_key: keystore.private_key,
-            public_key: keystore.public_key,
-            validator_index: None,
-            validator_status: None,
-        }
-    }
-}
-
 pub struct ValidatorService {
     pub beacon_api_client: Arc<BeaconApiClient>,
-    pub validators: Vec<Arc<ValidatorInfo>>,
+    pub validators: Vec<Arc<Keystore>>,
     pub suggested_fee_recipient: Arc<Address>,
     pub executor: ReamExecutor,
+    pub active_validator_count: usize,
+    pub pubkey_to_index: HashMap<PubKey, u64>,
 }
 
 impl ValidatorService {
@@ -65,21 +50,22 @@ impl ValidatorService {
         request_timeout: Duration,
         executor: ReamExecutor,
     ) -> anyhow::Result<Self> {
+        let validators = keystores.into_iter().map(Arc::new).collect::<Vec<_>>();
+
         Ok(Self {
             beacon_api_client: Arc::new(BeaconApiClient::new(
                 beacon_api_endpoint,
                 request_timeout,
             )?),
-            validators: keystores
-                .into_iter()
-                .map(|keystore| Arc::new(ValidatorInfo::from_keystore(keystore)))
-                .collect::<Vec<_>>(),
+            validators,
             suggested_fee_recipient: Arc::new(suggested_fee_recipient),
             executor,
+            active_validator_count: 0,
+            pubkey_to_index: HashMap::new(),
         })
     }
 
-    pub async fn start(self) {
+    pub async fn start(mut self) {
         let genesis_info = self
             .beacon_api_client
             .get_genesis()
@@ -110,7 +96,7 @@ impl ValidatorService {
 
                     if current_epoch != epoch {
                         epoch = current_epoch;
-                        self.on_epoch(epoch);
+                        self.on_epoch(epoch).await;
                     }
                     self.on_slot(slot);
                 }
@@ -122,7 +108,39 @@ impl ValidatorService {
         info!("Current Slot: {slot}");
     }
 
-    pub fn on_epoch(&self, epoch: u64) {
+    pub async fn fetch_validator_indicies(&mut self) {
+        if self.active_validator_count < self.validators.len() {
+            let validator_states = self
+                .beacon_api_client
+                .get_state_validator_list(
+                    ID::Head,
+                    Some(
+                        self.validators
+                            .iter()
+                            .map(|validator_info| {
+                                ValidatorID::Address(validator_info.public_key.clone())
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
+                    None,
+                )
+                .await;
+
+            if let Ok(validator_infos) = validator_states {
+                validator_infos.data.into_iter().for_each(|validator_data| {
+                    if let Entry::Occupied(mut entry) =
+                        self.pubkey_to_index.entry(validator_data.validator.pubkey)
+                    {
+                        entry.insert(validator_data.index);
+                        self.active_validator_count += 1;
+                    }
+                });
+            }
+        }
+    }
+
+    pub async fn on_epoch(&mut self, epoch: u64) {
+        self.fetch_validator_indicies().await;
         info!("Current Epoch: {epoch}");
     }
 }
