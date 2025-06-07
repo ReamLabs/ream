@@ -28,6 +28,8 @@ use reqwest::Url;
 use serde_json::json;
 use tracing::{error, info};
 
+use crate::aggregate_and_proof::SignedAggregateAndProof;
+
 #[derive(Clone)]
 pub struct BeaconApiClient {
     http_client: ClientWithBaseUrl,
@@ -361,6 +363,30 @@ impl BeaconApiClient {
                     .post("/eth/v2/beacon/pool/attestations".to_string())?
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
                     .json(&single_attestation)
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn publish_aggregate_and_proofs(
+        &self,
+        signed_aggregate_and_proofs: Vec<SignedAggregateAndProof>,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post("/eth/v2/validator/aggregate_and_proofs".to_string())?
+                    .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
+                    .json(&signed_aggregate_and_proofs)
                     .build()?,
             )
             .await?;
