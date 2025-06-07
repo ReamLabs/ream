@@ -7,6 +7,7 @@ use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
 use ream_beacon_api_types::{
+    committee::BeaconCommitteeSubscription,
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     error::ValidatorError,
     id::{ID, ValidatorID},
@@ -26,6 +27,8 @@ use ream_network_spec::networks::NetworkSpec;
 use reqwest::Url;
 use serde_json::json;
 use tracing::{error, info};
+
+use crate::aggregate_and_proof::SignedAggregateAndProof;
 
 #[derive(Clone)]
 pub struct BeaconApiClient {
@@ -303,6 +306,29 @@ impl BeaconApiClient {
         Ok(response.json().await?)
     }
 
+    pub async fn prepare_committe_subnet(
+        &self,
+        subscriptions: Vec<BeaconCommitteeSubscription>,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post("/eth/v1/validator/beacon_committee_subscriptions".to_string())?
+                    .json(&subscriptions)
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
+    }
+
     pub async fn get_attestation_data(
         &self,
         slot: u64,
@@ -337,6 +363,30 @@ impl BeaconApiClient {
                     .post("/eth/v2/beacon/pool/attestations".to_string())?
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
                     .json(&single_attestation)
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn publish_aggregate_and_proofs(
+        &self,
+        signed_aggregate_and_proofs: Vec<SignedAggregateAndProof>,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post("/eth/v2/validator/aggregate_and_proofs".to_string())?
+                    .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
+                    .json(&signed_aggregate_and_proofs)
                     .build()?,
             )
             .await?;
