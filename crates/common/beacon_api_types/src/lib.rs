@@ -1,3 +1,4 @@
+pub mod block;
 pub mod committee;
 pub mod duties;
 pub mod error;

@@ -1,12 +1,16 @@
 pub mod event;
 pub mod http_client;
-use std::{pin::Pin, time::Duration};
 
+use std::{pin::Pin, str::FromStr, time::Duration};
+
+use alloy_primitives::{B256, hex};
+use anyhow::anyhow;
 use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
 use ream_beacon_api_types::{
+    block::{FullBlockData, ProduceBlockData, ProduceBlockResponse},
     committee::BeaconCommitteeSubscription,
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     error::ValidatorError,
@@ -19,13 +23,15 @@ use ream_beacon_api_types::{
     sync::SyncStatus,
     validator::{ValidatorData, ValidatorStatus},
 };
+use ream_bls::BLSSignature;
 use ream_consensus::{
-    attestation_data::AttestationData, fork::Fork, genesis::Genesis,
-    single_attestation::SingleAttestation,
+    attestation_data::AttestationData, electra::blinded_beacon_block::BlindedBeaconBlock,
+    fork::Fork, genesis::Genesis, single_attestation::SingleAttestation,
 };
 use ream_network_spec::networks::NetworkSpec;
-use reqwest::Url;
+use reqwest::{Url, header::HeaderMap};
 use serde_json::json;
+use ssz::Decode;
 use tracing::{error, info};
 
 use crate::aggregate_and_proof::SignedAggregateAndProof;
@@ -399,4 +405,98 @@ impl BeaconApiClient {
 
         Ok(())
     }
+
+    pub async fn produce_block(
+        &self,
+        slot: u64,
+        randao_reveal: BLSSignature,
+        graffiti: Option<B256>,
+        skip_randao_verification: Option<bool>,
+        builder_boost_factor: Option<u64>,
+    ) -> anyhow::Result<ProduceBlockResponse, ValidatorError> {
+        let mut request_builder = self
+            .http_client
+            .get(format!("/eth/v3/validator/blocks/{slot}"))?
+            .query(&[("randao_reveal", hex::encode(randao_reveal.to_slice()))]);
+
+        if let Some(graffiti_value) = graffiti {
+            request_builder = request_builder.query(&[("graffiti", graffiti_value.to_string())]);
+        }
+
+        if let Some(skip_randao) = skip_randao_verification {
+            request_builder =
+                request_builder.query(&[("skip_randao_verification", skip_randao.to_string())]);
+        }
+
+        if let Some(boost_factor) = builder_boost_factor {
+            request_builder =
+                request_builder.query(&[("builder_boost_factor", boost_factor.to_string())]);
+        }
+
+        let response = self.http_client.execute(request_builder.build()?).await?;
+
+        let headers = response.headers();
+
+        let content_type = get_header_str(headers, "content-type")?;
+
+        let version = get_header_str(headers, "Eth-Consensus-Version")?.to_string();
+        let execution_payload_blinded =
+            parse_header::<bool>(headers, "Eth-Execution-Payload-Blinded")?;
+        let execution_payload_value = parse_header::<u64>(headers, "Eth-Execution-Payload-Value")?;
+        let consensus_block_value = parse_header::<u64>(headers, "Eth-Consensus-Block-Value")?;
+
+        if content_type.contains("application/octet-stream") {
+            Ok(ProduceBlockResponse {
+                version,
+                execution_payload_blinded,
+                execution_payload_value,
+                consensus_block_value,
+                data: if execution_payload_blinded {
+                    ProduceBlockData::Blinded(
+                        BlindedBeaconBlock::from_ssz_bytes(&response.bytes().await?).map_err(
+                            |err| anyhow!("Failed to decode SSZ bytes for blinded block: {err:?}"),
+                        )?,
+                    )
+                } else {
+                    ProduceBlockData::Full(
+                        FullBlockData::from_ssz_bytes(&response.bytes().await?).map_err(|err| {
+                            anyhow!("Failed to decode SSZ bytes for full block: {err:?}")
+                        })?,
+                    )
+                },
+            })
+        } else {
+            Ok(ProduceBlockResponse {
+                version,
+                execution_payload_blinded,
+                execution_payload_value,
+                consensus_block_value,
+                data: if execution_payload_blinded {
+                    ProduceBlockData::Blinded(response.json().await?)
+                } else {
+                    ProduceBlockData::Full(response.json().await?)
+                },
+            })
+        }
+    }
+}
+
+pub fn get_header_str<'a>(headers: &'a HeaderMap, key: &'a str) -> Result<&'a str, anyhow::Error> {
+    headers
+        .get(key)
+        .ok_or_else(|| anyhow!("Header '{key}' not found"))?
+        .to_str()
+        .map_err(|err| anyhow!("Failed to convert header '{key}' to string: {err}"))
+}
+
+pub fn parse_header<T: std::str::FromStr>(
+    headers: &HeaderMap,
+    key: &str,
+) -> Result<T, anyhow::Error>
+where
+    <T as FromStr>::Err: std::error::Error,
+{
+    get_header_str(headers, key)?
+        .parse::<T>()
+        .map_err(|err| anyhow!("Failed to parse header '{key}': {err}"))
 }
