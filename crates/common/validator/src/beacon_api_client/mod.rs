@@ -7,6 +7,7 @@ use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
 use ream_beacon_api_types::{
+    committee::BeaconCommitteeSubscription,
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     error::ValidatorError,
     id::{ID, ValidatorID},
@@ -301,6 +302,29 @@ impl BeaconApiClient {
         }
 
         Ok(response.json().await?)
+    }
+
+    pub async fn prepare_committe_subnet(
+        &self,
+        subscriptions: Vec<BeaconCommitteeSubscription>,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post("/eth/v1/validator/beacon_committee_subscriptions".to_string())?
+                    .json(&subscriptions)
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
     }
 
     pub async fn get_attestation_data(
