@@ -13,7 +13,7 @@ use ream_beacon_api_types::{
     query::{IdQuery, StatusQuery},
     request::{SyncCommitteeSubscription, ValidatorsPostRequest},
     responses::BeaconResponse,
-    validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
+    validator::ValidatorStatus,
 };
 use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
@@ -35,12 +35,12 @@ pub struct ValidatorData {
     index: u64,
     #[serde(with = "serde_utils::quoted_u64")]
     balance: u64,
-    status: String,
+    status: ValidatorStatus,
     validator: Validator,
 }
 
 impl ValidatorData {
-    pub fn new(index: u64, balance: u64, status: String, validator: Validator) -> Self {
+    pub fn new(index: u64, balance: u64, status: ValidatorStatus, validator: Validator) -> Self {
         Self {
             index,
             balance,
