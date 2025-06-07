@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use discv5::Enr;
 use libp2p::{Multiaddr, PeerId};
 use parking_lot::RwLock;
+use ream_discv5::subnet::{AttestationSubnets, SyncCommitteeSubnets};
 use ssz::Encode;
 
 use crate::{
@@ -16,6 +17,8 @@ pub struct NetworkState {
     pub peer_table: RwLock<HashMap<PeerId, CachedPeer>>,
     pub meta_data: RwLock<GetMetaDataV2>,
     pub data_dir: PathBuf,
+    pub attestation_subnets: RwLock<AttestationSubnets>,
+    pub sync_committee_subnets: RwLock<SyncCommitteeSubnets>,
 }
 
 impl NetworkState {
