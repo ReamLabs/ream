@@ -4,9 +4,13 @@ use actix_web::{
 };
 use alloy_primitives::B256;
 use ream_beacon_api_types::{error::ApiError, responses::DataVersionedResponse};
-use ream_light_client::bootstrap::LightClientBootstrap;
+use ream_consensus::constants::{
+    EPOCHS_PER_SYNC_COMMITTEE_PERIOD, MAX_REQUEST_LIGHT_CLIENT_UPDATES, SLOTS_PER_EPOCH,
+};
+use ream_light_client::{bootstrap::LightClientBootstrap, update::LightClientUpdate};
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::error;
+use tree_hash::TreeHash;
 
 #[get("/beacon/light_client/bootstrap/{block_root}")]
 pub async fn get_light_client_bootstrap(
@@ -44,9 +48,93 @@ pub async fn get_light_client_bootstrap(
 
 #[get("/beacon/light_client/updates")]
 pub async fn get_light_client_updates(
-    _db: Data<ReamDB>,
-    _start_period: String,
-    _count: String,
+    db: Data<ReamDB>,
+    start_period: String,
+    count: String,
 ) -> Result<impl Responder, ApiError> {
-    Ok(HttpResponse::NotImplemented().body("Not implemented"))
+    let start_period: u64 = start_period
+        .parse()
+        .map_err(|_| ApiError::BadRequest("Invalid start_period".into()))?;
+
+    let count: u64 = count
+        .parse()
+        .map_err(|_| ApiError::BadRequest("Invalid count".into()))?;
+
+    let count = std::cmp::min(count, MAX_REQUEST_LIGHT_CLIENT_UPDATES);
+
+    let mut updates = Vec::new();
+
+    for period in start_period..start_period + count {
+        let slot = period * EPOCHS_PER_SYNC_COMMITTEE_PERIOD * SLOTS_PER_EPOCH;
+        let block_root = db
+            .slot_index_provider()
+            .get(slot)
+            .map_err(|_| ApiError::InternalError)?
+            .ok_or(ApiError::NotFound(format!(
+                "Failed to find block_root for slot {slot:?}"
+            )))?;
+
+        let block = db
+            .beacon_block_provider()
+            .get(block_root)
+            .map_err(|_| ApiError::InternalError)?
+            .ok_or(ApiError::NotFound(format!(
+                "Failed to find beacon_block from {block_root:?}"
+            )))?;
+
+        let state = db
+            .beacon_state_provider()
+            .get(block_root)
+            .map_err(|_| ApiError::InternalError)?
+            .ok_or(ApiError::NotFound(format!(
+                "Failed to find beacon_state from {block_root:?}"
+            )))?;
+
+        let attested_block = db
+            .beacon_block_provider()
+            .get(block.message.parent_root)
+            .map_err(|_| ApiError::InternalError)?
+            .ok_or(ApiError::NotFound(format!(
+                "Failed to find beacon_block from {block_root:?}"
+            )))?;
+
+        let attested_block_root = attested_block.tree_hash_root();
+        let attested_state = db
+            .beacon_state_provider()
+            .get(attested_block_root)
+            .map_err(|_| ApiError::InternalError)?
+            .ok_or(ApiError::NotFound(format!(
+                "Failed to find beacon_state from {block_root:?}"
+            )))?;
+
+        let finalized_block = db
+            .beacon_block_provider()
+            .get(attested_state.finalized_checkpoint.root)
+            .map_err(|err| {
+                error!("Failed to get block by block_root, error: {err:?}");
+                ApiError::InternalError
+            })?
+            .ok_or_else(|| {
+                ApiError::NotFound(format!("Failed to find beacon block from {block_root:?}"))
+            })?;
+
+        let light_client_update = LightClientUpdate::new(
+            state,
+            block,
+            attested_state,
+            attested_block,
+            Some(finalized_block),
+        )
+        .map_err(|err| {
+            error!("Failed to create light client bootstrap, error: {err:?}");
+            ApiError::InternalError
+        })?;
+        updates.push(light_client_update);
+    }
+    if updates.is_empty() {
+        return Err(ApiError::NotFound(
+            "No light client updates found in requested range".into(),
+        ));
+    }
+    Ok(HttpResponse::Ok().json(DataVersionedResponse::new(updates)))
 }
