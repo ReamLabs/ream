@@ -6,7 +6,10 @@ use std::{
 
 use alloy_primitives::Address;
 use anyhow::anyhow;
-use ream_beacon_api_types::id::{ID, ValidatorID};
+use ream_beacon_api_types::{
+    duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
+    id::{ID, ValidatorID},
+};
 use ream_bls::PubKey;
 use ream_consensus::{electra::beacon_state::BeaconState, misc::compute_epoch_at_slot};
 use ream_executor::ReamExecutor;
@@ -14,7 +17,7 @@ use ream_keystore::keystore::Keystore;
 use ream_network_spec::networks::network_spec;
 use reqwest::Url;
 use tokio::time::{Instant, MissedTickBehavior, interval_at};
-use tracing::info;
+use tracing::{error, info, warn};
 
 use crate::beacon_api_client::BeaconApiClient;
 
@@ -40,6 +43,9 @@ pub struct ValidatorService {
     pub executor: ReamExecutor,
     pub active_validator_count: usize,
     pub pubkey_to_index: HashMap<PubKey, u64>,
+    pub proposer_duties: Vec<ProposerDuty>,
+    pub attester_duties: Vec<AttesterDuty>,
+    pub sync_committee_duties: Vec<SyncCommitteeDuty>,
 }
 
 impl ValidatorService {
@@ -62,6 +68,9 @@ impl ValidatorService {
             executor,
             active_validator_count: 0,
             pubkey_to_index: HashMap::new(),
+            proposer_duties: Vec::new(),
+            attester_duties: Vec::new(),
+            sync_committee_duties: Vec::new(),
         })
     }
 
@@ -135,6 +144,57 @@ impl ValidatorService {
                         self.active_validator_count += 1;
                     }
                 });
+            }
+        }
+    }
+
+    pub async fn fetch_duties(&mut self, epoch: u64) {
+        let validator_indices: Vec<u64> = self.pubkey_to_index.values().cloned().collect();
+
+        if validator_indices.is_empty() {
+            warn!("No active validators found, skipping duty fetch");
+            return;
+        }
+
+        match self.beacon_api_client.get_proposer_duties(epoch).await {
+            Ok(duties_response) => {
+                self.proposer_duties = duties_response
+                    .data
+                    .into_iter()
+                    .filter(|duty| validator_indices.contains(&duty.validator_index))
+                    .collect();
+            }
+            Err(err) => {
+                error!("Failed to fetch proposer duties for epoch {epoch}: {err:?}");
+            }
+        }
+
+        match self
+            .beacon_api_client
+            .get_attester_duties(epoch + 1, &validator_indices)
+            .await
+        {
+            Ok(duties_response) => {
+                self.attester_duties = duties_response.data;
+            }
+            Err(err) => {
+                error!(
+                    "Failed to fetch attester duties for epoch {}: {err:?}",
+                    epoch + 1
+                );
+            }
+        }
+
+        match self
+            .beacon_api_client
+            .get_sync_committee_duties(epoch, &validator_indices)
+            .await
+        {
+            Ok(duties_response) => {
+                self.sync_committee_duties = duties_response.data;
+            }
+            Err(err) => {
+                error!("Failed to fetch sync committee duties for epoch {epoch}: {err:?}",);
             }
         }
     }
