@@ -210,9 +210,7 @@ impl ManagerService {
                                             attestation.tree_hash_root()
                                         );
 
-                                        let is_from_block = false;
-
-                                        if let Err(err) = self.beacon_chain.process_attestation(*attestation, is_from_block).await {
+                                        if let Err(err) = self.beacon_chain.process_attestation(*attestation, true).await {
                                             error!("Failed to process gossipsub attestation: {err}");
                                         }
                                     }
@@ -299,8 +297,7 @@ impl ManagerService {
                                         continue;
                                     };
 
-                                    let store = self.beacon_chain.store.lock().await;
-                                    let head_root = match store.get_head() {
+                                    let head_root = match self.beacon_chain.store.lock().await.get_head() {
                                         Ok(head) => head,
                                         Err(err) => {
                                             warn!("Failed to get head root: {err}, falling back to finalized root");
