@@ -128,7 +128,7 @@ impl ValidatorService {
 
             if let Ok(validator_infos) = validator_states {
                 validator_infos.data.into_iter().for_each(|validator_data| {
-                    if let Entry::Occupied(mut entry) =
+                    if let Entry::Vacant(entry) =
                         self.pubkey_to_index.entry(validator_data.validator.pubkey)
                     {
                         entry.insert(validator_data.index);
