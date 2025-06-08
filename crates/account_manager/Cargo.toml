@@ -10,4 +10,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+hashsig.workspace = true
+rand.workspace = true
 tracing.workspace = true
