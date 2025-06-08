@@ -175,7 +175,7 @@ impl ManagerService {
 
     pub async fn start(self) {
         let mut manager_receiver = self.manager_receiver;
-        let mut interval = interval(Duration::from_secs(12));
+        let mut interval = interval(Duration::from_secs(network_spec().seconds_per_slot));
         loop {
             tokio::select! {
                 _ = interval.tick() => {
@@ -185,7 +185,7 @@ impl ManagerService {
                         .as_secs();
 
                     if let Err(err) = self.beacon_chain.process_tick(time).await {
-                        error!("Failed to process gossipsub tick: {}", err);
+                        error!("Failed to process gossipsub tick: {err}");
                     }
                 }
                 Some(event) = manager_receiver.recv() => {
@@ -201,7 +201,7 @@ impl ManagerService {
                                         );
 
                                         if let Err(err) = self.beacon_chain.process_block(*signed_block).await {
-                                            error!("Failed to process gossipsub beacon block: {}", err);
+                                            error!("Failed to process gossipsub beacon block: {err}");
                                         }
                                     }
                                     GossipsubMessage::BeaconAttestation(attestation) => {
@@ -213,7 +213,7 @@ impl ManagerService {
                                         let is_from_block = false;
 
                                         if let Err(err) = self.beacon_chain.process_attestation(*attestation, is_from_block).await {
-                                            error!("Failed to process gossipsub attestation: {}", err);
+                                            error!("Failed to process gossipsub attestation: {err}");
                                         }
                                     }
                                     GossipsubMessage::BlsToExecutionChange(bls_to_execution_change) => {
@@ -249,7 +249,7 @@ impl ManagerService {
                                         );
 
                                         if let Err(err) = self.beacon_chain.process_attester_slashing(*attester_slashing).await {
-                                            error!("Failed to process gossipsub attester slashing: {}", err);
+                                            error!("Failed to process gossipsub attester slashing: {err}");
                                         }
                                     }
                                     GossipsubMessage::ProposerSlashing(proposer_slashing) => {
