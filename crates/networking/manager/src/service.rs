@@ -1,4 +1,8 @@
-use std::{path::PathBuf, sync::Arc, time::{Duration, UNIX_EPOCH}};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::anyhow;
 use discv5::multiaddr::PeerId;
@@ -174,8 +178,13 @@ impl ManagerService {
         let mut interval = interval(Duration::from_secs(12));
         loop {
             tokio::select! {
-                time = interval.tick() => {
-                    if let Err(err) = self.beacon_chain.process_tick(time.duration_since(UNIX_EPOCH)).await {
+                _ = interval.tick() => {
+                    let time = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("correct time")
+                        .as_secs();
+
+                    if let Err(err) = self.beacon_chain.process_tick(time).await {
                         error!("Failed to process gossipsub tick: {}", err);
                     }
                 }
