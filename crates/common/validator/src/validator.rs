@@ -156,6 +156,14 @@ impl ValidatorService {
             return;
         }
 
+        self.fetch_proposer_duties(epoch, &validator_indices).await;
+        self.fetch_attester_duties(epoch + 1, &validator_indices)
+            .await;
+        self.fetch_sync_committee_duties(epoch, &validator_indices)
+            .await;
+    }
+
+    pub async fn fetch_proposer_duties(&mut self, epoch: u64, validator_indices: &[u64]) {
         match self.beacon_api_client.get_proposer_duties(epoch).await {
             Ok(duties_response) => {
                 self.proposer_duties = duties_response
@@ -168,33 +176,34 @@ impl ValidatorService {
                 error!("Failed to fetch proposer duties for epoch {epoch}: {err:?}");
             }
         }
+    }
 
+    pub async fn fetch_attester_duties(&mut self, epoch: u64, validator_indices: &[u64]) {
         match self
             .beacon_api_client
-            .get_attester_duties(epoch + 1, &validator_indices)
+            .get_attester_duties(epoch, validator_indices)
             .await
         {
             Ok(duties_response) => {
                 self.attester_duties = duties_response.data;
             }
             Err(err) => {
-                error!(
-                    "Failed to fetch attester duties for epoch {}: {err:?}",
-                    epoch + 1
-                );
+                error!("Failed to fetch attester duties for epoch {epoch}: {err:?}");
             }
         }
+    }
 
+    pub async fn fetch_sync_committee_duties(&mut self, epoch: u64, validator_indices: &[u64]) {
         match self
             .beacon_api_client
-            .get_sync_committee_duties(epoch, &validator_indices)
+            .get_sync_committee_duties(epoch, validator_indices)
             .await
         {
             Ok(duties_response) => {
                 self.sync_committee_duties = duties_response.data;
             }
             Err(err) => {
-                error!("Failed to fetch sync committee duties for epoch {epoch}: {err:?}",);
+                error!("Failed to fetch sync committee duties for epoch {epoch}: {err:?}");
             }
         }
     }
