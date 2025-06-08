@@ -105,11 +105,9 @@ pub fn scrypt(
         }));
     }
     for thread_handle in thread_handles {
-        let (thread_index, thread_result) = thread_handle.join().map_err(|err| {
-            anyhow!(format!(
-                "Failed to join thread while doin scrypt_romix: {err:?}"
-            ))
-        })?;
+        let (thread_index, thread_result) = thread_handle
+            .join()
+            .map_err(|err| anyhow!("Failed to join thread while doin scrypt_romix: {err:?}"))?;
         initial_key[thread_index * block_size_in_bytes..(thread_index + 1) * block_size_in_bytes]
             .copy_from_slice(&thread_result);
     }

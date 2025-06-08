@@ -15,6 +15,7 @@ discv5.workspace = true
 libp2p.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+tree_hash.workspace = true
 url.workspace = true
 
 # ream dependencies
@@ -23,6 +24,7 @@ ream-consensus.workspace = true
 ream-discv5.workspace = true
 ream-execution-engine.workspace = true
 ream-executor.workspace = true
+ream-fork-choice.workspace = true
 ream-network-spec.workspace = true
 ream-p2p.workspace = true
 ream-storage.workspace = true

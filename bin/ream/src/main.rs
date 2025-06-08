@@ -2,7 +2,10 @@ use std::env;
 
 use clap::Parser;
 use ream::cli::{
-    Cli, Commands, beacon_node::BeaconNodeConfig, validator_node::ValidatorNodeConfig,
+    Cli, Commands,
+    beacon_node::BeaconNodeConfig,
+    import_keystores::{load_keystore_directory, load_password_file, process_password},
+    validator_node::ValidatorNodeConfig,
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus::constants::set_genesis_validator_root;
@@ -14,7 +17,7 @@ use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
 };
-use ream_validator::beacon_api_client::BeaconApiClient;
+use ream_validator::validator::ValidatorService;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -41,7 +44,7 @@ async fn main() {
         Commands::BeaconNode(config) => {
             run_beacon_node(*config, async_executor, main_executor).await
         }
-        Commands::ValidatorNode(config) => run_validator_node(*config).await,
+        Commands::ValidatorNode(config) => run_validator_node(*config, async_executor).await,
     }
 }
 
@@ -113,9 +116,39 @@ pub async fn run_beacon_node(
     }
 }
 
-pub async fn run_validator_node(config: ValidatorNodeConfig) {
+pub async fn run_validator_node(config: ValidatorNodeConfig, async_executor: ReamExecutor) {
     info!("starting up validator node...");
 
-    BeaconApiClient::new(config.beacon_api_endpoint, config.request_timeout)
-        .expect("Failed to create beacon api client");
+    set_network_spec(config.network.clone());
+
+    let password = process_password({
+        if let Some(ref password_file) = config.password_file {
+            load_password_file(password_file).expect("Failed to read password from password file")
+        } else if let Some(password_str) = config.password {
+            password_str
+        } else {
+            panic!("Expected either password or password-file to be set")
+        }
+    });
+
+    let key_stores = load_keystore_directory(&config.import_keystores)
+        .expect("Failed to load keystore directory")
+        .into_iter()
+        .map(|encrypted_keystore| {
+            encrypted_keystore
+                .decrypt(password.as_bytes())
+                .expect("Could not decrypt a keystore")
+        })
+        .collect::<Vec<_>>();
+
+    let validator_service = ValidatorService::new(
+        key_stores,
+        config.suggested_fee_recipient,
+        config.beacon_api_endpoint,
+        config.request_timeout,
+        async_executor,
+    )
+    .expect("Failed to create validator service");
+
+    validator_service.start().await;
 }

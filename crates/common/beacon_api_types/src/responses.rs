@@ -145,6 +145,30 @@ impl<T: Serialize + Encode + Decode> DutiesResponse<T> {
     }
 }
 
+/// A SyncCommitteeDutiesResponse data struct that can be used to wrap duty data
+/// for sync committee duties
+/// used for json rpc responses
+///
+/// # Example
+/// {
+///     "execution_optimistic": false,
+///     "data": [T]
+/// }
+#[derive(Debug, Deserialize, Serialize, Encode, Decode)]
+pub struct SyncCommitteeDutiesResponse<T: Encode + Decode> {
+    pub execution_optimistic: bool,
+    pub data: Vec<T>,
+}
+
+impl<T: Serialize + Encode + Decode> SyncCommitteeDutiesResponse<T> {
+    pub fn new(data: Vec<T>) -> Self {
+        Self {
+            execution_optimistic: EXECUTION_OPTIMISTIC,
+            data,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct BeaconHeadResponse {
     pub root: B256,

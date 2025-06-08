@@ -50,6 +50,7 @@ version = "0.1.0"
 [workspace.dependencies]
 actix-web = "4.10.2"
 actix-web-lab = "0.24.1"
+aes = "0.8.4"
 alloy-consensus = { version = "1.0", default-features = false }
 alloy-primitives = { version = "1.1", features = ['serde'] }
 alloy-rlp = { version = "0.3.8", default-features = false, features = ["derive"] }
@@ -94,6 +95,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 tree_hash = "0.10"
 tree_hash_derive = "0.10"
+unicode-normalization = "0.1.24"
 url = "2.5"
 
 # ream dependencies
@@ -106,6 +108,7 @@ ream-discv5 = { path = "crates/networking/discv5" }
 ream-execution-engine = { path = "crates/common/execution_engine" }
 ream-executor = { path = "crates/common/executor" }
 ream-fork-choice = { path = "crates/common/fork_choice" }
+ream-keystore = { path = "crates/crypto/keystore" }
 ream-light-client = { path = "crates/common/light_client" }
 ream-manager = { path = "crates/networking/manager" }
 ream-merkle = { path = "crates/crypto/merkle" }

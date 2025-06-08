@@ -1,5 +1,5 @@
 [package]
-name = "keystore"
+name = "ream-keystore"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -10,6 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+aes.workspace = true
 alloy-primitives.workspace = true
 anyhow.workspace = true
 serde.workspace = true

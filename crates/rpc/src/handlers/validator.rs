@@ -10,45 +10,17 @@ use ream_beacon_api_types::{
     query::{IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
     responses::BeaconResponse,
+    validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tracing::error;
 
 use super::state::get_state_from_id;
 
 const MAX_VALIDATOR_COUNT: usize = 100;
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ValidatorData {
-    #[serde(with = "serde_utils::quoted_u64")]
-    index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    balance: u64,
-    status: String,
-    validator: Validator,
-}
-
-impl ValidatorData {
-    pub fn new(index: u64, balance: u64, status: String, validator: Validator) -> Self {
-        Self {
-            index,
-            balance,
-            status,
-            validator,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct ValidatorBalance {
-    #[serde(with = "serde_utils::quoted_u64")]
-    index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    balance: u64,
-}
 
 fn build_validator_balances(
     validators: &[(Validator, u64)],
@@ -126,7 +98,10 @@ pub async fn get_validator_from_state(
     )
 }
 
-pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<String, ApiError> {
+pub async fn validator_status(
+    validator: &Validator,
+    db: &ReamDB,
+) -> Result<ValidatorStatus, ApiError> {
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
@@ -140,9 +115,9 @@ pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<Stri
     let state = get_state_from_id(ID::Slot(highest_slot), db).await?;
 
     if validator.exit_epoch < state.get_current_epoch() {
-        Ok("offline".to_string())
+        Ok(ValidatorStatus::Offline)
     } else {
-        Ok("active_ongoing".to_string())
+        Ok(ValidatorStatus::ActiveOngoing)
     }
 }
 
@@ -230,8 +205,8 @@ pub async fn post_validators_from_state(
     request: Json<ValidatorsPostRequest>,
     _status_query: Json<StatusQuery>,
 ) -> Result<impl Responder, ApiError> {
-    let ValidatorsPostRequest { ids, status, .. } = request.into_inner();
-    let status_query = StatusQuery { status };
+    let ValidatorsPostRequest { ids, statuses, .. } = request.into_inner();
+    let status_query = StatusQuery { status: statuses };
 
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
     let mut validators_data = Vec::new();

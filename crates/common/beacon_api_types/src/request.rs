@@ -1,9 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::id::ValidatorID;
+use crate::{id::ValidatorID, validator::ValidatorStatus};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ValidatorsPostRequest {
     pub ids: Option<Vec<ValidatorID>>,
-    pub status: Option<Vec<String>>,
+    pub statuses: Option<Vec<ValidatorStatus>>,
 }

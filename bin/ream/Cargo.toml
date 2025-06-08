@@ -15,12 +15,15 @@ name = "ream"
 path = "src/main.rs"
 
 [dependencies]
+alloy-primitives.workspace = true
+anyhow.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 discv5.workspace = true
 hashbrown.workspace = true
 tokio.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+unicode-normalization.workspace = true
 url.workspace = true
 
 # ream dependencies
@@ -28,6 +31,7 @@ ream-checkpoint-sync.workspace = true
 ream-consensus.workspace = true
 ream-discv5.workspace = true
 ream-executor.workspace = true 
+ream-keystore.workspace = true
 ream-manager.workspace = true
 ream-network-spec.workspace = true 
 ream-node.workspace = true

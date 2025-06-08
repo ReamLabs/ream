@@ -1,11 +1,13 @@
-use std::{net::IpAddr, time::Duration};
+use std::{net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
+use alloy_primitives::Address;
 use clap::Parser;
+use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use url::Url;
 
 use crate::cli::constants::{
     DEFAULT_BEACON_API_ENDPOINT, DEFAULT_HTTP_ADDRESS, DEFAULT_KEY_MANAGER_HTTP_PORT,
-    DEFAULT_REQUEST_TIMEOUT,
+    DEFAULT_NETWORK, DEFAULT_REQUEST_TIMEOUT,
 };
 
 #[derive(Debug, Parser)]
@@ -25,6 +27,37 @@ pub struct ValidatorNodeConfig {
 
     #[arg(long, help = "Set HTTP Port of the key manager server", default_value_t = DEFAULT_KEY_MANAGER_HTTP_PORT)]
     pub key_manager_http_port: u16,
+
+    #[arg(
+        long,
+        help = "Choose mainnet, holesky, sepolia, hoodi, dev or provide a path to a YAML config file",
+        default_value = DEFAULT_NETWORK,
+        value_parser = network_parser
+    )]
+    pub network: Arc<NetworkSpec>,
+
+    #[arg(long, help = "The directory for importing keystores")]
+    pub import_keystores: PathBuf,
+
+    #[arg(
+        long,
+        help = "The suggested fee recipient address where staking rewards would go to"
+    )]
+    pub suggested_fee_recipient: Address,
+
+    #[arg(
+        long,
+        group = "password_source",
+        help = "The plaintext password file to use for keystores"
+    )]
+    pub password_file: Option<PathBuf>,
+
+    #[arg(
+        long,
+        group = "password_source",
+        help = "The password to use for keystores. It's recommended to use password-file over this in order to prevent your keystore password from appearing in the shell history"
+    )]
+    pub password: Option<String>,
 }
 
 pub fn duration_parser(duration_string: &str) -> Result<Duration, String> {

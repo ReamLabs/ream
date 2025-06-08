@@ -18,6 +18,12 @@ pub struct AggregateAndProof {
     pub selection_proof: BLSSignature,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct SignedAggregateAndProof {
+    pub message: AggregateAndProof,
+    pub signature: BLSSignature,
+}
+
 pub fn get_aggregate_and_proof(
     state: &BeaconState,
     aggregator_index: u64,
