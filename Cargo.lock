@@ -4869,6 +4869,7 @@ dependencies = [
  "clap",
  "discv5",
  "hashbrown 0.15.3",
+ "ream-account-manager",
  "ream-checkpoint-sync",
  "ream-consensus",
  "ream-discv5",
@@ -4886,6 +4887,13 @@ dependencies = [
  "tracing-subscriber",
  "unicode-normalization",
  "url",
+]
+
+[[package]]
+name = "ream-account-manager"
+version = "0.1.0"
+dependencies = [
+ "tracing",
 ]
 
 [[package]]
