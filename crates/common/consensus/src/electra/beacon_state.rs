@@ -184,11 +184,9 @@ pub struct BeaconState {
     pub current_epoch_participation: VariableList<u8, U1099511627776>,
 
     #[cfg(feature="zkvm")]
-    #[serde(with = "quoted_u8_var_list")]
     pub previous_epoch_participation: VariableList<u8, U536870912>,
 
     #[cfg(feature="zkvm")]
-    #[serde(with = "quoted_u8_var_list")]
     pub current_epoch_participation: VariableList<u8, U536870912>,
 
 
@@ -204,7 +202,6 @@ pub struct BeaconState {
     pub inactivity_scores: VariableList<u64, U1099511627776>,
 
     #[cfg(feature="zkvm")]
-    #[serde(with = "quoted_u64_var_list")]
     pub inactivity_scores: VariableList<u64, U536870912>,
 
     // Sync
