@@ -168,7 +168,8 @@ pub async fn run_account_manager(config: AccountManagerConfig) {
         config.lifetime, config.chunk_size
     );
 
-    ream_account_manager::generate_keys();
+    let seed_phrase = config.get_seed_phrase();
+    ream_account_manager::generate_keys(&seed_phrase);
 
     info!("Account manager completed successfully");
     process::exit(0);

@@ -1,4 +1,7 @@
+use bip32::Mnemonic;
 use clap::Parser;
+use rand::rngs::OsRng;
+use tracing::warn;
 
 #[derive(Debug, Parser)]
 pub struct AccountManagerConfig {
@@ -13,6 +16,10 @@ pub struct AccountManagerConfig {
     /// Chunk size for messages
     #[arg(short, long, default_value_t = 5)]
     pub chunk_size: u64,
+
+    /// Seed phrase for key generation
+    #[arg(short, long)]
+    pub seed_phrase: Option<String>,
 }
 
 impl Default for AccountManagerConfig {
@@ -21,6 +28,7 @@ impl Default for AccountManagerConfig {
             verbosity: 3,
             lifetime: 28,
             chunk_size: 5,
+            seed_phrase: None,
         }
     }
 }
@@ -42,5 +50,19 @@ impl AccountManagerConfig {
         }
 
         Ok(())
+    }
+
+    pub fn get_seed_phrase(&self) -> String {
+        if let Some(phrase) = &self.seed_phrase {
+            phrase.clone()
+        } else {
+            let mnemonic = Mnemonic::random(OsRng, Default::default());
+            let phrase = mnemonic.phrase().to_string();
+            warn!("⚠️  IMPORTANT: Generated new seed phrase: {}", phrase);
+            warn!(
+                "⚠️  Please save this seed phrase somewhere safe. You will need it to recover your keys."
+            );
+            phrase
+        }
     }
 }
