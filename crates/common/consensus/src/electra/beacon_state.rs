@@ -25,6 +25,9 @@ use ssz_types::{
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
+#[cfg(feature="zkvm")]
+use ssz_types::typenum::U536870912;
+
 use super::{
     beacon_block::{BeaconBlock, SignedBeaconBlock},
     beacon_block_body::BeaconBlockBody,
@@ -127,6 +130,8 @@ pub mod quoted_u8_var_list {
     }
 }
 
+// Using U536870912 (2^29) because risc0 guest fails for U4294967296 (2^32) and above,
+// and U2147483648 (2^31) and U1073741824 (2^30) fails to merkleize
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BeaconState {
     // Versioning
@@ -151,9 +156,16 @@ pub struct BeaconState {
     pub eth1_deposit_index: u64,
 
     // Registry
+    #[cfg(not(feature="zkvm"))]
     pub validators: VariableList<Validator, U1099511627776>,
+    #[cfg(not(feature="zkvm"))]
     #[serde(with = "quoted_u64_var_list")]
     pub balances: VariableList<u64, U1099511627776>,
+
+    #[cfg(feature="zkvm")]
+    pub validators: VariableList<Validator, U536870912>,
+    #[cfg(feature="zkvm")]
+    pub balances: VariableList<u64, U536870912>,
 
     // Randomness
     pub randao_mixes: FixedVector<B256, U65536>,
@@ -163,10 +175,22 @@ pub struct BeaconState {
     pub slashings: FixedVector<u64, U8192>,
 
     // Participation
+    #[cfg(not(feature="zkvm"))]
     #[serde(with = "quoted_u8_var_list")]
     pub previous_epoch_participation: VariableList<u8, U1099511627776>,
+
+    #[cfg(not(feature="zkvm"))]
     #[serde(with = "quoted_u8_var_list")]
     pub current_epoch_participation: VariableList<u8, U1099511627776>,
+
+    #[cfg(feature="zkvm")]
+    #[serde(with = "quoted_u8_var_list")]
+    pub previous_epoch_participation: VariableList<u8, U536870912>,
+
+    #[cfg(feature="zkvm")]
+    #[serde(with = "quoted_u8_var_list")]
+    pub current_epoch_participation: VariableList<u8, U536870912>,
+
 
     // Finality
     pub justification_bits: BitVector<U4>,
@@ -175,8 +199,13 @@ pub struct BeaconState {
     pub finalized_checkpoint: Checkpoint,
 
     // Inactivity
+    #[cfg(not(feature="zkvm"))]
     #[serde(with = "quoted_u64_var_list")]
     pub inactivity_scores: VariableList<u64, U1099511627776>,
+
+    #[cfg(feature="zkvm")]
+    #[serde(with = "quoted_u64_var_list")]
+    pub inactivity_scores: VariableList<u64, U536870912>,
 
     // Sync
     pub current_sync_committee: Arc<SyncCommittee>,
