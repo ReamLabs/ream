@@ -155,7 +155,7 @@ pub async fn run_validator_node(config: ValidatorNodeConfig, async_executor: Rea
     validator_service.start().await;
 }
 
-pub async fn run_account_manager(config: AccountManagerConfig) {
+pub async fn run_account_manager(mut config: AccountManagerConfig) {
     info!("starting up account manager...");
 
     // Validate the configuration

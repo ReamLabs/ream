@@ -38,15 +38,17 @@ impl AccountManagerConfig {
         Self::parse()
     }
 
-    pub fn validate(&self) -> anyhow::Result<()> {
+    pub fn validate(&mut self) -> anyhow::Result<()> {
         // Validate chunk size
         if self.chunk_size < 4 {
-            anyhow::bail!("Chunk size must be at least 4");
+            warn!("Chunk size must be at least 4, resetting to 4");
+            self.chunk_size = 4;
         }
 
         // Validate lifetime
         if self.lifetime < 18 {
-            anyhow::bail!("Lifetime must be at least 18");
+            warn!("Lifetime must be at least 18, resetting to 18");
+            self.lifetime = 18;
         }
 
         Ok(())
