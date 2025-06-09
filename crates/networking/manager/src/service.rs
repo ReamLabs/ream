@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -8,7 +9,10 @@ use anyhow::anyhow;
 use discv5::multiaddr::PeerId;
 use libp2p::swarm::ConnectionId;
 use ream_beacon_chain::beacon_chain::BeaconChain;
-use ream_consensus::{blob_sidecar::BlobIdentifier, constants::genesis_validators_root};
+use ream_consensus::{
+    blob_sidecar::BlobIdentifier, constants::genesis_validators_root,
+    electra::beacon_state::BeaconState,
+};
 use ream_discv5::{
     config::DiscoveryConfig,
     subnet::{AttestationSubnets, SyncCommitteeSubnets},
@@ -39,7 +43,11 @@ use ream_p2p::{
 };
 use ream_storage::{db::ReamDB, tables::Table};
 use ream_syncer::block_range::BlockRangeSyncer;
-use tokio::{sync::mpsc, time::interval};
+use tokio::{
+    sync::{RwLock, mpsc},
+    time::interval,
+    task::JoinHandle,
+};
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 
@@ -52,6 +60,8 @@ pub struct ManagerService {
     pub network_state: Arc<NetworkState>,
     pub block_range_syncer: BlockRangeSyncer,
     pub ream_db: ReamDB,
+    pub sync_committee_subscriptions: Arc<RwLock<HashMap<u8, u64>>>,
+    pub sync_committee_subnets: Arc<RwLock<SyncCommitteeSubnets>>,
 }
 
 impl ManagerService {
@@ -165,6 +175,9 @@ impl ManagerService {
 
         let block_range_syncer = BlockRangeSyncer::new(beacon_chain.clone(), p2p_sender.clone());
 
+        let sync_committee_subscriptions = Arc::new(RwLock::new(HashMap::new()));
+        let sync_committee_subnets = Arc::new(RwLock::new(SyncCommitteeSubnets::new()));
+
         Ok(Self {
             beacon_chain,
             manager_receiver,
@@ -172,31 +185,116 @@ impl ManagerService {
             network_state,
             block_range_syncer,
             ream_db,
+            sync_committee_subscriptions,
+            sync_committee_subnets,
         })
     }
 
     /// Starts the manager service, which listens for network events and handles requests.
     ///
     /// Panics if the manager receiver is not initialized.
+    /// Fetch the latest BeaconState from the DB by highest slot.
+    fn get_latest_beacon_state(db: &ReamDB) -> Option<BeaconState> {
+        let highest_slot = db.slot_index_provider().get_highest_slot().ok().flatten()?;
+        let block_root = db.slot_index_provider().get(highest_slot).ok().flatten()?;
+        db.beacon_state_provider().get(block_root).ok().flatten()
+    }
+
+    pub async fn check_and_expire_sync_committee_subscriptions(&self) {
+        let state = match Self::get_latest_beacon_state(&self.ream_db) {
+            Some(state) => state,
+            None => return,
+        };
+        let current_epoch = state.get_current_epoch();
+        let mut map = self.sync_committee_subscriptions.write().await;
+        let expired: Vec<u8> = map
+            .iter()
+            .filter_map(|(&subnet_id, &until_epoch)| {
+                if until_epoch <= current_epoch {
+                    Some(subnet_id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if !expired.is_empty() {
+            let mut subnets = self.sync_committee_subnets.write().await;
+            for subnet_id in &expired {
+                if let Err(e) = subnets.disable_sync_committee_subnet(*subnet_id) {
+                    tracing::error!(
+                        "Failed to disable sync committee subnet {}: {}",
+                        subnet_id,
+                        e
+                    );
+                }
+                map.remove(subnet_id);
+            }
+            if !expired.is_empty() {
+                tracing::info!(
+                    "Marked that ENR needs to be updated after sync committee subnet expiry"
+                );
+            }
+        }
+    }
+
     pub async fn start(self) {
         let ManagerService {
             beacon_chain,
             mut manager_receiver,
             p2p_sender,
             ream_db,
+            sync_committee_subscriptions,
+            sync_committee_subnets,
             ..
         } = self;
-        let mut interval = interval(Duration::from_secs(network_spec().seconds_per_slot));
+        let mut slot_interval =
+            tokio::time::interval(Duration::from_secs(network_spec().seconds_per_slot));
+        let mut expiry_interval = tokio::time::interval(Duration::from_secs(12 * 32));
         loop {
             tokio::select! {
-                _ = interval.tick() => {
+                _ = slot_interval.tick() => {
                     let time = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .expect("correct time")
                         .as_secs();
-
-                    if let Err(err) =  beacon_chain.process_tick(time).await {
+                    if let Err(err) = beacon_chain.process_tick(time).await {
                         error!("Failed to process gossipsub tick: {err}");
+                    }
+                }
+                _ = expiry_interval.tick() => {
+                    let state = match Self::get_latest_beacon_state(&ream_db) {
+                        Some(state) => state,
+                        None => continue,
+                    };
+                    let current_epoch = state.get_current_epoch();
+                    let mut map = sync_committee_subscriptions.write().await;
+                    let expired: Vec<u8> = map
+                        .iter()
+                        .filter_map(|(&subnet_id, &until_epoch)| {
+                            if until_epoch <= current_epoch {
+                                Some(subnet_id)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !expired.is_empty() {
+                        let mut subnets = sync_committee_subnets.write().await;
+                        for subnet_id in &expired {
+                            if let Err(e) = subnets.disable_sync_committee_subnet(*subnet_id) {
+                                tracing::error!(
+                                    "Failed to disable sync committee subnet {}: {}",
+                                    subnet_id,
+                                    e
+                                );
+                            }
+                            map.remove(subnet_id);
+                        }
+                        if !expired.is_empty() {
+                            tracing::info!(
+                                "Marked that ENR needs to be updated after sync committee subnet expiry"
+                            );
+                        }
                     }
                 }
                 Some(event) = manager_receiver.recv() => {
@@ -210,8 +308,7 @@ impl ManagerService {
                                             signed_block.message.slot,
                                             signed_block.message.block_root()
                                         );
-
-                                        if let Err(err) =  beacon_chain.process_block(*signed_block).await {
+                                        if let Err(err) = beacon_chain.process_block(*signed_block).await {
                                             error!("Failed to process gossipsub beacon block: {err}");
                                         }
                                     }
@@ -220,7 +317,6 @@ impl ManagerService {
                                             "Beacon Attestation received over gossipsub: root: {}",
                                             attestation.tree_hash_root()
                                         );
-
                                         if let Err(err) =  beacon_chain.process_attestation(*attestation, true).await {
                                             error!("Failed to process gossipsub attestation: {err}");
                                         }
@@ -301,6 +397,30 @@ impl ManagerService {
                                         Ok(status) => status,
                                         Err(err) => {
                                             warn!("Failed to build status request: {err}");
+                                    let Ok(finalized_checkpoint) = ream_db.finalized_checkpoint_provider().get() else {
+                                        warn!("Failed to get finalized checkpoint");
+                                        p2p_sender.send_error_response(
+                                            peer_id,
+                                            connection_id,
+                                            stream_id,
+                                            "Failed to get finalized checkpoint",
+                                        );
+                                        continue;
+                                    };
+
+                                    let head_root = match beacon_chain.store.lock().await.get_head() {
+                                        Ok(head) => head,
+                                        Err(err) => {
+                                            warn!("Failed to get head root: {err}, falling back to finalized root");
+                                            finalized_checkpoint.root
+                                        }
+                                    };
+
+
+                                    let head_slot = match ream_db.beacon_block_provider().get(head_root) {
+                                        Ok(Some(block)) => block.message.slot,
+                                        err => {
+                                            warn!("Failed to get block for head root {head_root}: {err:?}");
                                             p2p_sender.send_error_response(
                                                 peer_id,
                                                 connection_id,
@@ -310,7 +430,6 @@ impl ManagerService {
                                             continue;
                                         }
                                     };
-
                                      p2p_sender.send_response(
                                         peer_id,
                                         connection_id,
