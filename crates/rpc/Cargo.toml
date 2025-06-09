@@ -10,19 +10,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-#ream-dependencies
-ream-beacon-api-types.workspace = true
-ream-bls.workspace = true
-ream-consensus.workspace = true
-ream-discv5.workspace = true
-ream-fork-choice.workspace = true
-ream-light-client.workspace = true
-ream-network-spec.workspace = true
-ream-node.workspace = true
-ream-p2p.workspace = true
-ream-storage.workspace = true
-
-#misc
 actix-web.workspace = true
 actix-web-lab.workspace = true
 alloy-primitives.workspace = true
@@ -41,3 +28,15 @@ thiserror.workspace = true
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 tracing.workspace = true
 tree_hash.workspace = true
+
+#ream-dependencies
+ream-beacon-api-types.workspace = true
+ream-bls.workspace = true
+ream-consensus.workspace = true
+ream-discv5.workspace = true
+ream-fork-choice.workspace = true
+ream-light-client.workspace = true
+ream-network-spec.workspace = true
+ream-node.workspace = true
+ream-p2p.workspace = true
+ream-storage.workspace = true

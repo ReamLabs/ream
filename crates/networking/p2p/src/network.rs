@@ -21,7 +21,6 @@ use libp2p::{
         upgrade::{SelectUpgrade, Version},
     },
     dns::Transport as DnsTransport,
-    futures::StreamExt,
     gossipsub::{Event as GossipsubEvent, IdentTopic as Topic, Message, MessageAuthenticity},
     identify,
     multiaddr::Protocol,
@@ -39,6 +38,7 @@ use ream_discv5::{
 };
 use ream_executor::ReamExecutor;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio_stream::{StreamExt, wrappers::IntervalStream};
 use tracing::{error, info, trace, warn};
 use yamux::Config as YamuxConfig;
 
@@ -298,18 +298,8 @@ impl Network {
         manager_sender: UnboundedSender<ReamNetworkEvent>,
         mut p2p_receiver: UnboundedReceiver<P2PMessage>,
     ) {
-        use tokio::sync::mpsc;
-        let (enr_tx, mut enr_rx) = mpsc::unbounded_channel();
-        // Spawn the periodic ENR update trigger
-        tokio::spawn(async move {
-            let mut check_enr_interval =
-                tokio::time::interval(tokio::time::Duration::from_secs(12));
-            loop {
-                check_enr_interval.tick().await;
-                // Ignore send errors (main loop may have exited)
-                let _ = enr_tx.send(());
-            }
-        });
+        let mut enr_update_interval =
+            IntervalStream::new(tokio::time::interval(tokio::time::Duration::from_secs(12)));
         let mut network = self;
         loop {
             tokio::select! {
@@ -342,17 +332,9 @@ impl Network {
                         RequestMessage::Ping(Ping::new(network.network_state.meta_data.read().seq_number)),
                     );
                 }
-                Some(_) = enr_rx.recv() => {
+                Some(_) = enr_update_interval.next() => {
                     network.check_and_update_enr().await;
                 }
-            }
-        }
-    }
-    /// polling the libp2p swarm for network events.
-    pub async fn polling_events(&mut self) {
-        while let Some(event) = self.swarm.next().await {
-            if let Some(event) = self.parse_swarm_event(event).await {
-                self.handle_network_event(event).await;
             }
         }
     }
@@ -372,52 +354,6 @@ impl Network {
             } else {
                 sync_subnets.reset_enr_update_flag();
                 info!("Successfully updated ENR with sync committee subnet subscriptions");
-            }
-        }
-    }
-
-    async fn handle_network_event(&mut self, event: ReamNetworkEvent) {
-        match event {
-            ReamNetworkEvent::PeerConnectedIncoming(peer_id) => {
-                info!("Peer connected (incoming): {}", peer_id);
-            }
-            ReamNetworkEvent::PeerConnectedOutgoing(peer_id) => {
-                info!("Peer connected (outgoing): {}", peer_id);
-            }
-            ReamNetworkEvent::PeerDisconnected(peer_id) => {
-                info!("Peer disconnected: {}", peer_id);
-            }
-            ReamNetworkEvent::Status(peer_id) => {
-                info!("Status from peer: {}", peer_id);
-            }
-            ReamNetworkEvent::Ping(peer_id) => {
-                info!("Ping from peer: {}", peer_id);
-            }
-            ReamNetworkEvent::MetaData(peer_id) => {
-                info!("Metadata from peer: {}", peer_id);
-            }
-            ReamNetworkEvent::DisconnectPeer(peer_id) => {
-                info!("Disconnecting peer: {}", peer_id);
-                let _ = Swarm::disconnect_peer_id(&mut self.swarm, peer_id);
-            }
-            ReamNetworkEvent::DiscoverPeers(target_peers) => {
-                info!("Discovering {} peers", target_peers);
-                self.swarm
-                    .behaviour_mut()
-                    .discovery
-                    .discover_peers(QueryType::Peers, target_peers);
-            }
-            ReamNetworkEvent::RequestMessage {
-                peer_id,
-                stream_id: _,
-                connection_id: _,
-                message,
-            } => {
-                info!(
-                    "Received request message from peer {}: {:?}",
-                    peer_id, message
-                );
-                // Handle the request message here
             }
         }
     }
