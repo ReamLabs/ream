@@ -2,7 +2,7 @@
 #![allow(deprecated)]
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, VecDeque, hash_map::Entry},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -343,11 +343,21 @@ impl ConnectionHandler for ReqRespConnectionHandler {
             self.inbound_streams.remove(&stream_id);
         }
 
-        let mut streams_to_remove = vec![];
-        for (stream_id, outbound_stream) in self.outbound_streams.iter_mut() {
-            let Some(outbound_stream_state) = outbound_stream.state.take() else {
+        for stream_id in self.outbound_streams.keys().cloned().collect::<Vec<_>>() {
+            let mut entry = match self.outbound_streams.entry(stream_id) {
+                Entry::Occupied(entry) => entry,
+                Entry::Vacant(_) => {
+                    unreachable!(
+                        "Outbound stream should always be present, poll() should not be in parallel {stream_id}",
+                    );
+                }
+            };
+
+            let request_id = entry.get().request_id;
+
+            let Some(outbound_stream_state) = entry.get_mut().state.take() else {
                 unreachable!(
-                    "OutboundStreamState should always be present, poll() should not be in parallel"
+                    "OutboundStreamState should always be present, poll() should not be in parallel {stream_id}",
                 );
             };
 
@@ -357,7 +367,7 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                     message,
                 } => {
                     if let ConnectionState::Closed = self.connection_state {
-                        outbound_stream.state = Some(OutboundStreamState::Closing(stream));
+                        entry.get_mut().state = Some(OutboundStreamState::Closing(stream));
                         self.behaviour_events
                             .push(HandlerEvent::Err(ReqRespError::Disconnected));
                         continue;
@@ -366,13 +376,10 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                     match stream.poll_next_unpin(context) {
                         Poll::Ready(response_message) => {
                             let Some(response_message) = response_message else {
-                                streams_to_remove.push(*stream_id);
-
+                                entry.remove_entry();
                                 return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
                                     HandlerEvent::Ok(Box::new(
-                                        ReqRespMessageReceived::EndOfStream {
-                                            request_id: outbound_stream.request_id,
-                                        },
+                                        ReqRespMessageReceived::EndOfStream { request_id },
                                     )),
                                 ));
                             };
@@ -380,7 +387,7 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                             let response_message = match response_message {
                                 Ok(message) => message,
                                 Err(err) => {
-                                    streams_to_remove.push(*stream_id);
+                                    entry.remove_entry();
                                     return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
                                         HandlerEvent::Err(err),
                                     ));
@@ -391,14 +398,17 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                                 response_message,
                                 RespMessage::Error(_) | RespMessage::EndOfStream
                             ) {
-                                outbound_stream.state = Some(OutboundStreamState::Closing(stream));
+                                entry.get_mut().state = Some(OutboundStreamState::Closing(stream));
+                            } else {
+                                entry.get_mut().state =
+                                    Some(OutboundStreamState::PendingResponse { stream, message });
                             }
 
                             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
                                 match response_message {
                                     RespMessage::Response(message) => HandlerEvent::Ok(Box::new(
                                         ReqRespMessageReceived::Response {
-                                            request_id: outbound_stream.request_id,
+                                            request_id,
                                             message,
                                         },
                                     )),
@@ -410,7 +420,7 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                             ));
                         }
                         Poll::Pending => {
-                            outbound_stream.state =
+                            entry.get_mut().state =
                                 Some(OutboundStreamState::PendingResponse { stream, message })
                         }
                     }
@@ -418,18 +428,14 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                 OutboundStreamState::Closing(mut stream) => {
                     match Sink::poll_close(Pin::new(&mut stream), context) {
                         Poll::Ready(_) => {
-                            streams_to_remove.push(*stream_id);
+                            entry.remove_entry();
                         }
                         Poll::Pending => {
-                            outbound_stream.state = Some(OutboundStreamState::Closing(stream));
+                            entry.get_mut().state = Some(OutboundStreamState::Closing(stream));
                         }
                     }
                 }
             }
-        }
-
-        for stream_id in streams_to_remove {
-            self.outbound_streams.remove(&stream_id);
         }
 
         if let Some(open_info) = self.pending_outbound_streams.pop() {

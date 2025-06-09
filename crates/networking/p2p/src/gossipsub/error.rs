@@ -1,8 +1,8 @@
 #[derive(thiserror::Error, Debug)]
 pub enum GossipsubError {
-    #[error("Invalid data {0}")]
+    #[error("Gossipsub invalid data {0}")]
     InvalidData(String),
-    #[error("Invalid topic {0}")]
+    #[error("Gossipsub invalid topic {0}")]
     InvalidTopic(String),
 }
 

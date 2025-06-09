@@ -5,6 +5,7 @@ use std::{
 };
 
 use alloy_primitives::aliases::B32;
+use anyhow::anyhow;
 use asynchronous_codec::BytesMut;
 use futures::{
     FutureExt, SinkExt,
@@ -217,13 +218,7 @@ impl Decoder for OutboundSSZSnappyCodec {
                     }
                 } else {
                     Ok(Some(RespMessage::Error(
-                        VariableList::<u8, U256>::from_ssz_bytes(&buf)
-                            .map(ReqRespError::from)
-                            .unwrap_or_else(|err| {
-                                ReqRespError::InvalidData(format!(
-                                    "Failed to decode variable list: {err:?}"
-                                ))
-                            }),
+                        VariableList::<u8, U256>::from_ssz_bytes(&buf).map(ReqRespError::from).map_err(|err| anyhow!("OutboundSSZSnappyCodec::decode: protocol: {:?}, response_code: {response_code:?}, err: {err:?}", self.protocol.protocol))?,
                     )))
                 }
             }
