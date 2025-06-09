@@ -385,6 +385,7 @@ pub async fn post_validator_balances_from_state(
         ))),
     )
 }
+
 pub async fn process_sync_committee_subscriptions(
     _db: &ReamDB,
     subscriptions: &[SyncCommitteeSubscription],
