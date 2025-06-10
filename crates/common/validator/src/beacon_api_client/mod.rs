@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
-use http_client::ClientWithBaseUrl;
+use http_client::{ClientWithBaseUrl, ContentType};
 use ream_beacon_api_types::{
     block::{BroadcastValidation, FullBlockData, ProduceBlockData, ProduceBlockResponse},
     committee::BeaconCommitteeSubscription,
@@ -50,7 +50,11 @@ pub struct BeaconApiClient {
 impl BeaconApiClient {
     pub fn new(beacon_api_endpoint: Url, request_timeout: Duration) -> anyhow::Result<Self> {
         Ok(Self {
-            http_client: ClientWithBaseUrl::new(beacon_api_endpoint, request_timeout)?,
+            http_client: ClientWithBaseUrl::new(
+                beacon_api_endpoint,
+                request_timeout,
+                ContentType::Ssz,
+            )?,
         })
     }
 
@@ -170,7 +174,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post(format!("/eth/v1/beacon/states/{state_id}/validators"))?
+                    .post(
+                        format!("/eth/v1/beacon/states/{state_id}/validators"),
+                        ContentType::Json,
+                    )?
                     .json(&ValidatorsPostRequest {
                         ids: validator_ids,
                         statuses: validator_statuses,
@@ -265,7 +272,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post(format!("/eth/v1/validator/duties/attester/{epoch}"))?
+                    .post(
+                        format!("/eth/v1/validator/duties/attester/{epoch}"),
+                        ContentType::Json,
+                    )?
                     .json(&json!(
                         validator_indices
                             .iter()
@@ -294,7 +304,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post(format!("/eth/v1/validator/duties/sync/{epoch}"))?
+                    .post(
+                        format!("/eth/v1/validator/duties/sync/{epoch}"),
+                        ContentType::Json,
+                    )?
                     .json(&json!(
                         validator_indices
                             .iter()
@@ -322,7 +335,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post("/eth/v1/validator/beacon_committee_subscriptions".to_string())?
+                    .post(
+                        "/eth/v1/validator/beacon_committee_subscriptions".to_string(),
+                        ContentType::Json,
+                    )?
                     .json(&subscriptions)
                     .build()?,
             )
@@ -368,7 +384,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post("/eth/v2/beacon/pool/attestations".to_string())?
+                    .post(
+                        "/eth/v2/beacon/pool/attestations".to_string(),
+                        ContentType::Json,
+                    )?
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
                     .json(&single_attestation)
                     .build()?,
@@ -392,7 +411,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post("/eth/v2/validator/aggregate_and_proofs".to_string())?
+                    .post(
+                        "/eth/v2/validator/aggregate_and_proofs".to_string(),
+                        ContentType::Json,
+                    )?
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
                     .json(&signed_aggregate_and_proofs)
                     .build()?,
@@ -491,13 +513,12 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post("/eth/v2/beacon/blocks".to_string())?
+                    .post("/eth/v2/beacon/blocks".to_string(), ContentType::Ssz)?
                     .query(&[(
                         "broadcast_validation",
                         serde_json::to_string(&broadcast_validation)?,
                     )])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
-                    .header("Content-Type", "application/octet-stream")
                     .body(signed_beacon_block.as_ssz_bytes())
                     .build()?,
             )
@@ -521,13 +542,15 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post("/eth/v2/beacon/blinded_blocks".to_string())?
+                    .post(
+                        "/eth/v2/beacon/blinded_blocks".to_string(),
+                        ContentType::Ssz,
+                    )?
                     .query(&[(
                         "broadcast_validation",
                         serde_json::to_string(&broadcast_validation)?,
                     )])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
-                    .header("Content-Type", "application/octet-stream")
                     .body(signed_blinded_beacon_block.as_ssz_bytes())
                     .build()?,
             )

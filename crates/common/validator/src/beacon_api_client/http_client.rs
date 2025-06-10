@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::anyhow;
 use reqwest::{
     Client, IntoUrl, Request, RequestBuilder, Response, Url,
-    header::{ACCEPT, CONTENT_TYPE, HeaderValue},
+    header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue},
 };
 
 pub const ACCEPT_PRIORITY: &str = "application/octet-stream;q=1.0,application/json;q=0.9";
@@ -12,13 +12,23 @@ pub const JSON_CONTENT_TYPE: &str = "application/json";
 pub const SSZ_CONTENT_TYPE: &str = "application/octet-stream";
 
 #[derive(Debug, Clone)]
+pub enum ContentType {
+    Json,
+    Ssz,
+}
+
+#[derive(Debug, Clone)]
 pub struct ClientWithBaseUrl {
     client: Client,
     base_url: Url,
+    content_type: ContentType,
 }
-
 impl ClientWithBaseUrl {
-    pub fn new(url: Url, request_timeout: Duration) -> anyhow::Result<Self> {
+    pub fn new(
+        url: Url,
+        request_timeout: Duration,
+        content_type: ContentType,
+    ) -> anyhow::Result<Self> {
         let client = Client::builder()
             .timeout(request_timeout)
             .build()
@@ -27,6 +37,7 @@ impl ClientWithBaseUrl {
         Ok(Self {
             client,
             base_url: url,
+            content_type,
         })
     }
 
@@ -40,20 +51,39 @@ impl ClientWithBaseUrl {
 
     pub fn get<U: IntoUrl>(&self, url: U) -> anyhow::Result<RequestBuilder> {
         let url = self.base_url.join(url.as_str())?;
-        Ok(self
-            .client
-            .get(url)
-            .header(CONTENT_TYPE, HeaderValue::from_static(SSZ_CONTENT_TYPE))
-            .header(ACCEPT, HeaderValue::from_static(ACCEPT_PRIORITY)))
+
+        let mut headers = HeaderMap::new();
+        match self.content_type {
+            ContentType::Json => {
+                headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));
+            }
+            ContentType::Ssz => {
+                headers.insert(CONTENT_TYPE, HeaderValue::from_static(SSZ_CONTENT_TYPE));
+                headers.insert(ACCEPT, HeaderValue::from_static(ACCEPT_PRIORITY));
+            }
+        }
+
+        Ok(self.client.get(url).headers(headers))
     }
 
-    pub fn post<U: IntoUrl>(&self, url: U) -> anyhow::Result<RequestBuilder> {
+    pub fn post<U: IntoUrl>(
+        &self,
+        url: U,
+        content_type: ContentType,
+    ) -> anyhow::Result<RequestBuilder> {
         let url = self.base_url.join(url.as_str())?;
-        Ok(self
-            .client
-            .post(url)
-            .header(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE))
-            .header(ACCEPT, HeaderValue::from_static(ACCEPT_PRIORITY)))
+
+        let mut headers = HeaderMap::new();
+        match content_type {
+            ContentType::Json => {
+                headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));
+            }
+            ContentType::Ssz => {
+                headers.insert(CONTENT_TYPE, HeaderValue::from_static(SSZ_CONTENT_TYPE));
+            }
+        }
+
+        Ok(self.client.post(url).headers(headers))
     }
 
     pub async fn execute(&self, request: Request) -> Result<Response, reqwest::Error> {
