@@ -17,12 +17,22 @@ pub enum ContentType {
     Ssz,
 }
 
+impl ContentType {
+    pub fn to_header_value(&self) -> HeaderValue {
+        match self {
+            ContentType::Json => HeaderValue::from_static(JSON_CONTENT_TYPE),
+            ContentType::Ssz => HeaderValue::from_static(SSZ_CONTENT_TYPE),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ClientWithBaseUrl {
     client: Client,
     base_url: Url,
     content_type: ContentType,
 }
+
 impl ClientWithBaseUrl {
     pub fn new(
         url: Url,
@@ -73,17 +83,10 @@ impl ClientWithBaseUrl {
     ) -> anyhow::Result<RequestBuilder> {
         let url = self.base_url.join(url.as_str())?;
 
-        let mut headers = HeaderMap::new();
-        match content_type {
-            ContentType::Json => {
-                headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));
-            }
-            ContentType::Ssz => {
-                headers.insert(CONTENT_TYPE, HeaderValue::from_static(SSZ_CONTENT_TYPE));
-            }
-        }
-
-        Ok(self.client.post(url).headers(headers))
+        Ok(self
+            .client
+            .post(url)
+            .header(CONTENT_TYPE, content_type.to_header_value()))
     }
 
     pub async fn execute(&self, request: Request) -> Result<Response, reqwest::Error> {
