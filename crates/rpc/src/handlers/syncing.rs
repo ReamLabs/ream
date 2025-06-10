@@ -23,7 +23,6 @@ impl Syncing {
                 sync_distance,
                 is_syncing,
                 el_offline,
-                // TODO
                 is_optimistic: EXECUTION_OPTIMISTIC,
             },
         }
@@ -71,13 +70,11 @@ pub async fn get_syncing_status(
         }
     };
 
-    // get is_syncing
-    let is_syncing = sync_distance > 1;
-
     Ok(HttpResponse::Ok().json(DataResponse::new(Syncing::new(
         head_slot,
         sync_distance,
         el_offline,
-        is_syncing,
+        // get is_syncing
+        sync_distance > 1,
     ))))
 }
