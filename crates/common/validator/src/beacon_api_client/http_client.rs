@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::anyhow;
 use reqwest::{
     Client, IntoUrl, Request, RequestBuilder, Response, Url,
-    header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue},
+    header::{ACCEPT, CONTENT_TYPE, HeaderValue},
 };
 
 pub const ACCEPT_PRIORITY: &str = "application/octet-stream;q=1.0,application/json;q=0.9";
@@ -24,24 +24,8 @@ pub struct ClientWithBaseUrl {
 }
 
 impl ClientWithBaseUrl {
-    pub fn new(
-        url: Url,
-        request_timeout: Duration,
-        content_type: ContentType,
-    ) -> anyhow::Result<Self> {
-        let mut headers = HeaderMap::new();
-        match content_type {
-            ContentType::Json => {
-                headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));
-            }
-            ContentType::Ssz => {
-                headers.insert(CONTENT_TYPE, HeaderValue::from_static(SSZ_CONTENT_TYPE));
-                headers.insert(ACCEPT, HeaderValue::from_static(ACCEPT_PRIORITY));
-            }
-        }
-
+    pub fn new(url: Url, request_timeout: Duration) -> anyhow::Result<Self> {
         let client = Client::builder()
-            .default_headers(headers)
             .timeout(request_timeout)
             .build()
             .map_err(|err| anyhow!("Failed to build HTTP client {err:?}"))?;
