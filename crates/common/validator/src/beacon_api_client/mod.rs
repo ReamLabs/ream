@@ -519,6 +519,7 @@ impl BeaconApiClient {
                         serde_json::to_string(&broadcast_validation)?,
                     )])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
+                    .header("Content-Type", "application/octet-stream")
                     .body(signed_beacon_block.as_ssz_bytes())
                     .build()?,
             )
@@ -551,6 +552,7 @@ impl BeaconApiClient {
                         serde_json::to_string(&broadcast_validation)?,
                     )])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
+                    .header("Content-Type", "application/octet-stream")
                     .body(signed_blinded_beacon_block.as_ssz_bytes())
                     .build()?,
             )
