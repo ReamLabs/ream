@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::anyhow;
 use reqwest::{
     Client, IntoUrl, Request, RequestBuilder, Response, Url,
-    header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue},
+    header::{ACCEPT, CONTENT_TYPE, HeaderValue},
 };
 
 pub const ACCEPT_PRIORITY: &str = "application/octet-stream;q=1.0,application/json;q=0.9";

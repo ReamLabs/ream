@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
-use http_client::{ClientWithBaseUrl, ContentType};
+use http_client::ClientWithBaseUrl;
 use ream_beacon_api_types::{
     block::{BroadcastValidation, FullBlockData, ProduceBlockData, ProduceBlockResponse},
     committee::BeaconCommitteeSubscription,
@@ -50,11 +50,7 @@ pub struct BeaconApiClient {
 impl BeaconApiClient {
     pub fn new(beacon_api_endpoint: Url, request_timeout: Duration) -> anyhow::Result<Self> {
         Ok(Self {
-            http_client: ClientWithBaseUrl::new(
-                beacon_api_endpoint,
-                request_timeout,
-                ContentType::Ssz,
-            )?,
+            http_client: ClientWithBaseUrl::new(beacon_api_endpoint, request_timeout)?,
         })
     }
 
