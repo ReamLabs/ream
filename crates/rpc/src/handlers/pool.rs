@@ -4,11 +4,13 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json},
 };
-use ream_beacon_api_types::{error::ApiError, responses::DataResponse};
+use ream_beacon_api_types::{error::ApiError, id::ID, responses::DataResponse};
 use ream_consensus::voluntary_exit::SignedVoluntaryExit;
 use ream_operation_pool::OperationPool;
 use ream_storage::db::ReamDB;
 use tracing::error;
+
+use crate::handlers::state::get_state_from_id;
 
 /// GET /eth/v1/beacon/pool/voluntary_exits
 #[get("/beacon/pool/voluntary_exits")]
@@ -26,14 +28,17 @@ pub async fn post_voluntary_exits(
     operation_pool: Data<Arc<OperationPool>>,
     signed_voluntary_exit: Json<SignedVoluntaryExit>,
 ) -> Result<impl Responder, ApiError> {
-    let beacon_state = db
-        .beacon_state_provider()
-        .last()
+    let highest_slot = db
+        .slot_index_provider()
+        .get_highest_slot()
         .map_err(|err| {
-            error!("Failed to get latest beacon_state, error: {err:?}");
+            error!("Failed to get_highest_slot, error: {err:?}");
             ApiError::InternalError
         })?
-        .ok_or_else(|| ApiError::NotFound(String::from("Failed to find latest beacon_state")))?;
+        .ok_or(ApiError::NotFound(
+            "Failed to find highest slot".to_string(),
+        ))?;
+    let beacon_state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
 
     let signed_voluntary_exit = signed_voluntary_exit.into_inner();
 
@@ -46,7 +51,7 @@ pub async fn post_voluntary_exits(
         })?;
 
     operation_pool.insert_signed_voluntary_exit(signed_voluntary_exit);
-    // TODO: broadcast voluntary exit to peers
+    // TODO: publish voluntary exit to peers (gossipsub)
 
     Ok(HttpResponse::Ok())
 }

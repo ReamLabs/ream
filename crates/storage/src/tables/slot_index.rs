@@ -42,9 +42,27 @@ impl Table for SlotIndexTable {
 }
 
 impl SlotIndexTable {
+    pub fn get_oldest_slot(&self) -> Result<Option<u64>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(SLOT_INDEX_TABLE)?;
+        Ok(table.first()?.map(|result| result.0.value()))
+    }
+
+    pub fn get_oldest_root(&self) -> Result<Option<B256>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(SLOT_INDEX_TABLE)?;
+        Ok(table.first()?.map(|result| result.1.value()))
+    }
+
     pub fn get_highest_slot(&self) -> Result<Option<u64>, StoreError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(SLOT_INDEX_TABLE)?;
         Ok(table.last()?.map(|result| result.0.value()))
+    }
+
+    pub fn get_highest_root(&self) -> Result<Option<B256>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(SLOT_INDEX_TABLE)?;
+        Ok(table.last()?.map(|result| result.1.value()))
     }
 }

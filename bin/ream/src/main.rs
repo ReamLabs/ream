@@ -17,6 +17,7 @@ use ream_rpc::{config::RpcServerConfig, start_server};
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
+    tables::Table,
 };
 use ream_validator::validator::ValidatorService;
 use tracing::info;
@@ -79,10 +80,15 @@ pub async fn run_beacon_node(
 
     info!("Database Initialization completed");
 
+    let oldest_root = ream_db
+        .slot_index_provider()
+        .get_oldest_root()
+        .expect("Failed to access slot index provider")
+        .expect("No oldest root found");
     set_genesis_validator_root(
         ream_db
             .beacon_state_provider()
-            .first()
+            .get(oldest_root)
             .expect("Failed to access beacon state provider")
             .expect("No beacon state found")
             .genesis_validators_root,
