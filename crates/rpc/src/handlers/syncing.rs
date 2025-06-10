@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use actix_web::{HttpResponse, Responder, get, web::Data};
 use ream_beacon_api_types::{
     error::ApiError,
@@ -6,6 +8,7 @@ use ream_beacon_api_types::{
 };
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice::store::Store;
+use ream_operation_pool::OperationPool;
 use ream_storage::{db::ReamDB, tables::Table};
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -33,10 +36,12 @@ impl Syncing {
 #[get("/node/syncing")]
 pub async fn get_syncing_status(
     db: Data<ReamDB>,
+    operation_pool: Data<Arc<OperationPool>>,
     execution_engine: Data<ExecutionEngine>,
 ) -> Result<impl Responder, ApiError> {
     let store = Store {
         db: db.get_ref().clone(),
+        operation_pool: operation_pool.get_ref().clone(),
     };
 
     // get head_slot

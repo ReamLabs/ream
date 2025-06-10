@@ -2,8 +2,8 @@ use actix_web::web::ServiceConfig;
 
 use crate::handlers::{
     peers::{get_peer, get_peer_count},
-    version::get_version,
     syncing::get_syncing_status,
+    version::get_version,
 };
 
 pub fn register_node_routes(cfg: &mut ServiceConfig) {

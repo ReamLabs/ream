@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use actix_web::{App, HttpServer, dev::ServerHandle, middleware, web::Data};
 use config::RpcServerConfig;
-use ream_operation_pool::OperationPool;
 use ream_execution_engine::ExecutionEngine;
+use ream_operation_pool::OperationPool;
 use ream_p2p::network_state::NetworkState;
 use ream_storage::db::ReamDB;
 use tracing::info;

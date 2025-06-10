@@ -138,7 +138,14 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
     });
 
     let http_future = executor.spawn(async move {
-        start_server(server_config, ream_db, network_state, operation_pool,execution_engine).await
+        start_server(
+            server_config,
+            ream_db,
+            network_state,
+            operation_pool,
+            execution_engine,
+        )
+        .await
     });
 
     tokio::select! {
