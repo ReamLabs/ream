@@ -374,7 +374,6 @@ impl BeaconApiClient {
 
         Ok(())
     }
-
     pub async fn get_attestation_data(
         &self,
         slot: u64,
@@ -384,7 +383,11 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .get(format!("/eth/v1/validator/attestation_data?slot={slot}&committee_index={committee_index}"))?
+                    .get("/eth/v1/validator/attestation_data".to_string())?
+                    .query(&[
+                        ("slot", slot.to_string()),
+                        ("committee_index", committee_index.to_string()),
+                    ])
                     .build()?,
             )
             .await?;
@@ -450,6 +453,35 @@ impl BeaconApiClient {
         }
 
         Ok(())
+    }
+
+    pub async fn get_aggregated_attestation(
+        &self,
+        attestation_data_root: B256,
+        slot: u64,
+        committee_index: u64,
+    ) -> anyhow::Result<DataVersionedResponse<Attestation>, ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .get("/eth/v2/validator/aggregate_attestation".to_string())?
+                    .query(&[
+                        ("attestation_data_root", attestation_data_root.to_string()),
+                        ("slot", slot.to_string()),
+                        ("committee_index", committee_index.to_string()),
+                    ])
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(response.json().await?)
     }
 
     pub async fn produce_block(
