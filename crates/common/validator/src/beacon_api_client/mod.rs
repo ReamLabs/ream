@@ -17,7 +17,7 @@ use ream_beacon_api_types::{
     id::{ID, ValidatorID},
     request::ValidatorsPostRequest,
     responses::{
-        BeaconResponse, DataResponse, DutiesResponse, ETH_CONSENSUS_VERSION_HEADER,
+        BeaconResponse, DataResponse, DutiesResponse, ETH_CONSENSUS_VERSION_HEADER, RootResponse,
         SyncCommitteeDutiesResponse, VERSION,
     },
     sync::SyncStatus,
@@ -102,6 +102,28 @@ impl BeaconApiClient {
             .execute(
                 self.http_client
                     .get("/eth/v1/beacon/genesis".to_string())?
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(response.json().await?)
+    }
+
+    pub async fn get_block_root(
+        &self,
+        state_id: ID,
+    ) -> anyhow::Result<BeaconResponse<RootResponse>, ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .get(format!("/eth/v1/beacon/states/{state_id}/root"))?
                     .build()?,
             )
             .await?;
@@ -312,7 +334,7 @@ impl BeaconApiClient {
         Ok(response.json().await?)
     }
 
-    pub async fn prepare_committe_subnet(
+    pub async fn prepare_committee_subnet(
         &self,
         subscriptions: Vec<BeaconCommitteeSubscription>,
     ) -> anyhow::Result<(), ValidatorError> {
