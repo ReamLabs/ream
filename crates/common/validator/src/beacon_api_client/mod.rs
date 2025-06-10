@@ -10,7 +10,7 @@ use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
 use ream_beacon_api_types::{
-    block::{FullBlockData, ProduceBlockData, ProduceBlockResponse},
+    block::{BroadcastValidation, FullBlockData, ProduceBlockData, ProduceBlockResponse},
     committee::BeaconCommitteeSubscription,
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     error::ValidatorError,
@@ -25,8 +25,14 @@ use ream_beacon_api_types::{
 };
 use ream_bls::BLSSignature;
 use ream_consensus::{
-    attestation_data::AttestationData, electra::blinded_beacon_block::BlindedBeaconBlock,
-    fork::Fork, genesis::Genesis, single_attestation::SingleAttestation,
+    attestation_data::AttestationData,
+    electra::{
+        beacon_block::SignedBeaconBlock,
+        blinded_beacon_block::{BlindedBeaconBlock, SignedBlindedBeaconBlock},
+    },
+    fork::Fork,
+    genesis::Genesis,
+    single_attestation::SingleAttestation,
 };
 use ream_network_spec::networks::NetworkSpec;
 use reqwest::{Url, header::HeaderMap};
@@ -478,6 +484,64 @@ impl BeaconApiClient {
                 },
             })
         }
+    }
+
+    pub async fn publish_block(
+        &self,
+        broadcast_validation: BroadcastValidation,
+        signed_beacon_block: SignedBeaconBlock,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post("/eth/v2/beacon/blocks".to_string())?
+                    .query(&[(
+                        "broadcast_validation",
+                        serde_json::to_string(&broadcast_validation)?,
+                    )])
+                    .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
+                    .json(&signed_beacon_block)
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn publish_blinded_block(
+        &self,
+        broadcast_validation: BroadcastValidation,
+        signed_blinded_beacon_block: SignedBlindedBeaconBlock,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post("/eth/v2/beacon/blinded_blocks".to_string())?
+                    .query(&[(
+                        "broadcast_validation",
+                        serde_json::to_string(&broadcast_validation)?,
+                    )])
+                    .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
+                    .json(&signed_blinded_beacon_block)
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
     }
 }
 
