@@ -32,6 +32,7 @@ pub struct ClientWithBaseUrl {
     base_url: Url,
     content_type: ContentType,
 }
+
 impl ClientWithBaseUrl {
     pub fn new(
         url: Url,
