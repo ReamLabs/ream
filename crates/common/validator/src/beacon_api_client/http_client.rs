@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::anyhow;
 use reqwest::{
     Client, IntoUrl, Request, RequestBuilder, Response, Url,
-    header::{ACCEPT, CONTENT_TYPE, HeaderValue},
+    header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue},
 };
 
 pub const ACCEPT_PRIORITY: &str = "application/octet-stream;q=1.0,application/json;q=0.9";
@@ -32,7 +32,6 @@ pub struct ClientWithBaseUrl {
     base_url: Url,
     content_type: ContentType,
 }
-
 impl ClientWithBaseUrl {
     pub fn new(
         url: Url,

@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
-use http_client::ClientWithBaseUrl;
+use http_client::{ClientWithBaseUrl, ContentType};
 use ream_beacon_api_types::{
     block::{BroadcastValidation, FullBlockData, ProduceBlockData, ProduceBlockResponse},
     committee::BeaconCommitteeSubscription,
@@ -50,7 +50,11 @@ pub struct BeaconApiClient {
 impl BeaconApiClient {
     pub fn new(beacon_api_endpoint: Url, request_timeout: Duration) -> anyhow::Result<Self> {
         Ok(Self {
-            http_client: ClientWithBaseUrl::new(beacon_api_endpoint, request_timeout)?,
+            http_client: ClientWithBaseUrl::new(
+                beacon_api_endpoint,
+                request_timeout,
+                ContentType::Ssz,
+            )?,
         })
     }
 
@@ -515,7 +519,6 @@ impl BeaconApiClient {
                         serde_json::to_string(&broadcast_validation)?,
                     )])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
-                    .header("Content-Type", "application/octet-stream")
                     .body(signed_beacon_block.as_ssz_bytes())
                     .build()?,
             )
@@ -548,7 +551,6 @@ impl BeaconApiClient {
                         serde_json::to_string(&broadcast_validation)?,
                     )])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
-                    .header("Content-Type", "application/octet-stream")
                     .body(signed_blinded_beacon_block.as_ssz_bytes())
                     .build()?,
             )
