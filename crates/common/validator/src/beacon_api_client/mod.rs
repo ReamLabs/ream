@@ -15,7 +15,7 @@ use ream_beacon_api_types::{
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     error::ValidatorError,
     id::{ID, ValidatorID},
-    request::ValidatorsPostRequest,
+    request::{SyncCommitteePostRequest, ValidatorsPostRequest},
     responses::{
         BeaconResponse, DataResponse, DutiesResponse, ETH_CONSENSUS_VERSION_HEADER, RootResponse,
         SyncCommitteeDutiesResponse, VERSION,
@@ -184,6 +184,29 @@ impl BeaconApiClient {
         }
 
         Ok(response.json().await?)
+    }
+
+    pub async fn publish_sync_committee_signature(
+        &self,
+        sync_committee_request: SyncCommitteePostRequest,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post("/eth/v1/beacon/pool/sync_committees")?
+                    .json(&sync_committee_request)
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
     }
 
     pub async fn get_state_validator_list(
