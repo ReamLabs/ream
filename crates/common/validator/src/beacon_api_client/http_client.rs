@@ -11,12 +11,6 @@ pub const JSON_ACCEPT_PRIORITY: &str = "application/json;q=1";
 pub const JSON_CONTENT_TYPE: &str = "application/json";
 pub const SSZ_CONTENT_TYPE: &str = "application/octet-stream";
 
-#[derive(Debug, Clone, Copy)]
-pub enum ContentType {
-    Json,
-    Ssz,
-}
-
 #[derive(Debug, Clone)]
 pub struct ClientWithBaseUrl {
     client: Client,
