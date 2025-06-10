@@ -37,7 +37,7 @@ use ream_consensus::{
 use ream_network_spec::networks::NetworkSpec;
 use reqwest::{Url, header::HeaderMap};
 use serde_json::json;
-use ssz::Decode;
+use ssz::{Decode, Encode};
 use tracing::{error, info};
 
 use crate::aggregate_and_proof::SignedAggregateAndProof;
@@ -501,7 +501,7 @@ impl BeaconApiClient {
                         serde_json::to_string(&broadcast_validation)?,
                     )])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
-                    .json(&signed_beacon_block)
+                    .body(signed_beacon_block.as_ssz_bytes())
                     .build()?,
             )
             .await?;
@@ -530,7 +530,7 @@ impl BeaconApiClient {
                         serde_json::to_string(&broadcast_validation)?,
                     )])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
-                    .json(&signed_blinded_beacon_block)
+                    .body(signed_blinded_beacon_block.as_ssz_bytes())
                     .build()?,
             )
             .await?;
