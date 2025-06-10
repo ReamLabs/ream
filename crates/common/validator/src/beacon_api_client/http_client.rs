@@ -62,12 +62,20 @@ impl ClientWithBaseUrl {
 
     pub fn get<U: IntoUrl>(&self, url: U) -> anyhow::Result<RequestBuilder> {
         let url = self.base_url.join(url.as_str())?;
-        Ok(self.client.get(url))
+        Ok(self
+            .client
+            .get(url)
+            .header(CONTENT_TYPE, HeaderValue::from_static(SSZ_CONTENT_TYPE))
+            .header(ACCEPT, HeaderValue::from_static(ACCEPT_PRIORITY)))
     }
 
     pub fn post<U: IntoUrl>(&self, url: U) -> anyhow::Result<RequestBuilder> {
         let url = self.base_url.join(url.as_str())?;
-        Ok(self.client.post(url))
+        Ok(self
+            .client
+            .post(url)
+            .header(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE))
+            .header(ACCEPT, HeaderValue::from_static(ACCEPT_PRIORITY)))
     }
 
     pub async fn execute(&self, request: Request) -> Result<Response, reqwest::Error> {
