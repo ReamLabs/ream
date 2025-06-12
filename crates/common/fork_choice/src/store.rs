@@ -211,11 +211,11 @@ impl Store {
                 .finalized_checkpoint_provider()
                 .insert(finalized_checkpoint)?;
             // Clean operation pool
-            let beacon_state = self
+            if let Some(beacon_state) = self
                 .db
                 .beacon_state_provider()
-                .get(finalized_checkpoint.root)?;
-            if let Some(beacon_state) = beacon_state {
+                .get(finalized_checkpoint.root)?
+            {
                 self.operation_pool
                     .clean_signed_voluntary_exits(&beacon_state);
             }

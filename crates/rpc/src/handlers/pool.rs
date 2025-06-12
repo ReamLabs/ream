@@ -51,7 +51,7 @@ pub async fn post_voluntary_exits(
         })?;
 
     operation_pool.insert_signed_voluntary_exit(signed_voluntary_exit);
-    // TODO: publish voluntary exit to peers (gossipsub)
+    // TODO: publish voluntary exit to peers (gossipsub) - https://github.com/ReamLabs/ream/issues/556
 
     Ok(HttpResponse::Ok())
 }
