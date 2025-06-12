@@ -290,6 +290,11 @@ impl ValidatorService {
             .await?
             .data
             .root;
+        let domain = compute_domain(
+            DOMAIN_SYNC_COMMITTEE,
+            Some(network_spec().electra_fork_version),
+            None,
+        );
         let signing_root = compute_signing_root(beacon_block_root, domain);
 
         let payload = validator_indices
