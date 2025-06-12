@@ -195,6 +195,7 @@ impl BeaconApiClient {
             .execute(
                 self.http_client
                     .post("/eth/v1/beacon/pool/sync_committees")?
+                    .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
                     .json(&sync_committee_request)
                     .build()?,
             )
