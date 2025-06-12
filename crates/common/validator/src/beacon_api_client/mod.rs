@@ -17,14 +17,15 @@ use ream_beacon_api_types::{
     id::{ID, ValidatorID},
     request::ValidatorsPostRequest,
     responses::{
-        BeaconResponse, DataResponse, DutiesResponse, ETH_CONSENSUS_VERSION_HEADER, RootResponse,
-        SyncCommitteeDutiesResponse, VERSION,
+        BeaconResponse, DataResponse, DataVersionedResponse, DutiesResponse,
+        ETH_CONSENSUS_VERSION_HEADER, RootResponse, SyncCommitteeDutiesResponse, VERSION,
     },
     sync::SyncStatus,
     validator::{ValidatorData, ValidatorStatus},
 };
 use ream_bls::BLSSignature;
 use ream_consensus::{
+    attestation::Attestation,
     attestation_data::AttestationData,
     electra::{
         beacon_block::SignedBeaconBlock,
