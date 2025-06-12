@@ -1,6 +1,6 @@
 # ream validator_node
 
-
+Start the validator node
 
 ```bash
 $ ream validator_node --help

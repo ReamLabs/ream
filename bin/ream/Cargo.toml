@@ -17,9 +17,11 @@ path = "src/main.rs"
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
+bip32.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 discv5.workspace = true
 hashbrown.workspace = true
+rand.workspace = true
 tokio.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
@@ -27,6 +29,7 @@ unicode-normalization.workspace = true
 url.workspace = true
 
 # ream dependencies
+ream-account-manager.workspace = true
 ream-checkpoint-sync.workspace = true
 ream-consensus.workspace = true
 ream-discv5.workspace = true
