@@ -7,6 +7,7 @@ use std::{
 use alloy_primitives::Address;
 use anyhow::anyhow;
 use ream_beacon_api_types::{
+    block::{BroadcastValidation, ProduceBlockData},
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     id::{ID, ValidatorID},
 };
@@ -19,7 +20,11 @@ use reqwest::Url;
 use tokio::time::{Instant, MissedTickBehavior, interval_at};
 use tracing::{error, info, warn};
 
-use crate::beacon_api_client::BeaconApiClient;
+use crate::{
+    beacon_api_client::BeaconApiClient,
+    block::{sign_beacon_block, sign_blinded_beacon_block},
+    randao::sign_randao_reveal,
+};
 
 pub fn check_if_validator_active(
     state: &BeaconState,
@@ -43,6 +48,7 @@ pub struct ValidatorService {
     pub executor: ReamExecutor,
     pub active_validator_count: usize,
     pub pubkey_to_index: HashMap<PubKey, u64>,
+    pub validator_index_to_keystore: HashMap<u64, Arc<Keystore>>,
     pub proposer_duties: Vec<ProposerDuty>,
     pub attester_duties: Vec<AttesterDuty>,
     pub sync_committee_duties: Vec<SyncCommitteeDuty>,
@@ -68,6 +74,7 @@ impl ValidatorService {
             executor,
             active_validator_count: 0,
             pubkey_to_index: HashMap::new(),
+            validator_index_to_keystore: HashMap::new(),
             proposer_duties: Vec::new(),
             attester_duties: Vec::new(),
             sync_committee_duties: Vec::new(),
@@ -137,10 +144,22 @@ impl ValidatorService {
 
             if let Ok(validator_infos) = validator_states {
                 validator_infos.data.into_iter().for_each(|validator_data| {
-                    if let Entry::Vacant(entry) =
-                        self.pubkey_to_index.entry(validator_data.validator.pubkey)
+                    if let Entry::Vacant(entry) = self
+                        .pubkey_to_index
+                        .entry(validator_data.validator.pubkey.clone())
                     {
                         entry.insert(validator_data.index);
+
+                        if let Some(keystore) = self
+                            .validators
+                            .iter()
+                            .find(|keystore| keystore.public_key == validator_data.validator.pubkey)
+                            .cloned()
+                        {
+                            self.validator_index_to_keystore
+                                .insert(validator_data.index, keystore);
+                        }
+
                         self.active_validator_count += 1;
                     }
                 });
@@ -206,6 +225,40 @@ impl ValidatorService {
                 error!("Failed to fetch sync committee duties for epoch {epoch}: {err:?}");
             }
         }
+    }
+
+    pub async fn propose_block(&self, slot: u64, validator_index: u64) -> anyhow::Result<()> {
+        let keystore = self
+            .validator_index_to_keystore
+            .get(&validator_index)
+            .cloned()
+            .ok_or_else(|| anyhow!("Keystore not found for validator: {validator_index}"))?;
+        let randao_reveal = sign_randao_reveal(slot, &keystore.private_key)?;
+        let block_response = self
+            .beacon_api_client
+            .produce_block(slot, randao_reveal, None, None, None)
+            .await?;
+
+        match block_response.data {
+            ProduceBlockData::Full(full_block) => {
+                let signed_beacon_block =
+                    sign_beacon_block(slot, full_block.block, &keystore.private_key)?;
+
+                self.beacon_api_client
+                    .publish_block(BroadcastValidation::Gossip, signed_beacon_block)
+                    .await?;
+            }
+            ProduceBlockData::Blinded(blinded_block) => {
+                let signed_blinded_block =
+                    sign_blinded_beacon_block(slot, blinded_block, &keystore.private_key)?;
+
+                self.beacon_api_client
+                    .publish_blinded_block(BroadcastValidation::Gossip, signed_blinded_block)
+                    .await?;
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn on_epoch(&mut self, epoch: u64) {
