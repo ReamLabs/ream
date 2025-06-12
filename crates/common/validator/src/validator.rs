@@ -10,9 +10,14 @@ use ream_beacon_api_types::{
     block::{BroadcastValidation, ProduceBlockData},
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     id::{ID, ValidatorID},
+    request::SyncCommitteeRequestItem,
 };
-use ream_bls::PubKey;
-use ream_consensus::{electra::beacon_state::BeaconState, misc::compute_epoch_at_slot};
+use ream_bls::{PubKey, traits::Signable};
+use ream_consensus::{
+    constants::DOMAIN_SYNC_COMMITTEE,
+    electra::beacon_state::BeaconState,
+    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+};
 use ream_executor::ReamExecutor;
 use ream_keystore::keystore::Keystore;
 use ream_network_spec::networks::network_spec;
@@ -259,6 +264,49 @@ impl ValidatorService {
         }
 
         Ok(())
+    }
+
+    pub async fn submit_sync_committee(
+        &mut self,
+        slot: u64,
+        validator_indices: &[u64],
+    ) -> anyhow::Result<()> {
+        let beacon_block_root = self
+            .beacon_api_client
+            .get_block_root(ID::Slot(slot))
+            .await?
+            .data
+            .root;
+        let domain = compute_domain(
+            DOMAIN_SYNC_COMMITTEE,
+            Some(network_spec().electra_fork_version),
+            None,
+        );
+        let signing_root = compute_signing_root(beacon_block_root, domain);
+
+        let payload = validator_indices
+            .iter()
+            .filter_map(|&validator_index| {
+                if let Entry::Occupied(keystore) =
+                    self.validator_index_to_keystore.entry(validator_index)
+                {
+                    if let Ok(signature) = keystore.get().private_key.sign(signing_root.as_ref()) {
+                        return Some(SyncCommitteeRequestItem {
+                            slot,
+                            beacon_block_root,
+                            validator_index,
+                            signature,
+                        });
+                    }
+                }
+                None
+            })
+            .collect::<Vec<_>>();
+
+        Ok(self
+            .beacon_api_client
+            .publish_sync_committee_signature(payload)
+            .await?)
     }
 
     pub async fn on_epoch(&mut self, epoch: u64) {
