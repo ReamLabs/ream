@@ -11,7 +11,7 @@ use ream_p2p::{
     network_state::NetworkState,
     peer::{ConnectionState, Direction},
 };
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 
 /// GET /eth/v1/node/peers/{peer_id}
 #[get("/node/peers/{peer_id}")]
