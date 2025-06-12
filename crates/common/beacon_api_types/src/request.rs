@@ -11,9 +11,6 @@ pub struct ValidatorsPostRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct SyncCommitteePostRequest(Vec<SyncCommitteeRequestItem>);
-
-#[derive(Debug, Deserialize, Serialize)]
 pub struct SyncCommitteeRequestItem {
     #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,
