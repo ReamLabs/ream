@@ -194,7 +194,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post("/eth/v1/beacon/pool/sync_committees".to_string())?
+                    .post(
+                        "/eth/v1/beacon/pool/sync_committees".to_string(),
+                        ContentType::Json,
+                    )?
                     .json(&sync_committee_request)
                     .build()?,
             )
