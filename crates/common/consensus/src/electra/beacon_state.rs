@@ -354,7 +354,7 @@ impl BeaconState {
         loop {
             let candidate_index = indices[compute_shuffled_index(i % total, total, seed)?];
 
-            let random_bytes = hash(&[seed.as_slice(), &(i / 16).to_le_bytes()].concat());
+            let random_bytes = hash(&[seed.as_slice(), &((i / 16) as u64).to_le_bytes()].concat());
             let offset = i % 16 * 2;
             let random_value = bytes_to_int64(&random_bytes[offset..offset + 2]);
 
