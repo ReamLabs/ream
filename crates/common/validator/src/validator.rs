@@ -267,43 +267,42 @@ impl ValidatorService {
     }
 
     pub async fn submit_sync_committee(
-        &mut self,
+        &self,
         slot: u64,
-        validator_indices: &[u64],
+        validator_indices: Vec<u64>,
     ) -> anyhow::Result<()> {
+        let domain = compute_domain(
+            DOMAIN_SYNC_COMMITTEE,
+            Some(network_spec().electra_fork_version),
+            None,
+        );
         let beacon_block_root = self
             .beacon_api_client
             .get_block_root(ID::Slot(slot))
             .await?
             .data
             .root;
-        let domain = compute_domain(
-            DOMAIN_SYNC_COMMITTEE,
-            Some(network_spec().electra_fork_version),
-            None,
-        );
         let signing_root = compute_signing_root(beacon_block_root, domain);
 
         let payload = validator_indices
             .iter()
             .filter_map(|&validator_index| {
-                if let Entry::Occupied(keystore) =
-                    self.validator_index_to_keystore.entry(validator_index)
-                {
-                    if let Ok(signature) = keystore.get().private_key.sign(signing_root.as_ref()) {
-                        return Some(SyncCommitteeRequestItem {
+                if let Some(keystore) = self.validator_index_to_keystore.get(&validator_index) {
+                    return match keystore.private_key.sign(signing_root.as_ref()) {
+                        Ok(signature) => Some(Ok(SyncCommitteeRequestItem {
                             slot,
                             beacon_block_root,
                             validator_index,
                             signature,
-                        });
-                    } else {
-                        info!("invalid private key detected for validator at index {validator_index:?}")
-                    }
+                        })),
+                        Err(signing_error) => Some(Err(anyhow!(
+                            "Signing failed for validator {validator_index:?}: {signing_error:?}"
+                        ))),
+                    };
                 }
                 None
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(self
             .beacon_api_client
