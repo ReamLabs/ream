@@ -18,10 +18,7 @@ use ssz_types::{BitVector, typenum::U512};
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    constants::{
-        DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF, SYNC_COMMITTEE_SUBNET_COUNT,
-        TARGET_AGGREGATORS_PER_COMMITTEE,
-    },
+    constants::{SYNC_COMMITTEE_SUBNET_COUNT, TARGET_AGGREGATORS_PER_COMMITTEE},
     contribution_and_proof::SyncCommitteeContribution,
     hash_signature_prefix_to_u64,
 };
@@ -136,13 +133,23 @@ pub fn process_sync_committee_contributions(
     Ok(())
 }
 
-pub fn get_sync_committee_selection_proof(slot: u64, subcommittee_index: u64, privkey: &PrivateKey) -> anyhow::Result<BLSSignature> {
+pub fn get_sync_committee_selection_proof(
+    slot: u64,
+    subcommittee_index: u64,
+    privkey: &PrivateKey,
+) -> anyhow::Result<BLSSignature> {
     let domain = compute_domain(
         DOMAIN_SYNC_COMMITTEE,
         Some(network_spec().electra_fork_version),
         None,
     );
-    let signing_root = compute_signing_root(SyncAggregatorSelectionData {slot, subcommittee_index}, domain);
+    let signing_root = compute_signing_root(
+        SyncAggregatorSelectionData {
+            slot,
+            subcommittee_index,
+        },
+        domain,
+    );
     Ok(privkey.sign(signing_root.as_ref())?)
 }
 

@@ -12,7 +12,7 @@ use ream_beacon_api_types::{
     id::{ID, ValidatorID},
     request::SyncCommitteeRequestItem,
 };
-use ream_bls::{traits::Signable, BLSSignature, PrivateKey, PubKey};
+use ream_bls::{PubKey, traits::Signable};
 use ream_consensus::{
     constants::DOMAIN_SYNC_COMMITTEE,
     electra::beacon_state::BeaconState,
@@ -28,7 +28,7 @@ use tracing::{error, info, warn};
 use crate::{
     beacon_api_client::BeaconApiClient,
     block::{sign_beacon_block, sign_blinded_beacon_block},
-    randao::sign_randao_reveal, sync_committee::SyncAggregatorSelectionData,
+    randao::sign_randao_reveal,
 };
 
 pub fn check_if_validator_active(

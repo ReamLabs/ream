@@ -1,9 +1,6 @@
 use alloy_primitives::B256;
 use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
-use ream_consensus::{
-    electra::beacon_state::BeaconState,
-    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
-};
+use ream_consensus::misc::{compute_domain, compute_signing_root};
 use ream_network_spec::networks::network_spec;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -39,7 +36,11 @@ pub struct SignedContributionAndProof {
     pub signature: BLSSignature,
 }
 
-pub fn get_contribution_and_proof(contribution: SyncCommitteeContribution, aggregator_index: u64, privkey: &PrivateKey) -> anyhow::Result<ContributionAndProof> {
+pub fn get_contribution_and_proof(
+    contribution: SyncCommitteeContribution,
+    aggregator_index: u64,
+    privkey: &PrivateKey,
+) -> anyhow::Result<ContributionAndProof> {
     Ok(ContributionAndProof {
         selection_proof: get_sync_committee_selection_proof(
             contribution.slot,
