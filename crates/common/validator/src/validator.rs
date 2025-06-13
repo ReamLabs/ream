@@ -327,7 +327,7 @@ impl ValidatorService {
         let client = self.beacon_api_client.clone();
 
         tokio::try_join!(
-            self.submit_sync_committee(slot, non_aggregator_indicies),
+            self.submit_sync_committee(slot, non_aggregator_indicies.as_ref()),
             async move {
                 interval.tick().await;
 
