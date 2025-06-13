@@ -381,7 +381,7 @@ impl ValidatorService {
     pub async fn submit_sync_committee(
         &self,
         slot: u64,
-        validator_indices: Vec<u64>,
+        validator_indices: &[u64],
     ) -> anyhow::Result<()> {
         let domain = compute_domain(
             DOMAIN_SYNC_COMMITTEE,
