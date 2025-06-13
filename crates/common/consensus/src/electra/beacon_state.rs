@@ -17,6 +17,8 @@ use ream_bls::{
 use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz_derive::{Decode, Encode};
+#[cfg(feature = "zkvm")]
+use ssz_types::typenum::U536870912;
 use ssz_types::{
     BitVector, FixedVector, VariableList,
     serde_utils::{quoted_u64_fixed_vec, quoted_u64_var_list},
@@ -24,8 +26,6 @@ use ssz_types::{
 };
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
-#[cfg(feature = "zkvm")]
-use ssz_types::typenum::U536870912;
 
 use super::{
     beacon_block::{BeaconBlock, SignedBeaconBlock},
