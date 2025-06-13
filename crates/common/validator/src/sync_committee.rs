@@ -153,7 +153,7 @@ pub fn get_sync_committee_selection_proof(
     Ok(private_key.sign(signing_root.as_ref())?)
 }
 
-pub fn is_sync_committee_aggregator(signature: BLSSignature) -> bool {
+pub fn is_sync_committee_aggregator(signature: &BLSSignature) -> bool {
     hash_signature_prefix_to_u64(signature)
         % max(
             1,

@@ -41,7 +41,10 @@ use serde_json::json;
 use ssz::{Decode, Encode};
 use tracing::{error, info};
 
-use crate::aggregate_and_proof::SignedAggregateAndProof;
+use crate::{
+    aggregate_and_proof::SignedAggregateAndProof,
+    contribution_and_proof::{SignedContributionAndProof, SyncCommitteeContribution},
+};
 
 #[derive(Clone)]
 pub struct BeaconApiClient {
@@ -401,6 +404,62 @@ impl BeaconApiClient {
 
         Ok(())
     }
+
+    pub async fn get_sync_committee_contribution(
+        &self,
+        slot: u64,
+        subcommittee_index: u64,
+        beacon_block_root: B256,
+    ) -> Result<DataResponse<SyncCommitteeContribution>, ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .get("/eth/v1/validator/sync_committee_contribution".to_string())?
+                    .query(&[
+                        ("slot", slot.to_string()),
+                        ("subcommittee_index", subcommittee_index.to_string()),
+                        ("beacon_block_root", beacon_block_root.to_string()),
+                    ])
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(response.json().await?)
+    }
+
+    pub async fn publish_contribution_and_proofs(
+        &self,
+        signed_contribution_and_proofs: Vec<SignedContributionAndProof>,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post(
+                        "/eth/v1/validator/contribution_and_proofs".to_string(),
+                        ContentType::Json,
+                    )?
+                    .json(&signed_contribution_and_proofs)
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
+    }
+
     pub async fn get_attestation_data(
         &self,
         slot: u64,

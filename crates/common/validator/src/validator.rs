@@ -7,6 +7,7 @@ use std::{
 
 use alloy_primitives::Address;
 use anyhow::{anyhow, bail};
+use futures::future::try_join_all;
 use ream_beacon_api_types::{
     block::{BroadcastValidation, ProduceBlockData},
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
@@ -16,7 +17,7 @@ use ream_beacon_api_types::{
 use ream_bls::{PublicKey, traits::Signable};
 use ream_consensus::{
     attestation_data::AttestationData,
-    constants::DOMAIN_SYNC_COMMITTEE,
+    constants::{DOMAIN_SYNC_COMMITTEE, INTERVALS_PER_SLOT, SYNC_COMMITTEE_SIZE},
     electra::beacon_state::BeaconState,
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
     single_attestation::SingleAttestation,
@@ -34,7 +35,12 @@ use crate::{
     attestation::{get_selection_proof, sign_attestation_data},
     beacon_api_client::BeaconApiClient,
     block::{sign_beacon_block, sign_blinded_beacon_block},
+    constants::SYNC_COMMITTEE_SUBNET_COUNT,
+    contribution_and_proof::{
+        ContributionAndProof, SignedContributionAndProof, get_contribution_and_proof_signature,
+    },
     randao::sign_randao_reveal,
+    sync_committee::{get_sync_committee_selection_proof, is_sync_committee_aggregator},
 };
 
 pub fn check_if_validator_active(
@@ -274,10 +280,108 @@ impl ValidatorService {
         Ok(())
     }
 
+    pub async fn perform_sync_duties(&mut self, slot: u64) -> anyhow::Result<()> {
+        let mut interval = {
+            let interval_start = Instant::now();
+            interval_at(
+                interval_start,
+                Duration::from_secs(network_spec().seconds_per_slot * 2 / INTERVALS_PER_SLOT),
+            )
+        };
+        interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
+
+        let (aggregator_infos, non_aggregator_indicies) = self
+            .sync_committee_duties
+            .iter()
+            .try_fold::<_, _, Result<_, anyhow::Error>>(
+            (
+                Vec::with_capacity(self.sync_committee_duties.len()),
+                Vec::with_capacity(self.sync_committee_duties.len()),
+            ),
+            |(mut aggregator_infos, mut non_aggregator_indicies), duty| {
+                if let Some(keystore) = self.validator_index_to_keystore.get(&duty.validator_index)
+                {
+                    for &committee_index in &duty.validator_sync_committee_indices {
+                        let proof = get_sync_committee_selection_proof(
+                            slot,
+                            committee_index,
+                            &keystore.private_key,
+                        )
+                        .map_err(|err| anyhow!("Could not get selection proof: {err:?}"))?;
+                        if is_sync_committee_aggregator(&proof) {
+                            aggregator_infos.push((
+                                duty.validator_index,
+                                committee_index,
+                                proof,
+                                Arc::clone(keystore),
+                            ));
+                        } else {
+                            non_aggregator_indicies.push(duty.validator_index);
+                        }
+                    }
+                }
+                Ok((aggregator_infos, non_aggregator_indicies))
+            },
+        )?;
+
+        let client = self.beacon_api_client.clone();
+
+        tokio::try_join!(
+            self.submit_sync_committee(slot, non_aggregator_indicies),
+            async move {
+                interval.tick().await;
+
+                let block_root = client.get_block_root(ID::Slot(slot)).await?.data.root;
+
+                let contribution_tasks = aggregator_infos
+                    .into_iter()
+                    .map({
+                        let client = client.clone();
+                        move |(validator_index, committee_index, selection_proof, keystore)| {
+                            let client = client.clone();
+                            async move {
+                                let subcommittee_index = committee_index
+                                    / (SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT);
+                                let contribution = client
+                                    .get_sync_committee_contribution(
+                                        slot,
+                                        subcommittee_index,
+                                        block_root,
+                                    )
+                                    .await?
+                                    .data;
+                                let contribution_and_proof = ContributionAndProof {
+                                    aggregator_index: validator_index,
+                                    contribution,
+                                    selection_proof,
+                                };
+                                let contribution_and_proof_signature =
+                                    get_contribution_and_proof_signature(
+                                        &contribution_and_proof,
+                                        &keystore.private_key,
+                                    )?;
+                                Ok::<_, anyhow::Error>(SignedContributionAndProof {
+                                    message: contribution_and_proof,
+                                    signature: contribution_and_proof_signature,
+                                })
+                            }
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                client
+                    .publish_contribution_and_proofs(try_join_all(contribution_tasks).await?)
+                    .await?;
+                Ok(())
+            }
+        )?;
+
+        Ok(())
+    }
+
     pub async fn submit_sync_committee(
         &self,
         slot: u64,
-        validator_indices: &[u64],
+        validator_indices: Vec<u64>,
     ) -> anyhow::Result<()> {
         let domain = compute_domain(
             DOMAIN_SYNC_COMMITTEE,
@@ -290,11 +394,6 @@ impl ValidatorService {
             .await?
             .data
             .root;
-        let domain = compute_domain(
-            DOMAIN_SYNC_COMMITTEE,
-            Some(network_spec().electra_fork_version),
-            None,
-        );
         let signing_root = compute_signing_root(beacon_block_root, domain);
 
         let payload = validator_indices
