@@ -24,7 +24,6 @@ use ssz_types::{
 };
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
-
 #[cfg(feature = "zkvm")]
 use ssz_types::typenum::U536870912;
 
