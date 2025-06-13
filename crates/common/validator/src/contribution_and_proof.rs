@@ -39,13 +39,13 @@ pub struct SignedContributionAndProof {
 pub fn get_contribution_and_proof(
     contribution: SyncCommitteeContribution,
     aggregator_index: u64,
-    privkey: &PrivateKey,
+    private_key: &PrivateKey,
 ) -> anyhow::Result<ContributionAndProof> {
     Ok(ContributionAndProof {
         selection_proof: get_sync_committee_selection_proof(
             contribution.slot,
             contribution.subcommittee_index,
-            privkey,
+            private_key,
         )?,
         aggregator_index,
         contribution,

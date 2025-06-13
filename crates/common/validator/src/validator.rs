@@ -297,6 +297,8 @@ impl ValidatorService {
                             validator_index,
                             signature,
                         });
+                    } else {
+                        info!("invalid private key detected for validator at index {validator_index:?}")
                     }
                 }
                 None

@@ -136,7 +136,7 @@ pub fn process_sync_committee_contributions(
 pub fn get_sync_committee_selection_proof(
     slot: u64,
     subcommittee_index: u64,
-    privkey: &PrivateKey,
+    private_key: &PrivateKey,
 ) -> anyhow::Result<BLSSignature> {
     let domain = compute_domain(
         DOMAIN_SYNC_COMMITTEE,
@@ -150,7 +150,7 @@ pub fn get_sync_committee_selection_proof(
         },
         domain,
     );
-    Ok(privkey.sign(signing_root.as_ref())?)
+    Ok(private_key.sign(signing_root.as_ref())?)
 }
 
 pub fn is_sync_committee_aggregator(signature: BLSSignature) -> bool {
