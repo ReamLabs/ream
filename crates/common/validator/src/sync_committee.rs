@@ -143,13 +143,7 @@ pub fn get_sync_committee_selection_proof(
         Some(network_spec().electra_fork_version),
         None,
     );
-    let signing_root = compute_signing_root(
-        SyncAggregatorSelectionData {
-            slot,
-            subcommittee_index,
-        },
-        domain,
-    );
+    let signing_root = compute_signing_root(SyncAggregatorSelectionData {slot, subcommittee_index}, domain);
     Ok(private_key.sign(signing_root.as_ref())?)
 }
 

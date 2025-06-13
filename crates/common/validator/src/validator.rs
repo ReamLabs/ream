@@ -34,7 +34,7 @@ use crate::{
     attestation::{get_selection_proof, sign_attestation_data},
     beacon_api_client::BeaconApiClient,
     block::{sign_beacon_block, sign_blinded_beacon_block},
-    randao::sign_randao_reveal,
+    randao::sign_randao_reveal, sync_committee::SyncAggregatorSelectionData,
 };
 
 pub fn check_if_validator_active(
