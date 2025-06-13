@@ -150,7 +150,7 @@ pub fn get_sync_committee_selection_proof(
         },
         domain,
     );
-    Ok(privkey.sign(signing_root.as_ref())?)
+    Ok(private_key.sign(signing_root.as_ref())?)
 }
 
 pub fn is_sync_committee_aggregator(signature: BLSSignature) -> bool {
