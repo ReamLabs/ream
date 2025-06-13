@@ -143,14 +143,8 @@ pub fn get_sync_committee_selection_proof(
         Some(network_spec().electra_fork_version),
         None,
     );
-    let signing_root = compute_signing_root(
-        SyncAggregatorSelectionData {
-            slot,
-            subcommittee_index,
-        },
-        domain,
-    );
-    Ok(private_key.sign(signing_root.as_ref())?)
+    let signing_root = compute_signing_root(SyncAggregatorSelectionData {slot, subcommittee_index}, domain);
+    Ok(privkey.sign(signing_root.as_ref())?)
 }
 
 pub fn is_sync_committee_aggregator(signature: BLSSignature) -> bool {
