@@ -423,6 +423,14 @@ impl Network {
                         request_id,
                         RequestMessage::Status(self.network_state.status.read().clone()),
                     );
+                    self.swarm.behaviour_mut().req_resp.send_request(
+                        peer_id,
+                        request_id,
+                        RequestMessage::Ping(Ping::new(
+                            self.network_state.meta_data.read().seq_number,
+                        )),
+                    );
+                    self.peers_to_ping.insert(peer_id);
                 }
 
                 None
@@ -635,7 +643,6 @@ impl Network {
                                         .map_or(0, |meta_data| meta_data.seq_number)
                             {
                                 let request_id = self.request_id();
-
                                 self.swarm.behaviour_mut().req_resp.send_request(
                                     peer_id,
                                     request_id,
