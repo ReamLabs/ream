@@ -10,7 +10,9 @@ pub struct SignedBeaconBlockHeader {
     pub signature: BLSSignature,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(
+    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
+)]
 pub struct BeaconBlockHeader {
     #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,

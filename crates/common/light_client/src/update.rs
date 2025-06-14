@@ -91,30 +91,30 @@ impl LightClientUpdate {
         // Indicate finality whenever possible
         let (finalized_header, finality_branch) = match finalized_block {
             Some(finalized_block) => {
-                let proof = Some(attested_state.finalized_root_inclusion_proof()?.into());
+                let proof = attested_state.finalized_root_inclusion_proof()?.into();
                 if finalized_block.message.slot != GENESIS_SLOT {
                     let header = LightClientHeader::new(&finalized_block)?;
                     ensure!(
                         header.beacon.tree_hash_root() == attested_state.finalized_checkpoint.root,
                         "Finalized header root does not match attested finalized checkpoint"
                     );
-                    (Some(header), proof)
+                    (header, proof)
                 } else {
                     ensure!(
                         attested_state.finalized_checkpoint.root == B256::default(),
                         "Expected empty finalized checkpoint root at genesis"
                     );
-                    (None, proof)
+                    (Default::default(), proof)
                 }
             }
-            None => (None, None),
+            None => (Default::default(), Default::default()),
         };
         Ok(LightClientUpdate {
             attested_header,
             next_sync_committee,
             next_sync_committee_branch,
-            finalized_header: finalized_header.expect("finality_header should not be None"),
-            finality_branch: finality_branch.expect("finality_branch should not be None"),
+            finalized_header,
+            finality_branch,
             sync_aggregate: block.message.body.sync_aggregate,
             signature_slot: block.message.slot,
         })

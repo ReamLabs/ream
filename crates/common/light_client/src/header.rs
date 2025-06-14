@@ -9,7 +9,9 @@ use ssz_types::{FixedVector, typenum::U3};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(
+    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
+)]
 pub struct LightClientHeader {
     pub beacon: BeaconBlockHeader,
     pub execution: ExecutionPayloadHeader,
