@@ -346,21 +346,40 @@ impl Network {
                     self.peers_to_ping.insert(peer_id);
                 }
                 _ = status_interval.tick() => {
-                    let peers_to_ping_count = self.peers_to_ping.len();
-                    let mut counts: HashMap<ConnectionState, usize> = HashMap::new();
-                    for peer in self.network_state.peer_table.read().values() {
-                        *counts.entry(peer.state).or_insert(0) += 1;
-                    }
-                    info!(
-                        "Peer statuses: {counts:?}, Peers to ping: {peers_to_ping_count}, MetaData seq_number: {}",
-                        self.network_state.meta_data.read().seq_number
-                    );
-
-                    // remove all peers that have not been seen for more than 6 minutes
                     let now = Instant::now();
-                    self.network_state.peer_table.write().retain(|_, peer| {
-                        now.duration_since(peer.last_seen) < Duration::from_secs(360)
-                    });
+                    let mut peer_table = self.network_state.peer_table.write();
+
+                    // Clean up stale peers
+                    peer_table.retain(|_, peer| now.duration_since(peer.last_seen) < Duration::from_secs(360));
+
+                    // Compute peer state counts, status/meta counts in a single pass
+                    let mut counts: HashMap<ConnectionState, usize> = HashMap::new();
+                    let mut status_is_some_count = 0;
+                    let mut meta_data_some_count = 0;
+
+                    for peer in peer_table.values() {
+                        *counts.entry(peer.state).or_insert(0) += 1;
+                        if peer.status.is_some() {
+                            status_is_some_count += 1;
+                        }
+                        if peer.meta_data.is_some() {
+                            meta_data_some_count += 1;
+                        }
+                    }
+
+                    let peer_count = peer_table.len();
+                    let peers_to_ping_count = self.peers_to_ping.len();
+                    let seq_number = self.network_state.meta_data.read().seq_number;
+
+                    info!("Peer statuses: {counts:?}, Peers with Status {status_is_some_count}, Peers with MetaData {meta_data_some_count}, Peers to ping: {peers_to_ping_count}, MetaData seq_number: {seq_number}");
+
+                    if peer_count < TARGET_PEER_COUNT {
+                        info!("Peer count is below target: {peer_count}, discovering more peers");
+                        self.swarm
+                            .behaviour_mut()
+                            .discovery
+                            .discover_peers(QueryType::Peers, 16);
+                    }
                 }
             }
         }
@@ -370,8 +389,6 @@ impl Network {
         &mut self,
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {
-        // currently no-op for any network events
-        info!("Event: {:?}", event);
         match event {
             SwarmEvent::OutgoingConnectionError {
                 peer_id: Some(peer_id),
@@ -384,21 +401,6 @@ impl Network {
                     Direction::Outbound,
                     None,
                 );
-                None
-            }
-            SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                self.network_state.peer_table.write().remove(&peer_id);
-                let peer_count = self.network_state.peer_table.read().len();
-                if peer_count < TARGET_PEER_COUNT {
-                    info!(
-                        "Peer count is below target: {peer_count}, attempting to discover more peers"
-                    );
-                    self.swarm
-                        .behaviour_mut()
-                        .discovery
-                        .discover_peers(QueryType::Peers, 16);
-                }
-
                 None
             }
             // We only handle this for incoming connections
@@ -705,7 +707,6 @@ impl Network {
     }
 
     fn handle_gossipsub_event(&mut self, event: GossipsubEvent) -> Option<ReamNetworkEvent> {
-        info!("Gossipsub event: {:?}", event);
         match event {
             GossipsubEvent::Message {
                 propagation_source: _,
