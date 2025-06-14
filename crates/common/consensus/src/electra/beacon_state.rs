@@ -17,6 +17,8 @@ use ream_bls::{
 use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz_derive::{Decode, Encode};
+#[cfg(feature = "zkvm")]
+use ssz_types::typenum::U536870912;
 use ssz_types::{
     BitVector, FixedVector, VariableList,
     serde_utils::{quoted_u64_fixed_vec, quoted_u64_var_list},
@@ -127,6 +129,14 @@ pub mod quoted_u8_var_list {
     }
 }
 
+// The BeaconState contains some "zkvm" features where 32-bit zkVMs would fail
+// on constructing a VariableList larger than 2^32 size (i.e. 2^40). When "zkvm" feature
+// is enabled, it would construct the BeaconState with 2^29 list instead.
+//
+// This feature needs to be used with the modified ssz_types crate at
+// https://github.com/ReamLabs/ssz_types/tree/magic-extended-list
+// where the crate would detect 2^29 as a magic number when computing the root hash,
+// and it will compute as a 2^40 list root instead.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BeaconState {
     // Versioning
@@ -151,9 +161,16 @@ pub struct BeaconState {
     pub eth1_deposit_index: u64,
 
     // Registry
+    #[cfg(not(feature = "zkvm"))]
     pub validators: VariableList<Validator, U1099511627776>,
+    #[cfg(feature = "zkvm")]
+    pub validators: VariableList<Validator, U536870912>,
+
+    #[cfg(not(feature = "zkvm"))]
     #[serde(with = "quoted_u64_var_list")]
     pub balances: VariableList<u64, U1099511627776>,
+    #[cfg(feature = "zkvm")]
+    pub balances: VariableList<u64, U536870912>,
 
     // Randomness
     pub randao_mixes: FixedVector<B256, U65536>,
@@ -163,10 +180,17 @@ pub struct BeaconState {
     pub slashings: FixedVector<u64, U8192>,
 
     // Participation
+    #[cfg(not(feature = "zkvm"))]
     #[serde(with = "quoted_u8_var_list")]
     pub previous_epoch_participation: VariableList<u8, U1099511627776>,
+    #[cfg(feature = "zkvm")]
+    pub previous_epoch_participation: VariableList<u8, U536870912>,
+
+    #[cfg(not(feature = "zkvm"))]
     #[serde(with = "quoted_u8_var_list")]
     pub current_epoch_participation: VariableList<u8, U1099511627776>,
+    #[cfg(feature = "zkvm")]
+    pub current_epoch_participation: VariableList<u8, U536870912>,
 
     // Finality
     pub justification_bits: BitVector<U4>,
@@ -175,8 +199,11 @@ pub struct BeaconState {
     pub finalized_checkpoint: Checkpoint,
 
     // Inactivity
+    #[cfg(not(feature = "zkvm"))]
     #[serde(with = "quoted_u64_var_list")]
     pub inactivity_scores: VariableList<u64, U1099511627776>,
+    #[cfg(feature = "zkvm")]
+    pub inactivity_scores: VariableList<u64, U536870912>,
 
     // Sync
     pub current_sync_committee: Arc<SyncCommittee>,

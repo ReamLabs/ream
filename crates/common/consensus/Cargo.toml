@@ -9,6 +9,9 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+zkvm = []
+
 [dependencies]
 alloy-consensus.workspace = true
 alloy-primitives.workspace = true
