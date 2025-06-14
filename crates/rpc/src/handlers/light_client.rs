@@ -1,6 +1,6 @@
 use actix_web::{
     HttpResponse, Responder, get,
-    web::{Data, Path},
+    web::{Data, Path, Query},
 };
 use alloy_primitives::B256;
 use ream_beacon_api_types::{error::ApiError, responses::DataVersionedResponse};
@@ -49,18 +49,11 @@ pub async fn get_light_client_bootstrap(
 #[get("/beacon/light_client/updates")]
 pub async fn get_light_client_updates(
     db: Data<ReamDB>,
-    start_period: String,
-    count: String,
+    start_period: Query<u64>,
+    count: Query<u64>,
 ) -> Result<impl Responder, ApiError> {
-    let start_period: u64 = start_period
-        .parse()
-        .map_err(|_| ApiError::BadRequest("Invalid start_period".into()))?;
-
-    let count: u64 = count
-        .parse()
-        .map_err(|_| ApiError::BadRequest("Invalid count".into()))?;
-
-    let count = std::cmp::min(count, MAX_REQUEST_LIGHT_CLIENT_UPDATES);
+    let start_period: u64 = start_period.into_inner();
+    let count = std::cmp::min(count.into_inner(), MAX_REQUEST_LIGHT_CLIENT_UPDATES);
 
     let mut updates = Vec::new();
 
@@ -69,10 +62,16 @@ pub async fn get_light_client_updates(
         let block_root = db
             .slot_index_provider()
             .get(slot)
-            .map_err(|_| ApiError::InternalError)?
-            .ok_or(ApiError::NotFound(format!(
-                "Failed to find block_root for slot {slot:?}"
-            )))?;
+            .map_err(|err| {
+                error!("Failed to get block root for slot {}: {:?}", slot, err);
+                ApiError::InternalError
+            })?
+            .ok_or_else(|| {
+                ApiError::NotFound(format!(
+                    "No block root found for slot {} (period {})",
+                    slot, start_period
+                ))
+            })?;
 
         let block = db
             .beacon_block_provider()
@@ -118,18 +117,19 @@ pub async fn get_light_client_updates(
                 ApiError::NotFound(format!("Failed to find beacon block from {block_root:?}"))
             })?;
 
-        let light_client_update = LightClientUpdate::new(
-            state,
-            block,
-            attested_state,
-            attested_block,
-            Some(finalized_block),
-        )
-        .map_err(|err| {
-            error!("Failed to create light client bootstrap, error: {err:?}");
-            ApiError::InternalError
-        })?;
-        updates.push(light_client_update);
+        updates.push(
+            LightClientUpdate::new(
+                state,
+                block,
+                attested_state,
+                attested_block,
+                Some(finalized_block),
+            )
+            .map_err(|err| {
+                error!("Failed to create light client bootstrap, error: {err:?}");
+                ApiError::InternalError
+            })?,
+        );
     }
     if updates.is_empty() {
         return Err(ApiError::NotFound(

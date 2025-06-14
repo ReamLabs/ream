@@ -31,8 +31,8 @@ pub struct LightClientUpdate {
     #[serde(with = "serde_utils::quoted_u64")]
     pub signature_slot: u64,
 }
+
 impl LightClientUpdate {
-    /// implements create_light_client_update
     pub fn new(
         state: BeaconState,
         block: SignedBeaconBlock,
@@ -47,7 +47,7 @@ impl LightClientUpdate {
                 .sync_aggregate
                 .sync_committee_bits
                 .iter()
-                .filter(|b| *b)
+                .filter(|sync_committee_bit| *sync_committee_bit)
                 .count()
                 >= MIN_SYNC_COMMITTEE_PARTICIPANTS.try_into().unwrap(),
             "Not enough sync committee participants"
@@ -76,55 +76,45 @@ impl LightClientUpdate {
         let update_attested_period =
             compute_sync_committee_period_at_slot(attested_block.message.slot);
 
-        let update_attested_header = LightClientHeader::new(&attested_block);
+        let attested_header = LightClientHeader::new(&attested_block)?;
 
-        let mut update_next_sync_committee = None;
-        let mut update_next_sync_committee_branch = None;
-        let mut update_finalized_header: Option<Result<LightClientHeader, anyhow::Error>> = None;
-        let mut update_finality_branch = None;
-
-        //`next_sync_committee` is only useful if the message is signed by the current sync
-        //`next_sync_committee` committee
-        if update_attested_period == update_signature_period {
-            update_next_sync_committee = Some(attested_state.next_sync_committee.clone());
-            update_next_sync_committee_branch =
-                Some(attested_state.next_sync_committee_inclusion_proof()?.into());
-        }
+        // `next_sync_committee` is only useful if the message is signed by the current sync
+        // committee
+        ensure!(
+            update_signature_period == update_attested_period,
+            "Signature period must match attested period"
+        );
+        let next_sync_committee = attested_state.next_sync_committee.as_ref().clone();
+        let next_sync_committee_branch =
+            attested_state.next_sync_committee_inclusion_proof()?.into();
 
         // Indicate finality whenever possible
-        if let Some(finalized_block) = finalized_block {
-            if finalized_block.message.slot != GENESIS_SLOT {
-                let finalized_header = LightClientHeader::new(&finalized_block);
-                let header = finalized_header?;
-                ensure!(
-                    header.beacon.tree_hash_root() == attested_state.finalized_checkpoint.root,
-                    "Finalized header root does not match attested finalized checkpoint"
-                );
-                update_finalized_header = Some(Ok(header));
-            } else {
-                ensure!(
-                    attested_state.finalized_checkpoint.root == B256::default(),
-                    "Expected empty finalized checkpoint root at genesis"
-                );
+        let (finalized_header, finality_branch) = match finalized_block {
+            Some(finalized_block) => {
+                let proof = Some(attested_state.finalized_root_inclusion_proof()?.into());
+                if finalized_block.message.slot != GENESIS_SLOT {
+                    let header = LightClientHeader::new(&finalized_block)?;
+                    ensure!(
+                        header.beacon.tree_hash_root() == attested_state.finalized_checkpoint.root,
+                        "Finalized header root does not match attested finalized checkpoint"
+                    );
+                    (Some(header), proof)
+                } else {
+                    ensure!(
+                        attested_state.finalized_checkpoint.root == B256::default(),
+                        "Expected empty finalized checkpoint root at genesis"
+                    );
+                    (None, proof)
+                }
             }
-
-            update_finality_branch = Some(attested_state.finalized_root_inclusion_proof()?);
+            None => (None, None),
         };
-
         Ok(LightClientUpdate {
-            attested_header: update_attested_header?,
-            next_sync_committee: update_next_sync_committee
-                .ok_or_else(|| anyhow::anyhow!("Missing next sync committee"))?
-                .as_ref()
-                .clone(),
-            next_sync_committee_branch: update_next_sync_committee_branch
-                .ok_or_else(|| anyhow::anyhow!("Missing next sync committee branch"))?,
-            finalized_header: update_finalized_header
-                .ok_or_else(|| anyhow::anyhow!("Missing finalized header"))?
-                .unwrap(),
-            finality_branch: FixedVector::<_, U6>::from(
-                update_finality_branch.ok_or_else(|| anyhow::anyhow!("Missing finality branch"))?,
-            ),
+            attested_header,
+            next_sync_committee,
+            next_sync_committee_branch,
+            finalized_header: finalized_header.expect("finality_header should not be None"),
+            finality_branch: finality_branch.expect("finality_branch should not be None"),
             sync_aggregate: block.message.body.sync_aggregate,
             signature_slot: block.message.slot,
         })
