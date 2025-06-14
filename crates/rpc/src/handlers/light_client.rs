@@ -1,12 +1,16 @@
 use actix_web::{
     HttpResponse, Responder, get,
-    web::{Data, Path},
+    web::{Data, Path, Query},
 };
 use alloy_primitives::B256;
 use ream_beacon_api_types::{error::ApiError, responses::DataVersionedResponse};
-use ream_light_client::bootstrap::LightClientBootstrap;
+use ream_consensus::constants::{
+    EPOCHS_PER_SYNC_COMMITTEE_PERIOD, MAX_REQUEST_LIGHT_CLIENT_UPDATES, SLOTS_PER_EPOCH,
+};
+use ream_light_client::{bootstrap::LightClientBootstrap, update::LightClientUpdate};
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::error;
+use tree_hash::TreeHash;
 
 #[get("/beacon/light_client/bootstrap/{block_root}")]
 pub async fn get_light_client_bootstrap(
@@ -40,4 +44,97 @@ pub async fn get_light_client_bootstrap(
         })?;
 
     Ok(HttpResponse::Ok().json(DataVersionedResponse::new(light_client_bootstrap)))
+}
+
+#[get("/beacon/light_client/updates")]
+pub async fn get_light_client_updates(
+    db: Data<ReamDB>,
+    start_period: Query<u64>,
+    count: Query<u64>,
+) -> Result<impl Responder, ApiError> {
+    let start_period: u64 = start_period.into_inner();
+    let count = std::cmp::min(count.into_inner(), MAX_REQUEST_LIGHT_CLIENT_UPDATES);
+
+    let mut updates = Vec::new();
+
+    for period in start_period..start_period + count {
+        let slot = period * EPOCHS_PER_SYNC_COMMITTEE_PERIOD * SLOTS_PER_EPOCH;
+        let block_root = db
+            .slot_index_provider()
+            .get(slot)
+            .map_err(|err| {
+                error!("Failed to get block root for slot {}: {:?}", slot, err);
+                ApiError::InternalError
+            })?
+            .ok_or_else(|| {
+                ApiError::NotFound(format!(
+                    "No block root found for slot {} (period {})",
+                    slot, start_period
+                ))
+            })?;
+
+        let block = db
+            .beacon_block_provider()
+            .get(block_root)
+            .map_err(|_| ApiError::InternalError)?
+            .ok_or(ApiError::NotFound(format!(
+                "Failed to find beacon_block from {block_root:?}"
+            )))?;
+
+        let state = db
+            .beacon_state_provider()
+            .get(block_root)
+            .map_err(|_| ApiError::InternalError)?
+            .ok_or(ApiError::NotFound(format!(
+                "Failed to find beacon_state from {block_root:?}"
+            )))?;
+
+        let attested_block = db
+            .beacon_block_provider()
+            .get(block.message.parent_root)
+            .map_err(|_| ApiError::InternalError)?
+            .ok_or(ApiError::NotFound(format!(
+                "Failed to find beacon_block from {block_root:?}"
+            )))?;
+
+        let attested_block_root = attested_block.tree_hash_root();
+        let attested_state = db
+            .beacon_state_provider()
+            .get(attested_block_root)
+            .map_err(|_| ApiError::InternalError)?
+            .ok_or(ApiError::NotFound(format!(
+                "Failed to find beacon_state from {block_root:?}"
+            )))?;
+
+        let finalized_block = db
+            .beacon_block_provider()
+            .get(attested_state.finalized_checkpoint.root)
+            .map_err(|err| {
+                error!("Failed to get block by block_root, error: {err:?}");
+                ApiError::InternalError
+            })?
+            .ok_or_else(|| {
+                ApiError::NotFound(format!("Failed to find beacon block from {block_root:?}"))
+            })?;
+
+        updates.push(
+            LightClientUpdate::new(
+                state,
+                block,
+                attested_state,
+                attested_block,
+                Some(finalized_block),
+            )
+            .map_err(|err| {
+                error!("Failed to create light client bootstrap, error: {err:?}");
+                ApiError::InternalError
+            })?,
+        );
+    }
+    if updates.is_empty() {
+        return Err(ApiError::NotFound(
+            "No light client updates found in requested range".into(),
+        ));
+    }
+    Ok(HttpResponse::Ok().json(DataVersionedResponse::new(updates)))
 }
