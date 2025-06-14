@@ -5244,6 +5244,7 @@ dependencies = [
  "ream-beacon-api-types",
  "ream-bls",
  "ream-consensus",
+ "ream-execution-engine",
  "ream-fork-choice",
  "ream-light-client",
  "ream-network-spec",
