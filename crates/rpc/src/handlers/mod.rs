@@ -8,5 +8,6 @@ pub mod light_client;
 pub mod peers;
 pub mod pool;
 pub mod state;
+pub mod syncing;
 pub mod validator;
 pub mod version;
