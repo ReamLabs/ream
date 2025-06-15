@@ -50,6 +50,7 @@ async fn main() {
         Commands::ValidatorNode(config) => run_validator_node(*config, async_executor).await,
         Commands::AccountManager(config) => run_account_manager(*config).await,
     }
+    process::exit(0);
 }
 
 pub async fn run_beacon_node(
@@ -186,5 +187,4 @@ pub async fn run_account_manager(mut config: AccountManagerConfig) {
     ream_account_manager::generate_keys(&seed_phrase);
 
     info!("Account manager completed successfully");
-    process::exit(0);
 }
