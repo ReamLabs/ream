@@ -153,3 +153,7 @@ pub fn get_committee_indices(commitee_bits: &BitVector<U64>) -> Vec<u64> {
 pub fn compute_sync_committee_period(epoch: u64) -> u64 {
     epoch / EPOCHS_PER_SYNC_COMMITTEE_PERIOD
 }
+
+pub fn compute_sync_committee_period_at_slot(slot: u64) -> u64 {
+    compute_sync_committee_period(compute_epoch_at_slot(slot))
+}
