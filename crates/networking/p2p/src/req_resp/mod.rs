@@ -146,10 +146,6 @@ impl NetworkBehaviour for ReqResp {
         connection_id: ConnectionId,
         event: <Self::ConnectionHandler as ConnectionHandler>::ToBehaviour,
     ) {
-        info!(
-            "REQRESP: Handling connection handler event {:?} {:?} {:?}",
-            peer_id, connection_id, event
-        );
         match event {
             HandlerEvent::Ok(message) => self.events.push(ToSwarm::GenerateEvent(ReqRespMessage {
                 peer_id,

@@ -1,6 +1,6 @@
 use std::{
     future::Future,
-    io::{Cursor, Read, Write},
+    io::{Cursor, ErrorKind, Read, Write},
     pin::Pin,
 };
 
@@ -60,6 +60,7 @@ where
                 protocol,
                 current_response_code: None,
                 context_bytes: None,
+                length: None,
             },
         );
 
@@ -87,6 +88,7 @@ pub struct OutboundSSZSnappyCodec {
     protocol: ProtocolId,
     current_response_code: Option<ResponseCode>,
     context_bytes: Option<B32>,
+    length: Option<usize>,
 }
 
 impl Encoder<RequestMessage> for OutboundSSZSnappyCodec {
@@ -151,9 +153,15 @@ impl Decoder for OutboundSSZSnappyCodec {
             }
         }
 
-        let length = match Uvi::<usize>::default().decode(src)? {
-            Some(length) => length,
-            None => return Ok(None),
+        let length = match self.length {
+            Some(cached_length) => cached_length,
+            None => {
+                let decoded_length = match Uvi::<usize>::default().decode(src)? {
+                    Some(decoded_length) => decoded_length,
+                    None => return Ok(None),
+                };
+                *self.length.get_or_insert(decoded_length)
+            }
         };
 
         // The length-prefix is within the expected size bounds derived from the payload SSZ
@@ -171,6 +179,8 @@ impl Decoder for OutboundSSZSnappyCodec {
         let result = match decoder.read_exact(&mut buf) {
             Ok(_) => {
                 src.advance(decoder.get_ref().position() as usize);
+                self.length = None;
+                self.context_bytes = None;
                 if ResponseCode::Success == response_code {
                     match self.protocol.protocol {
                         SupportedProtocol::GoodbyeV1 => Ok(Some(RespMessage::Error(
@@ -222,9 +232,20 @@ impl Decoder for OutboundSSZSnappyCodec {
                     )))
                 }
             }
-            Err(_) => Err(ReqRespError::InvalidData(
-                "Failed to snappy message".to_string(),
-            )),
+            Err(err) => match err.kind() {
+                ErrorKind::UnexpectedEof => {
+                    if decoder.get_ref().position() < max_message_size() {
+                        Ok(None)
+                    } else {
+                        Err(ReqRespError::InvalidData(format!(
+                            "Message is bigger then max message size: {err:?}"
+                        )))
+                    }
+                }
+                _ => Err(ReqRespError::InvalidData(format!(
+                    "Failed to snappy message {err:?}"
+                ))),
+            },
         };
         debug!(
             "OutboundSSZSnappyCodec::decode: protocol: {:?}, response_code: {:?}, result: {:?}",
