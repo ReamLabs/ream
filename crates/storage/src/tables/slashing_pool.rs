@@ -15,6 +15,7 @@ impl Default for SlashingPool {
         Self::new()
     }
 }
+
 impl SlashingPool {
     pub fn new() -> Self {
         Self {
@@ -29,11 +30,10 @@ impl SlashingPool {
     }
 
     /// Insert a proposer slashing into the pool.
-    /// 
     pub fn insert_proposer_slashing(
         &self,
         proposer_slashing: ProposerSlashing,
-    ) -> Result<(), Error> {
+    ) -> anyhow::Result<(), Error> {
         let mut proposer_slashings = self.proposer_slashings.write();
         let proposer_index = proposer_slashing.signed_header_1.message.proposer_index;
 
