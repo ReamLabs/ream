@@ -3,6 +3,9 @@ use clap::Parser;
 use rand::rngs::OsRng;
 use tracing::warn;
 
+const MIN_CHUNK_SIZE: u64 = 4;
+const MIN_LIFETIME: u64 = 18;
+
 #[derive(Debug, Parser)]
 pub struct AccountManagerConfig {
     /// Verbosity level
@@ -40,15 +43,21 @@ impl AccountManagerConfig {
 
     pub fn validate(&mut self) -> anyhow::Result<()> {
         // Validate chunk size
-        if self.chunk_size < 4 {
-            warn!("Chunk size must be at least 4, resetting to 4");
-            self.chunk_size = 4;
+        if self.chunk_size < MIN_CHUNK_SIZE {
+            warn!(
+                "Chunk size must be at least {}, resetting to {}",
+                MIN_CHUNK_SIZE, MIN_CHUNK_SIZE
+            );
+            self.chunk_size = MIN_CHUNK_SIZE;
         }
 
         // Validate lifetime
-        if self.lifetime < 18 {
-            warn!("Lifetime must be at least 18, resetting to 18");
-            self.lifetime = 18;
+        if self.lifetime < MIN_LIFETIME {
+            warn!(
+                "Lifetime must be at least {}, resetting to {}",
+                MIN_LIFETIME, MIN_LIFETIME
+            );
+            self.lifetime = MIN_LIFETIME;
         }
 
         Ok(())
@@ -60,7 +69,7 @@ impl AccountManagerConfig {
         } else {
             let mnemonic = Mnemonic::random(OsRng, Default::default());
             let phrase = mnemonic.phrase().to_string();
-            warn!("⚠️  IMPORTANT: Generated new seed phrase: {}", phrase);
+            warn!("⚠️  IMPORTANT: Generated new seed phrase: {phrase}");
             warn!(
                 "⚠️  Please save this seed phrase somewhere safe. You will need it to recover your keys."
             );
