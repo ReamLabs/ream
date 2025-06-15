@@ -5090,6 +5090,7 @@ dependencies = [
  "ream-manager",
  "ream-network-spec",
  "ream-node",
+ "ream-operation-pool",
  "ream-p2p",
  "ream-rpc",
  "ream-storage",
@@ -5139,8 +5140,12 @@ dependencies = [
  "ream-consensus",
  "ream-execution-engine",
  "ream-fork-choice",
+ "ream-network-spec",
+ "ream-operation-pool",
+ "ream-p2p",
  "ream-storage",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -5276,6 +5281,7 @@ dependencies = [
  "kzg",
  "ream-bls",
  "ream-consensus",
+ "ream-operation-pool",
  "ream-polynomial-commitments",
  "ream-storage",
  "rust-kzg-blst",
@@ -5332,6 +5338,7 @@ dependencies = [
  "ream-executor",
  "ream-fork-choice",
  "ream-network-spec",
+ "ream-operation-pool",
  "ream-p2p",
  "ream-storage",
  "ream-syncer",
@@ -5369,6 +5376,14 @@ version = "0.1.0"
 dependencies = [
  "vergen",
  "vergen-git2",
+]
+
+[[package]]
+name = "ream-operation-pool"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "ream-consensus",
 ]
 
 [[package]]
@@ -5457,6 +5472,7 @@ dependencies = [
  "ream-light-client",
  "ream-network-spec",
  "ream-node",
+ "ream-operation-pool",
  "ream-p2p",
  "ream-storage",
  "serde",

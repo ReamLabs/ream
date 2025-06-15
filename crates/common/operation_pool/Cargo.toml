@@ -1,0 +1,16 @@
+[package]
+name = "ream-operation-pool"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+parking_lot.workspace = true
+
+# ream dependencies
+ream-consensus.workspace = true

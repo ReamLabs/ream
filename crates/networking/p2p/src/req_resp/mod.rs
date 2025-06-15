@@ -15,8 +15,9 @@ use libp2p::{
     Multiaddr, PeerId,
     core::{Endpoint, transport::PortUse},
     swarm::{
-        CloseConnection, ConnectionDenied, ConnectionHandler, ConnectionId, FromSwarm,
-        NetworkBehaviour, NotifyHandler, SubstreamProtocol, THandler, THandlerInEvent, ToSwarm,
+        CloseConnection, ConnectionClosed, ConnectionDenied, ConnectionHandler, ConnectionId,
+        FromSwarm, NetworkBehaviour, NotifyHandler, SubstreamProtocol, THandler, THandlerInEvent,
+        ToSwarm,
     },
 };
 use messages::RequestMessage;
@@ -124,9 +125,19 @@ impl NetworkBehaviour for ReqResp {
         Ok(ReqRespConnectionHandler::new(listen_protocol))
     }
 
-    fn on_swarm_event(&mut self, _event: FromSwarm) {
-        // Nothing that is relevant to us currently.
-        info!("REQRESP: Handling swarm event {:?}", _event);
+    fn on_swarm_event(&mut self, event: FromSwarm) {
+        if let FromSwarm::ConnectionClosed(ConnectionClosed {
+            peer_id,
+            connection_id,
+            cause,
+            remaining_established: _,
+            ..
+        }) = event
+        {
+            info!(
+                "REQRESP: Connection closed for peer {peer_id} with connection ID {connection_id} due to {cause:?}"
+            );
+        }
     }
 
     fn on_connection_handler_event(

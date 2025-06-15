@@ -1,4 +1,4 @@
-use std::{env, process};
+use std::{env, process,sync::Arc}};
 
 use clap::Parser;
 use ream::cli::{
@@ -13,10 +13,12 @@ use ream_consensus::constants::set_genesis_validator_root;
 use ream_executor::ReamExecutor;
 use ream_manager::service::ManagerService;
 use ream_network_spec::networks::set_network_spec;
+use ream_operation_pool::OperationPool;
 use ream_rpc::{config::RpcServerConfig, start_server};
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
+    tables::Table,
 };
 use ream_validator::validator::ValidatorService;
 use tracing::info;
@@ -80,14 +82,21 @@ pub async fn run_beacon_node(
 
     info!("Database Initialization completed");
 
+    let oldest_root = ream_db
+        .slot_index_provider()
+        .get_oldest_root()
+        .expect("Failed to access slot index provider")
+        .expect("No oldest root found");
     set_genesis_validator_root(
         ream_db
             .beacon_state_provider()
-            .first()
+            .get(oldest_root)
             .expect("Failed to access beacon state provider")
             .expect("No beacon state found")
             .genesis_validators_root,
     );
+
+    let operation_pool = Arc::new(OperationPool::default());
 
     let server_config = RpcServerConfig::new(
         config.http_address,
@@ -95,10 +104,15 @@ pub async fn run_beacon_node(
         config.http_allow_origin,
     );
 
-    let network_manager =
-        ManagerService::new(async_executor, config.into(), ream_db.clone(), ream_dir)
-            .await
-            .expect("Failed to create manager service");
+    let network_manager = ManagerService::new(
+        async_executor,
+        config.into(),
+        ream_db.clone(),
+        ream_dir,
+        operation_pool.clone(),
+    )
+    .await
+    .expect("Failed to create manager service");
 
     let network_state = network_manager.network_state.clone();
 
@@ -106,7 +120,7 @@ pub async fn run_beacon_node(
         network_manager.start().await;
     });
 
-    let http_future = start_server(server_config, ream_db, network_state);
+    let http_future = start_server(server_config, ream_db, network_state, operation_pool);
 
     tokio::select! {
         _ = http_future => {

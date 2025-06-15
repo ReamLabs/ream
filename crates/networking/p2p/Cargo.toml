@@ -33,7 +33,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-io-timeout = "1"
 tokio-util.workspace = true
-tracing.workspace = true
+tracing = { workspace = true, features = ["log"] }
 tree_hash.workspace = true
 unsigned-varint = { version = "0.8", features = ["codec"] }
 

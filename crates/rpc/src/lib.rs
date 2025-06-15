@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use actix_web::{App, HttpServer, dev::ServerHandle, middleware, web::Data};
 use config::RpcServerConfig;
+use ream_operation_pool::OperationPool;
 use ream_p2p::network_state::NetworkState;
 use ream_storage::db::ReamDB;
 use tracing::info;
@@ -17,6 +18,7 @@ pub async fn start_server(
     server_config: RpcServerConfig,
     db: ReamDB,
     network_state: Arc<NetworkState>,
+    operation_pool: Arc<OperationPool>,
 ) -> std::io::Result<()> {
     info!(
         "starting HTTP server on {:?}",
@@ -32,6 +34,7 @@ pub async fn start_server(
             .app_data(stop_handle)
             .app_data(Data::new(db.clone()))
             .app_data(Data::new(network_state.clone()))
+            .app_data(Data::new(operation_pool.clone()))
             .configure(register_routers)
     })
     .bind(server_config.http_socket_address)?

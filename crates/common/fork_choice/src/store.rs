@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, bail, ensure};
@@ -21,6 +21,7 @@ use ream_consensus::{
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
     polynomial_commitments::kzg_commitment::KZGCommitment,
 };
+use ream_operation_pool::OperationPool;
 use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use ream_storage::{
     db::ReamDB,
@@ -36,11 +37,12 @@ use crate::constants::{
 #[derive(Debug)]
 pub struct Store {
     pub db: ReamDB,
+    pub operation_pool: Arc<OperationPool>,
 }
 
 impl Store {
-    pub fn new(db: ReamDB) -> Self {
-        Self { db }
+    pub fn new(db: ReamDB, operation_pool: Arc<OperationPool>) -> Self {
+        Self { db, operation_pool }
     }
 
     pub fn is_previous_epoch_justified(&self) -> anyhow::Result<bool> {
@@ -208,7 +210,16 @@ impl Store {
             self.db
                 .finalized_checkpoint_provider()
                 .insert(finalized_checkpoint)?;
-        };
+            // Clean operation pool
+            if let Some(beacon_state) = self
+                .db
+                .beacon_state_provider()
+                .get(finalized_checkpoint.root)?
+            {
+                self.operation_pool
+                    .clean_signed_voluntary_exits(&beacon_state);
+            }
+        }
 
         Ok(())
     }
@@ -797,7 +808,9 @@ pub fn get_forkchoice_store(
     db.unrealized_justifications_provider()
         .insert(anchor_root, justified_checkpoint)?;
 
-    Ok(Store { db })
+    let operation_pool = Arc::new(OperationPool::default());
+
+    Ok(Store { db, operation_pool })
 }
 
 pub fn compute_slots_since_epoch_start(slot: u64) -> u64 {
