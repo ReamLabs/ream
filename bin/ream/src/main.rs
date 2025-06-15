@@ -1,4 +1,4 @@
-use std::{env, process,sync::Arc}};
+use std::{env, process,sync::Arc};
 
 use clap::Parser;
 use ream::cli::{
