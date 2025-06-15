@@ -7,7 +7,10 @@ use crate::handlers::{
     },
     committee::get_committees,
     header::{get_headers, get_headers_from_block},
-    pool::{get_voluntary_exits, post_voluntary_exits},
+    pool::{
+        get_pool_proposer_slashings, get_voluntary_exits, post_pool_proposer_slashings,
+        post_voluntary_exits,
+    },
     state::{
         get_pending_consolidations, get_pending_deposits, get_pending_partial_withdrawals,
         get_state_finality_checkpoint, get_state_fork, get_state_randao, get_state_root,
@@ -44,7 +47,9 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(get_validator_balances_from_state)
         .service(post_validator_balances_from_state)
         .service(get_voluntary_exits)
-        .service(post_voluntary_exits);
+        .service(post_voluntary_exits)
+        .service(get_pool_proposer_slashings)
+        .service(post_pool_proposer_slashings);
 }
 
 pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {
