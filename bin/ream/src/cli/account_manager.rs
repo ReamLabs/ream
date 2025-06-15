@@ -1,3 +1,4 @@
+use anyhow::ensure;
 use bip32::Mnemonic;
 use clap::Parser;
 use rand::rngs::OsRng;
@@ -42,24 +43,14 @@ impl AccountManagerConfig {
     }
 
     pub fn validate(&mut self) -> anyhow::Result<()> {
-        // Validate chunk size
-        if self.chunk_size < MIN_CHUNK_SIZE {
-            warn!(
-                "Chunk size must be at least {}, resetting to {}",
-                MIN_CHUNK_SIZE, MIN_CHUNK_SIZE
-            );
-            self.chunk_size = MIN_CHUNK_SIZE;
-        }
-
-        // Validate lifetime
-        if self.lifetime < MIN_LIFETIME {
-            warn!(
-                "Lifetime must be at least {}, resetting to {}",
-                MIN_LIFETIME, MIN_LIFETIME
-            );
-            self.lifetime = MIN_LIFETIME;
-        }
-
+        ensure!(
+            self.chunk_size >= MIN_CHUNK_SIZE,
+            "Chunk size must be at least {MIN_CHUNK_SIZE}"
+        );
+        ensure!(
+            self.lifetime >= MIN_LIFETIME,
+            "Lifetime must be at least {MIN_LIFETIME}"
+        );
         Ok(())
     }
 
