@@ -1,10 +1,14 @@
+use std::sync::Arc;
+
 use libp2p::{PeerId, swarm::ConnectionId};
-use ream_beacon_chain::beacon_chain::BeaconChain;
 use ream_consensus::blob_sidecar::BlobIdentifier;
-use ream_p2p::req_resp::messages::{
-    RequestMessage, ResponseMessage,
-    beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
-    blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
+use ream_p2p::{
+    network_state::NetworkState,
+    req_resp::messages::{
+        RequestMessage, ResponseMessage,
+        beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+        blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
+    },
 };
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::{info, trace, warn};
@@ -16,9 +20,9 @@ pub async fn handle_req_resp_message(
     stream_id: u64,
     connection_id: ConnectionId,
     message: RequestMessage,
-    beacon_chain: &BeaconChain,
     p2p_sender: &P2PSender,
     ream_db: &ReamDB,
+    network_state: Arc<NetworkState>,
 ) {
     match message {
         RequestMessage::Status(status) => {
@@ -29,25 +33,12 @@ pub async fn handle_req_resp_message(
                 ?status,
                 "Received Status request"
             );
-            let status = match beacon_chain.build_status_request().await {
-                Ok(status) => status,
-                Err(err) => {
-                    warn!("Failed to build status request: {err}");
-                    p2p_sender.send_error_response(
-                        peer_id,
-                        connection_id,
-                        stream_id,
-                        &format!("Failed to build status request: {err}"),
-                    );
-                    return;
-                }
-            };
 
             p2p_sender.send_response(
                 peer_id,
                 connection_id,
                 stream_id,
-                ResponseMessage::Status(status),
+                ResponseMessage::Status(network_state.status.read().clone()),
             );
 
             p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
@@ -181,9 +172,8 @@ pub async fn handle_req_resp_message(
         }
         RequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request { inner }) => {
             for blob_identifier in inner {
-                let Ok(Some(blob_and_proof)) = ream_db
-                    .blobs_and_proofs_provider()
-                    .get(blob_identifier.clone())
+                let Ok(Some(blob_and_proof)) =
+                    ream_db.blobs_and_proofs_provider().get(blob_identifier)
                 else {
                     trace!("No blob and proof found for identifier {blob_identifier:?}");
                     p2p_sender.send_error_response(

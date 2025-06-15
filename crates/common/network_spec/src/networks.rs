@@ -1,13 +1,25 @@
 use std::{
     str::FromStr,
-    sync::{Arc, LazyLock, OnceLock},
+    sync::{Arc, LazyLock, Once, OnceLock},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use alloy_primitives::{Address, B256, U256, address, aliases::B32, b256, fixed_bytes};
-use ream_consensus::{fork::Fork, fork_data::ForkData, misc::checksummed_address};
+use ream_consensus::{
+    constants::GENESIS_VALIDATORS_ROOT, fork::Fork, fork_data::ForkData, misc::checksummed_address,
+};
 use serde::Deserialize;
 
 use crate::fork_schedule::ForkSchedule;
+
+pub static HAS_NETWORK_SPEC_BEEN_INITIALIZED: Once = Once::new();
+
+pub fn initialize_test_network_spec() {
+    let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
+    HAS_NETWORK_SPEC_BEEN_INITIALIZED.call_once(|| {
+        set_network_spec(DEV.clone());
+    });
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Network {
@@ -197,6 +209,18 @@ impl NetworkSpec {
                 epoch: self.electra_fork_epoch,
             },
         ])
+    }
+
+    /// Returns the slot number for `n_days_ago` days ago.
+    ///
+    /// if n_days_ago is larger then the current slot, it returns 0.
+    pub fn slot_n_days_ago(&self, n_days_ago: u64) -> u64 {
+        let genesis_instant = UNIX_EPOCH + Duration::from_secs(self.min_genesis_time);
+        let elapsed = SystemTime::now()
+            .duration_since(genesis_instant)
+            .expect("System Time is before the genesis time");
+        let current_slot = elapsed.as_secs() / self.seconds_per_slot;
+        current_slot.saturating_sub(n_days_ago * 24 * 60 * 60 / self.seconds_per_slot)
     }
 }
 

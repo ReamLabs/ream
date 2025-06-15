@@ -55,8 +55,12 @@ use crate::{
         ReqResp, ReqRespMessage,
         handler::{ReqRespMessageReceived, RespMessage},
         messages::{
-            RequestMessage, ResponseMessage, beacon_blocks::BeaconBlocksByRangeV2Request,
-            meta_data::GetMetaDataV2, ping::Ping, status::Status,
+            RequestMessage, ResponseMessage,
+            beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+            blob_sidecars::BlobSidecarsByRootV1Request,
+            meta_data::GetMetaDataV2,
+            ping::Ping,
+            status::Status,
         },
     },
     utils::read_meta_data_from_disk,
@@ -337,6 +341,20 @@ impl Network {
                                 self.callbacks.insert(request_id, callback);
                                 self.swarm.behaviour_mut().req_resp.send_request(peer_id, request_id, RequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request::new(start, count)))
                             },
+                            P2PRequest::BlockRoots { peer_id, roots, callback } => {
+                                let request_id = self.request_id();
+                                self.callbacks.insert(request_id, callback);
+                                self.swarm.behaviour_mut().req_resp.send_request(peer_id, request_id, RequestMessage::BeaconBlocksByRoot(BeaconBlocksByRootV2Request::new(roots)));
+                            },
+                            P2PRequest::BlobIdentifiers { peer_id, blob_identifiers, callback } => {
+                                let request_id = self.request_id();
+                                self.callbacks.insert(request_id, callback);
+                                self.swarm.behaviour_mut().req_resp.send_request(
+                                    peer_id,
+                                    request_id,
+                                    RequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request::new(blob_identifiers)),
+                                );
+                            }
                             P2PRequest::Status { peer_id, status } => {
                                 let request_id = self.request_id();
                                 self.swarm.behaviour_mut().req_resp.send_request(
@@ -803,19 +821,18 @@ pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, 
 
 #[cfg(test)]
 mod tests {
-    use std::{net::IpAddr, sync::Once};
+    use std::net::IpAddr;
 
-    use alloy_primitives::{B256, aliases::B32};
+    use alloy_primitives::aliases::B32;
     use discv5::enr::CombinedKey;
     use k256::ecdsa::SigningKey;
     use libp2p_identity::{Keypair, PeerId};
-    use ream_consensus::constants::GENESIS_VALIDATORS_ROOT;
     use ream_discv5::{
         config::DiscoveryConfig,
         subnet::{AttestationSubnets, SyncCommitteeSubnets},
     };
     use ream_executor::ReamExecutor;
-    use ream_network_spec::networks::{DEV, set_network_spec};
+    use ream_network_spec::networks::initialize_test_network_spec;
     use tokio::{runtime::Runtime, time::sleep};
 
     use super::*;
@@ -823,15 +840,6 @@ mod tests {
         config::NetworkConfig,
         gossipsub::{configurations::GossipsubConfig, topics::GossipTopicKind},
     };
-
-    static HAS_NETWORK_SPEC_BEEN_INITIALIZED: Once = Once::new();
-
-    fn initialize_network_spec() {
-        let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
-        HAS_NETWORK_SPEC_BEEN_INITIALIZED.call_once(|| {
-            set_network_spec(DEV.clone());
-        });
-    }
 
     async fn create_network(
         socket_address: IpAddr,
@@ -900,7 +908,7 @@ mod tests {
 
     #[test]
     fn insert_then_read_returns_snapshot() {
-        initialize_network_spec();
+        initialize_test_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
 
@@ -932,7 +940,7 @@ mod tests {
 
     #[test]
     fn update_existing_peer() {
-        initialize_network_spec();
+        initialize_test_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
 
@@ -968,7 +976,7 @@ mod tests {
 
     #[test]
     fn cached_peer_unknown_returns_none() {
-        initialize_network_spec();
+        initialize_test_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
 
@@ -985,7 +993,7 @@ mod tests {
 
     #[test]
     fn test_p2p_gossipsub() {
-        initialize_network_spec();
+        initialize_test_network_spec();
 
         let runtime = Runtime::new().unwrap();
 
@@ -1054,7 +1062,7 @@ mod tests {
 
     #[test]
     fn test_peer_table_lifecycle() {
-        initialize_network_spec();
+        initialize_test_network_spec();
 
         let tokio_runtime = Runtime::new().unwrap();
 

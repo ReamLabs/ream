@@ -10,9 +10,22 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+alloy-primitives.workspace = true
 anyhow.workspace = true
+ethereum_ssz.workspace = true
+futures.workspace = true
+libp2p.workspace = true
+libp2p-identity.workspace = true
+libp2p-mplex.workspace = true
+ream-beacon-chain.workspace = true
+ream-bls.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+tree_hash.workspace = true
 
 # ream dependencies
-ream-beacon-chain.workspace = true
+ream-consensus.workspace = true
+ream-executor.workspace = true
+ream-network-spec.workspace = true
 ream-p2p.workspace = true
+ream-storage.workspace = true

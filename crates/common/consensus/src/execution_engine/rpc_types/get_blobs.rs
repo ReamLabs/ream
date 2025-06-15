@@ -3,7 +3,10 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, serde_utils::hex_fixed_vec, typenum::U131072};
 use tree_hash_derive::TreeHash;
 
-use crate::{constants::BYTES_PER_BLOB, polynomial_commitments::kzg_proof::KZGProof};
+use crate::{
+    blob_sidecar::BlobSidecar, constants::BYTES_PER_BLOB,
+    polynomial_commitments::kzg_proof::KZGProof,
+};
 
 #[derive(
     Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Decode, Encode, TreeHash, Default,
@@ -27,4 +30,13 @@ impl Blob {
 pub struct BlobAndProofV1 {
     pub blob: Blob,
     pub proof: KZGProof,
+}
+
+impl From<BlobSidecar> for BlobAndProofV1 {
+    fn from(blob_sidecar: BlobSidecar) -> Self {
+        BlobAndProofV1 {
+            blob: blob_sidecar.blob,
+            proof: blob_sidecar.kzg_proof,
+        }
+    }
 }

@@ -1,4 +1,6 @@
+use alloy_primitives::B256;
 use libp2p::{PeerId, swarm::ConnectionId};
+use ream_consensus::blob_sidecar::BlobIdentifier;
 use tokio::sync::mpsc;
 
 use crate::req_resp::{
@@ -25,6 +27,16 @@ pub enum P2PRequest {
         peer_id: PeerId,
         start: u64,
         count: u64,
+        callback: mpsc::Sender<anyhow::Result<P2PCallbackResponse>>,
+    },
+    BlockRoots {
+        peer_id: PeerId,
+        roots: Vec<B256>,
+        callback: mpsc::Sender<anyhow::Result<P2PCallbackResponse>>,
+    },
+    BlobIdentifiers {
+        peer_id: PeerId,
+        blob_identifiers: Vec<BlobIdentifier>,
         callback: mpsc::Sender<anyhow::Result<P2PCallbackResponse>>,
     },
 }

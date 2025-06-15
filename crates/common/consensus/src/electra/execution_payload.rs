@@ -23,7 +23,9 @@ const EMPTY_UNCLE_ROOT_HASH: B256 =
 
 pub type Transactions = VariableList<VariableList<u8, U1073741824>, U1048576>;
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Default,
+)]
 pub struct ExecutionPayload {
     // Execution block header fields
     pub parent_hash: B256,

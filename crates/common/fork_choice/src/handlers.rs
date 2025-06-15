@@ -22,6 +22,7 @@ pub async fn on_block(
     store: &mut Store,
     signed_block: &SignedBeaconBlock,
     execution_engine: &Option<impl ExecutionApi>,
+    verify_blob_availability: bool,
 ) -> anyhow::Result<()> {
     let block = &signed_block.message;
 
@@ -59,19 +60,22 @@ pub async fn on_block(
 
     ensure!(store.db.finalized_checkpoint_provider().get()?.root == finalized_checkpoint_block);
 
-    // Check if blob data is available
-    // If not, this block MAY be queued and subsequently considered when blob data becomes available
-    // *Note*: Extraneous or invalid Blobs (in addition to the expected/referenced valid blobs)
-    // received on the p2p network MUST NOT invalidate a block that is otherwise valid and available
-    ensure!(
-        store
-            .is_data_available(
-                &block.body.blob_kzg_commitments,
-                execution_engine,
-                block.tree_hash_root()
-            )
-            .await?
-    );
+    if verify_blob_availability {
+        // Check if blob data is available
+        // If not, this block MAY be queued and subsequently considered when blob data becomes
+        // available *Note*: Extraneous or invalid Blobs (in addition to the
+        // expected/referenced valid blobs) received on the p2p network MUST NOT invalidate
+        // a block that is otherwise valid and available
+        ensure!(
+            store
+                .is_data_available(
+                    &block.body.blob_kzg_commitments,
+                    execution_engine,
+                    block.tree_hash_root()
+                )
+                .await?
+        );
+    }
 
     // Check the block is valid and compute the post-state
     // Make a copy of the state to avoid mutability issues

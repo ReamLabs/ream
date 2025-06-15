@@ -523,7 +523,6 @@ async fn send_response_message_to_inbound_stream(
 
     let is_error = matches!(response_message, RespMessage::Error(_));
     let result = inbound_stream.send(response_message).await;
-
     if is_error || result.is_err() {
         inbound_stream.close().await?;
     }

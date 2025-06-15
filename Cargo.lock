@@ -2035,6 +2035,7 @@ dependencies = [
  "ream-consensus",
  "ream-fork-choice",
  "ream-merkle",
+ "ream-network-spec",
  "ream-storage",
  "rstest",
  "serde",
@@ -5304,6 +5305,7 @@ dependencies = [
 name = "ream-executor"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "futures",
  "tokio",
  "tracing",
@@ -5559,10 +5561,23 @@ dependencies = [
 name = "ream-syncer"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
+ "ethereum_ssz",
+ "futures",
+ "libp2p",
+ "libp2p-identity",
+ "libp2p-mplex",
  "ream-beacon-chain",
+ "ream-bls",
+ "ream-consensus",
+ "ream-executor",
+ "ream-network-spec",
  "ream-p2p",
+ "ream-storage",
  "tokio",
+ "tracing",
+ "tree_hash",
 ]
 
 [[package]]

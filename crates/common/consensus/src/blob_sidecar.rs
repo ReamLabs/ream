@@ -27,7 +27,7 @@ pub struct BlobSidecar {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, Hash, Deserialize, Encode, Decode, Ord, PartialOrd, Default,
+    Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize, Encode, Decode, Ord, PartialOrd, Default,
 )]
 pub struct BlobIdentifier {
     pub block_root: B256,

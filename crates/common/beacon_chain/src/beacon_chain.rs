@@ -41,7 +41,13 @@ impl BeaconChain {
 
     pub async fn process_block(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
-        on_block(&mut store, &signed_block, &self.execution_engine).await?;
+        on_block(
+            &mut store,
+            &signed_block,
+            &self.execution_engine,
+            signed_block.message.slot >= network_spec().slot_n_days_ago(17),
+        )
+        .await?;
         Ok(())
     }
 

@@ -91,7 +91,7 @@ mod tests {
         let key = BlobIdentifier::default();
         let value = BlobAndProofV1::default();
 
-        table.insert(key.clone(), value.clone())?;
+        table.insert(key, value.clone())?;
 
         let result = table.get(key)?;
 
