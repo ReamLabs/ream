@@ -26,12 +26,11 @@ use tracing_subscriber::EnvFilter;
 
 pub const APP_NAME: &str = "ream";
 
-#[tokio::main]
-async fn main() {
+fn main() {
     // Set the default log level to `info` if not set
     let rust_log = env::var(EnvFilter::DEFAULT_ENV).unwrap_or_default();
     let env_filter = match rust_log.is_empty() {
-        true => EnvFilter::builder().parse_lossy("info"),
+        true => EnvFilter::builder().parse_lossy("info,actix_server=warn"),
         false => EnvFilter::builder().parse_lossy(rust_log),
     };
 
@@ -39,25 +38,36 @@ async fn main() {
 
     let cli = Cli::parse();
 
-    let async_executor = ReamExecutor::new().expect("unable to create executor");
-
-    let main_executor = ReamExecutor::new().expect("unable to create executor");
+    let executor = ReamExecutor::new().expect("unable to create executor");
+    let executor_clone = executor.clone();
 
     match cli.command {
         Commands::BeaconNode(config) => {
-            run_beacon_node(*config, async_executor, main_executor).await
+            executor_clone.spawn(async move { run_beacon_node(*config, executor).await });
         }
-        Commands::ValidatorNode(config) => run_validator_node(*config, async_executor).await,
-        Commands::AccountManager(config) => run_account_manager(*config).await,
+        Commands::ValidatorNode(config) => {
+            executor_clone.spawn(async move { run_validator_node(*config, executor).await });
+        }
+
+        Commands::AccountManager(config) => {
+            executor_clone.spawn(async move { run_account_manager(*config).await });
+        }
     }
+
+    executor_clone.runtime().block_on(async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to pause until ctrl-c");
+        info!("Ctrl-C received, shutting down...");
+        executor_clone.shutdown_signal();
+    });
+
+    executor_clone.shutdown_runtime();
+
     process::exit(0);
 }
 
-pub async fn run_beacon_node(
-    config: BeaconNodeConfig,
-    async_executor: ReamExecutor,
-    main_executor: ReamExecutor,
-) {
+pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
     info!("starting up beacon node...");
 
     set_network_spec(config.network.clone());
@@ -106,7 +116,7 @@ pub async fn run_beacon_node(
     );
 
     let network_manager = ManagerService::new(
-        async_executor,
+        executor.clone(),
         config.into(),
         ream_db.clone(),
         ream_dir,
@@ -117,11 +127,13 @@ pub async fn run_beacon_node(
 
     let network_state = network_manager.network_state.clone();
 
-    let network_future = main_executor.spawn(async move {
+    let network_future = executor.spawn(async move {
         network_manager.start().await;
     });
 
-    let http_future = start_server(server_config, ream_db, network_state, operation_pool);
+    let http_future = executor.spawn(async move {
+        start_server(server_config, ream_db, network_state, operation_pool).await
+    });
 
     tokio::select! {
         _ = http_future => {
@@ -133,7 +145,7 @@ pub async fn run_beacon_node(
     }
 }
 
-pub async fn run_validator_node(config: ValidatorNodeConfig, async_executor: ReamExecutor) {
+pub async fn run_validator_node(config: ValidatorNodeConfig, executor: ReamExecutor) {
     info!("starting up validator node...");
 
     set_network_spec(config.network.clone());
@@ -163,7 +175,7 @@ pub async fn run_validator_node(config: ValidatorNodeConfig, async_executor: Rea
         config.suggested_fee_recipient,
         config.beacon_api_endpoint,
         config.request_timeout,
-        async_executor,
+        executor,
     )
     .expect("Failed to create validator service");
 

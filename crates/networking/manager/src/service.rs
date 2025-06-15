@@ -39,7 +39,7 @@ use ream_p2p::{
 };
 use ream_storage::{db::ReamDB, tables::Table};
 use ream_syncer::block_range::BlockRangeSyncer;
-use tokio::{sync::mpsc, task::JoinHandle, time::interval};
+use tokio::{sync::mpsc, time::interval};
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 
@@ -49,7 +49,6 @@ pub struct ManagerService {
     pub beacon_chain: Arc<BeaconChain>,
     manager_receiver: mpsc::UnboundedReceiver<ReamNetworkEvent>,
     p2p_sender: P2PSender,
-    pub network_handle: JoinHandle<()>,
     pub network_state: Arc<NetworkState>,
     pub block_range_syncer: BlockRangeSyncer,
     pub ream_db: ReamDB,
@@ -57,7 +56,7 @@ pub struct ManagerService {
 
 impl ManagerService {
     pub async fn new(
-        async_executor: ReamExecutor,
+        executor: ReamExecutor,
         config: ManagerConfig,
         ream_db: ReamDB,
         ream_dir: PathBuf,
@@ -158,9 +157,9 @@ impl ManagerService {
         ));
         let status = beacon_chain.build_status_request().await?;
 
-        let network = Network::init(async_executor, &network_config, status).await?;
+        let network = Network::init(executor.clone(), &network_config, status).await?;
         let network_state = network.network_state();
-        let network_handle = tokio::spawn(async move {
+        executor.spawn(async move {
             network.start(manager_sender, p2p_receiver).await;
         });
 
@@ -170,7 +169,6 @@ impl ManagerService {
             beacon_chain,
             manager_receiver,
             p2p_sender: P2PSender(p2p_sender),
-            network_handle,
             network_state,
             block_range_syncer,
             ream_db,
