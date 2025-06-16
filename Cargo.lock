@@ -5211,6 +5211,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-builder"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rpc-types-beacon",
+ "anyhow",
+ "ethereum_hashing",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "ream-beacon-api-types",
+ "ream-bls",
+ "ream-consensus",
+ "ream-execution-engine",
+ "serde",
+ "serde_json",
+ "ssz_types",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
 name = "ream-checkpoint-sync"
 version = "0.1.0"
 dependencies = [

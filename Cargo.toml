@@ -5,6 +5,7 @@ members = [
     "crates/account_manager",
     "crates/common/beacon_api_types",
     "crates/common/beacon_chain",
+    "crates/common/builder",
     "crates/common/checkpoint_sync",
     "crates/common/consensus",
     "crates/common/execution_engine",
@@ -110,6 +111,7 @@ ream-account-manager = { path = "crates/account_manager" }
 ream-beacon-api-types = { path = "crates/common/beacon_api_types" }
 ream-beacon-chain = { path = "crates/common/beacon_chain" }
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
+ream-builder = { path = "crates/common/builder" }
 ream-checkpoint-sync = { path = "crates/common/checkpoint_sync" }
 ream-consensus = { path = "crates/common/consensus" }
 ream-discv5 = { path = "crates/networking/discv5" }
