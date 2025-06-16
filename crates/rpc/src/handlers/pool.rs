@@ -7,7 +7,7 @@ use actix_web::{
 use ream_beacon_api_types::{error::ApiError, id::ID, responses::DataResponse};
 use ream_consensus::{proposer_slashing::ProposerSlashing, voluntary_exit::SignedVoluntaryExit};
 use ream_operation_pool::OperationPool;
-use ream_storage::{db::ReamDB, tables::slashing_pool::SlashingPool};
+use ream_storage::db::ReamDB;
 use tracing::error;
 
 use crate::handlers::state::get_state_from_id;
@@ -59,17 +59,18 @@ pub async fn post_voluntary_exits(
 /// GET /eth/v1/beacon/pool/proposer_slashings
 #[get("/beacon/pool/proposer_slashings")]
 pub async fn get_pool_proposer_slashings(
-    slashing_pool: Data<Arc<SlashingPool>>,
+    operation_pool: Data<Arc<OperationPool>>,
 ) -> Result<impl Responder, ApiError> {
-    let slashings = slashing_pool.get_all_proposer_slashings();
-    Ok(HttpResponse::Ok().json(DataResponse::new(slashings)))
+    Ok(HttpResponse::Ok().json(DataResponse::new(
+        operation_pool.get_all_proposer_slashings(),
+    )))
 }
 
 /// POST /eth/v1/beacon/pool/proposer_slashings
-#[post("/beacon/pool/post_proposer_slashings")]
+#[post("/beacon/pool/proposer_slashings")]
 pub async fn post_pool_proposer_slashings(
     db: Data<ReamDB>,
-    slashing_pool: Data<SlashingPool>,
+    operation_pool: Data<Arc<OperationPool>>,
     slashing: Json<ProposerSlashing>,
 ) -> Result<impl Responder, ApiError> {
     let highest_slot = db
@@ -85,7 +86,7 @@ pub async fn post_pool_proposer_slashings(
     let mut beacon_state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
     let proposer_index = slashing.signed_header_1.message.proposer_index;
 
-    if slashing_pool.has_slashing_for_proposer(proposer_index) {
+    if operation_pool.has_slashing_for_proposer(proposer_index) {
         return Err(ApiError::BadRequest(
             "Proposer slashing already exists for this validator".to_string(),
         ));
@@ -99,10 +100,11 @@ pub async fn post_pool_proposer_slashings(
                 "Invalid proposer slashing, it will never pass validation so it's rejected: {err:?}"
             ))
         })?;
-    slashing_pool
-        .get_ref()
-        .insert_proposer_slashing(slashing.clone())
-        .map_err(|_| ApiError::BadRequest("Proposer slashing already in pool".to_string()))?;
+    operation_pool
+        .insert_proposer_slashing(slashing)
+        .map_err(|err| {
+            ApiError::BadRequest(format!("Failed to insert proposer slashing: {err:?}"))
+        })?;
 
     Ok(HttpResponse::Ok().finish())
 }

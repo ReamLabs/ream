@@ -10,7 +10,6 @@ pub mod justified_checkpoint;
 pub mod latest_messages;
 pub mod parent_root_index;
 pub mod proposer_boost_root;
-pub mod slashing_pool;
 pub mod slot_index;
 pub mod state_root_index;
 pub mod time;

@@ -5158,6 +5158,7 @@ dependencies = [
 name = "ream-operation-pool"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "parking_lot",
  "ream-consensus",
 ]
