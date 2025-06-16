@@ -5215,16 +5215,13 @@ name = "ream-builder"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
- "alloy-rpc-types-beacon",
  "anyhow",
  "ethereum_hashing",
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
- "ream-beacon-api-types",
  "ream-bls",
  "ream-consensus",
- "ream-execution-engine",
  "reqwest",
  "serde",
  "serde_json",
