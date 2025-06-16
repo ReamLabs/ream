@@ -14,7 +14,6 @@ alloy-primitives.workspace = true
 anyhow.workspace = true
 directories.workspace = true
 ethereum_ssz.workspace = true
-parking_lot.workspace = true
 redb.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true

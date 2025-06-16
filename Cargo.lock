@@ -5272,7 +5272,6 @@ dependencies = [
  "anyhow",
  "directories",
  "ethereum_ssz",
- "parking_lot",
  "ream-consensus",
  "redb",
  "tempfile",
