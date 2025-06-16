@@ -12,8 +12,8 @@ pub enum ApiError {
     #[error("Bad Request: {0}")]
     BadRequest(String),
 
-    #[error("Internal Server Error")]
-    InternalError,
+    #[error("Internal Server Error: {0}")]
+    InternalError(String),
 
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
@@ -32,7 +32,7 @@ impl ResponseError for ApiError {
 
     fn status_code(&self) -> StatusCode {
         match *self {
-            ApiError::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
             ApiError::NotFound(_) => StatusCode::NOT_FOUND,
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,

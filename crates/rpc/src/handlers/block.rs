@@ -30,7 +30,6 @@ use ream_storage::{
     tables::{Field, Table},
 };
 use serde::{Deserialize, Serialize};
-use tracing::error;
 use tree_hash::TreeHash;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -53,16 +52,18 @@ pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, A
     let block_root = match block_id {
         ID::Finalized => {
             let finalized_checkpoint = db.finalized_checkpoint_provider().get().map_err(|err| {
-                error!("Failed to get block by block_root, error: {err:?}");
-                ApiError::InternalError
+                ApiError::InternalError(format!(
+                    "Failed to get block by block_root, error: {err:?}"
+                ))
             })?;
 
             Ok(Some(finalized_checkpoint.root))
         }
         ID::Justified => {
             let justified_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
-                error!("Failed to get block by block_root, error: {err:?}");
-                ApiError::InternalError
+                ApiError::InternalError(format!(
+                    "Failed to get block by block_root, error: {err:?}"
+                ))
             })?;
 
             Ok(Some(justified_checkpoint.root))
@@ -76,8 +77,7 @@ pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, A
         ID::Root(root) => Ok(Some(root)),
     }
     .map_err(|err| {
-        error!("Failed to get block by block_root, error: {err:?}");
-        ApiError::InternalError
+        ApiError::InternalError(format!("Failed to get block by block_root, error: {err:?}"))
     })?
     .ok_or_else(|| ApiError::NotFound(format!("Failed to find `block_root` from {block_id:?}")))?;
 
@@ -89,7 +89,11 @@ async fn get_beacon_state(block_id: ID, db: &ReamDB) -> Result<BeaconState, ApiE
 
     db.beacon_state_provider()
         .get(block_root)
-        .map_err(|_| ApiError::InternalError)?
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get beacon_state by block_root, error: {err:?}"
+            ))
+        })?
         .ok_or(ApiError::NotFound(format!(
             "Failed to find `beacon_state` from {block_root:?}"
         )))
@@ -198,8 +202,7 @@ pub async fn get_beacon_block_from_id(
     db.beacon_block_provider()
         .get(block_root)
         .map_err(|err| {
-            error!("Failed to get block by block_root, error: {err:?}");
-            ApiError::InternalError
+            ApiError::InternalError(format!("Failed to get block by block_root, error: {err:?}"))
         })?
         .ok_or_else(|| {
             ApiError::NotFound(format!("Failed to find `beacon block` from {block_root:?}"))
@@ -286,10 +289,11 @@ pub async fn get_block_from_id(
 /// Called by `/beacon/heads` to get fork choice leaves.
 #[get("/beacon/heads")]
 pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
-    let justified_checkpoint = db
-        .justified_checkpoint_provider()
-        .get()
-        .map_err(|_| ApiError::InternalError)?;
+    let justified_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
+        ApiError::InternalError(format!(
+            "Failed to get justified_checkpoint, error: {err:?}"
+        ))
+    })?;
 
     let mut blocks = HashMap::new();
     let store = Store {
@@ -299,8 +303,7 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
     store
         .filter_block_tree(justified_checkpoint.root, &mut blocks)
         .map_err(|err| {
-            error!("Failed to filter block tree, error: {err:?}");
-            ApiError::InternalError
+            ApiError::InternalError(format!("Failed to filter block tree, error: {err:?}"))
         })?;
 
     let mut leaves = vec![];

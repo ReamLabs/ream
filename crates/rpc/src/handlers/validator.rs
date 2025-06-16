@@ -16,7 +16,6 @@ use ream_bls::PubKey;
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
 use serde::Serialize;
-use tracing::error;
 
 use super::state::get_state_from_id;
 
@@ -106,8 +105,7 @@ pub async fn validator_status(
         .slot_index_provider()
         .get_highest_slot()
         .map_err(|err| {
-            error!("Failed to get_highest_slot, error: {err:?}");
-            ApiError::InternalError
+            ApiError::InternalError(format!("Failed to get_highest_slot, error: {err:?}"))
         })?
         .ok_or(ApiError::NotFound(
             "Failed to find highest slot".to_string(),

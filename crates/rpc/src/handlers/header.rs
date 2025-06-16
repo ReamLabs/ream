@@ -12,7 +12,6 @@ use ream_beacon_api_types::{
 use ream_consensus::beacon_block_header::SignedBeaconBlockHeader;
 use ream_storage::{db::ReamDB, tables::Table};
 use serde::{Deserialize, Serialize};
-use tracing::error;
 use tree_hash::TreeHash;
 
 use super::block::get_beacon_block_from_id;
@@ -50,8 +49,7 @@ pub async fn get_headers(
                 .beacon_block_provider()
                 .get(parent_root)
                 .map_err(|err| {
-                    error!("Failed to get headers, error: {err:?}");
-                    ApiError::InternalError
+                    ApiError::InternalError(format!("Failed to get headers, error: {err:?}"))
                 })?
                 .ok_or_else(|| ApiError::NotFound(String::from("Unable to fetch parent block")))?;
 
@@ -109,8 +107,7 @@ pub async fn get_header_from_slot(
             .slot_index_provider()
             .get_highest_slot()
             .map_err(|err| {
-                error!("Failed to get headers, error: {err:?}");
-                ApiError::InternalError
+                ApiError::InternalError(format!("Failed to get headers, error: {err:?}"))
             })?
             .ok_or_else(|| ApiError::NotFound(String::from("Unable to fetch latest slot")))?,
     };

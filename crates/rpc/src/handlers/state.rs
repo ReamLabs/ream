@@ -18,7 +18,6 @@ use ream_storage::{
     tables::{Field, Table},
 };
 use serde::{Deserialize, Serialize};
-use tracing::error;
 use tree_hash::TreeHash;
 
 pub const SYNC_COMMITTEE_SUBNET_COUNT: u64 = 4;
@@ -70,16 +69,18 @@ pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState,
     let block_root = match state_id {
         ID::Finalized => {
             let finalized_checkpoint = db.finalized_checkpoint_provider().get().map_err(|err| {
-                error!("Failed to get finalized_checkpoint, error: {err:?}");
-                ApiError::InternalError
+                ApiError::InternalError(format!(
+                    "Failed to get finalized_checkpoint, error: {err:?}"
+                ))
             })?;
 
             Ok(Some(finalized_checkpoint.root))
         }
         ID::Justified => {
             let justified_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
-                error!("Failed to get justified_checkpoint, error: {err:?}");
-                ApiError::InternalError
+                ApiError::InternalError(format!(
+                    "Failed to get justified_checkpoint, error: {err:?}"
+                ))
             })?;
 
             Ok(Some(justified_checkpoint.root))
@@ -92,17 +93,13 @@ pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState,
         ID::Slot(slot) => db.slot_index_provider().get(slot),
         ID::Root(root) => db.state_root_index_provider().get(root),
     }
-    .map_err(|err| {
-        error!("Failed to get headers, error: {err:?}");
-        ApiError::InternalError
-    })?
+    .map_err(|err| ApiError::InternalError(format!("Failed to get headers, error: {err:?}")))?
     .ok_or_else(|| ApiError::NotFound(format!("Failed to find `block_root` from {state_id:?}")))?;
 
     db.beacon_state_provider()
         .get(block_root)
         .map_err(|err| {
-            error!("Failed to get block by block_root, error: {err:?}");
-            ApiError::InternalError
+            ApiError::InternalError(format!("Failed to get block by block_root, error: {err:?}"))
         })?
         .ok_or_else(|| ApiError::NotFound(format!("Failed to find `block_root` from {state_id:?}")))
 }

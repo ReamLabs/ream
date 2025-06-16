@@ -8,7 +8,6 @@ use ream_beacon_api_types::{
 };
 use ream_consensus::blob_sidecar::BlobIdentifier;
 use ream_storage::{db::ReamDB, tables::Table};
-use tracing::error;
 use tree_hash::TreeHash;
 
 use crate::handlers::block::get_beacon_block_from_id;
@@ -43,8 +42,9 @@ pub async fn get_blob_sidecars(
             .blobs_and_proofs_provider()
             .get(BlobIdentifier::new(block_root, *index))
             .map_err(|err| {
-                error!("Failed to get blob and proof for index: {index}, error: {err:?}");
-                ApiError::InternalError
+                ApiError::InternalError(format!(
+                    "Failed to get blob and proof for index: {index}, error: {err:?}"
+                ))
             })?
             .ok_or(ApiError::NotFound(format!(
                 "Failed to get blob and proof for index: {index}"
@@ -53,8 +53,9 @@ pub async fn get_blob_sidecars(
             beacon_block
                 .blob_sidecar(blob_and_proof, *index)
                 .map_err(|err| {
-                    error!("Failed to create blob sidecar for index: {index}, error: {err:?}");
-                    ApiError::InternalError
+                    ApiError::InternalError(format!(
+                        "Failed to create blob sidecar for index: {index}, error: {err:?}"
+                    ))
                 })?,
         );
     }
