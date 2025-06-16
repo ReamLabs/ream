@@ -19,21 +19,28 @@ pub struct BlobsAndProofsTable {
     pub data_dir: PathBuf,
 }
 
+impl BlobsAndProofsTable {
+    fn blob_file_path(&self, blob_identifier: &BlobIdentifier) -> PathBuf {
+        self.data_dir.join(BLOB_FOLDER_NAME).join(format!(
+            "{}_{}.ssz_snappy",
+            blob_identifier.block_root, blob_identifier.index
+        ))
+    }
+}
+
 impl Table for BlobsAndProofsTable {
     type Key = BlobIdentifier;
 
     type Value = BlobAndProofV1;
 
     fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
-        let blob_dir = self.data_dir.join(BLOB_FOLDER_NAME);
-        let file_path = blob_dir.join(blob_filename(&key));
+        let file_path = self.blob_file_path(&key);
 
         if !file_path.exists() {
             return Ok(None);
         }
 
         let mut bytes = vec![];
-
         let mut file = File::open(file_path)?;
         file.read_to_end(&mut bytes)?;
         let mut decoder = Decoder::new();
@@ -43,10 +50,7 @@ impl Table for BlobsAndProofsTable {
     }
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
-        let blob_dir = self.data_dir.join(BLOB_FOLDER_NAME);
-
-        let file_path = blob_dir.join(blob_filename(&key));
-
+        let file_path = self.blob_file_path(&key);
         let mut encoder = Encoder::new();
         let snappy_encoding = encoder.compress_vec(&value.as_ssz_bytes())?;
         let mut file = File::create(file_path)?;
@@ -54,13 +58,6 @@ impl Table for BlobsAndProofsTable {
 
         Ok(())
     }
-}
-
-pub fn blob_filename(blob_identifier: &BlobIdentifier) -> String {
-    format!(
-        "{}_{}.ssz_snappy",
-        blob_identifier.block_root, blob_identifier.index
-    )
 }
 
 #[cfg(test)]
@@ -81,8 +78,8 @@ mod tests {
     };
 
     #[test]
-    fn test_blobs() -> Result<(), StoreError> {
-        let tmp_dir = TempDir::new("test_blobs")?;
+    fn test_retrieving_blob() -> Result<(), StoreError> {
+        let tmp_dir = TempDir::new("test_retrieving_blob")?;
 
         let blob_dir = tmp_dir.path().to_path_buf().join(BLOB_FOLDER_NAME);
         fs::create_dir_all(&blob_dir)?;
@@ -105,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_no_blobs_available() -> Result<(), StoreError> {
-        let tmp_dir = TempDir::new("test_blobs")?;
+        let tmp_dir = TempDir::new("test_no_blobs_available")?;
 
         let blob_dir = tmp_dir.path().to_path_buf().join(BLOB_FOLDER_NAME);
         fs::create_dir_all(&blob_dir)?;
