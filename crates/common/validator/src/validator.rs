@@ -5,7 +5,7 @@ use std::{
 };
 
 use alloy_primitives::Address;
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use ream_beacon_api_types::{
     block::{BroadcastValidation, ProduceBlockData},
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
@@ -318,27 +318,24 @@ impl ValidatorService {
         validator_index: u64,
         committee_index: u64,
     ) -> anyhow::Result<()> {
-        if let Some(keystore) = self.validator_index_to_keystore.get(&validator_index) {
-            let attestation_data = self
-                .beacon_api_client
-                .get_attestation_data(slot, committee_index)
-                .await?
-                .data;
+        let Some(keystore) = self.validator_index_to_keystore.get(&validator_index) else {
+            bail!("Keystore not found for validator: {validator_index}");
+        };
 
-            Ok(self
-                .beacon_api_client
-                .submit_attestation(vec![SingleAttestation {
-                    attester_index: validator_index,
-                    committee_index,
-                    signature: sign_attestation_data(&attestation_data, &keystore.private_key)?,
-                    data: attestation_data,
-                }])
-                .await?)
-        } else {
-            Err(anyhow!(
-                "Keystore not found for validator: {validator_index}"
-            ))
-        }
+        let attestation_data = self
+            .beacon_api_client
+            .get_attestation_data(slot, committee_index)
+            .await?
+            .data;
+        Ok(self
+            .beacon_api_client
+            .submit_attestation(vec![SingleAttestation {
+                attester_index: validator_index,
+                committee_index,
+                signature: sign_attestation_data(&attestation_data, &keystore.private_key)?,
+                data: attestation_data,
+            }])
+            .await?)
     }
 
     pub async fn on_epoch(&mut self, epoch: u64) {
