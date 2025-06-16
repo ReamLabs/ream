@@ -5225,11 +5225,13 @@ dependencies = [
  "ream-bls",
  "ream-consensus",
  "ream-execution-engine",
+ "reqwest",
  "serde",
  "serde_json",
  "ssz_types",
  "tree_hash",
  "tree_hash_derive",
+ "url",
 ]
 
 [[package]]

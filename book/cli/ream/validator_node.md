@@ -29,6 +29,10 @@ Options:
           The plaintext password file to use for keystores
       --password <PASSWORD>
           The password to use for keystores. It's recommended to use password-file over this in order to prevent your keystore password from appearing in the shell history
+      --enable-builder
+          Enable external block builder
+      --mev-relay-url <MEV_RELAY_URL>
+          Set HTTP url of MEV relay to connect to for external block building. Will only be used if `enable_builder` is passed.
   -h, --help
           Print help
 ```

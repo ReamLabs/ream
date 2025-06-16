@@ -6,7 +6,10 @@ use ream_consensus::{
     misc::{compute_domain, compute_signing_root},
 };
 
-use crate::{builder_bid::BuilderBid, validator_registration::ValidatorRegistrationV1};
+use crate::{
+    BuilderConfig, builder_api::header::get_builder_header, builder_bid::BuilderBid,
+    validator_registration::ValidatorRegistrationV1,
+};
 
 pub fn is_eligible_for_bid(
     state: BeaconState,
@@ -40,19 +43,25 @@ pub fn is_eligible_for_bid(
     parent_hash == state.latest_execution_payload_header.block_hash
 }
 
-pub fn get_bid(execution_payload: ExecutionPayload, value: U256, pubkey: PubKey) -> BuilderBid {
+pub async fn get_bid(
+    config: BuilderConfig,
+    execution_payload: ExecutionPayload,
+    value: U256,
+    pubkey: PubKey,
+    slot: u64,
+) -> anyhow::Result<BuilderBid> {
     let header = execution_payload.to_execution_payload_header();
+    let parent_hash = execution_payload.parent_hash;
 
-    // TODO: Call `getHeader` Builder API to fetch `SignedBuilderBid` to get the
-    // `blob_kzg_commitments` and `execution_requests`
+    let signed_blinded_bid = get_builder_header(config, parent_hash, &pubkey, slot).await?;
 
-    BuilderBid {
+    Ok(BuilderBid {
         header,
-        blob_kzg_commitments: todo!(),
-        execution_requests: todo!(),
+        blob_kzg_commitments: signed_blinded_bid.message.blob_kzg_commitments,
+        execution_requests: signed_blinded_bid.message.execution_requests,
         value,
         pubkey,
-    }
+    })
 }
 
 pub fn get_bid_signature(

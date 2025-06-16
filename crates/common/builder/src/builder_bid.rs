@@ -4,10 +4,11 @@ use ream_consensus::{
     electra::execution_payload_header::ExecutionPayloadHeader,
     execution_requests::ExecutionRequests, polynomial_commitments::kzg_commitment::KZGCommitment,
 };
+use serde::{Deserialize, Serialize};
 use ssz_types::{VariableList, typenum::U4096};
 use tree_hash_derive::TreeHash;
 
-#[derive(Debug, PartialEq, Eq, Clone, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, TreeHash, Serialize, Deserialize)]
 pub struct BuilderBid {
     pub header: ExecutionPayloadHeader,
     pub blob_kzg_commitments: VariableList<KZGCommitment, U4096>,
@@ -16,7 +17,7 @@ pub struct BuilderBid {
     pub pubkey: PubKey,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct SignedBuilderBid {
     pub message: BuilderBid,
     pub signature: BLSSignature,
