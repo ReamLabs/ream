@@ -17,6 +17,7 @@ use ream_consensus::{
     constants::DOMAIN_SYNC_COMMITTEE,
     electra::beacon_state::BeaconState,
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+    single_attestation::SingleAttestation,
 };
 use ream_executor::ReamExecutor;
 use ream_keystore::keystore::Keystore;
@@ -26,6 +27,7 @@ use tokio::time::{Instant, MissedTickBehavior, interval_at};
 use tracing::{error, info, warn};
 
 use crate::{
+    attestation::sign_attestation_data,
     beacon_api_client::BeaconApiClient,
     block::{sign_beacon_block, sign_blinded_beacon_block},
     randao::sign_randao_reveal,
@@ -308,6 +310,36 @@ impl ValidatorService {
             .beacon_api_client
             .publish_sync_committee_signature(payload)
             .await?)
+    }
+
+    pub async fn make_attestation(
+        &self,
+        slot: u64,
+        validator_index: u64,
+        committee_index: u64,
+    ) -> anyhow::Result<()> {
+        if let Some(keystore) = self.validator_index_to_keystore.get(&validator_index) {
+            let attestation_data = self
+                .beacon_api_client
+                .get_attestation_data(slot, committee_index)
+                .await?
+                .data;
+
+            let signature = sign_attestation_data(&attestation_data, &keystore.private_key)?;
+
+            let single_attestation = SingleAttestation {
+                attester_index: validator_index,
+                committee_index,
+                data: attestation_data,
+                signature,
+            };
+
+            self.beacon_api_client
+                .submit_attestation(vec![single_attestation])
+                .await?;
+        }
+
+        Ok(())
     }
 
     pub async fn on_epoch(&mut self, epoch: u64) {

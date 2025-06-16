@@ -14,7 +14,7 @@ use ream_consensus::{
         SLOTS_PER_EPOCH,
     },
     electra::beacon_state::BeaconState,
-    misc::{compute_epoch_at_slot, compute_signing_root, get_committee_indices},
+    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root, get_committee_indices},
 };
 use ream_network_spec::networks::network_spec;
 use ssz_types::{
@@ -124,4 +124,17 @@ pub fn get_aggregate_signature(attestations: Vec<Attestation>) -> anyhow::Result
         .map(|attestation| &attestation.signature)
         .collect();
     Ok(BLSSignature::aggregate(&signatures)?)
+}
+
+pub fn sign_attestation_data(
+    attestation_data: &AttestationData,
+    private_key: &PrivateKey,
+) -> anyhow::Result<BLSSignature> {
+    let domain = compute_domain(
+        DOMAIN_BEACON_ATTESTER,
+        Some(network_spec().electra_fork_version),
+        None,
+    );
+    let signing_root = compute_signing_root(attestation_data, domain);
+    Ok(private_key.sign(signing_root.as_ref())?)
 }
