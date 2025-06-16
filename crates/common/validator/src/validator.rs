@@ -325,21 +325,20 @@ impl ValidatorService {
                 .await?
                 .data;
 
-            let signature = sign_attestation_data(&attestation_data, &keystore.private_key)?;
-
-            let single_attestation = SingleAttestation {
-                attester_index: validator_index,
-                committee_index,
-                data: attestation_data,
-                signature,
-            };
-
-            self.beacon_api_client
-                .submit_attestation(vec![single_attestation])
-                .await?;
+            Ok(self
+                .beacon_api_client
+                .submit_attestation(vec![SingleAttestation {
+                    attester_index: validator_index,
+                    committee_index,
+                    signature: sign_attestation_data(&attestation_data, &keystore.private_key)?,
+                    data: attestation_data,
+                }])
+                .await?)
+        } else {
+            Err(anyhow!(
+                "Keystore not found for validator: {validator_index}"
+            ))
         }
-
-        Ok(())
     }
 
     pub async fn on_epoch(&mut self, epoch: u64) {
