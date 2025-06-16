@@ -8,7 +8,6 @@ use ream_beacon_api_types::{error::ApiError, id::ID, responses::DataResponse};
 use ream_consensus::voluntary_exit::SignedVoluntaryExit;
 use ream_operation_pool::OperationPool;
 use ream_storage::db::ReamDB;
-use tracing::error;
 
 use crate::handlers::state::get_state_from_id;
 
@@ -32,8 +31,7 @@ pub async fn post_voluntary_exits(
         .slot_index_provider()
         .get_highest_slot()
         .map_err(|err| {
-            error!("Failed to get_highest_slot, error: {err:?}");
-            ApiError::InternalError
+            ApiError::InternalError(format!("Failed to get_highest_slot, error: {err:?}"))
         })?
         .ok_or(ApiError::NotFound(
             "Failed to find highest slot".to_string(),

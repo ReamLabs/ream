@@ -46,22 +46,21 @@ pub async fn get_syncing_status(
 
     // get head_slot
     let head = store.get_head().map_err(|err| {
-        error!("Failed to get current slot, error: {err:?}");
-        ApiError::InternalError
+        ApiError::InternalError(format!("Failed to get current slot, error: {err:?}"))
     })?;
 
     let head_slot = match db.beacon_block_provider().get(head) {
         Ok(Some(block)) => block.message.slot,
         err => {
-            error!("Failed to get head slot, error: {err:?}");
-            return Err(ApiError::InternalError);
+            return Err(ApiError::InternalError(format!(
+                "Failed to get head slot, error: {err:?}"
+            )));
         }
     };
 
     // calculate sync_distance
     let current_slot = store.get_current_slot().map_err(|err| {
-        error!("Failed to get current slot, error: {err:?}");
-        ApiError::InternalError
+        ApiError::InternalError(format!("Failed to get current slot, error: {err:?}"))
     })?;
 
     let sync_distance = current_slot.saturating_sub(head_slot);
