@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, hash_map::Entry},
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
+    vec,
 };
 
 use alloy_primitives::Address;
@@ -14,6 +15,7 @@ use ream_beacon_api_types::{
 };
 use ream_bls::{PubKey, traits::Signable};
 use ream_consensus::{
+    attestation_data::AttestationData,
     constants::DOMAIN_SYNC_COMMITTEE,
     electra::beacon_state::BeaconState,
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
@@ -25,9 +27,11 @@ use ream_network_spec::networks::network_spec;
 use reqwest::Url;
 use tokio::time::{Instant, MissedTickBehavior, interval_at};
 use tracing::{error, info, warn};
+use tree_hash::TreeHash;
 
 use crate::{
-    attestation::sign_attestation_data,
+    aggregate_and_proof::{AggregateAndProof, SignedAggregateAndProof, sign_aggregate_and_proof},
+    attestation::{get_selection_proof, sign_attestation_data},
     beacon_api_client::BeaconApiClient,
     block::{sign_beacon_block, sign_blinded_beacon_block},
     randao::sign_randao_reveal,
@@ -327,14 +331,50 @@ impl ValidatorService {
             .get_attestation_data(slot, committee_index)
             .await?
             .data;
-        Ok(self
-            .beacon_api_client
-            .submit_attestation(vec![SingleAttestation {
+        Ok(self.beacon_api_client.submit_attestation(
+            vec![SingleAttestation {
                 attester_index: validator_index,
                 committee_index,
                 signature: sign_attestation_data(&attestation_data, &keystore.private_key)?,
                 data: attestation_data,
-            }])
+            }]
+            .await?,
+        ))
+    }
+
+    pub async fn submit_aggregate_and_proof(
+        &self,
+        attestation_data: AttestationData,
+        slot: u64,
+        committee_index: u64,
+        aggregator_index: u64,
+    ) -> anyhow::Result<()> {
+        let keystore = self
+            .validator_index_to_keystore
+            .get(&aggregator_index)
+            .cloned()
+            .ok_or_else(|| anyhow!("Keystore not found for validator: {aggregator_index}"))?;
+
+        let aggregate = self
+            .beacon_api_client
+            .get_aggregated_attestation(attestation_data.tree_hash_root(), slot, committee_index)
+            .await?
+            .data;
+
+        let aggregate_and_proof = AggregateAndProof {
+            aggregator_index,
+            aggregate,
+            selection_proof: get_selection_proof(slot, &keystore.private_key)?,
+        };
+
+        let signed_aggregate_and_proof = SignedAggregateAndProof {
+            signature: sign_aggregate_and_proof(&aggregate_and_proof, &keystore.private_key)?,
+            message: aggregate_and_proof,
+        };
+
+        Ok(self
+            .beacon_api_client
+            .publish_aggregate_and_proofs(vec![signed_aggregate_and_proof])
             .await?)
     }
 

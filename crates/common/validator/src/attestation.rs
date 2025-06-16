@@ -138,3 +138,13 @@ pub fn sign_attestation_data(
     let signing_root = compute_signing_root(attestation_data, domain);
     Ok(private_key.sign(signing_root.as_ref())?)
 }
+
+pub fn get_selection_proof(slot: u64, private_key: &PrivateKey) -> anyhow::Result<BLSSignature> {
+    let domain = compute_domain(
+        DOMAIN_SELECTION_PROOF,
+        Some(network_spec().electra_fork_version),
+        None,
+    );
+    let signing_root = compute_signing_root(slot, domain);
+    Ok(private_key.sign(signing_root.as_ref())?)
+}
