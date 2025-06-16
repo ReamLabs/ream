@@ -21,7 +21,9 @@ pub struct BlobSidecar {
     pub kzg_commitment_inclusion_proof: FixedVector<B256, U17>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Encode, Decode, Ord, PartialOrd)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, Deserialize, Encode, Decode, Ord, PartialOrd, Default,
+)]
 pub struct BlobIdentifier {
     pub block_root: B256,
     pub index: u64,

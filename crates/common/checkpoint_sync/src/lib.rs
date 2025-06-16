@@ -53,10 +53,14 @@ pub async fn initialize_db_from_checkpoint(
     if db.is_initialized() {
         warn!("DB is already initialized. Skipping checkpoint sync.");
 
+        let highest_root = db
+            .slot_index_provider()
+            .get_highest_root()?
+            .expect("No highest root found");
         let state = db
             .beacon_state_provider()
-            .last()?
-            .ok_or_else(|| anyhow!("Unable to fetch latest state"))?;
+            .get(highest_root)?
+            .ok_or_else(|| anyhow!("Unable to fetch beacon state"))?;
 
         if let Some(weak_subjectivity_checkpoint) = &weak_subjectivity_checkpoint {
             if !verify_state_from_weak_subjectivity_checkpoint(

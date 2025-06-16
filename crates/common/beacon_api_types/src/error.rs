@@ -71,4 +71,7 @@ pub enum ValidatorError {
 
     #[error("Anyhow error: {0}")]
     Anyhow(#[from] anyhow::Error),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(#[from] serde_json::Error),
 }

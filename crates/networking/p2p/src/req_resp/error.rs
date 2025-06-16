@@ -35,6 +35,6 @@ impl From<ssz::DecodeError> for ReqRespError {
 impl From<VariableList<u8, U256>> for ReqRespError {
     fn from(err: VariableList<u8, U256>) -> Self {
         let err = String::from_utf8(Vec::from(err)).unwrap_or("Invalid UTF-8".to_string());
-        ReqRespError::InvalidData(format!("Failed to decode variable list: {err:?}"))
+        ReqRespError::InvalidData(format!("ReqResp error message from peer: {err:?}"))
     }
 }

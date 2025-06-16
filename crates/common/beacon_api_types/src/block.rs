@@ -7,6 +7,24 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BroadcastValidation {
+    /// Lightweight gossip checks only (default)
+    Gossip,
+    /// Full consensus checks, including validation of all signatures and block fields
+    /// except for the execution payload transactions
+    Consensus,
+    /// Same as consensus, with an extra equivocation check immediately before broadcast
+    ConsensusAndEquivocation,
+}
+
+impl Default for BroadcastValidation {
+    fn default() -> Self {
+        Self::Gossip
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProduceBlockResponse {
     pub version: String,
     pub execution_payload_blinded: bool,

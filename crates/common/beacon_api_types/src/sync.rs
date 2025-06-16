@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 
-#[derive(Debug, Deserialize, Serialize, Encode, Decode)]
+#[derive(Debug, Deserialize, Serialize, Encode, Decode, Default)]
 pub struct SyncStatus {
     #[serde(with = "serde_utils::quoted_u64")]
     pub head_slot: u64,

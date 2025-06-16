@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus::electra::beacon_state::BeaconState;
-use redb::{Database, Durability, ReadableTable, TableDefinition};
+use redb::{Database, Durability, TableDefinition};
 
 use super::{SSZEncoding, Table};
 use crate::errors::StoreError;
@@ -39,23 +39,5 @@ impl Table for BeaconStateTable {
         drop(table);
         write_txn.commit()?;
         Ok(())
-    }
-}
-
-impl BeaconStateTable {
-    pub fn first(&self) -> Result<Option<BeaconState>, StoreError> {
-        let read_txn = self.db.begin_read()?;
-
-        let table = read_txn.open_table(BEACON_STATE_TABLE)?;
-        let result = table.first()?;
-        Ok(result.map(|res| res.1.value()))
-    }
-
-    pub fn last(&self) -> Result<Option<BeaconState>, StoreError> {
-        let read_txn = self.db.begin_read()?;
-
-        let table = read_txn.open_table(BEACON_STATE_TABLE)?;
-        let result = table.last()?;
-        Ok(result.map(|res| res.1.value()))
     }
 }

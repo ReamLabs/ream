@@ -1,9 +1,7 @@
 use alloy_primitives::B256;
 use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
-use ream_consensus::{
-    electra::beacon_state::BeaconState,
-    misc::{compute_epoch_at_slot, compute_signing_root},
-};
+use ream_consensus::misc::{compute_domain, compute_signing_root};
+use ream_network_spec::networks::network_spec;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{BitVector, typenum::U128};
@@ -39,14 +37,12 @@ pub struct SignedContributionAndProof {
 }
 
 pub fn get_contribution_and_proof(
-    state: &BeaconState,
-    aggregator_index: u64,
     contribution: SyncCommitteeContribution,
-    private_key: PrivateKey,
+    aggregator_index: u64,
+    private_key: &PrivateKey,
 ) -> anyhow::Result<ContributionAndProof> {
     Ok(ContributionAndProof {
         selection_proof: get_sync_committee_selection_proof(
-            state,
             contribution.slot,
             contribution.subcommittee_index,
             private_key,
@@ -57,15 +53,13 @@ pub fn get_contribution_and_proof(
 }
 
 pub fn get_contribution_and_proof_signature(
-    state: &BeaconState,
     contribution_and_proof: ContributionAndProof,
     private_key: PrivateKey,
 ) -> anyhow::Result<BLSSignature> {
-    let domain = state.get_domain(
+    let domain = compute_domain(
         DOMAIN_CONTRIBUTION_AND_PROOF,
-        Some(compute_epoch_at_slot(
-            contribution_and_proof.contribution.slot,
-        )),
+        Some(network_spec().electra_fork_version),
+        None,
     );
     let signing_root = compute_signing_root(contribution_and_proof, domain);
     Ok(private_key.sign(signing_root.as_ref())?)

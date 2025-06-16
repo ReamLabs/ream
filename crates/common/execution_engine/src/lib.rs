@@ -3,7 +3,7 @@ pub mod utils;
 
 use std::path::PathBuf;
 
-use alloy_primitives::{Address, B64, B256, Bytes, hex};
+use alloy_primitives::{Address, B64, B256, Bytes, U64, hex};
 use alloy_rpc_types_eth::{Block, BlockId, BlockNumberOrTag, Filter, Log, TransactionRequest};
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -139,7 +139,7 @@ impl ExecutionEngine {
             .to_result()
     }
 
-    pub async fn eth_chain_id(&self) -> anyhow::Result<B64> {
+    pub async fn eth_chain_id(&self) -> anyhow::Result<U64> {
         let request_body = JsonRpcRequest {
             id: 1,
             jsonrpc: "2.0".to_string(),
@@ -152,7 +152,7 @@ impl ExecutionEngine {
         self.http_client
             .execute(http_post_request)
             .await?
-            .json::<JsonRpcResponse<B64>>()
+            .json::<JsonRpcResponse<U64>>()
             .await?
             .to_result()
     }
