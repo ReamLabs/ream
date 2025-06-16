@@ -30,7 +30,7 @@ use super::{
     beacon_block_body::BeaconBlockBody,
     execution_payload::ExecutionPayload,
     execution_payload_header::ExecutionPayloadHeader,
-    zkvm_types::{MaxAttestationsPerEpoch, ValidatorRegistryLimit},
+    zkvm_types::ValidatorRegistryLimit,
 };
 use crate::{
     attestation::Attestation,
@@ -101,7 +101,7 @@ pub mod quoted_u8_var_list {
     use super::*;
 
     pub fn serialize<S>(
-        value: &VariableList<u8, MaxAttestationsPerEpoch>,
+        value: &VariableList<u8, ValidatorRegistryLimit>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
@@ -113,7 +113,7 @@ pub mod quoted_u8_var_list {
 
     pub fn deserialize<'de, D>(
         deserializer: D,
-    ) -> Result<VariableList<u8, MaxAttestationsPerEpoch>, D::Error>
+    ) -> Result<VariableList<u8, ValidatorRegistryLimit>, D::Error>
     where
         D: Deserializer<'de>,
     {
