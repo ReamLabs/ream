@@ -10,6 +10,9 @@ pub enum StoreError {
 
     #[error("Field not initilized")]
     FieldNotInitilized,
+
+    #[error("DecodeError not found {0}")]
+    DecodeError(String),
 }
 
 impl From<redb::Error> for StoreError {
@@ -45,5 +48,11 @@ impl From<redb::StorageError> for StoreError {
 impl From<redb::DatabaseError> for StoreError {
     fn from(err: redb::DatabaseError) -> Self {
         StoreError::Redb(Box::new(err.into()))
+    }
+}
+
+impl From<ssz::DecodeError> for StoreError {
+    fn from(value: ssz::DecodeError) -> Self {
+        StoreError::DecodeError(format!("{value:?}"))
     }
 }

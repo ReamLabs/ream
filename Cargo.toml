@@ -93,6 +93,7 @@ serde_yaml = "0.9"
 sha2 = "0.10"
 snap = "1.1"
 ssz_types = "0.11"
+tempdir = "0.3.7"
 tempfile = "3.19"
 thiserror = "2.0.11"
 tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
