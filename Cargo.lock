@@ -5541,6 +5541,7 @@ dependencies = [
  "ethereum_ssz",
  "ream-consensus",
  "redb",
+ "snap",
  "ssz_types",
  "tempdir",
  "tempfile",
