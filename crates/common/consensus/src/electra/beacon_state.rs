@@ -173,9 +173,9 @@ pub struct BeaconState {
 
     // Participation
     #[serde(with = "quoted_u8_var_list")]
-    pub previous_epoch_participation: VariableList<u8, MaxAttestationsPerEpoch>,
+    pub previous_epoch_participation: VariableList<u8, ValidatorRegistryLimit>,
     #[serde(with = "quoted_u8_var_list")]
-    pub current_epoch_participation: VariableList<u8, MaxAttestationsPerEpoch>,
+    pub current_epoch_participation: VariableList<u8, ValidatorRegistryLimit>,
 
     // Finality
     pub justification_bits: BitVector<U4>,
