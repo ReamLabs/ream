@@ -161,6 +161,7 @@ pub struct BeaconState {
 
     // Registry
     pub validators: VariableList<Validator, ValidatorRegistryLimit>,
+    #[serde(with = "quoted_u64_var_list")]
     pub balances: VariableList<u64, ValidatorRegistryLimit>,
 
     // Randomness
@@ -173,6 +174,7 @@ pub struct BeaconState {
     // Participation
     #[serde(with = "quoted_u8_var_list")]
     pub previous_epoch_participation: VariableList<u8, MaxAttestationsPerEpoch>,
+    #[serde(with = "quoted_u8_var_list")]
     pub current_epoch_participation: VariableList<u8, MaxAttestationsPerEpoch>,
 
     // Finality
