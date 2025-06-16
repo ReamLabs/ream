@@ -20,7 +20,7 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitVector, FixedVector, VariableList,
     serde_utils::{quoted_u64_fixed_vec, quoted_u64_var_list},
-    typenum::{U4, U2048, U8192, U65536, U262144, U16777216, U134217728, U1099511627776},
+    typenum::{U4, U2048, U8192, U65536, U262144, U16777216, U134217728},
 };
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
@@ -101,7 +101,7 @@ pub mod quoted_u8_var_list {
     use super::*;
 
     pub fn serialize<S>(
-        value: &VariableList<u8, U1099511627776>,
+        value: &VariableList<u8, MaxAttestationsPerEpoch>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
@@ -113,7 +113,7 @@ pub mod quoted_u8_var_list {
 
     pub fn deserialize<'de, D>(
         deserializer: D,
-    ) -> Result<VariableList<u8, U1099511627776>, D::Error>
+    ) -> Result<VariableList<u8, MaxAttestationsPerEpoch>, D::Error>
     where
         D: Deserializer<'de>,
     {
