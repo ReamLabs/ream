@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 use anyhow::ensure;
 use ream_consensus::{
-    constants::{GENESIS_SLOT, MIN_SYNC_COMMITTEE_PARTICIPANTS},
+    constants::GENESIS_SLOT,
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     misc::compute_sync_committee_period_at_slot,
     sync_aggregate::SyncAggregate,
@@ -14,6 +14,8 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::header::LightClientHeader;
+
+pub const MIN_SYNC_COMMITTEE_PARTICIPANTS: u64 = 1;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct LightClientUpdate {
@@ -48,8 +50,8 @@ impl LightClientUpdate {
                 .sync_committee_bits
                 .iter()
                 .filter(|sync_committee_bit| *sync_committee_bit)
-                .count()
-                >= MIN_SYNC_COMMITTEE_PARTICIPANTS.try_into().unwrap(),
+                .count() as u64
+                >= MIN_SYNC_COMMITTEE_PARTICIPANTS,
             "Not enough sync committee participants"
         );
         ensure!(

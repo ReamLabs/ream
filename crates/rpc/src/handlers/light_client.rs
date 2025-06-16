@@ -4,12 +4,12 @@ use actix_web::{
 };
 use alloy_primitives::B256;
 use ream_beacon_api_types::{error::ApiError, responses::DataVersionedResponse};
-use ream_consensus::constants::{
-    EPOCHS_PER_SYNC_COMMITTEE_PERIOD, MAX_REQUEST_LIGHT_CLIENT_UPDATES, SLOTS_PER_EPOCH,
-};
+use ream_consensus::constants::{EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SLOTS_PER_EPOCH};
 use ream_light_client::{bootstrap::LightClientBootstrap, update::LightClientUpdate};
 use ream_storage::{db::ReamDB, tables::Table};
 use tree_hash::TreeHash;
+
+pub const MAX_REQUEST_LIGHT_CLIENT_UPDATES: u64 = 128;
 
 #[get("/beacon/light_client/bootstrap/{block_root}")]
 pub async fn get_light_client_bootstrap(
