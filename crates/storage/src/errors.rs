@@ -14,8 +14,8 @@ pub enum StoreError {
     #[error("DecodeError not found {0}")]
     DecodeError(String),
 
-    #[error("EncoderError not found {0}")]
-    SnappyError(String),
+    #[error("SnappyError not found {0}")]
+    SnappyError(#[from] snap::Error),
 }
 
 impl From<redb::Error> for StoreError {
@@ -57,11 +57,5 @@ impl From<redb::DatabaseError> for StoreError {
 impl From<ssz::DecodeError> for StoreError {
     fn from(value: ssz::DecodeError) -> Self {
         StoreError::DecodeError(format!("{value:?}"))
-    }
-}
-
-impl From<snap::Error> for StoreError {
-    fn from(value: snap::Error) -> Self {
-        StoreError::SnappyError(format!("{value:?}"))
     }
 }

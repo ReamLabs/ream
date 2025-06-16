@@ -49,11 +49,9 @@ pub struct ReamDB {
 
 impl ReamDB {
     pub fn new(data_dir: PathBuf) -> Result<Self, StoreError> {
-        let ream_file = data_dir.join(REDB_FILE);
-
         let db = Builder::new()
             .set_cache_size(REDB_CACHE_SIZE)
-            .create(&ream_file)?;
+            .create(data_dir.join(REDB_FILE))?;
 
         let write_txn = db.begin_write()?;
         write_txn.open_table(BEACON_BLOCK_TABLE)?;
@@ -75,8 +73,7 @@ impl ReamDB {
         write_txn.open_table(UNREALIZED_JUSTIFED_CHECKPOINT_FIELD)?;
         write_txn.commit()?;
 
-        let ream_file = data_dir.join(BLOB_FOLDER_NAME);
-        let _ = fs::create_dir(ream_file);
+        fs::create_dir(data_dir.join(BLOB_FOLDER_NAME))?;
 
         Ok(Self {
             db: Arc::new(db),
