@@ -2,6 +2,7 @@
 default-members = ["bin/ream"]
 members = [
     "bin/ream",
+    "crates/account_manager",
     "crates/common/beacon_api_types",
     "crates/common/beacon_chain",
     "crates/common/checkpoint_sync",
@@ -12,6 +13,7 @@ members = [
     "crates/common/light_client",
     "crates/common/network_spec",
     "crates/common/node",
+    "crates/common/operation_pool",
     "crates/common/polynomial_commitments",
     "crates/common/validator",
     "crates/crypto/bls",
@@ -58,6 +60,7 @@ alloy-rpc-types-beacon = "1.0.8"
 alloy-rpc-types-eth = "1.0.7"
 anyhow = "1.0"
 async-trait = "0.1.86"
+bip32 = "0.5.3"
 clap = "4"
 delay_map = "0.4.1"
 directories = { version = "6.0.0" }
@@ -70,6 +73,7 @@ ethereum_ssz_derive = "0.9"
 eventsource-client = "0.15.0"
 futures = "0.3"
 hashbrown = "0.15.3"
+hashsig = { git = "https://github.com/b-wagn/hash-sig" }
 itertools = "0.14"
 jsonwebtoken = "9.3.1"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }
@@ -77,6 +81,8 @@ libp2p = { version = "0.55", default-features = false, features = ["identify", "
 libp2p-identity = "0.2"
 libp2p-mplex = "0.43"
 parking_lot = "0.12.3"
+rand = "0.8"
+rand_chacha = "0.3"
 redb = { version = "2.4.0" }
 reqwest = { version = "0.12", features = ["json"] }
 rstest = "0.25"
@@ -87,6 +93,7 @@ serde_yaml = "0.9"
 sha2 = "0.10"
 snap = "1.1"
 ssz_types = "0.11"
+tempdir = "0.3.7"
 tempfile = "3.19"
 thiserror = "2.0.11"
 tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
@@ -99,6 +106,7 @@ unicode-normalization = "0.1.24"
 url = "2.5"
 
 # ream dependencies
+ream-account-manager = { path = "crates/account_manager" }
 ream-beacon-api-types = { path = "crates/common/beacon_api_types" }
 ream-beacon-chain = { path = "crates/common/beacon_chain" }
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
@@ -114,6 +122,7 @@ ream-manager = { path = "crates/networking/manager" }
 ream-merkle = { path = "crates/crypto/merkle" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }
+ream-operation-pool = { path = "crates/common/operation_pool" }
 ream-p2p = { path = "crates/networking/p2p" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-rpc = { path = "crates/rpc" }
