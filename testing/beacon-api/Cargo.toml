@@ -12,6 +12,7 @@ regex = "1.0"
 thiserror = "1.0"
 anyhow = "1.0"
 alloy-primitives = "0.1.0"
+jsonschema = "0.17"
 
 # ream
 ream-beacon-api-types.workspace = true

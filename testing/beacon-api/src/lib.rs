@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 use reqwest::{Client, StatusCode};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 use std::collections::HashMap;
 use regex::Regex;
 
@@ -92,4 +92,5 @@ fn extract_version(version: &str) -> String {
 
 pub mod schema;
 pub mod test_utils;
-pub mod beacon_api; 
+pub mod beacon_api;
+pub mod test_data; 

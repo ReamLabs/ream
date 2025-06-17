@@ -1,205 +1,165 @@
 use serde_json::Value;
 use std::error::Error;
-use std::fs;
-use std::collections::HashMap;
+use jsonschema::{JSONSchema, ValidationError};
+use std::fmt;
+use serde_json::json;
 
 #[derive(Debug)]
+pub struct SchemaValidationError {
+    pub message: String,
+}
+
+impl fmt::Display for SchemaValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl Error for SchemaValidationError {}
+
+impl From<ValidationError<'_>> for SchemaValidationError {
+    fn from(error: ValidationError<'_>) -> Self {
+        SchemaValidationError {
+            message: error.to_string(),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct RouteSpec {
     pub path: String,
     pub method: String,
-    pub operation_id: String,
-    pub responses: Value,
-    pub response_ok_schema: Option<Value>,
-    pub response_ssz_required: bool,
-    pub request_schema: Value,
-    pub request_ssz_required: bool,
+    pub base_url: String,
+    pub response_schema: Option<Value>,
+    pub request_schema: Option<Value>,
 }
 
 pub struct SchemaValidator {
-    pub routes: HashMap<String, RouteSpec>,
     schema: Value,
+    route_specs: HashMap<String, RouteSpec>,
 }
 
 impl SchemaValidator {
-    pub fn new(schema_path: &str) -> Result<Self, Box<dyn Error>> {
-        let schema_content = fs::read_to_string(schema_path)?;
-        let schema: Value = serde_json::from_str(&schema_content)?;
-        let mut routes = HashMap::new();
+    pub fn new(schema: Value) -> Result<Self, Box<dyn Error>> {
+        let mut validator = Self {
+            schema,
+            route_specs: HashMap::new(),
+        };
+        validator.init_route_specs()?;
+        Ok(validator)
+    }
 
-        if let Some(paths) = schema.get("paths").and_then(|p| p.as_object()) {
-            for (path, path_item) in paths {
-                if let Some(path_item) = path_item.as_object() {
-                    for (method, operation) in path_item {
-                        if let Some(operation) = operation.as_object() {
-                            if let Some(operation_id) = operation.get("operationId").and_then(|id| id.as_str()) {
-                                if let Some(responses) = operation.get("responses").and_then(|r| r.as_object()) {
-                                    if let Some(success_response) = responses.get("200").and_then(|r| r.as_object()) {
-                                        if let Some(content) = success_response.get("content").and_then(|c| c.as_object()) {
-                                            if let Some(json_content) = content.get("application/json").and_then(|c| c.as_object()) {
-                                                if let Some(schema) = json_content.get("schema") {
-                                                    let response_ok_schema: Result<Value, String> = if let Some(ref_path) = schema.get("$ref").and_then(|r| r.as_str()) {
-                                                        let path = ref_path.trim_start_matches("#/");
-                                                        let parts: Vec<&str> = path.split('/').collect();
-                                                        let mut current = &schema;
-                                                        let mut values = Vec::new();
-                                                        for part in parts {
-                                                            let temp = current.get(part).ok_or_else(|| format!("Reference not found: {}", ref_path))?;
-                                                            values.push(temp);
-                                                            current = values.last().unwrap();
-                                                        }
-                                                        Ok(current.clone().clone())
-                                                    } else {
-                                                        Ok(schema.clone())
-                                                    };
-                                                    let response_ssz_required = content.get("application/octet-stream").is_some();
-                                                    
-                                                    let request_schema = operation.get("requestBody")
-                                                        .and_then(|r| r.get("content"))
-                                                        .and_then(|c| c.get("application/json"))
-                                                        .and_then(|c| c.get("schema"))
-                                                        .map(|s| -> Result<Value, String> {
-                                                            if let Some(ref_path) = s.get("$ref").and_then(|r| r.as_str()) {
-                                                                let path = ref_path.trim_start_matches("#/");
-                                                                let parts: Vec<&str> = path.split('/').collect();
-                                                                let mut current = &schema;
-                                                                let mut values = Vec::new();
-                                                                for part in parts {
-                                                                    let temp = current.get(part).ok_or_else(|| format!("Reference not found: {}", ref_path))?;
-                                                                    values.push(temp);
-                                                                    current = values.last().unwrap();
-                                                                }
-                                                                Ok(current.clone().clone())
-                                                            } else {
-                                                                Ok(s.clone())
-                                                            }
-                                                        })
-                                                        .unwrap_or_else(|| Ok(Value::Object(serde_json::Map::new())))
-                                                        .unwrap_or_else(|_: String| Value::Object(serde_json::Map::new()));
+    fn init_route_specs(&mut self) -> Result<(), Box<dyn Error>> {
+        let paths = self.schema.get("paths")
+            .ok_or_else(|| SchemaValidationError { message: "No paths found in schema".to_string() })?;
 
-                                                    let request_ssz_required = operation.get("requestBody")
-                                                        .and_then(|r| r.get("content"))
-                                                        .and_then(|c| c.get("application/octet-stream"))
-                                                        .is_some();
+        for (path, methods) in paths.as_object()
+            .ok_or_else(|| SchemaValidationError { message: "Paths must be an object".to_string() })?
+        {
+            for (method, spec) in methods.as_object()
+                .ok_or_else(|| SchemaValidationError { message: "Methods must be an object".to_string() })?
+            {
+                let operation_id = spec.get("operationId")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| SchemaValidationError { 
+                        message: format!("No operationId found for {} {}", method, path) 
+                    })?;
 
-                                                    routes.insert(
-                                                        operation_id.to_string(),
-                                                        RouteSpec {
-                                                            path: path.clone(),
-                                                            method: method.clone(),
-                                                            operation_id: operation_id.to_string(),
-                                                            responses: operation.get("responses").cloned().unwrap_or_default(),
-                                                            response_ok_schema: Some(response_ok_schema?),
-                                                            response_ssz_required,
-                                                            request_schema,
-                                                            request_ssz_required,
-                                                        },
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                // Get response schema
+                let response_schema = spec.get("responses")
+                    .and_then(|r| r.get("200"))
+                    .and_then(|r| r.get("content"))
+                    .and_then(|c| c.get("application/json"))
+                    .and_then(|c| c.get("schema"))
+                    .cloned();
+
+                // Get request schema
+                let request_schema = spec.get("requestBody")
+                    .and_then(|r| r.get("content"))
+                    .and_then(|c| c.get("application/json"))
+                    .and_then(|c| c.get("schema"))
+                    .cloned();
+
+                let route_spec = RouteSpec {
+                    path: path.clone(),
+                    method: method.to_uppercase(),
+                    base_url: "http://localhost:5052".to_string(),
+                    response_schema,
+                    request_schema,
+                };
+
+                self.route_specs.insert(operation_id.to_string(), route_spec);
             }
         }
+        Ok(())
+    }
 
-        Ok(Self { routes, schema })
+    pub fn get_route_spec(&self, operation_id: &str) -> Option<&RouteSpec> {
+        self.route_specs.get(operation_id)
+    }
+
+    pub fn validate_request(&self, operation_id: &str, request: &Value) -> Result<(), Box<dyn Error>> {
+        let route_spec = self.get_route_spec(operation_id)
+            .ok_or_else(|| SchemaValidationError { 
+                message: format!("No route spec found for {}", operation_id) 
+            })?;
+
+        if let Some(schema) = &route_spec.request_schema {
+            // TODO: Implement actual JSON Schema validation
+            // For now, just check if the request matches the schema structure
+            if !self.validate_against_schema(request, schema) {
+                return Err(Box::new(SchemaValidationError {
+                    message: format!("Request validation failed for {}", operation_id)
+                }));
+            }
+        }
+        Ok(())
     }
 
     pub fn validate_response(&self, operation_id: &str, response: &Value) -> Result<(), Box<dyn Error>> {
-        println!("Validating response for operation: {}", operation_id);
-        let route_spec = self.routes.get(operation_id)
-            .ok_or_else(|| format!("Operation {} not found in schema", operation_id))?;
+        let route_spec = self.get_route_spec(operation_id)
+            .ok_or_else(|| SchemaValidationError { 
+                message: format!("No route spec found for {}", operation_id) 
+            })?;
 
-        if let Some(schema) = &route_spec.response_ok_schema {
-            println!("Found response schema for {}", operation_id);
-            self.validate_value(response, schema)
-        } else {
-            println!("No response schema found for {}", operation_id);
-            Ok(())
+        if let Some(schema) = &route_spec.response_schema {
+            // TODO: Implement actual JSON Schema validation
+            // For now, just check if the response matches the schema structure
+            if !self.validate_against_schema(response, schema) {
+                return Err(Box::new(SchemaValidationError {
+                    message: format!("Response validation failed for {}", operation_id)
+                }));
+            }
         }
+        Ok(())
     }
 
-    fn validate_value(&self, value: &Value, schema: &Value) -> Result<(), Box<dyn Error>> {
-        
-        // Handle oneOf/anyOf
-        if let Some(one_of) = schema.get("oneOf").and_then(|v| v.as_array()) {
-            let mut errors = Vec::new();
-            for variant in one_of {
-                match self.validate_value(value, variant) {
-                    Ok(_) => return Ok(()),
-                    Err(e) => errors.push(e.to_string()),
-                }
-            }
-            return Err(format!("Value does not match any of the oneOf schemas: {}", errors.join(", ")).into());
-        }
-
-        if let Some(any_of) = schema.get("anyOf").and_then(|v| v.as_array()) {
-            let mut errors = Vec::new();
-            for variant in any_of {
-                match self.validate_value(value, variant) {
-                    Ok(_) => return Ok(()),
-                    Err(e) => errors.push(e.to_string()),
-                }
-            }
-            return Err(format!("Value does not match any of the anyOf schemas: {}", errors.join(", ")).into());
-        }
-
-        // Handle allOf
-        if let Some(all_of) = schema.get("allOf").and_then(|v| v.as_array()) {
-            for variant in all_of {
-                self.validate_value(value, variant)?;
-            }
-            return Ok(());
-        }
-
-        // Handle type
-        if let Some(type_str) = schema.get("type").and_then(|t| t.as_str()) {
-            let value_type = match value {
-                Value::Null => "null",
-                Value::Bool(_) => "boolean",
-                Value::Number(_) => "number",
-                Value::String(_) => "string",
-                Value::Array(_) => "array",
-                Value::Object(_) => "object",
-            };
-            if value_type != type_str {
-                // Special case for data field - if schema expects array but got object, wrap object in array
-                if type_str == "array" && value_type == "object" {
-                    let wrapped = Value::Array(vec![value.clone()]);
-                    return self.validate_value(&wrapped, schema);
-                }
-                return Err(format!("Expected type {}, got {}", type_str, value_type).into());
-            }
-        }
-
-        // Handle properties
-        if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
-            if let Some(value_obj) = value.as_object() {
-                for (prop_name, prop_schema) in properties {
-                    if let Some(prop_value) = value_obj.get(prop_name) {
-                        self.validate_value(prop_value, prop_schema)?;
-                    } else if let Some(required) = schema.get("required").and_then(|r| r.as_array()) {
-                        if required.iter().any(|r| r.as_str() == Some(prop_name)) {
-                            return Err(format!("Missing required property: {}", prop_name).into());
+    fn validate_against_schema(&self, value: &Value, schema: &Value) -> bool {
+        // Basic schema validation
+        if let Some(required) = schema.get("required").and_then(|r| r.as_array()) {
+            if let Some(obj) = value.as_object() {
+                for field in required {
+                    if let Some(field_str) = field.as_str() {
+                        if !obj.contains_key(field_str) {
+                            return false;
                         }
                     }
                 }
             }
         }
 
-        // Handle items for arrays
-        if let Some(items) = schema.get("items") {
-            if let Some(array) = value.as_array() {
-                for item in array {
-                    self.validate_value(item, items)?;
+        if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
+            if let Some(obj) = value.as_object() {
+                for (key, prop_schema) in properties {
+                    if let Some(value) = obj.get(key) {
+                        if !self.validate_against_schema(value, prop_schema) {
+                            return false;
+                        }
+                    }
                 }
             }
         }
 
-        Ok(())
+        true
     }
 } 

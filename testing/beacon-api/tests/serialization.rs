@@ -1,9 +1,10 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
-use alloy_primitives::b256;
+use alloy_primitives::B256;
 use ream_beacon_api_types::responses::BeaconVersionedResponse;
 use ream_consensus::electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
 use serde_json::Value;
@@ -19,9 +20,10 @@ async fn test_beacon_state_serialization() -> anyhow::Result<()> {
 
     assert_eq!(beacon_state.version, "electra");
     assert_eq!(beacon_state.data.latest_block_header.slot, 1);
+    let expected_root = B256::from_str("0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2")?;
     assert_eq!(
-        beacon_state.data.latest_block_header.parent_root,
-        b256!("0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2")
+        beacon_state.data.latest_block_header.parent_root.as_slice(),
+        expected_root.as_slice()
     );
 
     let serialized_json: Value = serde_json::to_value(&beacon_state)?;
@@ -57,5 +59,5 @@ async fn test_beacon_block_serialization() -> anyhow::Result<()> {
 pub fn read_json_file<P: AsRef<Path>>(file_name: P) -> anyhow::Result<Value> {
     let file_contents =
         fs::read_to_string(PathBuf::from(PATH_TO_TEST_DATA_FOLDER).join(file_name))?;
-    Ok(serde_json::from_str(&file_contents)?)
+    Ok(serde_json::from_str::<Value>(&file_contents)?)
 }
