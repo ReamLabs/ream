@@ -9,6 +9,7 @@ pub mod block;
 pub mod constants;
 pub mod contribution_and_proof;
 pub mod execution_requests;
+pub mod randao;
 pub mod state;
 pub mod sync_committee;
 pub mod validator;

@@ -9,9 +9,10 @@ $ ream --help
 Usage: ream <COMMAND>
 
 Commands:
-  beacon_node     Start the node
-  validator_node
-  help            Print this message or the help of the given subcommand(s)
+  beacon_node      Start the beacon node
+  validator_node   Start the validator node
+  account_manager  Manage validator accounts
+  help             Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help     Print help

@@ -10,28 +10,35 @@ use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
 use ream_beacon_api_types::{
-    block::{FullBlockData, ProduceBlockData, ProduceBlockResponse},
+    block::{BroadcastValidation, FullBlockData, ProduceBlockData, ProduceBlockResponse},
     committee::BeaconCommitteeSubscription,
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     error::ValidatorError,
     id::{ID, ValidatorID},
-    request::ValidatorsPostRequest,
+    request::{SyncCommitteeRequestItem, ValidatorsPostRequest},
     responses::{
-        BeaconResponse, DataResponse, DutiesResponse, ETH_CONSENSUS_VERSION_HEADER,
-        SyncCommitteeDutiesResponse, VERSION,
+        BeaconResponse, DataResponse, DataVersionedResponse, DutiesResponse,
+        ETH_CONSENSUS_VERSION_HEADER, RootResponse, SyncCommitteeDutiesResponse, VERSION,
     },
     sync::SyncStatus,
     validator::{ValidatorData, ValidatorStatus},
 };
 use ream_bls::BLSSignature;
 use ream_consensus::{
-    attestation_data::AttestationData, electra::blinded_beacon_block::BlindedBeaconBlock,
-    fork::Fork, genesis::Genesis, single_attestation::SingleAttestation,
+    attestation::Attestation,
+    attestation_data::AttestationData,
+    electra::{
+        beacon_block::SignedBeaconBlock,
+        blinded_beacon_block::{BlindedBeaconBlock, SignedBlindedBeaconBlock},
+    },
+    fork::Fork,
+    genesis::Genesis,
+    single_attestation::SingleAttestation,
 };
 use ream_network_spec::networks::NetworkSpec;
 use reqwest::{Url, header::HeaderMap};
 use serde_json::json;
-use ssz::Decode;
+use ssz::{Decode, Encode};
 use tracing::{error, info};
 
 use crate::aggregate_and_proof::SignedAggregateAndProof;
@@ -115,6 +122,28 @@ impl BeaconApiClient {
         Ok(response.json().await?)
     }
 
+    pub async fn get_block_root(
+        &self,
+        state_id: ID,
+    ) -> anyhow::Result<BeaconResponse<RootResponse>, ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .get(format!("/eth/v1/beacon/states/{state_id}/root"))?
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(response.json().await?)
+    }
+
     pub async fn get_config_spec(
         &self,
     ) -> anyhow::Result<DataResponse<NetworkSpec>, ValidatorError> {
@@ -158,6 +187,32 @@ impl BeaconApiClient {
         Ok(response.json().await?)
     }
 
+    pub async fn publish_sync_committee_signature(
+        &self,
+        sync_committee_request: Vec<SyncCommitteeRequestItem>,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post(
+                        "/eth/v1/beacon/pool/sync_committees".to_string(),
+                        ContentType::Json,
+                    )?
+                    .json(&sync_committee_request)
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
+    }
+
     pub async fn get_state_validator_list(
         &self,
         state_id: ID,
@@ -168,7 +223,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post(format!("/eth/v1/beacon/states/{state_id}/validators"))?
+                    .post(
+                        format!("/eth/v1/beacon/states/{state_id}/validators"),
+                        ContentType::Json,
+                    )?
                     .json(&ValidatorsPostRequest {
                         ids: validator_ids,
                         statuses: validator_statuses,
@@ -263,7 +321,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post(format!("/eth/v1/validator/duties/attester/{epoch}"))?
+                    .post(
+                        format!("/eth/v1/validator/duties/attester/{epoch}"),
+                        ContentType::Json,
+                    )?
                     .json(&json!(
                         validator_indices
                             .iter()
@@ -292,7 +353,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post(format!("/eth/v1/validator/duties/sync/{epoch}"))?
+                    .post(
+                        format!("/eth/v1/validator/duties/sync/{epoch}"),
+                        ContentType::Json,
+                    )?
                     .json(&json!(
                         validator_indices
                             .iter()
@@ -312,7 +376,7 @@ impl BeaconApiClient {
         Ok(response.json().await?)
     }
 
-    pub async fn prepare_committe_subnet(
+    pub async fn prepare_committee_subnet(
         &self,
         subscriptions: Vec<BeaconCommitteeSubscription>,
     ) -> anyhow::Result<(), ValidatorError> {
@@ -320,7 +384,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post("/eth/v1/validator/beacon_committee_subscriptions".to_string())?
+                    .post(
+                        "/eth/v1/validator/beacon_committee_subscriptions".to_string(),
+                        ContentType::Json,
+                    )?
                     .json(&subscriptions)
                     .build()?,
             )
@@ -334,7 +401,6 @@ impl BeaconApiClient {
 
         Ok(())
     }
-
     pub async fn get_attestation_data(
         &self,
         slot: u64,
@@ -344,7 +410,11 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .get(format!("/eth/v1/validator/attestation_data?slot={slot}&committee_index={committee_index}"))?
+                    .get("/eth/v1/validator/attestation_data".to_string())?
+                    .query(&[
+                        ("slot", slot.to_string()),
+                        ("committee_index", committee_index.to_string()),
+                    ])
                     .build()?,
             )
             .await?;
@@ -366,7 +436,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post("/eth/v2/beacon/pool/attestations".to_string())?
+                    .post(
+                        "/eth/v2/beacon/pool/attestations".to_string(),
+                        ContentType::Json,
+                    )?
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
                     .json(&single_attestation)
                     .build()?,
@@ -390,7 +463,10 @@ impl BeaconApiClient {
             .http_client
             .execute(
                 self.http_client
-                    .post("/eth/v2/validator/aggregate_and_proofs".to_string())?
+                    .post(
+                        "/eth/v2/validator/aggregate_and_proofs".to_string(),
+                        ContentType::Json,
+                    )?
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
                     .json(&signed_aggregate_and_proofs)
                     .build()?,
@@ -404,6 +480,35 @@ impl BeaconApiClient {
         }
 
         Ok(())
+    }
+
+    pub async fn get_aggregated_attestation(
+        &self,
+        attestation_data_root: B256,
+        slot: u64,
+        committee_index: u64,
+    ) -> anyhow::Result<DataVersionedResponse<Attestation>, ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .get("/eth/v2/validator/aggregate_attestation".to_string())?
+                    .query(&[
+                        ("attestation_data_root", attestation_data_root.to_string()),
+                        ("slot", slot.to_string()),
+                        ("committee_index", committee_index.to_string()),
+                    ])
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(response.json().await?)
     }
 
     pub async fn produce_block(
@@ -478,6 +583,67 @@ impl BeaconApiClient {
                 },
             })
         }
+    }
+
+    pub async fn publish_block(
+        &self,
+        broadcast_validation: BroadcastValidation,
+        signed_beacon_block: SignedBeaconBlock,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post("/eth/v2/beacon/blocks".to_string(), ContentType::Ssz)?
+                    .query(&[(
+                        "broadcast_validation",
+                        serde_json::to_string(&broadcast_validation)?,
+                    )])
+                    .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
+                    .body(signed_beacon_block.as_ssz_bytes())
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn publish_blinded_block(
+        &self,
+        broadcast_validation: BroadcastValidation,
+        signed_blinded_beacon_block: SignedBlindedBeaconBlock,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post(
+                        "/eth/v2/beacon/blinded_blocks".to_string(),
+                        ContentType::Ssz,
+                    )?
+                    .query(&[(
+                        "broadcast_validation",
+                        serde_json::to_string(&broadcast_validation)?,
+                    )])
+                    .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
+                    .body(signed_blinded_beacon_block.as_ssz_bytes())
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
     }
 }
 

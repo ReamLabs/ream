@@ -1,5 +1,5 @@
 [package]
-name = "ream-executor"
+name = "ream-account-manager"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -10,6 +10,8 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-futures.workspace = true
-tokio.workspace = true
+hashsig.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+sha2.workspace = true
 tracing.workspace = true

@@ -1,4 +1,5 @@
 use alloy_primitives::B256;
+use ream_bls::BLSSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash::TreeHash;
@@ -21,4 +22,10 @@ impl BlindedBeaconBlock {
     pub fn block_root(&self) -> B256 {
         self.tree_hash_root()
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+pub struct SignedBlindedBeaconBlock {
+    pub message: BlindedBeaconBlock,
+    pub signature: BLSSignature,
 }

@@ -9,7 +9,7 @@ use crate::{
     tables::{
         beacon_block::{BEACON_BLOCK_TABLE, BeaconBlockTable},
         beacon_state::{BEACON_STATE_TABLE, BeaconStateTable},
-        blobs_and_proofs::{BLOBS_AND_PROOFS_TABLE, BlobsAndProofsTable},
+        blobs_and_proofs::{BLOB_FOLDER_NAME, BlobsAndProofsTable},
         block_timeliness::{BLOCK_TIMELINESS_TABLE, BlockTimelinessTable},
         checkpoint_states::{CHECKPOINT_STATES_TABLE, CheckpointStatesTable},
         equivocating_indices::{EQUIVOCATING_INDICES_FIELD, EquivocatingIndicesField},
@@ -44,20 +44,18 @@ pub const REDB_CACHE_SIZE: usize = 1_024 * 1_024 * 1_024;
 #[derive(Clone, Debug)]
 pub struct ReamDB {
     pub db: Arc<Database>,
+    pub data_dir: PathBuf,
 }
 
 impl ReamDB {
-    pub fn new(ream_dir: PathBuf) -> Result<Self, StoreError> {
-        let ream_file = ream_dir.join(REDB_FILE);
-
+    pub fn new(data_dir: PathBuf) -> Result<Self, StoreError> {
         let db = Builder::new()
             .set_cache_size(REDB_CACHE_SIZE)
-            .create(&ream_file)?;
+            .create(data_dir.join(REDB_FILE))?;
 
         let write_txn = db.begin_write()?;
         write_txn.open_table(BEACON_BLOCK_TABLE)?;
         write_txn.open_table(BEACON_STATE_TABLE)?;
-        write_txn.open_table(BLOBS_AND_PROOFS_TABLE)?;
         write_txn.open_table(BLOCK_TIMELINESS_TABLE)?;
         write_txn.open_table(CHECKPOINT_STATES_TABLE)?;
         write_txn.open_table(EQUIVOCATING_INDICES_FIELD)?;
@@ -75,7 +73,12 @@ impl ReamDB {
         write_txn.open_table(UNREALIZED_JUSTIFED_CHECKPOINT_FIELD)?;
         write_txn.commit()?;
 
-        Ok(Self { db: Arc::new(db) })
+        fs::create_dir(data_dir.join(BLOB_FOLDER_NAME))?;
+
+        Ok(Self {
+            db: Arc::new(db),
+            data_dir,
+        })
     }
 
     pub fn beacon_block_provider(&self) -> BeaconBlockTable {
@@ -92,7 +95,7 @@ impl ReamDB {
 
     pub fn blobs_and_proofs_provider(&self) -> BlobsAndProofsTable {
         BlobsAndProofsTable {
-            db: self.db.clone(),
+            data_dir: self.data_dir.clone(),
         }
     }
 
