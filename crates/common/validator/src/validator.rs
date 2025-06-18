@@ -355,26 +355,26 @@ impl ValidatorService {
             .cloned()
             .ok_or_else(|| anyhow!("Keystore not found for validator: {aggregator_index}"))?;
 
-        let aggregate = self
-            .beacon_api_client
-            .get_aggregated_attestation(attestation_data.tree_hash_root(), slot, committee_index)
-            .await?
-            .data;
-
         let aggregate_and_proof = AggregateAndProof {
             aggregator_index,
-            aggregate,
+            aggregate: self
+                .beacon_api_client
+                .get_aggregated_attestation(
+                    attestation_data.tree_hash_root(),
+                    slot,
+                    committee_index,
+                )
+                .await?
+                .data,
             selection_proof: get_selection_proof(slot, &keystore.private_key)?,
-        };
-
-        let signed_aggregate_and_proof = SignedAggregateAndProof {
-            signature: sign_aggregate_and_proof(&aggregate_and_proof, &keystore.private_key)?,
-            message: aggregate_and_proof,
         };
 
         Ok(self
             .beacon_api_client
-            .publish_aggregate_and_proofs(vec![signed_aggregate_and_proof])
+            .publish_aggregate_and_proofs(vec![SignedAggregateAndProof {
+                signature: sign_aggregate_and_proof(&aggregate_and_proof, &keystore.private_key)?,
+                message: aggregate_and_proof,
+            }])
             .await?)
     }
 
