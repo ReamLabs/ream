@@ -331,15 +331,15 @@ impl ValidatorService {
             .get_attestation_data(slot, committee_index)
             .await?
             .data;
-        Ok(self.beacon_api_client.submit_attestation(
-            vec![SingleAttestation {
+        Ok(self
+            .beacon_api_client
+            .submit_attestation(vec![SingleAttestation {
                 attester_index: validator_index,
                 committee_index,
                 signature: sign_attestation_data(&attestation_data, &keystore.private_key)?,
                 data: attestation_data,
-            }]
-            .await?,
-        ))
+            }])
+            .await?)
     }
 
     pub async fn submit_aggregate_and_proof(
