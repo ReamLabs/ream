@@ -1,11 +1,11 @@
 use actix_web::{
     HttpResponse, Responder, get,
-    web::{Data, Path, Query},
+    web::{Data, Path, Query, HttpRequest},
 };
 use alloy_primitives::B256;
 use ream_beacon_api_types::{error::ApiError, responses::DataVersionedResponse};
 use ream_consensus::constants::{EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SLOTS_PER_EPOCH};
-use ream_light_client::{bootstrap::LightClientBootstrap, update::LightClientUpdate};
+use ream_light_client::{bootstrap::LightClientBootstrap, update::LightClientUpdate, finality_update::LightClientFinalityUpdate};
 use ream_storage::{db::ReamDB, tables::Table};
 use tree_hash::TreeHash;
 
@@ -159,4 +159,134 @@ pub async fn get_light_client_updates(
         ));
     }
     Ok(HttpResponse::Ok().json(DataVersionedResponse::new(updates)))
+}
+
+#[get("/beacon/light_client/finality_update")]
+pub async fn get_light_client_finality_update(
+    db: Data<ReamDB>,
+    req: HttpRequest,
+) -> Result<impl Responder, ApiError> {
+    // Get the latest finalized checkpoint
+    let finalized_checkpoint = db
+        .finalized_checkpoint_provider()
+        .get()
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get finalized checkpoint, error: {err:?}"
+            ))
+        })?
+        .ok_or_else(|| {
+            ApiError::NotFound("LC finality update unavailable".into())
+        })?;
+
+    // Get the latest head block root from the latest slot
+    let latest_slot = db
+        .slot_index_provider()
+        .get_latest()
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get latest slot, error: {err:?}"
+            ))
+        })?
+        .ok_or_else(|| {
+            ApiError::NotFound("LC finality update unavailable".into())
+        })?;
+
+    let head_block_root = db
+        .slot_index_provider()
+        .get(latest_slot)
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get block root for latest slot, error: {err:?}"
+            ))
+        })?
+        .ok_or_else(|| {
+            ApiError::NotFound("LC finality update unavailable".into())
+        })?;
+
+    // Get the head block and state
+    let head_block = db
+        .beacon_block_provider()
+        .get(head_block_root)
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get head block, error: {err:?}"
+            ))
+        })?
+        .ok_or_else(|| {
+            ApiError::NotFound("LC finality update unavailable".into())
+        })?;
+
+    let head_state = db
+        .beacon_state_provider()
+        .get(head_block_root)
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get head state, error: {err:?}"
+            ))
+        })?
+        .ok_or_else(|| {
+            ApiError::NotFound("LC finality update unavailable".into())
+        })?;
+
+    // Get the finalized block and state
+    let finalized_block = db
+        .beacon_block_provider()
+        .get(finalized_checkpoint.root)
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get finalized block, error: {err:?}"
+            ))
+        })?
+        .ok_or_else(|| {
+            ApiError::NotFound("LC finality update unavailable".into())
+        })?;
+
+    let finalized_state = db
+        .beacon_state_provider()
+        .get(finalized_checkpoint.root)
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get finalized state, error: {err:?}"
+            ))
+        })?
+        .ok_or_else(|| {
+            ApiError::NotFound("LC finality update unavailable".into())
+        })?;
+
+    // Create the finality update
+    let finality_update = LightClientFinalityUpdate {
+        attested_header: head_state.latest_block_header.clone(),
+        finalized_header: finalized_state.latest_block_header.clone(),
+        finality_branch: head_state.finalized_root_inclusion_proof().map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get finalized root inclusion proof, error: {err:?}"
+            ))
+        })?.into(),
+        sync_aggregate: head_block.message.body.sync_aggregate,
+        signature_slot: head_block.message.slot,
+    };
+
+    // Check Accept header for response format
+    let accept = req.headers().get("accept").and_then(|h| h.to_str().ok());
+    let response = match accept {
+        Some("application/octet-stream") => {
+            let ssz_bytes = finality_update.as_ssz_bytes();
+            HttpResponse::Ok()
+                .content_type("application/octet-stream")
+                .insert_header(("Eth-Consensus-Version", "electra"))
+                .body(ssz_bytes)
+        }
+        Some("application/json") | None => {
+            HttpResponse::Ok()
+                .content_type("application/json")
+                .insert_header(("Eth-Consensus-Version", "electra"))
+                .json(DataVersionedResponse::new(finality_update))
+        }
+        _ => {
+            return Err(ApiError::NotAcceptable("Accepted media type not supported".into()));
+        }
+    };
+
+    Ok(response)
 }
