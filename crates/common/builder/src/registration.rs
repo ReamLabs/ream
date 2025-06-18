@@ -1,14 +1,16 @@
 use alloy_primitives::map::HashMap;
-use anyhow::{Ok, ensure};
+use anyhow::{Ok, anyhow, ensure};
 use ream_bls::{PubKey, traits::Verifiable};
 use ream_consensus::{
-    constants::{DOMAIN_APPLICATION_BUILDER, MAX_REGISTRATION_LOOKAHEAD},
     electra::beacon_state::BeaconState,
     misc::{compute_domain, compute_signing_root},
     validator::Validator,
 };
 
-use crate::validator_registration::{SignedValidatorRegistrationV1, ValidatorRegistrationV1};
+use crate::{
+    DOMAIN_APPLICATION_BUILDER, MAX_REGISTRATION_LOOKAHEAD,
+    validator_registration::{SignedValidatorRegistrationV1, ValidatorRegistrationV1},
+};
 
 /// Check if ``validator`` is pending in ``epoch``.
 pub fn is_pending_validator(validator: &Validator, epoch: u64) -> bool {
@@ -32,7 +34,10 @@ pub fn verify_registration_signature(
 
     signed_registration
         .signature
-        .verify(&signed_registration.message.pubkey, signing_root.as_ref())
+        .verify(
+            &signed_registration.message.public_key,
+            signing_root.as_ref(),
+        )
         .is_ok()
 }
 
@@ -42,19 +47,23 @@ pub fn process_registration(
     registrations: HashMap<PubKey, ValidatorRegistrationV1>,
     current_timestamp: u64,
 ) -> anyhow::Result<()> {
-    let validator_pubkeys: Vec<PubKey> =
-        state.validators.iter().map(|v| v.pubkey.clone()).collect();
+    let validator_pubkeys = state
+        .validators
+        .iter()
+        .map(|validator| validator.pubkey.clone())
+        .collect::<Vec<_>>();
 
     ensure!(
-        validator_pubkeys.contains(&registration.message.pubkey),
+        validator_pubkeys.contains(&registration.message.public_key),
         "Validator not found"
     );
 
-    let index = validator_pubkeys
+    let validator = state
+        .validators
         .iter()
-        .position(|k| *k == registration.message.pubkey)
-        .unwrap();
-    let validator = state.validators[index].clone();
+        .find(|v| v.pubkey == registration.message.public_key)
+        .ok_or(anyhow!("Validator not found"))?
+        .clone();
 
     ensure!(
         is_eligible_for_registration(&state, validator),
@@ -65,7 +74,7 @@ pub fn process_registration(
         "Registration timestamp is too far in the future"
     );
 
-    if let Some(prev_registration) = registrations.get(&registration.message.pubkey) {
+    if let Some(prev_registration) = registrations.get(&registration.message.public_key) {
         ensure!(
             registration.message.timestamp >= prev_registration.timestamp,
             "Registration timestamp must be greater than or equal to previous registration timestamp"

@@ -14,7 +14,8 @@ pub struct BuilderBid {
     pub blob_kzg_commitments: VariableList<KZGCommitment, U4096>,
     pub execution_requests: ExecutionRequests,
     pub value: U256,
-    pub pubkey: PubKey,
+    #[serde(rename = "pubkey")]
+    pub public_key: PubKey,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]

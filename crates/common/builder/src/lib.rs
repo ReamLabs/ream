@@ -1,13 +1,16 @@
+use alloy_primitives::{aliases::B32, fixed_bytes};
 use url::Url;
 
 pub mod bid;
-pub mod blinded_beacon_block;
 pub mod blobs;
-pub mod builder_api;
 pub mod builder_bid;
+pub mod builder_client;
 pub mod registration;
 pub mod validator_registration;
 pub mod verify;
+
+pub const DOMAIN_APPLICATION_BUILDER: B32 = fixed_bytes!("0x00000001");
+pub const MAX_REGISTRATION_LOOKAHEAD: u64 = 10;
 
 #[derive(Debug, Clone)]
 pub struct BuilderConfig {

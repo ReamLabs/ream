@@ -7,7 +7,7 @@ pub struct ValidatorRegistrationV1 {
     pub fee_recipient: Address,
     pub gas_limit: u64,
     pub timestamp: u64,
-    pub pubkey: PubKey,
+    pub public_key: PubKey,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

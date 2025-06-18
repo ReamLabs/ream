@@ -1,10 +1,10 @@
+use anyhow::anyhow;
 use ream_bls::traits::Verifiable;
 use ream_consensus::{
-    constants::DOMAIN_BEACON_PROPOSER, electra::beacon_state::BeaconState,
+    constants::DOMAIN_BEACON_PROPOSER,
+    electra::{beacon_state::BeaconState, blinded_beacon_block::SignedBlindedBeaconBlock},
     misc::compute_signing_root,
 };
-
-use crate::blinded_beacon_block::SignedBlindedBeaconBlock;
 
 pub fn verify_blinded_block_signature(
     state: BeaconState,
@@ -15,7 +15,7 @@ pub fn verify_blinded_block_signature(
     let proposer = state
         .validators
         .get(proposer_index as usize)
-        .ok_or(anyhow::anyhow!("Invalid proposer index"))?;
+        .ok_or(anyhow!("Invalid proposer index"))?;
 
     let signing_root = compute_signing_root(
         signed_block.message,
