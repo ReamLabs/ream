@@ -6,10 +6,7 @@ use reqwest::{
     header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue},
 };
 
-pub const ACCEPT_PRIORITY: &str = "application/octet-stream;q=1.0,application/json;q=0.9";
-pub const JSON_ACCEPT_PRIORITY: &str = "application/json;q=1";
-pub const JSON_CONTENT_TYPE: &str = "application/json";
-pub const SSZ_CONTENT_TYPE: &str = "application/octet-stream";
+use beacon_api_types::responses::{JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE, ACCEPT_PRIORITY, JSON_ACCEPT_PRIORITY};
 
 #[derive(Debug, Clone)]
 pub enum ContentType {

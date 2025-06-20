@@ -3,7 +3,7 @@ use actix_web::{
     web::{Data, Path, Query, HttpRequest},
 };
 use alloy_primitives::B256;
-use ream_beacon_api_types::{error::ApiError, responses::{DataVersionedResponse, VERSION, ETH_CONSENSUS_VERSION_HEADER}};
+use ream_beacon_api_types::{error::ApiError, responses::{DataVersionedResponse, VERSION, ETH_CONSENSUS_VERSION_HEADER, SSZ_CONTENT_TYPE, JSON_CONTENT_TYPE}};
 use ream_consensus::constants::{EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SLOTS_PER_EPOCH};
 use ream_light_client::{bootstrap::LightClientBootstrap, update::LightClientUpdate, finality_update::LightClientFinalityUpdate};
 use ream_storage::{db::ReamDB, tables::Table};
@@ -269,16 +269,16 @@ pub async fn get_light_client_finality_update(
 
     // Check Accept header for response format
     let response = match http_request.headers().get("accept").and_then(|header| header.to_str().ok()) {
-        Some("application/octet-stream") => {
+        Some(SSZ_CONTENT_TYPE) => {
             let ssz_bytes = finality_update.as_ssz_bytes();
             HttpResponse::Ok()
-                .content_type("application/octet-stream")
+                .content_type(SSZ_CONTENT_TYPE)
                 .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
                 .body(ssz_bytes)
         }
         _ => {
             HttpResponse::Ok()
-                .content_type("application/json")
+                .content_type(JSON_CONTENT_TYPE)
                 .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
                 .json(DataVersionedResponse::new(finality_update))
         }
