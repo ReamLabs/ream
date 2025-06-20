@@ -1,28 +1,13 @@
-use anyhow::anyhow;
 use ream_bls::traits::Verifiable;
-use ream_consensus::{
-    constants::DOMAIN_BEACON_PROPOSER,
-    electra::{beacon_state::BeaconState, blinded_beacon_block::SignedBlindedBeaconBlock},
-    misc::compute_signing_root,
-};
+use ream_consensus::misc::{compute_domain, compute_signing_root};
 
-pub fn verify_blinded_block_signature(
-    state: BeaconState,
-    signed_block: SignedBlindedBeaconBlock,
-) -> anyhow::Result<bool> {
-    let proposer_index = state.get_beacon_proposer_index(Some(state.slot))?;
+use crate::{DOMAIN_APPLICATION_BUILDER, builder_bid::SignedBuilderBid};
 
-    let proposer = state
-        .validators
-        .get(proposer_index as usize)
-        .ok_or(anyhow!("Invalid proposer index"))?;
+pub fn verify_bid_signature(signed_bid: SignedBuilderBid) -> anyhow::Result<bool> {
+    let domain = compute_domain(DOMAIN_APPLICATION_BUILDER, None, None);
+    let signing_root = compute_signing_root(signed_bid.message.clone(), domain);
 
-    let signing_root = compute_signing_root(
-        signed_block.message,
-        state.get_domain(DOMAIN_BEACON_PROPOSER, Some(state.get_current_epoch())),
-    );
-
-    Ok(signed_block
+    Ok(signed_bid
         .signature
-        .verify(&proposer.pubkey, signing_root.as_ref())?)
+        .verify(&signed_bid.message.public_key, signing_root.as_ref())?)
 }

@@ -1,5 +1,5 @@
 use alloy_primitives::U256;
-use ream_bls::{BLSSignature, PubKey};
+use ream_bls::{BLSSignature, PublicKey};
 use ream_consensus::{
     electra::execution_payload_header::ExecutionPayloadHeader,
     execution_requests::ExecutionRequests, polynomial_commitments::kzg_commitment::KZGCommitment,
@@ -15,7 +15,7 @@ pub struct BuilderBid {
     pub execution_requests: ExecutionRequests,
     pub value: U256,
     #[serde(rename = "pubkey")]
-    pub public_key: PubKey,
+    pub public_key: PublicKey,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
