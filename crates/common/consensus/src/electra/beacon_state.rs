@@ -107,7 +107,10 @@ pub mod quoted_u8_var_list {
     where
         S: Serializer,
     {
-        let string_vec: Vec<String> = value.iter().map(|v| v.to_string()).collect();
+        let string_vec: Vec<String> = value
+            .iter()
+            .map(|validator| validator.to_string())
+            .collect();
         string_vec.serialize(serializer)
     }
 
@@ -317,8 +320,8 @@ impl BeaconState {
         self.validators
             .iter()
             .enumerate()
-            .filter_map(|(i, v)| {
-                if v.is_active_validator(epoch) {
+            .filter_map(|(i, validator)| {
+                if validator.is_active_validator(epoch) {
                     Some(i as u64)
                 } else {
                     None
@@ -518,7 +521,7 @@ impl BeaconState {
                     .collect::<anyhow::Result<Vec<_>>>()?,
                 signing_root.as_ref(),
             )
-            .map_err(|e| anyhow!("Invalid indexed attestation: {:?}", e))
+            .map_err(|err| anyhow!("Invalid indexed attestation: {:?}", err))
     }
 
     /// Return the set of attesting indices corresponding to ``aggregation_bits`` and
@@ -769,9 +772,9 @@ impl BeaconState {
     pub fn get_eligible_validator_indices(&self) -> anyhow::Result<Vec<u64>> {
         let previous_epoch = self.get_previous_epoch();
         let mut validator_indices = vec![];
-        for (index, v) in self.validators.iter().enumerate() {
-            if v.is_active_validator(previous_epoch)
-                || (v.slashed && previous_epoch + 1 < v.withdrawable_epoch)
+        for (index, validator) in self.validators.iter().enumerate() {
+            if validator.is_active_validator(previous_epoch)
+                || (validator.slashed && previous_epoch + 1 < validator.withdrawable_epoch)
             {
                 validator_indices.push(index as u64)
             }
@@ -2047,7 +2050,7 @@ impl BeaconState {
             .validators
             .iter()
             .enumerate()
-            .find(|(_, v)| v.public_key == deposit.public_key)
+            .find(|(_, validator)| validator.public_key == deposit.public_key)
         {
             self.increase_balance(index as u64, deposit.amount)?;
         } else {
@@ -2271,7 +2274,7 @@ impl BeaconState {
         signed_block
             .signature
             .verify(&proposer.public_key, signing_root.as_ref())
-            .map_err(|e| anyhow!("Invalid block signature: {:?}", e))
+            .map_err(|err| anyhow!("Invalid block signature: {err}"))
     }
 
     /// Check if ``validator`` is eligible for activation.
@@ -2829,7 +2832,7 @@ pub fn eth_fast_aggregate_verify(
 
     signature
         .fast_aggregate_verify(public_keys, message.as_ref())
-        .map_err(|e| anyhow!("Failed to verify fast aggregate: {:?}", e))
+        .map_err(|err| anyhow!("Failed to verify fast aggregate: {err}"))
 }
 
 /// Return the aggregate public key for the public keys in ``public_keys``.

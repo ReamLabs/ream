@@ -68,7 +68,7 @@ pub async fn get_validator_from_state(
                     .validators
                     .iter()
                     .enumerate()
-                    .find(|(_, v)| v.public_key == *public_key)
+                    .find(|(_, validator)| validator.public_key == *public_key)
                 {
                     Some((i, validator)) => (i, validator.to_owned()),
                     None => {
@@ -154,7 +154,7 @@ pub async fn get_validators_from_state(
                             .validators
                             .iter()
                             .enumerate()
-                            .find(|(_, v)| v.public_key == *public_key)
+                            .find(|(_, validator)| validator.public_key == *public_key)
                         {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
@@ -228,7 +228,7 @@ pub async fn post_validators_from_state(
                             .validators
                             .iter()
                             .enumerate()
-                            .find(|(_, v)| v.public_key == *public_key)
+                            .find(|(_, validator)| validator.public_key == *public_key)
                         {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {

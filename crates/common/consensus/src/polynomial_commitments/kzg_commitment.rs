@@ -91,7 +91,7 @@ impl FromStr for KZGCommitment {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let bytes = hex::decode(s).map_err(|e| e.to_string())?;
+        let bytes = hex::decode(s).map_err(|err| err.to_string())?;
         if bytes.len() == BYTES_PER_COMMITMENT {
             let mut kzg_commitment_bytes = [0; BYTES_PER_COMMITMENT];
             kzg_commitment_bytes[..].copy_from_slice(&bytes);

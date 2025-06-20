@@ -15,7 +15,7 @@ use crate::{
 
 impl BLSSignature {
     pub fn to_blst_signature(&self) -> Result<BlstSignature, BLSError> {
-        BlstSignature::from_bytes(&self.inner).map_err(|e| BLSError::BlstError(e.into()))
+        BlstSignature::from_bytes(&self.inner).map_err(|err| BLSError::BlstError(err.into()))
     }
 }
 
