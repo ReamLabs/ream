@@ -109,7 +109,7 @@ pub mod quoted_u8_var_list {
     {
         let string_vec: Vec<String> = value
             .iter()
-            .map(|validator| validator.to_string())
+            .map(|v| v.to_string())
             .collect();
         string_vec.serialize(serializer)
     }
@@ -521,7 +521,7 @@ impl BeaconState {
                     .collect::<anyhow::Result<Vec<_>>>()?,
                 signing_root.as_ref(),
             )
-            .map_err(|err| anyhow!("Invalid indexed attestation: {:?}", err))
+            .map_err(|err| anyhow!("Invalid indexed attestation: {err}"))
     }
 
     /// Return the set of attesting indices corresponding to ``aggregation_bits`` and
