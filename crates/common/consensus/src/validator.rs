@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use ream_bls::PubKey;
+use ream_bls::PublicKey;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
@@ -14,7 +14,8 @@ use crate::{
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Validator {
-    pub pubkey: PubKey,
+    #[serde(rename = "pubkey")]
+    pub public_key: PublicKey,
 
     /// Commitment to pubkey for withdrawals
     pub withdrawal_credentials: B256,

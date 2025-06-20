@@ -247,13 +247,13 @@ pub async fn get_sync_committees(
     };
 
     let validators = sync_committee
-        .pubkeys
+        .public_keys
         .iter()
-        .filter_map(|pubkey| {
+        .filter_map(|public_key| {
             state
                 .validators
                 .iter()
-                .position(|validator| validator.pubkey == *pubkey)
+                .position(|validator| validator.public_key == *public_key)
                 .map(|position| position as u64)
         })
         .collect::<Vec<_>>();

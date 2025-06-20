@@ -5,7 +5,7 @@ use bls12_381::{
 };
 
 use crate::{
-    BLSSignature, PubKey,
+    BLSSignature, PublicKey,
     constants::DST,
     errors::BLSError,
     traits::{Aggregatable, Verifiable, ZkcryptoAggregatable, ZkcryptoVerifiable},
@@ -40,29 +40,32 @@ impl From<G2Projective> for BLSSignature {
 impl Verifiable for BLSSignature {
     type Error = BLSError;
 
-    fn verify(&self, pubkey: &PubKey, message: &[u8]) -> Result<bool, BLSError> {
+    fn verify(&self, public_key: &PublicKey, message: &[u8]) -> Result<bool, BLSError> {
         let h = <G2Projective as HashToCurve<ExpandMsgXmd<sha2::Sha256>>>::hash_to_curve(
             [message],
             DST,
         );
 
-        let gt1 = pairing(&G1Affine::try_from(pubkey)?, &G2Affine::from(h));
+        let gt1 = pairing(&G1Affine::try_from(public_key)?, &G2Affine::from(h));
         let gt2 = pairing(&G1Affine::generator(), &G2Affine::try_from(self)?);
 
         Ok(gt1 == gt2)
     }
 
-    fn fast_aggregate_verify<'a, P>(&self, pubkeys: P, message: &[u8]) -> Result<bool, BLSError>
+    fn fast_aggregate_verify<'a, P>(&self, public_keys: P, message: &[u8]) -> Result<bool, BLSError>
     where
-        P: AsRef<[&'a PubKey]>,
+        P: AsRef<[&'a PublicKey]>,
     {
-        let aggregate_pubkey = PubKey::aggregate(pubkeys.as_ref())?;
+        let aggregate_public_key = PublicKey::aggregate(public_keys.as_ref())?;
         let h = <G2Projective as HashToCurve<ExpandMsgXmd<sha2::Sha256>>>::hash_to_curve(
             [message],
             DST,
         );
 
-        let gt1 = pairing(&G1Affine::try_from(&aggregate_pubkey)?, &G2Affine::from(h));
+        let gt1 = pairing(
+            &G1Affine::try_from(&aggregate_public_key)?,
+            &G2Affine::from(h),
+        );
         let gt2 = pairing(&G1Affine::generator(), &G2Affine::try_from(self)?);
 
         Ok(gt1 == gt2)

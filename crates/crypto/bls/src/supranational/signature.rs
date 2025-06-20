@@ -8,7 +8,7 @@ use ssz_types::FixedVector;
 use crate::{
     constants::DST,
     errors::BLSError,
-    pubkey::PubKey,
+    public_key::PublicKey,
     signature::BLSSignature,
     traits::{Aggregatable, SupranationalAggregatable, SupranationalVerifiable, Verifiable},
 };
@@ -33,9 +33,9 @@ impl TryFrom<BlstSignature> for BLSSignature {
 impl Verifiable for BLSSignature {
     type Error = BLSError;
 
-    fn verify(&self, pubkey: &PubKey, message: &[u8]) -> Result<bool, BLSError> {
+    fn verify(&self, public_key: &PublicKey, message: &[u8]) -> Result<bool, BLSError> {
         let signature = self.to_blst_signature()?;
-        let public_key = pubkey.to_blst_pubkey()?;
+        let public_key = public_key.to_blst_public_key()?;
 
         Ok(
             signature.verify(true, message, DST, &[], &public_key, false)
@@ -43,15 +43,15 @@ impl Verifiable for BLSSignature {
         )
     }
 
-    fn fast_aggregate_verify<'a, P>(&self, pubkeys: P, message: &[u8]) -> Result<bool, BLSError>
+    fn fast_aggregate_verify<'a, P>(&self, public_keys: P, message: &[u8]) -> Result<bool, BLSError>
     where
-        P: AsRef<[&'a PubKey]>,
+        P: AsRef<[&'a PublicKey]>,
     {
         let signature = self.to_blst_signature()?;
-        let public_keys = pubkeys
+        let public_keys = public_keys
             .as_ref()
             .iter()
-            .map(|key| key.to_blst_pubkey())
+            .map(|key| key.to_blst_public_key())
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(signature.fast_aggregate_verify(

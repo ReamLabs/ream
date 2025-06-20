@@ -72,8 +72,7 @@ pub async fn get_light_client_updates(
             })?
             .ok_or_else(|| {
                 ApiError::NotFound(format!(
-                    "No block root found for slot {} (period {})",
-                    slot, start_period
+                    "No block root found for slot {slot} (period {start_period})",
                 ))
             })?;
 

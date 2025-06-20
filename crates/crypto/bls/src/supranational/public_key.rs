@@ -4,40 +4,40 @@ use ssz_types::FixedVector;
 
 use crate::{
     errors::BLSError,
-    pubkey::PubKey,
+    public_key::PublicKey,
     traits::{Aggregatable, SupranationalAggregatable},
 };
 
-impl TryFrom<BlstPublicKey> for PubKey {
+impl TryFrom<BlstPublicKey> for PublicKey {
     type Error = BLSError;
 
     fn try_from(value: BlstPublicKey) -> Result<Self, Self::Error> {
-        Ok(PubKey {
+        Ok(PublicKey {
             inner: FixedVector::new(value.to_bytes().to_vec())
                 .map_err(|_| BLSError::InvalidPublicKey)?,
         })
     }
 }
 
-impl PubKey {
-    pub fn to_blst_pubkey(&self) -> Result<BlstPublicKey, BLSError> {
+impl PublicKey {
+    pub fn to_blst_public_key(&self) -> Result<BlstPublicKey, BLSError> {
         BlstPublicKey::from_bytes(&self.inner).map_err(|err| BLSError::BlstError(err.into()))
     }
 }
 
-impl Aggregatable<PubKey> for PubKey {
+impl Aggregatable<PublicKey> for PublicKey {
     type Error = anyhow::Error;
 
-    fn aggregate(public_keys: &[&PubKey]) -> anyhow::Result<PubKey> {
+    fn aggregate(public_keys: &[&PublicKey]) -> anyhow::Result<PublicKey> {
         let public_keys = public_keys
             .iter()
-            .map(|public_key| public_key.to_blst_pubkey())
+            .map(|public_key| public_key.to_blst_public_key())
             .collect::<Result<Vec<_>, _>>()?;
         let aggregate_public_key =
             BlstAggregatePublicKey::aggregate(&public_keys.iter().collect::<Vec<_>>(), true)
                 .map_err(|err| anyhow!("Failed to aggregate and validate public keys {err:?}"))?;
-        Ok(PubKey::try_from(aggregate_public_key.to_public_key())?)
+        Ok(PublicKey::try_from(aggregate_public_key.to_public_key())?)
     }
 }
 
-impl SupranationalAggregatable<PubKey> for PubKey {}
+impl SupranationalAggregatable<PublicKey> for PublicKey {}

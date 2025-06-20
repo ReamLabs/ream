@@ -10,11 +10,17 @@ use tree_hash_derive::TreeHash;
 use crate::errors::BLSError;
 
 #[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default, Eq, Hash)]
-pub struct PubKey {
+pub struct PublicKey {
     pub inner: FixedVector<u8, U48>,
 }
 
-impl Serialize for PubKey {
+impl PublicKey {
+    pub fn to_bytes(&self) -> &[u8] {
+        self.inner.iter().as_slice()
+    }
+}
+
+impl Serialize for PublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -24,7 +30,7 @@ impl Serialize for PubKey {
     }
 }
 
-impl<'de> Deserialize<'de> for PubKey {
+impl<'de> Deserialize<'de> for PublicKey {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -36,13 +42,7 @@ impl<'de> Deserialize<'de> for PubKey {
     }
 }
 
-impl PubKey {
-    pub fn to_bytes(&self) -> &[u8] {
-        self.inner.iter().as_slice()
-    }
-}
-
-impl FromStr for PubKey {
+impl FromStr for PublicKey {
     type Err = BLSError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let clean_str = s.strip_prefix("0x").unwrap_or(s);
@@ -52,7 +52,7 @@ impl FromStr for PubKey {
             return Err(BLSError::InvalidByteLength);
         }
 
-        Ok(PubKey {
+        Ok(PublicKey {
             inner: FixedVector::from(bytes),
         })
     }

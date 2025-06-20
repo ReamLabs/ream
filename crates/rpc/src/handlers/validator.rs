@@ -12,7 +12,7 @@ use ream_beacon_api_types::{
     responses::BeaconResponse,
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
-use ream_bls::PubKey;
+use ream_bls::PublicKey;
 use ream_consensus::validator::Validator;
 use ream_storage::db::ReamDB;
 use serde::Serialize;
@@ -34,7 +34,7 @@ fn build_validator_balances(
         .filter(|(idx, (validator, _))| match &filtered_ids {
             Some(ids) => {
                 ids.contains(&ValidatorID::Index(*idx as u64))
-                    || ids.contains(&ValidatorID::Address(validator.pubkey.clone()))
+                    || ids.contains(&ValidatorID::Address(validator.public_key.clone()))
             }
             None => true,
         })
@@ -63,17 +63,17 @@ pub async fn get_validator_from_state(
                     )));
                 }
             },
-            ValidatorID::Address(pubkey) => {
+            ValidatorID::Address(public_key) => {
                 match state
                     .validators
                     .iter()
                     .enumerate()
-                    .find(|(_, v)| v.pubkey == *pubkey)
+                    .find(|(_, v)| v.public_key == *public_key)
                 {
                     Some((i, validator)) => (i, validator.to_owned()),
                     None => {
                         return Err(ApiError::NotFound(format!(
-                            "Validator not found for pubkey: {pubkey:?}"
+                            "Validator not found for public_key: {public_key:?}"
                         )))?;
                     }
                 }
@@ -149,17 +149,17 @@ pub async fn get_validators_from_state(
                             )))?;
                         }
                     },
-                    ValidatorID::Address(pubkey) => {
+                    ValidatorID::Address(public_key) => {
                         match state
                             .validators
                             .iter()
                             .enumerate()
-                            .find(|(_, v)| v.pubkey == *pubkey)
+                            .find(|(_, v)| v.public_key == *public_key)
                         {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
                                 return Err(ApiError::NotFound(format!(
-                                    "Validator not found for pubkey: {pubkey:?}"
+                                    "Validator not found for public_key: {public_key:?}"
                                 )))?;
                             }
                         }
@@ -223,17 +223,17 @@ pub async fn post_validators_from_state(
                             )))?;
                         }
                     },
-                    ValidatorID::Address(pubkey) => {
+                    ValidatorID::Address(public_key) => {
                         match state
                             .validators
                             .iter()
                             .enumerate()
-                            .find(|(_, v)| v.pubkey == *pubkey)
+                            .find(|(_, v)| v.public_key == *public_key)
                         {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
                                 return Err(ApiError::NotFound(format!(
-                                    "Validator not found for pubkey: {pubkey:?}"
+                                    "Validator not found for public_key: {public_key:?}"
                                 )))?;
                             }
                         }
@@ -274,7 +274,7 @@ pub async fn post_validators_from_state(
 struct ValidatorIdentity {
     #[serde(with = "serde_utils::quoted_u64")]
     index: u64,
-    pubkey: PubKey,
+    public_key: PublicKey,
     #[serde(with = "serde_utils::quoted_u64")]
     activation_epoch: u64,
 }
@@ -295,11 +295,11 @@ pub async fn post_validator_identities_from_state(
         .enumerate()
         .filter_map(|(index, validator)| {
             if validator_ids_set.contains(&ValidatorID::Index(index as u64))
-                || validator_ids_set.contains(&ValidatorID::Address(validator.pubkey.clone()))
+                || validator_ids_set.contains(&ValidatorID::Address(validator.public_key.clone()))
             {
                 Some(ValidatorIdentity {
                     index: index as u64,
-                    pubkey: validator.pubkey.clone(),
+                    public_key: validator.public_key.clone(),
                     activation_epoch: validator.activation_epoch,
                 })
             } else {

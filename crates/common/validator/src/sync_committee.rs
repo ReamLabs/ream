@@ -62,13 +62,13 @@ pub fn is_assigned_to_sync_committee(
     if sync_committee_period == current_sync_committee_period {
         Ok(state
             .current_sync_committee
-            .pubkeys
-            .contains(&validator.pubkey))
+            .public_keys
+            .contains(&validator.public_key))
     } else {
         Ok(state
             .next_sync_committee
-            .pubkeys
-            .contains(&validator.pubkey))
+            .public_keys
+            .contains(&validator.public_key))
     }
 }
 
@@ -90,10 +90,10 @@ pub fn compute_subnets_for_sync_committee(
     };
 
     let sync_committee_indices: Vec<usize> = sync_committee
-        .pubkeys
+        .public_keys
         .iter()
         .enumerate()
-        .filter(|(_, pubkey)| **pubkey == target_validator.pubkey)
+        .filter(|(_, public_key)| **public_key == target_validator.public_key)
         .map(|(index, _)| index)
         .collect();
 

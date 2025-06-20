@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use alloy_primitives::B256;
 use anyhow::{Result, anyhow, ensure};
-use ream_bls::{PrivateKey, PubKey as PublicKey};
+use ream_bls::{PrivateKey, PublicKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -12,7 +12,8 @@ use crate::{decrypt::aes128_ctr, hex_serde, pbkdf2::pbkdf2, scrypt::scrypt};
 pub struct EncryptedKeystore {
     pub crypto: Crypto,
     pub description: String,
-    pub pubkey: PublicKey,
+    #[serde(rename = "pubkey")]
+    pub public_key: PublicKey,
     pub path: String,
     pub uuid: String,
     pub version: u64,
@@ -95,7 +96,7 @@ impl EncryptedKeystore {
             }
         };
         Ok(Keystore {
-            public_key: self.pubkey.clone(),
+            public_key: self.public_key.clone(),
             private_key,
         })
     }
@@ -192,7 +193,7 @@ mod tests {
                 },
             },
             description: "Test Keystore".to_string(),
-            pubkey: PublicKey {
+            public_key: PublicKey {
                 inner: FixedVector::from(vec![0x12; 48]),
             },
             path: "m/44'/60'/0'/0/0".to_string(),
@@ -239,12 +240,12 @@ mod tests {
                         },
                     },
                     description: "".to_string(),
-                    pubkey: PublicKey {
+                    public_key: PublicKey {
                         inner: FixedVector::from(
                             hex::decode(
                                 "b69dfa082ca75d4e50ed4da8fa07d550ba9ec4019815409f42a98b79861d7ad96633a2476594b94c8a6e3048e1b2623e",
                             )
-                            .expect("Failed to decode pubkey"),
+                            .expect("Failed to decode public_key"),
                         ),
                     },
                     path: "m/12381/3600/0/0/0".to_string(),

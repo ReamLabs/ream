@@ -1,10 +1,11 @@
-use ream_bls::PubKey;
+use ream_bls::PublicKey;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 
 #[derive(Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct ProposerDuty {
-    pub pubkey: PubKey,
+    #[serde(rename = "pubkey")]
+    pub public_key: PublicKey,
     #[serde(with = "serde_utils::quoted_u64")]
     pub validator_index: u64,
     #[serde(with = "serde_utils::quoted_u64")]
@@ -13,7 +14,8 @@ pub struct ProposerDuty {
 
 #[derive(Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct AttesterDuty {
-    pub pubkey: PubKey,
+    #[serde(rename = "pubkey")]
+    pub public_key: PublicKey,
     #[serde(with = "serde_utils::quoted_u64")]
     pub validator_index: u64,
     #[serde(with = "serde_utils::quoted_u64")]
@@ -28,7 +30,8 @@ pub struct AttesterDuty {
 
 #[derive(Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct SyncCommitteeDuty {
-    pub pubkey: PubKey,
+    #[serde(rename = "pubkey")]
+    pub public_key: PublicKey,
     #[serde(with = "serde_utils::quoted_u64")]
     pub validator_index: u64,
     pub validator_sync_committee_indices: Vec<u64>,

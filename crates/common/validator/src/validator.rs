@@ -13,7 +13,7 @@ use ream_beacon_api_types::{
     id::{ID, ValidatorID},
     request::SyncCommitteeRequestItem,
 };
-use ream_bls::{PubKey, traits::Signable};
+use ream_bls::{PublicKey, traits::Signable};
 use ream_consensus::{
     attestation_data::AttestationData,
     constants::DOMAIN_SYNC_COMMITTEE,
@@ -58,7 +58,7 @@ pub struct ValidatorService {
     pub suggested_fee_recipient: Arc<Address>,
     pub executor: ReamExecutor,
     pub active_validator_count: usize,
-    pub pubkey_to_index: HashMap<PubKey, u64>,
+    pub public_key_to_index: HashMap<PublicKey, u64>,
     pub validator_index_to_keystore: HashMap<u64, Arc<Keystore>>,
     pub proposer_duties: Vec<ProposerDuty>,
     pub attester_duties: Vec<AttesterDuty>,
@@ -84,7 +84,7 @@ impl ValidatorService {
             suggested_fee_recipient: Arc::new(suggested_fee_recipient),
             executor,
             active_validator_count: 0,
-            pubkey_to_index: HashMap::new(),
+            public_key_to_index: HashMap::new(),
             validator_index_to_keystore: HashMap::new(),
             proposer_duties: Vec::new(),
             attester_duties: Vec::new(),
@@ -156,15 +156,17 @@ impl ValidatorService {
             if let Ok(validator_infos) = validator_states {
                 validator_infos.data.into_iter().for_each(|validator_data| {
                     if let Entry::Vacant(entry) = self
-                        .pubkey_to_index
-                        .entry(validator_data.validator.pubkey.clone())
+                        .public_key_to_index
+                        .entry(validator_data.validator.public_key.clone())
                     {
                         entry.insert(validator_data.index);
 
                         if let Some(keystore) = self
                             .validators
                             .iter()
-                            .find(|keystore| keystore.public_key == validator_data.validator.pubkey)
+                            .find(|keystore| {
+                                keystore.public_key == validator_data.validator.public_key
+                            })
                             .cloned()
                         {
                             self.validator_index_to_keystore
@@ -179,7 +181,7 @@ impl ValidatorService {
     }
 
     pub async fn fetch_duties(&mut self, epoch: u64) {
-        let validator_indices: Vec<u64> = self.pubkey_to_index.values().cloned().collect();
+        let validator_indices: Vec<u64> = self.public_key_to_index.values().cloned().collect();
 
         if validator_indices.is_empty() {
             warn!("No active validators found, skipping duty fetch");

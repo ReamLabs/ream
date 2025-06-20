@@ -1,5 +1,5 @@
 use alloy_primitives::Address;
-use ream_bls::PubKey;
+use ream_bls::PublicKey;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
@@ -10,7 +10,8 @@ use crate::misc::checksummed_address;
 pub struct WithdrawalRequest {
     #[serde(with = "checksummed_address")]
     pub source_address: Address,
-    pub validator_pubkey: PubKey,
+    #[serde(rename = "validator_pubkey")]
+    pub validator_public_key: PublicKey,
     #[serde(with = "serde_utils::quoted_u64")]
     pub amount: u64,
 }

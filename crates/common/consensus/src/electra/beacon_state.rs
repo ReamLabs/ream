@@ -11,7 +11,7 @@ use anyhow::{anyhow, bail, ensure};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
 use ream_bls::{
-    BLSSignature, PubKey,
+    BLSSignature, PublicKey,
     traits::{Aggregatable, Verifiable},
 };
 use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
@@ -512,7 +512,7 @@ impl BeaconState {
                     .map(|&index| {
                         self.validators
                             .get(index)
-                            .map(|validator| &validator.pubkey)
+                            .map(|validator| &validator.public_key)
                             .ok_or(anyhow!("Invalid index"))
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?,
@@ -1021,13 +1021,13 @@ impl BeaconState {
 
     pub fn add_validator_to_registry(
         &mut self,
-        pubkey: PubKey,
+        public_key: PublicKey,
         withdrawal_credentials: B256,
         amount: u64,
     ) -> anyhow::Result<()> {
         self.validators
             .push(get_validator_from_deposit(
-                pubkey,
+                public_key,
                 withdrawal_credentials,
                 amount,
             ))
@@ -1050,7 +1050,7 @@ impl BeaconState {
 
     pub fn apply_deposit(
         &mut self,
-        pubkey: PubKey,
+        public_key: PublicKey,
         withdrawal_credentials: B256,
         amount: u64,
         signature: BLSSignature,
@@ -1058,13 +1058,18 @@ impl BeaconState {
         if !self
             .validators
             .iter()
-            .any(|validator| validator.pubkey == pubkey)
+            .any(|validator| validator.public_key == public_key)
         {
             // Verify the deposit signature (proof of possession) which is not checked by the
             // deposit contract
-            match is_valid_deposit_signature(&pubkey, withdrawal_credentials, amount, &signature) {
+            match is_valid_deposit_signature(
+                &public_key,
+                withdrawal_credentials,
+                amount,
+                &signature,
+            ) {
                 Ok(true) => {
-                    self.add_validator_to_registry(pubkey.clone(), withdrawal_credentials, 0)?
+                    self.add_validator_to_registry(public_key.clone(), withdrawal_credentials, 0)?
                 }
                 _ => return Ok(()),
             }
@@ -1073,7 +1078,7 @@ impl BeaconState {
         // Increase balance by deposit amount
         self.pending_deposits
             .push(PendingDeposit {
-                pubkey,
+                public_key,
                 withdrawal_credentials,
                 amount,
                 signature,
@@ -1100,7 +1105,7 @@ impl BeaconState {
         self.eth1_deposit_index += 1;
 
         self.apply_deposit(
-            deposit.data.pubkey.clone(),
+            deposit.data.public_key.clone(),
             deposit.data.withdrawal_credentials,
             deposit.data.amount,
             deposit.data.signature.clone(),
@@ -1120,7 +1125,7 @@ impl BeaconState {
         ensure!(&validator.withdrawal_credentials[..1] == BLS_WITHDRAWAL_PREFIX);
         ensure!(
             validator.withdrawal_credentials[1..]
-                == hash(address_change.from_bls_pubkey.to_bytes())[1..]
+                == hash(address_change.from_bls_public_key.to_bytes())[1..]
         );
 
         // Fork-agnostic domain since address changes are valid across forks
@@ -1134,7 +1139,7 @@ impl BeaconState {
         ensure!(
             signed_address_change
                 .signature
-                .verify(&address_change.from_bls_pubkey, signing_root.as_ref())?,
+                .verify(&address_change.from_bls_public_key, signing_root.as_ref())?,
             "BLS Signature verification failed!"
         );
 
@@ -1212,7 +1217,7 @@ impl BeaconState {
         ensure!(
             signed_voluntary_exit
                 .signature
-                .verify(&validator.pubkey, signing_root.as_ref())?,
+                .verify(&validator.public_key, signing_root.as_ref())?,
             "BLS Signature verification failed!"
         );
 
@@ -1245,12 +1250,11 @@ impl BeaconState {
             return Ok(());
         }
 
-        // Verify pubkey exists
-        let Some((index, validator)) = self
-            .validators
-            .iter()
-            .enumerate()
-            .find(|(_, validator)| validator.pubkey == withdrawal_request.validator_pubkey)
+        // Verify public_key exists
+        let Some((index, validator)) =
+            self.validators.iter().enumerate().find(|(_, validator)| {
+                validator.public_key == withdrawal_request.validator_public_key
+            })
         else {
             return Ok(());
         };
@@ -1331,7 +1335,7 @@ impl BeaconState {
         // Create pending deposit
         self.pending_deposits
             .push(PendingDeposit {
-                pubkey: deposit_request.pubkey.clone(),
+                public_key: deposit_request.public_key.clone(),
                 withdrawal_credentials: deposit_request.withdrawal_credentials,
                 amount: deposit_request.amount,
                 signature: deposit_request.signature.clone(),
@@ -1347,15 +1351,15 @@ impl BeaconState {
         consolidation_request: &ConsolidationRequest,
     ) -> bool {
         // Switch to compounding requires source and target be equal
-        if consolidation_request.source_pubkey != consolidation_request.target_pubkey {
+        if consolidation_request.source_public_key != consolidation_request.target_public_key {
             return false;
         }
 
-        // Verify pubkey exists
+        // Verify public_key exists
         let Some(source_validator) = self
             .validators
             .iter()
-            .find(|validator| validator.pubkey == consolidation_request.source_pubkey)
+            .find(|validator| validator.public_key == consolidation_request.source_public_key)
         else {
             return false;
         };
@@ -1388,12 +1392,9 @@ impl BeaconState {
         consolidation_request: &ConsolidationRequest,
     ) -> anyhow::Result<()> {
         if self.is_valid_switch_to_compounding_request(consolidation_request) {
-            let Some((index, _)) = self
-                .validators
-                .iter()
-                .enumerate()
-                .find(|(_, validator)| validator.pubkey == consolidation_request.source_pubkey)
-            else {
+            let Some((index, _)) = self.validators.iter().enumerate().find(|(_, validator)| {
+                validator.public_key == consolidation_request.source_public_key
+            }) else {
                 bail!("Validator not found");
             };
             self.switch_to_compounding_validator(index as u64)?;
@@ -1401,7 +1402,7 @@ impl BeaconState {
         }
 
         // Verify that source != target, so a consolidation cannot be used as an exit
-        if consolidation_request.source_pubkey == consolidation_request.target_pubkey {
+        if consolidation_request.source_public_key == consolidation_request.target_public_key {
             return Ok(());
         }
 
@@ -1416,19 +1417,17 @@ impl BeaconState {
             return Ok(());
         }
 
-        let Some((source_index, source_validator)) = self
-            .validators
-            .iter()
-            .enumerate()
-            .find(|(_, validator)| validator.pubkey == consolidation_request.source_pubkey)
+        let Some((source_index, source_validator)) =
+            self.validators.iter().enumerate().find(|(_, validator)| {
+                validator.public_key == consolidation_request.source_public_key
+            })
         else {
             return Ok(());
         };
-        let Some((target_index, target_validator)) = self
-            .validators
-            .iter()
-            .enumerate()
-            .find(|(_, validator)| validator.pubkey == consolidation_request.target_pubkey)
+        let Some((target_index, target_validator)) =
+            self.validators.iter().enumerate().find(|(_, validator)| {
+                validator.public_key == consolidation_request.target_public_key
+            })
         else {
             return Ok(());
         };
@@ -1567,7 +1566,7 @@ impl BeaconState {
             ensure!(
                 signed_header
                     .signature
-                    .verify(&proposer.pubkey, signing_root.as_ref())?,
+                    .verify(&proposer.public_key, signing_root.as_ref())?,
                 "BLS Signature verification failed!"
             );
         }
@@ -1636,15 +1635,15 @@ impl BeaconState {
 
     pub fn process_sync_aggregate(&mut self, sync_aggregate: &SyncAggregate) -> anyhow::Result<()> {
         // Verify sync committee aggregate signature signing over the previous slot block root
-        let committee_pubkeys = &self.current_sync_committee.pubkeys;
-        let mut participant_pubkeys = vec![];
+        let committee_public_keys = &self.current_sync_committee.public_keys;
+        let mut participant_public_keys = vec![];
 
-        for (pubkey, bit) in committee_pubkeys
+        for (public_key, bit) in committee_public_keys
             .iter()
             .zip(sync_aggregate.sync_committee_bits.iter())
         {
             if bit {
-                participant_pubkeys.push(pubkey);
+                participant_public_keys.push(public_key);
             }
         }
 
@@ -1658,7 +1657,7 @@ impl BeaconState {
 
         ensure!(
             eth_fast_aggregate_verify(
-                &participant_pubkeys,
+                &participant_public_keys,
                 signing_root,
                 &sync_aggregate.sync_committee_signature,
             )?,
@@ -1675,17 +1674,17 @@ impl BeaconState {
             participant_reward * PROPOSER_WEIGHT / (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT);
 
         // Apply participant and proposer rewards
-        let mut all_pubkeys = vec![];
+        let mut all_public_keys = vec![];
         for validator in &self.validators {
-            all_pubkeys.push(validator.pubkey.clone());
+            all_public_keys.push(validator.public_key.clone());
         }
 
         let mut committee_indices = vec![];
-        for pubkey in &self.current_sync_committee.pubkeys {
-            let index = all_pubkeys
+        for public_key in &self.current_sync_committee.public_keys {
+            let index = all_public_keys
                 .iter()
-                .position(|r| r == pubkey)
-                .ok_or_else(|| anyhow!("Pubkey not found in all_pubkeys."))?;
+                .position(|r| r == public_key)
+                .ok_or_else(|| anyhow!("Public key not found in all_public_keys."))?;
             committee_indices.push(index);
         }
 
@@ -1857,7 +1856,7 @@ impl BeaconState {
                 compute_signing_root(epoch, self.get_domain(DOMAIN_RANDAO, Some(epoch)));
             ensure!(
                 body.randao_reveal
-                    .verify(&proposer.pubkey, signing_root.as_ref())?,
+                    .verify(&proposer.public_key, signing_root.as_ref())?,
                 "BLS Signature verification failed!"
             );
 
@@ -2048,14 +2047,14 @@ impl BeaconState {
             .validators
             .iter()
             .enumerate()
-            .find(|(_, v)| v.pubkey == deposit.pubkey)
+            .find(|(_, v)| v.public_key == deposit.public_key)
         {
             self.increase_balance(index as u64, deposit.amount)?;
         } else {
             // Verify the deposit signature (proof of possession) which is not checked by the
             // deposit contract
             if is_valid_deposit_signature(
-                &deposit.pubkey,
+                &deposit.public_key,
                 deposit.withdrawal_credentials,
                 deposit.amount,
                 &deposit.signature,
@@ -2063,7 +2062,7 @@ impl BeaconState {
             .unwrap_or_default()
             {
                 self.add_validator_to_registry(
-                    deposit.pubkey.clone(),
+                    deposit.public_key.clone(),
                     deposit.withdrawal_credentials,
                     deposit.amount,
                 )?;
@@ -2109,7 +2108,7 @@ impl BeaconState {
             let (is_validator_exited, is_validator_withdrawn) = if let Some(validator) = self
                 .validators
                 .iter()
-                .find(|validator| validator.pubkey == deposit.pubkey)
+                .find(|validator| validator.public_key == deposit.public_key)
             {
                 (
                     validator.exit_epoch < FAR_FUTURE_EPOCH,
@@ -2271,7 +2270,7 @@ impl BeaconState {
 
         signed_block
             .signature
-            .verify(&proposer.pubkey, signing_root.as_ref())
+            .verify(&proposer.public_key, signing_root.as_ref())
             .map_err(|e| anyhow!("Invalid block signature: {:?}", e))
     }
 
@@ -2384,20 +2383,21 @@ impl BeaconState {
         Ok(())
     }
 
-    /// Return the next sync committee, with possible pubkey duplicates.
+    /// Return the next sync committee, with possible public_key duplicates.
     pub fn get_next_sync_committee(&self) -> anyhow::Result<SyncCommittee> {
         let indices = self.get_next_sync_committee_indices()?;
-        let mut pubkeys = vec![];
+        let mut public_keys = vec![];
 
         for index in indices {
-            pubkeys.push(self.validators[index as usize].pubkey.clone());
+            public_keys.push(self.validators[index as usize].public_key.clone());
         }
 
-        let aggregate_pubkey = eth_aggregate_pubkeys(&pubkeys.iter().collect::<Vec<_>>())?;
+        let aggregate_public_key =
+            eth_aggregate_public_keys(&public_keys.iter().collect::<Vec<_>>())?;
 
         Ok(SyncCommittee {
-            pubkeys: FixedVector::from(pubkeys),
-            aggregate_pubkey,
+            public_keys: FixedVector::from(public_keys),
+            aggregate_public_key,
         })
     }
 
@@ -2619,7 +2619,7 @@ impl BeaconState {
             // and GENESIS_SLOT to distinguish from a pending deposit request
             self.pending_deposits
                 .push(PendingDeposit {
-                    pubkey: validator.pubkey.clone(),
+                    public_key: validator.public_key.clone(),
                     withdrawal_credentials: validator.withdrawal_credentials,
                     amount: excess_balance,
                     signature: BLSSignature::infinity(),
@@ -2793,12 +2793,12 @@ impl BeaconState {
 }
 
 pub fn get_validator_from_deposit(
-    pubkey: PubKey,
+    public_key: PublicKey,
     withdrawal_credentials: B256,
     amount: u64,
 ) -> Validator {
     let mut validator = Validator {
-        pubkey,
+        public_key,
         withdrawal_credentials,
         effective_balance: 0,
         slashed: false,
@@ -2817,29 +2817,29 @@ pub fn get_validator_from_deposit(
 }
 
 /// Wrapper to ``bls.FastAggregateVerify`` accepting the ``G2_POINT_AT_INFINITY`` signature when
-/// ``pubkeys`` is empty.
+/// ``public_keys`` is empty.
 pub fn eth_fast_aggregate_verify(
-    pubkeys: &[&PubKey],
+    public_keys: &[&PublicKey],
     message: B256,
     signature: &BLSSignature,
 ) -> anyhow::Result<bool> {
-    if pubkeys.is_empty() && *signature == BLSSignature::infinity() {
+    if public_keys.is_empty() && *signature == BLSSignature::infinity() {
         return Ok(true);
     }
 
     signature
-        .fast_aggregate_verify(pubkeys, message.as_ref())
+        .fast_aggregate_verify(public_keys, message.as_ref())
         .map_err(|e| anyhow!("Failed to verify fast aggregate: {:?}", e))
 }
 
-/// Return the aggregate public key for the public keys in ``pubkeys``.
+/// Return the aggregate public key for the public keys in ``public_keys``.
 /// NOTE: the ``+`` operation should be interpreted as elliptic curve point addition, which takes as
-/// input elliptic curve points that must be decoded from the input ``BLSPubkey``s.
+/// input elliptic curve points that must be decoded from the input ``BLSPublicKey``s.
 /// This implementation is for demonstrative purposes only and ignores encoding/decoding concerns.
 /// Refer to the BLS signature draft standard for more information.
-pub fn eth_aggregate_pubkeys(pubkeys: &[&PubKey]) -> anyhow::Result<PubKey> {
-    ensure!(!pubkeys.is_empty(), "Public keys list cannot be empty");
-    Ok(PubKey::aggregate(pubkeys)?)
+pub fn eth_aggregate_public_keys(public_keys: &[&PublicKey]) -> anyhow::Result<PublicKey> {
+    ensure!(!public_keys.is_empty(), "Public keys list cannot be empty");
+    Ok(PublicKey::aggregate(public_keys)?)
 }
 
 /// Return the largest integer ``x`` such that ``x**2 <= n``.
@@ -2858,13 +2858,13 @@ pub fn integer_squareroot(n: u64) -> u64 {
 }
 
 pub fn is_valid_deposit_signature(
-    pubkey: &PubKey,
+    public_key: &PublicKey,
     withdrawal_credentials: B256,
     amount: u64,
     signature: &BLSSignature,
 ) -> anyhow::Result<bool> {
     let deposit_message = DepositMessage {
-        pubkey: pubkey.clone(),
+        public_key: public_key.clone(),
         withdrawal_credentials,
         amount,
     };
@@ -2873,6 +2873,6 @@ pub fn is_valid_deposit_signature(
     let signing_root = compute_signing_root(deposit_message, domain);
 
     signature
-        .verify(pubkey, signing_root.as_ref())
+        .verify(public_key, signing_root.as_ref())
         .map_err(|err| anyhow!("Invalid deposit signature: {err:?}"))
 }
