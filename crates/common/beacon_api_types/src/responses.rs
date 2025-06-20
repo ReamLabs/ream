@@ -5,6 +5,10 @@ use ssz_derive::{Decode, Encode};
 
 pub const VERSION: &str = "electra";
 pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
+pub const ACCEPT_PRIORITY: &str = "application/octet-stream;q=1.0,application/json;q=0.9";
+pub const JSON_ACCEPT_PRIORITY: &str = "application/json;q=1";
+pub const JSON_CONTENT_TYPE: &str = "application/json";
+pub const SSZ_CONTENT_TYPE: &str = "application/octet-stream";
 pub const EXECUTION_OPTIMISTIC: bool = false;
 const FINALIZED: bool = false;
 
