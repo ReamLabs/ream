@@ -26,6 +26,9 @@ use tracing_subscriber::EnvFilter;
 
 pub const APP_NAME: &str = "ream";
 
+/// Entry point for the Ream client. Initializes logging, parses CLI arguments, and runs the appropriate
+/// node type (beacon node, validator node, or account manager) based on the command line arguments.
+/// Handles graceful shutdown on Ctrl-C.
 fn main() {
     // Set the default log level to `info` if not set
     let rust_log = env::var(EnvFilter::DEFAULT_ENV).unwrap_or_default();
@@ -48,7 +51,6 @@ fn main() {
         Commands::ValidatorNode(config) => {
             executor_clone.spawn(async move { run_validator_node(*config, executor).await });
         }
-
         Commands::AccountManager(config) => {
             executor_clone.spawn(async move { run_account_manager(*config).await });
         }
@@ -67,6 +69,14 @@ fn main() {
     process::exit(0);
 }
 
+/// Runs the beacon node.
+///
+/// This function initializes the beacon node by setting up the network specification,
+/// creating a Ream database, and initializing the database from a checkpoint.
+///
+/// At the end of setup, it starts 2 services:
+/// 1. The HTTP server that serves Beacon API, Engine API.
+/// 2. The P2P network that handles peer discovery (discv5), gossiping (gossipsub) and Req/Resp API.
 pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
     info!("starting up beacon node...");
 
@@ -154,6 +164,11 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
     }
 }
 
+/// Runs the validator node.
+///
+/// This function initializes the validator node by setting up the network specification,
+/// loading the keystores, and creating a validator service.
+/// It also starts the validator service.
 pub async fn run_validator_node(config: ValidatorNodeConfig, executor: ReamExecutor) {
     info!("starting up validator node...");
 
@@ -191,6 +206,11 @@ pub async fn run_validator_node(config: ValidatorNodeConfig, executor: ReamExecu
     validator_service.start().await;
 }
 
+/// Runs the account manager.
+///
+/// This function initializes the account manager by validating the configuration,
+/// generating keys, and starting the account manager service.
+///
 pub async fn run_account_manager(mut config: AccountManagerConfig) {
     info!("starting up account manager...");
 

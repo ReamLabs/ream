@@ -115,6 +115,15 @@ pub struct Network {
 }
 
 impl Network {
+    /// Initializes the network by:
+    /// - Creating a local keypair
+    /// - Setting up the discovery, req_resp and gossipsub behaviours
+    /// - Starting P2P listening and discovery
+    /// - Connecting to the configured bootnodes
+    /// - Subscribing to the configured gossipsub topics
+    /// 
+    /// Note that this function starts P2P listening, but not handling network events yet.
+    /// Event handling starts when `Network::start()` is called.
     pub async fn init(
         executor: ReamExecutor,
         config: &NetworkConfig,
@@ -257,10 +266,12 @@ impl Network {
         Ok(())
     }
 
+    /// Returns the local node's peer id.
     pub fn peer_id(&self) -> PeerId {
         self.peer_id
     }
 
+    /// Returns the local node's ENR.
     pub fn enr(&self) -> Enr {
         self.swarm.behaviour().discovery.local_enr().clone()
     }
@@ -271,10 +282,12 @@ impl Network {
         request_id
     }
 
+    /// Returns the local node's network state such as peer table.
     pub fn network_state(&self) -> Arc<NetworkState> {
         self.network_state.clone()
     }
 
+    /// Returns the cached peer from the peer table.
     pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
         self.network_state.peer_table.read().get(id).cloned()
     }
@@ -292,7 +305,14 @@ impl Network {
         }
     }
 
-    /// Starts the service
+    /// Starts monitoring for network events. The network worker awaits for different types 
+    /// of network events:
+    /// - A swarm event
+    /// - A p2p message
+    /// - A peer pinging
+    /// - An interval tick to perform p2p maintenance e.g. peer pinging, peer clean up and peer discovery
+    /// 
+    /// The network worker will then route each event to the appropriate handler. The handlers are defined in `ManagerService`.
     pub async fn start(
         mut self,
         manager_sender: UnboundedSender<ReamNetworkEvent>,

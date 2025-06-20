@@ -54,7 +54,19 @@ pub struct ManagerService {
     pub ream_db: ReamDB,
 }
 
+/// The `ManagerService` acts as the manager for all networking activities in Ream.
+/// Its core responsibilities include:
+/// - Managing interactions between discovery, gossipsub, and sync protocols
+/// - Routing messages from network protocols to the beacon chain logic
+/// - Handling peer lifecycle management and connection state
 impl ManagerService {
+    /// Creates a new `ManagerService` instance.
+    ///
+    /// This function initializes the manager service by configuring:
+    /// - discv5 configurations such as bootnodes, socket address, port, attestation subnets, sync committee subnets, etc.
+    /// - The gossipsub topics to subscribe to
+    /// 
+    /// Upon successful configuration, it starts the network worker.
     pub async fn new(
         executor: ReamExecutor,
         config: ManagerConfig,
@@ -175,7 +187,8 @@ impl ManagerService {
         })
     }
 
-    /// Starts the manager service, which listens for network events and handles requests.
+    /// Starts the manager service, which receives either a Gossipsub message or Req/Resp message 
+    /// from the network worker, and dispatches them to the appropriate handlers.
     ///
     /// Panics if the manager receiver is not initialized.
     pub async fn start(self) {
@@ -201,6 +214,7 @@ impl ManagerService {
                 }
                 Some(event) = manager_receiver.recv() => {
                     match event {
+                        // Handles Gossipsub messages from other peers.
                         ReamNetworkEvent::GossipsubMessage { message } => {
                             match GossipsubMessage::decode(&message.topic, &message.data) {
                                 Ok(gossip_message) => match gossip_message {
@@ -293,6 +307,7 @@ impl ManagerService {
                                 }
                             }
                         },
+                        // Handles Req/Resp messages from other peers.
                         ReamNetworkEvent::RequestMessage { peer_id, stream_id, connection_id, message } => {
                             match message {
                                 RequestMessage::Status(status) => {
