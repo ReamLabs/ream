@@ -107,10 +107,7 @@ pub mod quoted_u8_var_list {
     where
         S: Serializer,
     {
-        let string_vec: Vec<String> = value
-            .iter()
-            .map(|v| v.to_string())
-            .collect();
+        let string_vec: Vec<String> = value.iter().map(|v| v.to_string()).collect();
         string_vec.serialize(serializer)
     }
 
