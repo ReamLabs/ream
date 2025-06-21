@@ -193,38 +193,48 @@ impl ManagerService {
     }
 
     /// Fetch the latest BeaconState from the DB by highest slot.
-    fn get_latest_beacon_state(db: &ReamDB) -> Option<BeaconState> {
-        let highest_slot = db.slot_index_provider().get_highest_slot().ok().flatten()?;
-        let block_root = db.slot_index_provider().get(highest_slot).ok().flatten()?;
-        db.beacon_state_provider().get(block_root).ok().flatten()
+    fn get_latest_beacon_state(db: &ReamDB) -> anyhow::Result<Option<BeaconState>> {
+        let highest_slot = db
+            .slot_index_provider()
+            .get_highest_slot()?
+            .ok_or_else(|| anyhow::anyhow!("No highest slot found in database"))?;
+
+        let block_root = db
+            .slot_index_provider()
+            .get(highest_slot)?
+            .ok_or_else(|| anyhow::anyhow!("No block root found for slot {}", highest_slot))?;
+        let beacon_state = db.beacon_state_provider().get(block_root)?;
+        Ok(beacon_state)
     }
 
     pub async fn check_and_expire_sync_committee_subscriptions(&self) {
         let state = match Self::get_latest_beacon_state(&self.ream_db) {
-            Some(state) => state,
-            None => return,
+            Ok(Some(state)) => state,
+            Ok(None) => {
+                trace!("No beacon state available for sync committee subscription check");
+                return;
+            }
+            Err(err) => {
+                error!("Failed to get latest beacon state: {}", err);
+                return;
+            }
         };
         let current_epoch = state.get_current_epoch();
-        let mut map = self.sync_committee_subscriptions.write().await;
-        let expired: Vec<u8> = map
+        let mut sync_committee_subscriptions = self.sync_committee_subscriptions.write().await;
+        let expired_subnet_ids: Vec<u8> = sync_committee_subscriptions
             .iter()
-            .filter_map(|(&subnet_id, &until_epoch)| {
-                if until_epoch <= current_epoch {
-                    Some(subnet_id)
-                } else {
-                    None
-                }
-            })
+            .filter(|&(&_subnet_id, &until_epoch)| until_epoch <= current_epoch)
+            .map(|(&subnet_id, &_until_epoch)| subnet_id)
             .collect();
-        if !expired.is_empty() {
+        if !expired_subnet_ids.is_empty() {
             let mut subnets = self.sync_committee_subnets.write().await;
-            for subnet_id in &expired {
+            for subnet_id in &expired_subnet_ids {
                 if let Err(err) = subnets.disable_sync_committee_subnet(*subnet_id) {
                     error!("Failed to disable sync committee subnet {subnet_id}: {err}",);
                 }
-                map.remove(subnet_id);
+                sync_committee_subscriptions.remove(subnet_id);
             }
-            if !expired.is_empty() {
+            if !expired_subnet_ids.is_empty() {
                 info!("Marked that ENR needs to be updated after sync committee subnet expiry");
             }
         }
