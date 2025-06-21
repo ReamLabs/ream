@@ -15,10 +15,10 @@ use ream_beacon_api_types::{
     id::{ID, ValidatorID},
     request::SyncCommitteeRequestItem,
 };
-use ream_bls::{traits::Signable, BLSSignature, PublicKey};
+use ream_bls::{BLSSignature, PublicKey, traits::Signable};
 use ream_consensus::{
     attestation_data::AttestationData,
-    constants::{DOMAIN_SYNC_COMMITTEE, INTERVALS_PER_SLOT, SYNC_COMMITTEE_SIZE, SLOTS_PER_EPOCH},
+    constants::{DOMAIN_SYNC_COMMITTEE, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE},
     electra::beacon_state::BeaconState,
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
     single_attestation::SingleAttestation,
