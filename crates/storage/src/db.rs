@@ -73,7 +73,7 @@ impl ReamDB {
         write_txn.open_table(UNREALIZED_JUSTIFED_CHECKPOINT_FIELD)?;
         write_txn.commit()?;
 
-        fs::create_dir(data_dir.join(BLOB_FOLDER_NAME))?;
+        fs::create_dir_all(data_dir.join(BLOB_FOLDER_NAME))?;
 
         Ok(Self {
             db: Arc::new(db),
