@@ -150,7 +150,7 @@ impl ValidatorService {
                         self.on_slot(slot).await;
                     }
                     if intervals % INTERVALS_PER_SLOT == 2 {
-                        self.on_slot(slot).await;
+                        self.on_slot_aggregator(slot).await;
                     }
                     if (intervals+1) % (INTERVALS_PER_SLOT * SLOTS_PER_EPOCH) == 0 {
                         self.on_epoch_end(epoch).await;
