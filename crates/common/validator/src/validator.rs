@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, hash_map::Entry},
+    mem::take,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
     vec,
@@ -61,7 +62,7 @@ pub struct SyncTaskInfo {
     pub validator_index: u64,
     pub committee_index: u64,
     pub selection_proof: BLSSignature,
-    pub key_store: Arc<Keystore>
+    pub key_store: Arc<Keystore>,
 }
 
 pub struct ValidatorService {
@@ -126,9 +127,13 @@ impl ValidatorService {
         let mut epoch = compute_epoch_at_slot(slot);
 
         let mut interval = {
-            let interval_start =
-                Instant::now() - (elapsed - Duration::from_secs(intervals * (seconds_per_slot / INTERVALS_PER_SLOT)));
-            interval_at(interval_start, Duration::from_secs(seconds_per_slot / INTERVALS_PER_SLOT))
+            let interval_start = Instant::now()
+                - (elapsed
+                    - Duration::from_secs(intervals * (seconds_per_slot / INTERVALS_PER_SLOT)));
+            interval_at(
+                interval_start,
+                Duration::from_secs(seconds_per_slot / INTERVALS_PER_SLOT),
+            )
         };
         interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
 
@@ -140,18 +145,12 @@ impl ValidatorService {
                         epoch += 1;
                         self.on_epoch(epoch).await;
                     }
-                    match intervals % INTERVALS_PER_SLOT {
-                        0 => {
-                            slot += 1;
-                            self.on_slot(slot).await;
-                        },
-                        1 => {self.on_first_slot_interval(slot).await},
-                        2 => {self.on_second_slot_interval(slot).await},
-                        _ => unreachable!(
-                            "intervals % INTERVALS_PER_SLOT should always be in 0..={} \
-                            but got {}",
-                            INTERVALS_PER_SLOT - 1, intervals % INTERVALS_PER_SLOT
-                        ),
+                    if intervals % INTERVALS_PER_SLOT == 0 {
+                        slot += 1;
+                        self.on_slot(slot).await;
+                    }
+                    if intervals % INTERVALS_PER_SLOT == 2 {
+                        self.on_slot(slot).await;
                     }
                     if (intervals+1) % (INTERVALS_PER_SLOT * SLOTS_PER_EPOCH) == 0 {
                         self.on_epoch_end(epoch).await;
@@ -161,10 +160,68 @@ impl ValidatorService {
         }
     }
 
-    /* Runs on the start of every epoch prior to the per-slot code.
-        - Fetches validator indicies
-        - Fetches proposer and committee duties for the epoch
-     */
+    pub async fn process_aggregator_sync_infos(&mut self, slot: u64) -> anyhow::Result<()> {
+        let client = self.beacon_api_client.clone();
+        let aggregator_infos = take(&mut self.sync_aggregator_infos);
+
+        let block_root = client.get_block_root(ID::Slot(slot)).await?.data.root;
+
+        let contribution_tasks = aggregator_infos
+            .into_iter()
+            .map(|aggregator_info| {
+                let client = client.clone();
+                tokio::spawn(async move {
+                    let subcommittee_index = aggregator_info.committee_index
+                        / (SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT);
+
+                    let contribution = client
+                        .get_sync_committee_contribution(slot, subcommittee_index, block_root)
+                        .await?
+                        .data;
+
+                    let contribution_and_proof = ContributionAndProof {
+                        aggregator_index: aggregator_info.validator_index,
+                        contribution,
+                        selection_proof: aggregator_info.selection_proof,
+                    };
+
+                    let contribution_and_proof_signature = get_contribution_and_proof_signature(
+                        &contribution_and_proof,
+                        &aggregator_info.key_store.private_key,
+                    )?;
+
+                    Ok::<_, anyhow::Error>(SignedContributionAndProof {
+                        message: contribution_and_proof,
+                        signature: contribution_and_proof_signature,
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let signed_proofs = try_join_all(contribution_tasks)
+            .await?
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+
+        client
+            .publish_contribution_and_proofs(signed_proofs)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn process_normal_sync_infos(&mut self, slot: u64) -> anyhow::Result<()> {
+        let normal_infos = take(&mut self.sync_normal_infos)
+            .into_iter()
+            .map(|sync_info| sync_info.validator_index)
+            .collect::<Vec<u64>>();
+        self.submit_sync_committee(slot, normal_infos.as_ref())
+            .await
+    }
+
+    // Runs on the start of every epoch prior to the per-slot code.
+    // - Fetches validator indicies
+    // - Fetches proposer and committee duties for the epoch
     pub async fn on_epoch(&mut self, epoch: u64) {
         info!("Current Epoch: {epoch}");
 
@@ -181,9 +238,9 @@ impl ValidatorService {
         }
     }
 
-    /* Runs on the end of every epoch after the per-slot code(exactly 4 seconds prior to the next epoch).
-        - Fetches the attester duties for the next epoch
-     */
+    // Runs on the end of every epoch after the per-slot code(exactly 4 seconds prior to the next
+    // epoch).
+    // - Fetches the attester duties for the next epoch
     pub async fn on_epoch_end(&mut self, epoch: u64) {
         info!("Current Epoch: {epoch}");
         let validator_indices: Vec<u64> = self.pubkey_to_index.values().cloned().collect();
@@ -193,6 +250,7 @@ impl ValidatorService {
             return;
         }
 
+        // In the future, we can likely increase the lookahead for sync duties
         let (attester_duties, sync_duties) = tokio::join!(
             self.fetch_attester_duties(epoch + 1, &validator_indices),
             self.fetch_sync_committee_duties(epoch + 1, &validator_indices),
@@ -207,32 +265,30 @@ impl ValidatorService {
         }
 
         // Fetch proposer duties separately (could also be joined if needed)
-        if let Some(proposer_duties) =
-            self.fetch_proposer_duties(epoch + 1, &validator_indices).await
+        if let Some(proposer_duties) = self
+            .fetch_proposer_duties(epoch + 1, &validator_indices)
+            .await
         {
             self.proposer_duties = proposer_duties;
         }
     }
 
-    /* Runs at the start of every slot
-        - 
-     */
+    // Runs at the start of every slot
     pub async fn on_slot(&mut self, slot: u64) {
         info!("Current Slot: {slot}");
+        if let Err(sync_error) = self.prepare_sync_infos(slot - 1).await {
+            warn!("Could not prepare the sync infos: {sync_error:?}");
+        } else if let Err(sync_error) = self.process_normal_sync_infos(slot - 1).await {
+            warn!("Could not process the normal sync infos: {sync_error:?}");
+        }
     }
 
-    /* Runs at the end of the first interval of every slot(4 seconds after on_slot)
-        - Used for attestation aggregation
-     */
-    pub async fn on_first_slot_interval(&mut self, slot: u64) {
-        info!("First interval at slot: {slot}");
-    }
-
-    /* Runs at the start of every slot
-        - 
-     */
-    pub async fn on_second_slot_interval(&mut self, slot: u64) {
-        info!("Second interval at slot: {slot}");
+    // Runs at 2 intervals into every slot: meant for aggregators
+    pub async fn on_slot_aggregator(&mut self, slot: u64) {
+        info!("Current Slot: {slot}");
+        if let Err(sync_error) = self.process_aggregator_sync_infos(slot - 1).await {
+            warn!("Could not process the aggregator sync infos: {sync_error:?}");
+        }
     }
 
     pub async fn fetch_validator_indicies(&mut self) {
@@ -417,58 +473,6 @@ impl ValidatorService {
 
         Ok(())
     }
-        /*
-
-        let client = self.beacon_api_client.clone();
-
-        tokio::try_join!(
-            self.submit_sync_committee(slot, non_aggregator_indicies.as_ref()),
-            async move {
-                interval.tick().await;
-
-                let block_root = client.get_block_root(ID::Slot(slot)).await?.data.root;
-
-                let contribution_tasks = aggregator_infos
-                    .into_iter()
-                    .map({
-                        let client = client.clone();
-                        move |(validator_index, committee_index, selection_proof, keystore)| {
-                            let client = client.clone();
-                            tokio::spawn(async move {
-                                let subcommittee_index = committee_index
-                                    / (SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT);
-                                let contribution = client
-                                    .get_sync_committee_contribution(
-                                        slot,
-                                        subcommittee_index,
-                                        block_root,
-                                    )
-                                    .await?
-                                    .data;
-                                let contribution_and_proof = ContributionAndProof {
-                                    aggregator_index: validator_index,
-                                    contribution,
-                                    selection_proof,
-                                };
-                                let contribution_and_proof_signature =
-                                    get_contribution_and_proof_signature(
-                                        &contribution_and_proof,
-                                        &keystore.private_key,
-                                    )?;
-                                Ok::<_, anyhow::Error>(SignedContributionAndProof {
-                                    message: contribution_and_proof,
-                                    signature: contribution_and_proof_signature,
-                                })
-                            })
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                client
-                    .publish_contribution_and_proofs(try_join_all(contribution_tasks).await?.into_iter().collect::<Result<_,_>>()?)
-                    .await?;
-                Ok(())
-            }
-        )?; */
 
     pub async fn submit_sync_committee(
         &self,
