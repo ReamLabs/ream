@@ -6,7 +6,7 @@ use reqwest::{
     header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue},
 };
 
-use beacon_api_types::responses::{JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE, ACCEPT_PRIORITY, JSON_ACCEPT_PRIORITY};
+use ream_beacon_api_types::responses::{ACCEPT_PRIORITY, JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE};
 
 #[derive(Debug, Clone)]
 pub enum ContentType {
