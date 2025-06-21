@@ -244,8 +244,9 @@ impl ManagerService {
     ///
     /// Panics if the manager receiver is not initialized.
     pub async fn start(mut self) {
-        let mut slot_interval = interval(Duration::from_secs(network_spec().seconds_per_slot));
-        let mut expiry_interval = tokio::time::interval(Duration::from_secs(12 * 32));
+        let network_spec = network_spec();
+        let mut slot_interval = interval(Duration::from_secs(network_spec.seconds_per_slot));
+        let mut expiry_interval = interval(Duration::from_secs(12 * 32));
         loop {
             tokio::select! {
                 _ = slot_interval.tick() => {

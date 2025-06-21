@@ -5,7 +5,7 @@ use std::{
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
     sync::Arc,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::anyhow;
@@ -32,7 +32,7 @@ use libp2p::{
 use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Secp256k1PublicKey};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
-use ream_consensus::constants::genesis_validators_root;
+use ream_consensus::constants::{SLOTS_PER_EPOCH, genesis_validators_root};
 use ream_discv5::{
     discovery::{DiscoveredPeers, Discovery, QueryType},
     subnet::{AttestationSubnets, SyncCommitteeSubnets},
@@ -107,6 +107,27 @@ impl libp2p::swarm::Executor for Executor {
     }
 }
 
+fn calculate_epoch_aligned_interval(
+    min_genesis_time: u64,
+    seconds_per_slot: u64,
+) -> (Instant, Duration) {
+    let epoch_duration = Duration::from_secs(seconds_per_slot * SLOTS_PER_EPOCH);
+    let next_epoch_start = next_epoch_boundary(min_genesis_time, seconds_per_slot);
+
+    (next_epoch_start, epoch_duration)
+}
+fn next_epoch_boundary(min_genesis_time: u64, seconds_per_slot: u64) -> Instant {
+    let epoch_duration = Duration::from_secs(seconds_per_slot * SLOTS_PER_EPOCH);
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+    let time_since_genesis = now.saturating_sub(min_genesis_time);
+    let time_in_current_epoch = time_since_genesis % epoch_duration.as_secs();
+    let time_until_next_epoch = epoch_duration.as_secs() - time_in_current_epoch;
+    Instant::now() + Duration::from_secs(time_until_next_epoch)
+}
 pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
@@ -302,20 +323,15 @@ impl Network {
         mut p2p_receiver: UnboundedReceiver<P2PMessage>,
     ) {
         let mut status_interval = interval(Duration::from_secs(30));
-        use tokio::sync::mpsc;
-        let (enr_tx, mut _enr_rx) = mpsc::unbounded_channel();
-        // Spawn the periodic ENR update trigger
-        tokio::spawn(async move {
-            let mut check_enr_interval =
-                tokio::time::interval(tokio::time::Duration::from_secs(12));
-            loop {
-                check_enr_interval.tick().await;
-                // Ignore send errors (main loop may have exited)
-                let _ = enr_tx.send(());
-            }
-        });
-        let mut enr_update_interval =
-            IntervalStream::new(tokio::time::interval(tokio::time::Duration::from_secs(12)));
+        let network_spec = network_spec();
+        let _ = calculate_epoch_aligned_interval(
+            network_spec.min_genesis_time,
+            network_spec.seconds_per_slot,
+        );
+        let enr_update_interval = interval(Duration::from_secs(
+            network_spec.seconds_per_slot * SLOTS_PER_EPOCH,
+        ));
+        let mut enr_update_stream = IntervalStream::new(enr_update_interval);
         loop {
             tokio::select! {
                 Some(event) = self.swarm.next() => {
@@ -398,7 +414,7 @@ impl Network {
                             .discover_peers(QueryType::Peers, 16);
                     }
                 }
-                Some(_) = enr_update_interval.next() => {
+                Some(_) = enr_update_stream.next() => {
                     self.check_and_update_enr().await;
                 }
             }
