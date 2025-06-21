@@ -10,7 +10,9 @@ use super::DOMAIN_APPLICATION_BUILDER;
 #[derive(Debug, PartialEq, Eq, Clone, TreeHash, Serialize, Deserialize)]
 pub struct ValidatorRegistrationV1 {
     pub fee_recipient: Address,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub gas_limit: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub timestamp: u64,
     pub public_key: PublicKey,
 }
