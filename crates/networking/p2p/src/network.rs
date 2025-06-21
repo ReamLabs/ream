@@ -432,16 +432,22 @@ impl Network {
         let mut sync_subnets = self.network_state.sync_committee_subnets.write();
 
         if sync_subnets.needs_enr_update() {
-            if let Err(e) = self
+            if let Err(err) = self
                 .swarm
                 .behaviour()
                 .discovery
                 .update_subnet_enrs(&attestation_subnets, &sync_subnets)
             {
-                error!("Failed to update ENR with subnet subscriptions: {}", e);
+                error!("Failed to update ENR with subnet subscriptions: {err}");
             } else {
+                // Update meta_data attnets and syncnets fields
+                let mut meta_data = self.network_state.meta_data.write();
+                meta_data.attnets = attestation_subnets.0.clone();
+                meta_data.syncnets = sync_subnets.bitfield.clone();
                 sync_subnets.reset_enr_update_flag();
-                info!("Successfully updated ENR with sync committee subnet subscriptions");
+                info!(
+                    "Successfully updated ENR with sync committee subnet subscriptions and updated meta_data attnets/syncnets"
+                );
             }
         }
     }
