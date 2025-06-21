@@ -7,7 +7,9 @@ use crate::handlers::{
     },
     committee::get_committees,
     header::{get_headers, get_headers_from_block},
-    light_client::{get_light_client_bootstrap, get_light_client_updates, get_light_client_finality_update},
+    light_client::{
+        get_light_client_bootstrap, get_light_client_finality_update, get_light_client_updates,
+    },
     pool::{get_voluntary_exits, post_voluntary_exits},
     state::{
         get_pending_consolidations, get_pending_deposits, get_pending_partial_withdrawals,
