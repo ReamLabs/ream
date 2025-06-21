@@ -5,17 +5,14 @@ use anyhow::{Ok, anyhow};
 use ream_beacon_api_types::responses::{ETH_CONSENSUS_VERSION_HEADER, VERSION};
 use ream_bls::PublicKey;
 use ream_consensus::electra::blinded_beacon_block::SignedBlindedBeaconBlock;
-use reqwest::{
-    StatusCode,
-    header::{CONTENT_TYPE, HeaderMap, HeaderValue},
-};
+use reqwest::StatusCode;
 use url::Url;
 
 use super::{
     blobs::ExecutionPayloadAndBlobsBundle, builder_bid::SignedBuilderBid,
     validator_registration::SignedValidatorRegistrationV1,
 };
-use crate::beacon_api_client::http_client::{ClientWithBaseUrl, ContentType, JSON_CONTENT_TYPE};
+use crate::beacon_api_client::http_client::{ClientWithBaseUrl, ContentType};
 
 #[derive(Debug, Clone)]
 pub struct BuilderConfig {
@@ -38,16 +35,6 @@ impl BuilderClient {
         })
     }
 
-    pub fn get_header_with_json(&self) -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));
-        headers.insert(
-            ETH_CONSENSUS_VERSION_HEADER,
-            HeaderValue::from_static(VERSION),
-        );
-        headers
-    }
-
     /// Get an execution payload header.
     pub async fn get_builder_header(
         &self,
@@ -55,13 +42,11 @@ impl BuilderClient {
         public_key: &PublicKey,
         slot: u64,
     ) -> anyhow::Result<SignedBuilderBid> {
-        let get_header_endpoint = self.client.base_url().join(&format!(
-            "/eth/v1/builder/header/{slot}/{parent_hash:?}/{public_key:?}"
-        ))?;
-
         Ok(self
             .client
-            .get(get_header_endpoint)?
+            .get(format!(
+                "/eth/v1/builder/header/{slot}/{parent_hash:?}/{public_key:?}"
+            ))?
             .send()
             .await?
             .json::<SignedBuilderBid>()
@@ -73,15 +58,13 @@ impl BuilderClient {
         &self,
         signed_blinded_block: SignedBlindedBeaconBlock,
     ) -> anyhow::Result<ExecutionPayloadAndBlobsBundle> {
-        let get_blinded_blocks_endpoint = self
-            .client
-            .base_url()
-            .join("/eth/v1/builder/blinded_blocks")?;
-
         let response = self
             .client
-            .post(get_blinded_blocks_endpoint, ContentType::Json)?
-            .headers(self.get_header_with_json())
+            .post(
+                "/eth/v1/builder/blinded_blocks".to_string(),
+                ContentType::Json,
+            )?
+            .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
             .json(&signed_blinded_block)
             .send()
             .await?;
@@ -91,9 +74,7 @@ impl BuilderClient {
 
     /// Check if builder is healthy.
     pub async fn get_builder_status(&self) -> anyhow::Result<()> {
-        let builder_statis_endpoint = self.client.base_url().join("/eth/v1/builder/status")?;
-
-        let response = self.client.get(builder_statis_endpoint)?.send().await?;
+        let response = self.client.get("/eth/v1/builder/status")?.send().await?;
         match response.status() {
             StatusCode::OK => Ok(()),
             StatusCode::INTERNAL_SERVER_ERROR => {
@@ -108,15 +89,13 @@ impl BuilderClient {
         &self,
         signed_registration: SignedValidatorRegistrationV1,
     ) -> anyhow::Result<()> {
-        let register_validator_endpoint = self
-            .client
-            .base_url()
-            .join("/eth/v1/builder/register_validator")?;
-
         let response = self
             .client
-            .post(register_validator_endpoint, ContentType::Json)?
-            .headers(self.get_header_with_json())
+            .post(
+                "/eth/v1/builder/register_validator".to_string(),
+                ContentType::Json,
+            )?
+            .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
             .json(&signed_registration)
             .send()
             .await?;
