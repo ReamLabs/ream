@@ -20,7 +20,7 @@ pub async fn start_server(
     db: ReamDB,
     network_state: Arc<NetworkState>,
     operation_pool: Arc<OperationPool>,
-    execution_engine: ExecutionEngine,
+    execution_engine: Option<ExecutionEngine>,
 ) -> std::io::Result<()> {
     info!(
         "starting HTTP server on {:?}",

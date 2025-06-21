@@ -127,11 +127,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
 
     let network_state = network_manager.network_state.clone();
 
-    let execution_engine = network_manager
-        .beacon_chain
-        .execution_engine
-        .clone()
-        .expect("Execution engine must be initialized for API server");
+    let execution_engine = network_manager.beacon_chain.execution_engine.clone();
 
     let network_future = executor.spawn(async move {
         network_manager.start().await;

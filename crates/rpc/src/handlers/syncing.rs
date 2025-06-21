@@ -37,7 +37,7 @@ impl Syncing {
 pub async fn get_syncing_status(
     db: Data<ReamDB>,
     operation_pool: Data<Arc<OperationPool>>,
-    execution_engine: Data<ExecutionEngine>,
+    execution_engine: Data<Option<ExecutionEngine>>,
 ) -> Result<impl Responder, ApiError> {
     let store = Store {
         db: db.get_ref().clone(),
@@ -66,12 +66,15 @@ pub async fn get_syncing_status(
     let sync_distance = current_slot.saturating_sub(head_slot);
 
     // get el_offline
-    let el_offline = match execution_engine.eth_chain_id().await {
-        Ok(_) => false,
-        Err(err) => {
-            error!("Execution engine is offline or erroring, error: {err:?}");
-            true
-        }
+    let el_offline = match &**execution_engine {
+        Some(execution_engine) => match execution_engine.eth_chain_id().await {
+            Ok(_) => false,
+            Err(err) => {
+                error!("Execution engine is offline or erroring, error: {err:?}");
+                true
+            }
+        },
+        None => true,
     };
 
     Ok(HttpResponse::Ok().json(DataResponse::new(Syncing::new(
