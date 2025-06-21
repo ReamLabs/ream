@@ -19,3 +19,9 @@ pub struct SyncCommitteeRequestItem {
     pub validator_index: u64,
     pub signature: BLSSignature,
 }
+#[derive(Debug, Deserialize)]
+pub struct SyncCommitteeSubscription {
+    pub validator_index: u64,
+    pub sync_committee_indices: Vec<u64>,
+    pub until_epoch: u64,
+}

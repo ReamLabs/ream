@@ -21,7 +21,6 @@ use libp2p::{
         upgrade::{SelectUpgrade, Version},
     },
     dns::Transport as DnsTransport,
-    futures::StreamExt,
     gossipsub::{Event as GossipsubEvent, IdentTopic as Topic, Message, MessageAuthenticity},
     identify,
     multiaddr::Protocol,
@@ -34,13 +33,17 @@ use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Sec
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
 use ream_consensus::constants::genesis_validators_root;
-use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
+use ream_discv5::{
+    discovery::{DiscoveredPeers, Discovery, QueryType},
+    subnet::{AttestationSubnets, SyncCommitteeSubnets},
+};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::network_spec;
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time::interval,
 };
+use tokio_stream::{StreamExt, wrappers::IntervalStream};
 use tracing::{error, info, trace, warn};
 use yamux::Config as YamuxConfig;
 
@@ -122,12 +125,10 @@ impl Network {
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
-        let discovery = {
-            let mut discovery =
-                Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
-            discovery.discover_peers(QueryType::Peers, 16);
-            discovery
-        };
+        // Create discovery service
+        let mut discovery =
+            Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
+        discovery.discover_peers(QueryType::Peers, 16);
 
         let req_resp = ReqResp::new();
 
@@ -205,9 +206,11 @@ impl Network {
             ),
             status: RwLock::new(status),
             data_dir: config.data_dir.clone(),
+            attestation_subnets: RwLock::new(AttestationSubnets::new()),
+            sync_committee_subnets: RwLock::new(SyncCommitteeSubnets::new()),
         });
 
-        let mut network = Network {
+        let mut network = Self {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
             subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
@@ -299,6 +302,20 @@ impl Network {
         mut p2p_receiver: UnboundedReceiver<P2PMessage>,
     ) {
         let mut status_interval = interval(Duration::from_secs(30));
+        use tokio::sync::mpsc;
+        let (enr_tx, mut _enr_rx) = mpsc::unbounded_channel();
+        // Spawn the periodic ENR update trigger
+        tokio::spawn(async move {
+            let mut check_enr_interval =
+                tokio::time::interval(tokio::time::Duration::from_secs(12));
+            loop {
+                check_enr_interval.tick().await;
+                // Ignore send errors (main loop may have exited)
+                let _ = enr_tx.send(());
+            }
+        });
+        let mut enr_update_interval =
+            IntervalStream::new(tokio::time::interval(tokio::time::Duration::from_secs(12)));
         loop {
             tokio::select! {
                 Some(event) = self.swarm.next() => {
@@ -381,6 +398,34 @@ impl Network {
                             .discover_peers(QueryType::Peers, 16);
                     }
                 }
+                Some(_) = enr_update_interval.next() => {
+                    self.check_and_update_enr().await;
+                }
+            }
+        }
+    }
+
+    async fn check_and_update_enr(&mut self) {
+        let attestation_subnets = self.network_state.attestation_subnets.read();
+        let mut sync_subnets = self.network_state.sync_committee_subnets.write();
+
+        if sync_subnets.needs_enr_update() {
+            if let Err(err) = self
+                .swarm
+                .behaviour()
+                .discovery
+                .update_subnet_enrs(&attestation_subnets, &sync_subnets)
+            {
+                error!("Failed to update ENR with subnet subscriptions: {err}");
+            } else {
+                // Update meta_data attnets and syncnets fields
+                let mut meta_data = self.network_state.meta_data.write();
+                meta_data.attnets = attestation_subnets.0.clone();
+                meta_data.syncnets = sync_subnets.bitfield.clone();
+                sync_subnets.reset_enr_update_flag();
+                info!(
+                    "Successfully updated ENR with sync committee subnet subscriptions and updated meta_data attnets/syncnets"
+                );
             }
         }
     }
