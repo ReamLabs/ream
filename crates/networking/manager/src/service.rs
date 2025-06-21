@@ -23,7 +23,10 @@ use ream_p2p::{
     network::{Network, ReamNetworkEvent},
     network_state::NetworkState,
 };
-use ream_storage::db::ReamDB;
+use ream_storage::{
+    db::ReamDB,
+    tables::{Field, Table},
+};
 use ream_syncer::block_range::BlockRangeSyncer;
 use tokio::{
     sync::{RwLock, mpsc},
@@ -188,6 +191,9 @@ impl NetworkManagerService {
         }
     }
 
+    /// Starts the manager service, which listens for network events and handles requests.
+    ///
+    /// Panics if the manager receiver is not initialized.
     pub async fn start(self) {
         let NetworkManagerService {
             beacon_chain,
@@ -205,15 +211,15 @@ impl NetworkManagerService {
             tokio::select! {
                 _ = slot_interval.tick() => {
                     let time = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("correct time")
-                        .as_secs();
+                    .duration_since(UNIX_EPOCH)
+                    .expect("correct time")
+                    .as_secs();
                     if let Err(err) = beacon_chain.process_tick(time).await {
                         error!("Failed to process gossipsub tick: {err}");
                     }
                 }
                 _ = expiry_interval.tick() => {
-                    let state = match Self::get_latest_beacon_state(&ream_db) {
+                    let state = match ManagerService::get_latest_beacon_state(&ream_db) {
                         Some(state) => state,
                         None => continue,
                     };
@@ -222,7 +228,7 @@ impl NetworkManagerService {
                     let expired: Vec<u8> = map
                         .iter()
                         .filter_map(|(&subnet_id, &until_epoch)| {
-                            if until_epoch <= current_epoch {
+                            if until_epoch <= current_epoch{
                                 Some(subnet_id)
                             } else {
                                 None
@@ -348,36 +354,42 @@ impl NetworkManagerService {
                                         Ok(status) => status,
                                         Err(err) => {
                                             warn!("Failed to build status request: {err}");
-                                    let Ok(finalized_checkpoint) = ream_db.finalized_checkpoint_provider().get() else {
-                                        warn!("Failed to get finalized checkpoint");
-                                        p2p_sender.send_error_response(
-                                            peer_id,
-                                            connection_id,
-                                            stream_id,
-                                            "Failed to get finalized checkpoint",
-                                        );
-                                        continue;
-                                    };
+                                            let finalized_checkpoint = match ream_db.finalized_checkpoint_provider().get() {
+                                                Ok(checkpoint) => checkpoint,
+                                                Err(e) => {
+                                                    warn!("Failed to get finalized checkpoint: {e}");
+                                                    p2p_sender.send_error_response(
+                                                        peer_id,
+                                                        connection_id,
+                                                        stream_id,
+                                                        "Failed to get finalized checkpoint",
+                                                    );
+                                                    continue;
+                                                }
+                                            };
 
-                                    let head_root = match beacon_chain.store.lock().await.get_head() {
-                                        Ok(head) => head,
-                                        Err(err) => {
-                                            warn!("Failed to get head root: {err}, falling back to finalized root");
-                                            finalized_checkpoint.root
-                                        }
-                                    };
+                                            let head_root = match beacon_chain.store.lock().await.get_head() {
+                                                Ok(head) => head,
+                                                Err(err) => {
+                                                    warn!("Failed to get head root: {err}, falling back to finalized root");
+                                                    finalized_checkpoint.root
+                                                }
+                                            };
 
+                                            let _head_slot = match ream_db.beacon_block_provider().get(head_root) {
+                                                Ok(Some(block)) => block.message.slot,
+                                                err => {
+                                                    warn!("Failed to get block for head root {head_root}: {err:?}");
+                                                    p2p_sender.send_error_response(
+                                                        peer_id,
+                                                        connection_id,
+                                                        stream_id,
+                                                        &format!("Failed to build status request: {err:?}")
+                                                    );
+                                                    continue;
+                                                }
+                                            };
 
-                                    let head_slot = match ream_db.beacon_block_provider().get(head_root) {
-                                        Ok(Some(block)) => block.message.slot,
-                                        err => {
-                                            warn!("Failed to get block for head root {head_root}: {err:?}");
-                                            p2p_sender.send_error_response(
-                                                peer_id,
-                                                connection_id,
-                                                stream_id,
-                                                &format!("Failed to build status request: {err}"),
-                                            );
                                             continue;
                                         }
                                     };

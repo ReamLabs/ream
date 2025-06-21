@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
 use actix_web::{App, HttpServer, dev::ServerHandle, middleware, web::Data};
-use config::{RpcServerConfig, ServerConfig};
+use config::RpcServerConfig;
 use ream_execution_engine::ExecutionEngine;
 use ream_operation_pool::OperationPool;
-use config::{RpcServerConfig, ServerConfig};
-use ream_discv5::subnet::SyncCommitteeSubnets;
 use ream_p2p::network_state::NetworkState;
 use ream_storage::db::ReamDB;
 use tracing::info;
@@ -40,8 +38,6 @@ pub async fn start_server(
             .app_data(Data::new(network_state.clone()))
             .app_data(Data::new(operation_pool.clone()))
             .app_data(Data::new(execution_engine.clone()))
-            .app_data(Data::new(sync_committee_subscriptions.clone()))
-            .app_data(Data::new(sync_committee_subnets.clone()))
             .configure(register_routers)
     })
     .bind(server_config.http_socket_address)?
