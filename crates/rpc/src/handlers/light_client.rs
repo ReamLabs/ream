@@ -1,12 +1,25 @@
 use actix_web::{
-    HttpResponse, Responder, get,
+    HttpRequest, HttpResponse, Responder, get,
     web::{Data, Path, Query},
 };
 use alloy_primitives::B256;
-use ream_beacon_api_types::{error::ApiError, responses::DataVersionedResponse};
+use ream_beacon_api_types::{
+    error::ApiError,
+    responses::{
+        DataVersionedResponse, ETH_CONSENSUS_VERSION_HEADER, JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE,
+        VERSION,
+    },
+};
 use ream_consensus::constants::{EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SLOTS_PER_EPOCH};
-use ream_light_client::{bootstrap::LightClientBootstrap, update::LightClientUpdate};
-use ream_storage::{db::ReamDB, tables::Table};
+use ream_light_client::{
+    bootstrap::LightClientBootstrap, finality_update::LightClientFinalityUpdate,
+    header::LightClientHeader, update::LightClientUpdate,
+};
+use ream_storage::{
+    db::ReamDB,
+    tables::{Field, Table},
+};
+use ssz::Encode;
 use tree_hash::TreeHash;
 
 pub const MAX_REQUEST_LIGHT_CLIENT_UPDATES: u64 = 128;
@@ -159,4 +172,118 @@ pub async fn get_light_client_updates(
         ));
     }
     Ok(HttpResponse::Ok().json(DataVersionedResponse::new(updates)))
+}
+
+#[get("/beacon/light_client/finality_update")]
+pub async fn get_light_client_finality_update(
+    db: Data<ReamDB>,
+    http_request: HttpRequest,
+) -> Result<impl Responder, ApiError> {
+    // Get the latest finalized checkpoint
+    let finalized_checkpoint = db.finalized_checkpoint_provider().get().map_err(|err| {
+        ApiError::InternalError(format!(
+            "Failed to get finalized checkpoint, error: {err:?}"
+        ))
+    })?;
+
+    // Get the latest head block root from the latest slot
+    let latest_slot = db
+        .slot_index_provider()
+        .get_highest_slot()
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get latest slot, error: {err:?}"))
+        })?
+        .ok_or_else(|| ApiError::NotFound("Light client finality update unavailable".into()))?;
+
+    let head_block_root = db
+        .slot_index_provider()
+        .get(latest_slot)
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get block root for latest slot, error: {err:?}"
+            ))
+        })?
+        .ok_or_else(|| ApiError::NotFound("Light client finality update unavailable".into()))?;
+
+    // Get the head block and state
+    let head_block = db
+        .beacon_block_provider()
+        .get(head_block_root)
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get head block, error: {err:?}"))
+        })?
+        .ok_or_else(|| ApiError::NotFound("Light client finality update unavailable".into()))?;
+
+    // Get the attested block (parent of head block) and its state
+    let attested_block = db
+        .beacon_block_provider()
+        .get(head_block.message.parent_root)
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get attested block, error: {err:?}"))
+        })?
+        .ok_or_else(|| ApiError::NotFound("Light client finality update unavailable".into()))?;
+
+    let attested_block_root = attested_block.tree_hash_root();
+    let attested_state = db
+        .beacon_state_provider()
+        .get(attested_block_root)
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get attested state, error: {err:?}"))
+        })?
+        .ok_or_else(|| ApiError::NotFound("Light client finality update unavailable".into()))?;
+
+    // Get the finalized block
+    let finalized_block = db
+        .beacon_block_provider()
+        .get(finalized_checkpoint.root)
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get finalized block, error: {err:?}"))
+        })?
+        .ok_or_else(|| ApiError::NotFound("Light client finality update unavailable".into()))?;
+
+    // Create the finality update
+    let attested_header = LightClientHeader::new(&attested_block).map_err(|err| {
+        ApiError::InternalError(format!(
+            "Failed to create attested light client header: {err:?}"
+        ))
+    })?;
+    let finalized_header = LightClientHeader::new(&finalized_block).map_err(|err| {
+        ApiError::InternalError(format!(
+            "Failed to create finalized light client header: {err:?}"
+        ))
+    })?;
+    let finality_update = LightClientFinalityUpdate {
+        attested_header,
+        finalized_header,
+        finality_branch: attested_state
+            .finalized_root_inclusion_proof()
+            .map_err(|err| {
+                ApiError::InternalError(format!(
+                    "Failed to get finalized root inclusion proof, error: {err:?}"
+                ))
+            })?
+            .into(),
+        sync_aggregate: head_block.message.body.sync_aggregate,
+        signature_slot: head_block.message.slot,
+    };
+
+    // Check Accept header for response format
+    let response = match http_request
+        .headers()
+        .get("accept")
+        .and_then(|header| header.to_str().ok())
+    {
+        Some(SSZ_CONTENT_TYPE) => {
+            HttpResponse::Ok()
+                .content_type(SSZ_CONTENT_TYPE)
+                .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
+                .body(finality_update.as_ssz_bytes())
+        }
+        _ => HttpResponse::Ok()
+            .content_type(JSON_CONTENT_TYPE)
+            .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
+            .json(DataVersionedResponse::new(finality_update)),
+    };
+
+    Ok(response)
 }
