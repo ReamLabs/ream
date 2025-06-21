@@ -21,7 +21,9 @@ pub struct SyncCommitteeRequestItem {
 }
 #[derive(Debug, Deserialize)]
 pub struct SyncCommitteeSubscription {
+    #[serde(with = "serde_utils::quoted_u64")]
     pub validator_index: u64,
     pub sync_committee_indices: Vec<u64>,
+    #[serde(with = "serde_utils::quoted_u64")]
     pub until_epoch: u64,
 }
