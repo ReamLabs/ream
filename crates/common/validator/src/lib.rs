@@ -15,7 +15,7 @@ pub mod state;
 pub mod sync_committee;
 pub mod validator;
 
-pub fn hash_signature_prefix_to_u64(signature: BLSSignature) -> u64 {
+pub fn hash_signature_prefix_to_u64(signature: &BLSSignature) -> u64 {
     let mut hash_prefix_bytes = [0u8; 8];
     hash_prefix_bytes.copy_from_slice(&hash(signature.to_slice())[..8]);
     u64::from_le_bytes(hash_prefix_bytes)

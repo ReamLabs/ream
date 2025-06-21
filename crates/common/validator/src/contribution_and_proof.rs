@@ -53,8 +53,8 @@ pub fn get_contribution_and_proof(
 }
 
 pub fn get_contribution_and_proof_signature(
-    contribution_and_proof: ContributionAndProof,
-    private_key: PrivateKey,
+    contribution_and_proof: &ContributionAndProof,
+    private_key: &PrivateKey,
 ) -> anyhow::Result<BLSSignature> {
     let domain = compute_domain(
         DOMAIN_CONTRIBUTION_AND_PROOF,
