@@ -5,7 +5,7 @@ use actix_web::{
     web::{Data, Json},
 };
 use ream_beacon_api_types::{error::ApiError, id::ID, responses::DataResponse};
-use ream_consensus::voluntary_exit::SignedVoluntaryExit;
+use ream_consensus::{proposer_slashing::ProposerSlashing, voluntary_exit::SignedVoluntaryExit};
 use ream_operation_pool::OperationPool;
 use ream_storage::db::ReamDB;
 
@@ -52,4 +52,57 @@ pub async fn post_voluntary_exits(
     // TODO: publish voluntary exit to peers (gossipsub) - https://github.com/ReamLabs/ream/issues/556
 
     Ok(HttpResponse::Ok())
+}
+
+/// GET /eth/v1/beacon/pool/proposer_slashings
+#[get("/beacon/pool/proposer_slashings")]
+pub async fn get_pool_proposer_slashings(
+    operation_pool: Data<Arc<OperationPool>>,
+) -> Result<impl Responder, ApiError> {
+    Ok(HttpResponse::Ok().json(DataResponse::new(
+        operation_pool.get_all_proposer_slashings(),
+    )))
+}
+
+/// POST /eth/v1/beacon/pool/proposer_slashings
+#[post("/beacon/pool/proposer_slashings")]
+pub async fn post_pool_proposer_slashings(
+    db: Data<ReamDB>,
+    operation_pool: Data<Arc<OperationPool>>,
+    slashing: Json<ProposerSlashing>,
+) -> Result<impl Responder, ApiError> {
+    let highest_slot = db
+        .slot_index_provider()
+        .get_highest_slot()
+        .map_err(|err| {
+            error!("Failed to get_highest_slot, error: {err:?}");
+            ApiError::InternalError
+        })?
+        .ok_or(ApiError::NotFound(
+            "Failed to find highest slot".to_string(),
+        ))?;
+    let mut beacon_state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
+    let proposer_index = slashing.signed_header_1.message.proposer_index;
+
+    if operation_pool.has_slashing_for_proposer(proposer_index) {
+        return Err(ApiError::BadRequest(
+            "Proposer slashing already exists for this validator".to_string(),
+        ));
+    }
+    let slashing = slashing.into_inner();
+
+    beacon_state
+        .process_proposer_slashing(&slashing)
+        .map_err(|err| {
+            ApiError::BadRequest(format!(
+                "Invalid proposer slashing, it will never pass validation so it's rejected: {err:?}"
+            ))
+        })?;
+    operation_pool
+        .insert_proposer_slashing(slashing)
+        .map_err(|err| {
+            ApiError::BadRequest(format!("Failed to insert proposer slashing: {err:?}"))
+        })?;
+
+    Ok(HttpResponse::Ok().finish())
 }
