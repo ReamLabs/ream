@@ -2,7 +2,8 @@ use alloy_primitives::Address;
 use anyhow::ensure;
 use ream_consensus::electra::beacon_state::BeaconState;
 
-use crate::{builder_bid::SignedBuilderBid, verify::verify_bid_signature};
+use super::builder_bid::SignedBuilderBid;
+use crate::builder::verify::verify_bid_signature;
 
 pub fn process_bid(
     state: BeaconState,

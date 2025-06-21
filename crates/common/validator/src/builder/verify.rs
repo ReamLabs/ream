@@ -1,7 +1,7 @@
 use ream_bls::traits::Verifiable;
 use ream_consensus::misc::{compute_domain, compute_signing_root};
 
-use crate::{DOMAIN_APPLICATION_BUILDER, builder_bid::SignedBuilderBid};
+use super::{DOMAIN_APPLICATION_BUILDER, builder_bid::SignedBuilderBid};
 
 pub fn verify_bid_signature(signed_bid: SignedBuilderBid) -> anyhow::Result<bool> {
     let domain = compute_domain(DOMAIN_APPLICATION_BUILDER, None, None);

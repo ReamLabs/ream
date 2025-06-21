@@ -1,7 +1,7 @@
 use std::{net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use alloy_primitives::Address;
-use clap::{ArgAction, Parser};
+use clap::Parser;
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use url::Url;
 
@@ -59,11 +59,7 @@ pub struct ValidatorNodeConfig {
     )]
     pub password: Option<String>,
 
-    #[arg(
-        long,
-        help = "Enable external block builder",
-        action(ArgAction::SetTrue)
-    )]
+    #[arg(long, help = "Enable external block builder")]
     pub enable_builder: bool,
 
     #[arg(

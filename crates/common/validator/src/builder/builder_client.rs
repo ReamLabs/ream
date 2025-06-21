@@ -1,5 +1,6 @@
 use alloy_primitives::B256;
-use anyhow::Ok;
+use anyhow::{Ok, anyhow};
+use ream_beacon_api_types::responses::{ETH_CONSENSUS_VERSION_HEADER, VERSION};
 use ream_bls::PublicKey;
 use ream_consensus::electra::blinded_beacon_block::SignedBlindedBeaconBlock;
 use reqwest::{
@@ -8,14 +9,17 @@ use reqwest::{
 };
 use url::Url;
 
-use crate::{
-    BuilderConfig, blobs::ExecutionPayloadAndBlobsBundle, builder_bid::SignedBuilderBid,
+use super::{
+    blobs::ExecutionPayloadAndBlobsBundle, builder_bid::SignedBuilderBid,
     validator_registration::SignedValidatorRegistrationV1,
 };
+use crate::beacon_api_client::http_client::JSON_CONTENT_TYPE;
 
-pub const VERSION: &str = "electra";
-pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
-pub const JSON_CONTENT_TYPE: &str = "application/json";
+#[derive(Debug, Clone)]
+pub struct BuilderConfig {
+    pub builder_enabled: bool,
+    pub mev_relay_url: Url,
+}
 
 pub struct BuilderClient {
     client: Client,
@@ -87,9 +91,9 @@ impl BuilderClient {
         match response.status() {
             StatusCode::OK => Ok(()),
             StatusCode::INTERNAL_SERVER_ERROR => {
-                Err(anyhow::anyhow!("internal error: builder internal error"))
+                Err(anyhow!("internal error: builder internal error"))
             }
-            _ => Err(anyhow::anyhow!("failed to get builder status")),
+            _ => Err(anyhow!("failed to get builder status")),
         }
     }
 
@@ -112,10 +116,10 @@ impl BuilderClient {
 
         match response.status() {
             StatusCode::OK => Ok(()),
-            StatusCode::BAD_REQUEST => Err(anyhow::anyhow!("unknown validator")),
-            StatusCode::UNSUPPORTED_MEDIA_TYPE => Err(anyhow::anyhow!("unsupported media type")),
-            StatusCode::INTERNAL_SERVER_ERROR => Err(anyhow::anyhow!("builder internal error")),
-            _ => Err(anyhow::anyhow!("internal error")),
+            StatusCode::BAD_REQUEST => Err(anyhow!("unknown validator")),
+            StatusCode::UNSUPPORTED_MEDIA_TYPE => Err(anyhow!("unsupported media type")),
+            StatusCode::INTERNAL_SERVER_ERROR => Err(anyhow!("builder internal error")),
+            _ => Err(anyhow!("internal error")),
         }
     }
 }

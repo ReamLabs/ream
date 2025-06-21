@@ -5211,27 +5211,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-builder"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "ethereum_hashing",
- "ethereum_serde_utils",
- "ethereum_ssz",
- "ethereum_ssz_derive",
- "ream-bls",
- "ream-consensus",
- "reqwest",
- "serde",
- "serde_json",
- "ssz_types",
- "tree_hash",
- "tree_hash_derive",
- "url",
-]
-
-[[package]]
 name = "ream-checkpoint-sync"
 version = "0.1.0"
 dependencies = [
@@ -5611,6 +5590,7 @@ dependencies = [
  "tracing",
  "tree_hash",
  "tree_hash_derive",
+ "url",
 ]
 
 [[package]]

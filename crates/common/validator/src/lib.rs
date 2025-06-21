@@ -6,6 +6,7 @@ pub mod attestation;
 pub mod beacon_api_client;
 pub mod blob_sidecars;
 pub mod block;
+pub mod builder;
 pub mod constants;
 pub mod contribution_and_proof;
 pub mod execution_requests;

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::DOMAIN_APPLICATION_BUILDER;
+use super::DOMAIN_APPLICATION_BUILDER;
 
 #[derive(Debug, PartialEq, Eq, Clone, TreeHash, Serialize, Deserialize)]
 pub struct ValidatorRegistrationV1 {
