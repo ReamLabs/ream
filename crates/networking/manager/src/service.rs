@@ -46,7 +46,10 @@ use ream_storage::{
     tables::{Field, Table},
 };
 use ream_syncer::block_range::BlockRangeSyncer;
-use tokio::sync::{RwLock, mpsc};
+use tokio::{
+    sync::{RwLock, mpsc},
+    time::interval,
+};
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 
@@ -216,19 +219,13 @@ impl ManagerService {
         if !expired.is_empty() {
             let mut subnets = self.sync_committee_subnets.write().await;
             for subnet_id in &expired {
-                if let Err(e) = subnets.disable_sync_committee_subnet(*subnet_id) {
-                    tracing::error!(
-                        "Failed to disable sync committee subnet {}: {}",
-                        subnet_id,
-                        e
-                    );
+                if let Err(err) = subnets.disable_sync_committee_subnet(*subnet_id) {
+                    error!("Failed to disable sync committee subnet {subnet_id}: {err}",);
                 }
                 map.remove(subnet_id);
             }
             if !expired.is_empty() {
-                tracing::info!(
-                    "Marked that ENR needs to be updated after sync committee subnet expiry"
-                );
+                info!("Marked that ENR needs to be updated after sync committee subnet expiry");
             }
         }
     }
@@ -236,18 +233,8 @@ impl ManagerService {
     /// Starts the manager service, which listens for network events and handles requests.
     ///
     /// Panics if the manager receiver is not initialized.
-    pub async fn start(self) {
-        let ManagerService {
-            beacon_chain,
-            mut manager_receiver,
-            p2p_sender,
-            ream_db,
-            sync_committee_subscriptions,
-            sync_committee_subnets,
-            ..
-        } = self;
-        let mut slot_interval =
-            tokio::time::interval(Duration::from_secs(network_spec().seconds_per_slot));
+    pub async fn start(mut self) {
+        let mut slot_interval = interval(Duration::from_secs(network_spec().seconds_per_slot));
         let mut expiry_interval = tokio::time::interval(Duration::from_secs(12 * 32));
         loop {
             tokio::select! {
@@ -256,47 +243,14 @@ impl ManagerService {
                     .duration_since(UNIX_EPOCH)
                     .expect("correct time")
                     .as_secs();
-                    if let Err(err) = beacon_chain.process_tick(time).await {
+                    if let Err(err) = self.beacon_chain.process_tick(time).await {
                         error!("Failed to process gossipsub tick: {err}");
                     }
                 }
                 _ = expiry_interval.tick() => {
-                    let state = match ManagerService::get_latest_beacon_state(&ream_db) {
-                        Some(state) => state,
-                        None => continue,
-                    };
-                    let current_epoch = state.get_current_epoch();
-                    let mut map = sync_committee_subscriptions.write().await;
-                    let expired: Vec<u8> = map
-                        .iter()
-                        .filter_map(|(&subnet_id, &until_epoch)| {
-                            if until_epoch <= current_epoch{
-                                Some(subnet_id)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    if !expired.is_empty() {
-                        let mut subnets = sync_committee_subnets.write().await;
-                        for subnet_id in &expired {
-                            if let Err(e) = subnets.disable_sync_committee_subnet(*subnet_id) {
-                                tracing::error!(
-                                    "Failed to disable sync committee subnet {}: {}",
-                                    subnet_id,
-                                    e
-                                );
-                            }
-                            map.remove(subnet_id);
-                        }
-                        if !expired.is_empty() {
-                            tracing::info!(
-                                "Marked that ENR needs to be updated after sync committee subnet expiry"
-                            );
-                        }
-                    }
+                    self.check_and_expire_sync_committee_subscriptions().await;
                 }
-                Some(event) = manager_receiver.recv() => {
+                Some(event) = self.manager_receiver.recv() => {
                     match event {
                         ReamNetworkEvent::GossipsubMessage { message } => {
                             match GossipsubMessage::decode(&message.topic, &message.data) {
@@ -307,7 +261,7 @@ impl ManagerService {
                                             signed_block.message.slot,
                                             signed_block.message.block_root()
                                         );
-                                        if let Err(err) = beacon_chain.process_block(*signed_block).await {
+                                        if let Err(err) = self.beacon_chain.process_block(*signed_block).await {
                                             error!("Failed to process gossipsub beacon block: {err}");
                                         }
                                     }
@@ -316,7 +270,7 @@ impl ManagerService {
                                             "Beacon Attestation received over gossipsub: root: {}",
                                             attestation.tree_hash_root()
                                         );
-                                        if let Err(err) =  beacon_chain.process_attestation(*attestation, true).await {
+                                        if let Err(err) =  self.beacon_chain.process_attestation(*attestation, true).await {
                                             error!("Failed to process gossipsub attestation: {err}");
                                         }
                                     }
@@ -352,7 +306,7 @@ impl ManagerService {
                                             attester_slashing.tree_hash_root()
                                         );
 
-                                        if let Err(err) = beacon_chain.process_attester_slashing(*attester_slashing).await {
+                                        if let Err(err) = self.beacon_chain.process_attester_slashing(*attester_slashing).await {
                                             error!("Failed to process gossipsub attester slashing: {err}");
                                         }
                                     }
@@ -392,15 +346,15 @@ impl ManagerService {
                             match message {
                                 RequestMessage::Status(status) => {
                                     trace!(?peer_id, ?stream_id, ?connection_id, ?status, "Received Status request");
-                                    let status = match beacon_chain.build_status_request().await {
+                                    let status = match self.beacon_chain.build_status_request().await {
                                         Ok(status) => status,
                                         Err(err) => {
                                             warn!("Failed to build status request: {err}");
-                                            let finalized_checkpoint = match ream_db.finalized_checkpoint_provider().get() {
+                                            let finalized_checkpoint = match self.ream_db.finalized_checkpoint_provider().get() {
                                                 Ok(checkpoint) => checkpoint,
                                                 Err(e) => {
                                                     warn!("Failed to get finalized checkpoint: {e}");
-                                                    p2p_sender.send_error_response(
+                                                    self.p2p_sender.send_error_response(
                                                         peer_id,
                                                         connection_id,
                                                         stream_id,
@@ -410,7 +364,7 @@ impl ManagerService {
                                                 }
                                             };
 
-                                            let head_root = match beacon_chain.store.lock().await.get_head() {
+                                            let head_root = match self.beacon_chain.store.lock().await.get_head() {
                                                 Ok(head) => head,
                                                 Err(err) => {
                                                     warn!("Failed to get head root: {err}, falling back to finalized root");
@@ -418,11 +372,11 @@ impl ManagerService {
                                                 }
                                             };
 
-                                            let _head_slot = match ream_db.beacon_block_provider().get(head_root) {
+                                            let _head_slot = match self.ream_db.beacon_block_provider().get(head_root) {
                                                 Ok(Some(block)) => block.message.slot,
                                                 err => {
                                                     warn!("Failed to get block for head root {head_root}: {err:?}");
-                                                    p2p_sender.send_error_response(
+                                                    self.p2p_sender.send_error_response(
                                                         peer_id,
                                                         connection_id,
                                                         stream_id,
@@ -435,20 +389,20 @@ impl ManagerService {
                                             continue;
                                         }
                                     };
-                                     p2p_sender.send_response(
+                                     self.p2p_sender.send_response(
                                         peer_id,
                                         connection_id,
                                         stream_id,
                                         ResponseMessage::Status(status),
                                     );
 
-                                    p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
+                                    self.p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
                                 },
                                 RequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request { start_slot, count, .. }) => {
                                     for slot in start_slot..start_slot + count {
-                                        let Ok(Some(block_root)) = ream_db.slot_index_provider().get(slot) else {
+                                        let Ok(Some(block_root)) = self.ream_db.slot_index_provider().get(slot) else {
                                             trace!("No block root found for slot {slot}");
-                                            p2p_sender.send_error_response(
+                                            self.p2p_sender.send_error_response(
                                                 peer_id,
                                                 connection_id,
                                                 stream_id,
@@ -456,9 +410,9 @@ impl ManagerService {
                                             );
                                             continue;
                                         };
-                                        let Ok(Some(block)) = ream_db.beacon_block_provider().get(block_root) else {
+                                        let Ok(Some(block)) = self.ream_db.beacon_block_provider().get(block_root) else {
                                             trace!("No block found for root {block_root}");
-                                            p2p_sender.send_error_response(
+                                            self.p2p_sender.send_error_response(
                                                 peer_id,
                                                 connection_id,
                                                 stream_id,
@@ -467,7 +421,7 @@ impl ManagerService {
                                             continue;
                                         };
 
-                                        p2p_sender.send_response(
+                                        self.p2p_sender.send_response(
                                             peer_id,
                                             connection_id,
                                             stream_id,
@@ -475,14 +429,14 @@ impl ManagerService {
                                         );
                                     }
 
-                                    p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
+                                    self.p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
                                 },
                                 RequestMessage::BeaconBlocksByRoot(BeaconBlocksByRootV2Request { inner }) =>
                                 {
                                     for block_root in inner {
-                                        let Ok(Some(block)) = ream_db.beacon_block_provider().get(block_root) else {
+                                        let Ok(Some(block)) = self.ream_db.beacon_block_provider().get(block_root) else {
                                             trace!("No block found for root {block_root}");
-                                            p2p_sender.send_error_response(
+                                            self.p2p_sender.send_error_response(
                                                 peer_id,
                                                 connection_id,
                                                 stream_id,
@@ -491,7 +445,7 @@ impl ManagerService {
                                             continue;
                                         };
 
-                                        p2p_sender.send_response(
+                                        self.p2p_sender.send_response(
                                             peer_id,
                                             connection_id,
                                             stream_id,
@@ -499,13 +453,13 @@ impl ManagerService {
                                         );
                                     }
 
-                                    p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
+                                    self.p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
                                 },
                                 RequestMessage::BlobSidecarsByRange(BlobSidecarsByRangeV1Request { start_slot, count }) => {
                                     for slot in start_slot..start_slot + count {
-                                        let Ok(Some(block_root)) = ream_db.slot_index_provider().get(slot) else {
+                                        let Ok(Some(block_root)) = self.ream_db.slot_index_provider().get(slot) else {
                                             trace!("No block root found for slot {slot}");
-                                            p2p_sender.send_error_response(
+                                            self.p2p_sender.send_error_response(
                                                 peer_id,
                                                 connection_id,
                                                 stream_id,
@@ -513,9 +467,9 @@ impl ManagerService {
                                             );
                                             continue;
                                         };
-                                        let Ok(Some(block)) = ream_db.beacon_block_provider().get(block_root) else {
+                                        let Ok(Some(block)) = self.ream_db.beacon_block_provider().get(block_root) else {
                                             trace!("No block found for root {block_root}");
-                                            p2p_sender.send_error_response(
+                                            self.p2p_sender.send_error_response(
                                                 peer_id,
                                                 connection_id,
                                                 stream_id,
@@ -525,9 +479,9 @@ impl ManagerService {
                                         };
 
                                         for index in 0..block.message.body.blob_kzg_commitments.len() {
-                                            let Ok(Some(blob_and_proof)) = ream_db.blobs_and_proofs_provider().get(BlobIdentifier::new(block_root, index as u64)) else {
+                                            let Ok(Some(blob_and_proof)) = self.ream_db.blobs_and_proofs_provider().get(BlobIdentifier::new(block_root, index as u64)) else {
                                                 trace!("No blob and proof found for block root {block_root} and index {index}");
-                                                p2p_sender.send_error_response(
+                                                self.p2p_sender.send_error_response(
                                                     peer_id,
                                                     connection_id,
                                                     stream_id,
@@ -540,7 +494,7 @@ impl ManagerService {
                                                 Ok(blob_sidecar) => blob_sidecar,
                                                 Err(err) => {
                                                     info!("Failed to create blob sidecar for block root {block_root} and index {index}: {err}");
-                                                    p2p_sender.send_error_response(
+                                                    self.p2p_sender.send_error_response(
                                                         peer_id,
                                                         connection_id,
                                                         stream_id,
@@ -550,7 +504,7 @@ impl ManagerService {
                                                 }
                                             };
 
-                                            p2p_sender.send_response(
+                                            self.p2p_sender.send_response(
                                                 peer_id,
                                                 connection_id,
                                                 stream_id,
@@ -559,13 +513,13 @@ impl ManagerService {
                                         }
                                     }
 
-                                    p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
+                                    self.p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
                                 },
                                 RequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request { inner }) => {
                                     for blob_identifier in inner {
-                                        let Ok(Some(blob_and_proof)) = ream_db.blobs_and_proofs_provider().get(blob_identifier.clone()) else {
+                                        let Ok(Some(blob_and_proof)) = self.ream_db.blobs_and_proofs_provider().get(blob_identifier.clone()) else {
                                             trace!("No blob and proof found for identifier {blob_identifier:?}");
-                                            p2p_sender.send_error_response(
+                                            self.p2p_sender.send_error_response(
                                                 peer_id,
                                                 connection_id,
                                                 stream_id,
@@ -574,9 +528,9 @@ impl ManagerService {
                                             continue;
                                         };
 
-                                        let Ok(Some(block)) = ream_db.beacon_block_provider().get(blob_identifier.block_root) else {
+                                        let Ok(Some(block)) = self.ream_db.beacon_block_provider().get(blob_identifier.block_root) else {
                                             trace!("No block found for root {}", blob_identifier.block_root);
-                                            p2p_sender.send_error_response(
+                                            self.p2p_sender.send_error_response(
                                                 peer_id,
                                                 connection_id,
                                                 stream_id,
@@ -589,7 +543,7 @@ impl ManagerService {
                                             Ok(blob_sidecar) => blob_sidecar,
                                             Err(err) => {
                                                 info!("Failed to create blob sidecar for identifier {blob_identifier:?}: {err}");
-                                                p2p_sender.send_error_response(
+                                                self.p2p_sender.send_error_response(
                                                     peer_id,
                                                     connection_id,
                                                     stream_id,
@@ -599,14 +553,14 @@ impl ManagerService {
                                             }
                                         };
 
-                                        p2p_sender.send_response(
+                                        self.p2p_sender.send_response(
                                             peer_id,
                                             connection_id,
                                             stream_id,
                                             ResponseMessage::BlobSidecarsByRoot(blob_sidecar),
                                         );
                                     }
-                                    p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
+                                    self.p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
                                 },
                                 _ => warn!("This message shouldn't be handled in the network manager: {message:?}"),
                             }
