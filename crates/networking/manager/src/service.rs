@@ -198,7 +198,6 @@ impl NetworkManagerService {
     /// Starts the manager service, which listens for network events and handles requests.
     ///
     /// Panics if the manager receiver is not initialized.
-<<<<<<< HEAD
     pub async fn start(self) {
         let NetworkManagerService {
             beacon_chain,
@@ -211,11 +210,8 @@ impl NetworkManagerService {
         } = self;
         let mut slot_interval =
             tokio::time::interval(Duration::from_secs(network_spec().seconds_per_slot));
-=======
-    pub async fn start(mut self) {
-        let mut slot_interval = interval(Duration::from_secs(network_spec().seconds_per_slot));
->>>>>>> 0302f61 (chore service.rs review)
         let mut expiry_interval = tokio::time::interval(Duration::from_secs(12 * 32));
+        let network_spec = network_spec();
         loop {
             tokio::select! {
                 _ = slot_interval.tick() => {
