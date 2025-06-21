@@ -44,7 +44,7 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(get_validator_balances_from_state)
         .service(post_validator_balances_from_state)
         .service(get_voluntary_exits)
-        .service(post_voluntary_exits);
+        .service(post_voluntary_exits)
         .service(post_sync_committee_subscriptions);
 }
 

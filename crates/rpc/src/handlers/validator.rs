@@ -21,7 +21,7 @@ use ream_discv5::subnet::SyncCommitteeSubnets;
 use ream_storage::db::ReamDB;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::info;
 
 use super::state::get_state_from_id;
 
@@ -387,31 +387,32 @@ pub async fn post_validator_balances_from_state(
 }
 
 pub async fn process_sync_committee_subscriptions(
-    _db: &ReamDB,
     subscriptions: &[SyncCommitteeSubscription],
     sync_committee_subscriptions: &SyncCommitteeSubscriptionMap,
     sync_committee_subnets: &Arc<RwLock<SyncCommitteeSubnets>>,
 ) -> Result<(), ApiError> {
     let mut map = sync_committee_subscriptions.write().await;
     let mut subnets = sync_committee_subnets.write().await;
-    for sub in subscriptions.iter() {
+    for subscription in subscriptions.iter() {
         // Parse until_epoch
-        let until_epoch: u64 = sub.until_epoch;
+        let until_epoch: u64 = subscription.until_epoch;
         // Parse and validate sync_committee_indices
-        for &idx in &sub.sync_committee_indices {
-            let subnet_id: u8 = match idx {
+        for &index in &subscription.sync_committee_indices {
+            let subnet_id: u8 = match index {
                 id if id < 4 => id as u8,
                 _ => {
                     return Err(ApiError::BadRequest(format!(
                         "Invalid sync_committee_index: {}",
-                        idx
+                        index
                     )));
                 }
             };
             map.insert(subnet_id, until_epoch);
             // Enable the subnet in networking
-            if let Err(_e) = subnets.enable_sync_committee_subnet(subnet_id) {
-                return Err(ApiError::InternalError);
+            if let Err(e) = subnets.enable_sync_committee_subnet(subnet_id) {
+                return Err(ApiError::InternalError(format!(
+                    "Failed to enable subnet: {e}"
+                )));
             }
         }
     }
@@ -421,13 +422,11 @@ pub async fn process_sync_committee_subscriptions(
 
 #[post("/validator/sync_committee_subscriptions")]
 pub async fn post_sync_committee_subscriptions(
-    db: Data<ReamDB>,
     subscriptions: Json<Vec<SyncCommitteeSubscription>>,
     sync_committee_subscriptions: Data<SyncCommitteeSubscriptionMap>,
     sync_committee_subnets: Data<Arc<RwLock<SyncCommitteeSubnets>>>,
 ) -> Result<impl Responder, ApiError> {
     process_sync_committee_subscriptions(
-        &db,
         &subscriptions,
         &sync_committee_subscriptions,
         &sync_committee_subnets,
@@ -440,15 +439,12 @@ pub async fn post_sync_committee_subscriptions(
 mod tests {
     use std::{collections::HashMap, sync::Arc};
 
-    use tempfile::tempdir;
     use tokio::sync::RwLock;
 
     use super::*;
 
     #[tokio::test]
     async fn test_process_sync_committee_subscriptions_valid() {
-        let temp_dir = tempdir().unwrap();
-        let db = ReamDB::new(temp_dir.path().to_path_buf()).unwrap();
         let subscriptions = vec![SyncCommitteeSubscription {
             validator_index: 1,
             sync_committee_indices: vec![0, 1],
@@ -458,7 +454,6 @@ mod tests {
         let sync_committee_subnets = Arc::new(RwLock::new(SyncCommitteeSubnets::new()));
 
         let result = process_sync_committee_subscriptions(
-            &db,
             &subscriptions,
             &sync_committee_subscriptions,
             &sync_committee_subnets,
@@ -469,8 +464,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_sync_committee_subscriptions_invalid_index() {
-        let temp_dir = tempdir().unwrap();
-        let db = ReamDB::new(temp_dir.path().to_path_buf()).unwrap();
         let subscriptions = vec![SyncCommitteeSubscription {
             validator_index: 1,
             sync_committee_indices: vec![5],
@@ -480,7 +473,6 @@ mod tests {
         let sync_committee_subnets = Arc::new(RwLock::new(SyncCommitteeSubnets::new()));
 
         let result = process_sync_committee_subscriptions(
-            &db,
             &subscriptions,
             &sync_committee_subscriptions,
             &sync_committee_subnets,
