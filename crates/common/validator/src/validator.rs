@@ -15,7 +15,7 @@ use ream_beacon_api_types::{
     id::{ID, ValidatorID},
     request::SyncCommitteeRequestItem,
 };
-use ream_bls::{PublicKey, traits::Signable};
+use ream_bls::{traits::Signable, BLSSignature, PublicKey};
 use ream_consensus::{
     attestation_data::AttestationData,
     constants::{DOMAIN_SYNC_COMMITTEE, INTERVALS_PER_SLOT, SYNC_COMMITTEE_SIZE, SLOTS_PER_EPOCH},
@@ -226,7 +226,7 @@ impl ValidatorService {
         info!("Current Epoch: {epoch}");
 
         self.fetch_validator_indicies().await;
-        let validator_indices: Vec<u64> = self.pubkey_to_index.values().cloned().collect();
+        let validator_indices: Vec<u64> = self.public_key_to_index.values().cloned().collect();
 
         if validator_indices.is_empty() {
             warn!("No active validators found, skipping duty fetch");
@@ -243,7 +243,7 @@ impl ValidatorService {
     // - Fetches the attester duties for the next epoch
     pub async fn on_epoch_end(&mut self, epoch: u64) {
         info!("Current Epoch: {epoch}");
-        let validator_indices: Vec<u64> = self.pubkey_to_index.values().cloned().collect();
+        let validator_indices: Vec<u64> = self.public_key_to_index.values().cloned().collect();
 
         if validator_indices.is_empty() {
             warn!("No active validators found, skipping duty fetch");
@@ -335,21 +335,6 @@ impl ValidatorService {
             }
         }
     }
-    /*
-    pub async fn fetch_duties(&mut self, epoch: u64) {
-        let validator_indices: Vec<u64> = self.public_key_to_index.values().cloned().collect();
-
-        if validator_indices.is_empty() {
-            warn!("No active validators found, skipping duty fetch");
-            return;
-        }
-
-        self.fetch_proposer_duties(epoch, &validator_indices).await;
-        self.fetch_attester_duties(epoch + 1, &validator_indices)
-            .await;
-        self.fetch_sync_committee_duties(epoch, &validator_indices)
-            .await;
-    } */
 
     pub async fn fetch_proposer_duties(
         &self,
@@ -578,10 +563,5 @@ impl ValidatorService {
                 message: aggregate_and_proof,
             }])
             .await?)
-    }
-
-    pub async fn on_epoch(&mut self, epoch: u64) {
-        self.fetch_validator_indicies().await;
-        info!("Current Epoch: {epoch}");
     }
 }
