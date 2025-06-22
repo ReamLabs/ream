@@ -1500,12 +1500,12 @@ impl BeaconState {
             .validators
             .iter()
             .enumerate()
-            .map(|(i, v)| (&v.pubkey, i))
+            .map(|(i, v)| (&v.public_key, i))
             .collect();
 
-        let mut indices = Vec::with_capacity(sync_committee.pubkeys.len());
+        let mut indices = Vec::with_capacity(sync_committee.public_keys.len());
 
-        for pubkey in &sync_committee.pubkeys {
+        for pubkey in &sync_committee.public_keys {
             let index = pubkey_to_index
                 .get(pubkey)
                 .ok_or_else(|| anyhow!("Pubkey not found in validator set."))?;
@@ -1745,7 +1745,7 @@ impl BeaconState {
             "Sync aggregate signature verification failed."
         );
 
-        let proposer_index = self.get_beacon_proposer_index()?;
+        let proposer_index = self.get_beacon_proposer_index(None)?;
         let balance_changes =
             self.calculate_sync_committee_balance_change(sync_aggregate, proposer_index)?;
 
@@ -1766,7 +1766,7 @@ impl BeaconState {
         beacon_block: &SignedBeaconBlock,
     ) -> anyhow::Result<HashMap<u64, u64>> {
         let sync_aggregate = &beacon_block.message.body.sync_aggregate;
-        let proposer_index = self.get_beacon_proposer_index()?;
+        let proposer_index = self.get_beacon_proposer_index(None)?;
 
         let balance_changes =
             self.calculate_sync_committee_balance_change(sync_aggregate, proposer_index)?;

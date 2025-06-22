@@ -1,3 +1,5 @@
+use std::{collections::HashSet, sync::Arc};
+
 use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path},
@@ -6,13 +8,13 @@ use alloy_primitives::B256;
 use hashbrown::HashMap;
 use ream_beacon_api_types::{
     error::ApiError,
-    id::ID,
+    id::{ID, ValidatorID},
     responses::{
         BeaconHeadResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse,
     },
 };
 use ream_consensus::{
-    constants::{MAINNET_GENESIS_VALIDATORS_ROOT, WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root},
+    constants::{WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root},
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     genesis::Genesis,
 };
@@ -26,14 +28,7 @@ use ream_storage::{
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
-use crate::{
-    handlers::state::get_state_from_id,
-    types::{
-        errors::ApiError,
-        id::{ID, ValidatorID},
-        response::{BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse},
-    },
-};
+use crate::handlers::state::get_state_from_id;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct BlockRewards {
@@ -264,7 +259,9 @@ pub async fn post_sync_committee_rewards(
             Ok(rewards) => rewards,
             Err(err) => {
                 error!("Failed to compute sync committee rewards, error: {err:?}");
-                return Err(ApiError::InternalError);
+                return Err(ApiError::InternalError(format!(
+                    "Failed to compute sync committee rewards, error: {err:?}"
+                )));
             }
         };
     let sync_committee_rewards: Vec<ValidatorSyncCommitteeReward> = sync_committee_rewards_map
@@ -288,7 +285,7 @@ pub async fn post_sync_committee_rewards(
                         ValidatorID::Index(index) => *index == reward.validator_index,
                         ValidatorID::Address(pubkey) => {
                             match beacon_state.validators.get(reward.validator_index as usize) {
-                                Some(validator) => validator.pubkey == *pubkey,
+                                Some(validator) => validator.public_key == *pubkey,
                                 None => false,
                             }
                         }
@@ -332,7 +329,7 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
     for (block_root, block) in &blocks {
         if !referenced_parents.contains(block_root) {
             leaves.push(BeaconHeadResponse {
-                root: block.tree_hash_root(),
+                root: block.block_root(),
                 slot: block.slot,
                 execution_optimistic: false,
             });
