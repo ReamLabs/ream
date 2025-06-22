@@ -1,12 +1,11 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
+use ream_beacon_api_types::responses::{ACCEPT_PRIORITY, JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE};
 use reqwest::{
     Client, IntoUrl, Request, RequestBuilder, Response, Url,
     header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue},
 };
-
-use ream_beacon_api_types::responses::{ACCEPT_PRIORITY, JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE};
 
 #[derive(Debug, Clone)]
 pub enum ContentType {

@@ -273,12 +273,10 @@ pub async fn get_light_client_finality_update(
         .get("accept")
         .and_then(|header| header.to_str().ok())
     {
-        Some(SSZ_CONTENT_TYPE) => {
-            HttpResponse::Ok()
-                .content_type(SSZ_CONTENT_TYPE)
-                .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
-                .body(finality_update.as_ssz_bytes())
-        }
+        Some(SSZ_CONTENT_TYPE) => HttpResponse::Ok()
+            .content_type(SSZ_CONTENT_TYPE)
+            .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
+            .body(finality_update.as_ssz_bytes()),
         _ => HttpResponse::Ok()
             .content_type(JSON_CONTENT_TYPE)
             .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
