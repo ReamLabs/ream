@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use anyhow::bail;
 use ream_consensus::{
@@ -17,13 +17,14 @@ use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tracing::warn;
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
     pub store: Mutex<Store>,
     pub execution_engine: Option<ExecutionEngine>,
+    pub prior_seen_attester_slashed_indices: RwLock<HashSet<u64>>,
 }
 
 impl BeaconChain {
@@ -36,6 +37,7 @@ impl BeaconChain {
         Self {
             store: Mutex::new(Store::new(db, operation_pool)),
             execution_engine,
+            prior_seen_attester_slashed_indices: RwLock::new(HashSet::new()),
         }
     }
 

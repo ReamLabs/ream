@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     path::PathBuf,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -39,6 +40,7 @@ use ream_p2p::{
 };
 use ream_storage::{db::ReamDB, tables::Table};
 use ream_syncer::block_range::BlockRangeSyncer;
+use ssz::Encode;
 use tokio::{sync::mpsc, time::interval};
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
@@ -257,8 +259,55 @@ impl ManagerService {
                                             attester_slashing.tree_hash_root()
                                         );
 
-                                        if let Err(err) = beacon_chain.process_attester_slashing(*attester_slashing).await {
+                                        let indice_1: HashSet<_> = attester_slashing.attestation_1.attesting_indices.iter().cloned().collect();
+                                        let indice_2: HashSet<_> = attester_slashing.attestation_2.attesting_indices.iter().cloned().collect();
+                                        let indices: HashSet<_> = indice_1.intersection(&indice_2).cloned().collect();
+
+                                        let seen = beacon_chain
+                                            .prior_seen_attester_slashed_indices
+                                            .read()
+                                            .await;
+
+                                        let mut all_seen = true;
+                                        for index in &indices {
+                                            if !seen.contains(index) {
+                                                all_seen = false;
+                                                break;
+                                            }
+                                        }
+
+                                        if all_seen {
+                                            return;
+                                        }
+
+                                        if let Err(err) = beacon_chain.process_attester_slashing(*attester_slashing.clone()).await {
                                             error!("Failed to process gossipsub attester slashing: {err}");
+                                            return;
+                                        }
+
+                                        let mut seen_mut = beacon_chain
+                                            .prior_seen_attester_slashed_indices
+                                            .write()
+                                            .await;
+
+                                        for index in indices {
+                                            seen_mut.insert(index);
+                                        }
+
+                                        let topic = GossipTopic {
+                                            fork: network_spec().fork_digest(genesis_validators_root()),
+                                            kind: GossipTopicKind::AttesterSlashing,
+                                        };
+
+                                        let data = attester_slashing.as_ssz_bytes();
+
+                                        info!(
+                                            "Forwarding validated attester slashing to peers: root: {}",
+                                            attester_slashing.tree_hash_root()
+                                        );
+
+                                        if let Err(err) = p2p_sender.0.send(P2PMessage::Gossip { topic, data }) {
+                                            error!("Failed to forward attester slashing to peers: {err}");
                                         }
                                     }
                                     GossipsubMessage::ProposerSlashing(proposer_slashing) => {

@@ -328,6 +328,12 @@ impl Network {
                         P2PMessage::Response(P2PResponse {peer_id, connection_id, stream_id, message}) => {
                             self.swarm.behaviour_mut().req_resp.send_response(peer_id, connection_id, stream_id, message)
                         },
+                        P2PMessage::Gossip { topic, data } => {
+                            let ident_topic: libp2p::gossipsub::IdentTopic = topic.into();
+                            if let Err(err) = self.swarm.behaviour_mut().gossipsub.publish(ident_topic, data) {
+                                warn!("Failed to publish gossip message: {err}");
+                            }
+                        }
                     }
                 }
                 Some(Ok(peer_id)) = self.peers_to_ping.next() => {
