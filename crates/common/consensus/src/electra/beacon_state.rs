@@ -1,5 +1,5 @@
 use std::{
-    cmp::{max, min},
+    cmp::{Ordering, max, min},
     collections::{HashMap, HashSet},
     mem::take,
     ops::Deref,
@@ -1685,6 +1685,35 @@ impl BeaconState {
         Ok(())
     }
 
+    fn calculate_sync_committee_balance_change(
+        &self,
+        sync_aggregate: &SyncAggregate,
+        proposer_index: u64,
+    ) -> anyhow::Result<HashMap<u64, i64>> {
+        let sync_committee_indices =
+            self.get_sync_committee_indices(&self.current_sync_committee)?;
+        let (participant_reward, proposer_reward) = self.get_proposer_and_participant_rewards();
+
+        let mut balance_changes = HashMap::<u64, i64>::new();
+        let mut total_proposer_rewards = 0i64;
+
+        for (validator_index, participant_bit) in sync_committee_indices
+            .iter()
+            .zip(sync_aggregate.sync_committee_bits.iter())
+        {
+            if participant_bit {
+                *balance_changes.entry(*validator_index as u64).or_insert(0) +=
+                    participant_reward as i64;
+                total_proposer_rewards += proposer_reward as i64;
+            } else {
+                *balance_changes.entry(*validator_index as u64).or_insert(0) -=
+                    participant_reward as i64;
+            }
+        }
+        *balance_changes.entry(proposer_index).or_insert(0) += total_proposer_rewards;
+        Ok(balance_changes)
+    }
+
     pub fn process_sync_aggregate(&mut self, sync_aggregate: &SyncAggregate) -> anyhow::Result<()> {
         // Verify sync committee aggregate signature signing over the previous slot block root
         let committee_public_keys = &self.current_sync_committee.public_keys;
@@ -1716,24 +1745,19 @@ impl BeaconState {
             "Sync aggregate signature verification failed."
         );
 
-        // Compute participant and proposer rewards
-        let (participant_reward, proposer_reward) = self.get_proposer_and_participant_rewards();
+        let proposer_index = self.get_beacon_proposer_index()?;
+        let balance_changes =
+            self.calculate_sync_committee_balance_change(sync_aggregate, proposer_index)?;
 
-        // Apply participant and proposer rewards
-        let committee_indices = self.get_sync_committee_indices(&self.current_sync_committee)?;
-
-        for (participant_index, participation_bit) in committee_indices
-            .iter()
-            .zip(sync_aggregate.sync_committee_bits.iter())
-        {
-            if participation_bit {
-                self.increase_balance(*participant_index as u64, participant_reward)?;
-                self.increase_balance(self.get_beacon_proposer_index(None)?, proposer_reward)?;
-            } else {
-                self.decrease_balance(*participant_index as u64, participant_reward)?;
+        for (validator_index, balance_change) in balance_changes {
+            match balance_change.cmp(&0) {
+                Ordering::Greater => {
+                    self.increase_balance(validator_index, balance_change as u64)?
+                }
+                Ordering::Less => self.decrease_balance(validator_index, balance_change as u64)?,
+                Ordering::Equal => {}
             }
         }
-
         Ok(())
     }
 
@@ -1742,68 +1766,19 @@ impl BeaconState {
         beacon_block: &SignedBeaconBlock,
     ) -> anyhow::Result<HashMap<u64, u64>> {
         let sync_aggregate = &beacon_block.message.body.sync_aggregate;
-        let sync_committee = &self.current_sync_committee;
+        let proposer_index = self.get_beacon_proposer_index()?;
 
-        let sync_committee_indices = self.get_sync_committee_indices(sync_committee)?;
+        let balance_changes =
+            self.calculate_sync_committee_balance_change(sync_aggregate, proposer_index)?;
 
-        let (participant_reward, proposer_reward) = self.get_proposer_and_participant_rewards();
-
-        let mut balances = HashMap::<usize, u64>::new();
-
-        for validator_index in &sync_committee_indices {
-            balances.insert(
-                *validator_index,
-                *self
-                    .balances
-                    .get(*validator_index)
-                    .ok_or(anyhow!("Sync Committee Rewards Sync Error"))?,
-            );
-        }
-
-        let proposer_index = beacon_block.message.proposer_index as usize;
-        balances.insert(
-            proposer_index,
-            *self
-                .balances
-                .get(proposer_index)
-                .ok_or(anyhow!("Sync Committee Rewards Sync Error"))?,
-        );
-
-        let mut total_proposer_rewards = 0;
-
-        for (validator_index, participant_bit) in sync_committee_indices
-            .iter()
-            .zip(sync_aggregate.sync_committee_bits.iter())
-        {
-            let participant_balance = balances
-                .get_mut(validator_index)
-                .ok_or(anyhow!("Sync Committee Rewards Sync Error"))?;
-
-            if participant_bit {
-                *participant_balance += participant_reward;
-
-                *balances
-                    .get_mut(&proposer_index)
-                    .ok_or(anyhow!("Sync Committee Rewards Sync Error"))? += proposer_reward;
-                total_proposer_rewards += proposer_reward;
-            } else {
-                *participant_balance = participant_balance.saturating_sub(participant_reward);
-            }
-        }
-
-        let rewards: HashMap<u64, u64> = balances
-            .iter()
-            .filter_map(|(&index, &new_balance)| {
-                let initial_balance = *self.balances.get(index)? as i64;
-                let reward = if index != proposer_index {
-                    new_balance as i64 - initial_balance
-                } else if sync_committee_indices.contains(&index) {
-                    new_balance as i64 - initial_balance - total_proposer_rewards as i64
+        let rewards = balance_changes
+            .into_iter()
+            .filter_map(|(validator_index, balance_change)| {
+                if balance_change != 0 {
+                    Some((validator_index, balance_change.unsigned_abs()))
                 } else {
-                    return None;
-                };
-
-                Some((index as u64, reward as u64))
+                    None
+                }
             })
             .collect();
 
