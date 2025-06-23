@@ -423,7 +423,8 @@ impl ValidatorService {
         self.sync_aggregator_infos.clear();
 
         for duty in &self.sync_committee_duties {
-            let Some(key_store) = self.validator_index_to_keystore.get(&duty.validator_index) else {
+            let Some(key_store) = self.validator_index_to_keystore.get(&duty.validator_index)
+            else {
                 continue;
             };
             for &committee_index in &duty.validator_sync_committee_indices {
