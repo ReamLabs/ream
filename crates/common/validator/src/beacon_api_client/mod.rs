@@ -34,6 +34,7 @@ use ream_consensus::{
     fork::Fork,
     genesis::Genesis,
     single_attestation::SingleAttestation,
+    voluntary_exit::SignedVoluntaryExit,
 };
 use ream_network_spec::networks::NetworkSpec;
 use reqwest::{Url, header::HeaderMap};
@@ -692,6 +693,32 @@ impl BeaconApiClient {
                     )])
                     .header(ETH_CONSENSUS_VERSION_HEADER, VERSION)
                     .body(signed_blinded_beacon_block.as_ssz_bytes())
+                    .build()?,
+            )
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ValidatorError::RequestFailed {
+                status_code: response.status(),
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn submit_signed_voluntary_exit(
+        &self,
+        signed_voluntary_exit: SignedVoluntaryExit,
+    ) -> anyhow::Result<(), ValidatorError> {
+        let response = self
+            .http_client
+            .execute(
+                self.http_client
+                    .post(
+                        "/eth/v1/beacon/pool/voluntary_exits".to_string(),
+                        ContentType::Json,
+                    )?
+                    .json(&signed_voluntary_exit)
                     .build()?,
             )
             .await?;

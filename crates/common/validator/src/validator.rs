@@ -42,6 +42,7 @@ use crate::{
     },
     randao::sign_randao_reveal,
     sync_committee::{get_sync_committee_selection_proof, is_sync_committee_aggregator},
+    voluntary_exit::sign_voluntary_exit,
 };
 
 pub fn check_if_validator_active(
@@ -556,5 +557,26 @@ impl ValidatorService {
                 message: aggregate_and_proof,
             }])
             .await?)
+    }
+
+    pub async fn submit_voluntary_exit(
+        &self,
+        validator_index: u64,
+        epoch: u64,
+    ) -> anyhow::Result<()> {
+        self.beacon_api_client
+            .submit_signed_voluntary_exit(sign_voluntary_exit(
+                epoch,
+                validator_index,
+                &self
+                    .validator_index_to_keystore
+                    .get(&validator_index)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("Keystore not found for validator: {validator_index}"))?
+                    .private_key,
+            )?)
+            .await?;
+
+        Ok(())
     }
 }

@@ -14,6 +14,7 @@ pub mod randao;
 pub mod state;
 pub mod sync_committee;
 pub mod validator;
+pub mod voluntary_exit;
 
 pub fn hash_signature_prefix_to_u64(signature: &BLSSignature) -> u64 {
     let mut hash_prefix_bytes = [0u8; 8];
