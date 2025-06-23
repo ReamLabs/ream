@@ -6004,6 +6004,7 @@ dependencies = [
  "rand 0.8.5",
  "ream-consensus-misc",
  "ream-network-spec",
+ "sha2",
  "ssz_types",
  "tokio",
  "tracing",

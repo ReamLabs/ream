@@ -4,6 +4,7 @@ use discv5::{ConfigBuilder, Enr, ListenConfig};
 
 use crate::subnet::{AttestationSubnets, SyncCommitteeSubnets};
 
+#[derive(Clone)]
 pub struct DiscoveryConfig {
     pub discv5_config: discv5::Config,
     pub bootnodes: Vec<Enr>,
