@@ -312,7 +312,7 @@ impl Network {
     /// - A peer pinging
     /// - An interval tick to perform p2p maintenance e.g. peer pinging, peer clean up and peer discovery
     /// 
-    /// The network worker will then route each event to the appropriate handler. The handlers are defined in `ManagerService`.
+    /// The network worker will then route each event to the appropriate handler. The handlers are defined in `NetworkManagerService`.
     pub async fn start(
         mut self,
         manager_sender: UnboundedSender<ReamNetworkEvent>,

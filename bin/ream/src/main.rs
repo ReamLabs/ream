@@ -11,7 +11,7 @@ use ream::cli::{
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus::constants::set_genesis_validator_root;
 use ream_executor::ReamExecutor;
-use ream_manager::service::ManagerService;
+use ream_manager::service::NetworkManagerService;
 use ream_network_spec::networks::set_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_rpc::{config::RpcServerConfig, start_server};
@@ -125,7 +125,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
         config.http_allow_origin,
     );
 
-    let network_manager = ManagerService::new(
+    let network_manager = NetworkManagerService::new(
         executor.clone(),
         config.into(),
         ream_db.clone(),

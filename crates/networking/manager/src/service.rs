@@ -45,7 +45,7 @@ use tree_hash::TreeHash;
 
 use crate::config::ManagerConfig;
 
-pub struct ManagerService {
+pub struct NetworkManagerService {
     pub beacon_chain: Arc<BeaconChain>,
     manager_receiver: mpsc::UnboundedReceiver<ReamNetworkEvent>,
     p2p_sender: P2PSender,
@@ -54,13 +54,13 @@ pub struct ManagerService {
     pub ream_db: ReamDB,
 }
 
-/// The `ManagerService` acts as the manager for all networking activities in Ream.
+/// The `NetworkManagerService` acts as the manager for all networking activities in Ream.
 /// Its core responsibilities include:
 /// - Managing interactions between discovery, gossipsub, and sync protocols
 /// - Routing messages from network protocols to the beacon chain logic
 /// - Handling peer lifecycle management and connection state
-impl ManagerService {
-    /// Creates a new `ManagerService` instance.
+impl NetworkManagerService {
+    /// Creates a new `NetworkManagerService` instance.
     ///
     /// This function initializes the manager service by configuring:
     /// - discv5 configurations such as bootnodes, socket address, port, attestation subnets, sync committee subnets, etc.
@@ -192,7 +192,7 @@ impl ManagerService {
     ///
     /// Panics if the manager receiver is not initialized.
     pub async fn start(self) {
-        let ManagerService {
+        let NetworkManagerService {
             beacon_chain,
             mut manager_receiver,
             p2p_sender,
