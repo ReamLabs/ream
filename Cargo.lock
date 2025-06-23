@@ -5130,7 +5130,7 @@ dependencies = [
  "ream-discv5",
  "ream-executor",
  "ream-keystore",
- "ream-manager",
+ "ream-network-manager",
  "ream-network-spec",
  "ream-node",
  "ream-operation-pool",
@@ -5369,7 +5369,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-manager"
+name = "ream-merkle"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_hashing",
+ "serde",
+]
+
+[[package]]
+name = "ream-network-manager"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -5390,16 +5400,6 @@ dependencies = [
  "tracing",
  "tree_hash",
  "url",
-]
-
-[[package]]
-name = "ream-merkle"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "ethereum_hashing",
- "serde",
 ]
 
 [[package]]

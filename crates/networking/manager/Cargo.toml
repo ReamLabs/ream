@@ -1,5 +1,5 @@
 [package]
-name = "ream-manager"
+name = "ream-network-manager"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true

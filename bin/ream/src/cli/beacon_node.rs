@@ -2,7 +2,7 @@ use std::{net::IpAddr, path::PathBuf, sync::Arc};
 
 use clap::Parser;
 use ream_consensus::checkpoint::Checkpoint;
-use ream_manager::config::ManagerConfig;
+use ream_network_manager::config::ManagerConfig;
 use ream_network_spec::{cli::network_parser, networks::NetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
 use url::Url;
