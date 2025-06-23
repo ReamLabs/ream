@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use discv5::{
     Discv5, Enr, Event,
     enr::{CombinedKey, NodeId, k256::ecdsa::SigningKey},
@@ -21,7 +21,9 @@ use libp2p::{
         THandlerOutEvent, ToSwarm, dummy::ConnectionHandler,
     },
 };
-use ream_consensus_misc::constants::beacon::genesis_validators_root;
+use ream_consensus_misc::{
+    constants::beacon::genesis_validators_root, misc::compute_epoch_at_slot,
+};
 use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
@@ -29,9 +31,9 @@ use crate::{
     config::DiscoveryConfig,
     eth2::{ENR_ETH2_KEY, EnrForkId},
     subnet::{
-        ATTESTATION_BITFIELD_ENR_KEY, CUSTODY_GROUP_COUNT_ENR_KEY, NEXT_FORK_DIGEST_ENR_KEY,
-        NextForkDigest, SYNC_COMMITTEE_BITFIELD_ENR_KEY, attestation_subnet_predicate,
-        sync_committee_subnet_predicate,
+        ATTESTATION_BITFIELD_ENR_KEY, AttestationSubnets, CUSTODY_GROUP_COUNT_ENR_KEY,
+        NEXT_FORK_DIGEST_ENR_KEY, NextForkDigest, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
+        attestation_subnet_predicate, compute_subscribed_subnets, sync_committee_subnet_predicate,
     },
 };
 
@@ -74,7 +76,11 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<Self> {
+    pub async fn new(
+        local_key: Keypair,
+        config: &DiscoveryConfig,
+        current_slot: u64,
+    ) -> anyhow::Result<Self> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
 
@@ -108,7 +114,18 @@ impl Discovery {
             }
             if let Err(err) = discv5.add_enr(enr) {
                 error!("Failed to add bootnode to Discv5 {err:?}");
-            };
+            }
+        }
+
+        // Compute and set attestation subnets
+        let subnets =
+            compute_subscribed_subnets(enr.node_id(), compute_epoch_at_slot(current_slot))?;
+        let mut config = config.clone();
+        config.attestation_subnets = AttestationSubnets::new();
+        for subnet_id in subnets {
+            config
+                .attestation_subnets
+                .enable_attestation_subnet(subnet_id)?;
         }
 
         let event_stream = if !config.disable_discovery {
@@ -398,7 +415,7 @@ mod tests {
         config.attestation_subnets.disable_attestation_subnet(1)?; // Set subnet 1
         config.disable_discovery = true;
 
-        let discovery = Discovery::new(key, &config).await.unwrap();
+        let discovery = Discovery::new(key, &config, 0).await.unwrap();
         // Check ENR reflects config.subnets
         let enr_subnets = discovery
             .discv5
@@ -420,15 +437,16 @@ mod tests {
         config.attestation_subnets.disable_attestation_subnet(1)?;
         config.disable_discovery = true;
 
-        let discovery = Discovery::new(key, &config).await.unwrap();
+        let discovery = Discovery::new(key, &config, 0).await.unwrap();
+        let local_enr = discovery.local_enr();
 
         // Predicate for subnet 0 should match
         let predicate = attestation_subnet_predicate(vec![0]);
-        assert!(predicate(&discovery.local_enr()));
+        assert!(predicate(&local_enr));
 
         // Predicate for subnet 1 should not match
         let predicate = attestation_subnet_predicate(vec![1]);
-        assert!(!predicate(&discovery.local_enr()));
+        assert!(!predicate(&local_enr));
         Ok(())
     }
 
@@ -448,7 +466,7 @@ mod tests {
 
         config.attestation_subnets.enable_attestation_subnet(0)?; // Local node on subnet 0
         config.disable_discovery = false;
-        let mut discovery = Discovery::new(key, &config).await.unwrap();
+        let mut discovery = Discovery::new(key, &config, 0).await.unwrap();
 
         // Simulate a peer with another Discovery instance
         let peer_key = Keypair::generate_secp256k1();
@@ -467,19 +485,17 @@ mod tests {
         peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
 
-        let peer_discovery = Discovery::new(peer_key, &peer_config).await.unwrap();
+        let peer_discovery = Discovery::new(peer_key, &peer_config, 0).await.unwrap();
+        let peer_enr = peer_discovery.local_enr().clone();
 
         // Add peer to discv5
-        discovery
-            .discv5
-            .add_enr(peer_discovery.local_enr().clone())
-            .unwrap();
+        discovery.discv5.add_enr(peer_enr.clone()).unwrap();
 
         // Mock the query result to bypass async polling
         discovery.discovery_queries.clear();
         let query_result = QueryResult {
             query_type: QueryType::AttestationSubnetPeers(vec![0]),
-            result: Ok(vec![peer_discovery.local_enr().clone()]),
+            result: Ok(vec![peer_enr.clone()]),
         };
         discovery
             .discovery_queries

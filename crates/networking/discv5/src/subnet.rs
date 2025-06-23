@@ -1,7 +1,9 @@
-use alloy_primitives::aliases::B32;
+use alloy_primitives::{B256, aliases::B32};
 use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
 use anyhow::{anyhow, ensure};
-use discv5::Enr;
+use discv5::{Enr, enr::NodeId};
+use ream_consensus_misc::misc::compute_shuffled_index;
+use sha2::{Digest, Sha256};
 use ssz::{Decode, Encode};
 use ssz_types::{
     BitVector,
@@ -15,6 +17,11 @@ pub const SYNC_COMMITTEE_BITFIELD_ENR_KEY: &str = "syncnets";
 pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
 pub const CUSTODY_GROUP_COUNT_ENR_KEY: &str = "cgc";
 pub const NEXT_FORK_DIGEST_ENR_KEY: &str = "nfd";
+
+// Subscription constants
+const SUBNETS_PER_NODE: usize = 2;
+pub const EPOCHS_PER_SUBNET_SUBSCRIPTION: u64 = 256;
+const ATTESTATION_SUBNET_PREFIX_BITS: u32 = 8;
 
 /// Represents the attestation subnets a node is subscribed to
 ///
@@ -197,6 +204,38 @@ impl Decodable for NextForkDigest {
         })?;
         Ok(Self(digest))
     }
+}
+
+/// Compute a single subscribed subnet based on node_id, epoch, and index
+pub fn compute_subscribed_subnet(node_id: NodeId, epoch: u64, index: usize) -> anyhow::Result<u8> {
+    // Extract prefix from first 8 bytes of node_id
+    let mut node_id_prefix_bytes = [0u8; 8];
+    node_id_prefix_bytes.copy_from_slice(&node_id.raw()[..8]);
+    let node_id_prefix =
+        u64::from_be_bytes(node_id_prefix_bytes) >> (64 - ATTESTATION_SUBNET_PREFIX_BITS);
+
+    let mut node_offset_bytes = [0u8; 8];
+    node_offset_bytes.copy_from_slice(&node_id.raw()[24..32]);
+    let node_offset = u64::from_be_bytes(node_offset_bytes) % EPOCHS_PER_SUBNET_SUBSCRIPTION;
+
+    let permutation_seed =
+        Sha256::digest(((epoch + node_offset) / EPOCHS_PER_SUBNET_SUBSCRIPTION).to_le_bytes());
+
+    let permutated_prefix = compute_shuffled_index(
+        node_id_prefix as usize,
+        1 << ATTESTATION_SUBNET_PREFIX_BITS,
+        B256::from_slice(permutation_seed.as_slice()),
+    )?;
+    Ok(((permutated_prefix + index) % ATTESTATION_SUBNET_COUNT) as u8)
+}
+
+/// Compute all subscribed subnets for a node
+pub fn compute_subscribed_subnets(node_id: NodeId, epoch: u64) -> anyhow::Result<Vec<u8>> {
+    (0..SUBNETS_PER_NODE).try_fold(Vec::new(), |mut acc, i| {
+        let subnet = compute_subscribed_subnet(node_id, epoch, i)?;
+        acc.push(subnet);
+        Ok(acc)
+    })
 }
 
 pub fn attestation_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool + Send + Sync {
@@ -551,5 +590,45 @@ mod tests {
                 && sync_committee_subnet_predicate(vec![2])(enr)
         };
         assert!(!combined_subnet_predicate_fn(&enr));
+    }
+
+    #[test]
+    fn test_compute_subscribed_subnet() {
+        let node_id = NodeId::random();
+        let epoch = 1000;
+        let index = 0;
+
+        // Test valid subnet
+        let subnet = compute_subscribed_subnet(node_id, epoch, index).unwrap();
+        assert!(
+            subnet < ATTESTATION_SUBNET_COUNT as u8,
+            "Subnet ID out of bounds: {subnet}"
+        );
+
+        // Test determinism
+        let subnet_same = compute_subscribed_subnet(node_id, epoch, index).unwrap();
+        assert_eq!(subnet, subnet_same, "Non-deterministic subnet");
+
+        // Test different epoch
+        let subnet_diff = compute_subscribed_subnet(node_id, epoch + 256, index).unwrap();
+        // Subnets may differ after 256 epochs due to seed change
+        if subnet == subnet_diff {
+            println!("Note: Same subnet for different epochs (possible but rare)");
+        }
+
+        // Test index
+        let subnet_index1 = compute_subscribed_subnet(node_id, epoch, 1).unwrap();
+        // Subnets may be same or different (spec allows either)
+        assert!(
+            subnet_index1 < ATTESTATION_SUBNET_COUNT as u8,
+            "Subnet ID for index 1 out of bounds: {subnet_index1}"
+        );
+
+        // Test edge cases
+        let subnet_epoch_zero = compute_subscribed_subnet(node_id, 0, index).unwrap();
+        assert!(
+            subnet_epoch_zero < ATTESTATION_SUBNET_COUNT as u8,
+            "Subnet ID for epoch 0 out of bounds"
+        );
     }
 }

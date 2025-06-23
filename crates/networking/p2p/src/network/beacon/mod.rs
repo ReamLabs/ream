@@ -123,9 +123,16 @@ impl Network {
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
-        let mut discovery =
-            Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
-        discovery.discover_peers(QueryType::Peers, 16);
+        let discovery = {
+            let mut discovery = Discovery::new(
+                Keypair::from(local_key.clone()),
+                &config.discv5_config,
+                status.head_slot,
+            )
+            .await?;
+            discovery.discover_peers(QueryType::Peers, 16);
+            discovery
+        };
 
         let req_resp = ReqResp::new(Chain::Beacon);
 
