@@ -4,7 +4,7 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path},
 };
-use alloy_primitives::B256;
+use alloy_primitives::{B256, Bytes};
 use hashbrown::HashMap;
 use ream_beacon_api_types::{
     error::ApiError,
@@ -26,6 +26,7 @@ use ream_storage::{
     tables::{Field, Table},
 };
 use serde::{Deserialize, Serialize};
+use ssz::Encode;
 use tracing::error;
 
 use crate::handlers::state::get_state_from_id;
@@ -341,6 +342,7 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
 
 #[get("/beacon/blind_block/{block_id}")]
 pub async fn get_blind_block(
+    req: HttpRequest,
     db: Data<ReamDB>,
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
@@ -375,5 +377,14 @@ pub async fn get_blind_block(
         },
         signature: beacon_block.signature.clone(),
     };
+    if let Some(header) = req.headers().get("application/octet-stream") {
+        if header.to_str().unwrap_or_default() == "application/octet-stream" {
+            let ssz_response = Bytes::from(signed_blind_block.as_ssz_bytes()).to_string();
+            return Ok(HttpResponse::Ok()
+                .content_type("application/octet-stream")
+                .body(ssz_response));
+        }
+    }
+
     Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(signed_blind_block)))
 }
