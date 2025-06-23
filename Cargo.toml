@@ -118,8 +118,8 @@ ream-executor = { path = "crates/common/executor" }
 ream-fork-choice = { path = "crates/common/fork_choice" }
 ream-keystore = { path = "crates/crypto/keystore" }
 ream-light-client = { path = "crates/common/light_client" }
-ream-network-manager = { path = "crates/networking/manager" }
 ream-merkle = { path = "crates/crypto/merkle" }
+ream-network-manager = { path = "crates/networking/manager" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }
 ream-operation-pool = { path = "crates/common/operation_pool" }
