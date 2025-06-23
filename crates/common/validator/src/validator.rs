@@ -62,7 +62,7 @@ pub struct SyncTaskInfo {
     pub validator_index: u64,
     pub committee_index: u64,
     pub selection_proof: BLSSignature,
-    pub key_store: Arc<Keystore>,
+    pub keystore: Arc<Keystore>,
 }
 
 pub struct ValidatorService {
@@ -82,13 +82,13 @@ pub struct ValidatorService {
 
 impl ValidatorService {
     pub fn new(
-        key_stores: Vec<Keystore>,
+        keystores: Vec<Keystore>,
         suggested_fee_recipient: Address,
         beacon_api_endpoint: Url,
         request_timeout: Duration,
         executor: ReamExecutor,
     ) -> anyhow::Result<Self> {
-        let validators = key_stores.into_iter().map(Arc::new).collect::<Vec<_>>();
+        let validators = keystores.into_iter().map(Arc::new).collect::<Vec<_>>();
 
         Ok(Self {
             beacon_api_client: Arc::new(BeaconApiClient::new(
@@ -179,7 +179,7 @@ impl ValidatorService {
 
                     let contribution_and_proof_signature = get_contribution_and_proof_signature(
                         &contribution_and_proof,
-                        &aggregator_info.key_store.private_key,
+                        &aggregator_info.keystore.private_key,
                     )?;
 
                     Ok::<_, anyhow::Error>(SignedContributionAndProof {
@@ -309,16 +309,16 @@ impl ValidatorService {
                     {
                         entry.insert(validator_data.index);
 
-                        if let Some(key_store) = self
+                        if let Some(keystore) = self
                             .validators
                             .iter()
-                            .find(|key_store| {
-                                key_store.public_key == validator_data.validator.public_key
+                            .find(|keystore| {
+                                keystore.public_key == validator_data.validator.public_key
                             })
                             .cloned()
                         {
                             self.validator_index_to_keystore
-                                .insert(validator_data.index, key_store);
+                                .insert(validator_data.index, keystore);
                         }
 
                         self.active_validator_count += 1;
@@ -385,12 +385,12 @@ impl ValidatorService {
     }
 
     pub async fn propose_block(&self, slot: u64, validator_index: u64) -> anyhow::Result<()> {
-        let key_store = self
+        let keystore = self
             .validator_index_to_keystore
             .get(&validator_index)
             .cloned()
             .ok_or_else(|| anyhow!("keystore not found for validator: {validator_index}"))?;
-        let randao_reveal = sign_randao_reveal(slot, &key_store.private_key)?;
+        let randao_reveal = sign_randao_reveal(slot, &keystore.private_key)?;
         let block_response = self
             .beacon_api_client
             .produce_block(slot, randao_reveal, None, None, None)
@@ -399,7 +399,7 @@ impl ValidatorService {
         match block_response.data {
             ProduceBlockData::Full(full_block) => {
                 let signed_beacon_block =
-                    sign_beacon_block(slot, full_block.block, &key_store.private_key)?;
+                    sign_beacon_block(slot, full_block.block, &keystore.private_key)?;
 
                 self.beacon_api_client
                     .publish_block(BroadcastValidation::Gossip, signed_beacon_block)
@@ -407,7 +407,7 @@ impl ValidatorService {
             }
             ProduceBlockData::Blinded(blinded_block) => {
                 let signed_blinded_block =
-                    sign_blinded_beacon_block(slot, blinded_block, &key_store.private_key)?;
+                    sign_blinded_beacon_block(slot, blinded_block, &keystore.private_key)?;
 
                 self.beacon_api_client
                     .publish_blinded_block(BroadcastValidation::Gossip, signed_blinded_block)
@@ -423,15 +423,14 @@ impl ValidatorService {
         self.sync_aggregator_infos.clear();
 
         for duty in &self.sync_committee_duties {
-            let Some(key_store) = self.validator_index_to_keystore.get(&duty.validator_index)
-            else {
+            let Some(keystore) = self.validator_index_to_keystore.get(&duty.validator_index) else {
                 continue;
             };
             for &committee_index in &duty.validator_sync_committee_indices {
                 let selection_proof = get_sync_committee_selection_proof(
                     slot,
                     committee_index,
-                    &key_store.private_key,
+                    &keystore.private_key,
                 )
                 .map_err(|err| anyhow!("Could not get selection proof: {err:?}"))?;
 
@@ -439,7 +438,7 @@ impl ValidatorService {
                     validator_index: duty.validator_index,
                     committee_index,
                     selection_proof,
-                    key_store: Arc::clone(key_store),
+                    keystore: Arc::clone(keystore),
                 };
 
                 if is_sync_committee_aggregator(&task_info.selection_proof) {
@@ -474,8 +473,8 @@ impl ValidatorService {
         let payload = validator_indices
             .iter()
             .filter_map(|&validator_index| {
-                if let Some(key_store) = self.validator_index_to_keystore.get(&validator_index) {
-                    return match key_store.private_key.sign(signing_root.as_ref()) {
+                if let Some(keystore) = self.validator_index_to_keystore.get(&validator_index) {
+                    return match keystore.private_key.sign(signing_root.as_ref()) {
                         Ok(signature) => Some(Ok(SyncCommitteeRequestItem {
                             slot,
                             beacon_block_root,
@@ -503,7 +502,7 @@ impl ValidatorService {
         validator_index: u64,
         committee_index: u64,
     ) -> anyhow::Result<()> {
-        let Some(key_store) = self.validator_index_to_keystore.get(&validator_index) else {
+        let Some(keystore) = self.validator_index_to_keystore.get(&validator_index) else {
             bail!("Keystore not found for validator: {validator_index}");
         };
 
@@ -517,7 +516,7 @@ impl ValidatorService {
             .submit_attestation(vec![SingleAttestation {
                 attester_index: validator_index,
                 committee_index,
-                signature: sign_attestation_data(&attestation_data, &key_store.private_key)?,
+                signature: sign_attestation_data(&attestation_data, &keystore.private_key)?,
                 data: attestation_data,
             }])
             .await?)
@@ -530,7 +529,7 @@ impl ValidatorService {
         committee_index: u64,
         aggregator_index: u64,
     ) -> anyhow::Result<()> {
-        let key_store = self
+        let keystore = self
             .validator_index_to_keystore
             .get(&aggregator_index)
             .cloned()
@@ -547,13 +546,13 @@ impl ValidatorService {
                 )
                 .await?
                 .data,
-            selection_proof: get_selection_proof(slot, &key_store.private_key)?,
+            selection_proof: get_selection_proof(slot, &keystore.private_key)?,
         };
 
         Ok(self
             .beacon_api_client
             .publish_aggregate_and_proofs(vec![SignedAggregateAndProof {
-                signature: sign_aggregate_and_proof(&aggregate_and_proof, &key_store.private_key)?,
+                signature: sign_aggregate_and_proof(&aggregate_and_proof, &keystore.private_key)?,
                 message: aggregate_and_proof,
             }])
             .await?)
