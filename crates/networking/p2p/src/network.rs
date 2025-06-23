@@ -121,7 +121,7 @@ impl Network {
     /// - Starting P2P listening and discovery
     /// - Connecting to the configured bootnodes
     /// - Subscribing to the configured gossipsub topics
-    /// 
+    ///
     /// Note that this function starts P2P listening, but not handling network events yet.
     /// Event handling starts when `Network::start()` is called.
     pub async fn init(
@@ -305,14 +305,16 @@ impl Network {
         }
     }
 
-    /// Starts monitoring for network events. The network worker awaits for different types 
+    /// Starts monitoring for network events. The network worker awaits for different types
     /// of network events:
     /// - A swarm event
     /// - A p2p message
     /// - A peer pinging
-    /// - An interval tick to perform p2p maintenance e.g. peer pinging, peer clean up and peer discovery
-    /// 
-    /// The network worker will then route each event to the appropriate handler. The handlers are defined in `NetworkManagerService`.
+    /// - An interval tick to perform p2p maintenance e.g. peer pinging, peer clean up and peer
+    ///   discovery
+    ///
+    /// The network worker will then route each event to the appropriate handler. The handlers are
+    /// defined in `NetworkManagerService`.
     pub async fn start(
         mut self,
         manager_sender: UnboundedSender<ReamNetworkEvent>,

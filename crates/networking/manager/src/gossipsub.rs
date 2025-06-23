@@ -2,12 +2,10 @@ use libp2p::gossipsub::Message;
 use ream_beacon_chain::beacon_chain::BeaconChain;
 use ream_consensus::constants::genesis_validators_root;
 use ream_network_spec::networks::network_spec;
-use ream_p2p::{
-    gossipsub::{
-        configurations::GossipsubConfig,
-        message::GossipsubMessage,
-        topics::{GossipTopic, GossipTopicKind},
-    },
+use ream_p2p::gossipsub::{
+    configurations::GossipsubConfig,
+    message::GossipsubMessage,
+    topics::{GossipTopic, GossipTopicKind},
 };
 use tracing::{error, info, trace};
 use tree_hash::TreeHash;
@@ -80,7 +78,7 @@ pub async fn handle_gossipsub_message(message: Message, beacon_chain: &BeaconCha
                     signed_block.message.block_root()
                 );
 
-                if let Err(err) =  beacon_chain.process_block(*signed_block).await {
+                if let Err(err) = beacon_chain.process_block(*signed_block).await {
                     error!("Failed to process gossipsub beacon block: {err}");
                 }
             }
@@ -90,7 +88,7 @@ pub async fn handle_gossipsub_message(message: Message, beacon_chain: &BeaconCha
                     attestation.tree_hash_root()
                 );
 
-                if let Err(err) =  beacon_chain.process_attestation(*attestation, true).await {
+                if let Err(err) = beacon_chain.process_attestation(*attestation, true).await {
                     error!("Failed to process gossipsub attestation: {err}");
                 }
             }
@@ -126,7 +124,10 @@ pub async fn handle_gossipsub_message(message: Message, beacon_chain: &BeaconCha
                     attester_slashing.tree_hash_root()
                 );
 
-                if let Err(err) = beacon_chain.process_attester_slashing(*attester_slashing).await {
+                if let Err(err) = beacon_chain
+                    .process_attester_slashing(*attester_slashing)
+                    .await
+                {
                     error!("Failed to process gossipsub attester slashing: {err}");
                 }
             }
@@ -148,9 +149,7 @@ pub async fn handle_gossipsub_message(message: Message, beacon_chain: &BeaconCha
                     light_client_finality_update.tree_hash_root()
                 );
             }
-            GossipsubMessage::LightClientOptimisticUpdate(
-                light_client_optimistic_update,
-            ) => {
+            GossipsubMessage::LightClientOptimisticUpdate(light_client_optimistic_update) => {
                 info!(
                     "Light Client Optimistic Update received over gossipsub: root: {}",
                     light_client_optimistic_update.tree_hash_root()

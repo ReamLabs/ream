@@ -26,9 +26,9 @@ use tracing_subscriber::EnvFilter;
 
 pub const APP_NAME: &str = "ream";
 
-/// Entry point for the Ream client. Initializes logging, parses CLI arguments, and runs the appropriate
-/// node type (beacon node, validator node, or account manager) based on the command line arguments.
-/// Handles graceful shutdown on Ctrl-C.
+/// Entry point for the Ream client. Initializes logging, parses CLI arguments, and runs the
+/// appropriate node type (beacon node, validator node, or account manager) based on the command
+/// line arguments. Handles graceful shutdown on Ctrl-C.
 fn main() {
     // Set the default log level to `info` if not set
     let rust_log = env::var(EnvFilter::DEFAULT_ENV).unwrap_or_default();
@@ -210,7 +210,6 @@ pub async fn run_validator_node(config: ValidatorNodeConfig, executor: ReamExecu
 ///
 /// This function initializes the account manager by validating the configuration,
 /// generating keys, and starting the account manager service.
-///
 pub async fn run_account_manager(mut config: AccountManagerConfig) {
     info!("starting up account manager...");
 

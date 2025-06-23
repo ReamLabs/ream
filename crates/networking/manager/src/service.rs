@@ -48,9 +48,10 @@ impl NetworkManagerService {
     /// Creates a new `NetworkManagerService` instance.
     ///
     /// This function initializes the manager service by configuring:
-    /// - discv5 configurations such as bootnodes, socket address, port, attestation subnets, sync committee subnets, etc.
+    /// - discv5 configurations such as bootnodes, socket address, port, attestation subnets, sync
+    ///   committee subnets, etc.
     /// - The gossipsub topics to subscribe to
-    /// 
+    ///
     /// Upon successful configuration, it starts the network worker.
     pub async fn new(
         executor: ReamExecutor,
@@ -122,7 +123,7 @@ impl NetworkManagerService {
         })
     }
 
-    /// Starts the manager service, which receives either a Gossipsub message or Req/Resp message 
+    /// Starts the manager service, which receives either a Gossipsub message or Req/Resp message
     /// from the network worker, and dispatches them to the appropriate handlers.
     ///
     /// Panics if the manager receiver is not initialized.

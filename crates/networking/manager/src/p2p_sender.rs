@@ -1,15 +1,8 @@
 use anyhow::anyhow;
-use libp2p::{
-    PeerId,
-    swarm::ConnectionId,
-};
+use libp2p::{PeerId, swarm::ConnectionId};
 use ream_p2p::{
     channel::{P2PMessage, P2PResponse},
-    req_resp::{
-        error::ReqRespError,
-        handler::RespMessage,
-        messages::ResponseMessage,
-    },
+    req_resp::{error::ReqRespError, handler::RespMessage, messages::ResponseMessage},
 };
 use tokio::sync::mpsc;
 use tracing::warn;
