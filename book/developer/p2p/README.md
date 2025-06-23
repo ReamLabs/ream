@@ -6,7 +6,7 @@ This document describes the architecture of Ream's networking layer.
 
 The networking stack is organized into 5 main layers:
 
-```
+```ignore
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                       ream-p2p::config::NetworkConfig                        │
 │                    (Container for network configurations)                    │
