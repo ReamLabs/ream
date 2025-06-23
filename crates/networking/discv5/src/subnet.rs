@@ -1,17 +1,24 @@
 use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
 use anyhow::{anyhow, ensure};
-use discv5::Enr;
+use discv5::{Enr, enr::NodeId};
 use ssz::Encode;
 use ssz_types::{
     BitVector,
     typenum::{U4, U64},
 };
+use sha2::{Digest, Sha256};
 use tracing::{error, trace};
 
 pub const ATTESTATION_BITFIELD_ENR_KEY: &str = "attnets";
 pub const ATTESTATION_SUBNET_COUNT: usize = 64;
 pub const SYNC_COMMITTEE_BITFIELD_ENR_KEY: &str = "syncnets";
 pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
+
+// Subscription constants
+const SUBNETS_PER_NODE: usize = 2;
+pub const EPOCHS_PER_SUBNET_SUBSCRIPTION: u64 = 256;
+const ATTESTATION_SUBNET_PREFIX_BITS: u32 = 8;
+const NODE_ID_BITS: u32 = 256;
 
 /// Represents the attestation subnets a node is subscribed to
 ///
@@ -135,6 +142,50 @@ impl Decodable for SyncCommitteeSubnets {
         })?;
         Ok(Self(subnets))
     }
+}
+
+/// Compute a single subscribed subnet based on node_id, epoch, and index
+pub fn compute_subscribed_subnet(node_id: NodeId, epoch: u64, index: usize) -> u8 {
+    // Extract prefix from first 8 bytes of node_id
+    let node_id_prefix =
+        u64::from_be_bytes(node_id.raw()[..8].try_into().unwrap()) >> (64 - ATTESTATION_SUBNET_PREFIX_BITS);
+    let node_offset =
+        u64::from_be_bytes(node_id.raw()[24..32].try_into().unwrap()) % EPOCHS_PER_SUBNET_SUBSCRIPTION;
+    let permutation_seed = Sha256::digest(
+        ((epoch + node_offset) / EPOCHS_PER_SUBNET_SUBSCRIPTION).to_le_bytes(),
+    );
+    let permutated_prefix = compute_shuffled_index(
+        node_id_prefix as usize,
+        1 << ATTESTATION_SUBNET_PREFIX_BITS,
+        permutation_seed.into(),
+    );
+    ((permutated_prefix + index) % ATTESTATION_SUBNET_COUNT) as u8
+}
+
+/// Compute all subscribed subnets for a node
+pub fn compute_subscribed_subnets(node_id: NodeId, epoch: u64) -> Vec<u8> {
+    (0..SUBNETS_PER_NODE)
+        .map(|i| compute_subscribed_subnet(node_id, epoch, i))
+        .collect()
+}
+
+/// Simple shuffling function based on Ethereum's shuffle algorithm
+fn compute_shuffled_index(index: usize, index_count: usize, seed: [u8; 32]) -> usize {
+    assert!(index < index_count, "Index out of bounds");
+    let mut indices = (0..index_count).collect::<Vec<_>>();
+    let mut i = 0;
+    while i < index_count {
+        let pivot = {
+            let mut hasher = Sha256::new();
+            hasher.update(seed);
+            hasher.update((i as u32).to_le_bytes());
+            let hash = hasher.finalize();
+            u64::from_le_bytes(hash[..8].try_into().unwrap()) as usize % (index_count - i)
+        };
+        indices.swap(i, i + pivot);
+        i += 1;
+    }
+    indices[index]
 }
 
 pub fn attestation_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool + Send + Sync {

@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use discv5::{
     Discv5, Enr,
     enr::{CombinedKey, NodeId, k256::ecdsa::SigningKey},
@@ -30,7 +30,7 @@ use crate::{
     eth2::{ENR_ETH2_KEY, EnrForkId},
     subnet::{
         ATTESTATION_BITFIELD_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
-        attestation_subnet_predicate, sync_committee_subnet_predicate,
+        attestation_subnet_predicate, compute_subscribed_subnets, sync_committee_subnet_predicate,
     },
 };
 
@@ -101,7 +101,17 @@ impl Discovery {
             }
             if let Err(err) = discv5.add_enr(enr) {
                 error!("Failed to add bootnode to Discv5 {err:?}");
-            };
+            }
+        }
+
+        // Compute and set attestation subnets
+        let mut config = config.clone();
+        let subnets = compute_subscribed_subnets(enr.node_id(), config.current_epoch);
+        config.attestation_subnets = crate::subnet::AttestationSubnets::new();
+        for subnet_id in subnets {
+            config
+                .attestation_subnets
+                .enable_attestation_subnet(subnet_id)?;
         }
 
         let event_stream = if !config.disable_discovery {

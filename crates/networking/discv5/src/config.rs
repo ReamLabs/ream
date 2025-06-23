@@ -4,6 +4,7 @@ use discv5::{ConfigBuilder, Enr, ListenConfig};
 
 use crate::subnet::{AttestationSubnets, SyncCommitteeSubnets};
 
+#[derive(Clone)]
 pub struct DiscoveryConfig {
     pub discv5_config: discv5::Config,
     pub bootnodes: Vec<Enr>,
@@ -13,6 +14,7 @@ pub struct DiscoveryConfig {
     pub disable_discovery: bool,
     pub attestation_subnets: AttestationSubnets,
     pub sync_committee_subnets: SyncCommitteeSubnets,
+    pub current_epoch: u64,
 }
 
 impl Default for DiscoveryConfig {
@@ -44,6 +46,7 @@ impl Default for DiscoveryConfig {
             disable_discovery: false,
             attestation_subnets,
             sync_committee_subnets,
+            current_epoch: 0,
         }
     }
 }

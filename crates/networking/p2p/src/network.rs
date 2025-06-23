@@ -813,6 +813,7 @@ mod tests {
         bootnodes: Vec<Enr>,
         disable_discovery: bool,
         topics: Vec<GossipTopic>,
+        current_epoch: u64,
     ) -> anyhow::Result<Network> {
         let executor = ReamExecutor::new().unwrap();
 
@@ -834,6 +835,7 @@ mod tests {
                 disable_discovery,
                 attestation_subnets: AttestationSubnets::new(),
                 sync_committee_subnets: SyncCommitteeSubnets::new(),
+                current_epoch,
             },
             gossipsub_config: GossipsubConfig {
                 topics,
@@ -880,7 +882,7 @@ mod tests {
         let tokio_runtime = Runtime::new().unwrap();
 
         let network = tokio_runtime.block_on(async {
-            create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
+            create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![], 0)
                 .await
                 .unwrap()
         });
@@ -912,7 +914,7 @@ mod tests {
         let tokio_runtime = Runtime::new().unwrap();
 
         let network = tokio_runtime.block_on(async {
-            create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
+            create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![], 0)
                 .await
                 .unwrap()
         });
@@ -948,7 +950,7 @@ mod tests {
         let tokio_runtime = Runtime::new().unwrap();
 
         let network = tokio_runtime.block_on(async {
-            create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![])
+            create_network("127.0.0.1".parse().unwrap(), 0, 0, vec![], true, vec![], 0)
                 .await
                 .unwrap()
         });
@@ -977,6 +979,7 @@ mod tests {
                 vec![],
                 true,
                 gossip_topics.clone(),
+                0,
             ))
             .unwrap();
         let network_1_enr = network_1.enr();
@@ -988,6 +991,7 @@ mod tests {
                 vec![network_1_enr],
                 false,
                 gossip_topics.clone(),
+                0,
             ))
             .unwrap();
 
@@ -1041,6 +1045,7 @@ mod tests {
                 vec![],
                 true,
                 vec![],
+                0,
             ))
             .unwrap();
 
@@ -1052,6 +1057,7 @@ mod tests {
                 vec![],
                 true,
                 vec![],
+                0,
             ))
             .unwrap();
 

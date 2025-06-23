@@ -8,9 +8,7 @@ use ream_p2p::bootnodes::Bootnodes;
 use url::Url;
 
 use crate::cli::constants::{
-    DEFAULT_DISABLE_DISCOVERY, DEFAULT_DISCOVERY_PORT, DEFAULT_HTTP_ADDRESS,
-    DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_NETWORK, DEFAULT_SOCKET_ADDRESS,
-    DEFAULT_SOCKET_PORT,
+    DEFAULT_CURRENT_EPOCH, DEFAULT_DISABLE_DISCOVERY, DEFAULT_DISCOVERY_PORT, DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_NETWORK, DEFAULT_SOCKET_ADDRESS, DEFAULT_SOCKET_PORT
 };
 
 #[derive(Debug, Parser)]
@@ -26,6 +24,9 @@ pub struct BeaconNodeConfig {
       value_parser = network_parser
   )]
     pub network: Arc<NetworkSpec>,
+
+    #[arg(long, help = "Set current epoch", default_value_t = DEFAULT_CURRENT_EPOCH)]
+    pub current_epoch: u64,
 
     #[arg(long, help = "Set HTTP address", default_value_t = DEFAULT_HTTP_ADDRESS)]
     pub http_address: IpAddr,
@@ -98,6 +99,7 @@ pub struct BeaconNodeConfig {
 impl From<BeaconNodeConfig> for ManagerConfig {
     fn from(config: BeaconNodeConfig) -> Self {
         Self {
+            current_epoch: config.current_epoch,
             http_address: config.http_address,
             http_port: config.http_port,
             http_allow_origin: config.http_allow_origin,
