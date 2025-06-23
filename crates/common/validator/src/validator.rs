@@ -571,7 +571,6 @@ impl ValidatorService {
                 &self
                     .validator_index_to_keystore
                     .get(&validator_index)
-                    .cloned()
                     .ok_or_else(|| anyhow!("Keystore not found for validator: {validator_index}"))?
                     .private_key,
             )?)
