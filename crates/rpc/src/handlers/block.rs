@@ -338,3 +338,42 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
 
     Ok(HttpResponse::Ok().json(DataResponse::new(leaves)))
 }
+
+#[get("/beacon/blind_block/{block_id}")]
+pub async fn get_blind_block(
+    db: Data<ReamDB>,
+    block_id: Path<ID>,
+) -> Result<impl Responder, ApiError> {
+    // This endpoint is not implemented yet.
+    let beacon_block: SignedBeaconBlock =
+        get_beacon_block_from_id(block_id.into_inner(), &db).await?;
+    let signed_blind_block: SignedBlindedBeaconBlock = SignedBlindedBeaconBlock {
+        message: BlindedBeaconBlock {
+            slot: beacon_block.message.slot,
+            proposer_index: beacon_block.message.proposer_index,
+            parent_root: beacon_block.message.parent_root,
+            state_root: beacon_block.message.state_root,
+            body: BlindedBeaconBlockBody {
+                randao_reveal: beacon_block.message.body.randao_reveal,
+                eth1_data: beacon_block.message.body.eth1_data,
+                graffiti: beacon_block.message.body.graffiti,
+                proposer_slashings: beacon_block.message.body.proposer_slashings,
+                attester_slashings: beacon_block.message.body.attester_slashings,
+                attestations: beacon_block.message.body.attestations,
+                deposits: beacon_block.message.body.deposits,
+                voluntary_exits: beacon_block.message.body.voluntary_exits,
+                sync_aggregate: beacon_block.message.body.sync_aggregate,
+                execution_payload_header: beacon_block
+                    .message
+                    .body
+                    .execution_payload
+                    .to_execution_payload_header(),
+                bls_to_execution_changes: beacon_block.message.body.bls_to_execution_changes,
+                blob_kzg_commitments: beacon_block.message.body.blob_kzg_commitments,
+                execution_requests: beacon_block.message.body.execution_requests,
+            },
+        },
+        signature: beacon_block.signature.clone(),
+    };
+    Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(signed_blind_block)))
+}

@@ -3,7 +3,8 @@ use actix_web::web::ServiceConfig;
 use crate::handlers::{
     blob_sidecar::get_blob_sidecars,
     block::{
-        get_block_attestations, get_block_from_id, get_block_rewards, get_block_root, get_genesis,
+        get_blind_block, get_block_attestations, get_block_from_id, get_block_rewards,
+        get_block_root, get_genesis,
         post_sync_committee_rewards,
     },
     committee::get_committees,
@@ -57,7 +58,8 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(post_voluntary_exits)
         .service(get_light_client_bootstrap)
         .service(get_light_client_updates)
-        .service(get_light_client_finality_update);
+        .service(get_light_client_finality_update)
+        .service(get_blind_block);
 }
 
 pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {
