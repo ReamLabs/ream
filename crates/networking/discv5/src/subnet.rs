@@ -1,12 +1,12 @@
 use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
 use anyhow::{anyhow, ensure};
 use discv5::{Enr, enr::NodeId};
+use sha2::{Digest, Sha256};
 use ssz::Encode;
 use ssz_types::{
     BitVector,
     typenum::{U4, U64},
 };
-use sha2::{Digest, Sha256};
 use tracing::{error, trace};
 
 pub const ATTESTATION_BITFIELD_ENR_KEY: &str = "attnets";
@@ -18,7 +18,6 @@ pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
 const SUBNETS_PER_NODE: usize = 2;
 pub const EPOCHS_PER_SUBNET_SUBSCRIPTION: u64 = 256;
 const ATTESTATION_SUBNET_PREFIX_BITS: u32 = 8;
-const NODE_ID_BITS: u32 = 256;
 
 /// Represents the attestation subnets a node is subscribed to
 ///
@@ -147,13 +146,12 @@ impl Decodable for SyncCommitteeSubnets {
 /// Compute a single subscribed subnet based on node_id, epoch, and index
 pub fn compute_subscribed_subnet(node_id: NodeId, epoch: u64, index: usize) -> u8 {
     // Extract prefix from first 8 bytes of node_id
-    let node_id_prefix =
-        u64::from_be_bytes(node_id.raw()[..8].try_into().unwrap()) >> (64 - ATTESTATION_SUBNET_PREFIX_BITS);
-    let node_offset =
-        u64::from_be_bytes(node_id.raw()[24..32].try_into().unwrap()) % EPOCHS_PER_SUBNET_SUBSCRIPTION;
-    let permutation_seed = Sha256::digest(
-        ((epoch + node_offset) / EPOCHS_PER_SUBNET_SUBSCRIPTION).to_le_bytes(),
-    );
+    let node_id_prefix = u64::from_be_bytes(node_id.raw()[..8].try_into().unwrap())
+        >> (64 - ATTESTATION_SUBNET_PREFIX_BITS);
+    let node_offset = u64::from_be_bytes(node_id.raw()[24..32].try_into().unwrap())
+        % EPOCHS_PER_SUBNET_SUBSCRIPTION;
+    let permutation_seed =
+        Sha256::digest(((epoch + node_offset) / EPOCHS_PER_SUBNET_SUBSCRIPTION).to_le_bytes());
     let permutated_prefix = compute_shuffled_index(
         node_id_prefix as usize,
         1 << ATTESTATION_SUBNET_PREFIX_BITS,
@@ -540,5 +538,77 @@ mod tests {
                 && sync_committee_subnet_predicate(vec![2])(enr)
         };
         assert!(!combined_subnet_predicate_fn(&enr));
+    }
+
+    #[test]
+    fn test_compute_shuffled_index() {
+        let seed = [0u8; 32]; // Fixed seed for determinism
+        let index_count = 256; // 2^8 prefixes
+        let index = 42;
+
+        // Test valid index
+        let result = compute_shuffled_index(index, index_count, seed);
+        assert!(
+            result < index_count,
+            "Shuffled index out of bounds: {}",
+            result
+        );
+
+        // Test determinism
+        let result_same = compute_shuffled_index(index, index_count, seed);
+        assert_eq!(result, result_same, "Non-deterministic shuffling");
+
+        // Test different seed
+        let seed_diff = [1u8; 32];
+        let result_diff = compute_shuffled_index(index, index_count, seed_diff);
+        assert_ne!(result, result_diff, "Same result for different seeds");
+
+        // Test edge cases
+        let result_zero = compute_shuffled_index(0, index_count, seed);
+        assert!(result_zero < index_count, "Zero index out of bounds");
+        let result_max = compute_shuffled_index(index_count - 1, index_count, seed);
+        assert!(result_max < index_count, "Max index out of bounds");
+    }
+
+    #[test]
+    fn test_compute_subscribed_subnet() {
+        let node_id = NodeId::random();
+        let epoch = 1000;
+        let index = 0;
+
+        // Test valid subnet
+        let subnet = compute_subscribed_subnet(node_id, epoch, index);
+        assert!(
+            subnet < ATTESTATION_SUBNET_COUNT as u8,
+            "Subnet ID out of bounds: {}",
+            subnet
+        );
+
+        // Test determinism
+        let subnet_same = compute_subscribed_subnet(node_id, epoch, index);
+        assert_eq!(subnet, subnet_same, "Non-deterministic subnet");
+
+        // Test different epoch
+        let subnet_diff = compute_subscribed_subnet(node_id, epoch + 256, index);
+        // Subnets may differ after 256 epochs due to seed change
+        if subnet == subnet_diff {
+            println!("Note: Same subnet for different epochs (possible but rare)");
+        }
+
+        // Test index
+        let subnet_index1 = compute_subscribed_subnet(node_id, epoch, 1);
+        // Subnets may be same or different (spec allows either)
+        assert!(
+            subnet_index1 < ATTESTATION_SUBNET_COUNT as u8,
+            "Subnet ID for index 1 out of bounds: {}",
+            subnet_index1
+        );
+
+        // Test edge cases
+        let subnet_epoch_zero = compute_subscribed_subnet(node_id, 0, index);
+        assert!(
+            subnet_epoch_zero < ATTESTATION_SUBNET_COUNT as u8,
+            "Subnet ID for epoch 0 out of bounds"
+        );
     }
 }
