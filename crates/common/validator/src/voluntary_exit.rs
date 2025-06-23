@@ -30,7 +30,7 @@ pub fn sign_voluntary_exit(
                 )
                 .as_ref(),
             )
-            .map_err(|e| anyhow!("Failed to sign voluntary exit: {e}"))?,
+            .map_err(|err| anyhow!("Failed to sign voluntary exit: {err}"))?,
         message: voluntary_exit,
     })
 }
