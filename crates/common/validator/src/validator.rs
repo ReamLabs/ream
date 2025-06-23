@@ -423,27 +423,28 @@ impl ValidatorService {
         self.sync_aggregator_infos.clear();
 
         for duty in &self.sync_committee_duties {
-            if let Some(key_store) = self.validator_index_to_keystore.get(&duty.validator_index) {
-                for &committee_index in &duty.validator_sync_committee_indices {
-                    let selection_proof = get_sync_committee_selection_proof(
-                        slot,
-                        committee_index,
-                        &key_store.private_key,
-                    )
-                    .map_err(|err| anyhow!("Could not get selection proof: {err:?}"))?;
+            let Some(key_store) = self.validator_index_to_keystore.get(&duty.validator_index) else {
+                continue;
+            };
+            for &committee_index in &duty.validator_sync_committee_indices {
+                let selection_proof = get_sync_committee_selection_proof(
+                    slot,
+                    committee_index,
+                    &key_store.private_key,
+                )
+                .map_err(|err| anyhow!("Could not get selection proof: {err:?}"))?;
 
-                    let task_info = SyncTaskInfo {
-                        validator_index: duty.validator_index,
-                        committee_index,
-                        selection_proof,
-                        key_store: Arc::clone(key_store),
-                    };
+                let task_info = SyncTaskInfo {
+                    validator_index: duty.validator_index,
+                    committee_index,
+                    selection_proof,
+                    key_store: Arc::clone(key_store),
+                };
 
-                    if is_sync_committee_aggregator(&task_info.selection_proof) {
-                        self.sync_aggregator_infos.push(task_info);
-                    } else {
-                        self.sync_normal_infos.push(task_info);
-                    }
+                if is_sync_committee_aggregator(&task_info.selection_proof) {
+                    self.sync_aggregator_infos.push(task_info);
+                } else {
+                    self.sync_normal_infos.push(task_info);
                 }
             }
         }
