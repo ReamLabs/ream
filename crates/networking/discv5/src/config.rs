@@ -14,7 +14,6 @@ pub struct DiscoveryConfig {
     pub disable_discovery: bool,
     pub attestation_subnets: AttestationSubnets,
     pub sync_committee_subnets: SyncCommitteeSubnets,
-    pub current_epoch: u64,
 }
 
 impl Default for DiscoveryConfig {
@@ -46,7 +45,6 @@ impl Default for DiscoveryConfig {
             disable_discovery: false,
             attestation_subnets,
             sync_committee_subnets,
-            current_epoch: 0,
         }
     }
 }

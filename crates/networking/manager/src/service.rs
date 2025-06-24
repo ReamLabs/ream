@@ -78,7 +78,6 @@ impl ManagerService {
             disable_discovery: config.disable_discovery,
             attestation_subnets: AttestationSubnets::new(),
             sync_committee_subnets: SyncCommitteeSubnets::new(),
-            current_epoch: config.current_epoch,
         };
 
         let mut gossipsub_config = GossipsubConfig::default();

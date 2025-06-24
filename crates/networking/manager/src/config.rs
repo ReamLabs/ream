@@ -4,7 +4,6 @@ use ream_p2p::bootnodes::Bootnodes;
 use url::Url;
 
 pub struct ManagerConfig {
-    pub current_epoch: u64,
     pub http_address: IpAddr,
     pub http_port: u16,
     pub http_allow_origin: bool,

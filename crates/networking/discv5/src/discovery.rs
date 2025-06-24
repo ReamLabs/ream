@@ -21,7 +21,7 @@ use libp2p::{
         THandlerOutEvent, ToSwarm, dummy::ConnectionHandler,
     },
 };
-use ream_consensus::constants::genesis_validators_root;
+use ream_consensus::{constants::genesis_validators_root, misc::compute_epoch_at_slot};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
@@ -69,7 +69,11 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<Self> {
+    pub async fn new(
+        local_key: Keypair,
+        config: &DiscoveryConfig,
+        current_slot: u64,
+    ) -> anyhow::Result<Self> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
 
@@ -106,7 +110,9 @@ impl Discovery {
 
         // Compute and set attestation subnets
         let mut config = config.clone();
-        let subnets = compute_subscribed_subnets(enr.node_id(), config.current_epoch);
+        // Define the get_current_epoch function
+        let current_epoch = compute_epoch_at_slot(current_slot);
+        let subnets = compute_subscribed_subnets(enr.node_id(), current_epoch)?;
         config.attestation_subnets = crate::subnet::AttestationSubnets::new();
         for subnet_id in subnets {
             config
@@ -368,7 +374,7 @@ mod tests {
         config.attestation_subnets.disable_attestation_subnet(1)?; // Set subnet 1
         config.disable_discovery = true;
 
-        let discovery = Discovery::new(key, &config).await.unwrap();
+        let discovery = Discovery::new(key, &config, 0).await.unwrap();
         let enr: &discv5::enr::Enr<CombinedKey> = discovery.local_enr();
         // Check ENR reflects config.subnets
         let enr_subnets = enr
@@ -388,7 +394,7 @@ mod tests {
         config.attestation_subnets.disable_attestation_subnet(1)?;
         config.disable_discovery = true;
 
-        let discovery = Discovery::new(key, &config).await.unwrap();
+        let discovery = Discovery::new(key, &config, 0).await.unwrap();
         let local_enr = discovery.local_enr();
 
         // Predicate for subnet 0 should match
@@ -417,7 +423,7 @@ mod tests {
 
         config.attestation_subnets.enable_attestation_subnet(0)?; // Local node on subnet 0
         config.disable_discovery = false;
-        let mut discovery = Discovery::new(key, &config).await.unwrap();
+        let mut discovery = Discovery::new(key, &config, 0).await.unwrap();
 
         // Simulate a peer with another Discovery instance
         let peer_key = Keypair::generate_secp256k1();
@@ -436,7 +442,7 @@ mod tests {
         peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
 
-        let peer_discovery = Discovery::new(peer_key, &peer_config).await.unwrap();
+        let peer_discovery = Discovery::new(peer_key, &peer_config, 0).await.unwrap();
         let peer_enr = peer_discovery.local_enr().clone();
 
         // Add peer to discv5
