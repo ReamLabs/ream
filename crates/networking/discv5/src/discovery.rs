@@ -29,7 +29,7 @@ use crate::{
     config::DiscoveryConfig,
     eth2::{ENR_ETH2_KEY, EnrForkId},
     subnet::{
-        ATTESTATION_BITFIELD_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
+        ATTESTATION_BITFIELD_ENR_KEY, AttestationSubnets, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
         attestation_subnet_predicate, compute_subscribed_subnets, sync_committee_subnet_predicate,
     },
 };
@@ -113,7 +113,7 @@ impl Discovery {
         // Define the get_current_epoch function
         let current_epoch = compute_epoch_at_slot(current_slot);
         let subnets = compute_subscribed_subnets(enr.node_id(), current_epoch)?;
-        config.attestation_subnets = crate::subnet::AttestationSubnets::new();
+        config.attestation_subnets = AttestationSubnets::new();
         for subnet_id in subnets {
             config
                 .attestation_subnets
