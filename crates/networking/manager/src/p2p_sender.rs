@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use libp2p::{PeerId, swarm::ConnectionId};
 use ream_p2p::{
-    channel::{P2PMessage, P2PResponse},
+    channel::{GossipMessage, P2PMessage, P2PResponse},
     req_resp::{error::ReqRespError, handler::RespMessage, messages::ResponseMessage},
 };
 use tokio::sync::mpsc;
@@ -10,6 +10,12 @@ use tracing::warn;
 pub struct P2PSender(pub mpsc::UnboundedSender<P2PMessage>);
 
 impl P2PSender {
+    pub fn send_gossip(&self, message: GossipMessage) {
+        if let Err(err) = self.0.send(P2PMessage::Gossip(message)) {
+            warn!("Failed to send gossip message: {err}");
+        }
+    }
+
     pub fn send_response(
         &self,
         peer_id: PeerId,

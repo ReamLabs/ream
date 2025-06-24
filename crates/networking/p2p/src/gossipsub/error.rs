@@ -4,6 +4,8 @@ pub enum GossipsubError {
     InvalidData(String),
     #[error("Gossipsub invalid topic {0}")]
     InvalidTopic(String),
+    #[error("Gossipsub validation failed {0:?}")]
+    ValidationFailed(String),
 }
 
 impl From<ssz::DecodeError> for GossipsubError {

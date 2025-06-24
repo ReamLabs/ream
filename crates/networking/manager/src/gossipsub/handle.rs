@@ -7,8 +7,11 @@ use ream_p2p::gossipsub::{
     message::GossipsubMessage,
     topics::{GossipTopic, GossipTopicKind},
 };
+use ream_storage::cache::CachedDB;
 use tracing::{error, info, trace};
 use tree_hash::TreeHash;
+
+use crate::p2p_sender::P2PSender;
 
 pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
     let mut gossipsub_config = GossipsubConfig::default();
@@ -68,7 +71,12 @@ pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
 }
 
 /// Dispatches a gossipsub message to its appropriate handler.
-pub async fn handle_gossipsub_message(message: Message, beacon_chain: &BeaconChain) {
+pub async fn handle_gossipsub_message(
+    message: Message,
+    beacon_chain: &BeaconChain,
+    _cached_db: &CachedDB,
+    _p2psender: &P2PSender,
+) {
     match GossipsubMessage::decode(&message.topic, &message.data) {
         Ok(gossip_message) => match gossip_message {
             GossipsubMessage::BeaconBlock(signed_block) => {
@@ -77,10 +85,6 @@ pub async fn handle_gossipsub_message(message: Message, beacon_chain: &BeaconCha
                     signed_block.message.slot,
                     signed_block.message.block_root()
                 );
-
-                if let Err(err) = beacon_chain.process_block(*signed_block).await {
-                    error!("Failed to process gossipsub beacon block: {err}");
-                }
             }
             GossipsubMessage::BeaconAttestation(attestation) => {
                 info!(

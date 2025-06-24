@@ -18,14 +18,14 @@ use ream_p2p::{
     network::{Network, ReamNetworkEvent},
     network_state::NetworkState,
 };
-use ream_storage::db::ReamDB;
+use ream_storage::{cache::CachedDB, db::ReamDB};
 use ream_syncer::block_range::BlockRangeSyncer;
 use tokio::{sync::mpsc, time::interval};
 use tracing::{error, info};
 
 use crate::{
     config::ManagerConfig,
-    gossipsub::{handle_gossipsub_message, init_gossipsub_config_with_topics},
+    gossipsub::handle::{handle_gossipsub_message, init_gossipsub_config_with_topics},
     p2p_sender::P2PSender,
     req_resp::handle_req_resp_message,
 };
@@ -37,6 +37,7 @@ pub struct NetworkManagerService {
     pub network_state: Arc<NetworkState>,
     pub block_range_syncer: BlockRangeSyncer,
     pub ream_db: ReamDB,
+    pub cached_db: CachedDB,
 }
 
 /// The `NetworkManagerService` acts as the manager for all networking activities in Ream.
@@ -118,6 +119,8 @@ impl NetworkManagerService {
             executor.clone(),
         );
 
+        let cached_db = CachedDB::new();
+
         Ok(Self {
             beacon_chain,
             manager_receiver,
@@ -125,6 +128,7 @@ impl NetworkManagerService {
             network_state,
             block_range_syncer,
             ream_db,
+            cached_db,
         })
     }
 
@@ -138,6 +142,7 @@ impl NetworkManagerService {
             mut manager_receiver,
             p2p_sender,
             ream_db,
+            cached_db,
             network_state,
             block_range_syncer,
             ..
@@ -190,7 +195,7 @@ impl NetworkManagerService {
                     match event {
                         // Handles Gossipsub messages from other peers.
                         ReamNetworkEvent::GossipsubMessage { message } =>
-                            handle_gossipsub_message(message, &beacon_chain).await,
+                            handle_gossipsub_message(message, &beacon_chain, &cached_db, &p2p_sender).await,
                         // Handles Req/Resp messages from other peers.
                         ReamNetworkEvent::RequestMessage { peer_id, stream_id, connection_id, message } =>
                             handle_req_resp_message(peer_id, stream_id, connection_id, message, &p2p_sender, &ream_db, network_state.clone()).await,
