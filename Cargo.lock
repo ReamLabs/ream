@@ -5384,6 +5384,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "discv5",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "libp2p",
  "ream-beacon-chain",
  "ream-consensus",
@@ -5453,6 +5455,7 @@ dependencies = [
  "ream-executor",
  "ream-light-client",
  "ream-network-spec",
+ "ream-storage",
  "ream-validator",
  "serde",
  "serde_yaml",
