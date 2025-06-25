@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use actix_web::{
-    HttpResponse, Responder, get, post,
+    HttpRequest, HttpResponse, Responder, get, post,
     web::{Data, Json, Path},
 };
 use alloy_primitives::{B256, Bytes};
