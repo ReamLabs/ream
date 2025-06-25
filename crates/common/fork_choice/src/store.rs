@@ -218,6 +218,20 @@ impl Store {
             {
                 self.operation_pool
                     .clean_signed_voluntary_exits(&beacon_state);
+
+                if let Some(beacon_block) = self
+                    .db
+                    .beacon_block_provider()
+                    .get(finalized_checkpoint.root)?
+                {
+                    for signed_bls_to_execution_change in
+                        beacon_block.message.body.bls_to_execution_changes
+                    {
+                        self.operation_pool.remove_signed_bls_to_execution_change(
+                            signed_bls_to_execution_change.tree_hash_root(),
+                        );
+                    }
+                }
             }
         }
 

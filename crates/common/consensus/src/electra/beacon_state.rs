@@ -1112,20 +1112,21 @@ impl BeaconState {
         )
     }
 
-    pub fn process_bls_to_execution_change(
-        &mut self,
-        signed_address_change: &SignedBLSToExecutionChange,
+    pub fn validate_bls_to_execution_change(
+        &self,
+        signed_bls_to_execution_change: &SignedBLSToExecutionChange,
     ) -> anyhow::Result<()> {
-        let address_change = &signed_address_change.message;
+        let bls_to_execution_change = &signed_bls_to_execution_change.message;
 
-        ensure!(address_change.validator_index < self.validators.len() as u64);
+        ensure!(bls_to_execution_change.validator_index < self.validators.len() as u64);
 
-        let validator: &Validator = &self.validators[address_change.validator_index as usize];
+        let validator: &Validator =
+            &self.validators[bls_to_execution_change.validator_index as usize];
 
         ensure!(&validator.withdrawal_credentials[..1] == BLS_WITHDRAWAL_PREFIX);
         ensure!(
             validator.withdrawal_credentials[1..]
-                == hash(address_change.from_bls_public_key.to_bytes())[1..]
+                == hash(bls_to_execution_change.from_bls_public_key.to_bytes())[1..]
         );
 
         // Fork-agnostic domain since address changes are valid across forks
@@ -1135,21 +1136,33 @@ impl BeaconState {
             Some(self.genesis_validators_root),
         );
 
-        let signing_root = compute_signing_root(address_change, domain);
+        let signing_root = compute_signing_root(bls_to_execution_change, domain);
         ensure!(
-            signed_address_change
-                .signature
-                .verify(&address_change.from_bls_public_key, signing_root.as_ref())?,
+            signed_bls_to_execution_change.signature.verify(
+                &bls_to_execution_change.from_bls_public_key,
+                signing_root.as_ref()
+            )?,
             "BLS Signature verification failed!"
         );
+
+        Ok(())
+    }
+
+    pub fn process_bls_to_execution_change(
+        &mut self,
+        signed_bls_to_execution_change: &SignedBLSToExecutionChange,
+    ) -> anyhow::Result<()> {
+        self.validate_bls_to_execution_change(signed_bls_to_execution_change)?;
+
+        let bls_to_execution_change = &signed_bls_to_execution_change.message;
 
         let withdrawal_credentials = [
             ETH1_ADDRESS_WITHDRAWAL_PREFIX,
             vec![0x00; 11].as_slice(),
-            address_change.to_execution_address.as_slice(),
+            bls_to_execution_change.to_execution_address.as_slice(),
         ]
         .concat();
-        self.validators[address_change.validator_index as usize].withdrawal_credentials =
+        self.validators[bls_to_execution_change.validator_index as usize].withdrawal_credentials =
             B256::from_slice(&withdrawal_credentials);
 
         Ok(())

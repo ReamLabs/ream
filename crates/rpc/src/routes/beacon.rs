@@ -11,7 +11,10 @@ use crate::handlers::{
     light_client::{
         get_light_client_bootstrap, get_light_client_finality_update, get_light_client_updates,
     },
-    pool::{get_voluntary_exits, post_voluntary_exits},
+    pool::{
+        get_bls_to_execution_changes, get_voluntary_exits, post_bls_to_execution_changes,
+        post_voluntary_exits,
+    },
     state::{
         get_pending_consolidations, get_pending_deposits, get_pending_partial_withdrawals,
         get_state_finality_checkpoint, get_state_fork, get_state_randao, get_state_root,
@@ -48,6 +51,8 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(post_sync_committee_rewards)
         .service(get_validator_balances_from_state)
         .service(post_validator_balances_from_state)
+        .service(get_bls_to_execution_changes)
+        .service(post_bls_to_execution_changes)
         .service(get_voluntary_exits)
         .service(post_voluntary_exits)
         .service(get_light_client_bootstrap)

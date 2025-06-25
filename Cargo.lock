@@ -5426,8 +5426,10 @@ dependencies = [
 name = "ream-operation-pool"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "parking_lot",
  "ream-consensus",
+ "tree_hash",
 ]
 
 [[package]]
