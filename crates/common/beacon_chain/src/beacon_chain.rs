@@ -1,14 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
-use anyhow::{anyhow, bail, ensure};
+use anyhow::bail;
 use ream_bls::{BLSSignature, PublicKey};
 use ream_consensus::{
-    attestation::Attestation,
-    attester_slashing::AttesterSlashing,
-    bls_to_execution_change::BLSToExecutionChange,
-    constants::{MAX_BLOBS_PER_BLOCK_ELECTRA, genesis_validators_root},
+    attestation::Attestation, attester_slashing::AttesterSlashing,
+    bls_to_execution_change::BLSToExecutionChange, constants::genesis_validators_root,
     electra::beacon_block::SignedBeaconBlock,
-    misc::compute_start_slot_at_epoch,
 };
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice::{
@@ -120,113 +117,5 @@ impl BeaconChain {
             head_root,
             head_slot,
         })
-    }
-
-    pub async fn validate_beacon_block(&self, block: &SignedBeaconBlock) -> anyhow::Result<()> {
-        let store = self.store.lock().await;
-
-        let latest_block_in_db = store.db.get_latest_block()?;
-        let latest_state_in_db = store.db.get_latest_state()?;
-
-        ensure!(
-            block.message.slot > latest_block_in_db.message.slot,
-            "Block slot must be greater than latest block slot in db"
-        );
-
-        let start_slot_at_epoch =
-            compute_start_slot_at_epoch(store.db.finalized_checkpoint_provider().get()?.epoch);
-        ensure!(
-            block.message.slot >= start_slot_at_epoch,
-            "Block slot must be greater than start slot at epoch"
-        );
-
-        let validator = latest_state_in_db
-            .validators
-            .get(block.message.proposer_index as usize)
-            .ok_or(anyhow!("Invalid proposer index"))?;
-        ensure!(
-            !self
-                .cached_proposer_signature
-                .read()
-                .await
-                .contains_key(&(validator.public_key.clone(), block.message.slot)),
-            format!(
-                "Signature for slot:{} and proposer:{:?} already cached",
-                block.message.slot, validator.public_key
-            )
-        );
-
-        ensure!(
-            latest_state_in_db.verify_block_signature(block)?,
-            "Invalid block signature"
-        );
-
-        if let Some(parent) = store
-            .db
-            .beacon_block_provider()
-            .get(block.message.parent_root)?
-        {
-            ensure!(
-                block.message.slot > parent.message.slot + 1,
-                "Invalid block slot"
-            );
-        } else {
-            return Err(anyhow!("Invalid parent block"));
-        }
-
-        let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
-        ensure!(
-            store.get_checkpoint_block(block.message.parent_root, finalized_checkpoint.epoch)?
-                == finalized_checkpoint.root,
-            "Invalid finalized checkpoint"
-        );
-
-        ensure!(
-            latest_state_in_db.get_beacon_proposer_index(Some(block.message.slot))?
-                == block.message.proposer_index,
-            "Invalid proposer index"
-        );
-
-        ensure!(
-            block.message.body.execution_payload.timestamp
-                == latest_state_in_db.compute_timestamp_at_slot(block.message.slot),
-            "timestamp must be equal to expected timestamp at slot"
-        );
-
-        let proposer_bls_execution_change = &block
-            .message
-            .body
-            .bls_to_execution_changes
-            .get(block.message.proposer_index as usize)
-            .ok_or(anyhow!("Invalid index for signed bls to execution change"))?
-            .message;
-
-        ensure!(
-            !self
-                .cached_bls_to_execution_signature
-                .read()
-                .await
-                .contains_key(&(validator.public_key.clone(), block.message.proposer_index)),
-            "BLS to execution signature already exists"
-        );
-
-        ensure!(
-            block.message.body.blob_kzg_commitments.len() <= MAX_BLOBS_PER_BLOCK_ELECTRA as usize,
-            "Too many blobs in block"
-        );
-
-        self.cached_proposer_signature.blocking_write().insert(
-            (validator.public_key.clone(), block.message.slot),
-            block.signature.clone(),
-        );
-
-        self.cached_bls_to_execution_signature
-            .blocking_write()
-            .insert(
-                (validator.public_key.clone(), block.message.proposer_index),
-                proposer_bls_execution_change.clone(),
-            );
-
-        Ok(())
     }
 }
