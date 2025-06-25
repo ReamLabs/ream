@@ -1,9 +1,12 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use anyhow::bail;
+use alloy_primitives::B256;
+use anyhow::{anyhow, bail, ensure};
+use ream_bls::PublicKey;
 use ream_consensus::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     constants::genesis_validators_root, electra::beacon_block::SignedBeaconBlock,
+    misc::compute_start_slot_at_epoch,
 };
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice::{
@@ -24,6 +27,7 @@ use tracing::warn;
 pub struct BeaconChain {
     pub store: Mutex<Store>,
     pub execution_engine: Option<ExecutionEngine>,
+    pub cached_proposer_signature: HashMap<(PublicKey, u64), B256>,
 }
 
 impl BeaconChain {
@@ -36,6 +40,7 @@ impl BeaconChain {
         Self {
             store: Mutex::new(Store::new(db, operation_pool)),
             execution_engine,
+            cached_proposer_signature: HashMap::new(),
         }
     }
 
@@ -111,5 +116,71 @@ impl BeaconChain {
             head_root,
             head_slot,
         })
+    }
+
+    pub async fn validate_beacon_block(&self, block: &SignedBeaconBlock) -> anyhow::Result<()> {
+        let store = self.store.lock().await;
+
+        let latest_block_in_db = store.db.get_latest_block()?;
+        let latest_state_in_db = store.db.get_latest_state()?;
+
+        ensure!(
+            block.message.slot > latest_block_in_db.message.slot,
+            "Block slot must be greater than latest block slot in db"
+        );
+
+        let start_slot_at_epoch =
+            compute_start_slot_at_epoch(store.db.finalized_checkpoint_provider().get()?.epoch);
+        ensure!(
+            block.message.slot >= start_slot_at_epoch,
+            "Block slot must be greater than start slot at epoch"
+        );
+
+        let proposer_address = latest_state_in_db
+            .validators
+            .get(block.message.proposer_index as usize)
+            .ok_or(anyhow!("Invalid proposer index"))?;
+        ensure!(
+            !self
+                .cached_proposer_signature
+                .contains_key(&(proposer_address.public_key.clone(), block.message.slot)),
+            format!(
+                "Signature for slot:{} and proposer:{:?} already cached",
+                block.message.slot, proposer_address.public_key
+            )
+        );
+
+        ensure!(
+            latest_state_in_db.verify_block_signature(block)?,
+            "Invalid block signature"
+        );
+
+        if let Some(parent) = store
+            .db
+            .beacon_block_provider()
+            .get(block.message.parent_root)?
+        {
+            ensure!(
+                block.message.slot > parent.message.slot + 1,
+                "Invalid block slot"
+            );
+        } else {
+            return Err(anyhow!("Invalid parent block"));
+        }
+
+        let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
+        ensure!(
+            store.get_checkpoint_block(block.message.parent_root, finalized_checkpoint.epoch)?
+                == finalized_checkpoint.root,
+            "Invalid finalized checkpoint"
+        );
+
+        ensure!(
+            latest_state_in_db.get_beacon_proposer_index(Some(block.message.slot))?
+                == block.message.proposer_index,
+            "Invalid proposer index"
+        );
+
+        Ok(())
     }
 }

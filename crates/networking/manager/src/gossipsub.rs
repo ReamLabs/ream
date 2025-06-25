@@ -78,6 +78,10 @@ pub async fn handle_gossipsub_message(message: Message, beacon_chain: &BeaconCha
                     signed_block.message.block_root()
                 );
 
+                if let Err(err) = beacon_chain.validate_beacon_block(&signed_block).await {
+                    error!("Failed to validate gossipsub beacon block: {err}");
+                }
+
                 if let Err(err) = beacon_chain.process_block(*signed_block).await {
                     error!("Failed to process gossipsub beacon block: {err}");
                 }

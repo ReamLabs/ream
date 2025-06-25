@@ -5,7 +5,6 @@ pub mod error;
 pub mod message;
 pub mod snappy;
 pub mod topics;
-pub mod validation;
 
 use libp2p::gossipsub::{AllowAllSubscriptionFilter, Behaviour};
 use snappy::SnappyTransform;

@@ -4,9 +4,8 @@ use alloy_primitives::{
     hex::{FromHex, ToHexExt},
 };
 use libp2p::gossipsub::{IdentTopic as Topic, TopicHash};
-use ream_storage::db::ReamDB;
 
-use super::{error::GossipsubError, validation::validate_beacon_block};
+use super::error::GossipsubError;
 
 pub const TOPIC_PREFIX: &str = "eth2";
 pub const ENCODING_POSTFIX: &str = "ssz_snappy";
@@ -86,30 +85,6 @@ impl GossipTopic {
 
         Ok(GossipTopic { fork, kind })
     }
-
-    pub fn validate_gossip_message(
-        &self,
-        ssz_object: &Vec<u8>,
-        db: &ReamDB,
-    ) -> Result<(), GossipsubError> {
-        match self.kind {
-            GossipTopicKind::BeaconBlock => validate_beacon_block(ssz_object, db)
-                .map_err(|err| GossipsubError::ValidationFailed(err.to_string()))?,
-            GossipTopicKind::AggregateAndProof => todo!(),
-            GossipTopicKind::VoluntaryExit => todo!(),
-            GossipTopicKind::ProposerSlashing => todo!(),
-            GossipTopicKind::AttesterSlashing => todo!(),
-            GossipTopicKind::BeaconAttestation(_) => todo!(),
-            GossipTopicKind::SyncCommittee(_) => todo!(),
-            GossipTopicKind::SyncCommitteeContributionAndProof => todo!(),
-            GossipTopicKind::BlsToExecutionChange => todo!(),
-            GossipTopicKind::LightClientFinalityUpdate => todo!(),
-            GossipTopicKind::LightClientOptimisticUpdate => todo!(),
-            GossipTopicKind::BlobSidecar(_) => todo!(),
-        }
-
-        Ok(())
-    }
 }
 
 impl std::fmt::Display for GossipTopic {
@@ -137,9 +112,9 @@ impl From<GossipTopic> for String {
     }
 }
 
-impl Into<TopicHash> for GossipTopic {
-    fn into(self) -> TopicHash {
-        let kind_str = match &self.kind {
+impl From<GossipTopic> for TopicHash {
+    fn from(val: GossipTopic) -> Self {
+        let kind_str = match &val.kind {
             BeaconBlock => BEACON_BLOCK_TOPIC,
             AggregateAndProof => BEACON_AGGREGATE_AND_PROOF_TOPIC,
             VoluntaryExit => VOLUNTARY_EXIT_TOPIC,
@@ -153,7 +128,7 @@ impl Into<TopicHash> for GossipTopic {
                 return TopicHash::from_raw(format!(
                     "/{}/{}/{}{}{}",
                     TOPIC_PREFIX,
-                    self.fork.encode_hex(),
+                    val.fork.encode_hex(),
                     BEACON_ATTESTATION_PREFIX,
                     index,
                     ENCODING_POSTFIX,
@@ -163,7 +138,7 @@ impl Into<TopicHash> for GossipTopic {
                 return TopicHash::from_raw(format!(
                     "/{}/{}/{}{}{}",
                     TOPIC_PREFIX,
-                    self.fork.encode_hex(),
+                    val.fork.encode_hex(),
                     SYNC_COMMITTEE_PREFIX_TOPIC,
                     index,
                     ENCODING_POSTFIX,
@@ -173,7 +148,7 @@ impl Into<TopicHash> for GossipTopic {
                 return TopicHash::from_raw(format!(
                     "/{}/{}/{}{}{}",
                     TOPIC_PREFIX,
-                    self.fork.encode_hex(),
+                    val.fork.encode_hex(),
                     BLOB_SIDECAR_PREFIX_TOPIC,
                     index,
                     ENCODING_POSTFIX,
@@ -184,7 +159,7 @@ impl Into<TopicHash> for GossipTopic {
         TopicHash::from_raw(format!(
             "/{}/{}/{}{}",
             TOPIC_PREFIX,
-            self.fork.encode_hex(),
+            val.fork.encode_hex(),
             kind_str,
             ENCODING_POSTFIX
         ))

@@ -5179,7 +5179,11 @@ dependencies = [
 name = "ream-beacon-chain"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "ream-bls",
  "ream-consensus",
  "ream-execution-engine",
  "ream-fork-choice",
@@ -5455,7 +5459,6 @@ dependencies = [
  "ream-executor",
  "ream-light-client",
  "ream-network-spec",
- "ream-storage",
  "ream-validator",
  "serde",
  "serde_yaml",

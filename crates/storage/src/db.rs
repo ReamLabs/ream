@@ -1,7 +1,7 @@
 use std::{fs, io, path::PathBuf, sync::Arc};
 
 use anyhow::{Result, anyhow};
-use ream_consensus::electra::beacon_block::SignedBeaconBlock;
+use ream_consensus::electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
 use redb::{Builder, Database};
 use tracing::info;
 
@@ -198,18 +198,31 @@ impl ReamDB {
         }
     }
     pub fn get_latest_block(&self) -> anyhow::Result<SignedBeaconBlock> {
-        let slot = self
+        let highest_root = self
             .slot_index_provider()
-            .get_highest_root()
-            .map_err(|err| anyhow!("Failed to get latest root, error: {err:?}"))?
-            .ok_or_else(|| anyhow!("Unable to fetch latest root"))?;
+            .get_highest_root()?
+            .expect("No highest root found");
 
         let latest_block = self
             .beacon_block_provider()
-            .get(slot)?
+            .get(highest_root)?
             .ok_or_else(|| anyhow!("Unable to fetch latest block"))?;
 
         Ok(latest_block)
+    }
+
+    pub fn get_latest_state(&self) -> anyhow::Result<BeaconState> {
+        let highest_root = self
+            .slot_index_provider()
+            .get_highest_root()?
+            .expect("No highest root found");
+
+        let state = self
+            .beacon_state_provider()
+            .get(highest_root)?
+            .ok_or_else(|| anyhow!("Unable to fetch latest state"))?;
+
+        Ok(state)
     }
 }
 
