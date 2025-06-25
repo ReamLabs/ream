@@ -31,6 +31,8 @@ use tracing::error;
 
 use crate::handlers::state::get_state_from_id;
 
+pub const OCTET_STREAM_HEADER: &str = "application/octet-stream";
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct BlockRewards {
     #[serde(with = "serde_utils::quoted_u64")]
@@ -346,45 +348,24 @@ pub async fn get_blind_block(
     db: Data<ReamDB>,
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
-    // This endpoint is not implemented yet.
-    let beacon_block: SignedBeaconBlock =
-        get_beacon_block_from_id(block_id.into_inner(), &db).await?;
-    let signed_blind_block: SignedBlindedBeaconBlock = SignedBlindedBeaconBlock {
-        message: BlindedBeaconBlock {
-            slot: beacon_block.message.slot,
-            proposer_index: beacon_block.message.proposer_index,
-            parent_root: beacon_block.message.parent_root,
-            state_root: beacon_block.message.state_root,
-            body: BlindedBeaconBlockBody {
-                randao_reveal: beacon_block.message.body.randao_reveal,
-                eth1_data: beacon_block.message.body.eth1_data,
-                graffiti: beacon_block.message.body.graffiti,
-                proposer_slashings: beacon_block.message.body.proposer_slashings,
-                attester_slashings: beacon_block.message.body.attester_slashings,
-                attestations: beacon_block.message.body.attestations,
-                deposits: beacon_block.message.body.deposits,
-                voluntary_exits: beacon_block.message.body.voluntary_exits,
-                sync_aggregate: beacon_block.message.body.sync_aggregate,
-                execution_payload_header: beacon_block
-                    .message
-                    .body
-                    .execution_payload
-                    .to_execution_payload_header(),
-                bls_to_execution_changes: beacon_block.message.body.bls_to_execution_changes,
-                blob_kzg_commitments: beacon_block.message.body.blob_kzg_commitments,
-                execution_requests: beacon_block.message.body.execution_requests,
-            },
-        },
-        signature: beacon_block.signature.clone(),
-    };
-    if let Some(header) = req.headers().get("application/octet-stream") {
-        if header.to_str().unwrap_or_default() == "application/octet-stream" {
-            let ssz_response = Bytes::from(signed_blind_block.as_ssz_bytes()).to_string();
-            return Ok(HttpResponse::Ok()
-                .content_type("application/octet-stream")
-                .body(ssz_response));
+    let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
+    if let Ok(signed_blind_block) = beacon_block.to_signed_blinded_beacon_block() {
+        match req
+            .headers()
+            .get(OCTET_STREAM_HEADER)
+            .and_then(|header| header.to_str().ok())
+        {
+            Some(OCTET_STREAM_HEADER) => {
+                let ssz_response = Bytes::from(signed_blind_block.as_ssz_bytes()).to_string();
+                Ok(HttpResponse::Ok()
+                    .content_type(OCTET_STREAM_HEADER)
+                    .body(ssz_response))
+            }
+            _ => Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(signed_blind_block))),
         }
+    } else {
+        Err(ApiError::InternalError(
+            "Failed to convert beacon block to signed blinded beacon block".to_string(),
+        ))
     }
-
-    Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(signed_blind_block)))
 }
