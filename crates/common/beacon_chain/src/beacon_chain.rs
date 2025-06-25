@@ -1,11 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use alloy_primitives::B256;
 use anyhow::{anyhow, bail, ensure};
-use ream_bls::PublicKey;
+use ream_bls::{BLSSignature, PublicKey};
 use ream_consensus::{
-    attestation::Attestation, attester_slashing::AttesterSlashing,
-    constants::genesis_validators_root, electra::beacon_block::SignedBeaconBlock,
+    attestation::Attestation,
+    attester_slashing::AttesterSlashing,
+    bls_to_execution_change::BLSToExecutionChange,
+    constants::{MAX_BLOBS_PER_BLOCK_ELECTRA, genesis_validators_root},
+    electra::beacon_block::SignedBeaconBlock,
     misc::compute_start_slot_at_epoch,
 };
 use ream_execution_engine::ExecutionEngine;
@@ -20,14 +22,15 @@ use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tracing::warn;
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
     pub store: Mutex<Store>,
     pub execution_engine: Option<ExecutionEngine>,
-    pub cached_proposer_signature: HashMap<(PublicKey, u64), B256>,
+    pub cached_proposer_signature: RwLock<HashMap<(PublicKey, u64), BLSSignature>>,
+    pub cached_bls_to_execution_signature: RwLock<HashMap<(PublicKey, u64), BLSToExecutionChange>>,
 }
 
 impl BeaconChain {
@@ -40,7 +43,8 @@ impl BeaconChain {
         Self {
             store: Mutex::new(Store::new(db, operation_pool)),
             execution_engine,
-            cached_proposer_signature: HashMap::new(),
+            cached_proposer_signature: HashMap::new().into(),
+            cached_bls_to_execution_signature: HashMap::new().into(),
         }
     }
 
@@ -136,17 +140,19 @@ impl BeaconChain {
             "Block slot must be greater than start slot at epoch"
         );
 
-        let proposer_address = latest_state_in_db
+        let validator = latest_state_in_db
             .validators
             .get(block.message.proposer_index as usize)
             .ok_or(anyhow!("Invalid proposer index"))?;
         ensure!(
             !self
                 .cached_proposer_signature
-                .contains_key(&(proposer_address.public_key.clone(), block.message.slot)),
+                .read()
+                .await
+                .contains_key(&(validator.public_key.clone(), block.message.slot)),
             format!(
                 "Signature for slot:{} and proposer:{:?} already cached",
-                block.message.slot, proposer_address.public_key
+                block.message.slot, validator.public_key
             )
         );
 
@@ -180,6 +186,46 @@ impl BeaconChain {
                 == block.message.proposer_index,
             "Invalid proposer index"
         );
+
+        ensure!(
+            block.message.body.execution_payload.timestamp
+                == latest_state_in_db.compute_timestamp_at_slot(block.message.slot),
+            "timestamp must be equal to expected timestamp at slot"
+        );
+
+        let proposer_bls_execution_change = &block
+            .message
+            .body
+            .bls_to_execution_changes
+            .get(block.message.proposer_index as usize)
+            .ok_or(anyhow!("Invalid index for signed bls to execution change"))?
+            .message;
+
+        ensure!(
+            !self
+                .cached_bls_to_execution_signature
+                .read()
+                .await
+                .contains_key(&(validator.public_key.clone(), block.message.proposer_index)),
+            "BLS to execution signature already exists"
+        );
+
+        ensure!(
+            block.message.body.blob_kzg_commitments.len() <= MAX_BLOBS_PER_BLOCK_ELECTRA as usize,
+            "Too many blobs in block"
+        );
+
+        self.cached_proposer_signature.blocking_write().insert(
+            (validator.public_key.clone(), block.message.slot),
+            block.signature.clone(),
+        );
+
+        self.cached_bls_to_execution_signature
+            .blocking_write()
+            .insert(
+                (validator.public_key.clone(), block.message.proposer_index),
+                proposer_bls_execution_change.clone(),
+            );
 
         Ok(())
     }
