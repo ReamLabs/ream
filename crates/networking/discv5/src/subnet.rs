@@ -148,10 +148,15 @@ impl Decodable for SyncCommitteeSubnets {
 /// Compute a single subscribed subnet based on node_id, epoch, and index
 pub fn compute_subscribed_subnet(node_id: NodeId, epoch: u64, index: usize) -> anyhow::Result<u8> {
     // Extract prefix from first 8 bytes of node_id
-    let node_id_prefix = u64::from_be_bytes(node_id.raw()[..8].try_into().unwrap())
-        >> (64 - ATTESTATION_SUBNET_PREFIX_BITS);
-    let node_offset = u64::from_be_bytes(node_id.raw()[24..32].try_into().unwrap())
-        % EPOCHS_PER_SUBNET_SUBSCRIPTION;
+    let mut node_id_prefix_bytes = [0u8; 8];
+    node_id_prefix_bytes.copy_from_slice(&node_id.raw()[..8]);
+    let node_id_prefix =
+        u64::from_be_bytes(node_id_prefix_bytes) >> (64 - ATTESTATION_SUBNET_PREFIX_BITS);
+
+    let mut node_offset_bytes = [0u8; 8];
+    node_offset_bytes.copy_from_slice(&node_id.raw()[24..32]);
+    let node_offset = u64::from_be_bytes(node_offset_bytes) % EPOCHS_PER_SUBNET_SUBSCRIPTION;
+
     let permutation_seed =
         Sha256::digest(((epoch + node_offset) / EPOCHS_PER_SUBNET_SUBSCRIPTION).to_le_bytes());
 

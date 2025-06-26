@@ -109,10 +109,9 @@ impl Discovery {
         }
 
         // Compute and set attestation subnets
+        let subnets =
+            compute_subscribed_subnets(enr.node_id(), compute_epoch_at_slot(current_slot))?;
         let mut config = config.clone();
-        // Define the get_current_epoch function
-        let current_epoch = compute_epoch_at_slot(current_slot);
-        let subnets = compute_subscribed_subnets(enr.node_id(), current_epoch)?;
         config.attestation_subnets = AttestationSubnets::new();
         for subnet_id in subnets {
             config
