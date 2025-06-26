@@ -10,11 +10,15 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+alloy-primitives.workspace = true
 anyhow.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
 # ream dependencies
+ream-bls.workspace = true
 ream-consensus.workspace = true
 ream-execution-engine.workspace = true
 ream-fork-choice.workspace = true

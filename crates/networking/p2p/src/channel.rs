@@ -1,9 +1,12 @@
 use libp2p::{PeerId, swarm::ConnectionId};
 use tokio::sync::mpsc;
 
-use crate::req_resp::{
-    handler::RespMessage,
-    messages::{ResponseMessage, status::Status},
+use crate::{
+    gossipsub::topics::GossipTopic,
+    req_resp::{
+        handler::RespMessage,
+        messages::{ResponseMessage, status::Status},
+    },
 };
 
 pub enum P2PCallbackResponse {
@@ -14,6 +17,7 @@ pub enum P2PCallbackResponse {
 pub enum P2PMessage {
     Request(P2PRequest),
     Response(P2PResponse),
+    Gossip(GossipMessage),
 }
 
 pub enum P2PRequest {
@@ -34,4 +38,10 @@ pub struct P2PResponse {
     pub connection_id: ConnectionId,
     pub stream_id: u64,
     pub message: RespMessage,
+}
+
+#[derive(Debug, Clone)]
+pub struct GossipMessage {
+    pub topic: GossipTopic,
+    pub data: Vec<u8>,
 }
