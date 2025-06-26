@@ -343,13 +343,13 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
 
 #[get("/beacon/blind_block/{block_id}")]
 pub async fn get_blind_block(
-    req: HttpRequest,
+    http_request: HttpRequest,
     db: Data<ReamDB>,
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
     let blinded_beacon_block = beacon_block.as_signed_blinded_beacon_block();
-    match req
+    match http_request
         .headers()
         .get(SSZ_CONTENT_TYPE)
         .and_then(|header| header.to_str().ok())
