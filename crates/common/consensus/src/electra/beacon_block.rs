@@ -76,8 +76,8 @@ impl SignedBeaconBlock {
             .collect::<anyhow::Result<Vec<_>>>()
     }
 
-    pub fn to_signed_blinded_beacon_block(&self) -> anyhow::Result<SignedBlindedBeaconBlock> {
-        Ok(SignedBlindedBeaconBlock {
+    pub fn as_signed_blinded_beacon_block(&self) -> SignedBlindedBeaconBlock {
+        SignedBlindedBeaconBlock {
             message: BlindedBeaconBlock {
                 slot: self.message.slot,
                 proposer_index: self.message.proposer_index,
@@ -104,7 +104,7 @@ impl SignedBeaconBlock {
                 },
             },
             signature: self.signature.clone(),
-        })
+        }
     }
 }
 

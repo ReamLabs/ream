@@ -8,9 +8,9 @@ use alloy_primitives::{B256, Bytes};
 use hashbrown::HashMap;
 use ream_beacon_api_types::{
     error::ApiError,
-    id::{ID, ValidatorID},
+    id::{ValidatorID, ID},
     responses::{
-        BeaconHeadResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse,
+        BeaconHeadResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse, SSZ_CONTENT_TYPE,
     },
 };
 use ream_consensus::{
@@ -30,8 +30,6 @@ use ssz::Encode;
 use tracing::error;
 
 use crate::handlers::state::get_state_from_id;
-
-pub const OCTET_STREAM_HEADER: &str = "application/octet-stream";
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct BlockRewards {
@@ -349,23 +347,17 @@ pub async fn get_blind_block(
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
-    if let Ok(signed_blind_block) = beacon_block.to_signed_blinded_beacon_block() {
-        match req
-            .headers()
-            .get(OCTET_STREAM_HEADER)
-            .and_then(|header| header.to_str().ok())
-        {
-            Some(OCTET_STREAM_HEADER) => {
-                let ssz_response = Bytes::from(signed_blind_block.as_ssz_bytes()).to_string();
-                Ok(HttpResponse::Ok()
-                    .content_type(OCTET_STREAM_HEADER)
-                    .body(ssz_response))
-            }
-            _ => Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(signed_blind_block))),
+    let blinded_beacon_block = beacon_block.as_signed_blinded_beacon_block();
+    match req
+        .headers()
+        .get(SSZ_CONTENT_TYPE)
+        .and_then(|header| header.to_str().ok())
+    {
+        Some(SSZ_CONTENT_TYPE) => {
+            Ok(HttpResponse::Ok()
+                .content_type(SSZ_CONTENT_TYPE)
+                .body(blinded_beacon_block.as_ssz_bytes()))
         }
-    } else {
-        Err(ApiError::InternalError(
-            "Failed to convert beacon block to signed blinded beacon block".to_string(),
-        ))
+        _ => Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(blinded_beacon_block))),
     }
 }
