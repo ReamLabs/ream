@@ -4,13 +4,14 @@ use actix_web::{
     HttpRequest, HttpResponse, Responder, get, post,
     web::{Data, Json, Path},
 };
-use alloy_primitives::{B256, Bytes};
+use alloy_primitives::B256;
 use hashbrown::HashMap;
 use ream_beacon_api_types::{
     error::ApiError,
-    id::{ValidatorID, ID},
+    id::{ID, ValidatorID},
     responses::{
-        BeaconHeadResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse, SSZ_CONTENT_TYPE,
+        BeaconHeadResponse, BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse,
+        SSZ_CONTENT_TYPE,
     },
 };
 use ream_consensus::{
@@ -353,11 +354,9 @@ pub async fn get_blind_block(
         .get(SSZ_CONTENT_TYPE)
         .and_then(|header| header.to_str().ok())
     {
-        Some(SSZ_CONTENT_TYPE) => {
-            Ok(HttpResponse::Ok()
-                .content_type(SSZ_CONTENT_TYPE)
-                .body(blinded_beacon_block.as_ssz_bytes()))
-        }
+        Some(SSZ_CONTENT_TYPE) => Ok(HttpResponse::Ok()
+            .content_type(SSZ_CONTENT_TYPE)
+            .body(blinded_beacon_block.as_ssz_bytes())),
         _ => Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(blinded_beacon_block))),
     }
 }
