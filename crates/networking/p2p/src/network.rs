@@ -132,8 +132,12 @@ impl Network {
         let local_key = secp256k1::Keypair::generate();
 
         let discovery = {
-            let mut discovery =
-                Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
+            let mut discovery = Discovery::new(
+                Keypair::from(local_key.clone()),
+                &config.discv5_config,
+                status.head_slot,
+            )
+            .await?;
             discovery.discover_peers(QueryType::Peers, 16);
             discovery
         };
