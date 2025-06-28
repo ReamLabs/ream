@@ -104,16 +104,6 @@ pub async fn get_state_from_id(state_id: ID, db: &ReamDB) -> Result<BeaconState,
         .ok_or_else(|| ApiError::NotFound(format!("Failed to find `block_root` from {state_id:?}")))
 }
 
-#[get("/beacon/states/{state_id}")]
-pub async fn get_beacon_state(
-    db: Data<ReamDB>,
-    state_id: Path<ID>,
-) -> Result<impl Responder, ApiError> {
-    let state = get_state_from_id(state_id.into_inner(), &db).await?;
-
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(state)))
-}
-
 #[get("/beacon/states/{state_id}/root")]
 pub async fn get_state_root(
     db: Data<ReamDB>,
