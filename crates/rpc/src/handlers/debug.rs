@@ -8,7 +8,10 @@ use hashbrown::HashMap;
 use ream_beacon_api_types::{
     error::ApiError,
     id::ID,
-    responses::{BeaconHeadResponse, BeaconResponse, DataResponse, ForkChoiceResponse},
+    responses::{
+        BeaconHeadResponse, BeaconResponse, DataResponse, ForkChoiceNode, ForkChoiceResponse,
+        ForkChoiceValidity,
+    },
 };
 use ream_fork_choice::store::Store;
 use ream_operation_pool::OperationPool;
@@ -68,9 +71,48 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
 
 #[get("/debug/fork_choice")]
 pub async fn get_fork_choice(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
-    let justified_checkpoint = todo!();
-    let finalized_checkpoint = todo!();
-    let fork_choice_nodes = vec![];
+    let justified_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
+        ApiError::InternalError(format!(
+            "Failed to get justified_checkpoint, error: {err:?}"
+        ))
+    })?;
+    let finalized_checkpoint = db.finalized_checkpoint_provider().get().map_err(|err| {
+        ApiError::InternalError(format!(
+            "Failed to get finalized_checkpoint, error: {err:?}"
+        ))
+    })?;
+
+    let store = Store {
+        db: db.get_ref().clone(),
+        operation_pool: Arc::new(OperationPool::default()),
+    };
+    let blocks = store.get_filtered_block_tree().map_err(|err| {
+        ApiError::InternalError(format!("Failed to get filtered block tree, error: {err:?}"))
+    })?;
+    let mut fork_choice_nodes = Vec::with_capacity(blocks.len());
+    for (block_root, block) in blocks {
+        let weight = store.get_weight(block_root).map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get weight for block {block_root:?}, error: {err:?}"
+            ))
+        })?;
+
+        // TODO: Fetch epoch info
+        let (justified_epoch, finalized_epoch) = (1, 1);
+
+        fork_choice_nodes.push(ForkChoiceNode {
+            slot: block.slot,
+            block_root,
+            parent_root: block.parent_root,
+            justified_epoch,
+            finalized_epoch,
+            weight,
+            // NOTE: As `EXECUTION_OPTIMISTIC` is default to false, validity will be always "valid" in this context.
+            validity: ForkChoiceValidity::Valid,
+            execution_block_hash: block.body.execution_payload.block_hash,
+            extra_data: Default::default(),
+        });
+    }
 
     Ok(HttpResponse::Ok().json(ForkChoiceResponse::new(
         justified_checkpoint,
