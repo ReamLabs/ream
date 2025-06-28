@@ -20,7 +20,7 @@ use ream_storage::{db::ReamDB, tables::Field};
 use crate::handlers::state::get_state_from_id;
 
 #[get("/debug/beacon/states/{state_id}")]
-pub async fn get_beacon_state(
+pub async fn get_debug_beacon_state(
     db: Data<ReamDB>,
     state_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
@@ -30,7 +30,7 @@ pub async fn get_beacon_state(
 }
 
 #[get("/debug/beacon/heads")]
-pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
+pub async fn get_debug_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
     let justified_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
         ApiError::InternalError(format!(
             "Failed to get justified_checkpoint, error: {err:?}"
@@ -70,7 +70,7 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
 }
 
 #[get("/debug/fork_choice")]
-pub async fn get_fork_choice(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
+pub async fn get_debug_fork_choice(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
     let justified_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
         ApiError::InternalError(format!(
             "Failed to get justified_checkpoint, error: {err:?}"
