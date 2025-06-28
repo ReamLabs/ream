@@ -12,7 +12,8 @@ pub fn get_v1_routes(config: &mut ServiceConfig) {
             .configure(beacon::register_beacon_routes)
             .configure(node::register_node_routes)
             .configure(config::register_config_routes)
-            .configure(validator::register_validator_routes),
+            .configure(validator::register_validator_routes)
+            .configure(debug::register_debug_routes_v1),
     );
 }
 

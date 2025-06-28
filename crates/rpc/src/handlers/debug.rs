@@ -8,7 +8,7 @@ use hashbrown::HashMap;
 use ream_beacon_api_types::{
     error::ApiError,
     id::ID,
-    responses::{BeaconHeadResponse, BeaconResponse, DataResponse},
+    responses::{BeaconHeadResponse, BeaconResponse, DataResponse, ForkChoiceResponse},
 };
 use ream_fork_choice::store::Store;
 use ream_operation_pool::OperationPool;
@@ -64,4 +64,17 @@ pub async fn get_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiErr
     }
 
     Ok(HttpResponse::Ok().json(DataResponse::new(leaves)))
+}
+
+#[get("/debug/fork_choice")]
+pub async fn get_fork_choice(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
+    let justified_checkpoint = todo!();
+    let finalized_checkpoint = todo!();
+    let fork_choice_nodes = vec![];
+
+    Ok(HttpResponse::Ok().json(ForkChoiceResponse::new(
+        justified_checkpoint,
+        finalized_checkpoint,
+        fork_choice_nodes,
+    )))
 }
