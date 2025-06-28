@@ -52,11 +52,11 @@ pub async fn get_debug_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, 
     let mut leaves = vec![];
     let mut referenced_parents = HashSet::new();
 
-    for block in blocks.values() {
+    for (block, _, _) in blocks.values() {
         referenced_parents.insert(block.parent_root);
     }
 
-    for (block_root, block) in &blocks {
+    for (block_root, (block, _, _)) in &blocks {
         if !referenced_parents.contains(block_root) {
             leaves.push(BeaconHeadResponse {
                 root: block.block_root(),
@@ -90,15 +90,12 @@ pub async fn get_debug_fork_choice(db: Data<ReamDB>) -> Result<impl Responder, A
         ApiError::InternalError(format!("Failed to get filtered block tree, error: {err:?}"))
     })?;
     let mut fork_choice_nodes = Vec::with_capacity(blocks.len());
-    for (block_root, block) in blocks {
+    for (block_root, (block, justified_epoch, finalized_epoch)) in blocks {
         let weight = store.get_weight(block_root).map_err(|err| {
             ApiError::InternalError(format!(
                 "Failed to get weight for block {block_root:?}, error: {err:?}"
             ))
         })?;
-
-        // TODO: Fetch epoch info
-        let (justified_epoch, finalized_epoch) = (1, 1);
 
         fork_choice_nodes.push(ForkChoiceNode {
             slot: block.slot,
@@ -107,7 +104,8 @@ pub async fn get_debug_fork_choice(db: Data<ReamDB>) -> Result<impl Responder, A
             justified_epoch,
             finalized_epoch,
             weight,
-            // NOTE: As `EXECUTION_OPTIMISTIC` is default to false, validity will be always "valid" in this context.
+            // NOTE: As `EXECUTION_OPTIMISTIC` is default to false, validity will be always "valid"
+            // in this context.
             validity: ForkChoiceValidity::Valid,
             execution_block_hash: block.body.execution_payload.block_hash,
             extra_data: Default::default(),
