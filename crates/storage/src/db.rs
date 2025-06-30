@@ -197,6 +197,7 @@ impl ReamDB {
             _ => false,
         }
     }
+
     pub fn get_latest_block(&self) -> anyhow::Result<SignedBeaconBlock> {
         let highest_root = self
             .slot_index_provider()
