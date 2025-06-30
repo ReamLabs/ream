@@ -15,6 +15,7 @@ anyhow.workspace = true
 directories.workspace = true
 ethereum_ssz.workspace = true
 lru.workspace = true
+ream-bls.workspace = true
 redb.workspace = true
 snap.workspace = true
 ssz_types.workspace = true
@@ -24,7 +25,6 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tree_hash.workspace = true
-ream-bls.workspace = true
 
 # ream dependencies
 ream-consensus.workspace = true
