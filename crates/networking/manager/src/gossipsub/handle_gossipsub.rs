@@ -10,13 +10,14 @@ use ream_p2p::{
         topics::{GossipTopic, GossipTopicKind},
     },
 };
+use ream_storage::cache::CachedDB;
 use ssz::Encode;
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 
 use crate::{
+    gossipsub::validate::{beacon_block::validate_beacon_block, result::ValidationResult},
     p2p_sender::P2PSender,
-    validate::{ValidationResult, validate_beacon_block},
 };
 
 pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
@@ -80,6 +81,7 @@ pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
 pub async fn handle_gossipsub_message(
     message: Message,
     beacon_chain: &BeaconChain,
+    cached_db: &CachedDB,
     p2psender: &P2PSender,
 ) {
     match GossipsubMessage::decode(&message.topic, &message.data) {
@@ -91,26 +93,26 @@ pub async fn handle_gossipsub_message(
                     signed_block.message.block_root()
                 );
 
-                if let Ok(validation_result) =
-                    validate_beacon_block(beacon_chain, &signed_block).await
-                {
-                    match validation_result {
-                        ValidationResult::Accept => {
-                            if let Err(err) =
-                                beacon_chain.process_block(*signed_block.clone()).await
-                            {
-                                error!("Failed to process gossipsub beacon block: {err}");
-                            }
-                            p2psender.send_gossip(GossipMessage {
-                                topic: GossipTopic::from_topic_hash(&message.topic)
-                                    .expect("invalid topic hash"),
-                                data: signed_block.as_ssz_bytes(),
-                            });
+                let Ok(validation_result) =
+                    validate_beacon_block(beacon_chain, cached_db, &signed_block).await
+                else {
+                    return;
+                };
+
+                match validation_result {
+                    ValidationResult::Accept => {
+                        if let Err(err) = beacon_chain.process_block(*signed_block.clone()).await {
+                            error!("Failed to process gossipsub beacon block: {err}");
                         }
-                        ValidationResult::Ignore => warn!("Ignoring gossipsub beacon block"),
-                        ValidationResult::Reject => {
-                            warn!("Rejecting gossipsub beacon block. Peer should be penalized")
-                        }
+                        p2psender.send_gossip(GossipMessage {
+                            topic: GossipTopic::from_topic_hash(&message.topic)
+                                .expect("invalid topic hash"),
+                            data: signed_block.as_ssz_bytes(),
+                        });
+                    }
+                    ValidationResult::Ignore => warn!("Ignoring gossipsub beacon block"),
+                    ValidationResult::Reject => {
+                        warn!("Rejecting gossipsub beacon block. Peer should be penalized")
                     }
                 }
             }

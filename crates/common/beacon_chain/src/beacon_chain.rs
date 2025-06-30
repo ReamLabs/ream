@@ -1,11 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::bail;
-use ream_bls::{BLSSignature, PublicKey};
 use ream_consensus::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
-    bls_to_execution_change::BLSToExecutionChange, constants::genesis_validators_root,
-    electra::beacon_block::SignedBeaconBlock,
+    constants::genesis_validators_root, electra::beacon_block::SignedBeaconBlock,
 };
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice::{
@@ -19,15 +17,13 @@ use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 use tracing::warn;
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
     pub store: Mutex<Store>,
     pub execution_engine: Option<ExecutionEngine>,
-    pub cached_proposer_signature: RwLock<HashMap<(PublicKey, u64), BLSSignature>>,
-    pub cached_bls_to_execution_signature: RwLock<HashMap<(PublicKey, u64), BLSToExecutionChange>>,
 }
 
 impl BeaconChain {
@@ -40,8 +36,6 @@ impl BeaconChain {
         Self {
             store: Mutex::new(Store::new(db, operation_pool)),
             execution_engine,
-            cached_proposer_signature: HashMap::new().into(),
-            cached_bls_to_execution_signature: HashMap::new().into(),
         }
     }
 
