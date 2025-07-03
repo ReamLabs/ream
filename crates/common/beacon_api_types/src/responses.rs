@@ -1,4 +1,5 @@
 use alloy_primitives::B256;
+use ream_consensus::checkpoint::Checkpoint;
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
@@ -188,4 +189,84 @@ impl BeaconHeadResponse {
             execution_optimistic: EXECUTION_OPTIMISTIC,
         }
     }
+}
+
+/// A ForkChoiceResponse data struct that is used for /debug/fork_choice endpoint.
+///
+/// # Example
+///
+/// ```json
+/// {
+///   "justified_checkpoint": {
+///     "epoch": "1",
+///     "root": "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2"
+///   },
+///   "finalized_checkpoint": {
+///     "epoch": "1",
+///     "root": "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2"
+///   },
+///   "fork_choice_nodes": [
+///     {
+///       "slot": "1",
+///       "block_root": "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2",
+///       "parent_root": "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2",
+///       "justified_epoch": "1",
+///       "finalized_epoch": "1",
+///       "weight": "1",
+///       "validity": "valid",
+///       "execution_block_hash": "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2",
+///       "extra_data": {}
+///     }
+///   ],
+///   "extra_data": {}
+/// }
+/// ```
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ForkChoiceResponse {
+    pub justified_checkpoint: Checkpoint,
+    pub finalized_checkpoint: Checkpoint,
+    pub fork_choice_nodes: Vec<ForkChoiceNode>,
+    #[serde(default)]
+    pub extra_data: serde_json::Value,
+}
+
+impl ForkChoiceResponse {
+    pub fn new(
+        justified_checkpoint: Checkpoint,
+        finalized_checkpoint: Checkpoint,
+        fork_choice_nodes: Vec<ForkChoiceNode>,
+    ) -> Self {
+        Self {
+            justified_checkpoint,
+            finalized_checkpoint,
+            fork_choice_nodes,
+            extra_data: serde_json::Value::default(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ForkChoiceNode {
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub slot: u64,
+    pub block_root: B256,
+    pub parent_root: B256,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub justified_epoch: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub finalized_epoch: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub weight: u64,
+    pub validity: ForkChoiceValidity,
+    pub execution_block_hash: B256,
+    #[serde(default)]
+    pub extra_data: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum ForkChoiceValidity {
+    Valid,
+    Invalid,
+    Optimistic,
 }

@@ -2,6 +2,7 @@ pub mod blob_sidecar;
 pub mod block;
 pub mod committee;
 pub mod config;
+pub mod debug;
 pub mod duties;
 pub mod header;
 pub mod light_client;
