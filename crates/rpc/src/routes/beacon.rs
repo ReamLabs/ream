@@ -23,7 +23,7 @@ use crate::handlers::{
     validator::{
         get_validator_balances_from_state, get_validator_from_state, get_validators_from_state,
         post_validator_balances_from_state, post_validator_identities_from_state,
-        post_validators_from_state,
+        post_validator_liveness, post_validators_from_state,
     },
 };
 
@@ -51,6 +51,7 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(post_sync_committee_rewards)
         .service(get_validator_balances_from_state)
         .service(post_validator_balances_from_state)
+        .service(post_validator_liveness)
         .service(get_bls_to_execution_changes)
         .service(post_bls_to_execution_changes)
         .service(get_voluntary_exits)

@@ -13,9 +13,9 @@ use ream_beacon_api_types::{
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_bls::PublicKey;
-use ream_consensus::validator::Validator;
+use ream_consensus::{constants::SLOTS_PER_EPOCH, validator::Validator};
 use ream_storage::db::ReamDB;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::state::get_state_from_id;
 
@@ -347,4 +347,63 @@ pub async fn post_validator_balances_from_state(
             body.id.as_ref(),
         ))),
     )
+}
+
+#[derive(Debug, Serialize)]
+pub struct ValidatorLivenessData {
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub index: u64,
+    pub is_live: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ValidatorIndex(#[serde(with = "serde_utils::quoted_u64")] pub u64);
+
+impl ValidatorLivenessData {
+    pub fn new(index: u64, is_live: bool) -> Self {
+        Self { index, is_live }
+    }
+}
+
+#[post("/validator/liveness/{epoch}")]
+pub async fn post_validator_liveness(
+    db: Data<ReamDB>,
+    epoch: Path<u64>,
+    validator_indices: Json<Vec<ValidatorIndex>>,
+) -> Result<impl Responder, ApiError> {
+    let epoch = epoch.into_inner();
+    let validator_indices = validator_indices.into_inner();
+
+    let slot = epoch * SLOTS_PER_EPOCH;
+    let state = get_state_from_id(ID::Slot(slot), &db).await?;
+
+    let mut liveness_data = Vec::new();
+
+    for ValidatorIndex(validator_index) in validator_indices {
+        let index = validator_index as usize;
+
+        let is_live = match state.validators.get(index) {
+            Some(validator) => {
+                if !validator.is_active_validator(epoch) {
+                    false
+                } else {
+                    let epoch_participation = if epoch == state.get_current_epoch() {
+                        &state.current_epoch_participation
+                    } else {
+                        &state.previous_epoch_participation
+                    };
+                    if let Some(participation) = epoch_participation.get(index) {
+                        *participation > 0
+                    } else {
+                        false
+                    }
+                }
+            }
+            None => continue,
+        };
+
+        liveness_data.push(ValidatorLivenessData::new(validator_index, is_live));
+    }
+
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(liveness_data)))
 }
