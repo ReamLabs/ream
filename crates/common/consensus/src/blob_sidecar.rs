@@ -1,17 +1,17 @@
 use alloy_primitives::B256;
-use ream_merkle::is_valid_merkle_branch;
+use ream_merkle::{get_root_from_merkle_branch, is_valid_merkle_branch};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use ssz_types::{
-    FixedVector,
-    typenum::{U17, Unsigned},
-};
+use ssz_types::{FixedVector, typenum::U17};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::{
     beacon_block_header::SignedBeaconBlockHeader,
-    constants::BLOB_KZG_COMMITMENTS_INDEX,
+    constants::{
+        BLOB_KZG_COMMITMENTS_INDEX, KZG_COMMITMENT_INCLUSION_PROOF_DEPTH, MAX_BLOBS_PER_BLOCK,
+    },
+    electra::execution_payload::Transactions,
     execution_engine::rpc_types::get_blobs::Blob,
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
@@ -43,66 +43,66 @@ impl BlobIdentifier {
 
 impl BlobSidecar {
     pub fn verify_blob_sidecar_inclusion_proof(&self) -> bool {
-        is_valid_merkle_branch(
+        let kzg_commitments_tree_depth =
+            (MAX_BLOBS_PER_BLOCK.next_power_of_two().ilog2() + 1) as usize;
+
+        let (subtree_proof, branch) = self
+            .kzg_commitment_inclusion_proof
+            .split_at(kzg_commitments_tree_depth);
+
+        let blob_kzg_commitments_root = get_root_from_merkle_branch(
             self.kzg_commitment.tree_hash_root(),
-            &self.kzg_commitment_inclusion_proof,
-            U17::USIZE as u64,
+            subtree_proof,
+            kzg_commitments_tree_depth as u64,
+            self.index,
+        );
+
+        is_valid_merkle_branch(
+            blob_kzg_commitments_root,
+            branch,
+            KZG_COMMITMENT_INCLUSION_PROOF_DEPTH - kzg_commitments_tree_depth as u64,
             BLOB_KZG_COMMITMENTS_INDEX,
             self.signed_block_header.message.body_root,
         )
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlobTransaction {
+    pub blob_sidecar: BlobSidecar,
+    pub transaction: Transactions,
+}
+
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::B256;
-    use ream_bls::BLSSignature;
-    use ream_merkle::{generate_proof, merkle_tree};
-    use ssz_types::{FixedVector, typenum::U17};
-    use tree_hash::TreeHash;
+    use std::path::Path;
 
-    use crate::{
-        beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
-        blob_sidecar::BlobSidecar,
-        constants::BLOB_KZG_COMMITMENTS_INDEX,
-        execution_engine::rpc_types::get_blobs::Blob,
-        polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
-    };
+    use anyhow::anyhow;
+    use ream_bls::BLSSignature;
+    use snap::raw::Decoder;
+    use ssz::Decode;
+    use ssz_types::{FixedVector, typenum::U17};
+
+    use super::*;
+    use crate::beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader};
+
+    fn read_ssz_snappy_file<T: Decode>(path: &Path) -> anyhow::Result<T> {
+        let ssz_snappy = std::fs::read(path)?;
+        let mut decoder = Decoder::new();
+        let ssz = decoder.decompress_vec(&ssz_snappy)?;
+        T::from_ssz_bytes(&ssz).map_err(|err| anyhow!("Failed to decode SSZ: {err:?}"))
+    }
 
     #[test]
     fn verify_blob_sidecar_inclusion_proof_positive() -> anyhow::Result<()> {
-        let blob = Blob {
-            inner: FixedVector::from(vec![0x42; 131072]),
-        };
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/blob_sidecar.ssz_snappy");
+        let blob_sidecar: BlobSidecar = read_ssz_snappy_file(&path)?;
 
-        let kzg_commitment = KZGCommitment([0u8; 48]);
-        let depth = 17;
-
-        let mut leaves = vec![B256::default(); 1 << depth];
-        leaves[BLOB_KZG_COMMITMENTS_INDEX as usize] = kzg_commitment.tree_hash_root();
-
-        let tree = merkle_tree(&leaves, depth)?;
-        let root = tree[1];
-
-        let mut proof = generate_proof(&tree, BLOB_KZG_COMMITMENTS_INDEX, depth)?;
-        proof.resize(17, B256::default());
-
-        let blob_sidecar = BlobSidecar {
-            index: BLOB_KZG_COMMITMENTS_INDEX,
-            blob,
-            kzg_commitment,
-            kzg_proof: KZGProof::default(),
-            signed_block_header: SignedBeaconBlockHeader {
-                message: BeaconBlockHeader {
-                    body_root: root,
-                    ..Default::default()
-                },
-                signature: BLSSignature::default(),
-            },
-            kzg_commitment_inclusion_proof: FixedVector::from(proof),
-        };
-
-        assert!(blob_sidecar.verify_blob_sidecar_inclusion_proof());
+        assert!(
+            blob_sidecar.verify_blob_sidecar_inclusion_proof(),
+            "Inclusion proof failed"
+        );
         Ok(())
     }
 

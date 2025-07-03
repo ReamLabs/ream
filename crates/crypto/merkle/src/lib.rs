@@ -69,6 +69,10 @@ pub fn is_valid_merkle_branch(
     index: u64,
     root: B256,
 ) -> bool {
+    root == get_root_from_merkle_branch(leaf, branch, depth, index)
+}
+
+pub fn get_root_from_merkle_branch(leaf: B256, branch: &[B256], depth: u64, index: u64) -> B256 {
     let mut value = leaf;
     for i in 0..depth {
         if get_generalized_index_bit(index, i) {
@@ -77,7 +81,7 @@ pub fn is_valid_merkle_branch(
             value = hash_concat(value.as_slice(), branch[i as usize].as_slice());
         }
     }
-    value == root
+    value
 }
 
 pub fn is_valid_normalized_merkle_branch(
