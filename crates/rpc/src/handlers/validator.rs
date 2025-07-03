@@ -10,45 +10,16 @@ use ream_beacon_api_types::{
     query::{IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
     responses::BeaconResponse,
+    validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
-use ream_bls::PubKey;
+use ream_bls::PublicKey;
 use ream_consensus::{validator::Validator, electra::beacon_state::BeaconState, constants::SLOTS_PER_EPOCH};
 use ream_storage::db::ReamDB;
-use serde::{Deserialize, Serialize};
-use tracing::error;
+use serde::Serialize;
 
 use super::state::get_state_from_id;
 
 const MAX_VALIDATOR_COUNT: usize = 100;
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ValidatorData {
-    #[serde(with = "serde_utils::quoted_u64")]
-    index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    balance: u64,
-    status: String,
-    validator: Validator,
-}
-
-impl ValidatorData {
-    pub fn new(index: u64, balance: u64, status: String, validator: Validator) -> Self {
-        Self {
-            index,
-            balance,
-            status,
-            validator,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct ValidatorBalance {
-    #[serde(with = "serde_utils::quoted_u64")]
-    index: u64,
-    #[serde(with = "serde_utils::quoted_u64")]
-    balance: u64,
-}
 
 fn build_validator_balances(
     validators: &[(Validator, u64)],
@@ -63,7 +34,7 @@ fn build_validator_balances(
         .filter(|(idx, (validator, _))| match &filtered_ids {
             Some(ids) => {
                 ids.contains(&ValidatorID::Index(*idx as u64))
-                    || ids.contains(&ValidatorID::Address(validator.pubkey.clone()))
+                    || ids.contains(&ValidatorID::Address(validator.public_key.clone()))
             }
             None => true,
         })
@@ -92,17 +63,17 @@ pub async fn get_validator_from_state(
                     )));
                 }
             },
-            ValidatorID::Address(pubkey) => {
+            ValidatorID::Address(public_key) => {
                 match state
                     .validators
                     .iter()
                     .enumerate()
-                    .find(|(_, v)| v.pubkey == *pubkey)
+                    .find(|(_, validator)| validator.public_key == *public_key)
                 {
                     Some((i, validator)) => (i, validator.to_owned()),
                     None => {
                         return Err(ApiError::NotFound(format!(
-                            "Validator not found for pubkey: {pubkey:?}"
+                            "Validator not found for public_key: {public_key:?}"
                         )))?;
                     }
                 }
@@ -126,13 +97,15 @@ pub async fn get_validator_from_state(
     )
 }
 
-pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<String, ApiError> {
+pub async fn validator_status(
+    validator: &Validator,
+    db: &ReamDB,
+) -> Result<ValidatorStatus, ApiError> {
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
         .map_err(|err| {
-            error!("Failed to get_highest_slot, error: {err:?}");
-            ApiError::InternalError
+            ApiError::InternalError(format!("Failed to get_highest_slot, error: {err:?}"))
         })?
         .ok_or(ApiError::NotFound(
             "Failed to find highest slot".to_string(),
@@ -140,9 +113,9 @@ pub async fn validator_status(validator: &Validator, db: &ReamDB) -> Result<Stri
     let state = get_state_from_id(ID::Slot(highest_slot), db).await?;
 
     if validator.exit_epoch < state.get_current_epoch() {
-        Ok("offline".to_string())
+        Ok(ValidatorStatus::Offline)
     } else {
-        Ok("active_ongoing".to_string())
+        Ok(ValidatorStatus::ActiveOngoing)
     }
 }
 
@@ -176,17 +149,17 @@ pub async fn get_validators_from_state(
                             )))?;
                         }
                     },
-                    ValidatorID::Address(pubkey) => {
+                    ValidatorID::Address(public_key) => {
                         match state
                             .validators
                             .iter()
                             .enumerate()
-                            .find(|(_, v)| v.pubkey == *pubkey)
+                            .find(|(_, validator)| validator.public_key == *public_key)
                         {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
                                 return Err(ApiError::NotFound(format!(
-                                    "Validator not found for pubkey: {pubkey:?}"
+                                    "Validator not found for public_key: {public_key:?}"
                                 )))?;
                             }
                         }
@@ -230,8 +203,8 @@ pub async fn post_validators_from_state(
     request: Json<ValidatorsPostRequest>,
     _status_query: Json<StatusQuery>,
 ) -> Result<impl Responder, ApiError> {
-    let ValidatorsPostRequest { ids, status, .. } = request.into_inner();
-    let status_query = StatusQuery { status };
+    let ValidatorsPostRequest { ids, statuses, .. } = request.into_inner();
+    let status_query = StatusQuery { status: statuses };
 
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
     let mut validators_data = Vec::new();
@@ -250,17 +223,17 @@ pub async fn post_validators_from_state(
                             )))?;
                         }
                     },
-                    ValidatorID::Address(pubkey) => {
+                    ValidatorID::Address(public_key) => {
                         match state
                             .validators
                             .iter()
                             .enumerate()
-                            .find(|(_, v)| v.pubkey == *pubkey)
+                            .find(|(_, validator)| validator.public_key == *public_key)
                         {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
                                 return Err(ApiError::NotFound(format!(
-                                    "Validator not found for pubkey: {pubkey:?}"
+                                    "Validator not found for public_key: {public_key:?}"
                                 )))?;
                             }
                         }
@@ -301,7 +274,7 @@ pub async fn post_validators_from_state(
 struct ValidatorIdentity {
     #[serde(with = "serde_utils::quoted_u64")]
     index: u64,
-    pubkey: PubKey,
+    public_key: PublicKey,
     #[serde(with = "serde_utils::quoted_u64")]
     activation_epoch: u64,
 }
@@ -322,11 +295,11 @@ pub async fn post_validator_identities_from_state(
         .enumerate()
         .filter_map(|(index, validator)| {
             if validator_ids_set.contains(&ValidatorID::Index(index as u64))
-                || validator_ids_set.contains(&ValidatorID::Address(validator.pubkey.clone()))
+                || validator_ids_set.contains(&ValidatorID::Address(validator.public_key.clone()))
             {
                 Some(ValidatorIdentity {
                     index: index as u64,
-                    pubkey: validator.pubkey.clone(),
+                    public_key: validator.public_key.clone(),
                     activation_epoch: validator.activation_epoch,
                 })
             } else {

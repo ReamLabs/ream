@@ -1,7 +1,10 @@
 use libp2p::{PeerId, swarm::ConnectionId};
 use tokio::sync::mpsc;
 
-use crate::req_resp::{handler::RespMessage, messages::ResponseMessage};
+use crate::req_resp::{
+    handler::RespMessage,
+    messages::{ResponseMessage, status::Status},
+};
 
 pub enum P2PCallbackResponse {
     ResponseMessage(Box<ResponseMessage>),
@@ -14,6 +17,10 @@ pub enum P2PMessage {
 }
 
 pub enum P2PRequest {
+    Status {
+        peer_id: PeerId,
+        status: Status,
+    },
     BlockRange {
         peer_id: PeerId,
         start: u64,

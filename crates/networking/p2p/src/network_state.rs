@@ -8,13 +8,14 @@ use ssz::Encode;
 
 use crate::{
     peer::{CachedPeer, ConnectionState, Direction},
-    req_resp::messages::meta_data::GetMetaDataV2,
+    req_resp::messages::{meta_data::GetMetaDataV2, status::Status},
     utils::META_DATA_FILE_NAME,
 };
 
 pub struct NetworkState {
     pub peer_table: RwLock<HashMap<PeerId, CachedPeer>>,
     pub meta_data: RwLock<GetMetaDataV2>,
+    pub status: RwLock<Status>,
     pub data_dir: PathBuf,
 }
 
@@ -40,14 +41,7 @@ impl NetworkState {
                     cached_peer.enr = Some(enr_ref.clone());
                 }
             })
-            .or_insert(CachedPeer {
-                peer_id,
-                last_seen_p2p_address: address,
-                state,
-                direction,
-                enr,
-                meta_data: None,
-            });
+            .or_insert(CachedPeer::new(peer_id, address, state, direction, enr));
     }
 
     pub fn write_meta_data_to_disk(&self) -> anyhow::Result<()> {

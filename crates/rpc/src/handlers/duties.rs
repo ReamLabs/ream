@@ -35,7 +35,7 @@ pub async fn get_proposer_duties(
             return Err(ApiError::ValidatorNotFound(format!("{validator_index}")));
         };
         duties.push(ProposerDuty {
-            pubkey: validator.pubkey.clone(),
+            public_key: validator.public_key.clone(),
             validator_index,
             slot,
         });
@@ -82,7 +82,7 @@ pub async fn get_attester_duties(
                 })?;
 
             duties.push(AttesterDuty {
-                pubkey: validator.pubkey.clone(),
+                public_key: validator.public_key.clone(),
                 validator_index,
                 committee_index,
                 committees_at_slot,

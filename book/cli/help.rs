@@ -192,7 +192,7 @@ fn get_entry(cmd: &Cmd) -> io::Result<(Vec<String>, String)> {
     }
 
     let stdout = str::from_utf8(&output.stdout)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?
         .to_string();
 
     // Parse subcommands from the help output

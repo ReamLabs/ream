@@ -43,10 +43,10 @@ The crate uses a **trait-based interface** to abstract over the specific backend
 ### Public Key Aggregation
 
 ```rust
-use ream_bls::{AggregatePubKey, PubKey};
+use ream_bls::{AggregatePublicKey, PublicKey};
 
-let pubkeys: &[&PubKey] = &[..];
-let agg_pubkey = AggregatePubKey::aggregate(pubkeys).unwrap();
+let public_keys: &[&PublicKey] = &[..];
+let aggregate_public_key = AggregatePublicKey::aggregate(public_keys).unwrap();
 ```
 
 ### Signing
@@ -63,23 +63,23 @@ let signature = private_key.sign(message);
 ### Signature Verification
 
 ```rust
-use ream_bls::{BLSSignature, PubKey};
+use ream_bls::{BLSSignature, PublicKey};
 
 let signature: BLSSignature = ..;
-let pubkey: PubKey = ..;
+let public_key: PublicKey = ..;
 let message = b"Hello, world!";
 
-let result = signature.verify(&pubkey, message);
+let result = signature.verify(&public_key, message);
 ```
 
 ### Fast Aggregate Verification
 
 ```rust
-use ream_bls::{AggregatePubKey, BLSSignature, PubKey};
+use ream_bls::{AggregatePublicKey, BLSSignature, PublicKey};
 
 let signature: BLSSignature = ..;
-let pubkeys: &[&PubKey] = &[..];
+let public_keys: &[&PublicKey] = &[..];
 let message = b"Hello, world!";
 
-let result = signature.fast_aggregate_verify(pubkeys, message);
+let result = signature.fast_aggregate_verify(public_keys, message);
 ```

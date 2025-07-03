@@ -11,7 +11,7 @@ use anyhow::{anyhow, bail, ensure};
 use ethereum_hashing::{hash, hash_fixed};
 use itertools::Itertools;
 use ream_bls::{
-    BLSSignature, PubKey,
+    BLSSignature, PublicKey,
     traits::{Aggregatable, Verifiable},
 };
 use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
@@ -20,7 +20,7 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitVector, FixedVector, VariableList,
     serde_utils::{quoted_u64_fixed_vec, quoted_u64_var_list},
-    typenum::{U4, U2048, U8192, U65536, U262144, U16777216, U134217728, U1099511627776},
+    typenum::{U4, U2048, U8192, U65536, U262144, U16777216, U134217728},
 };
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
@@ -30,6 +30,7 @@ use super::{
     beacon_block_body::BeaconBlockBody,
     execution_payload::ExecutionPayload,
     execution_payload_header::ExecutionPayloadHeader,
+    zkvm_types::ValidatorRegistryLimit,
 };
 use crate::{
     attestation::Attestation,
@@ -100,7 +101,7 @@ pub mod quoted_u8_var_list {
     use super::*;
 
     pub fn serialize<S>(
-        value: &VariableList<u8, U1099511627776>,
+        value: &VariableList<u8, ValidatorRegistryLimit>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
@@ -112,7 +113,7 @@ pub mod quoted_u8_var_list {
 
     pub fn deserialize<'de, D>(
         deserializer: D,
-    ) -> Result<VariableList<u8, U1099511627776>, D::Error>
+    ) -> Result<VariableList<u8, ValidatorRegistryLimit>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -127,6 +128,14 @@ pub mod quoted_u8_var_list {
     }
 }
 
+/// The BeaconState contains some "zkvm" features that addresses where 32-bit zkVMs would fail
+/// on constructing a VariableList larger than 2^32 size (i.e. 2^40). When "zkvm" feature
+/// is enabled, it would construct the BeaconState with 2^29 list instead.
+///
+/// This "zkvm" feature needs to be used with the modified ssz_types crate at
+/// https://github.com/ReamLabs/ssz_types/tree/magic-extended-list
+/// where the crate would detect 2^29 as a magic number when computing the root hash,
+/// and it will compute as a 2^40 list root instead.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BeaconState {
     // Versioning
@@ -151,9 +160,9 @@ pub struct BeaconState {
     pub eth1_deposit_index: u64,
 
     // Registry
-    pub validators: VariableList<Validator, U1099511627776>,
+    pub validators: VariableList<Validator, ValidatorRegistryLimit>,
     #[serde(with = "quoted_u64_var_list")]
-    pub balances: VariableList<u64, U1099511627776>,
+    pub balances: VariableList<u64, ValidatorRegistryLimit>,
 
     // Randomness
     pub randao_mixes: FixedVector<B256, U65536>,
@@ -164,9 +173,9 @@ pub struct BeaconState {
 
     // Participation
     #[serde(with = "quoted_u8_var_list")]
-    pub previous_epoch_participation: VariableList<u8, U1099511627776>,
+    pub previous_epoch_participation: VariableList<u8, ValidatorRegistryLimit>,
     #[serde(with = "quoted_u8_var_list")]
-    pub current_epoch_participation: VariableList<u8, U1099511627776>,
+    pub current_epoch_participation: VariableList<u8, ValidatorRegistryLimit>,
 
     // Finality
     pub justification_bits: BitVector<U4>,
@@ -176,7 +185,7 @@ pub struct BeaconState {
 
     // Inactivity
     #[serde(with = "quoted_u64_var_list")]
-    pub inactivity_scores: VariableList<u64, U1099511627776>,
+    pub inactivity_scores: VariableList<u64, ValidatorRegistryLimit>,
 
     // Sync
     pub current_sync_committee: Arc<SyncCommittee>,
@@ -308,8 +317,8 @@ impl BeaconState {
         self.validators
             .iter()
             .enumerate()
-            .filter_map(|(i, v)| {
-                if v.is_active_validator(epoch) {
+            .filter_map(|(i, validator)| {
+                if validator.is_active_validator(epoch) {
                     Some(i as u64)
                 } else {
                     None
@@ -354,7 +363,7 @@ impl BeaconState {
         loop {
             let candidate_index = indices[compute_shuffled_index(i % total, total, seed)?];
 
-            let random_bytes = hash(&[seed.as_slice(), &(i / 16).to_le_bytes()].concat());
+            let random_bytes = hash(&[seed.as_slice(), &((i / 16) as u64).to_le_bytes()].concat());
             let offset = i % 16 * 2;
             let random_value = bytes_to_int64(&random_bytes[offset..offset + 2]);
 
@@ -503,13 +512,13 @@ impl BeaconState {
                     .map(|&index| {
                         self.validators
                             .get(index)
-                            .map(|validator| &validator.pubkey)
+                            .map(|validator| &validator.public_key)
                             .ok_or(anyhow!("Invalid index"))
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?,
                 signing_root.as_ref(),
             )
-            .map_err(|e| anyhow!("Invalid indexed attestation: {:?}", e))
+            .map_err(|err| anyhow!("Invalid indexed attestation: {err}"))
     }
 
     /// Return the set of attesting indices corresponding to ``aggregation_bits`` and
@@ -760,9 +769,9 @@ impl BeaconState {
     pub fn get_eligible_validator_indices(&self) -> anyhow::Result<Vec<u64>> {
         let previous_epoch = self.get_previous_epoch();
         let mut validator_indices = vec![];
-        for (index, v) in self.validators.iter().enumerate() {
-            if v.is_active_validator(previous_epoch)
-                || (v.slashed && previous_epoch + 1 < v.withdrawable_epoch)
+        for (index, validator) in self.validators.iter().enumerate() {
+            if validator.is_active_validator(previous_epoch)
+                || (validator.slashed && previous_epoch + 1 < validator.withdrawable_epoch)
             {
                 validator_indices.push(index as u64)
             }
@@ -1012,13 +1021,13 @@ impl BeaconState {
 
     pub fn add_validator_to_registry(
         &mut self,
-        pubkey: PubKey,
+        public_key: PublicKey,
         withdrawal_credentials: B256,
         amount: u64,
     ) -> anyhow::Result<()> {
         self.validators
             .push(get_validator_from_deposit(
-                pubkey,
+                public_key,
                 withdrawal_credentials,
                 amount,
             ))
@@ -1041,7 +1050,7 @@ impl BeaconState {
 
     pub fn apply_deposit(
         &mut self,
-        pubkey: PubKey,
+        public_key: PublicKey,
         withdrawal_credentials: B256,
         amount: u64,
         signature: BLSSignature,
@@ -1049,13 +1058,18 @@ impl BeaconState {
         if !self
             .validators
             .iter()
-            .any(|validator| validator.pubkey == pubkey)
+            .any(|validator| validator.public_key == public_key)
         {
             // Verify the deposit signature (proof of possession) which is not checked by the
             // deposit contract
-            match is_valid_deposit_signature(&pubkey, withdrawal_credentials, amount, &signature) {
+            match is_valid_deposit_signature(
+                &public_key,
+                withdrawal_credentials,
+                amount,
+                &signature,
+            ) {
                 Ok(true) => {
-                    self.add_validator_to_registry(pubkey.clone(), withdrawal_credentials, 0)?
+                    self.add_validator_to_registry(public_key.clone(), withdrawal_credentials, 0)?
                 }
                 _ => return Ok(()),
             }
@@ -1064,7 +1078,7 @@ impl BeaconState {
         // Increase balance by deposit amount
         self.pending_deposits
             .push(PendingDeposit {
-                pubkey,
+                public_key,
                 withdrawal_credentials,
                 amount,
                 signature,
@@ -1091,27 +1105,28 @@ impl BeaconState {
         self.eth1_deposit_index += 1;
 
         self.apply_deposit(
-            deposit.data.pubkey.clone(),
+            deposit.data.public_key.clone(),
             deposit.data.withdrawal_credentials,
             deposit.data.amount,
             deposit.data.signature.clone(),
         )
     }
 
-    pub fn process_bls_to_execution_change(
-        &mut self,
-        signed_address_change: &SignedBLSToExecutionChange,
+    pub fn validate_bls_to_execution_change(
+        &self,
+        signed_bls_to_execution_change: &SignedBLSToExecutionChange,
     ) -> anyhow::Result<()> {
-        let address_change = &signed_address_change.message;
+        let bls_to_execution_change = &signed_bls_to_execution_change.message;
 
-        ensure!(address_change.validator_index < self.validators.len() as u64);
+        ensure!(bls_to_execution_change.validator_index < self.validators.len() as u64);
 
-        let validator: &Validator = &self.validators[address_change.validator_index as usize];
+        let validator: &Validator =
+            &self.validators[bls_to_execution_change.validator_index as usize];
 
         ensure!(&validator.withdrawal_credentials[..1] == BLS_WITHDRAWAL_PREFIX);
         ensure!(
             validator.withdrawal_credentials[1..]
-                == hash(address_change.from_bls_pubkey.to_bytes())[1..]
+                == hash(bls_to_execution_change.from_bls_public_key.to_bytes())[1..]
         );
 
         // Fork-agnostic domain since address changes are valid across forks
@@ -1121,21 +1136,33 @@ impl BeaconState {
             Some(self.genesis_validators_root),
         );
 
-        let signing_root = compute_signing_root(address_change, domain);
+        let signing_root = compute_signing_root(bls_to_execution_change, domain);
         ensure!(
-            signed_address_change
-                .signature
-                .verify(&address_change.from_bls_pubkey, signing_root.as_ref())?,
+            signed_bls_to_execution_change.signature.verify(
+                &bls_to_execution_change.from_bls_public_key,
+                signing_root.as_ref()
+            )?,
             "BLS Signature verification failed!"
         );
+
+        Ok(())
+    }
+
+    pub fn process_bls_to_execution_change(
+        &mut self,
+        signed_bls_to_execution_change: &SignedBLSToExecutionChange,
+    ) -> anyhow::Result<()> {
+        self.validate_bls_to_execution_change(signed_bls_to_execution_change)?;
+
+        let bls_to_execution_change = &signed_bls_to_execution_change.message;
 
         let withdrawal_credentials = [
             ETH1_ADDRESS_WITHDRAWAL_PREFIX,
             vec![0x00; 11].as_slice(),
-            address_change.to_execution_address.as_slice(),
+            bls_to_execution_change.to_execution_address.as_slice(),
         ]
         .concat();
-        self.validators[address_change.validator_index as usize].withdrawal_credentials =
+        self.validators[bls_to_execution_change.validator_index as usize].withdrawal_credentials =
             B256::from_slice(&withdrawal_credentials);
 
         Ok(())
@@ -1146,8 +1173,8 @@ impl BeaconState {
         self.genesis_time + slots_since_genesis * SECONDS_PER_SLOT
     }
 
-    pub fn process_voluntary_exit(
-        &mut self,
+    pub fn validate_voluntary_exit(
+        &self,
         signed_voluntary_exit: &SignedVoluntaryExit,
     ) -> anyhow::Result<()> {
         let voluntary_exit = &signed_voluntary_exit.message;
@@ -1203,12 +1230,21 @@ impl BeaconState {
         ensure!(
             signed_voluntary_exit
                 .signature
-                .verify(&validator.pubkey, signing_root.as_ref())?,
+                .verify(&validator.public_key, signing_root.as_ref())?,
             "BLS Signature verification failed!"
         );
 
+        Ok(())
+    }
+
+    pub fn process_voluntary_exit(
+        &mut self,
+        signed_voluntary_exit: &SignedVoluntaryExit,
+    ) -> anyhow::Result<()> {
+        self.validate_voluntary_exit(signed_voluntary_exit)?;
+
         // Initiate exit
-        self.initiate_validator_exit(validator_index as u64)?;
+        self.initiate_validator_exit(signed_voluntary_exit.message.validator_index)?;
 
         Ok(())
     }
@@ -1227,12 +1263,11 @@ impl BeaconState {
             return Ok(());
         }
 
-        // Verify pubkey exists
-        let Some((index, validator)) = self
-            .validators
-            .iter()
-            .enumerate()
-            .find(|(_, validator)| validator.pubkey == withdrawal_request.validator_pubkey)
+        // Verify public_key exists
+        let Some((index, validator)) =
+            self.validators.iter().enumerate().find(|(_, validator)| {
+                validator.public_key == withdrawal_request.validator_public_key
+            })
         else {
             return Ok(());
         };
@@ -1313,7 +1348,7 @@ impl BeaconState {
         // Create pending deposit
         self.pending_deposits
             .push(PendingDeposit {
-                pubkey: deposit_request.pubkey.clone(),
+                public_key: deposit_request.public_key.clone(),
                 withdrawal_credentials: deposit_request.withdrawal_credentials,
                 amount: deposit_request.amount,
                 signature: deposit_request.signature.clone(),
@@ -1329,15 +1364,15 @@ impl BeaconState {
         consolidation_request: &ConsolidationRequest,
     ) -> bool {
         // Switch to compounding requires source and target be equal
-        if consolidation_request.source_pubkey != consolidation_request.target_pubkey {
+        if consolidation_request.source_public_key != consolidation_request.target_public_key {
             return false;
         }
 
-        // Verify pubkey exists
+        // Verify public_key exists
         let Some(source_validator) = self
             .validators
             .iter()
-            .find(|validator| validator.pubkey == consolidation_request.source_pubkey)
+            .find(|validator| validator.public_key == consolidation_request.source_public_key)
         else {
             return false;
         };
@@ -1370,12 +1405,9 @@ impl BeaconState {
         consolidation_request: &ConsolidationRequest,
     ) -> anyhow::Result<()> {
         if self.is_valid_switch_to_compounding_request(consolidation_request) {
-            let Some((index, _)) = self
-                .validators
-                .iter()
-                .enumerate()
-                .find(|(_, validator)| validator.pubkey == consolidation_request.source_pubkey)
-            else {
+            let Some((index, _)) = self.validators.iter().enumerate().find(|(_, validator)| {
+                validator.public_key == consolidation_request.source_public_key
+            }) else {
                 bail!("Validator not found");
             };
             self.switch_to_compounding_validator(index as u64)?;
@@ -1383,7 +1415,7 @@ impl BeaconState {
         }
 
         // Verify that source != target, so a consolidation cannot be used as an exit
-        if consolidation_request.source_pubkey == consolidation_request.target_pubkey {
+        if consolidation_request.source_public_key == consolidation_request.target_public_key {
             return Ok(());
         }
 
@@ -1398,19 +1430,17 @@ impl BeaconState {
             return Ok(());
         }
 
-        let Some((source_index, source_validator)) = self
-            .validators
-            .iter()
-            .enumerate()
-            .find(|(_, validator)| validator.pubkey == consolidation_request.source_pubkey)
+        let Some((source_index, source_validator)) =
+            self.validators.iter().enumerate().find(|(_, validator)| {
+                validator.public_key == consolidation_request.source_public_key
+            })
         else {
             return Ok(());
         };
-        let Some((target_index, target_validator)) = self
-            .validators
-            .iter()
-            .enumerate()
-            .find(|(_, validator)| validator.pubkey == consolidation_request.target_pubkey)
+        let Some((target_index, target_validator)) =
+            self.validators.iter().enumerate().find(|(_, validator)| {
+                validator.public_key == consolidation_request.target_public_key
+            })
         else {
             return Ok(());
         };
@@ -1473,6 +1503,42 @@ impl BeaconState {
             })?;
 
         Ok(())
+    }
+
+    pub fn get_sync_committee_indices(
+        &self,
+        sync_committee: &SyncCommittee,
+    ) -> anyhow::Result<Vec<usize>> {
+        let pubkey_to_index: HashMap<_, _> = self
+            .validators
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (&v.public_key, i))
+            .collect();
+
+        let mut indices = Vec::with_capacity(sync_committee.public_keys.len());
+
+        for pubkey in &sync_committee.public_keys {
+            let index = pubkey_to_index
+                .get(pubkey)
+                .ok_or_else(|| anyhow!("Pubkey not found in validator set."))?;
+            indices.push(*index);
+        }
+
+        Ok(indices)
+    }
+
+    pub fn get_proposer_and_participant_rewards(&self) -> (u64, u64) {
+        let total_active_balance = self.get_total_active_balance();
+        let total_active_increments = total_active_balance / EFFECTIVE_BALANCE_INCREMENT;
+        let total_base_rewards = self.get_base_reward_per_increment() * total_active_increments;
+        let max_participant_rewards =
+            total_base_rewards * SYNC_REWARD_WEIGHT / WEIGHT_DENOMINATOR / SLOTS_PER_EPOCH;
+        let participant_reward = max_participant_rewards / SYNC_COMMITTEE_SIZE;
+        let proposer_reward =
+            participant_reward * PROPOSER_WEIGHT / (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT);
+
+        (participant_reward, proposer_reward)
     }
 
     /// Return the sync committee indices, with possible duplicates, for the next sync committee.
@@ -1549,7 +1615,7 @@ impl BeaconState {
             ensure!(
                 signed_header
                     .signature
-                    .verify(&proposer.pubkey, signing_root.as_ref())?,
+                    .verify(&proposer.public_key, signing_root.as_ref())?,
                 "BLS Signature verification failed!"
             );
         }
@@ -1574,12 +1640,12 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn process_attester_slashing(
-        &mut self,
-        attester_slashing: &AttesterSlashing,
-    ) -> anyhow::Result<()> {
-        let attestation_1 = &attester_slashing.attestation_1;
-        let attestation_2 = &attester_slashing.attestation_2;
+    pub fn get_slashable_attester_indices(
+        &self,
+        attester_shashing: &AttesterSlashing,
+    ) -> anyhow::Result<(HashSet<u64>, HashSet<u64>)> {
+        let attestation_1 = &attester_shashing.attestation_1;
+        let attestation_2 = &attester_shashing.attestation_2;
 
         // Ensure the two attestations are slashable
         ensure!(
@@ -1597,10 +1663,26 @@ impl BeaconState {
             "Second attestation is invalid"
         );
 
-        let current_epoch = self.get_current_epoch();
-        let indices_1: HashSet<_> = attestation_1.attesting_indices.iter().cloned().collect();
-        let indices_2: HashSet<_> = attestation_2.attesting_indices.iter().cloned().collect();
+        let attestation_indices_1 = attestation_1
+            .attesting_indices
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>();
+        let attestation_indices_2 = attestation_2
+            .attesting_indices
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>();
 
+        Ok((attestation_indices_1, attestation_indices_2))
+    }
+
+    pub fn process_attester_slashing(
+        &mut self,
+        attester_slashing: &AttesterSlashing,
+    ) -> anyhow::Result<()> {
+        let (indices_1, indices_2) = self.get_slashable_attester_indices(attester_slashing)?;
+        let current_epoch = self.get_current_epoch();
         let mut slashed_any = false;
 
         // Find common attesting indices and process slashing
@@ -1616,17 +1698,37 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn process_sync_aggregate(&mut self, sync_aggregate: &SyncAggregate) -> anyhow::Result<()> {
-        // Verify sync committee aggregate signature signing over the previous slot block root
-        let committee_pubkeys = &self.current_sync_committee.pubkeys;
-        let mut participant_pubkeys = vec![];
+    fn calculate_sync_committee_balance_change(
+        committee_indices: &[usize],
+        sync_committee_bits: impl Iterator<Item = bool>,
+        participant_reward: u64,
+    ) -> Vec<(u64, i64, bool)> {
+        let mut changes = Vec::new();
 
-        for (pubkey, bit) in committee_pubkeys
+        for (validator_index, participation_bit) in
+            committee_indices.iter().zip(sync_committee_bits)
+        {
+            let validator_index = *validator_index as u64;
+
+            if participation_bit {
+                changes.push((validator_index, participant_reward as i64, true));
+            } else {
+                changes.push((validator_index, -(participant_reward as i64), false));
+            }
+        }
+        changes
+    }
+
+    pub fn process_sync_aggregate(&mut self, sync_aggregate: &SyncAggregate) -> anyhow::Result<()> {
+        let committee_public_keys = &self.current_sync_committee.public_keys;
+        let mut participant_public_keys = vec![];
+
+        for (public_key, bit) in committee_public_keys
             .iter()
             .zip(sync_aggregate.sync_committee_bits.iter())
         {
             if bit {
-                participant_pubkeys.push(pubkey);
+                participant_public_keys.push(public_key);
             }
         }
 
@@ -1640,50 +1742,110 @@ impl BeaconState {
 
         ensure!(
             eth_fast_aggregate_verify(
-                &participant_pubkeys,
+                &participant_public_keys,
                 signing_root,
                 &sync_aggregate.sync_committee_signature,
             )?,
             "Sync aggregate signature verification failed."
         );
 
-        // Compute participant and proposer rewards
-        let total_active_increments = self.get_total_active_balance() / EFFECTIVE_BALANCE_INCREMENT;
-        let total_base_rewards = self.get_base_reward_per_increment() * total_active_increments;
-        let max_participant_rewards =
-            total_base_rewards * SYNC_REWARD_WEIGHT / WEIGHT_DENOMINATOR / SLOTS_PER_EPOCH;
-        let participant_reward = max_participant_rewards / SYNC_COMMITTEE_SIZE;
-        let proposer_reward =
-            participant_reward * PROPOSER_WEIGHT / (WEIGHT_DENOMINATOR - PROPOSER_WEIGHT);
+        let committee_indices = self.get_sync_committee_indices(&self.current_sync_committee)?;
+        let (participant_reward, proposer_reward) = self.get_proposer_and_participant_rewards();
+        let proposer_index = self.get_beacon_proposer_index(None)?;
 
-        // Apply participant and proposer rewards
-        let mut all_pubkeys = vec![];
-        for validator in &self.validators {
-            all_pubkeys.push(validator.pubkey.clone());
-        }
+        let changes = Self::calculate_sync_committee_balance_change(
+            &committee_indices,
+            sync_aggregate.sync_committee_bits.iter(),
+            participant_reward,
+        );
 
-        let mut committee_indices = vec![];
-        for pubkey in &self.current_sync_committee.pubkeys {
-            let index = all_pubkeys
-                .iter()
-                .position(|r| r == pubkey)
-                .ok_or_else(|| anyhow!("Pubkey not found in all_pubkeys."))?;
-            committee_indices.push(index);
-        }
-
-        for (participant_index, participation_bit) in committee_indices
-            .iter()
-            .zip(sync_aggregate.sync_committee_bits.iter())
-        {
-            if participation_bit {
-                self.increase_balance(*participant_index as u64, participant_reward)?;
-                self.increase_balance(self.get_beacon_proposer_index(None)?, proposer_reward)?;
+        for (validator_index, change, is_participant) in changes {
+            if change > 0 {
+                self.increase_balance(validator_index, change as u64)?;
             } else {
-                self.decrease_balance(*participant_index as u64, participant_reward)?;
+                self.decrease_balance(validator_index, change.unsigned_abs())?;
+            }
+
+            if is_participant {
+                self.increase_balance(proposer_index, proposer_reward)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn compute_sync_committee_rewards(
+        &self,
+        beacon_block: &SignedBeaconBlock,
+    ) -> anyhow::Result<HashMap<u64, u64>> {
+        let sync_aggregate = &beacon_block.message.body.sync_aggregate;
+        let sync_committee = &self.current_sync_committee;
+
+        let sync_committee_indices = self.get_sync_committee_indices(sync_committee)?;
+        let (participant_reward, proposer_reward) = self.get_proposer_and_participant_rewards();
+        let proposer_index = beacon_block.message.proposer_index as usize;
+
+        let mut balances = HashMap::<usize, u64>::new();
+
+        for validator_index in &sync_committee_indices {
+            balances.insert(
+                *validator_index,
+                *self
+                    .balances
+                    .get(*validator_index)
+                    .ok_or(anyhow!("Sync Committee Rewards Sync Error"))?,
+            );
+        }
+
+        balances.insert(
+            proposer_index,
+            *self
+                .balances
+                .get(proposer_index)
+                .ok_or(anyhow!("Sync Committee Rewards Sync Error"))?,
+        );
+
+        let changes = Self::calculate_sync_committee_balance_change(
+            &sync_committee_indices,
+            sync_aggregate.sync_committee_bits.iter(),
+            participant_reward,
+        );
+
+        let mut total_proposer_reward = 0u64;
+        for (validator_index, change, is_participant) in changes {
+            let participant_balance = balances
+                .get_mut(&(validator_index as usize))
+                .ok_or(anyhow!("Sync Committee Rewards Sync Error"))?;
+
+            if change > 0 {
+                *participant_balance += change as u64;
+            } else {
+                *participant_balance = participant_balance.saturating_sub(change.unsigned_abs());
+            }
+
+            if is_participant {
+                total_proposer_reward += proposer_reward;
             }
         }
 
-        Ok(())
+        *balances
+            .get_mut(&proposer_index)
+            .ok_or(anyhow!("Sync Committee Rewards Sync Error"))? += total_proposer_reward;
+
+        let rewards: HashMap<u64, u64> = balances
+            .iter()
+            .filter_map(|(&index, &new_balance)| {
+                let initial_balance = *self.balances.get(index)? as i64;
+                let reward = new_balance as i64 - initial_balance;
+
+                if reward > 0 {
+                    Some((index as u64, reward as u64))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        Ok(rewards)
     }
 
     pub fn process_justification_and_finalization(&mut self) -> anyhow::Result<()> {
@@ -1839,7 +2001,7 @@ impl BeaconState {
                 compute_signing_root(epoch, self.get_domain(DOMAIN_RANDAO, Some(epoch)));
             ensure!(
                 body.randao_reveal
-                    .verify(&proposer.pubkey, signing_root.as_ref())?,
+                    .verify(&proposer.public_key, signing_root.as_ref())?,
                 "BLS Signature verification failed!"
             );
 
@@ -2030,14 +2192,14 @@ impl BeaconState {
             .validators
             .iter()
             .enumerate()
-            .find(|(_, v)| v.pubkey == deposit.pubkey)
+            .find(|(_, validator)| validator.public_key == deposit.public_key)
         {
             self.increase_balance(index as u64, deposit.amount)?;
         } else {
             // Verify the deposit signature (proof of possession) which is not checked by the
             // deposit contract
             if is_valid_deposit_signature(
-                &deposit.pubkey,
+                &deposit.public_key,
                 deposit.withdrawal_credentials,
                 deposit.amount,
                 &deposit.signature,
@@ -2045,7 +2207,7 @@ impl BeaconState {
             .unwrap_or_default()
             {
                 self.add_validator_to_registry(
-                    deposit.pubkey.clone(),
+                    deposit.public_key.clone(),
                     deposit.withdrawal_credentials,
                     deposit.amount,
                 )?;
@@ -2091,7 +2253,7 @@ impl BeaconState {
             let (is_validator_exited, is_validator_withdrawn) = if let Some(validator) = self
                 .validators
                 .iter()
-                .find(|validator| validator.pubkey == deposit.pubkey)
+                .find(|validator| validator.public_key == deposit.public_key)
             {
                 (
                     validator.exit_epoch < FAR_FUTURE_EPOCH,
@@ -2253,8 +2415,8 @@ impl BeaconState {
 
         signed_block
             .signature
-            .verify(&proposer.pubkey, signing_root.as_ref())
-            .map_err(|e| anyhow!("Invalid block signature: {:?}", e))
+            .verify(&proposer.public_key, signing_root.as_ref())
+            .map_err(|err| anyhow!("Invalid block signature: {err}"))
     }
 
     /// Check if ``validator`` is eligible for activation.
@@ -2366,20 +2528,21 @@ impl BeaconState {
         Ok(())
     }
 
-    /// Return the next sync committee, with possible pubkey duplicates.
+    /// Return the next sync committee, with possible public_key duplicates.
     pub fn get_next_sync_committee(&self) -> anyhow::Result<SyncCommittee> {
         let indices = self.get_next_sync_committee_indices()?;
-        let mut pubkeys = vec![];
+        let mut public_keys = vec![];
 
         for index in indices {
-            pubkeys.push(self.validators[index as usize].pubkey.clone());
+            public_keys.push(self.validators[index as usize].public_key.clone());
         }
 
-        let aggregate_pubkey = eth_aggregate_pubkeys(&pubkeys.iter().collect::<Vec<_>>())?;
+        let aggregate_public_key =
+            eth_aggregate_public_keys(&public_keys.iter().collect::<Vec<_>>())?;
 
         Ok(SyncCommittee {
-            pubkeys: FixedVector::from(pubkeys),
-            aggregate_pubkey,
+            public_keys: FixedVector::from(public_keys),
+            aggregate_public_key,
         })
     }
 
@@ -2601,7 +2764,7 @@ impl BeaconState {
             // and GENESIS_SLOT to distinguish from a pending deposit request
             self.pending_deposits
                 .push(PendingDeposit {
-                    pubkey: validator.pubkey.clone(),
+                    public_key: validator.public_key.clone(),
                     withdrawal_credentials: validator.withdrawal_credentials,
                     amount: excess_balance,
                     signature: BLSSignature::infinity(),
@@ -2775,12 +2938,12 @@ impl BeaconState {
 }
 
 pub fn get_validator_from_deposit(
-    pubkey: PubKey,
+    public_key: PublicKey,
     withdrawal_credentials: B256,
     amount: u64,
 ) -> Validator {
     let mut validator = Validator {
-        pubkey,
+        public_key,
         withdrawal_credentials,
         effective_balance: 0,
         slashed: false,
@@ -2799,29 +2962,29 @@ pub fn get_validator_from_deposit(
 }
 
 /// Wrapper to ``bls.FastAggregateVerify`` accepting the ``G2_POINT_AT_INFINITY`` signature when
-/// ``pubkeys`` is empty.
+/// ``public_keys`` is empty.
 pub fn eth_fast_aggregate_verify(
-    pubkeys: &[&PubKey],
+    public_keys: &[&PublicKey],
     message: B256,
     signature: &BLSSignature,
 ) -> anyhow::Result<bool> {
-    if pubkeys.is_empty() && *signature == BLSSignature::infinity() {
+    if public_keys.is_empty() && *signature == BLSSignature::infinity() {
         return Ok(true);
     }
 
     signature
-        .fast_aggregate_verify(pubkeys, message.as_ref())
-        .map_err(|e| anyhow!("Failed to verify fast aggregate: {:?}", e))
+        .fast_aggregate_verify(public_keys, message.as_ref())
+        .map_err(|err| anyhow!("Failed to verify fast aggregate: {err}"))
 }
 
-/// Return the aggregate public key for the public keys in ``pubkeys``.
+/// Return the aggregate public key for the public keys in ``public_keys``.
 /// NOTE: the ``+`` operation should be interpreted as elliptic curve point addition, which takes as
-/// input elliptic curve points that must be decoded from the input ``BLSPubkey``s.
+/// input elliptic curve points that must be decoded from the input ``BLSPublicKey``s.
 /// This implementation is for demonstrative purposes only and ignores encoding/decoding concerns.
 /// Refer to the BLS signature draft standard for more information.
-pub fn eth_aggregate_pubkeys(pubkeys: &[&PubKey]) -> anyhow::Result<PubKey> {
-    ensure!(!pubkeys.is_empty(), "Public keys list cannot be empty");
-    Ok(PubKey::aggregate(pubkeys)?)
+pub fn eth_aggregate_public_keys(public_keys: &[&PublicKey]) -> anyhow::Result<PublicKey> {
+    ensure!(!public_keys.is_empty(), "Public keys list cannot be empty");
+    Ok(PublicKey::aggregate(public_keys)?)
 }
 
 /// Return the largest integer ``x`` such that ``x**2 <= n``.
@@ -2840,13 +3003,13 @@ pub fn integer_squareroot(n: u64) -> u64 {
 }
 
 pub fn is_valid_deposit_signature(
-    pubkey: &PubKey,
+    public_key: &PublicKey,
     withdrawal_credentials: B256,
     amount: u64,
     signature: &BLSSignature,
 ) -> anyhow::Result<bool> {
     let deposit_message = DepositMessage {
-        pubkey: pubkey.clone(),
+        public_key: public_key.clone(),
         withdrawal_credentials,
         amount,
     };
@@ -2855,6 +3018,6 @@ pub fn is_valid_deposit_signature(
     let signing_root = compute_signing_root(deposit_message, domain);
 
     signature
-        .verify(pubkey, signing_root.as_ref())
+        .verify(public_key, signing_root.as_ref())
         .map_err(|err| anyhow!("Invalid deposit signature: {err:?}"))
 }

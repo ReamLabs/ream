@@ -1,5 +1,5 @@
 use alloy_primitives::Address;
-use ream_bls::{BLSSignature, PubKey};
+use ream_bls::{BLSSignature, PublicKey};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
@@ -16,7 +16,8 @@ pub struct SignedBLSToExecutionChange {
 pub struct BLSToExecutionChange {
     #[serde(with = "serde_utils::quoted_u64")]
     pub validator_index: u64,
-    pub from_bls_pubkey: PubKey,
+    #[serde(rename = "from_bls_pubkey")]
+    pub from_bls_public_key: PublicKey,
     #[serde(with = "checksummed_address")]
     pub to_execution_address: Address,
 }

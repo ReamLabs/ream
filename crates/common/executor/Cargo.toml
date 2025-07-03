@@ -12,3 +12,4 @@ version.workspace = true
 [dependencies]
 futures.workspace = true
 tokio.workspace = true
+tracing.workspace = true

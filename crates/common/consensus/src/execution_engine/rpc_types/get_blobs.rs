@@ -5,7 +5,9 @@ use tree_hash_derive::TreeHash;
 
 use crate::{constants::BYTES_PER_BLOB, polynomial_commitments::kzg_proof::KZGProof};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Decode, Encode, TreeHash)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Decode, Encode, TreeHash, Default,
+)]
 #[serde(transparent)]
 pub struct Blob {
     #[serde(with = "hex_fixed_vec")]
@@ -20,7 +22,7 @@ impl Blob {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Decode, Encode)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Decode, Encode, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BlobAndProofV1 {
     pub blob: Blob,

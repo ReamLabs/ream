@@ -1,6 +1,6 @@
 # ream beacon_node
 
-Start the node
+Start the beacon node
 
 ```bash
 $ ream beacon_node --help

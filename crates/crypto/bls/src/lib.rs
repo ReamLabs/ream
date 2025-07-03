@@ -6,12 +6,12 @@
 pub mod constants;
 pub mod errors;
 pub mod private_key;
-pub mod pubkey;
+pub mod public_key;
 pub mod signature;
 pub mod traits;
 
 pub use private_key::PrivateKey;
-pub use pubkey::PubKey;
+pub use public_key::PublicKey;
 pub use signature::BLSSignature;
 
 #[cfg(feature = "supranational")]

@@ -24,3 +24,6 @@ testing/ef-tests/mainnet/*
 
 # redb files: prevent accidental commits of database files
 *.redb
+
+# DS_Store: Desktop Services Store
+.DS_Store

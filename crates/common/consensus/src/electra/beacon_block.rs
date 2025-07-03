@@ -10,6 +10,10 @@ use super::beacon_block_body::BeaconBlockBody;
 use crate::{
     beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
     blob_sidecar::BlobSidecar,
+    electra::{
+        blinded_beacon_block::{BlindedBeaconBlock, SignedBlindedBeaconBlock},
+        blinded_beacon_block_body::BlindedBeaconBlockBody,
+    },
     execution_engine::rpc_types::get_blobs::{Blob, BlobAndProofV1},
     polynomial_commitments::kzg_proof::KZGProof,
 };
@@ -70,6 +74,37 @@ impl SignedBeaconBlock {
                 self.blob_sidecar(BlobAndProofV1 { blob, proof }, index as u64)
             })
             .collect::<anyhow::Result<Vec<_>>>()
+    }
+
+    pub fn as_signed_blinded_beacon_block(&self) -> SignedBlindedBeaconBlock {
+        SignedBlindedBeaconBlock {
+            message: BlindedBeaconBlock {
+                slot: self.message.slot,
+                proposer_index: self.message.proposer_index,
+                parent_root: self.message.parent_root,
+                state_root: self.message.state_root,
+                body: BlindedBeaconBlockBody {
+                    randao_reveal: self.message.body.randao_reveal.clone(),
+                    eth1_data: self.message.body.eth1_data.clone(),
+                    graffiti: self.message.body.graffiti,
+                    proposer_slashings: self.message.body.proposer_slashings.clone(),
+                    attester_slashings: self.message.body.attester_slashings.clone(),
+                    attestations: self.message.body.attestations.clone(),
+                    deposits: self.message.body.deposits.clone(),
+                    voluntary_exits: self.message.body.voluntary_exits.clone(),
+                    sync_aggregate: self.message.body.sync_aggregate.clone(),
+                    execution_payload_header: self
+                        .message
+                        .body
+                        .execution_payload
+                        .to_execution_payload_header(),
+                    bls_to_execution_changes: self.message.body.bls_to_execution_changes.clone(),
+                    blob_kzg_commitments: self.message.body.blob_kzg_commitments.clone(),
+                    execution_requests: self.message.body.execution_requests.clone(),
+                },
+            },
+            signature: self.signature.clone(),
+        }
     }
 }
 

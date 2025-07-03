@@ -24,3 +24,4 @@ url.workspace = true
 
 # ream dependencies
 ream-bls.workspace = true
+ream-consensus.workspace = true

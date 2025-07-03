@@ -1,5 +1,5 @@
 use alloy_primitives::Address;
-use ream_bls::PubKey;
+use ream_bls::PublicKey;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
@@ -10,6 +10,8 @@ use crate::misc::checksummed_address;
 pub struct ConsolidationRequest {
     #[serde(with = "checksummed_address")]
     pub source_address: Address,
-    pub source_pubkey: PubKey,
-    pub target_pubkey: PubKey,
+    #[serde(rename = "source_pubkey")]
+    pub source_public_key: PublicKey,
+    #[serde(rename = "target_pubkey")]
+    pub target_public_key: PublicKey,
 }

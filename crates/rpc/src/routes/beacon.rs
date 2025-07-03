@@ -3,10 +3,18 @@ use actix_web::web::ServiceConfig;
 use crate::handlers::{
     blob_sidecar::get_blob_sidecars,
     block::{
-        get_block_attestations, get_block_from_id, get_block_rewards, get_block_root, get_genesis,
+        get_blind_block, get_block_attestations, get_block_from_id, get_block_rewards,
+        get_block_root, get_genesis, post_sync_committee_rewards,
     },
     committee::get_committees,
     header::{get_headers, get_headers_from_block},
+    light_client::{
+        get_light_client_bootstrap, get_light_client_finality_update, get_light_client_updates,
+    },
+    pool::{
+        get_bls_to_execution_changes, get_voluntary_exits, post_bls_to_execution_changes,
+        post_voluntary_exits,
+    },
     state::{
         get_pending_consolidations, get_pending_deposits, get_pending_partial_withdrawals,
         get_state_finality_checkpoint, get_state_fork, get_state_randao, get_state_root,
@@ -40,9 +48,18 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(get_validators_from_state)
         .service(post_validator_identities_from_state)
         .service(post_validators_from_state)
+        .service(post_sync_committee_rewards)
         .service(get_validator_balances_from_state)
         .service(post_validator_balances_from_state)
-        .service(post_validator_liveness);
+        .service(post_validator_liveness)
+        .service(get_bls_to_execution_changes)
+        .service(post_bls_to_execution_changes)
+        .service(get_voluntary_exits)
+        .service(post_voluntary_exits)
+        .service(get_light_client_bootstrap)
+        .service(get_light_client_updates)
+        .service(get_light_client_finality_update)
+        .service(get_blind_block);
 }
 
 pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {

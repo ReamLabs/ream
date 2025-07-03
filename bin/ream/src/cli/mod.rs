@@ -1,11 +1,16 @@
+pub mod account_manager;
 pub mod beacon_node;
 pub mod constants;
+pub mod import_keystores;
 pub mod validator_node;
 
 use clap::{Parser, Subcommand};
 use ream_node::version::FULL_VERSION;
 
-use crate::cli::{beacon_node::BeaconNodeConfig, validator_node::ValidatorNodeConfig};
+use crate::cli::{
+    account_manager::AccountManagerConfig, beacon_node::BeaconNodeConfig,
+    validator_node::ValidatorNodeConfig,
+};
 
 #[derive(Debug, Parser)]
 #[command(author, version = FULL_VERSION, about, long_about = None)]
@@ -16,11 +21,17 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Start the node
+    /// Start the beacon node
     #[command(name = "beacon_node")]
     BeaconNode(Box<BeaconNodeConfig>),
+
+    /// Start the validator node
     #[command(name = "validator_node")]
     ValidatorNode(Box<ValidatorNodeConfig>),
+
+    /// Manage validator accounts
+    #[command(name = "account_manager")]
+    AccountManager(Box<AccountManagerConfig>),
 }
 
 #[cfg(test)]
@@ -77,6 +88,12 @@ mod tests {
             "http://localhost:5052",
             "--request-timeout",
             "3",
+            "--import-keystores",
+            "./assets/keystore_dir/",
+            "--suggested-fee-recipient",
+            "0x003Fb16e421E42084EBC54bcdc7F0fa344cF9316",
+            "--password",
+            "𝔱𝔢𝔰𝔱𝔭𝔞𝔰𝔰𝔴𝔬𝔯𝔡🔑", // Taken directly from EIP-2335's test keystores
         ]);
 
         match cli.command {
@@ -89,6 +106,29 @@ mod tests {
                 assert_eq!(config.request_timeout, Duration::from_secs(3));
             }
             _ => unreachable!("This test should only validate the validator node cli"),
+        }
+    }
+
+    #[test]
+    fn test_cli_account_manager_command() {
+        let cli = Cli::parse_from([
+            "program",
+            "account_manager",
+            "--verbosity",
+            "2",
+            "--lifetime",
+            "30",
+            "--chunk-size",
+            "10",
+        ]);
+
+        match cli.command {
+            Commands::AccountManager(config) => {
+                assert_eq!(config.verbosity, 2);
+                assert_eq!(config.lifetime, 30);
+                assert_eq!(config.chunk_size, 10);
+            }
+            _ => unreachable!("This test should only validate the account manager cli"),
         }
     }
 }

@@ -2,7 +2,7 @@ use core::fmt;
 use std::{fmt::Display, str::FromStr};
 
 use alloy_primitives::{B256, hex};
-use ream_bls::PubKey;
+use ream_bls::PublicKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,7 +70,7 @@ impl fmt::Display for ID {
 pub enum ValidatorID {
     Index(u64),
     /// expected to be a 0x-prefixed hex string.
-    Address(PubKey),
+    Address(PublicKey),
 }
 
 impl Serialize for ValidatorID {
@@ -89,7 +89,7 @@ impl<'de> Deserialize<'de> for ValidatorID {
     {
         let s = String::deserialize(deserializer)?;
         if s.starts_with("0x") {
-            PubKey::from_str(&s)
+            PublicKey::from_str(&s)
                 .map(ValidatorID::Address)
                 .map_err(|_| serde::de::Error::custom(format!("Invalid hex address: {s}")))
         } else if s.chars().all(|c| c.is_ascii_digit()) {

@@ -1,12 +1,12 @@
 use bls12_381::{G1Affine, G1Projective};
 
 use crate::{
-    PubKey,
+    PublicKey,
     errors::BLSError,
     traits::{Aggregatable, ZkcryptoAggregatable},
 };
 
-impl From<G1Projective> for PubKey {
+impl From<G1Projective> for PublicKey {
     fn from(value: G1Projective) -> Self {
         Self {
             inner: G1Affine::from(value).to_compressed().to_vec().into(),
@@ -14,10 +14,10 @@ impl From<G1Projective> for PubKey {
     }
 }
 
-impl TryFrom<&PubKey> for G1Affine {
+impl TryFrom<&PublicKey> for G1Affine {
     type Error = BLSError;
 
-    fn try_from(value: &PubKey) -> Result<Self, Self::Error> {
+    fn try_from(value: &PublicKey) -> Result<Self, Self::Error> {
         match G1Affine::from_compressed(
             &value
                 .to_bytes()
@@ -32,10 +32,10 @@ impl TryFrom<&PubKey> for G1Affine {
     }
 }
 
-impl Aggregatable<PubKey> for PubKey {
+impl Aggregatable<PublicKey> for PublicKey {
     type Error = BLSError;
 
-    fn aggregate(public_keys: &[&PubKey]) -> Result<PubKey, Self::Error> {
+    fn aggregate(public_keys: &[&PublicKey]) -> Result<PublicKey, Self::Error> {
         let aggregate_point =
             public_keys
                 .iter()
@@ -43,8 +43,8 @@ impl Aggregatable<PubKey> for PubKey {
                     Ok(accumulator.add(&G1Projective::from(G1Affine::try_from(*public_key)?)))
                 })?;
 
-        Ok(PubKey::from(aggregate_point))
+        Ok(PublicKey::from(aggregate_point))
     }
 }
 
-impl ZkcryptoAggregatable<PubKey> for PubKey {}
+impl ZkcryptoAggregatable<PublicKey> for PublicKey {}

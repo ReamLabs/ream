@@ -3,9 +3,13 @@ use serde::{Deserialize, Serialize};
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
 
-pub const VERSION: &str = "electra";
+pub const ACCEPT_PRIORITY: &str = "application/octet-stream;q=1.0,application/json;q=0.9";
 pub const ETH_CONSENSUS_VERSION_HEADER: &str = "Eth-Consensus-Version";
-const EXECUTION_OPTIMISTIC: bool = false;
+pub const EXECUTION_OPTIMISTIC: bool = false;
+pub const JSON_ACCEPT_PRIORITY: &str = "application/json;q=1";
+pub const JSON_CONTENT_TYPE: &str = "application/json";
+pub const SSZ_CONTENT_TYPE: &str = "application/octet-stream";
+pub const VERSION: &str = "electra";
 const FINALIZED: bool = false;
 
 /// A DataResponse data struct that can be used to wrap data type
@@ -139,6 +143,30 @@ impl<T: Serialize + Encode + Decode> DutiesResponse<T> {
     pub fn new(dependent_root: B256, data: Vec<T>) -> Self {
         Self {
             dependent_root,
+            execution_optimistic: EXECUTION_OPTIMISTIC,
+            data,
+        }
+    }
+}
+
+/// A SyncCommitteeDutiesResponse data struct that can be used to wrap duty data
+/// for sync committee duties
+/// used for json rpc responses
+///
+/// # Example
+/// {
+///     "execution_optimistic": false,
+///     "data": [T]
+/// }
+#[derive(Debug, Deserialize, Serialize, Encode, Decode)]
+pub struct SyncCommitteeDutiesResponse<T: Encode + Decode> {
+    pub execution_optimistic: bool,
+    pub data: Vec<T>,
+}
+
+impl<T: Serialize + Encode + Decode> SyncCommitteeDutiesResponse<T> {
+    pub fn new(data: Vec<T>) -> Self {
+        Self {
             execution_optimistic: EXECUTION_OPTIMISTIC,
             data,
         }

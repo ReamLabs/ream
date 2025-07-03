@@ -40,6 +40,44 @@ pub async fn get_peer(
     })))
 }
 
+#[get("/node/peer_count")]
+pub async fn get_peer_count(
+    network_state: Data<Arc<NetworkState>>,
+) -> Result<impl Responder, ApiError> {
+    let mut connected = 0;
+    let mut connecting = 0;
+    let mut disconnected = 0;
+    let mut disconnecting = 0;
+
+    for peer in network_state.peer_table.read().values() {
+        match peer.state {
+            ConnectionState::Connected => connected += 1,
+            ConnectionState::Connecting => connecting += 1,
+            ConnectionState::Disconnected => disconnected += 1,
+            ConnectionState::Disconnecting => disconnecting += 1,
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(DataResponse::new(&PeerCount {
+        connected,
+        connecting,
+        disconnected,
+        disconnecting,
+    })))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PeerCount {
+    #[serde(with = "serde_utils::quoted_u64")]
+    disconnected: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    connecting: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    connected: u64,
+    #[serde(with = "serde_utils::quoted_u64")]
+    disconnecting: u64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Peer {
     /// libp2p peer ID

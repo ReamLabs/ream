@@ -1,4 +1,4 @@
-use crate::{BLSSignature, PubKey, errors::BLSError};
+use crate::{BLSSignature, PublicKey, errors::BLSError};
 
 /// Trait for aggregating BLS public keys.
 ///
@@ -57,27 +57,31 @@ pub trait Verifiable {
     /// Verifies a BLS signature against a public key and message.
     ///
     /// # Arguments
-    /// * `pubkey` - The public key to verify against
+    /// * `public_key` - The public key to verify against
     /// * `message` - The message that was signed
     ///
     /// # Returns
     /// * `Result<bool, BLSError>` - Ok(true) if the signature is valid, Ok(false) if verification
     ///   fails, or Err if there are issues with signature or public key bytes
-    fn verify(&self, pubkey: &PubKey, message: &[u8]) -> Result<bool, Self::Error>;
+    fn verify(&self, public_key: &PublicKey, message: &[u8]) -> Result<bool, Self::Error>;
 
     /// Verifies the signature against a message using an aggregate of multiple public keys
     ///
     /// # Arguments
-    /// * `pubkeys` - Collection of public key references to verify against
+    /// * `public_keys` - Collection of public key references to verify against
     /// * `message` - Message that was signed
     ///
     /// # Returns
     /// * `Result<bool, BLSError>` - Ok(true) if the signature is valid for the aggregate
     ///   verification, Ok(false) if verification fails, or Err if there are issues with signature
     ///   or public key bytes
-    fn fast_aggregate_verify<'a, P>(&self, pubkeys: P, message: &[u8]) -> Result<bool, Self::Error>
+    fn fast_aggregate_verify<'a, P>(
+        &self,
+        public_keys: P,
+        message: &[u8],
+    ) -> Result<bool, Self::Error>
     where
-        P: AsRef<[&'a PubKey]>;
+        P: AsRef<[&'a PublicKey]>;
 }
 
 /// Marker trait for zkcrypto/bls12_381 BLS signature verification implementation

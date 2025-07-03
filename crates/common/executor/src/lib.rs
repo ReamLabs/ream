@@ -1,15 +1,17 @@
-use std::future::Future;
+use std::{future::Future, sync::Arc, thread::sleep, time::Duration};
 
 use tokio::{runtime::Runtime, sync::broadcast, task::JoinHandle};
+use tracing::{debug, warn};
 
+#[derive(Clone)]
 pub struct ReamExecutor {
-    runtime: Runtime,
+    runtime: Arc<Runtime>,
     shutdown: broadcast::Sender<()>,
 }
 
 impl ReamExecutor {
     pub fn new() -> std::io::Result<Self> {
-        let runtime = Runtime::new()?;
+        let runtime = Arc::new(Runtime::new()?);
         let (shutdown, _) = broadcast::channel(1);
         Ok(Self { runtime, shutdown })
     }
@@ -17,10 +19,13 @@ impl ReamExecutor {
     /// Creates a new TaskExecutor with an existing runtime
     pub fn with_runtime(runtime: Runtime) -> Self {
         let (shutdown, _) = broadcast::channel(1);
-        Self { runtime, shutdown }
+        Self {
+            runtime: Arc::new(runtime),
+            shutdown,
+        }
     }
 
-    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<Option<F::Output>>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -28,8 +33,11 @@ impl ReamExecutor {
         let mut shutdown = self.shutdown.subscribe();
         self.runtime.spawn(async move {
             tokio::select! {
-                result = future => result,
-                _ = shutdown.recv() => panic!("Task cancelled due to shutdown"),
+                result = future => Some(result),
+                _ = shutdown.recv() => {
+                    debug!("Task cancelled due to shutdown");
+                    None
+                },
             }
         })
     }
@@ -81,8 +89,26 @@ impl ReamExecutor {
     }
 
     /// Triggers a shutdown signal to all spawned tasks
-    pub fn shutdown(&self) {
-        let _ = self.shutdown.send(());
+    pub fn shutdown_signal(&self) {
+        if let Err(err) = self.shutdown.send(()) {
+            warn!("Failed to send shutdown signal: {err}");
+        }
+    }
+
+    pub fn shutdown_runtime(self) {
+        sleep(Duration::from_secs(5));
+
+        let arc_count = Arc::strong_count(&self.runtime) + Arc::weak_count(&self.runtime);
+        match Arc::try_unwrap(self.runtime) {
+            Ok(runtime) => {
+                runtime.shutdown_timeout(Duration::from_secs(5));
+            }
+            Err(err) => {
+                warn!(
+                    "Failed to shutdown runtime: multiple references exist (count: {arc_count}): {err:?}"
+                );
+            }
+        }
     }
 
     /// Get a reference to the underlying runtime
@@ -108,7 +134,7 @@ mod tests {
             42
         });
 
-        assert_eq!(executor.runtime.block_on(handle).unwrap(), 42);
+        assert_eq!(executor.runtime.block_on(handle).unwrap().unwrap(), 42);
     }
 
     #[test]
@@ -122,7 +148,7 @@ mod tests {
             }
         });
 
-        executor.shutdown();
+        executor.shutdown_signal();
         assert_eq!(
             executor.runtime.block_on(handle).unwrap(),
             Some("cancelled")

@@ -9,26 +9,24 @@ use ream_bls::{
 use ream_consensus::{
     constants::{DOMAIN_SYNC_COMMITTEE, EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SYNC_COMMITTEE_SIZE},
     electra::{beacon_block::BeaconBlock, beacon_state::BeaconState},
-    misc::{compute_epoch_at_slot, compute_signing_root},
+    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
     sync_aggregate::SyncAggregate,
 };
+use ream_network_spec::networks::network_spec;
 use serde::{Deserialize, Serialize};
 use ssz_types::{BitVector, typenum::U512};
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    constants::{
-        DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF, SYNC_COMMITTEE_SUBNET_COUNT,
-        TARGET_AGGREGATORS_PER_COMMITTEE,
-    },
+    constants::{SYNC_COMMITTEE_SUBNET_COUNT, TARGET_AGGREGATORS_PER_COMMITTEE},
     contribution_and_proof::SyncCommitteeContribution,
     hash_signature_prefix_to_u64,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, TreeHash)]
 pub struct SyncAggregatorSelectionData {
-    slot: u64,
-    subcommittee_index: u64,
+    pub slot: u64,
+    pub subcommittee_index: u64,
 }
 
 pub struct SyncCommitteeMessage {
@@ -64,13 +62,13 @@ pub fn is_assigned_to_sync_committee(
     if sync_committee_period == current_sync_committee_period {
         Ok(state
             .current_sync_committee
-            .pubkeys
-            .contains(&validator.pubkey))
+            .public_keys
+            .contains(&validator.public_key))
     } else {
         Ok(state
             .next_sync_committee
-            .pubkeys
-            .contains(&validator.pubkey))
+            .public_keys
+            .contains(&validator.public_key))
     }
 }
 
@@ -92,10 +90,10 @@ pub fn compute_subnets_for_sync_committee(
     };
 
     let sync_committee_indices: Vec<usize> = sync_committee
-        .pubkeys
+        .public_keys
         .iter()
         .enumerate()
-        .filter(|(_, pubkey)| **pubkey == target_validator.pubkey)
+        .filter(|(_, public_key)| **public_key == target_validator.public_key)
         .map(|(index, _)| index)
         .collect();
 
@@ -136,14 +134,14 @@ pub fn process_sync_committee_contributions(
 }
 
 pub fn get_sync_committee_selection_proof(
-    state: &BeaconState,
     slot: u64,
     subcommittee_index: u64,
-    private_key: PrivateKey,
+    private_key: &PrivateKey,
 ) -> anyhow::Result<BLSSignature> {
-    let domain = state.get_domain(
-        DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF,
-        Some(compute_epoch_at_slot(slot)),
+    let domain = compute_domain(
+        DOMAIN_SYNC_COMMITTEE,
+        Some(network_spec().electra_fork_version),
+        None,
     );
     let signing_root = compute_signing_root(
         SyncAggregatorSelectionData {
@@ -155,7 +153,7 @@ pub fn get_sync_committee_selection_proof(
     Ok(private_key.sign(signing_root.as_ref())?)
 }
 
-pub fn is_sync_committee_aggregator(signature: BLSSignature) -> bool {
+pub fn is_sync_committee_aggregator(signature: &BLSSignature) -> bool {
     hash_signature_prefix_to_u64(signature)
         % max(
             1,
