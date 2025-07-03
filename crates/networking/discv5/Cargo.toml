@@ -19,6 +19,7 @@ ethereum_ssz_derive.workspace = true
 futures.workspace = true
 libp2p.workspace = true
 rand = "0.8.5"
+sha2.workspace = true
 ssz_types.workspace = true
 tokio.workspace = true
 tracing.workspace = true
