@@ -17,6 +17,7 @@ use ream_p2p::{
     config::NetworkConfig,
     network::{Network, ReamNetworkEvent},
     network_state::NetworkState,
+    node::NodeInfo,
 };
 use ream_storage::db::ReamDB;
 use ream_syncer::block_range::BlockRangeSyncer;
@@ -31,6 +32,7 @@ use crate::{
 };
 
 pub struct NetworkManagerService {
+    pub local_node: Arc<NodeInfo>,
     pub beacon_chain: Arc<BeaconChain>,
     manager_receiver: mpsc::UnboundedReceiver<ReamNetworkEvent>,
     p2p_sender: P2PSender,
@@ -106,7 +108,18 @@ impl NetworkManagerService {
         let status = beacon_chain.build_status_request().await?;
 
         let network = Network::init(executor.clone(), &network_config, status).await?;
+        let meta_data = network.network_state().meta_data.read().clone();
+
+        let local_node = Arc::new(NodeInfo::from(
+            network.peer_id(),
+            network.enr(),
+            config.discovery_port,
+            config.socket_address,
+            config.socket_port,
+            meta_data,
+        ));
         let network_state = network.network_state();
+
         executor.spawn(async move {
             network.start(manager_sender, p2p_receiver).await;
         });
@@ -114,6 +127,7 @@ impl NetworkManagerService {
         let block_range_syncer = BlockRangeSyncer::new(beacon_chain.clone(), p2p_sender.clone());
 
         Ok(Self {
+            local_node,
             beacon_chain,
             manager_receiver,
             p2p_sender: P2PSender(p2p_sender),
