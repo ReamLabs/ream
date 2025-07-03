@@ -23,7 +23,7 @@ use crate::handlers::{
     validator::{
         get_validator_balances_from_state, get_validator_from_state, get_validators_from_state,
         post_validator_balances_from_state, post_validator_identities_from_state,
-        post_validators_from_state, post_validator_liveness,
+        post_validator_liveness, post_validators_from_state,
     },
 };
 
