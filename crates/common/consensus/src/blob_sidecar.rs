@@ -11,7 +11,6 @@ use crate::{
     constants::{
         BLOB_KZG_COMMITMENTS_INDEX, KZG_COMMITMENT_INCLUSION_PROOF_DEPTH, MAX_BLOBS_PER_BLOCK,
     },
-    electra::execution_payload::Transactions,
     execution_engine::rpc_types::get_blobs::Blob,
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
@@ -46,31 +45,25 @@ impl BlobSidecar {
         let kzg_commitments_tree_depth =
             (MAX_BLOBS_PER_BLOCK.next_power_of_two().ilog2() + 1) as usize;
 
-        let (subtree_proof, branch) = self
+        let (kzg_commitment_to_kzg_commitments_proof, kzg_commitments_to_block_body_proof) = self
             .kzg_commitment_inclusion_proof
             .split_at(kzg_commitments_tree_depth);
 
         let blob_kzg_commitments_root = get_root_from_merkle_branch(
             self.kzg_commitment.tree_hash_root(),
-            subtree_proof,
+            kzg_commitment_to_kzg_commitments_proof,
             kzg_commitments_tree_depth as u64,
             self.index,
         );
 
         is_valid_merkle_branch(
             blob_kzg_commitments_root,
-            branch,
+            kzg_commitments_to_block_body_proof,
             KZG_COMMITMENT_INCLUSION_PROOF_DEPTH - kzg_commitments_tree_depth as u64,
             BLOB_KZG_COMMITMENTS_INDEX,
             self.signed_block_header.message.body_root,
         )
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlobTransaction {
-    pub blob_sidecar: BlobSidecar,
-    pub transaction: Transactions,
 }
 
 #[cfg(test)]
