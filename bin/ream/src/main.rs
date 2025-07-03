@@ -8,6 +8,7 @@ use ream::cli::{
     import_keystores::{load_keystore_directory, load_password_file, process_password},
     lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig,
+    voluntary_exit::VoluntaryExitConfig,
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus_misc::constants::set_genesis_validator_root;
@@ -22,9 +23,10 @@ use ream_storage::{
     dir::setup_data_dir,
     tables::Table,
 };
+use ream_validator::validator::ValidatorService;
 use ream_validator_beacon::validator::ValidatorService;
 use ream_validator_lean::service::ValidatorService as LeanValidatorService;
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 pub const APP_NAME: &str = "ream";
@@ -59,6 +61,9 @@ fn main() {
         }
         Commands::AccountManager(config) => {
             executor_clone.spawn(async move { run_account_manager(*config).await });
+        }
+        Commands::VoluntaryExit(config) => {
+            executor_clone.spawn(async move { run_voluntary_exit(*config, executor).await });
         }
     }
 
@@ -257,4 +262,55 @@ pub async fn run_account_manager(mut config: AccountManagerConfig) {
     ream_account_manager::generate_keys(&seed_phrase);
 
     info!("Account manager completed successfully");
+}
+
+/// Runs the voluntary exit process.
+///
+/// This function initializes the voluntary exit process by setting up the network specification,
+/// loading the keystores, creating a validator service, and processing the voluntary exit.
+pub async fn run_voluntary_exit(config: VoluntaryExitConfig, executor: ReamExecutor) {
+    info!("Starting voluntary exit process...");
+
+    set_network_spec(config.network.clone());
+
+    let password = process_password({
+        if let Some(ref password_file) = config.password_file {
+            load_password_file(password_file).expect("Failed to read password from password file")
+        } else if let Some(password_str) = config.password {
+            password_str
+        } else {
+            panic!("Expected either password or password-file to be set")
+        }
+    });
+
+    let key_stores = load_keystore_directory(&config.import_keystores)
+        .expect("Failed to load keystore directory")
+        .into_iter()
+        .map(|encrypted_keystore| {
+            encrypted_keystore
+                .decrypt(password.as_bytes())
+                .expect("Could not decrypt a keystore")
+        })
+        .collect::<Vec<_>>();
+
+    let validator_service = ValidatorService::new(
+        key_stores,
+        Default::default(), // Fee recipient not needed for voluntary exit
+        config.beacon_api_endpoint,
+        config.request_timeout,
+        executor,
+    )
+    .expect("Failed to create validator service");
+
+    match ream_validator::voluntary_exit::process_voluntary_exit(
+        validator_service,
+        config.validator_index,
+        config.epoch,
+        config.wait,
+    )
+    .await
+    {
+        Ok(()) => info!("Voluntary exit completed successfully"),
+        Err(err) => error!("Voluntary exit failed: {}", err),
+    }
 }
