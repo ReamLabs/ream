@@ -295,7 +295,7 @@ pub async fn run_voluntary_exit(config: VoluntaryExitConfig, executor: ReamExecu
 
     let validator_service = ValidatorService::new(
         key_stores,
-        Default::default(), // Fee recipient not needed for voluntary exit
+        Default::default(),
         config.beacon_api_endpoint,
         config.request_timeout,
         executor,
