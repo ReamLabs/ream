@@ -93,11 +93,14 @@ pub async fn handle_gossipsub_message(
                     signed_block.message.block_root()
                 );
 
-                let Ok(validation_result) =
-                    validate_beacon_block(beacon_chain, cached_db, &signed_block).await
-                else {
-                    return;
-                };
+                let validation_result =
+                    match validate_beacon_block(beacon_chain, cached_db, &signed_block).await {
+                        Ok(result) => result,
+                        Err(err) => {
+                            warn!("Failed to validate gossipsub beacon block: {err}");
+                            return;
+                        }
+                    };
 
                 match validation_result {
                     ValidationResult::Accept => {
@@ -110,9 +113,11 @@ pub async fn handle_gossipsub_message(
                             data: signed_block.as_ssz_bytes(),
                         });
                     }
-                    ValidationResult::Ignore => warn!("Ignoring gossipsub beacon block"),
-                    ValidationResult::Reject => {
-                        warn!("Rejecting gossipsub beacon block. Peer should be penalized")
+                    ValidationResult::Ignore(reason) => {
+                        warn!("Ignoring gossipsub beacon block: {reason}");
+                    }
+                    ValidationResult::Reject(reason) => {
+                        warn!("Rejecting gossipsub beacon block: {reason}");
                     }
                 }
             }

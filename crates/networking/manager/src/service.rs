@@ -157,7 +157,7 @@ impl NetworkManagerService {
                     match event {
                         // Handles Gossipsub messages from other peers.
                         ReamNetworkEvent::GossipsubMessage { message } =>
-                            handle_gossipsub_message(message, &beacon_chain,&cached_db, &p2p_sender).await,
+                            handle_gossipsub_message(message, &beacon_chain, &cached_db, &p2p_sender).await,
                         // Handles Req/Resp messages from other peers.
                         ReamNetworkEvent::RequestMessage { peer_id, stream_id, connection_id, message } =>
                             handle_req_resp_message(peer_id, stream_id, connection_id, message, &beacon_chain, &p2p_sender, &ream_db).await,

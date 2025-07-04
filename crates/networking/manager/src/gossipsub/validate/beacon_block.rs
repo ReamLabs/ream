@@ -5,7 +5,7 @@ use ream_consensus::{
     misc::compute_start_slot_at_epoch,
 };
 use ream_storage::{
-    cache::CachedDB,
+    cache::{AddressSlotIdentifier, CachedDB},
     tables::{Field, Table},
 };
 
@@ -23,14 +23,18 @@ pub async fn validate_beacon_block(
 
     // [IGNORE] The block is not from a future slot.
     if block.message.slot <= latest_block_in_db.message.slot {
-        return Ok(ValidationResult::Ignore);
+        return Ok(ValidationResult::Ignore(
+            "Block is not from a future slot".to_string(),
+        ));
     }
 
     // [IGNORE] The block is from a slot greater than the latest finalized slot.
     if block.message.slot
         < compute_start_slot_at_epoch(store.db.finalized_checkpoint_provider().get()?.epoch)
     {
-        return Ok(ValidationResult::Ignore);
+        return Ok(ValidationResult::Ignore(
+            "Block is from a slot greater than the latest finalized slot".to_string(),
+        ));
     }
 
     let validator = latest_state_in_db
@@ -44,15 +48,20 @@ pub async fn validate_beacon_block(
         .cached_proposer_signature
         .read()
         .await
-        .contains(&(validator.public_key.clone(), block.message.slot))
+        .contains(&AddressSlotIdentifier {
+            address: validator.public_key.clone(),
+            slot: block.message.slot,
+        })
     {
-        return Ok(ValidationResult::Ignore);
+        return Ok(ValidationResult::Ignore(
+            "Signature already received".to_string(),
+        ));
     }
 
     // [REJECT] The proposer signature, signed_beacon_block.signature, is valid with respect to the
     // proposer_index pubkey.
     if !latest_state_in_db.verify_block_signature(block)? {
-        return Ok(ValidationResult::Reject);
+        return Ok(ValidationResult::Reject("Invalid signature".to_string()));
     }
 
     // [IGNORE] The block's parent (defined by block.parent_root) has been seen.
@@ -63,10 +72,14 @@ pub async fn validate_beacon_block(
     {
         // [REJECT] The block is from a higher slot than its parent.
         if block.message.slot > parent.message.slot + 1 {
-            return Ok(ValidationResult::Reject);
+            return Ok(ValidationResult::Reject(
+                "Block is from a higher slot than expected".to_string(),
+            ));
         }
     } else {
-        return Ok(ValidationResult::Ignore);
+        return Ok(ValidationResult::Ignore(
+            "Parent block not found".to_string(),
+        ));
     }
 
     let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
@@ -74,21 +87,27 @@ pub async fn validate_beacon_block(
     if !store.get_checkpoint_block(block.message.parent_root, finalized_checkpoint.epoch)?
         == finalized_checkpoint.root
     {
-        return Ok(ValidationResult::Reject);
+        return Ok(ValidationResult::Reject(
+            "Finalized checkpoint is not an ancestor".to_string(),
+        ));
     }
 
     // [REJECT] The block is proposed by the expected proposer_index for the block's slot.
     if !latest_state_in_db.get_beacon_proposer_index(Some(block.message.slot))?
         == block.message.proposer_index
     {
-        return Ok(ValidationResult::Reject);
+        return Ok(ValidationResult::Reject(
+            "Proposer index is incorrect".to_string(),
+        ));
     }
 
     // [REJECT] The block's execution payload timestamp is correct with respect to the slot.
     if !block.message.body.execution_payload.timestamp
         == latest_state_in_db.compute_timestamp_at_slot(block.message.slot)
     {
-        return Ok(ValidationResult::Reject);
+        return Ok(ValidationResult::Reject(
+            "Execution payload timestamp is incorrect".to_string(),
+        ));
     }
 
     let proposer_bls_execution_change = &block
@@ -105,18 +124,28 @@ pub async fn validate_beacon_block(
         .cached_bls_to_execution_signature
         .read()
         .await
-        .contains(&(validator.public_key.clone(), block.message.proposer_index))
+        .contains(&AddressSlotIdentifier {
+            address: validator.public_key.clone(),
+            slot: block.message.slot,
+        })
     {
-        return Ok(ValidationResult::Ignore);
+        return Ok(ValidationResult::Ignore(
+            "Signature already received".to_string(),
+        ));
     }
 
     // [REJECT] The length of KZG commitments is less than or equal to the limitation.
     if block.message.body.blob_kzg_commitments.len() > MAX_BLOBS_PER_BLOCK_ELECTRA as usize {
-        return Ok(ValidationResult::Reject);
+        return Ok(ValidationResult::Reject(
+            "Length of KZG commitments is greater than the limit".to_string(),
+        ));
     }
 
     cached_db.cached_proposer_signature.blocking_write().put(
-        (validator.public_key.clone(), block.message.slot),
+        AddressSlotIdentifier {
+            address: validator.public_key.clone(),
+            slot: block.message.slot,
+        },
         block.signature.clone(),
     );
 
@@ -124,7 +153,10 @@ pub async fn validate_beacon_block(
         .cached_bls_to_execution_signature
         .blocking_write()
         .put(
-            (validator.public_key.clone(), block.message.proposer_index),
+            AddressSlotIdentifier {
+                address: validator.public_key.clone(),
+                slot: block.message.slot,
+            },
             proposer_bls_execution_change.clone(),
         );
 

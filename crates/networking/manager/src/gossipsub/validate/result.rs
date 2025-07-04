@@ -1,6 +1,6 @@
 #[derive(Debug)]
 pub enum ValidationResult {
     Accept,
-    Ignore,
-    Reject,
+    Ignore(String),
+    Reject(String),
 }
