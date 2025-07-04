@@ -5,7 +5,6 @@ pub mod constants;
 pub mod gossipsub;
 pub mod network;
 pub mod network_state;
-pub mod node;
 pub mod peer;
 pub mod req_resp;
 pub mod utils;

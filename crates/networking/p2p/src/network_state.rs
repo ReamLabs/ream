@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{collections::HashMap, fs, net::IpAddr, path::PathBuf};
 
 use anyhow::anyhow;
 use discv5::Enr;
@@ -13,6 +13,11 @@ use crate::{
 };
 
 pub struct NetworkState {
+    pub local_peer_id: PeerId,
+    pub local_enr: Enr,
+    pub socket_address: IpAddr,
+    pub socket_port: u16,
+    pub discovery_port: u16,
     pub peer_table: RwLock<HashMap<PeerId, CachedPeer>>,
     pub meta_data: RwLock<GetMetaDataV2>,
     pub status: RwLock<Status>,
