@@ -18,11 +18,11 @@ pub async fn validate_beacon_block(
 ) -> anyhow::Result<ValidationResult> {
     let store = beacon_chain.store.lock().await;
 
-    let latest_block_in_db = store.db.get_latest_block()?;
+    let latest_global_slot = store.db.time_provider().get()?;
     let latest_state_in_db = store.db.get_latest_state()?;
 
     // [IGNORE] The block is not from a future slot.
-    if block.message.slot <= latest_block_in_db.message.slot {
+    if block.message.slot <= latest_global_slot {
         return Ok(ValidationResult::Ignore(
             "Block is not from a future slot".to_string(),
         ));
