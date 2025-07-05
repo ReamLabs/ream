@@ -5,11 +5,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use anyhow::anyhow;
 use ream_beacon_chain::beacon_chain::BeaconChain;
-use ream_consensus::{
-    blob_sidecar::BlobIdentifier, constants::genesis_validators_root,
-    electra::beacon_state::BeaconState,
-};
+use ream_consensus::{blob_sidecar::BlobIdentifier, electra::beacon_state::BeaconState};
 use ream_discv5::{
     config::DiscoveryConfig,
     subnet::{AttestationSubnets, SyncCommitteeSubnets},
@@ -20,27 +18,26 @@ use ream_network_spec::networks::network_spec;
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
     config::NetworkConfig,
+    gossipsub::message::GossipsubMessage,
     network::{Network, ReamNetworkEvent},
     network_state::NetworkState,
+    req_resp::messages::{
+        RequestMessage, ResponseMessage,
+        beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+        blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
+    },
 };
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},
 };
 use ream_syncer::block_range::BlockRangeSyncer;
-use tokio::{
-    sync::{RwLock, mpsc},
-    time::interval,
-    task::JoinHandle,
-};
+use tokio::sync::{RwLock, mpsc};
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 
 use crate::{
-    config::ManagerConfig,
-    gossipsub::{handle_gossipsub_message, init_gossipsub_config_with_topics},
-    p2p_sender::P2PSender,
-    req_resp::handle_req_resp_message,
+    config::ManagerConfig, gossipsub::init_gossipsub_config_with_topics, p2p_sender::P2PSender,
 };
 
 pub struct NetworkManagerService {
@@ -152,12 +149,12 @@ impl NetworkManagerService {
         let highest_slot = db
             .slot_index_provider()
             .get_highest_slot()?
-            .ok_or_else(|| anyhow::anyhow!("No highest slot found in database"))?;
+            .ok_or_else(|| anyhow!("No highest slot found in database"))?;
 
         let block_root = db
             .slot_index_provider()
             .get(highest_slot)?
-            .ok_or_else(|| anyhow::anyhow!("No block root found for slot {}", highest_slot))?;
+            .ok_or_else(|| anyhow!("No block root found for slot {highest_slot}"))?;
         let beacon_state = db.beacon_state_provider().get(block_root)?;
         Ok(beacon_state)
     }
@@ -198,20 +195,11 @@ impl NetworkManagerService {
     /// Starts the manager service, which listens for network events and handles requests.
     ///
     /// Panics if the manager receiver is not initialized.
-    pub async fn start(self) {
-        let NetworkManagerService {
-            beacon_chain,
-            mut manager_receiver,
-            p2p_sender,
-            ream_db,
-            sync_committee_subscriptions,
-            sync_committee_subnets,
-            ..
-        } = self;
-        let mut slot_interval =
-            tokio::time::interval(Duration::from_secs(network_spec().seconds_per_slot));
-        let mut expiry_interval = tokio::time::interval(Duration::from_secs(12 * 32));
+    pub async fn start(mut self) {
         let network_spec = network_spec();
+        let mut slot_interval =
+            tokio::time::interval(Duration::from_secs(network_spec.seconds_per_slot));
+        let mut expiry_interval = tokio::time::interval(Duration::from_secs(12 * 32));
         loop {
             tokio::select! {
                 _ = slot_interval.tick() => {
@@ -541,7 +529,6 @@ impl NetworkManagerService {
                                 _ => warn!("This message shouldn't be handled in the network manager: {message:?}"),
                             }
                         },
->>>>>>> 93a0b97 (Addressed review comments)
                         unhandled_request => {
                             info!("Unhandled request: {unhandled_request:?}");
                         }

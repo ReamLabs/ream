@@ -27,8 +27,6 @@ use super::state::get_state_from_id;
 
 const MAX_VALIDATOR_COUNT: usize = 100;
 
-pub type SyncCommitteeSubscriptionMap = Arc<RwLock<HashMap<u8, u64>>>;
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ValidatorData {
     #[serde(with = "serde_utils::quoted_u64")]
@@ -59,27 +57,31 @@ struct ValidatorBalance {
 }
 
 fn build_validator_balances(
-    validators: &[(Validator, u64)],
-    filter_ids: Option<&Vec<ValidatorID>>,
+    validators_with_balances: &[(Validator, u64)],
+    validator_ids: Option<&Vec<ValidatorID>>,
 ) -> Vec<ValidatorBalance> {
-    // Turn the optional Vec<ValidatorID> into an optional HashSet for O(1) lookups
-    let filtered_ids = filter_ids.map(|ids| ids.iter().collect::<HashSet<_>>());
+    let mut result = Vec::new();
 
-    validators
-        .iter()
-        .enumerate()
-        .filter(|(idx, (validator, _))| match &filtered_ids {
-            Some(ids) => {
-                ids.contains(&ValidatorID::Index(*idx as u64))
-                    || ids.contains(&ValidatorID::Address(validator.public_key.clone()))
+    for (index, (validator, balance)) in validators_with_balances.iter().enumerate() {
+        // If specific validator IDs are requested, filter by them
+        if let Some(ids) = validator_ids {
+            let should_include = ids.iter().any(|id| match id {
+                ValidatorID::Index(i) => *i == index as u64,
+                ValidatorID::Address(public_key) => validator.public_key == *public_key,
+            });
+
+            if !should_include {
+                continue;
             }
-            None => true,
-        })
-        .map(|(idx, (_, balance))| ValidatorBalance {
-            index: idx as u64,
+        }
+
+        result.push(ValidatorBalance {
+            index: index as u64,
             balance: *balance,
-        })
-        .collect()
+        });
+    }
+
+    result
 }
 
 #[get("/beacon/states/{state_id}/validator/{validator_id}")]
@@ -386,13 +388,13 @@ pub async fn post_validator_balances_from_state(
     )
 }
 
-pub async fn process_sync_committee_subscriptions(
+async fn process_sync_committee_subscriptions(
     subscriptions: &[SyncCommitteeSubscription],
-    sync_committee_subscriptions: &SyncCommitteeSubscriptionMap,
+    sync_committee_subscriptions: &Arc<RwLock<HashMap<u8, u64>>>,
     sync_committee_subnets: &Arc<RwLock<SyncCommitteeSubnets>>,
 ) -> Result<(), ApiError> {
-    let mut map = sync_committee_subscriptions.write().await;
-    let mut subnets = sync_committee_subnets.write().await;
+    let mut subscription_map = sync_committee_subscriptions.write().await;
+    let mut subnet_manager = sync_committee_subnets.write().await;
     for subscription in subscriptions.iter() {
         // Parse until_epoch
         let until_epoch: u64 = subscription.until_epoch;
@@ -407,11 +409,11 @@ pub async fn process_sync_committee_subscriptions(
                     )));
                 }
             };
-            map.insert(subnet_id, until_epoch);
+            subscription_map.insert(subnet_id, until_epoch);
             // Enable the subnet in networking
-            if let Err(e) = subnets.enable_sync_committee_subnet(subnet_id) {
+            if let Err(err) = subnet_manager.enable_sync_committee_subnet(subnet_id) {
                 return Err(ApiError::InternalError(format!(
-                    "Failed to enable subnet: {e}"
+                    "Failed to enable subnet: {err}"
                 )));
             }
         }
@@ -423,7 +425,7 @@ pub async fn process_sync_committee_subscriptions(
 #[post("/validator/sync_committee_subscriptions")]
 pub async fn post_sync_committee_subscriptions(
     subscriptions: Json<Vec<SyncCommitteeSubscription>>,
-    sync_committee_subscriptions: Data<SyncCommitteeSubscriptionMap>,
+    sync_committee_subscriptions: Data<Arc<RwLock<HashMap<u8, u64>>>>,
     sync_committee_subnets: Data<Arc<RwLock<SyncCommitteeSubnets>>>,
 ) -> Result<impl Responder, ApiError> {
     process_sync_committee_subscriptions(

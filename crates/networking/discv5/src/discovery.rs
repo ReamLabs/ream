@@ -71,13 +71,20 @@ pub struct Discovery {
 impl Discovery {
     pub fn update_subnet_enrs(
         &self,
-        _attestation_subnets: &AttestationSubnets,
+        attestation_subnets: &AttestationSubnets,
         sync_committee_subnets: &SyncCommitteeSubnets,
     ) -> anyhow::Result<()> {
-        if sync_committee_subnets.needs_enr_update() {
-            info!("Updating ENR with sync committee subnet subscriptions");
-            sync_committee_subnets.update_enr(&self.discv5)?;
-        }
+        info!("Updating ENR with attestation subnet subscriptions");
+        self.discv5
+            .enr_insert(ATTESTATION_BITFIELD_ENR_KEY, attestation_subnets)
+            .map_err(|err| anyhow!("Failed to update ENR with attestation subnets: {err:?}"))?;
+
+        // Update ENR with sync committee subnet subscriptions
+        info!("Updating ENR with sync committee subnet subscriptions");
+        self.discv5
+            .enr_insert(SYNC_COMMITTEE_BITFIELD_ENR_KEY, sync_committee_subnets)
+            .map_err(|err| anyhow!("Failed to update ENR with sync committee subnets: {err:?}"))?;
+
         Ok(())
     }
 
