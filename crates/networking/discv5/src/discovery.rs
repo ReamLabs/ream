@@ -61,7 +61,6 @@ struct QueryResult {
 
 pub struct Discovery {
     discv5: Discv5,
-    local_enr: Enr,
     event_stream: EventStream,
     discovery_queries: FuturesUnordered<Pin<Box<dyn Future<Output = QueryResult> + Send>>>,
     find_peer_active: bool,
@@ -69,7 +68,7 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<Self> {
+    pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<(Self, Enr)> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
 
@@ -115,18 +114,16 @@ impl Discovery {
             EventStream::Inactive
         };
 
-        Ok(Self {
-            discv5,
-            local_enr: enr,
-            event_stream,
-            discovery_queries: FuturesUnordered::new(),
-            find_peer_active: false,
-            started: !config.disable_discovery,
-        })
-    }
-
-    pub fn local_enr(&self) -> &Enr {
-        &self.local_enr
+        Ok((
+            Self {
+                discv5,
+                event_stream,
+                discovery_queries: FuturesUnordered::new(),
+                find_peer_active: false,
+                started: !config.disable_discovery,
+            },
+            enr,
+        ))
     }
 
     pub fn discover_peers(&mut self, query: QueryType, target_peers: usize) {
@@ -374,8 +371,7 @@ mod tests {
         config.attestation_subnets.disable_attestation_subnet(1)?; // Set subnet 1
         config.disable_discovery = true;
 
-        let discovery = Discovery::new(key, &config).await.unwrap();
-        let enr: &discv5::enr::Enr<CombinedKey> = discovery.local_enr();
+        let (_discovery, enr) = Discovery::new(key, &config).await.unwrap();
         // Check ENR reflects config.subnets
         let enr_subnets = enr
             .get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY)
@@ -394,16 +390,15 @@ mod tests {
         config.attestation_subnets.disable_attestation_subnet(1)?;
         config.disable_discovery = true;
 
-        let discovery = Discovery::new(key, &config).await.unwrap();
-        let local_enr = discovery.local_enr();
+        let (_discovery, local_enr) = Discovery::new(key, &config).await.unwrap();
 
         // Predicate for subnet 0 should match
         let predicate = attestation_subnet_predicate(vec![0]);
-        assert!(predicate(local_enr));
+        assert!(predicate(&local_enr));
 
         // Predicate for subnet 1 should not match
         let predicate = attestation_subnet_predicate(vec![1]);
-        assert!(!predicate(local_enr));
+        assert!(!predicate(&local_enr));
         Ok(())
     }
 
@@ -423,7 +418,7 @@ mod tests {
 
         config.attestation_subnets.enable_attestation_subnet(0)?; // Local node on subnet 0
         config.disable_discovery = false;
-        let mut discovery = Discovery::new(key, &config).await.unwrap();
+        let (mut discovery, _local_enr) = Discovery::new(key, &config).await.unwrap();
 
         // Simulate a peer with another Discovery instance
         let peer_key = Keypair::generate_secp256k1();
@@ -442,8 +437,7 @@ mod tests {
         peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
 
-        let peer_discovery = Discovery::new(peer_key, &peer_config).await.unwrap();
-        let peer_enr = peer_discovery.local_enr().clone();
+        let (_peer_discovery, peer_enr) = Discovery::new(peer_key, &peer_config).await.unwrap();
 
         // Add peer to discv5
         discovery.discv5.add_enr(peer_enr.clone()).unwrap();
