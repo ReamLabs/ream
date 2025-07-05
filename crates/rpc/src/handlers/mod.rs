@@ -7,6 +7,7 @@ pub mod header;
 pub mod light_client;
 pub mod peers;
 pub mod pool;
+pub mod prepare_beacon_proposer;
 pub mod state;
 pub mod syncing;
 pub mod validator;
