@@ -131,11 +131,11 @@ impl Network {
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
-        let discovery = {
-            let mut discovery =
+        let (discovery, local_enr) = {
+            let (mut discovery, local_enr) =
                 Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
             discovery.discover_peers(QueryType::Peers, 16);
-            discovery
+            (discovery, local_enr)
         };
 
         let req_resp = ReqResp::new();
@@ -204,7 +204,13 @@ impl Network {
                 .build()
         };
 
+        let local_peer_id = PeerId::from_public_key(&PublicKey::from(local_key.public().clone()));
         let network_state = Arc::new(NetworkState {
+            local_peer_id,
+            local_enr,
+            socket_address: config.discv5_config.socket_address,
+            socket_port: config.discv5_config.socket_port,
+            discovery_port: config.discv5_config.discovery_port,
             peer_table: RwLock::new(HashMap::new()),
             meta_data: RwLock::new(
                 read_meta_data_from_disk(config.data_dir.clone()).unwrap_or_else(|err| {
@@ -234,8 +240,8 @@ impl Network {
     async fn start_network_worker(&mut self, config: &NetworkConfig) -> anyhow::Result<()> {
         info!("Libp2p starting .... ");
 
-        let mut multi_addr: Multiaddr = config.socket_address.into();
-        multi_addr.push(Protocol::Tcp(config.socket_port));
+        let mut multi_addr: Multiaddr = config.discv5_config.socket_address.into();
+        multi_addr.push(Protocol::Tcp(config.discv5_config.socket_port));
 
         match self.swarm.listen_on(multi_addr.clone()) {
             Ok(listener_id) => {
@@ -273,7 +279,7 @@ impl Network {
 
     /// Returns the local node's ENR.
     pub fn enr(&self) -> Enr {
-        self.swarm.behaviour().discovery.local_enr().clone()
+        self.network_state.local_enr.clone()
     }
 
     fn request_id(&mut self) -> u64 {
@@ -845,8 +851,6 @@ mod tests {
         .build();
 
         let config = NetworkConfig {
-            socket_address,
-            socket_port,
             discv5_config: DiscoveryConfig {
                 discv5_config,
                 bootnodes,
