@@ -69,7 +69,10 @@ impl OperationPool {
     }
 
     pub fn get_proposer_preparation(&self, validator_index: u64) -> Option<Address> {
-        self.proposer_preparations.read().get(&validator_index).copied()
+        self.proposer_preparations
+            .read()
+            .get(&validator_index)
+            .copied()
     }
 
     pub fn get_all_proposer_preparations(&self) -> HashMap<u64, Address> {
@@ -90,7 +93,10 @@ mod tests {
         assert_eq!(operation_pool.get_proposer_preparation(1), None);
 
         operation_pool.insert_proposer_preparation(1, fee_recipient1);
-        assert_eq!(operation_pool.get_proposer_preparation(1), Some(fee_recipient1));
+        assert_eq!(
+            operation_pool.get_proposer_preparation(1),
+            Some(fee_recipient1)
+        );
 
         operation_pool.insert_proposer_preparation(2, fee_recipient2);
         let all_preparations = operation_pool.get_all_proposer_preparations();
@@ -99,6 +105,9 @@ mod tests {
         assert_eq!(all_preparations.get(&2), Some(&fee_recipient2));
 
         operation_pool.insert_proposer_preparation(1, fee_recipient2);
-        assert_eq!(operation_pool.get_proposer_preparation(1), Some(fee_recipient2));
+        assert_eq!(
+            operation_pool.get_proposer_preparation(1),
+            Some(fee_recipient2)
+        );
     }
 }

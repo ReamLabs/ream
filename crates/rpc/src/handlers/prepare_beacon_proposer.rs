@@ -1,7 +1,11 @@
-use actix_web::{HttpResponse, Responder, post, web::{Data, Json}};
+use std::sync::Arc;
+
+use actix_web::{
+    HttpResponse, Responder, post,
+    web::{Data, Json},
+};
 use ream_beacon_api_types::{error::ApiError, request::PrepareBeaconProposerItem};
 use ream_operation_pool::OperationPool;
-use std::sync::Arc;
 
 #[post("/eth/v1/validator/prepare_beacon_proposer")]
 pub async fn prepare_beacon_proposer(
@@ -23,10 +27,12 @@ pub async fn prepare_beacon_proposer(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use actix_web::{http::StatusCode, test, App};
-    use alloy_primitives::Address;
     use std::sync::Arc;
+
+    use actix_web::{App, http::StatusCode, test};
+    use alloy_primitives::Address;
+
+    use super::*;
 
     #[actix_web::test]
     async fn test_prepare_beacon_proposer_success() {
@@ -34,8 +40,9 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(operation_pool))
-                .service(prepare_beacon_proposer)
-        ).await;
+                .service(prepare_beacon_proposer),
+        )
+        .await;
 
         let fee_recipient = Address::from([0x42; 20]);
         let items = vec![
@@ -64,8 +71,9 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(operation_pool))
-                .service(prepare_beacon_proposer)
-        ).await;
+                .service(prepare_beacon_proposer),
+        )
+        .await;
 
         let items: Vec<PrepareBeaconProposerItem> = vec![];
 
@@ -84,8 +92,9 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(operation_pool.clone()))
-                .service(prepare_beacon_proposer)
-        ).await;
+                .service(prepare_beacon_proposer),
+        )
+        .await;
 
         let fee_recipient = Address::from([0x42; 20]);
         let items = vec![PrepareBeaconProposerItem {
