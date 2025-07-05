@@ -1,6 +1,6 @@
 use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
 use anyhow::{anyhow, ensure};
-use discv5::Enr;
+use discv5::{Discv5, Enr};
 use ssz::Encode;
 use ssz_types::{
     BitVector,
@@ -75,16 +75,18 @@ impl Decodable for AttestationSubnets {
     }
 }
 
-/// Represents the sync committee subnets a node is subscribed to
-///
-/// This directly wraps a BitVector<U4> for the sync committee subnet bitfield
-/// and handles encoding/decoding to raw bytes for ENR records.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct SyncCommitteeSubnets(pub BitVector<U4>);
+pub struct SyncCommitteeSubnets {
+    pub bitfield: BitVector<U4>,
+    pub enr_update_needed: bool,
+}
 
 impl SyncCommitteeSubnets {
     pub fn new() -> Self {
-        Self(BitVector::new())
+        Self {
+            bitfield: BitVector::new(),
+            enr_update_needed: false,
+        }
     }
 
     pub fn enable_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
@@ -92,9 +94,11 @@ impl SyncCommitteeSubnets {
             subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
             "Subnet ID {subnet_id} exceeds maximum sync committee subnet count {SYNC_COMMITTEE_SUBNET_COUNT}",
         );
-        self.0
+        self.bitfield
             .set(subnet_id as usize, true)
-            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
+            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))?;
+        self.enr_update_needed = true;
+        Ok(())
     }
 
     pub fn disable_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
@@ -102,9 +106,12 @@ impl SyncCommitteeSubnets {
             subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
             "Subnet ID {subnet_id} exceeds maximum sync committee subnet count {SYNC_COMMITTEE_SUBNET_COUNT}",
         );
-        self.0
+        self.bitfield
             .set(subnet_id as usize, false)
-            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
+            .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))?;
+
+        self.enr_update_needed = true;
+        Ok(())
     }
 
     pub fn is_sync_committee_subnet_enabled(&self, subnet_id: u8) -> anyhow::Result<bool> {
@@ -112,15 +119,30 @@ impl SyncCommitteeSubnets {
             subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
             "Subnet ID {subnet_id} exceeds maximum sync committee subnet count {SYNC_COMMITTEE_SUBNET_COUNT}",
         );
-        self.0
+        self.bitfield
             .get(subnet_id as usize)
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
+    }
+
+    pub fn needs_enr_update(&self) -> bool {
+        self.enr_update_needed
+    }
+
+    pub fn reset_enr_update_flag(&mut self) {
+        self.enr_update_needed = false;
+    }
+
+    pub fn update_enr(&self, discv5: &Discv5) -> anyhow::Result<()> {
+        discv5
+            .enr_insert(SYNC_COMMITTEE_BITFIELD_ENR_KEY, self)
+            .map_err(|err| anyhow!("Failed to update ENR with sync committee subnets: {err:?}"))?;
+        Ok(())
     }
 }
 
 impl Encodable for SyncCommitteeSubnets {
     fn encode(&self, out: &mut dyn BufMut) {
-        let bytes = Bytes::from(self.0.as_ssz_bytes());
+        let bytes = Bytes::from(self.bitfield.as_ssz_bytes());
         bytes.encode(out);
     }
 }
@@ -128,12 +150,15 @@ impl Encodable for SyncCommitteeSubnets {
 impl Decodable for SyncCommitteeSubnets {
     fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
         let bytes = Bytes::decode(buf)?;
-        let subnets = BitVector::<U4>::from_bytes(bytes.to_vec().into()).map_err(|err| {
+        let bitfield = BitVector::<U4>::from_bytes(bytes.to_vec().into()).map_err(|err| {
             alloy_rlp::Error::Custom(Box::leak(
                 format!("Failed to decode SSZ SyncCommitteeSubnets: {err:?}").into_boxed_str(),
             ))
         })?;
-        Ok(Self(subnets))
+        Ok(Self {
+            bitfield,
+            enr_update_needed: false,
+        })
     }
 }
 
@@ -227,10 +252,7 @@ pub fn sync_committee_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> boo
 mod tests {
     use std::str::FromStr;
 
-    use discv5::{
-        Enr,
-        enr::{CombinedKey, k256::ecdsa::SigningKey},
-    };
+    use discv5::enr::{CombinedKey, k256::ecdsa::SigningKey};
 
     use super::*;
 
