@@ -1,10 +1,11 @@
 use actix_web::{HttpResponse, Responder, post, web::{Data, Json}};
 use ream_beacon_api_types::{error::ApiError, request::PrepareBeaconProposerItem};
 use ream_operation_pool::OperationPool;
+use std::sync::Arc;
 
 #[post("/eth/v1/validator/prepare_beacon_proposer")]
 pub async fn prepare_beacon_proposer(
-    operation_pool: Data<OperationPool>,
+    operation_pool: Data<Arc<OperationPool>>,
     prepare_beacon_proposer_items: Json<Vec<PrepareBeaconProposerItem>>,
 ) -> Result<impl Responder, ApiError> {
     let items = prepare_beacon_proposer_items.into_inner();
@@ -32,7 +33,7 @@ mod tests {
         let operation_pool = Arc::new(OperationPool::default());
         let app = test::init_service(
             App::new()
-                .app_data(Data::from(operation_pool))
+                .app_data(Data::new(operation_pool))
                 .service(prepare_beacon_proposer)
         ).await;
 
@@ -62,7 +63,7 @@ mod tests {
         let operation_pool = Arc::new(OperationPool::default());
         let app = test::init_service(
             App::new()
-                .app_data(Data::from(operation_pool))
+                .app_data(Data::new(operation_pool))
                 .service(prepare_beacon_proposer)
         ).await;
 
@@ -82,7 +83,7 @@ mod tests {
         let operation_pool = Arc::new(OperationPool::default());
         let app = test::init_service(
             App::new()
-                .app_data(Data::from(operation_pool.clone()))
+                .app_data(Data::new(operation_pool.clone()))
                 .service(prepare_beacon_proposer)
         ).await;
 
