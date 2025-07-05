@@ -131,11 +131,11 @@ impl Network {
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
-        let discovery = {
-            let mut discovery =
+        let (discovery, local_enr) = {
+            let (mut discovery, local_enr) =
                 Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
             discovery.discover_peers(QueryType::Peers, 16);
-            discovery
+            (discovery, local_enr)
         };
 
         let req_resp = ReqResp::new();
@@ -173,7 +173,6 @@ impl Network {
             identify::Behaviour::new(identify_config)
         };
 
-        let local_enr = discovery.local_enr().clone();
         let behaviour = {
             ReamBehaviour {
                 discovery,
@@ -280,7 +279,7 @@ impl Network {
 
     /// Returns the local node's ENR.
     pub fn enr(&self) -> Enr {
-        self.swarm.behaviour().discovery.local_enr().clone()
+        self.network_state.local_enr.clone()
     }
 
     fn request_id(&mut self) -> u64 {
