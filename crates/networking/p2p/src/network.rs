@@ -130,10 +130,15 @@ impl Network {
         status: Status,
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
+        let (tx, mut rx) = mpsc::unbounded_channel();
 
         let (discovery, local_enr) = {
-            let (mut discovery, local_enr) =
-                Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
+            let (mut discovery, local_enr) = Discovery::new(
+                Keypair::from(local_key.clone()),
+                &config.discv5_config,
+                Some(tx),
+            )
+            .await?;
             discovery.discover_peers(QueryType::Peers, 16);
             (discovery, local_enr)
         };
@@ -207,10 +212,7 @@ impl Network {
         let local_peer_id = PeerId::from_public_key(&PublicKey::from(local_key.public().clone()));
         let network_state = Arc::new(NetworkState {
             local_peer_id,
-            local_enr,
-            socket_address: config.discv5_config.socket_address,
-            socket_port: config.discv5_config.socket_port,
-            discovery_port: config.discv5_config.discovery_port,
+            local_enr: RwLock::new(local_enr),
             peer_table: RwLock::new(HashMap::new()),
             meta_data: RwLock::new(
                 read_meta_data_from_disk(config.data_dir.clone()).unwrap_or_else(|err| {
@@ -220,6 +222,14 @@ impl Network {
             ),
             status: RwLock::new(status),
             data_dir: config.data_dir.clone(),
+        });
+
+        let network_state_clone = Arc::clone(&network_state);
+        tokio::spawn(async move {
+            while let Some(enr) = rx.recv().await {
+                info!("Got ENR update: {}", enr);
+                *network_state_clone.local_enr.write() = enr;
+            }
         });
 
         let mut network = Network {
@@ -279,7 +289,7 @@ impl Network {
 
     /// Returns the local node's ENR.
     pub fn enr(&self) -> Enr {
-        self.network_state.local_enr.clone()
+        self.network_state.local_enr.read().clone()
     }
 
     fn request_id(&mut self) -> u64 {
