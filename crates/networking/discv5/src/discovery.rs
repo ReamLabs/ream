@@ -146,7 +146,23 @@ impl Discovery {
             .find_node_predicate(
                 NodeId::random(),
                 match query.clone() {
-                    QueryType::Peers => Box::new(empty_predicate()),
+                    QueryType::Peers => {
+                        let Some(Ok(fork_id)) =
+                            self.local_enr.get_decodable::<EnrForkId>(ENR_ETH2_KEY)
+                        else {
+                            warn!("ENR missing or invalid ENR_ETH2_KEY, skipping peer query");
+                            return;
+                        };
+                        let fork_digest = fork_id.fork_digest;
+
+                        Box::new(move |enr: &Enr| {
+                            enr.get_decodable::<EnrForkId>(ENR_ETH2_KEY)
+                                .and_then(Result::ok)
+                                .map(|id| id.fork_digest == fork_digest)
+                                .unwrap_or(false)
+                                && (enr.tcp4().is_some() || enr.tcp6().is_some())
+                        })
+                    }
                     QueryType::AttestationSubnetPeers(subnet_ids) => {
                         Box::new(attestation_subnet_predicate(subnet_ids))
                     }
