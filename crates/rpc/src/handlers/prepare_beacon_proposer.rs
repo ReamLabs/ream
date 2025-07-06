@@ -56,13 +56,13 @@ mod tests {
             },
         ];
 
-        let req = test::TestRequest::post()
+        let request = test::TestRequest::post()
             .uri("/validator/prepare_beacon_proposer")
             .set_json(&items)
             .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[actix_web::test]
@@ -77,13 +77,13 @@ mod tests {
 
         let items: Vec<PrepareBeaconProposerItem> = vec![];
 
-        let req = test::TestRequest::post()
+        let request = test::TestRequest::post()
             .uri("/validator/prepare_beacon_proposer")
             .set_json(&items)
             .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[actix_web::test]
@@ -102,13 +102,13 @@ mod tests {
             fee_recipient,
         }];
 
-        let req = test::TestRequest::post()
+        let request = test::TestRequest::post()
             .uri("/validator/prepare_beacon_proposer")
             .set_json(&items)
             .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
 
         let stored_fee_recipient = operation_pool.get_proposer_preparation(123);
         assert_eq!(stored_fee_recipient, Some(fee_recipient));
