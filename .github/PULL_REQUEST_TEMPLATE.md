@@ -1,8 +1,8 @@
-### What are you trying to achieve?
+### What was wrong?
 
  <!-- Describe in a sentence or two of the reason for this PR. Link to the issue if possible.  -->
 
-### How was it implemented/fixed?
+### How was it fixed?
 
  <!-- List the approach you used, and/or changes made to the codebase  -->
 
