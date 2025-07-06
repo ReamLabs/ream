@@ -110,6 +110,9 @@ mod tests {
         let response = test::call_service(&app, request).await;
         assert_eq!(response.status(), StatusCode::OK);
 
-        assert_eq!(operation_pool.get_proposer_preparation(123), Some(fee_recipient));
+        assert_eq!(
+            operation_pool.get_proposer_preparation(123),
+            Some(fee_recipient)
+        );
     }
 }
