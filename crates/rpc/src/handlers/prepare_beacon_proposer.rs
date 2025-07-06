@@ -7,7 +7,7 @@ use actix_web::{
 use ream_beacon_api_types::{error::ApiError, request::PrepareBeaconProposerItem};
 use ream_operation_pool::OperationPool;
 
-#[post("/eth/v1/validator/prepare_beacon_proposer")]
+#[post("/validator/prepare_beacon_proposer")]
 pub async fn prepare_beacon_proposer(
     operation_pool: Data<Arc<OperationPool>>,
     prepare_beacon_proposer_items: Json<Vec<PrepareBeaconProposerItem>>,
@@ -57,7 +57,7 @@ mod tests {
         ];
 
         let req = test::TestRequest::post()
-            .uri("/eth/v1/validator/prepare_beacon_proposer")
+            .uri("/validator/prepare_beacon_proposer")
             .set_json(&items)
             .to_request();
 
@@ -78,7 +78,7 @@ mod tests {
         let items: Vec<PrepareBeaconProposerItem> = vec![];
 
         let req = test::TestRequest::post()
-            .uri("/eth/v1/validator/prepare_beacon_proposer")
+            .uri("/validator/prepare_beacon_proposer")
             .set_json(&items)
             .to_request();
 
@@ -103,7 +103,7 @@ mod tests {
         }];
 
         let req = test::TestRequest::post()
-            .uri("/eth/v1/validator/prepare_beacon_proposer")
+            .uri("/validator/prepare_beacon_proposer")
             .set_json(&items)
             .to_request();
 
