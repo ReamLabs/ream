@@ -1,7 +1,7 @@
 use std::{fs, io, path::PathBuf, sync::Arc};
 
 use anyhow::{Result, anyhow};
-use ream_consensus::electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
+use ream_consensus::electra::beacon_state::BeaconState;
 use redb::{Builder, Database};
 use tracing::info;
 
@@ -196,20 +196,6 @@ impl ReamDB {
             Ok(Some(slot)) => slot > 0,
             _ => false,
         }
-    }
-
-    pub fn get_latest_block(&self) -> anyhow::Result<SignedBeaconBlock> {
-        let highest_root = self
-            .slot_index_provider()
-            .get_highest_root()?
-            .expect("No highest root found");
-
-        let latest_block = self
-            .beacon_block_provider()
-            .get(highest_root)?
-            .ok_or_else(|| anyhow!("Unable to fetch latest block"))?;
-
-        Ok(latest_block)
     }
 
     pub fn get_latest_state(&self) -> anyhow::Result<BeaconState> {

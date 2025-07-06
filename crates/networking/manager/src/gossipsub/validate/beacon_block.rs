@@ -18,11 +18,11 @@ pub async fn validate_beacon_block(
 ) -> anyhow::Result<ValidationResult> {
     let store = beacon_chain.store.lock().await;
 
-    let latest_global_slot = store.db.time_provider().get()?;
+    let current_global_slot = store.get_current_slot()?;
     let latest_state_in_db = store.db.get_latest_state()?;
 
     // [IGNORE] The block is not from a future slot.
-    if block.message.slot <= latest_global_slot {
+    if block.message.slot <= current_global_slot {
         return Ok(ValidationResult::Ignore(
             "Block is not from a future slot".to_string(),
         ));
@@ -70,10 +70,10 @@ pub async fn validate_beacon_block(
         .beacon_block_provider()
         .get(block.message.parent_root)?
     {
-        // [REJECT] The block is from a higher slot than its parent.
-        if block.message.slot > parent.message.slot + 1 {
+        // [REJECT] The block is not from a higher slot than its parent.
+        if block.message.slot < parent.message.slot + 1 {
             return Ok(ValidationResult::Reject(
-                "Block is from a higher slot than expected".to_string(),
+                "Block is from a slot lower than its parent".to_string(),
             ));
         }
     } else {
@@ -84,8 +84,8 @@ pub async fn validate_beacon_block(
 
     let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
     // [REJECT] The current finalized_checkpoint is an ancestor of block.
-    if !store.get_checkpoint_block(block.message.parent_root, finalized_checkpoint.epoch)?
-        == finalized_checkpoint.root
+    if store.get_checkpoint_block(block.message.parent_root, finalized_checkpoint.epoch)?
+        != finalized_checkpoint.root
     {
         return Ok(ValidationResult::Reject(
             "Finalized checkpoint is not an ancestor".to_string(),
@@ -93,8 +93,8 @@ pub async fn validate_beacon_block(
     }
 
     // [REJECT] The block is proposed by the expected proposer_index for the block's slot.
-    if !latest_state_in_db.get_beacon_proposer_index(Some(block.message.slot))?
-        == block.message.proposer_index
+    if latest_state_in_db.get_beacon_proposer_index(Some(block.message.slot))?
+        != block.message.proposer_index
     {
         return Ok(ValidationResult::Reject(
             "Proposer index is incorrect".to_string(),
@@ -102,8 +102,8 @@ pub async fn validate_beacon_block(
     }
 
     // [REJECT] The block's execution payload timestamp is correct with respect to the slot.
-    if !block.message.body.execution_payload.timestamp
-        == latest_state_in_db.compute_timestamp_at_slot(block.message.slot)
+    if block.message.body.execution_payload.timestamp
+        != latest_state_in_db.compute_timestamp_at_slot(block.message.slot)
     {
         return Ok(ValidationResult::Reject(
             "Execution payload timestamp is incorrect".to_string(),
