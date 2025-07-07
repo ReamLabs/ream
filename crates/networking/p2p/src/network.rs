@@ -5,7 +5,7 @@ use std::{
     num::{NonZeroU8, NonZeroUsize},
     pin::Pin,
     sync::Arc,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::anyhow;
@@ -21,7 +21,6 @@ use libp2p::{
         upgrade::{SelectUpgrade, Version},
     },
     dns::Transport as DnsTransport,
-    futures::StreamExt,
     gossipsub::{Event as GossipsubEvent, IdentTopic as Topic, Message, MessageAuthenticity},
     identify,
     multiaddr::Protocol,
@@ -33,14 +32,18 @@ use libp2p::{
 use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Secp256k1PublicKey};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
-use ream_consensus::constants::genesis_validators_root;
-use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
+use ream_consensus::constants::{SLOTS_PER_EPOCH, genesis_validators_root};
+use ream_discv5::{
+    discovery::{DiscoveredPeers, Discovery, QueryType},
+    subnet::{AttestationSubnets, SyncCommitteeSubnets},
+};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::network_spec;
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time::interval,
 };
+use tokio_stream::{StreamExt, wrappers::IntervalStream};
 use tracing::{error, info, trace, warn};
 use yamux::Config as YamuxConfig;
 
@@ -104,6 +107,27 @@ impl libp2p::swarm::Executor for Executor {
     }
 }
 
+fn calculate_epoch_aligned_interval(
+    min_genesis_time: u64,
+    seconds_per_slot: u64,
+) -> (Instant, Duration) {
+    let epoch_duration = Duration::from_secs(seconds_per_slot * SLOTS_PER_EPOCH);
+    let next_epoch_start = next_epoch_boundary(min_genesis_time, seconds_per_slot);
+
+    (next_epoch_start, epoch_duration)
+}
+fn next_epoch_boundary(min_genesis_time: u64, seconds_per_slot: u64) -> Instant {
+    let epoch_duration = Duration::from_secs(seconds_per_slot * SLOTS_PER_EPOCH);
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+    let time_since_genesis = now.saturating_sub(min_genesis_time);
+    let time_in_current_epoch = time_since_genesis % epoch_duration.as_secs();
+    let time_until_next_epoch = epoch_duration.as_secs() - time_in_current_epoch;
+    Instant::now() + Duration::from_secs(time_until_next_epoch)
+}
 pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
@@ -131,12 +155,10 @@ impl Network {
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
-        let discovery = {
-            let mut discovery =
-                Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
-            discovery.discover_peers(QueryType::Peers, 16);
-            discovery
-        };
+        // Create discovery service
+        let mut discovery =
+            Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
+        discovery.discover_peers(QueryType::Peers, 16);
 
         let req_resp = ReqResp::new();
 
@@ -214,9 +236,11 @@ impl Network {
             ),
             status: RwLock::new(status),
             data_dir: config.data_dir.clone(),
+            attestation_subnets: RwLock::new(AttestationSubnets::new()),
+            sync_committee_subnets: RwLock::new(SyncCommitteeSubnets::new()),
         });
 
-        let mut network = Network {
+        let mut network = Self {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
             subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
@@ -321,6 +345,15 @@ impl Network {
         mut p2p_receiver: UnboundedReceiver<P2PMessage>,
     ) {
         let mut status_interval = interval(Duration::from_secs(30));
+        let network_spec = network_spec();
+        let _ = calculate_epoch_aligned_interval(
+            network_spec.min_genesis_time,
+            network_spec.seconds_per_slot,
+        );
+        let enr_update_interval = interval(Duration::from_secs(
+            network_spec.seconds_per_slot * SLOTS_PER_EPOCH,
+        ));
+        let mut enr_update_stream = IntervalStream::new(enr_update_interval);
         loop {
             tokio::select! {
                 Some(event) = self.swarm.next() => {
@@ -403,6 +436,34 @@ impl Network {
                             .discover_peers(QueryType::Peers, 16);
                     }
                 }
+                Some(_) = enr_update_stream.next() => {
+                    self.check_and_update_enr().await;
+                }
+            }
+        }
+    }
+
+    async fn check_and_update_enr(&mut self) {
+        let attestation_subnets = self.network_state.attestation_subnets.read();
+        let mut sync_subnets = self.network_state.sync_committee_subnets.write();
+
+        if sync_subnets.needs_enr_update() {
+            if let Err(err) = self
+                .swarm
+                .behaviour()
+                .discovery
+                .update_subnet_enrs(&attestation_subnets, &sync_subnets)
+            {
+                error!("Failed to update ENR with subnet subscriptions: {err}");
+            } else {
+                // Update meta_data attnets and syncnets fields
+                let mut meta_data = self.network_state.meta_data.write();
+                meta_data.attnets = attestation_subnets.0.clone();
+                meta_data.syncnets = sync_subnets.bitfield.clone();
+                sync_subnets.reset_enr_update_flag();
+                info!(
+                    "Successfully updated ENR with sync committee subnet subscriptions and updated meta_data attnets/syncnets"
+                );
             }
         }
     }

@@ -32,6 +32,7 @@ ssz_types.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-io-timeout = "1"
+tokio-stream = "0.1"
 tokio-util.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tree_hash.workspace = true
