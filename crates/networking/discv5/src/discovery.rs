@@ -39,6 +39,17 @@ pub struct DiscoveredPeers {
     pub peers: HashMap<Enr, Option<Instant>>,
 }
 
+#[derive(Debug)]
+pub struct UpdatedEnr {
+    pub enr: Enr,
+}
+
+#[derive(Debug)]
+pub enum DiscoveryOutEvent {
+    DiscoveredPeers(DiscoveredPeers),
+    UpdatedEnr(UpdatedEnr),
+}
+
 enum EventStream {
     Inactive,
     Awaiting(
@@ -65,15 +76,10 @@ pub struct Discovery {
     discovery_queries: FuturesUnordered<Pin<Box<dyn Future<Output = QueryResult> + Send>>>,
     find_peer_active: bool,
     pub started: bool,
-    pub enr_update_sender: Option<mpsc::UnboundedSender<Enr>>,
 }
 
 impl Discovery {
-    pub async fn new(
-        local_key: Keypair,
-        config: &DiscoveryConfig,
-        enr_update_sender: Option<mpsc::UnboundedSender<Enr>>,
-    ) -> anyhow::Result<(Self, Enr)> {
+    pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<(Self, Enr)> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
 
@@ -126,7 +132,6 @@ impl Discovery {
                 discovery_queries: FuturesUnordered::new(),
                 find_peer_active: false,
                 started: !config.disable_discovery,
-                enr_update_sender,
             },
             enr,
         ))
@@ -199,8 +204,8 @@ impl Discovery {
                             }
                             Some(peer_map)
                         }
-                        Err(e) => {
-                            warn!("Failed to find peers: {:?}", e);
+                        Err(err) => {
+                            warn!("Failed to find peers: {err:?}");
                             None
                         }
                     }
@@ -263,7 +268,7 @@ impl Discovery {
 
 impl NetworkBehaviour for Discovery {
     type ConnectionHandler = ConnectionHandler;
-    type ToSwarm = DiscoveredPeers;
+    type ToSwarm = DiscoveryOutEvent;
 
     fn handle_pending_inbound_connection(
         &mut self,
@@ -316,7 +321,9 @@ impl NetworkBehaviour for Discovery {
         }
 
         if let Some(peers) = self.process_queries(cx) {
-            return Poll::Ready(ToSwarm::GenerateEvent(DiscoveredPeers { peers }));
+            return Poll::Ready(ToSwarm::GenerateEvent(DiscoveryOutEvent::DiscoveredPeers(
+                DiscoveredPeers { peers },
+            )));
         }
 
         match &mut self.event_stream {
@@ -327,8 +334,8 @@ impl NetworkBehaviour for Discovery {
                         Ok(stream) => {
                             self.event_stream = EventStream::Present(stream);
                         }
-                        Err(e) => {
-                            error!("Failed to start discovery event stream: {:?}", e);
+                        Err(err) => {
+                            error!("Failed to start discovery event stream: {err:?}");
                             self.event_stream = EventStream::Inactive;
                         }
                     }
@@ -336,17 +343,16 @@ impl NetworkBehaviour for Discovery {
             }
             EventStream::Present(receiver) => match receiver.try_recv() {
                 Ok(event) => {
-                    if let Event::SocketUpdated(socket_addr) = event {
-                        self.discv5.update_local_enr_socket(socket_addr, true);
-                        if let Some(enr_sender) = &self.enr_update_sender {
-                            if let Err(e) = enr_sender.send(self.discv5.local_enr()) {
-                                warn!("Failed to send socket address update: {:?}", e);
-                            }
-                        }
+                    if let Event::SocketUpdated(_) = event {
+                        return Poll::Ready(ToSwarm::GenerateEvent(DiscoveryOutEvent::UpdatedEnr(
+                            UpdatedEnr {
+                                enr: self.discv5.local_enr(),
+                            },
+                        )));
                     }
                 }
-                Err(error) => {
-                    error!("Failed to start discovery event stream: {:?}", error);
+                Err(err) => {
+                    warn!("No discovery event found: {err:?}");
                     self.event_stream = EventStream::Inactive;
                 }
             },
@@ -394,7 +400,7 @@ mod tests {
         config.attestation_subnets.disable_attestation_subnet(1)?; // Set subnet 1
         config.disable_discovery = true;
 
-        let (_discovery, enr) = Discovery::new(key, &config, None).await.unwrap();
+        let (_discovery, enr) = Discovery::new(key, &config).await.unwrap();
         // Check ENR reflects config.subnets
         let enr_subnets = enr
             .get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY)
@@ -413,7 +419,7 @@ mod tests {
         config.attestation_subnets.disable_attestation_subnet(1)?;
         config.disable_discovery = true;
 
-        let (_discovery, local_enr) = Discovery::new(key, &config, None).await.unwrap();
+        let (_discovery, local_enr) = Discovery::new(key, &config).await.unwrap();
 
         // Predicate for subnet 0 should match
         let predicate = attestation_subnet_predicate(vec![0]);
@@ -441,7 +447,7 @@ mod tests {
 
         config.attestation_subnets.enable_attestation_subnet(0)?; // Local node on subnet 0
         config.disable_discovery = false;
-        let (mut discovery, _local_enr) = Discovery::new(key, &config, None).await.unwrap();
+        let (mut discovery, _local_enr) = Discovery::new(key, &config).await.unwrap();
 
         // Simulate a peer with another Discovery instance
         let peer_key = Keypair::generate_secp256k1();
@@ -460,8 +466,7 @@ mod tests {
         peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
 
-        let (_peer_discovery, peer_enr) =
-            Discovery::new(peer_key, &peer_config, None).await.unwrap();
+        let (_peer_discovery, peer_enr) = Discovery::new(peer_key, &peer_config).await.unwrap();
 
         // Add peer to discv5
         discovery.discv5.add_enr(peer_enr.clone()).unwrap();
@@ -478,8 +483,9 @@ mod tests {
 
         // Poll the discovery to process the query
         let mut cx = Context::from_waker(futures::task::noop_waker_ref());
-        if let Poll::Ready(ToSwarm::GenerateEvent(DiscoveredPeers { peers })) =
-            discovery.poll(&mut cx)
+        if let Poll::Ready(ToSwarm::GenerateEvent(DiscoveryOutEvent::DiscoveredPeers(
+            DiscoveredPeers { peers },
+        ))) = discovery.poll(&mut cx)
         {
             assert_eq!(peers.len(), 1);
             assert!(peers.contains_key(&peer_enr));

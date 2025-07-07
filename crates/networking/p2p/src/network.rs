@@ -34,7 +34,9 @@ use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Sec
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
 use ream_consensus::constants::genesis_validators_root;
-use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
+use ream_discv5::discovery::{
+    DiscoveredPeers, Discovery, DiscoveryOutEvent, QueryType, UpdatedEnr,
+};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::network_spec;
 use tokio::{
@@ -130,15 +132,10 @@ impl Network {
         status: Status,
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
-        let (tx, mut rx) = mpsc::unbounded_channel();
 
         let (discovery, local_enr) = {
-            let (mut discovery, local_enr) = Discovery::new(
-                Keypair::from(local_key.clone()),
-                &config.discv5_config,
-                Some(tx),
-            )
-            .await?;
+            let (mut discovery, local_enr) =
+                Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
             discovery.discover_peers(QueryType::Peers, 16);
             (discovery, local_enr)
         };
@@ -209,9 +206,7 @@ impl Network {
                 .build()
         };
 
-        let local_peer_id = PeerId::from_public_key(&PublicKey::from(local_key.public().clone()));
         let network_state = Arc::new(NetworkState {
-            local_peer_id,
             local_enr: RwLock::new(local_enr),
             peer_table: RwLock::new(HashMap::new()),
             meta_data: RwLock::new(
@@ -222,14 +217,6 @@ impl Network {
             ),
             status: RwLock::new(status),
             data_dir: config.data_dir.clone(),
-        });
-
-        let network_state_clone = Arc::clone(&network_state);
-        tokio::spawn(async move {
-            while let Some(enr) = rx.recv().await {
-                info!("Got ENR update: {}", enr);
-                *network_state_clone.local_enr.write() = enr;
-            }
         });
 
         let mut network = Network {
@@ -308,7 +295,7 @@ impl Network {
         self.network_state.peer_table.read().get(id).cloned()
     }
 
-    fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
+    pub fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
         match enr.public_key() {
             CombinedPublicKey::Secp256k1(public_key) => {
                 let encoded_public_key = public_key.to_encoded_point(true);
@@ -475,8 +462,16 @@ impl Network {
             }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
                 ReamBehaviourEvent::Identify(_) => None,
-                ReamBehaviourEvent::Discovery(DiscoveredPeers { peers }) => {
+                ReamBehaviourEvent::Discovery(DiscoveryOutEvent::DiscoveredPeers(
+                    DiscoveredPeers { peers },
+                )) => {
                     self.handle_discovered_peers(peers);
+                    None
+                }
+                ReamBehaviourEvent::Discovery(DiscoveryOutEvent::UpdatedEnr(UpdatedEnr {
+                    enr,
+                })) => {
+                    *self.network_state.local_enr.write() = enr;
                     None
                 }
                 ReamBehaviourEvent::ReqResp(message) => {
