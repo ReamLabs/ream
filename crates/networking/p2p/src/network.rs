@@ -34,9 +34,7 @@ use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Sec
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
 use ream_consensus::constants::genesis_validators_root;
-use ream_discv5::discovery::{
-    DiscoveredPeers, Discovery, DiscoveryOutEvent, QueryType, UpdatedEnr,
-};
+use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::network_spec;
 use tokio::{
@@ -133,12 +131,9 @@ impl Network {
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
-        let (discovery, local_enr) = {
-            let (mut discovery, local_enr) =
-                Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
-            discovery.discover_peers(QueryType::Peers, 16);
-            (discovery, local_enr)
-        };
+        let mut discovery =
+            Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
+        discovery.discover_peers(QueryType::Peers, 16);
 
         let req_resp = ReqResp::new();
 
@@ -175,6 +170,7 @@ impl Network {
             identify::Behaviour::new(identify_config)
         };
 
+        let local_enr = discovery.local_enr();
         let behaviour = {
             ReamBehaviour {
                 discovery,
@@ -462,18 +458,16 @@ impl Network {
             }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
                 ReamBehaviourEvent::Identify(_) => None,
-                ReamBehaviourEvent::Discovery(DiscoveryOutEvent::DiscoveredPeers(
-                    DiscoveredPeers { peers },
-                )) => {
-                    self.handle_discovered_peers(peers);
-                    None
-                }
-                ReamBehaviourEvent::Discovery(DiscoveryOutEvent::UpdatedEnr(UpdatedEnr {
-                    enr,
-                })) => {
-                    *self.network_state.local_enr.write() = enr;
-                    None
-                }
+                ReamBehaviourEvent::Discovery(discovery_event) => match discovery_event {
+                    DiscoveryOutEvent::DiscoveredPeers { peers } => {
+                        self.handle_discovered_peers(peers);
+                        None
+                    }
+                    DiscoveryOutEvent::UpdatedEnr { enr } => {
+                        *self.network_state.local_enr.write() = enr;
+                        None
+                    }
+                },
                 ReamBehaviourEvent::ReqResp(message) => {
                     self.handle_request_response_event(message).await
                 }

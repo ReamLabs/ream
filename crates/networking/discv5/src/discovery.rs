@@ -35,19 +35,13 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct DiscoveredPeers {
-    pub peers: HashMap<Enr, Option<Instant>>,
-}
-
-#[derive(Debug)]
-pub struct UpdatedEnr {
-    pub enr: Enr,
-}
-
-#[derive(Debug)]
 pub enum DiscoveryOutEvent {
-    DiscoveredPeers(DiscoveredPeers),
-    UpdatedEnr(UpdatedEnr),
+    DiscoveredPeers {
+        peers: HashMap<Enr, Option<Instant>>,
+    },
+    UpdatedEnr {
+        enr: Enr,
+    },
 }
 
 enum EventStream {
@@ -79,7 +73,7 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<(Self, Enr)> {
+    pub async fn new(local_key: Keypair, config: &DiscoveryConfig) -> anyhow::Result<Self> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
 
@@ -125,16 +119,13 @@ impl Discovery {
             EventStream::Inactive
         };
 
-        Ok((
-            Self {
-                discv5,
-                event_stream,
-                discovery_queries: FuturesUnordered::new(),
-                find_peer_active: false,
-                started: !config.disable_discovery,
-            },
-            enr,
-        ))
+        Ok(Self {
+            discv5,
+            event_stream,
+            discovery_queries: FuturesUnordered::new(),
+            find_peer_active: false,
+            started: !config.disable_discovery,
+        })
     }
 
     pub fn discover_peers(&mut self, query: QueryType, target_peers: usize) {
@@ -264,6 +255,10 @@ impl Discovery {
         }
         None
     }
+
+    pub fn local_enr(&self) -> Enr {
+        self.discv5.local_enr()
+    }
 }
 
 impl NetworkBehaviour for Discovery {
@@ -321,9 +316,9 @@ impl NetworkBehaviour for Discovery {
         }
 
         if let Some(peers) = self.process_queries(cx) {
-            return Poll::Ready(ToSwarm::GenerateEvent(DiscoveryOutEvent::DiscoveredPeers(
-                DiscoveredPeers { peers },
-            )));
+            return Poll::Ready(ToSwarm::GenerateEvent(DiscoveryOutEvent::DiscoveredPeers {
+                peers,
+            }));
         }
 
         match &mut self.event_stream {
@@ -344,11 +339,11 @@ impl NetworkBehaviour for Discovery {
             EventStream::Present(receiver) => match receiver.try_recv() {
                 Ok(event) => {
                     if let Event::SocketUpdated(_) = event {
-                        return Poll::Ready(ToSwarm::GenerateEvent(DiscoveryOutEvent::UpdatedEnr(
-                            UpdatedEnr {
-                                enr: self.discv5.local_enr(),
+                        return Poll::Ready(ToSwarm::GenerateEvent(
+                            DiscoveryOutEvent::UpdatedEnr {
+                                enr: self.local_enr(),
                             },
-                        )));
+                        ));
                     }
                 }
                 Err(err) => {
@@ -400,9 +395,11 @@ mod tests {
         config.attestation_subnets.disable_attestation_subnet(1)?; // Set subnet 1
         config.disable_discovery = true;
 
-        let (_discovery, enr) = Discovery::new(key, &config).await.unwrap();
+        let discovery = Discovery::new(key, &config).await.unwrap();
         // Check ENR reflects config.subnets
-        let enr_subnets = enr
+        let enr_subnets = discovery
+            .discv5
+            .local_enr()
             .get_decodable::<AttestationSubnets>(ATTESTATION_BITFIELD_ENR_KEY)
             .ok_or("ATTESTATION_BITFIELD_ENR_KEY not found")
             .map_err(|err| anyhow!("ATTESTATION_BITFIELD_ENR_KEY decoding failed: {err:?}"))??;
@@ -419,15 +416,15 @@ mod tests {
         config.attestation_subnets.disable_attestation_subnet(1)?;
         config.disable_discovery = true;
 
-        let (_discovery, local_enr) = Discovery::new(key, &config).await.unwrap();
+        let discovery = Discovery::new(key, &config).await.unwrap();
 
         // Predicate for subnet 0 should match
         let predicate = attestation_subnet_predicate(vec![0]);
-        assert!(predicate(&local_enr));
+        assert!(predicate(&discovery.local_enr()));
 
         // Predicate for subnet 1 should not match
         let predicate = attestation_subnet_predicate(vec![1]);
-        assert!(!predicate(&local_enr));
+        assert!(!predicate(&discovery.local_enr()));
         Ok(())
     }
 
@@ -447,7 +444,7 @@ mod tests {
 
         config.attestation_subnets.enable_attestation_subnet(0)?; // Local node on subnet 0
         config.disable_discovery = false;
-        let (mut discovery, _local_enr) = Discovery::new(key, &config).await.unwrap();
+        let mut discovery = Discovery::new(key, &config).await.unwrap();
 
         // Simulate a peer with another Discovery instance
         let peer_key = Keypair::generate_secp256k1();
@@ -466,16 +463,19 @@ mod tests {
         peer_config.socket_port = 9001; // Different port
         peer_config.disable_discovery = true;
 
-        let (_peer_discovery, peer_enr) = Discovery::new(peer_key, &peer_config).await.unwrap();
+        let peer_discovery = Discovery::new(peer_key, &peer_config).await.unwrap();
 
         // Add peer to discv5
-        discovery.discv5.add_enr(peer_enr.clone()).unwrap();
+        discovery
+            .discv5
+            .add_enr(peer_discovery.local_enr().clone())
+            .unwrap();
 
         // Mock the query result to bypass async polling
         discovery.discovery_queries.clear();
         let query_result = QueryResult {
             query_type: QueryType::AttestationSubnetPeers(vec![0]),
-            result: Ok(vec![peer_enr.clone()]),
+            result: Ok(vec![peer_discovery.local_enr().clone()]),
         };
         discovery
             .discovery_queries
@@ -483,12 +483,11 @@ mod tests {
 
         // Poll the discovery to process the query
         let mut cx = Context::from_waker(futures::task::noop_waker_ref());
-        if let Poll::Ready(ToSwarm::GenerateEvent(DiscoveryOutEvent::DiscoveredPeers(
-            DiscoveredPeers { peers },
-        ))) = discovery.poll(&mut cx)
+        if let Poll::Ready(ToSwarm::GenerateEvent(DiscoveryOutEvent::DiscoveredPeers { peers })) =
+            discovery.poll(&mut cx)
         {
             assert_eq!(peers.len(), 1);
-            assert!(peers.contains_key(&peer_enr));
+            assert!(peers.contains_key(&peer_discovery.local_enr()));
         } else {
             panic!("Expected peers to be discovered");
         }
