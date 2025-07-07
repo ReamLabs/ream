@@ -5397,6 +5397,7 @@ dependencies = [
 name = "ream-network-manager"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
  "discv5",
  "ethereum_ssz",

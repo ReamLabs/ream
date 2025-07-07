@@ -2,14 +2,16 @@ use anyhow::anyhow;
 use ream_beacon_chain::beacon_chain::BeaconChain;
 use ream_consensus::{
     constants::MAX_BLOBS_PER_BLOCK_ELECTRA, electra::beacon_block::SignedBeaconBlock,
-    misc::compute_start_slot_at_epoch,
+    execution_engine::new_payload_request::NewPayloadRequest, misc::compute_start_slot_at_epoch,
 };
+use ream_execution_engine::rpc_types::payload_status::PayloadStatus;
 use ream_storage::{
     cache::{AddressSlotIdentifier, CachedDB},
     tables::{Field, Table},
 };
+use tracing::info;
 
-use super::result::ValidationResult;
+use super::{result::ValidationResult, utils::validate_parent_beacon_block};
 
 pub async fn validate_beacon_block(
     beacon_chain: &BeaconChain,
@@ -22,15 +24,15 @@ pub async fn validate_beacon_block(
     let latest_state_in_db = store.db.get_latest_state()?;
 
     // [IGNORE] The block is not from a future slot.
-    if block.message.slot <= current_global_slot {
+    if block.message.slot > current_global_slot {
         return Ok(ValidationResult::Ignore(
-            "Block is not from a future slot".to_string(),
+            "Block is from a future slot".to_string(),
         ));
     }
 
     // [IGNORE] The block is from a slot greater than the latest finalized slot.
     if block.message.slot
-        < compute_start_slot_at_epoch(store.db.finalized_checkpoint_provider().get()?.epoch)
+        <= compute_start_slot_at_epoch(store.db.finalized_checkpoint_provider().get()?.epoch)
     {
         return Ok(ValidationResult::Ignore(
             "Block is from a slot greater than the latest finalized slot".to_string(),
@@ -64,22 +66,89 @@ pub async fn validate_beacon_block(
         return Ok(ValidationResult::Reject("Invalid signature".to_string()));
     }
 
-    // [IGNORE] The block's parent (defined by block.parent_root) has been seen.
-    if let Some(parent) = store
+    match store
         .db
         .beacon_block_provider()
         .get(block.message.parent_root)?
     {
-        // [REJECT] The block is not from a higher slot than its parent.
-        if block.message.slot < parent.message.slot + 1 {
-            return Ok(ValidationResult::Reject(
-                "Block is from a slot lower than its parent".to_string(),
+        Some(parent_block) => {
+            // [REJECT] The block is from a higher slot than its parent.
+            if block.message.slot > parent_block.message.slot + 1 {
+                return Ok(ValidationResult::Reject(
+                    "Block is from a higher slot than expected".to_string(),
+                ));
+            }
+        }
+        None => {
+            // [IGNORE] The block's parent (defined by block.parent_root) has been seen.
+            return Ok(ValidationResult::Ignore(
+                "Parent block not found".to_string(),
             ));
         }
-    } else {
-        return Ok(ValidationResult::Ignore(
-            "Parent block not found".to_string(),
-        ));
+    }
+
+    if let Some(execution_enigne) = &beacon_chain.execution_engine {
+        let mut versioned_hashes = vec![];
+        for commitment in block.message.body.blob_kzg_commitments.iter() {
+            versioned_hashes.push(commitment.calculate_versioned_hash());
+        }
+
+        let payload_verification_status = execution_enigne
+            .notify_new_payload(NewPayloadRequest {
+                execution_payload: block.message.body.execution_payload.clone(),
+                versioned_hashes,
+                parent_beacon_block_root: block.message.parent_root,
+                execution_requests: block.message.body.execution_requests.clone(),
+            })
+            .await?;
+
+        match payload_verification_status {
+            // If execution_payload verification of block's parent by an execution node is not
+            // complete: [REJECT] The block's parent passes all validation (excluding
+            // execution node verification of the block.body.execution_payload)
+            PayloadStatus::Syncing => {
+                match validate_parent_beacon_block(
+                    beacon_chain,
+                    cached_db,
+                    block.message.parent_root,
+                )
+                .await?
+                {
+                    ValidationResult::Accept => info!("Parent block validation success"),
+                    ValidationResult::Ignore(reason) => {
+                        return Ok(ValidationResult::Reject(reason));
+                    }
+                    ValidationResult::Reject(reason) => {
+                        return Ok(ValidationResult::Reject(reason));
+                    }
+                }
+            }
+            // Otherwise:
+            // [IGNORE] The block's parent passes all validation (including execution node
+            // verification of the block.body.execution_payload).
+            PayloadStatus::Valid | PayloadStatus::Accepted => {
+                match validate_parent_beacon_block(
+                    beacon_chain,
+                    cached_db,
+                    block.message.parent_root,
+                )
+                .await?
+                {
+                    ValidationResult::Accept => info!("Parent block validation success"),
+                    ValidationResult::Ignore(reason) => {
+                        return Ok(ValidationResult::Ignore(reason));
+                    }
+                    ValidationResult::Reject(reason) => {
+                        return Ok(ValidationResult::Ignore(reason));
+                    }
+                }
+            }
+            PayloadStatus::InvalidBlockHash | PayloadStatus::Invalid => {
+                return Ok(ValidationResult::Reject(
+                    "Execution payload is invalid".to_string(),
+                ));
+            }
+        }
     }
 
     let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
@@ -110,13 +179,12 @@ pub async fn validate_beacon_block(
         ));
     }
 
-    let proposer_bls_execution_change = &block
+    let signed_proposer_bls_execution_change = block
         .message
         .body
         .bls_to_execution_changes
         .get(block.message.proposer_index as usize)
-        .ok_or(anyhow!("Invalid index for signed bls to execution change"))?
-        .message;
+        .ok_or(anyhow!("Invalid index for signed bls to execution change"))?;
 
     // [IGNORE] The signed_bls_to_execution_change is the first valid signed bls to execution change
     // received for the validator with index.
@@ -131,6 +199,16 @@ pub async fn validate_beacon_block(
     {
         return Ok(ValidationResult::Ignore(
             "Signature already received".to_string(),
+        ));
+    }
+
+    // [REJECT] All of the conditions within process_bls_to_execution_change pass validation.
+    if latest_state_in_db
+        .validate_bls_to_execution_change(signed_proposer_bls_execution_change)
+        .is_err()
+    {
+        return Ok(ValidationResult::Reject(
+            "BLS to execution change is invalid".to_string(),
         ));
     }
 
@@ -157,7 +235,7 @@ pub async fn validate_beacon_block(
                 address: validator.public_key.clone(),
                 slot: block.message.slot,
             },
-            proposer_bls_execution_change.clone(),
+            signed_proposer_bls_execution_change.message.clone(),
         );
 
     Ok(ValidationResult::Accept)
