@@ -61,10 +61,14 @@ pub async fn validate_gossip_beacon_block(
         }
     };
 
-    let validator = latest_state_in_db
+    let validator = if let Some(validator) = latest_state_in_db
         .validators
         .get(block.message.proposer_index as usize)
-        .ok_or(anyhow!("Invalid proposer index"))?;
+    {
+        validator
+    } else {
+        return Ok(ValidationResult::Reject("Validator not found".to_string()));
+    };
 
     cached_db.cached_proposer_signature.blocking_write().put(
         AddressSlotIdentifier {
@@ -122,10 +126,12 @@ pub async fn validate_beacon_block(
         ));
     }
 
-    let validator = state
-        .validators
-        .get(block.message.proposer_index as usize)
-        .ok_or(anyhow!("Invalid proposer index"))?;
+    let validator =
+        if let Some(validator) = state.validators.get(block.message.proposer_index as usize) {
+            validator
+        } else {
+            return Ok(ValidationResult::Reject("Validator not found".to_string()));
+        };
 
     // [IGNORE] The block is the first block with valid signature received for the proposer for the
     // slot.
@@ -145,8 +151,16 @@ pub async fn validate_beacon_block(
 
     // [REJECT] The proposer signature, signed_beacon_block.signature, is valid with respect to the
     // proposer_index pubkey.
-    if !state.verify_block_signature(block)? {
-        return Ok(ValidationResult::Reject("Invalid signature".to_string()));
+    match state.verify_block_signature(block) {
+        Ok(true) => {}
+        Ok(false) => {
+            return Ok(ValidationResult::Reject("Invalid signature".to_string()));
+        }
+        Err(err) => {
+            return Ok(ValidationResult::Reject(format!(
+                "Signature verification failed: {err}"
+            )));
+        }
     }
 
     match store
