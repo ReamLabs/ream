@@ -3,13 +3,14 @@ pub mod beacon_node;
 pub mod constants;
 pub mod import_keystores;
 pub mod validator_node;
+pub mod voluntary_exit;
 
 use clap::{Parser, Subcommand};
 use ream_node::version::FULL_VERSION;
 
 use crate::cli::{
     account_manager::AccountManagerConfig, beacon_node::BeaconNodeConfig,
-    validator_node::ValidatorNodeConfig,
+    validator_node::ValidatorNodeConfig, voluntary_exit::VoluntaryExitConfig,
 };
 
 #[derive(Debug, Parser)]
@@ -32,6 +33,10 @@ pub enum Commands {
     /// Manage validator accounts
     #[command(name = "account_manager")]
     AccountManager(Box<AccountManagerConfig>),
+
+    /// Perform voluntary exit for a validator
+    #[command(name = "voluntary_exit")]
+    VoluntaryExit(Box<VoluntaryExitConfig>),
 }
 
 #[cfg(test)]
