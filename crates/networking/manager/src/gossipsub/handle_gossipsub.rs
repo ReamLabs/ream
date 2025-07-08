@@ -16,7 +16,7 @@ use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 
 use crate::{
-    gossipsub::validate::{beacon_block::validate_beacon_block, result::ValidationResult},
+    gossipsub::validate::{beacon_block::validate_gossip_beacon_block, result::ValidationResult},
     p2p_sender::P2PSender,
 };
 
@@ -93,14 +93,19 @@ pub async fn handle_gossipsub_message(
                     signed_block.message.block_root()
                 );
 
-                let validation_result =
-                    match validate_beacon_block(beacon_chain, cached_db, &signed_block).await {
-                        Ok(result) => result,
-                        Err(err) => {
-                            warn!("Failed to validate gossipsub beacon block: {err}");
-                            return;
-                        }
-                    };
+                let validation_result = match validate_gossip_beacon_block(
+                    beacon_chain,
+                    cached_db,
+                    &signed_block,
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(err) => {
+                        warn!("Failed to validate gossipsub beacon block: {err}");
+                        return;
+                    }
+                };
 
                 match validation_result {
                     ValidationResult::Accept => {
