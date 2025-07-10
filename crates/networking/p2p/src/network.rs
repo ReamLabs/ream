@@ -34,7 +34,7 @@ use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Sec
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
 use ream_consensus::constants::genesis_validators_root;
-use ream_discv5::discovery::{DiscoveredPeers, Discovery, QueryType};
+use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::network_spec;
 use tokio::{
@@ -131,12 +131,9 @@ impl Network {
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
-        let discovery = {
-            let mut discovery =
-                Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
-            discovery.discover_peers(QueryType::Peers, 16);
-            discovery
-        };
+        let mut discovery =
+            Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
+        discovery.discover_peers(QueryType::Peers, 16);
 
         let req_resp = ReqResp::new();
 
@@ -173,6 +170,7 @@ impl Network {
             identify::Behaviour::new(identify_config)
         };
 
+        let local_enr = discovery.local_enr();
         let behaviour = {
             ReamBehaviour {
                 discovery,
@@ -205,6 +203,7 @@ impl Network {
         };
 
         let network_state = Arc::new(NetworkState {
+            local_enr: RwLock::new(local_enr),
             peer_table: RwLock::new(HashMap::new()),
             meta_data: RwLock::new(
                 read_meta_data_from_disk(config.data_dir.clone()).unwrap_or_else(|err| {
@@ -234,8 +233,8 @@ impl Network {
     async fn start_network_worker(&mut self, config: &NetworkConfig) -> anyhow::Result<()> {
         info!("Libp2p starting .... ");
 
-        let mut multi_addr: Multiaddr = config.socket_address.into();
-        multi_addr.push(Protocol::Tcp(config.socket_port));
+        let mut multi_addr: Multiaddr = config.discv5_config.socket_address.into();
+        multi_addr.push(Protocol::Tcp(config.discv5_config.socket_port));
 
         match self.swarm.listen_on(multi_addr.clone()) {
             Ok(listener_id) => {
@@ -273,7 +272,7 @@ impl Network {
 
     /// Returns the local node's ENR.
     pub fn enr(&self) -> Enr {
-        self.swarm.behaviour().discovery.local_enr().clone()
+        self.network_state.local_enr.read().clone()
     }
 
     fn request_id(&mut self) -> u64 {
@@ -292,7 +291,7 @@ impl Network {
         self.network_state.peer_table.read().get(id).cloned()
     }
 
-    fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
+    pub fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
         match enr.public_key() {
             CombinedPublicKey::Secp256k1(public_key) => {
                 let encoded_public_key = public_key.to_encoded_point(true);
@@ -459,10 +458,16 @@ impl Network {
             }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
                 ReamBehaviourEvent::Identify(_) => None,
-                ReamBehaviourEvent::Discovery(DiscoveredPeers { peers }) => {
-                    self.handle_discovered_peers(peers);
-                    None
-                }
+                ReamBehaviourEvent::Discovery(discovery_event) => match discovery_event {
+                    DiscoveryOutEvent::DiscoveredPeers { peers } => {
+                        self.handle_discovered_peers(peers);
+                        None
+                    }
+                    DiscoveryOutEvent::UpdatedEnr { enr } => {
+                        *self.network_state.local_enr.write() = enr;
+                        None
+                    }
+                },
                 ReamBehaviourEvent::ReqResp(message) => {
                     self.handle_request_response_event(message).await
                 }
@@ -845,8 +850,6 @@ mod tests {
         .build();
 
         let config = NetworkConfig {
-            socket_address,
-            socket_port,
             discv5_config: DiscoveryConfig {
                 discv5_config,
                 bootnodes,

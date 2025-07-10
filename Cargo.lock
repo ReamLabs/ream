@@ -5227,6 +5227,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tracing",
+ "tree_hash",
 ]
 
 [[package]]
@@ -5249,6 +5250,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2 0.10.8",
+ "snap",
  "ssz_types",
  "thiserror 2.0.12",
  "tree_hash",

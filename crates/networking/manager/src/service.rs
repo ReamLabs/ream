@@ -81,8 +81,6 @@ impl NetworkManagerService {
         let gossipsub_config = init_gossipsub_config_with_topics();
 
         let network_config = NetworkConfig {
-            socket_address: config.socket_address,
-            socket_port: config.socket_port,
             discv5_config,
             gossipsub_config,
             data_dir: ream_dir,
@@ -106,7 +104,9 @@ impl NetworkManagerService {
         let status = beacon_chain.build_status_request().await?;
 
         let network = Network::init(executor.clone(), &network_config, status).await?;
+
         let network_state = network.network_state();
+
         executor.spawn(async move {
             network.start(manager_sender, p2p_receiver).await;
         });

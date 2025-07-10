@@ -27,6 +27,7 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 sha2.workspace = true
+snap.workspace = true
 ssz_types.workspace = true
 thiserror.workspace = true
 tree_hash.workspace = true

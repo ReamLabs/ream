@@ -35,6 +35,13 @@ use crate::constants::{
 };
 
 #[derive(Debug)]
+pub struct BlockWithEpochInfo {
+    pub block: BeaconBlock,
+    pub justified_epoch: u64,
+    pub finalized_epoch: u64,
+}
+
+#[derive(Debug)]
 pub struct Store {
     pub db: ReamDB,
     pub operation_pool: Arc<OperationPool>,
@@ -88,7 +95,7 @@ impl Store {
     pub fn filter_block_tree(
         &self,
         block_root: B256,
-        blocks: &mut HashMap<B256, BeaconBlock>,
+        blocks: &mut HashMap<B256, BlockWithEpochInfo>,
     ) -> anyhow::Result<bool> {
         let Some(block) = self.db.beacon_block_provider().get(block_root)? else {
             bail!("failed to get block");
@@ -109,7 +116,19 @@ impl Store {
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
             if filter_results.iter().any(|&result| result) {
-                blocks.insert(block_root, block.message.clone());
+                let voting_source = self.get_voting_source(block_root)?;
+                let finalized_epoch = self.db.finalized_checkpoint_provider().get()?.epoch;
+
+                blocks.insert(
+                    block_root,
+                    BlockWithEpochInfo {
+                        block: block.message.clone(),
+                        // NOTE: Use the node's own `voting_source.epoch` as its `justified_epoch`,
+                        // as it means this node justifies the source.
+                        justified_epoch: voting_source.epoch,
+                        finalized_epoch,
+                    },
+                );
                 return Ok(true);
             }
             return Ok(false);
@@ -135,7 +154,16 @@ impl Store {
 
         // If expected finalized/justified, add to viable block-tree and signal viability to parent.
         if correct_justified && correct_finalized {
-            blocks.insert(block_root, block.message.clone());
+            blocks.insert(
+                block_root,
+                BlockWithEpochInfo {
+                    block: block.message.clone(),
+                    // NOTE: Use the node's own `voting_source.epoch` as its `justified_epoch`,
+                    // as it means this node justifies the source.
+                    justified_epoch: voting_source.epoch,
+                    finalized_epoch: finalized_checkpoint.epoch,
+                },
+            );
             return Ok(true);
         }
 
@@ -145,7 +173,11 @@ impl Store {
 
     /// Retrieve a filtered block tree from ``store``, only returning branches
     /// whose leaf state's justified/finalized info agrees with that in ``store``.
-    pub fn get_filtered_block_tree(&self) -> anyhow::Result<HashMap<B256, BeaconBlock>> {
+    ///
+    /// NOTE: ``blocks`` must contain justified/finalized epoch information of its node, so struct
+    /// ``BlockWithEpochInfo`` which contains ``justified_epoch`` and ``finalized_epoch`` should
+    /// be the value of the map.
+    pub fn get_filtered_block_tree(&self) -> anyhow::Result<HashMap<B256, BlockWithEpochInfo>> {
         let base = self.db.justified_checkpoint_provider().get()?.root;
         let mut blocks = HashMap::default();
         self.filter_block_tree(base, &mut blocks)?;
@@ -161,7 +193,7 @@ impl Store {
         loop {
             let mut children = vec![];
             for root in blocks.keys() {
-                if blocks[root].parent_root == head {
+                if blocks[root].block.parent_root == head {
                     children.push(root);
                 }
             }

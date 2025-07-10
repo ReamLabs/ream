@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub struct NetworkState {
+    pub local_enr: RwLock<Enr>,
     pub peer_table: RwLock<HashMap<PeerId, CachedPeer>>,
     pub meta_data: RwLock<GetMetaDataV2>,
     pub status: RwLock<Status>,
