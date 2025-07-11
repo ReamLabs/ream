@@ -25,7 +25,7 @@ use tracing::{error, info};
 
 use crate::{
     config::ManagerConfig,
-    gossipsub::handle_gossipsub::{handle_gossipsub_message, init_gossipsub_config_with_topics},
+    gossipsub::handle::{handle_gossipsub_message, init_gossipsub_config_with_topics},
     p2p_sender::P2PSender,
     req_resp::handle_req_resp_message,
 };

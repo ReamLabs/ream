@@ -1,2 +1,2 @@
-pub mod handle_gossipsub;
+pub mod handle;
 pub mod validate;

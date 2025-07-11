@@ -19,24 +19,10 @@ pub async fn validate_gossip_beacon_block(
     cached_db: &CachedDB,
     block: &SignedBeaconBlock,
 ) -> anyhow::Result<ValidationResult> {
-    let store = beacon_chain.store.lock().await;
+    let latest_state_in_db = {
+        let store = beacon_chain.store.lock().await;
 
-    let latest_state_in_db = store.db.get_latest_state()?;
-
-    let Some(parent_block) = store
-        .db
-        .beacon_block_provider()
-        .get(block.message.parent_root)?
-    else {
-        return Err(anyhow!("failed to get parent block"));
-    };
-
-    let Some(parent_state) = store
-        .db
-        .beacon_state_provider()
-        .get(block.message.parent_root)?
-    else {
-        return Err(anyhow!("failed to get parent state"));
+        store.db.get_latest_state()?
     };
 
     // Validate incoming block
@@ -49,6 +35,28 @@ pub async fn validate_gossip_beacon_block(
             return Ok(ValidationResult::Reject(reason));
         }
     }
+
+    let (parent_block, parent_state) = {
+        let store = beacon_chain.store.lock().await;
+        let Some(parent_block) = store
+            .db
+            .beacon_block_provider()
+            .get(block.message.parent_root)?
+        else {
+            return Err(anyhow!("failed to get parent block"));
+        };
+
+        let Some(parent_state) = store
+            .db
+            .beacon_state_provider()
+            .get(block.message.parent_root)?
+        else {
+            return Err(anyhow!("failed to get parent state"));
+        };
+
+        (parent_block, parent_state)
+    };
+
     // Validate parent block [block.message.parent_root]
     match validate_beacon_block(beacon_chain, cached_db, &parent_block, &parent_state, true).await?
     {
@@ -78,12 +86,17 @@ pub async fn validate_gossip_beacon_block(
         block.signature.clone(),
     );
 
-    let signed_proposer_bls_execution_change = block
-        .message
-        .body
-        .bls_to_execution_changes
-        .get(block.message.proposer_index as usize)
-        .ok_or(anyhow!("Invalid index for signed bls to execution change"))?;
+    let signed_proposer_bls_execution_change = if let Some(signed_proposer_bls_execution_change) =
+        block
+            .message
+            .body
+            .bls_to_execution_changes
+            .get(block.message.proposer_index as usize)
+    {
+        signed_proposer_bls_execution_change
+    } else {
+        return Err(anyhow!("Invalid index for signed bls to execution change"));
+    };
 
     cached_db
         .cached_bls_to_execution_signature
@@ -108,10 +121,8 @@ pub async fn validate_beacon_block(
 ) -> anyhow::Result<ValidationResult> {
     let store = beacon_chain.store.lock().await;
 
-    let current_global_slot = store.get_current_slot()?;
-
     // [IGNORE] The block is not from a future slot.
-    if block.message.slot > current_global_slot {
+    if block.message.slot > store.get_current_slot()? {
         return Ok(ValidationResult::Ignore(
             "Block is from a future slot".to_string(),
         ));
