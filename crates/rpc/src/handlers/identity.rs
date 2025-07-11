@@ -28,12 +28,12 @@ impl Identity {
 
                 if let Some(ip4) = enr.ip4() {
                     if let Some(tcp4) = enr.tcp4() {
-                        addresses.push(format!("/ip4/{}/tcp/{}/p2p/{}", ip4, tcp4, peer_id));
+                        addresses.push(format!("/ip4/{ip4}/tcp/{tcp4}/p2p/{peer_id}"));
                     }
                 }
                 if let Some(ip6) = enr.ip6() {
                     if let Some(tcp6) = enr.tcp6() {
-                        addresses.push(format!("/ip6/{}/tcp/{}/p2p/{}", ip6, tcp6, peer_id));
+                        addresses.push(format!("/ip6/{ip6}/tcp/{tcp6}/p2p/{peer_id}"));
                     }
                 }
 
@@ -44,12 +44,12 @@ impl Identity {
 
                 if let Some(ip4) = enr.ip4() {
                     if let Some(udp4) = enr.udp4() {
-                        addresses.push(format!("/ip4/{}/udp/{}/p2p/{}", ip4, udp4, peer_id));
+                        addresses.push(format!("/ip4/{ip4}/udp/{udp4}/p2p/{peer_id}"));
                     }
                 }
                 if let Some(ip6) = enr.ip6() {
                     if let Some(udp6) = enr.udp6() {
-                        addresses.push(format!("/ip6/{}/udp/{}/p2p/{}", ip6, udp6, peer_id));
+                        addresses.push(format!("/ip6/{ip6}/udp/{udp6}/p2p/{peer_id}"));
                     }
                 }
 
