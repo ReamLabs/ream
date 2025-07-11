@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::Deref};
 
 use actix_web::{
     HttpResponse, Responder, get, post,
@@ -356,12 +356,19 @@ pub struct ValidatorLivenessData {
     pub is_live: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct ValidatorIndex(#[serde(with = "serde_utils::quoted_u64")] pub u64);
-
 impl ValidatorLivenessData {
     pub fn new(index: u64, is_live: bool) -> Self {
         Self { index, is_live }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ValidatorIndex(#[serde(with = "serde_utils::quoted_u64")] pub u64);
+
+impl Deref for ValidatorIndex {
+    type Target = u64;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -374,13 +381,12 @@ pub async fn post_validator_liveness(
     let epoch = epoch.into_inner();
     let validator_indices = validator_indices.into_inner();
 
-    let slot = epoch * SLOTS_PER_EPOCH;
-    let state = get_state_from_id(ID::Slot(slot), &db).await?;
+    let state = get_state_from_id(ID::Slot(epoch * SLOTS_PER_EPOCH), &db).await?;
 
     let mut liveness_data = Vec::new();
 
-    for ValidatorIndex(validator_index) in validator_indices {
-        let index = validator_index as usize;
+    for validator_index in validator_indices {
+        let index = *validator_index as usize;
 
         let is_live = match state.validators.get(index) {
             Some(validator) => {
@@ -402,7 +408,7 @@ pub async fn post_validator_liveness(
             None => continue,
         };
 
-        liveness_data.push(ValidatorLivenessData::new(validator_index, is_live));
+        liveness_data.push(ValidatorLivenessData::new(*validator_index, is_live));
     }
 
     Ok(HttpResponse::Ok().json(BeaconResponse::new(liveness_data)))
