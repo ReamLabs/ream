@@ -1,3 +1,4 @@
+use GossipTopicKind::*;
 use alloy_primitives::{
     aliases::B32,
     hex::{FromHex, ToHexExt},
@@ -108,6 +109,60 @@ impl From<GossipTopic> for Topic {
 impl From<GossipTopic> for String {
     fn from(topic: GossipTopic) -> Self {
         topic.to_string()
+    }
+}
+
+impl From<GossipTopic> for TopicHash {
+    fn from(val: GossipTopic) -> Self {
+        let kind_str = match &val.kind {
+            BeaconBlock => BEACON_BLOCK_TOPIC,
+            AggregateAndProof => BEACON_AGGREGATE_AND_PROOF_TOPIC,
+            VoluntaryExit => VOLUNTARY_EXIT_TOPIC,
+            ProposerSlashing => PROPOSER_SLASHING_TOPIC,
+            AttesterSlashing => ATTESTER_SLASHING_TOPIC,
+            SyncCommitteeContributionAndProof => SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF_TOPIC,
+            BlsToExecutionChange => BLS_TO_EXECUTION_CHANGE_TOPIC,
+            LightClientFinalityUpdate => LIGHT_CLIENT_FINALITY_UPDATE_TOPIC,
+            LightClientOptimisticUpdate => LIGHT_CLIENT_OPTIMISTIC_UPDATE_TOPIC,
+            BeaconAttestation(index) => {
+                return TopicHash::from_raw(format!(
+                    "/{}/{}/{}{}{}",
+                    TOPIC_PREFIX,
+                    val.fork.encode_hex(),
+                    BEACON_ATTESTATION_PREFIX,
+                    index,
+                    ENCODING_POSTFIX,
+                ));
+            }
+            SyncCommittee(index) => {
+                return TopicHash::from_raw(format!(
+                    "/{}/{}/{}{}{}",
+                    TOPIC_PREFIX,
+                    val.fork.encode_hex(),
+                    SYNC_COMMITTEE_PREFIX_TOPIC,
+                    index,
+                    ENCODING_POSTFIX,
+                ));
+            }
+            BlobSidecar(index) => {
+                return TopicHash::from_raw(format!(
+                    "/{}/{}/{}{}{}",
+                    TOPIC_PREFIX,
+                    val.fork.encode_hex(),
+                    BLOB_SIDECAR_PREFIX_TOPIC,
+                    index,
+                    ENCODING_POSTFIX,
+                ));
+            }
+        };
+
+        TopicHash::from_raw(format!(
+            "/{}/{}/{}{}",
+            TOPIC_PREFIX,
+            val.fork.encode_hex(),
+            kind_str,
+            ENCODING_POSTFIX
+        ))
     }
 }
 

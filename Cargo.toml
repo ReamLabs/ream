@@ -80,6 +80,7 @@ kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 libp2p = { version = "0.55", default-features = false, features = ["identify", "yamux", "noise", "dns", "serde", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
 libp2p-identity = "0.2"
 libp2p-mplex = "0.43"
+lru = "0.15.0"
 parking_lot = "0.12.3"
 rand = "0.8"
 rand_chacha = "0.3"

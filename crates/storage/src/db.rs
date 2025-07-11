@@ -1,12 +1,14 @@
 use std::{fs, io, path::PathBuf, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+use ream_consensus::electra::beacon_state::BeaconState;
 use redb::{Builder, Database};
 use tracing::info;
 
 use crate::{
     errors::StoreError,
     tables::{
+        Table,
         beacon_block::{BEACON_BLOCK_TABLE, BeaconBlockTable},
         beacon_state::{BEACON_STATE_TABLE, BeaconStateTable},
         blobs_and_proofs::{BLOB_FOLDER_NAME, BlobsAndProofsTable},
@@ -194,6 +196,20 @@ impl ReamDB {
             Ok(Some(slot)) => slot > 0,
             _ => false,
         }
+    }
+
+    pub fn get_latest_state(&self) -> anyhow::Result<BeaconState> {
+        let highest_root = self
+            .slot_index_provider()
+            .get_highest_root()?
+            .expect("No highest root found");
+
+        let state = self
+            .beacon_state_provider()
+            .get(highest_root)?
+            .ok_or_else(|| anyhow!("Unable to fetch latest state"))?;
+
+        Ok(state)
     }
 }
 
