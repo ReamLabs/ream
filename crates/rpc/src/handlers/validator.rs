@@ -379,13 +379,12 @@ pub async fn post_validator_liveness(
     validator_indices: Json<Vec<ValidatorIndex>>,
 ) -> Result<impl Responder, ApiError> {
     let epoch = epoch.into_inner();
-    let validator_indices = validator_indices.into_inner();
 
     let state = get_state_from_id(ID::Slot(epoch * SLOTS_PER_EPOCH), &db).await?;
 
     let mut liveness_data = Vec::new();
 
-    for validator_index in validator_indices {
+    for validator_index in validator_indices.into_inner() {
         let index = *validator_index as usize;
 
         let is_live = match state.validators.get(index) {
