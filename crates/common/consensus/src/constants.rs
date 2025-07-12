@@ -71,7 +71,6 @@ pub const PROPOSER_WEIGHT: u64 = 8;
 pub const REORG_PARENT_WEIGHT_THRESHOLD: u64 = 160;
 pub const SAFETY_DECAY: u64 = 10;
 pub const SECONDS_PER_ETH1_BLOCK: u64 = 14;
-pub const SECONDS_PER_SLOT: u64 = 12;
 pub const SHARD_COMMITTEE_PERIOD: u64 = 256;
 pub const SHUFFLE_ROUND_COUNT: u8 = 90;
 pub const SLOTS_PER_EPOCH: u64 = 32;

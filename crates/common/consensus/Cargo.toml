@@ -36,3 +36,4 @@ tree_hash_derive.workspace = true
 # ream dependencies
 ream-bls.workspace = true
 ream-merkle.workspace = true
+ream-network-spec.workspace = true
