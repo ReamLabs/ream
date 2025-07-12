@@ -16,12 +16,13 @@ use ream_beacon_api_types::{
     request::SyncCommitteeRequestItem,
 };
 use ream_bls::{BLSSignature, PublicKey, traits::Signable};
-use ream_consensus::{
+use ream_consensus_beacon::{
+    electra::beacon_state::BeaconState, single_attestation::SingleAttestation,
+};
+use ream_consensus_misc::{
     attestation_data::AttestationData,
     constants::{DOMAIN_SYNC_COMMITTEE, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE},
-    electra::beacon_state::BeaconState,
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
-    single_attestation::SingleAttestation,
 };
 use ream_executor::ReamExecutor;
 use ream_keystore::keystore::Keystore;

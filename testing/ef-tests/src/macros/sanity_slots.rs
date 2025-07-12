@@ -10,7 +10,7 @@ macro_rules! test_sanity_slots {
                 sync::Arc,
             };
 
-            use ream_consensus::execution_engine::mock_engine::MockExecutionEngine;
+            use ream_consensus_beacon::execution_engine::mock_engine::MockExecutionEngine;
             use serde_yaml;
             use tokio::sync::Mutex;
 

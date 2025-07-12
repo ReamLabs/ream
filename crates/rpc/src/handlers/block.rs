@@ -10,11 +10,11 @@ use ream_beacon_api_types::{
         BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse, SSZ_CONTENT_TYPE,
     },
 };
-use ream_consensus::{
-    constants::{WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root},
+use ream_consensus_beacon::{
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     genesis::Genesis,
 };
+use ream_consensus_misc::constants::{WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root};
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     db::ReamDB,

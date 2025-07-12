@@ -10,7 +10,7 @@ use ream_beacon_api_types::{
         VERSION,
     },
 };
-use ream_consensus::constants::{EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SLOTS_PER_EPOCH};
+use ream_consensus_misc::constants::{EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SLOTS_PER_EPOCH};
 use ream_light_client::{
     bootstrap::LightClientBootstrap, finality_update::LightClientFinalityUpdate,
     header::LightClientHeader, update::LightClientUpdate,

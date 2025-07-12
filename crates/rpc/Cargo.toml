@@ -30,7 +30,8 @@ tree_hash.workspace = true
 #ream-dependencies
 ream-beacon-api-types.workspace = true
 ream-bls.workspace = true
-ream-consensus.workspace = true
+ream-consensus-beacon.workspace = true
+ream-consensus-misc.workspace = true
 ream-execution-engine.workspace = true
 ream-fork-choice.workspace = true
 ream-light-client.workspace = true

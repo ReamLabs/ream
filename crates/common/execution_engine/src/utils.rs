@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 use alloy_rlp::Decodable;
 use anyhow::{anyhow, bail};
-use ream_consensus::{
+use ream_consensus_beacon::{
     electra::execution_payload::Transactions,
     execution_engine::rpc_types::transaction::{BlobTransaction, TransactionType},
 };

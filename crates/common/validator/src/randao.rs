@@ -1,5 +1,5 @@
 use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
-use ream_consensus::{
+use ream_consensus_misc::{
     constants::DOMAIN_RANDAO,
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
 };

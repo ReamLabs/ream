@@ -24,18 +24,17 @@ use ream_beacon_api_types::{
     validator::{ValidatorData, ValidatorStatus},
 };
 use ream_bls::BLSSignature;
-use ream_consensus::{
+use ream_consensus_beacon::{
     attestation::Attestation,
-    attestation_data::AttestationData,
     electra::{
         beacon_block::SignedBeaconBlock,
         blinded_beacon_block::{BlindedBeaconBlock, SignedBlindedBeaconBlock},
     },
-    fork::Fork,
     genesis::Genesis,
     single_attestation::SingleAttestation,
     voluntary_exit::SignedVoluntaryExit,
 };
+use ream_consensus_misc::{attestation_data::AttestationData, fork::Fork};
 use ream_network_spec::networks::NetworkSpec;
 use reqwest::{Url, header::HeaderMap};
 use serde_json::json;

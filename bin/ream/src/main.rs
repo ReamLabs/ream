@@ -9,7 +9,7 @@ use ream::cli::{
     validator_node::ValidatorNodeConfig,
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-use ream_consensus::constants::set_genesis_validator_root;
+use ream_consensus_misc::constants::set_genesis_validator_root;
 use ream_executor::ReamExecutor;
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::set_network_spec;

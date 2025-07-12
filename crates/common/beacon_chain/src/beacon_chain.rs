@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::bail;
-use ream_consensus::{
+use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
-    constants::genesis_validators_root, electra::beacon_block::SignedBeaconBlock,
+    electra::beacon_block::SignedBeaconBlock,
 };
+use ream_consensus_misc::constants::genesis_validators_root;
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},

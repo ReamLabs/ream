@@ -1,8 +1,8 @@
 use alloy_primitives::B256;
-use ream_consensus::{
-    beacon_block_header::BeaconBlockHeader,
-    electra::{beacon_block::SignedBeaconBlock, execution_payload_header::ExecutionPayloadHeader},
+use ream_consensus_beacon::electra::{
+    beacon_block::SignedBeaconBlock, execution_payload_header::ExecutionPayloadHeader,
 };
+use ream_consensus_misc::beacon_block_header::BeaconBlockHeader;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U3};

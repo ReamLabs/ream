@@ -6,7 +6,7 @@ use actix_web_lab::extract::Query;
 use ream_beacon_api_types::{
     error::ApiError, id::ID, query::BlobSidecarQuery, responses::BeaconVersionedResponse,
 };
-use ream_consensus::blob_sidecar::BlobIdentifier;
+use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
 use ream_storage::{db::ReamDB, tables::Table};
 use tree_hash::TreeHash;
 

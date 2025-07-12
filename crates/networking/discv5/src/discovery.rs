@@ -21,7 +21,7 @@ use libp2p::{
         THandlerOutEvent, ToSwarm, dummy::ConnectionHandler,
     },
 };
-use ream_consensus::constants::genesis_validators_root;
+use ream_consensus_misc::constants::genesis_validators_root;
 use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
@@ -376,7 +376,7 @@ mod tests {
 
     use alloy_primitives::B256;
     use libp2p::identity::Keypair;
-    use ream_consensus::constants::GENESIS_VALIDATORS_ROOT;
+    use ream_consensus_misc::constants::GENESIS_VALIDATORS_ROOT;
     use ream_network_spec::networks::{DEV, set_network_spec};
 
     use super::*;

@@ -1,0 +1,29 @@
+#![warn(clippy::unwrap_used)]
+
+pub mod attestation;
+pub mod attester_slashing;
+pub mod blob_sidecar;
+pub mod bls_to_execution_change;
+pub mod consolidation_request;
+pub mod deposit;
+pub mod deposit_request;
+pub mod electra;
+pub mod eth_1_block;
+pub mod execution_engine;
+pub mod execution_requests;
+pub mod fork_choice;
+pub mod genesis;
+pub mod helpers;
+pub mod historical_summary;
+pub mod pending_consolidation;
+pub mod pending_deposit;
+pub mod pending_partial_withdrawal;
+pub mod polynomial_commitments;
+pub mod predicates;
+pub mod proposer_slashing;
+pub mod single_attestation;
+pub mod sync_aggregate;
+pub mod sync_committee;
+pub mod voluntary_exit;
+pub mod withdrawal;
+pub mod withdrawal_request;

@@ -1,7 +1,7 @@
 use std::{fs, io, path::PathBuf, sync::Arc};
 
 use anyhow::{Result, anyhow};
-use ream_consensus::electra::beacon_state::BeaconState;
+use ream_consensus_beacon::electra::beacon_state::BeaconState;
 use redb::{Builder, Database};
 use tracing::info;
 

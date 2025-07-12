@@ -7,7 +7,8 @@ macro_rules! test_sanity_blocks {
             mod $operation_name {
                 use std::{fs, path::Path};
 
-                use ream_consensus::execution_engine::mock_engine::MockExecutionEngine;
+                use ream_consensus_beacon::execution_engine::mock_engine::MockExecutionEngine;
+                use ream_network_spec::networks::initialize_test_network_spec;
                 use serde_yaml;
 
                 use super::*;
@@ -20,6 +21,7 @@ macro_rules! test_sanity_blocks {
 
                 #[tokio::test]
                 async fn $operation_name() {
+                    initialize_test_network_spec();
                     let base_path = std::env::current_dir()
                         .unwrap()
                         .join(format!("mainnet/tests/mainnet/electra/{}/pyspec_tests", $path));

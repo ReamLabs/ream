@@ -1,4 +1,4 @@
-use ream_consensus::{
+use ream_consensus_beacon::{
     electra::{beacon_block::BeaconBlock, blinded_beacon_block::BlindedBeaconBlock},
     execution_engine::rpc_types::get_blobs::Blob,
     polynomial_commitments::kzg_proof::KZGProof,

@@ -62,7 +62,7 @@ macro_rules! test_operation {
             #[allow(non_snake_case)]
             mod [<tests_ $processing_fn>] {
                 use super::*;
-                use ream_consensus::execution_engine::mock_engine::MockExecutionEngine;
+                use ream_consensus_beacon::execution_engine::mock_engine::MockExecutionEngine;
                 use ef_tests::test_operation_impl;
                 use std::{path::PathBuf, sync::Arc};
                 use tokio::sync::Mutex;
@@ -81,7 +81,7 @@ macro_rules! test_operation {
         #[cfg(test)]
         mod tests_process_execution_payload {
             use super::*;
-            use ream_consensus::execution_engine::mock_engine::MockExecutionEngine;
+            use ream_consensus_beacon::execution_engine::mock_engine::MockExecutionEngine;
             use ef_tests::test_operation_impl;
             use std::{path::PathBuf, sync::Arc};
             use tokio::sync::Mutex;

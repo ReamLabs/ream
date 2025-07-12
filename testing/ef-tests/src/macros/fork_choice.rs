@@ -8,9 +8,10 @@ macro_rules! test_fork_choice {
                 use std::fs;
                 use alloy_primitives::{hex, map::HashMap, B256, hex::FromHex};
                 use ream_bls::BLSSignature;
-                use ream_consensus::{
-                    attestation::Attestation, attester_slashing::AttesterSlashing, blob_sidecar::BlobIdentifier, checkpoint::Checkpoint, electra::{beacon_block::{BeaconBlock, SignedBeaconBlock}, beacon_state::BeaconState}, execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::{Blob, BlobAndProofV1}}, polynomial_commitments::kzg_proof::KZGProof
+                use ream_consensus_beacon::{
+                    attestation::Attestation, attester_slashing::AttesterSlashing, blob_sidecar::BlobIdentifier, electra::{beacon_block::{BeaconBlock, SignedBeaconBlock}, beacon_state::BeaconState}, execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::{Blob, BlobAndProofV1}}, polynomial_commitments::kzg_proof::KZGProof
                 };
+                use ream_consensus_misc::checkpoint::Checkpoint;
                 use ream_fork_choice::{
                     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
                     store::{get_forkchoice_store, Store},

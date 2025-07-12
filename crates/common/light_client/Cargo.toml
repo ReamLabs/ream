@@ -21,4 +21,5 @@ tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
 # ream dependencies
-ream-consensus.workspace = true
+ream-consensus-beacon.workspace = true
+ream-consensus-misc.workspace = true

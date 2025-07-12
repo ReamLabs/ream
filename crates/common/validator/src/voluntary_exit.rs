@@ -1,9 +1,9 @@
 use anyhow::anyhow;
 use ream_bls::{PrivateKey, traits::Signable};
-use ream_consensus::{
+use ream_consensus_beacon::voluntary_exit::{SignedVoluntaryExit, VoluntaryExit};
+use ream_consensus_misc::{
     constants::DOMAIN_VOLUNTARY_EXIT,
     misc::{compute_domain, compute_signing_root},
-    voluntary_exit::{SignedVoluntaryExit, VoluntaryExit},
 };
 use ream_network_spec::networks::network_spec;
 

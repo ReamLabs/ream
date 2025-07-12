@@ -1,12 +1,14 @@
 use alloy_primitives::B256;
 use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
-use ream_consensus::{
-    constants::DOMAIN_RANDAO,
+use ream_consensus_beacon::{
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
     },
     execution_engine::engine_trait::ExecutionApi,
+};
+use ream_consensus_misc::{
+    constants::DOMAIN_RANDAO,
     misc::{compute_epoch_at_slot, compute_signing_root},
 };
 use tree_hash::TreeHash;

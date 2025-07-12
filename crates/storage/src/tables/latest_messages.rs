@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ream_consensus::fork_choice::latest_message::LatestMessage;
+use ream_consensus_beacon::fork_choice::latest_message::LatestMessage;
 use redb::{Database, Durability, TableDefinition};
 
 use super::{SSZEncoding, Table};

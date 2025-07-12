@@ -1,4 +1,4 @@
-use ream_consensus::validator::Validator;
+use ream_consensus_misc::validator::Validator;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

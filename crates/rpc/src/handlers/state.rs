@@ -9,9 +9,9 @@ use ream_beacon_api_types::{
     query::EpochQuery,
     responses::{BeaconResponse, BeaconVersionedResponse},
 };
-use ream_consensus::{
-    checkpoint::Checkpoint, constants::SYNC_COMMITTEE_SIZE, electra::beacon_state::BeaconState,
-    misc::compute_sync_committee_period,
+use ream_consensus_beacon::electra::beacon_state::BeaconState;
+use ream_consensus_misc::{
+    checkpoint::Checkpoint, constants::SYNC_COMMITTEE_SIZE, misc::compute_sync_committee_period,
 };
 use ream_storage::{
     db::ReamDB,

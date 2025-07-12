@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use libp2p::{PeerId, swarm::ConnectionId};
-use ream_consensus::blob_sidecar::BlobIdentifier;
+use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
 use tokio::sync::mpsc;
 
 use crate::{

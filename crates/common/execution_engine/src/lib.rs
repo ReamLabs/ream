@@ -8,14 +8,16 @@ use alloy_rpc_types_eth::{Block, BlockId, BlockNumberOrTag, Filter, Log, Transac
 use anyhow::anyhow;
 use async_trait::async_trait;
 use jsonwebtoken::{EncodingKey, Header, encode, get_current_timestamp};
-use ream_consensus::{
-    constants::{CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE},
+use ream_consensus_beacon::{
     electra::execution_payload::ExecutionPayload,
     execution_engine::{
         engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest,
         rpc_types::get_blobs::BlobAndProofV1,
     },
     execution_requests::ExecutionRequests,
+};
+use ream_consensus_misc::constants::{
+    CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE,
 };
 use reqwest::{Client, Request, Url};
 use rpc_types::{

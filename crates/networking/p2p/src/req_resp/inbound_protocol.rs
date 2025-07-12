@@ -15,7 +15,7 @@ use libp2p::{
     bytes::{Buf, BufMut},
     core::UpgradeInfo,
 };
-use ream_consensus::constants::genesis_validators_root;
+use ream_consensus_misc::constants::genesis_validators_root;
 use ream_network_spec::networks::network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};
 use ssz::{Decode, Encode};

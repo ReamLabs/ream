@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 
 use lru::LruCache;
 use ream_bls::{BLSSignature, PublicKey};
-use ream_consensus::bls_to_execution_change::BLSToExecutionChange;
+use ream_consensus_beacon::bls_to_execution_change::BLSToExecutionChange;
 use tokio::sync::RwLock;
 
 const LRU_CACHE_SIZE: usize = 64;

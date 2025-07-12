@@ -1,6 +1,6 @@
 use alloy_primitives::{B256, Bytes, aliases::B32, bytes};
 use alloy_rlp::{Decodable, Encodable};
-use ream_consensus::{constants::FAR_FUTURE_EPOCH, fork_data::ForkData};
+use ream_consensus_misc::{constants::FAR_FUTURE_EPOCH, fork_data::ForkData};
 use ream_network_spec::networks::network_spec;
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use libp2p::{PeerId, swarm::ConnectionId};
-use ream_consensus::blob_sidecar::BlobIdentifier;
+use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
 use ream_p2p::{
     network_state::NetworkState,
     req_resp::messages::{

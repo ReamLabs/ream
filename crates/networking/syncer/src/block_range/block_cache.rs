@@ -5,7 +5,7 @@ use std::{
 
 use alloy_primitives::B256;
 use anyhow::{bail, ensure};
-use ream_consensus::{
+use ream_consensus_beacon::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
     electra::beacon_block::SignedBeaconBlock,
 };

@@ -25,7 +25,7 @@ jobs:
         rustup default succinct
 
     - name: Build SP1
-      run: cargo build --target=riscv32im-succinct-zkvm-elf -p ream-consensus -p ream-bls
+      run: cargo build --target=riscv32im-succinct-zkvm-elf -p ream-consensus-beacon -p ream-consensus-misc -p ream-bls
 
   build-risc0:
     runs-on: ubuntu-latest
@@ -41,5 +41,5 @@ jobs:
         rustup default risc0
         
     - name: Build Risc0
-      run: cargo build --target=riscv32im-risc0-zkvm-elf -p ream-consensus -p ream-bls
+      run: cargo build --target=riscv32im-risc0-zkvm-elf -p ream-consensus-beacon -p ream-consensus-misc -p ream-bls
 

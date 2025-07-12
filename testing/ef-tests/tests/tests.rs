@@ -5,16 +5,12 @@ use ef_tests::{
     test_merkle_proof_impl, test_operation, test_rewards, test_sanity_blocks, test_sanity_slots,
     test_shuffling, utils,
 };
-use ream_consensus::{
+use ream_consensus_beacon::{
     attestation::Attestation,
-    attestation_data::AttestationData,
     attester_slashing::AttesterSlashing,
-    beacon_block_header::BeaconBlockHeader,
     bls_to_execution_change::{BLSToExecutionChange, SignedBLSToExecutionChange},
-    checkpoint::Checkpoint,
     consolidation_request::ConsolidationRequest,
     deposit::Deposit,
-    deposit_data::DepositData,
     deposit_request::DepositRequest,
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
@@ -23,26 +19,25 @@ use ream_consensus::{
         execution_payload::ExecutionPayload,
         execution_payload_header::ExecutionPayloadHeader,
     },
-    eth_1_data::Eth1Data,
     execution_requests::ExecutionRequests,
-    fork::Fork,
-    fork_data::ForkData,
-    historical_batch::HistoricalBatch,
     historical_summary::HistoricalSummary,
-    indexed_attestation::IndexedAttestation,
-    misc::compute_shuffled_index,
     pending_consolidation::PendingConsolidation,
     pending_deposit::PendingDeposit,
     pending_partial_withdrawal::PendingPartialWithdrawal,
     proposer_slashing::ProposerSlashing,
-    signing_data::SigningData,
     single_attestation::SingleAttestation,
     sync_aggregate::SyncAggregate,
     sync_committee::SyncCommittee,
-    validator::Validator,
     voluntary_exit::{SignedVoluntaryExit, VoluntaryExit},
     withdrawal::Withdrawal,
     withdrawal_request::WithdrawalRequest,
+};
+use ream_consensus_misc::{
+    attestation_data::AttestationData, beacon_block_header::BeaconBlockHeader,
+    checkpoint::Checkpoint, deposit_data::DepositData, eth_1_data::Eth1Data, fork::Fork,
+    fork_data::ForkData, historical_batch::HistoricalBatch,
+    indexed_attestation::IndexedAttestation, misc::compute_shuffled_index,
+    signing_data::SigningData, validator::Validator,
 };
 use ream_merkle::is_valid_normalized_merkle_branch;
 

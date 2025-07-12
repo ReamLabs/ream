@@ -10,7 +10,7 @@ use ream_beacon_api_types::{
     query::{EpochQuery, IndexQuery, SlotQuery},
     responses::BeaconResponse,
 };
-use ream_consensus::{constants::SLOTS_PER_EPOCH, misc::compute_start_slot_at_epoch};
+use ream_consensus_misc::{constants::SLOTS_PER_EPOCH, misc::compute_start_slot_at_epoch};
 use ream_storage::db::ReamDB;
 use serde::Serialize;
 

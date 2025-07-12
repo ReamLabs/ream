@@ -1,5 +1,5 @@
 use alloy_primitives::{Address, B64, B256};
-use ream_consensus::withdrawal::Withdrawal;
+use ream_consensus_beacon::withdrawal::Withdrawal;
 use serde::{Deserialize, Serialize};
 use ssz_types::{VariableList, typenum::U16};
 

@@ -5,7 +5,7 @@ use actix_web::{
     web::{Data, Json},
 };
 use ream_beacon_api_types::{error::ApiError, id::ID, responses::DataResponse};
-use ream_consensus::{
+use ream_consensus_beacon::{
     bls_to_execution_change::SignedBLSToExecutionChange, voluntary_exit::SignedVoluntaryExit,
 };
 use ream_operation_pool::OperationPool;

@@ -6,11 +6,13 @@ use ream_bls::{
     BLSSignature, PrivateKey,
     traits::{Aggregatable, Signable},
 };
-use ream_consensus::{
-    constants::{DOMAIN_SYNC_COMMITTEE, EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SYNC_COMMITTEE_SIZE},
+use ream_consensus_beacon::{
     electra::{beacon_block::BeaconBlock, beacon_state::BeaconState},
-    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
     sync_aggregate::SyncAggregate,
+};
+use ream_consensus_misc::{
+    constants::{DOMAIN_SYNC_COMMITTEE, EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SYNC_COMMITTEE_SIZE},
+    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
 };
 use ream_network_spec::networks::network_spec;
 use serde::{Deserialize, Serialize};

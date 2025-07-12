@@ -1,6 +1,6 @@
 use libp2p::gossipsub::Message;
 use ream_beacon_chain::beacon_chain::BeaconChain;
-use ream_consensus::constants::genesis_validators_root;
+use ream_consensus_misc::constants::genesis_validators_root;
 use ream_network_spec::networks::network_spec;
 use ream_p2p::gossipsub::{
     configurations::GossipsubConfig,

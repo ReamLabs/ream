@@ -1,6 +1,6 @@
 use alloy_primitives::Address;
 use ream_bls::{BLSSignature, PrivateKey, PublicKey, traits::Signable};
-use ream_consensus::misc::{compute_domain, compute_signing_root};
+use ream_consensus_misc::misc::{compute_domain, compute_signing_root};
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
