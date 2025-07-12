@@ -5246,6 +5246,7 @@ dependencies = [
  "itertools 0.14.0",
  "ream-bls",
  "ream-merkle",
+ "ream-network-spec",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -5327,6 +5328,7 @@ dependencies = [
  "kzg",
  "ream-bls",
  "ream-consensus",
+ "ream-network-spec",
  "ream-operation-pool",
  "ream-polynomial-commitments",
  "ream-storage",
@@ -5411,7 +5413,7 @@ dependencies = [
  "alloy-primitives",
  "anyhow",
  "ethereum_serde_utils",
- "ream-consensus",
+ "ream-spec-utils",
  "serde",
  "serde_yaml",
 ]
@@ -5535,6 +5537,21 @@ dependencies = [
 [[package]]
 name = "ream-runtime"
 version = "0.1.0"
+
+[[package]]
+name = "ream-spec-utils"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tree_hash",
+ "tree_hash_derive",
+]
 
 [[package]]
 name = "ream-storage"

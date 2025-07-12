@@ -9,7 +9,7 @@ use ream_consensus::{
     blob_sidecar::BlobIdentifier,
     checkpoint::Checkpoint,
     constants::{
-        GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SECONDS_PER_SLOT, SLOTS_PER_EPOCH,
+        GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH,
     },
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
@@ -21,6 +21,7 @@ use ream_consensus::{
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
     polynomial_commitments::kzg_commitment::KZGCommitment,
 };
+use ream_network_spec::networks::network_spec;
 use ream_operation_pool::OperationPool;
 use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use ream_storage::{
@@ -68,7 +69,7 @@ impl Store {
     pub fn get_slots_since_genesis(&self) -> anyhow::Result<u64> {
         Ok(
             (self.db.time_provider().get()? - self.db.genesis_time_provider().get()?)
-                / SECONDS_PER_SLOT,
+                / network_spec().seconds_per_slot,
         )
     }
 
@@ -329,8 +330,8 @@ impl Store {
         // Use half `SECONDS_PER_SLOT // INTERVALS_PER_SLOT` as the proposer reorg deadline
         let time_into_slot = (self.db.time_provider().get()?
             - self.db.genesis_time_provider().get()?)
-            % SECONDS_PER_SLOT;
-        let proposer_reorg_cutoff = SECONDS_PER_SLOT / INTERVALS_PER_SLOT / 2;
+            % network_spec().seconds_per_slot;
+        let proposer_reorg_cutoff = network_spec().seconds_per_slot / INTERVALS_PER_SLOT / 2;
         Ok(time_into_slot <= proposer_reorg_cutoff)
     }
 
@@ -828,7 +829,7 @@ pub fn get_forkchoice_store(
     };
 
     db.time_provider()
-        .insert(anchor_state.genesis_time + SECONDS_PER_SLOT * anchor_state.slot)?;
+        .insert(anchor_state.genesis_time + network_spec().seconds_per_slot * anchor_state.slot)?;
     db.genesis_time_provider()
         .insert(anchor_state.genesis_time)?;
     db.justified_checkpoint_provider()

@@ -15,6 +15,7 @@ use ream_bls::{
     traits::{Aggregatable, Verifiable},
 };
 use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
+use ream_network_spec::networks::network_spec;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -62,7 +63,7 @@ use crate::{
         MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
         NEXT_SYNC_COMMITTEE_INDEX, PARTICIPATION_FLAG_WEIGHTS, PENDING_CONSOLIDATIONS_LIMIT,
         PENDING_PARTIAL_WITHDRAWALS_LIMIT, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
-        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SAFETY_DECAY, SECONDS_PER_SLOT,
+        PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SAFETY_DECAY,
         SHARD_COMMITTEE_PERIOD, SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE,
         SYNC_REWARD_WEIGHT, TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX,
         TIMELY_SOURCE_FLAG_INDEX, TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT,
@@ -1170,7 +1171,7 @@ impl BeaconState {
 
     pub fn compute_timestamp_at_slot(&self, slot: u64) -> u64 {
         let slots_since_genesis = slot - GENESIS_SLOT;
-        self.genesis_time + slots_since_genesis * SECONDS_PER_SLOT
+        self.genesis_time + slots_since_genesis * network_spec().seconds_per_slot
     }
 
     pub fn validate_voluntary_exit(

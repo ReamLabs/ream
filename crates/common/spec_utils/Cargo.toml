@@ -1,5 +1,5 @@
 [package]
-name = "ream-network-spec"
+name = "ream-spec-utils"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -11,10 +11,11 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
-anyhow.workspace = true
 ethereum_serde_utils.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 serde_yaml.workspace = true
-
-# ream-dependencies
-ream-spec-utils.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true

@@ -15,6 +15,7 @@ members = [
     "crates/common/node",
     "crates/common/operation_pool",
     "crates/common/polynomial_commitments",
+    "crates/common/spec_utils",
     "crates/common/validator",
     "crates/crypto/bls",
     "crates/crypto/keystore",
@@ -126,6 +127,7 @@ ream-operation-pool = { path = "crates/common/operation_pool" }
 ream-p2p = { path = "crates/networking/p2p" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-rpc = { path = "crates/rpc" }
+ream-spec-utils = { path = "crates/common/spec_utils" }
 ream-storage = { path = "crates/storage" }
 ream-syncer = { path = "crates/networking/syncer" }
 ream-validator = { path = "crates/common/validator" }
