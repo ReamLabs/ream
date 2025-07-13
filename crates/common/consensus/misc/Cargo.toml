@@ -1,5 +1,5 @@
 [package]
-name = "ream-consensus"
+name = "misc"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -8,9 +8,6 @@ readme.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
-
-[features]
-zkvm = []
 
 [dependencies]
 alloy-consensus.workspace = true
