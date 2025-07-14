@@ -27,3 +27,12 @@ pub struct BlobSidecarsByRangeV1Request {
 pub struct BlobSidecarsByRootV1Request {
     pub inner: VariableList<BlobIdentifier, MaxRequestBlobSidecarsElectra>,
 }
+
+impl BlobSidecarsByRootV1Request {
+    pub fn new(blob_identifiers: Vec<BlobIdentifier>) -> Self {
+        Self {
+            inner: VariableList::new(blob_identifiers)
+                .expect("Too many blob identifiers were requested"),
+        }
+    }
+}

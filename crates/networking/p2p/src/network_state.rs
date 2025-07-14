@@ -51,4 +51,14 @@ impl NetworkState {
             .map_err(|err| anyhow!("Failed to write meta data to disk: {err:?}"))?;
         Ok(())
     }
+
+    /// Gets a vector of all connected peers.
+    pub fn connected_peers(&self) -> Vec<CachedPeer> {
+        self.peer_table
+            .read()
+            .values()
+            .filter(|peer| peer.state == ConnectionState::Connected)
+            .cloned()
+            .collect()
+    }
 }

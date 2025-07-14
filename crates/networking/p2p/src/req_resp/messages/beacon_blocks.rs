@@ -25,3 +25,12 @@ impl BeaconBlocksByRangeV2Request {
 pub struct BeaconBlocksByRootV2Request {
     pub inner: VariableList<B256, U1024>,
 }
+
+/// Will panic if over 1024 roots are requested
+impl BeaconBlocksByRootV2Request {
+    pub fn new(roots: Vec<B256>) -> Self {
+        Self {
+            inner: VariableList::new(roots).expect("Too many roots were requested"),
+        }
+    }
+}

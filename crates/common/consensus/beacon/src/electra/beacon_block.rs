@@ -108,7 +108,9 @@ impl SignedBeaconBlock {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Default,
+)]
 pub struct BeaconBlock {
     #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,

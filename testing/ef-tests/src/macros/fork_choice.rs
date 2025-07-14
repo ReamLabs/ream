@@ -15,6 +15,7 @@ macro_rules! test_fork_choice {
                     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
                     store::{get_forkchoice_store, Store},
                 };
+                use ream_network_spec::networks::initialize_test_network_spec;
                 use ream_storage::{
                     db::ReamDB,
                     tables::{Table, Field},
@@ -92,6 +93,7 @@ macro_rules! test_fork_choice {
 
                 #[tokio::test]
                 async fn test_fork_choice() -> anyhow::Result<()> {
+                    initialize_test_network_spec();
                     let base_path = format!(
                         "mainnet/tests/mainnet/electra/fork_choice/{}/pyspec_tests",
                         stringify!($path)
@@ -158,7 +160,7 @@ macro_rules! test_fork_choice {
                                         }
                                     }
 
-                                    assert_eq!(on_block(&mut store, &block, &mock_engine).await.is_ok(), blocks.valid.unwrap_or(true), "Unexpected result on on_block");
+                                    assert_eq!(on_block(&mut store, &block, &mock_engine, true).await.is_ok(), blocks.valid.unwrap_or(true), "Unexpected result on on_block");
                                 }
                                 ForkChoiceStep::Attestation(attestations) => {
                                     let attestation_path =

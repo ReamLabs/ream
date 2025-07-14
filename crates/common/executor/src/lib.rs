@@ -1,7 +1,8 @@
 use std::{future::Future, sync::Arc, thread::sleep, time::Duration};
 
+use anyhow::bail;
 use tokio::{runtime::Runtime, sync::broadcast, task::JoinHandle};
-use tracing::{debug, warn};
+use tracing::warn;
 
 #[derive(Clone)]
 pub struct ReamExecutor {
@@ -25,7 +26,7 @@ impl ReamExecutor {
         }
     }
 
-    pub fn spawn<F>(&self, future: F) -> JoinHandle<Option<F::Output>>
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<anyhow::Result<F::Output>>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -33,10 +34,9 @@ impl ReamExecutor {
         let mut shutdown = self.shutdown.subscribe();
         self.runtime.spawn(async move {
             tokio::select! {
-                result = future => Some(result),
+                result = future => Ok(result),
                 _ = shutdown.recv() => {
-                    debug!("Task cancelled due to shutdown");
-                    None
+                    bail!("Task cancelled due to shutdown")
                 },
             }
         })

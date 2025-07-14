@@ -33,4 +33,5 @@ ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
 ream-fork-choice.workspace = true
 ream-merkle.workspace = true
+ream-network-spec.workspace = true
 ream-storage.workspace = true

@@ -111,7 +111,12 @@ impl NetworkManagerService {
             network.start(manager_sender, p2p_receiver).await;
         });
 
-        let block_range_syncer = BlockRangeSyncer::new(beacon_chain.clone(), p2p_sender.clone());
+        let block_range_syncer = BlockRangeSyncer::new(
+            beacon_chain.clone(),
+            p2p_sender.clone(),
+            network_state.clone(),
+            executor.clone(),
+        );
 
         Ok(Self {
             beacon_chain,
@@ -133,11 +138,44 @@ impl NetworkManagerService {
             mut manager_receiver,
             p2p_sender,
             ream_db,
+            network_state,
+            block_range_syncer,
             ..
         } = self;
+
         let mut interval = interval(Duration::from_secs(network_spec().seconds_per_slot));
+        let mut syncer_handle = block_range_syncer.start();
         loop {
             tokio::select! {
+                result = &mut syncer_handle => {
+                    let joined_result = match result {
+                        Ok(joined_result) => joined_result,
+                        Err(err) => {
+                            error!("Block range syncer failed to join task: {err}");
+                            continue;
+                        }
+                    };
+
+                    let thread_result = match joined_result {
+                        Ok(result) => result,
+                        Err(err) => {
+                            error!("Block range syncer thread failed: {err}");
+                            continue;
+                        }
+                    };
+
+                    let block_range_syncer = match thread_result {
+                        Ok(syncer) => syncer,
+                        Err(err) => {
+                            error!("Block range syncer failed to start: {err}");
+                            continue;
+                        }
+                    };
+
+                    if !block_range_syncer.is_synced_to_finalized_slot().await {
+                        syncer_handle = block_range_syncer.start();
+                    }
+                }
                 _ = interval.tick() => {
                     let time = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
@@ -155,7 +193,7 @@ impl NetworkManagerService {
                             handle_gossipsub_message(message, &beacon_chain).await,
                         // Handles Req/Resp messages from other peers.
                         ReamNetworkEvent::RequestMessage { peer_id, stream_id, connection_id, message } =>
-                            handle_req_resp_message(peer_id, stream_id, connection_id, message, &beacon_chain, &p2p_sender, &ream_db).await,
+                            handle_req_resp_message(peer_id, stream_id, connection_id, message, &p2p_sender, &ream_db, network_state.clone()).await,
                         // Log and skip unrecognized requests.
                         unhandled_request => {
                             info!("Unhandled request: {unhandled_request:?}");
