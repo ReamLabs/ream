@@ -1,6 +1,11 @@
 use alloy_primitives::B256;
 use ream_bls::BLSSignature;
 use ream_merkle::{generate_proof, merkle_tree};
+use ream_consensus_misc::constants::{
+    BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH, EXECUTION_PAYLOAD_INDEX,
+    KZG_COMMITMENTS_MERKLE_DEPTH,
+};
+use ream_consensus_misc::eth_1_data::Eth1Data;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -15,12 +20,7 @@ use crate::{
     attestation::Attestation,
     attester_slashing::AttesterSlashing,
     bls_to_execution_change::SignedBLSToExecutionChange,
-    constants::{
-        BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH, EXECUTION_PAYLOAD_INDEX,
-        KZG_COMMITMENTS_MERKLE_DEPTH,
-    },
     deposit::Deposit,
-    eth_1_data::Eth1Data,
     execution_requests::ExecutionRequests,
     polynomial_commitments::kzg_commitment::KZGCommitment,
     proposer_slashing::ProposerSlashing,

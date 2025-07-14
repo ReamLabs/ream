@@ -1,5 +1,5 @@
 use alloy_primitives::{Address, B256, U256};
-use ream_consensus::{electra::execution_payload::ExecutionPayload, withdrawal::Withdrawal};
+use ream_consensus_beacon::{electra::execution_payload::ExecutionPayload, withdrawal::Withdrawal};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{

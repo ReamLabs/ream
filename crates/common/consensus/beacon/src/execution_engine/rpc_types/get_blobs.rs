@@ -1,9 +1,10 @@
+use ream_consensus_misc::constants::BYTES_PER_BLOB;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, serde_utils::hex_fixed_vec, typenum::U131072};
 use tree_hash_derive::TreeHash;
 
-use crate::{constants::BYTES_PER_BLOB, polynomial_commitments::kzg_proof::KZGProof};
+use crate::{polynomial_commitments::kzg_proof::KZGProof};
 
 #[derive(
     Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Decode, Encode, TreeHash, Default,

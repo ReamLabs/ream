@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
-use crate::beacon_block_header::SignedBeaconBlockHeader;
+use ream_consensus_misc::beacon_block_header::SignedBeaconBlockHeader;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct ProposerSlashing {

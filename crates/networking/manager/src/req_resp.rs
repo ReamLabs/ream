@@ -1,6 +1,6 @@
 use libp2p::{PeerId, swarm::ConnectionId};
 use ream_beacon_chain::beacon_chain::BeaconChain;
-use ream_consensus::blob_sidecar::BlobIdentifier;
+use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
 use ream_p2p::req_resp::messages::{
     RequestMessage, ResponseMessage,
     beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},

@@ -1,13 +1,15 @@
 use alloy_primitives::{B256, map::HashSet};
 use anyhow::{anyhow, ensure};
-use ream_consensus::{
+use ream_consensus_beacon::{
     attestation::Attestation,
     attester_slashing::AttesterSlashing,
-    constants::{INTERVALS_PER_SLOT},
     electra::beacon_block::SignedBeaconBlock,
     execution_engine::engine_trait::ExecutionApi,
-    misc::compute_start_slot_at_epoch,
     predicates::is_slashable_attestation_data,
+};
+use ream_consensus_misc::{
+    constants::{INTERVALS_PER_SLOT},
+    misc::compute_start_slot_at_epoch,
 };
 use ream_network_spec::networks::network_spec;
 use ream_storage::{

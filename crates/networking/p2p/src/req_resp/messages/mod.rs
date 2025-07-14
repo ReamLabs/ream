@@ -12,7 +12,7 @@ use blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request};
 use goodbye::Goodbye;
 use meta_data::GetMetaDataV2;
 use ping::Ping;
-use ream_consensus::{blob_sidecar::BlobSidecar, electra::beacon_block::SignedBeaconBlock};
+use ream_consensus_beacon::{blob_sidecar::BlobSidecar, electra::beacon_block::SignedBeaconBlock};
 use ssz_derive::{Decode, Encode};
 use status::Status;
 

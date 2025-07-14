@@ -2,7 +2,7 @@ use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 
-use crate::{
+use ream_consensus_misc::{
     constants::{ETH1_FOLLOW_DISTANCE, SECONDS_PER_ETH1_BLOCK},
     eth_1_data::Eth1Data,
 };

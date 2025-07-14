@@ -1,6 +1,6 @@
 use alloy_primitives::Address;
 use anyhow::ensure;
-use ream_consensus::electra::beacon_state::BeaconState;
+use ream_consensus_beacon::electra::beacon_state::BeaconState;
 
 use super::builder_bid::SignedBuilderBid;
 use crate::builder::verify::verify_bid_signature;

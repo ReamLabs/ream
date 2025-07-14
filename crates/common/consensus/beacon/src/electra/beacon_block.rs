@@ -1,6 +1,7 @@
 use alloy_primitives::B256;
 use anyhow::ensure;
 use ream_bls::BLSSignature;
+use ream_consensus_misc::beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash::TreeHash;
@@ -8,7 +9,6 @@ use tree_hash_derive::TreeHash;
 
 use super::beacon_block_body::BeaconBlockBody;
 use crate::{
-    beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
     blob_sidecar::BlobSidecar,
     electra::{
         blinded_beacon_block::{BlindedBeaconBlock, SignedBlindedBeaconBlock},

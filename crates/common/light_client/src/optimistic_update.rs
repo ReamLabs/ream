@@ -1,4 +1,4 @@
-use ream_consensus::sync_aggregate::SyncAggregate;
+use ream_consensus_beacon::sync_aggregate::SyncAggregate;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;

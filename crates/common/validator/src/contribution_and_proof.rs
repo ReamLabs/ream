@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
-use ream_consensus::misc::{compute_domain, compute_signing_root};
+use ream_consensus_misc::misc::{compute_domain, compute_signing_root};
 use ream_network_spec::networks::network_spec;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};

@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use ream_consensus::checkpoint::Checkpoint;
+use ream_consensus_misc::checkpoint::Checkpoint;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use ssz::{Decode, Encode};

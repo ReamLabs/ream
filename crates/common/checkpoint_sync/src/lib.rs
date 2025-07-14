@@ -4,12 +4,12 @@ pub mod weak_subjectivity;
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 use checkpoint::get_checkpoint_sync_sources;
-use ream_consensus::{
+use ream_consensus_beacon::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
-    checkpoint::Checkpoint,
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     execution_engine::rpc_types::get_blobs::BlobAndProofV1,
 };
+use ream_consensus_misc::checkpoint::Checkpoint;
 use ream_fork_choice::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::network_spec;
 use ream_storage::{db::ReamDB, tables::Table};

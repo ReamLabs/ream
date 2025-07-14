@@ -13,7 +13,7 @@ use serde::{
 use ssz_derive::{Decode, Encode};
 use tree_hash::{PackedEncoding, TreeHash};
 
-use crate::constants::BYTES_PER_COMMITMENT;
+use ream_consensus_misc::constants::BYTES_PER_COMMITMENT;
 pub const VERSIONED_HASH_VERSION_KZG: u8 = 0x01;
 
 #[derive(Clone, Copy, Encode, Decode, PartialEq, Eq, Hash)]

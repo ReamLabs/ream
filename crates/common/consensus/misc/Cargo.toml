@@ -1,5 +1,5 @@
 [package]
-name = "misc"
+name = "ream-consensus-misc"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -33,4 +33,3 @@ tree_hash_derive.workspace = true
 # ream dependencies
 ream-bls.workspace = true
 ream-merkle.workspace = true
-ream-network-spec.workspace = true

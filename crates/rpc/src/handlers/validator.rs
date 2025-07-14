@@ -13,7 +13,7 @@ use ream_beacon_api_types::{
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_bls::PublicKey;
-use ream_consensus::validator::Validator;
+use ream_consensus_misc::validator::Validator;
 use ream_storage::db::ReamDB;
 use serde::Serialize;
 

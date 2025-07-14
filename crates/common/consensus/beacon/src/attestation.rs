@@ -7,7 +7,7 @@ use ssz_types::{
 };
 use tree_hash_derive::TreeHash;
 
-use crate::attestation_data::AttestationData;
+use ream_consensus_misc::attestation_data::AttestationData;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Attestation {

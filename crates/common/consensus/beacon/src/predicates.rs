@@ -1,4 +1,4 @@
-use crate::attestation_data::AttestationData;
+use ream_consensus_misc::attestation_data::AttestationData;
 
 /// Check if ``data_1`` and ``data_2`` are slashable according to Casper FFG rules.
 pub fn is_slashable_attestation_data(data_1: &AttestationData, data_2: &AttestationData) -> bool {

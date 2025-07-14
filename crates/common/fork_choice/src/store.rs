@@ -4,13 +4,9 @@ use alloy_primitives::B256;
 use anyhow::{anyhow, bail, ensure};
 use hashbrown::HashMap;
 use ream_bls::BLSSignature;
-use ream_consensus::{
+use ream_consensus_beacon::{
     attestation::Attestation,
     blob_sidecar::BlobIdentifier,
-    checkpoint::Checkpoint,
-    constants::{
-        GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH,
-    },
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
@@ -18,8 +14,14 @@ use ream_consensus::{
     execution_engine::{engine_trait::ExecutionApi, rpc_types::get_blobs::BlobAndProofV1},
     fork_choice::latest_message::LatestMessage,
     helpers::{calculate_committee_fraction, get_total_active_balance},
-    misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
     polynomial_commitments::kzg_commitment::KZGCommitment,
+};
+use ream_consensus_misc::{
+    checkpoint::Checkpoint,
+    constants::{
+        GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH,
+    },
+    misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
 };
 use ream_network_spec::networks::network_spec;
 use ream_operation_pool::OperationPool;

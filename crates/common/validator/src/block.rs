@@ -1,14 +1,17 @@
 use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
-use ream_consensus::{
-    constants::DOMAIN_BEACON_PROPOSER,
+use ream_consensus_beacon::{
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
         blinded_beacon_block::{BlindedBeaconBlock, SignedBlindedBeaconBlock},
     },
-    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+    
 };
 use ream_network_spec::networks::network_spec;
+use ream_consensus_misc::{
+    constants::DOMAIN_BEACON_PROPOSER,
+    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+};
 
 pub fn get_block_signature(
     state: &BeaconState,

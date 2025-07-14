@@ -17,4 +17,4 @@ serde.workspace = true
 serde_yaml.workspace = true
 
 # ream-dependencies
-ream-spec-utils.workspace = true
+ream-consensus-misc.workspace = true

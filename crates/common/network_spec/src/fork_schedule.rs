@@ -1,6 +1,6 @@
 use std::slice::Iter;
 
-use ream_spec_utils::fork::Fork;
+use ream_consensus_misc::fork::Fork;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

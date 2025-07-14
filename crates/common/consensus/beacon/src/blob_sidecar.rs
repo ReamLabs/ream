@@ -1,5 +1,11 @@
 use alloy_primitives::B256;
 use ream_merkle::{get_root_from_merkle_branch, is_valid_merkle_branch};
+use ream_consensus_misc::{
+    beacon_block_header::SignedBeaconBlockHeader,
+    constants::{
+        BLOB_KZG_COMMITMENTS_INDEX, KZG_COMMITMENT_INCLUSION_PROOF_DEPTH, MAX_BLOBS_PER_BLOCK,
+    },
+};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U17};
@@ -7,10 +13,6 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    beacon_block_header::SignedBeaconBlockHeader,
-    constants::{
-        BLOB_KZG_COMMITMENTS_INDEX, KZG_COMMITMENT_INCLUSION_PROOF_DEPTH, MAX_BLOBS_PER_BLOCK,
-    },
     execution_engine::rpc_types::get_blobs::Blob,
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
@@ -77,7 +79,7 @@ mod tests {
     use ssz_types::{FixedVector, typenum::U17};
 
     use super::*;
-    use crate::beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader};
+    use ream_consensus_misc::beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader};
 
     fn read_ssz_snappy_file<T: Decode>(path: &Path) -> anyhow::Result<T> {
         let ssz_snappy = std::fs::read(path)?;

@@ -5,7 +5,7 @@ use std::{
 
 use alloy_primitives::b256;
 use ream_beacon_api_types::responses::BeaconVersionedResponse;
-use ream_consensus::electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
+use ream_consensus_beacon::electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
 use serde_json::Value;
 
 const PATH_TO_TEST_DATA_FOLDER: &str = "./tests/assets";

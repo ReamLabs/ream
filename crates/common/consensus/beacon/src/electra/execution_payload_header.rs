@@ -1,4 +1,5 @@
 use alloy_primitives::{Address, B256, U256};
+use ream_consensus_misc::misc::checksummed_address;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -8,7 +9,6 @@ use ssz_types::{
 };
 use tree_hash_derive::TreeHash;
 
-use crate::misc::checksummed_address;
 
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,

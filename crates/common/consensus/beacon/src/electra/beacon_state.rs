@@ -16,31 +16,10 @@ use ream_bls::{
 };
 use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
 use ream_network_spec::networks::network_spec;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use ssz_derive::{Decode, Encode};
-use ssz_types::{
-    BitVector, FixedVector, VariableList,
-    serde_utils::{quoted_u64_fixed_vec, quoted_u64_var_list},
-    typenum::{U4, U2048, U8192, U65536, U262144, U16777216, U134217728},
-};
-use tree_hash::TreeHash;
-use tree_hash_derive::TreeHash;
-
-use super::{
-    beacon_block::{BeaconBlock, SignedBeaconBlock},
-    beacon_block_body::BeaconBlockBody,
-    execution_payload::ExecutionPayload,
-    execution_payload_header::ExecutionPayloadHeader,
-    zkvm_types::ValidatorRegistryLimit,
-};
-use crate::{
-    attestation::Attestation,
+use ream_consensus_misc::{
     attestation_data::AttestationData,
-    attester_slashing::AttesterSlashing,
     beacon_block_header::BeaconBlockHeader,
-    bls_to_execution_change::SignedBLSToExecutionChange,
     checkpoint::Checkpoint,
-    consolidation_request::ConsolidationRequest,
     constants::{
         BASE_REWARD_FACTOR, BEACON_STATE_MERKLE_DEPTH, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION,
         CHURN_LIMIT_QUOTIENT, COMPOUNDING_WITHDRAWAL_PREFIX, CURRENT_SYNC_COMMITTEE_INDEX,
@@ -70,21 +49,45 @@ use crate::{
         UNSET_DEPOSIT_REQUESTS_START_INDEX, WEIGHT_DENOMINATOR,
         WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA,
     },
-    deposit::Deposit,
     deposit_message::DepositMessage,
-    deposit_request::DepositRequest,
-    eth_1_block::Eth1Block,
     eth_1_data::Eth1Data,
-    execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
     fork::Fork,
-    helpers::xor,
-    historical_summary::HistoricalSummary,
     indexed_attestation::IndexedAttestation,
     misc::{
         bytes_to_int64, compute_activation_exit_epoch, compute_committee, compute_domain,
         compute_epoch_at_slot, compute_shuffled_index, compute_signing_root,
         compute_start_slot_at_epoch, get_committee_indices, is_sorted_and_unique,
     },
+    validator::Validator,
+};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use ssz_derive::{Decode, Encode};
+use ssz_types::{
+    BitVector, FixedVector, VariableList,
+    serde_utils::{quoted_u64_fixed_vec, quoted_u64_var_list},
+    typenum::{U4, U2048, U8192, U65536, U262144, U16777216, U134217728},
+};
+use tree_hash::TreeHash;
+use tree_hash_derive::TreeHash;
+
+use super::{
+    beacon_block::{BeaconBlock, SignedBeaconBlock},
+    beacon_block_body::BeaconBlockBody,
+    execution_payload::ExecutionPayload,
+    execution_payload_header::ExecutionPayloadHeader,
+    zkvm_types::ValidatorRegistryLimit,
+};
+use crate::{
+    attestation::Attestation,
+    attester_slashing::AttesterSlashing,
+    bls_to_execution_change::SignedBLSToExecutionChange,
+    consolidation_request::ConsolidationRequest,
+    deposit::Deposit,
+    deposit_request::DepositRequest,
+    eth_1_block::Eth1Block,
+    execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
+    helpers::xor,
+    historical_summary::HistoricalSummary,
     pending_consolidation::PendingConsolidation,
     pending_deposit::PendingDeposit,
     pending_partial_withdrawal::PendingPartialWithdrawal,
@@ -92,7 +95,6 @@ use crate::{
     proposer_slashing::ProposerSlashing,
     sync_aggregate::SyncAggregate,
     sync_committee::SyncCommittee,
-    validator::Validator,
     voluntary_exit::SignedVoluntaryExit,
     withdrawal::Withdrawal,
     withdrawal_request::WithdrawalRequest,

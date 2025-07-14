@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use anyhow::ensure;
-use ream_consensus::{
+use ream_consensus_beacon::{
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     sync_committee::SyncCommittee,
 };

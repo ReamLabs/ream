@@ -1,11 +1,8 @@
 use std::cmp;
 
 use alloy_primitives::B256;
-
-use crate::{
-    constants::{EFFECTIVE_BALANCE_INCREMENT, SLOTS_PER_EPOCH},
-    electra::beacon_state::BeaconState,
-};
+use ream_consensus_misc::constants::{EFFECTIVE_BALANCE_INCREMENT, SLOTS_PER_EPOCH};
+use crate::electra::beacon_state::BeaconState;
 
 pub fn get_total_balance(state: &BeaconState, indices: Vec<u64>) -> u64 {
     let sum = indices

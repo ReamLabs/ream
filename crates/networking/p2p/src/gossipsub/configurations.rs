@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use libp2p::gossipsub::{Config, ConfigBuilder, MessageId, ValidationMode};
-use ream_consensus::constants::{SLOTS_PER_EPOCH};
+use ream_consensus_misc::constants::{SLOTS_PER_EPOCH};
 use ream_network_spec::networks::network_spec;
 use sha2::{Digest, Sha256};
 

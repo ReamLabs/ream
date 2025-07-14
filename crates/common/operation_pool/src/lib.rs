@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use alloy_primitives::{Address, B256};
 use parking_lot::RwLock;
-use ream_consensus::{
+use ream_consensus_beacon::{
     bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
     voluntary_exit::SignedVoluntaryExit,
 };
