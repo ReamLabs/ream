@@ -5,7 +5,7 @@ use std::{
 
 use alloy_primitives::B256;
 use anyhow::{bail, ensure};
-use ream_consensus::{
+use ream_consensus_beacon::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
     electra::beacon_block::SignedBeaconBlock,
 };
@@ -284,7 +284,7 @@ impl Display for DataToFetch {
 mod tests {
     use alloy_primitives::B256;
     use ream_bls::BLSSignature;
-    use ream_consensus::electra::beacon_block::BeaconBlock;
+    use ream_consensus_beacon::electra::beacon_block::BeaconBlock;
 
     use super::*;
 

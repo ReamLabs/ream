@@ -13,9 +13,8 @@ use ream_beacon_api_types::{
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_bls::PublicKey;
-use ream_consensus::{
-    constants::SLOTS_PER_EPOCH, electra::beacon_state::BeaconState, validator::Validator,
-};
+use ream_consensus_beacon::electra::beacon_state::BeaconState;
+use ream_consensus_misc::{constants::SLOTS_PER_EPOCH, validator::Validator};
 use ream_storage::db::ReamDB;
 use serde::Serialize;
 

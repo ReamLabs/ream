@@ -5,9 +5,7 @@ use std::{
 };
 
 use alloy_primitives::{Address, B256, U256, address, aliases::B32, b256, fixed_bytes};
-use ream_consensus::{
-    constants::GENESIS_VALIDATORS_ROOT, fork::Fork, fork_data::ForkData, misc::checksummed_address,
-};
+use ream_consensus_misc::{constants::GENESIS_VALIDATORS_ROOT, fork::Fork, fork_data::ForkData, misc::checksummed_address};
 use serde::Deserialize;
 
 use crate::fork_schedule::ForkSchedule;

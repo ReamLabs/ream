@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-use ream_consensus::{
+use ream_consensus_beacon::{
     blob_sidecar::BlobIdentifier, execution_engine::rpc_types::get_blobs::BlobAndProofV1,
 };
 use snap::raw::{Decoder, Encoder};
@@ -64,7 +64,7 @@ impl Table for BlobsAndProofsTable {
 mod tests {
     use std::fs;
 
-    use ream_consensus::{
+    use ream_consensus_beacon::{
         blob_sidecar::BlobIdentifier, execution_engine::rpc_types::get_blobs::BlobAndProofV1,
     };
     use tempdir::TempDir;

@@ -24,5 +24,6 @@ tokio.workspace = true
 tracing.workspace = true
 
 # ream dependencies
-ream-consensus.workspace = true
+ream-consensus-beacon.workspace = true
+ream-consensus-misc.workspace = true
 ream-network-spec.workspace = true

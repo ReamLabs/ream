@@ -1,5 +1,5 @@
 use ream_bls::traits::Verifiable;
-use ream_consensus::misc::{compute_domain, compute_signing_root};
+use ream_consensus_misc::misc::{compute_domain, compute_signing_root};
 
 use super::{DOMAIN_APPLICATION_BUILDER, builder_bid::SignedBuilderBid};
 

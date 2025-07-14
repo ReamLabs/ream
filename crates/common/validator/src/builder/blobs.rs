@@ -1,4 +1,4 @@
-use ream_consensus::{
+use ream_consensus_beacon::{
     electra::execution_payload::ExecutionPayload,
     polynomial_commitments::kzg_commitment::KZGCommitment,
 };

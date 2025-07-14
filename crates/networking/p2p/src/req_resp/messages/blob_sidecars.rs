@@ -1,4 +1,4 @@
-use ream_consensus::blob_sidecar::BlobIdentifier;
+use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     VariableList,

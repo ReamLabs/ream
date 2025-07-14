@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-use ream_consensus::checkpoint::Checkpoint;
+use ream_consensus_misc::checkpoint::Checkpoint;
 use redb::{Database, Durability, TableDefinition};
 
 use super::{SSZEncoding, Table};

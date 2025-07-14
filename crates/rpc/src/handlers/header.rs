@@ -9,7 +9,7 @@ use ream_beacon_api_types::{
     query::{ParentRootQuery, SlotQuery},
     responses::BeaconResponse,
 };
-use ream_consensus::beacon_block_header::SignedBeaconBlockHeader;
+use ream_consensus_misc::beacon_block_header::SignedBeaconBlockHeader;
 use ream_storage::{db::ReamDB, tables::Table};
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;

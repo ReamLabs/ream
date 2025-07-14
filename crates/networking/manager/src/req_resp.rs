@@ -1,15 +1,10 @@
 use std::sync::Arc;
 
 use libp2p::{PeerId, swarm::ConnectionId};
-use ream_consensus::blob_sidecar::BlobIdentifier;
-use ream_p2p::{
-    network_state::NetworkState,
-    req_resp::messages::{
-        RequestMessage, ResponseMessage,
-        beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
-        blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
-    },
-};
+use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
+use ream_p2p::{network_state::NetworkState, req_resp::messages::{
+    beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request}, blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request}, RequestMessage, ResponseMessage
+}};
 use ream_storage::{db::ReamDB, tables::Table};
 use tracing::{info, trace, warn};
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-use ream_consensus::electra::beacon_block::SignedBeaconBlock;
+use ream_consensus_beacon::electra::beacon_block::SignedBeaconBlock;
 use redb::{Database, Durability, TableDefinition};
 use tree_hash::TreeHash;
 

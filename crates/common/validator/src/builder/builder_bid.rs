@@ -1,6 +1,6 @@
 use alloy_primitives::U256;
 use ream_bls::{BLSSignature, PublicKey};
-use ream_consensus::{
+use ream_consensus_beacon::{
     electra::execution_payload_header::ExecutionPayloadHeader,
     execution_requests::ExecutionRequests, polynomial_commitments::kzg_commitment::KZGCommitment,
 };

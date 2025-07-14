@@ -33,7 +33,8 @@ url.workspace = true
 
 # ream dependencies
 ream-bls.workspace = true
-ream-consensus.workspace = true
+ream-consensus-beacon.workspace = true
+ream-consensus-misc.workspace = true
 ream-execution-engine.workspace = true
 ream-executor.workspace = true
 ream-keystore.workspace = true

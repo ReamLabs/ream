@@ -1,5 +1,5 @@
 use alloy_primitives::{B256, Bytes};
-use ream_consensus::polynomial_commitments::kzg_commitment::KZGCommitment;
+use ream_consensus_beacon::polynomial_commitments::kzg_commitment::KZGCommitment;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{

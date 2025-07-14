@@ -1,11 +1,13 @@
 use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
-use ream_consensus::{
+use ream_consensus_beacon::{
     attestation::Attestation,
-    constants::DOMAIN_AGGREGATE_AND_PROOF,
     electra::beacon_state::BeaconState,
-    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
 };
 use ream_network_spec::networks::network_spec;
+use ream_consensus_misc::{
+    constants::DOMAIN_AGGREGATE_AND_PROOF,
+    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;

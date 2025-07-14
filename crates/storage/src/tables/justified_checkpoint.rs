@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ream_consensus::checkpoint::Checkpoint;
+use ream_consensus_misc::checkpoint::Checkpoint;
 use redb::{Database, Durability, TableDefinition};
 
 use super::{Field, SSZEncoding};

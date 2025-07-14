@@ -6,17 +6,19 @@ use ream_bls::{
     signature::BLSSignature,
     traits::{Aggregatable, Signable},
 };
-use ream_consensus::{
+use ream_consensus_beacon::{
     attestation::Attestation,
+    electra::beacon_state::BeaconState,
+};
+use ream_network_spec::networks::network_spec;
+use ream_consensus_misc::{
     attestation_data::AttestationData,
     constants::{
         DOMAIN_BEACON_ATTESTER, MAX_COMMITTEES_PER_SLOT, MAX_VALIDATORS_PER_COMMITTEE,
         SLOTS_PER_EPOCH,
     },
-    electra::beacon_state::BeaconState,
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root, get_committee_indices},
 };
-use ream_network_spec::networks::network_spec;
 use ssz_types::{
     BitList, BitVector,
     typenum::{U64, U131072},
