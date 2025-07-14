@@ -11,7 +11,7 @@ use std::{
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, bail};
-use block_cache::{BlockAndBlobBundle, BlockCache, DataToFetch, HUNDRED_MEGA_BYTES};
+use block_cache::{BlockAndBlobBundle, BlockCache, DataToFetch};
 use futures::task::noop_waker;
 use libp2p::PeerId;
 use peer_manager::PeerManager;
@@ -32,7 +32,7 @@ use tracing::{info, warn};
 use crate::block_range::peer_range_downloader::{PeerRangeDownloader, Range};
 
 const MAX_BLOBS_PER_REQUEST: usize = 6;
-const MAX_BLOCKS_PER_REQUEST: u64 = 30;
+const MAX_BLOCKS_PER_REQUEST: u64 = 10;
 const SLEEP_DURATION: Duration = Duration::from_secs(5);
 
 pub struct BlockRangeSyncer {
@@ -104,7 +104,7 @@ impl BlockRangeSyncer {
 
             // phase 1: download majority of blocks from ranges
             let mut block_cache =
-                BlockCache::new(HUNDRED_MEGA_BYTES, latest_synced_root, latest_synced_slot);
+                BlockCache::new(latest_synced_root, latest_synced_slot);
             let mut task_handles = vec![];
             loop {
                 poll_ready_tasks(&mut task_handles, &mut block_cache, &mut self.peer_manager)?;
@@ -173,7 +173,7 @@ impl BlockRangeSyncer {
                         for blob_identifiers_chunk in blob_identifiers.chunks(MAX_BLOBS_PER_REQUEST) {
                             let Some(peer) = self.peer_manager.fetch_idle_peer() else {
                                 self.peer_manager.update_peer_set();
-                                info!("No idle peers available for blob sync.");
+                                info!("No idle peers available for blob sync. {}", self.peer_manager.peer_counts());
                                 sleep(SLEEP_DURATION).await;
                                 break;
                             };
@@ -193,6 +193,7 @@ impl BlockRangeSyncer {
                         }
                     }
                     DataToFetch::DownloadsInProgress => {
+                        info!("Waiting for ongoing downloads to complete... {}", self.peer_manager.peer_counts());
                         sleep(Duration::from_secs(10)).await;
                     }
                     DataToFetch::Finished => break,
@@ -206,6 +207,9 @@ impl BlockRangeSyncer {
 
             // execute all the blocks downloaded
             for BlockAndBlobBundle { block, blobs } in block_cache.get_blocks_and_blobs()?  {
+                info!("Processing block with slot {}",
+                    block.message.slot,
+                );
                 for (blob_identifier, blob_sidecar) in blobs {
                     if let Err(err) = self
                         .beacon_chain
@@ -223,6 +227,8 @@ impl BlockRangeSyncer {
                 self.beacon_chain.process_block(block).await?;
             }
 
+            info!("All blocks processed successfully.");
+
             Ok(self)
         })
     }
@@ -230,17 +236,17 @@ impl BlockRangeSyncer {
 
 pub enum DownloadTask {
     BlockRange {
-        handle: JoinHandle<anyhow::Result<Vec<SignedBeaconBlock>>>,
+        handle: JoinHandle<anyhow::Result<anyhow::Result<Vec<SignedBeaconBlock>>>>,
         range: Range,
         peer_id: PeerId,
     },
     BlockRoots {
-        handle: JoinHandle<anyhow::Result<Vec<SignedBeaconBlock>>>,
+        handle: JoinHandle<anyhow::Result<anyhow::Result<Vec<SignedBeaconBlock>>>>,
         roots: Vec<B256>,
         peer_id: PeerId,
     },
     BlobIdentifiers {
-        handle: JoinHandle<anyhow::Result<Vec<BlobSidecar>>>,
+        handle: JoinHandle<anyhow::Result<anyhow::Result<Vec<BlobSidecar>>>>,
         blob_identifiers: Vec<BlobIdentifier>,
         peer_id: PeerId,
     },
@@ -248,7 +254,7 @@ pub enum DownloadTask {
 
 impl DownloadTask {
     pub fn new_block_range(
-        handle: JoinHandle<anyhow::Result<Vec<SignedBeaconBlock>>>,
+        handle: JoinHandle<anyhow::Result<anyhow::Result<Vec<SignedBeaconBlock>>>>,
         range: Range,
         peer_id: PeerId,
     ) -> Self {
@@ -260,7 +266,7 @@ impl DownloadTask {
     }
 
     pub fn new_block_roots(
-        handle: JoinHandle<anyhow::Result<Vec<SignedBeaconBlock>>>,
+        handle: JoinHandle<anyhow::Result<anyhow::Result<Vec<SignedBeaconBlock>>>>,
         roots: Vec<B256>,
         peer_id: PeerId,
     ) -> Self {
@@ -272,7 +278,7 @@ impl DownloadTask {
     }
 
     pub fn new_blob_identifiers(
-        handle: JoinHandle<anyhow::Result<Vec<BlobSidecar>>>,
+        handle: JoinHandle<anyhow::Result<anyhow::Result<Vec<BlobSidecar>>>>,
         blob_identifiers: Vec<BlobIdentifier>,
         peer_id: PeerId,
     ) -> Self {
@@ -319,14 +325,25 @@ fn poll_ready_tasks(
                             }
                         };
 
+                        let blocks = match blocks {
+                            Ok(blocks) => blocks,
+                            Err(err) => {
+                                block_cache.push_retry_range(*range);
+                                peer_manager
+                                    .ban_peer(peer_id, format!("Failed to fetch blocks: {err:?}"));
+                                continue;
+                            }
+                        };
+
                         if blocks.is_empty() {
                             warn!("Received empty block range from peer: {peer_id}");
                             block_cache.push_retry_range(*range);
-                            peer_manager.ban_peer(peer_id);
+                            peer_manager
+                                .ban_peer(peer_id, "Received empty block range".to_string());
                             continue;
                         }
 
-                        if let Err(err) = block_cache.add_blocks(blocks) {
+                        if let Err(err) = block_cache.add_blocks(blocks, true) {
                             warn!("Failed to add downloaded blocks to cache: {err:?}");
                             block_cache.push_retry_range(*range);
                         }
@@ -358,13 +375,26 @@ fn poll_ready_tasks(
                             }
                         };
 
+                        let blocks = match blocks {
+                            Ok(blocks) => blocks,
+                            Err(err) => {
+                                warn!("Failed to fetch blocks from roots: {err:?}");
+                                peer_manager.ban_peer(
+                                    peer_id,
+                                    format!("Failed to fetch blocks from receipts: {err:?}"),
+                                );
+                                continue;
+                            }
+                        };
+
                         if blocks.is_empty() {
                             warn!("Received empty block roots from peer: {peer_id}");
-                            peer_manager.ban_peer(peer_id);
+                            peer_manager
+                                .ban_peer(peer_id, "Received empty block roots".to_string());
                             continue;
                         }
 
-                        if let Err(err) = block_cache.add_blocks(blocks) {
+                        if let Err(err) = block_cache.add_blocks(blocks, false) {
                             warn!("Failed to add downloaded blocks to cache: {err:?}");
                         }
                     }
@@ -395,9 +425,22 @@ fn poll_ready_tasks(
                             }
                         };
 
+                        let blob_sidecars = match blob_sidecars {
+                            Ok(blob_sidecars) => blob_sidecars,
+                            Err(err) => {
+                                warn!("Failed to fetch blobs from identifiers: {err:?}");
+                                peer_manager.ban_peer(
+                                    peer_id,
+                                    format!("Failed to fetch blobs from identifiers: {err:?}"),
+                                );
+                                continue;
+                            }
+                        };
+
                         if blob_sidecars.is_empty() {
                             warn!("Received empty blob identifiers from peer: {peer_id}");
-                            peer_manager.ban_peer(peer_id);
+                            peer_manager
+                                .ban_peer(peer_id, "Received empty blob identifiers".to_string());
                             continue;
                         }
 

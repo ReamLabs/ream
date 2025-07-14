@@ -31,6 +31,7 @@ sha2.workspace = true
 snap.workspace = true
 ssz_types.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 

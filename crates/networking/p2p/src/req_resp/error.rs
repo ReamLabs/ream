@@ -16,8 +16,11 @@ pub enum ReqRespError {
     #[error("Incomplete stream")]
     IncompleteStream,
 
-    #[error("Stream timed out {0}")]
-    StreamTimedOut(#[from] tokio::time::error::Elapsed),
+    #[error("Stream timed out")]
+    StreamTimedOut,
+
+    #[error("Tokio timed out {0}")]
+    TokioTimedOut(#[from] tokio::time::error::Elapsed),
 
     #[error("Disconnected")]
     Disconnected,

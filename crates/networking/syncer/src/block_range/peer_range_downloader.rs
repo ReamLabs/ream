@@ -1,4 +1,5 @@
 use alloy_primitives::B256;
+use anyhow::bail;
 use libp2p::PeerId;
 use ream_consensus::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
@@ -36,7 +37,7 @@ impl PeerRangeDownloader {
         p2p_sender: UnboundedSender<P2PMessage>,
         executor: ReamExecutor,
         range: Range,
-    ) -> JoinHandle<anyhow::Result<Vec<SignedBeaconBlock>>> {
+    ) -> JoinHandle<anyhow::Result<anyhow::Result<Vec<SignedBeaconBlock>>>> {
         executor.spawn(async move {
             let mut beacon_blocks = vec![];
             let (callback, mut rx) = mpsc::channel(100);
@@ -65,13 +66,19 @@ impl PeerRangeDownloader {
                         info!("End of block range request stream received.");
                         break;
                     }
+                    Ok(P2PCallbackResponse::Disconnected) => {
+                        bail!("Peer disconnected while receiving block range.");
+                    }
+                    Ok(P2PCallbackResponse::Timeout) => {
+                        bail!("Block range request timed out.");
+                    }
                     Err(err) => {
                         info!("Error receiving BeaconBlocks from block range request: {err:?}");
                     }
                 }
             }
 
-            beacon_blocks
+            Ok(beacon_blocks)
         })
     }
 }
@@ -84,7 +91,7 @@ impl PeerRootsDownloader {
         p2p_sender: UnboundedSender<P2PMessage>,
         executor: ReamExecutor,
         roots: Vec<B256>,
-    ) -> JoinHandle<anyhow::Result<Vec<SignedBeaconBlock>>> {
+    ) -> JoinHandle<anyhow::Result<anyhow::Result<Vec<SignedBeaconBlock>>>> {
         executor.spawn(async move {
             let mut beacon_blocks = vec![];
             let (callback, mut rx) = mpsc::channel(100);
@@ -112,13 +119,19 @@ impl PeerRootsDownloader {
                         info!("End of block roots request stream received.");
                         break;
                     }
+                    Ok(P2PCallbackResponse::Disconnected) => {
+                        bail!("Peer disconnected while receiving block roots.");
+                    }
+                    Ok(P2PCallbackResponse::Timeout) => {
+                        bail!("Block roots request timed out.");
+                    }
                     Err(err) => {
                         info!("Error receiving BeaconBlocks from block roots request: {err:?}");
                     }
                 }
             }
 
-            beacon_blocks
+            Ok(beacon_blocks)
         })
     }
 }
@@ -131,7 +144,7 @@ impl PeerBlobIdentifierDownloader {
         p2p_sender: UnboundedSender<P2PMessage>,
         executor: ReamExecutor,
         blob_identifiers: Vec<BlobIdentifier>,
-    ) -> JoinHandle<anyhow::Result<Vec<BlobSidecar>>> {
+    ) -> JoinHandle<anyhow::Result<anyhow::Result<Vec<BlobSidecar>>>> {
         executor.spawn(async move {
             let mut blob_sidecars = vec![];
             let (callback, mut rx) = mpsc::channel(100);
@@ -159,13 +172,19 @@ impl PeerBlobIdentifierDownloader {
                         info!("End of blob roots request stream received.");
                         break;
                     }
+                    Ok(P2PCallbackResponse::Disconnected) => {
+                        bail!("Peer disconnected while receiving blob sidecars.");
+                    }
+                    Ok(P2PCallbackResponse::Timeout) => {
+                        bail!("Blob identifiers request timed out.");
+                    }
                     Err(err) => {
                         info!("Error receiving blobs from blob roots request: {err:?}");
                     }
                 }
             }
 
-            blob_sidecars
+            Ok(blob_sidecars)
         })
     }
 }

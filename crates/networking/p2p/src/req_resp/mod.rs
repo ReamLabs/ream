@@ -8,8 +8,10 @@ pub mod protocol_id;
 
 use std::task::{Context, Poll};
 
-use error::ReqRespError;
-use handler::{HandlerEvent, ReqRespConnectionHandler, ReqRespMessageReceived, RespMessage};
+use handler::{
+    HandlerEvent, ReqRespConnectionHandler, ReqRespMessageError, ReqRespMessageReceived,
+    RespMessage,
+};
 use inbound_protocol::InboundReqRespProtocol;
 use libp2p::{
     Multiaddr, PeerId,
@@ -21,7 +23,7 @@ use libp2p::{
     },
 };
 use messages::RequestMessage;
-use tracing::{debug, info};
+use tracing::{debug, trace};
 
 /// Maximum number of concurrent requests per protocol ID that a client may issue.
 pub const MAX_CONCURRENT_REQUESTS: usize = 2;
@@ -30,7 +32,7 @@ pub const MAX_CONCURRENT_REQUESTS: usize = 2;
 pub struct ReqRespMessage {
     pub peer_id: PeerId,
     pub connection_id: ConnectionId,
-    pub message: Result<ReqRespMessageReceived, ReqRespError>,
+    pub message: Result<ReqRespMessageReceived, ReqRespMessageError>,
 }
 
 #[derive(Debug)]
@@ -134,7 +136,7 @@ impl NetworkBehaviour for ReqResp {
             ..
         }) = event
         {
-            info!(
+            trace!(
                 "REQRESP: Connection closed for peer {peer_id} with connection ID {connection_id} due to {cause:?}"
             );
         }

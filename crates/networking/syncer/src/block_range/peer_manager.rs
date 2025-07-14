@@ -21,6 +21,7 @@ pub struct PeerManager {
     network_state: Arc<NetworkState>,
     peers: HashMap<PeerId, PeerInfo>,
     banned_peers: HashMap<PeerId, Instant>,
+    ban_reasons: HashMap<PeerId, String>,
 }
 
 impl PeerManager {
@@ -29,6 +30,7 @@ impl PeerManager {
             network_state,
             peers: HashMap::new(),
             banned_peers: HashMap::new(),
+            ban_reasons: HashMap::new(),
         }
     }
 
@@ -51,7 +53,8 @@ impl PeerManager {
     }
 
     /// Bans a peer
-    pub fn ban_peer(&mut self, peer_id: &PeerId) {
+    pub fn ban_peer(&mut self, peer_id: &PeerId, reason: String) {
+        self.ban_reasons.insert(*peer_id, reason);
         if let Some(peer_info) = self.peers.remove(peer_id) {
             self.banned_peers
                 .insert(peer_info.peer.peer_id, Instant::now());
@@ -71,6 +74,21 @@ impl PeerManager {
             }
         }
         None
+    }
+
+    pub fn peer_counts(&self) -> String {
+        let total_peers = self.peers.len();
+        let idle_peers = self
+            .peers
+            .values()
+            .filter(|peer_info| matches!(peer_info.peer_status, PeerStatus::Idle))
+            .count();
+        let downloading_peers = total_peers - idle_peers;
+
+        format!(
+            "Total Peers: {total_peers}, Idle: {idle_peers}, Downloading: {downloading_peers}, Banned: {}",
+            self.banned_peers.len()
+        )
     }
 
     /// Marks a peer as idle after a download is complete.

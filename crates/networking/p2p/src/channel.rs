@@ -13,6 +13,8 @@ use crate::{
 
 pub enum P2PCallbackResponse {
     ResponseMessage(Box<ResponseMessage>),
+    Disconnected,
+    Timeout,
     EndOfStream,
 }
 
@@ -49,7 +51,7 @@ pub struct P2PResponse {
     pub peer_id: PeerId,
     pub connection_id: ConnectionId,
     pub stream_id: u64,
-    pub message: RespMessage,
+    pub message: Box<RespMessage>,
 }
 
 #[derive(Debug, Clone)]

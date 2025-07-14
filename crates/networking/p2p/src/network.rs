@@ -9,7 +9,7 @@ use std::{
 };
 
 use anyhow::anyhow;
-use delay_map::HashSetDelay;
+use delay_map::{HashMapDelay, HashSetDelay};
 use discv5::{Enr, enr::CombinedPublicKey};
 use libp2p::{
     Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
@@ -53,7 +53,8 @@ use crate::{
     peer::{CachedPeer, ConnectionState, Direction},
     req_resp::{
         ReqResp, ReqRespMessage,
-        handler::{ReqRespMessageReceived, RespMessage},
+        configurations::REQUEST_TIMEOUT,
+        handler::{ReqRespMessageError, ReqRespMessageReceived, RespMessage},
         messages::{
             RequestMessage, ResponseMessage,
             beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
@@ -112,7 +113,7 @@ pub struct Network {
     peer_id: PeerId,
     swarm: Swarm<ReamBehaviour>,
     subscribed_topics: Arc<Mutex<HashSet<GossipTopic>>>,
-    callbacks: HashMap<u64, mpsc::Sender<anyhow::Result<P2PCallbackResponse>>>,
+    callbacks: HashMapDelay<u64, mpsc::Sender<anyhow::Result<P2PCallbackResponse>>>,
     request_id: u64,
     network_state: Arc<NetworkState>,
     peers_to_ping: HashSetDelay<PeerId>,
@@ -223,7 +224,7 @@ impl Network {
             peer_id: PeerId::from_public_key(&PublicKey::from(local_key.public().clone())),
             swarm,
             subscribed_topics: Arc::new(Mutex::new(HashSet::new())),
-            callbacks: HashMap::new(),
+            callbacks: HashMapDelay::new(REQUEST_TIMEOUT),
             request_id: 0,
             network_state,
             peers_to_ping: HashSetDelay::new(PING_INTERVAL_DURATION),
@@ -337,35 +338,32 @@ impl Network {
                     match event {
                         P2PMessage::Request(request) => match request {
                             P2PRequest::BlockRange { peer_id, start, count, callback } => {
-                                let request_id = self.request_id();
-                                self.callbacks.insert(request_id, callback);
-                                self.swarm.behaviour_mut().req_resp.send_request(peer_id, request_id, RequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request::new(start, count)))
+                                if let Some(request_id) = self.send_request(peer_id, RequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request::new(start, count))) {
+                                    self.callbacks.insert(request_id, callback);
+                                } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
+                                    warn!("Failed to send error response: {err:?}");
+                                }
                             },
                             P2PRequest::BlockRoots { peer_id, roots, callback } => {
-                                let request_id = self.request_id();
-                                self.callbacks.insert(request_id, callback);
-                                self.swarm.behaviour_mut().req_resp.send_request(peer_id, request_id, RequestMessage::BeaconBlocksByRoot(BeaconBlocksByRootV2Request::new(roots)));
+                                if let Some(request_id) = self.send_request(peer_id, RequestMessage::BeaconBlocksByRoot(BeaconBlocksByRootV2Request::new(roots))) {
+                                    self.callbacks.insert(request_id, callback);
+                                } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
+                                    warn!("Failed to send error response: {err:?}");
+                                }
                             },
                             P2PRequest::BlobIdentifiers { peer_id, blob_identifiers, callback } => {
-                                let request_id = self.request_id();
-                                self.callbacks.insert(request_id, callback);
-                                self.swarm.behaviour_mut().req_resp.send_request(
-                                    peer_id,
-                                    request_id,
-                                    RequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request::new(blob_identifiers)),
-                                );
+                                if let Some(request_id) = self.send_request(peer_id, RequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request::new(blob_identifiers))) {
+                                    self.callbacks.insert(request_id, callback);
+                                } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
+                                    warn!("Failed to send error response: {err:?}");
+                                }
                             }
                             P2PRequest::Status { peer_id, status } => {
-                                let request_id = self.request_id();
-                                self.swarm.behaviour_mut().req_resp.send_request(
-                                    peer_id,
-                                    request_id,
-                                    RequestMessage::Status(status),
-                                );
+                                self.send_request(peer_id, RequestMessage::Status(status));
                             }
                         },
                         P2PMessage::Response(P2PResponse {peer_id, connection_id, stream_id, message}) => {
-                            self.swarm.behaviour_mut().req_resp.send_response(peer_id, connection_id, stream_id, message)
+                            self.swarm.behaviour_mut().req_resp.send_response(peer_id, connection_id, stream_id, *message)
                         },
                         P2PMessage::Gossip(message) => {
                             if let Err(err) = self.swarm.behaviour_mut().gossipsub.publish(message.topic, message.data) {
@@ -380,14 +378,15 @@ impl Network {
                         continue;
                     }
 
-                    let request_id = self.request_id();
+                    let ping_message = RequestMessage::Ping(Ping::new(self.network_state.meta_data.read().seq_number));
+                    self.send_request(peer_id, ping_message);
 
-                    self.swarm.behaviour_mut().req_resp.send_request(
-                        peer_id,
-                        request_id,
-                        RequestMessage::Ping(Ping::new(self.network_state.meta_data.read().seq_number)),
-                    );
                     self.peers_to_ping.insert(peer_id);
+                }
+                Some(Ok((_, callback))) = self.callbacks.next() => {
+                    if let Err(err) = callback.send(Ok(P2PCallbackResponse::Timeout)).await {
+                        warn!("Failed to send timeout response: {err:?}");
+                    }
                 }
                 _ = status_interval.tick() => {
                     let now = Instant::now();
@@ -429,6 +428,20 @@ impl Network {
         }
     }
 
+    fn send_request(&mut self, peer_id: PeerId, message: RequestMessage) -> Option<u64> {
+        if !self.swarm.is_connected(&peer_id) {
+            return None;
+        }
+
+        let request_id = self.request_id();
+        self.swarm
+            .behaviour_mut()
+            .req_resp
+            .send_request(peer_id, request_id, message);
+
+        Some(request_id)
+    }
+
     async fn parse_swarm_event(
         &mut self,
         event: SwarmEvent<ReamBehaviourEvent>,
@@ -461,19 +474,13 @@ impl Network {
                     );
                 } else {
                     // send status request to the peer
-                    let request_id = self.request_id();
-                    self.swarm.behaviour_mut().req_resp.send_request(
-                        peer_id,
-                        request_id,
-                        RequestMessage::Status(self.network_state.status.read().clone()),
-                    );
-                    self.swarm.behaviour_mut().req_resp.send_request(
-                        peer_id,
-                        request_id,
-                        RequestMessage::Ping(Ping::new(
-                            self.network_state.meta_data.read().seq_number,
-                        )),
-                    );
+                    let status_message =
+                        RequestMessage::Status(self.network_state.status.read().clone());
+                    self.send_request(peer_id, status_message);
+                    let ping_message = RequestMessage::Ping(Ping::new(
+                        self.network_state.meta_data.read().seq_number,
+                    ));
+                    self.send_request(peer_id, ping_message);
                     self.peers_to_ping.insert(peer_id);
                 }
 
@@ -501,14 +508,14 @@ impl Network {
                 }
             },
             swarm_event => {
-                info!("Unhandled swarm event: {swarm_event:?}");
+                trace!("Unhandled swarm event: {swarm_event:?}");
                 None
             }
         }
     }
 
     fn handle_discovered_peers(&mut self, peers: HashMap<Enr, Option<Instant>>) {
-        info!("Discovered peers: {peers:?}");
+        trace!("Discovered peers: {peers:?}");
         for (enr, _) in peers {
             let mut multiaddrs: Vec<Multiaddr> = Vec::new();
             if let Some(ip) = enr.ip4() {
@@ -536,7 +543,7 @@ impl Network {
             }
 
             if !successfully_dialed {
-                warn!("Failed to dial any multiaddr for peer: {:?}", enr);
+                trace!("Failed to dial any multiaddr for peer: {:?}", enr);
                 continue;
             }
 
@@ -575,15 +582,21 @@ impl Network {
         let message = match message {
             Ok(message) => message,
             Err(err) => {
-                warn!("Request Response failed: {err:?}");
+                if let ReqRespMessageError::Outbound { request_id, .. } = &err {
+                    if let Some(callback) = self.callbacks.get(request_id) {
+                        if let Err(err) = callback.send(Err(anyhow!("{err:?}"))).await {
+                            warn!("Failed to send error response: {err:?}");
+                        }
+                    }
+                }
                 return None;
             }
         };
 
         match message {
-            ReqRespMessageReceived::Request { stream_id, message } => match message {
+            ReqRespMessageReceived::Request { stream_id, message } => match *message {
                 RequestMessage::MetaData(get_meta_data_v2) => {
-                    info!(
+                    trace!(
                         ?peer_id,
                         ?stream_id,
                         ?connection_id,
@@ -629,7 +642,7 @@ impl Network {
                     None
                 }
                 RequestMessage::Status(status) => {
-                    info!(
+                    trace!(
                         ?peer_id,
                         ?stream_id,
                         ?connection_id,
@@ -650,7 +663,7 @@ impl Network {
                     peer_id,
                     stream_id,
                     connection_id,
-                    message,
+                    message: *message,
                 }),
             },
             ReqRespMessageReceived::Response {
@@ -675,7 +688,7 @@ impl Network {
                             });
                     }
                     ResponseMessage::Ping(ping) => {
-                        info!(
+                        trace!(
                             ?peer_id,
                             ?request_id,
                             "Received Ping response: seq_number: {}",
@@ -692,19 +705,15 @@ impl Network {
                                         .as_ref()
                                         .map_or(0, |meta_data| meta_data.seq_number)
                             {
-                                let request_id = self.request_id();
-                                self.swarm.behaviour_mut().req_resp.send_request(
-                                    peer_id,
-                                    request_id,
-                                    RequestMessage::MetaData(
-                                        self.network_state.meta_data.read().clone().into(),
-                                    ),
+                                let meta_data_message = RequestMessage::MetaData(
+                                    self.network_state.meta_data.read().clone().into(),
                                 );
+                                self.send_request(peer_id, meta_data_message);
                             }
                         }
                     }
                     ResponseMessage::Status(status) => {
-                        info!(
+                        trace!(
                             ?peer_id,
                             ?request_id,
                             "Received Status response: fork_digest: {}, head_slot: {}",
@@ -717,6 +726,7 @@ impl Network {
                     _ => {}
                 }
 
+                self.callbacks.update_timeout(&request_id, REQUEST_TIMEOUT);
                 if let Some(callback) = self.callbacks.get(&request_id) {
                     if let Err(err) = callback
                         .send(Ok(P2PCallbackResponse::ResponseMessage(message)))

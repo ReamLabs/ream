@@ -5267,6 +5267,7 @@ dependencies = [
  "snap",
  "ssz_types",
  "thiserror 2.0.12",
+ "tracing",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -5351,6 +5352,7 @@ dependencies = [
  "serde_yaml",
  "ssz_types",
  "thiserror 2.0.12",
+ "tracing",
  "tree_hash",
  "tree_hash_derive",
 ]

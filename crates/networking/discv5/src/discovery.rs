@@ -23,7 +23,7 @@ use libp2p::{
 };
 use ream_consensus::constants::genesis_validators_root;
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::{
     config::DiscoveryConfig,
@@ -296,7 +296,7 @@ impl NetworkBehaviour for Discovery {
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {
-        info!("Discv5 on swarm event gotten: {:?}", event);
+        trace!("Discv5 on swarm event gotten: {event:?}");
     }
 
     fn on_connection_handler_event(

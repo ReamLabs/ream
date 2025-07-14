@@ -57,9 +57,7 @@ pub async fn on_block(
         block.parent_root,
         store.db.finalized_checkpoint_provider().get()?.epoch,
     )?;
-
     ensure!(store.db.finalized_checkpoint_provider().get()?.root == finalized_checkpoint_block);
-
     if verify_blob_availability {
         // Check if blob data is available
         // If not, this block MAY be queued and subsequently considered when blob data becomes
@@ -95,6 +93,7 @@ pub async fn on_block(
         .db
         .beacon_block_provider()
         .insert(block_root, signed_block.clone())?;
+
     // Add new state for this block to the store
     store
         .db

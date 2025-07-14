@@ -7,6 +7,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use delay_map::HashSetDelay;
 use futures::{FutureExt, Sink, SinkExt, StreamExt};
 use libp2p::{
     Stream,
@@ -17,9 +18,10 @@ use libp2p::{
         },
     },
 };
-use tracing::error;
+use tracing::{error, trace};
 
 use super::{
+    configurations::REQUEST_TIMEOUT,
     error::ReqRespError,
     inbound_protocol::{InboundFramed, InboundOutput, InboundReqRespProtocol, ResponseCode},
     messages::{RequestMessage, ResponseMessage},
@@ -31,7 +33,7 @@ use crate::req_resp::ConnectionRequest;
 pub enum ReqRespMessageReceived {
     Request {
         stream_id: u64,
-        message: RequestMessage,
+        message: Box<RequestMessage>,
     },
     Response {
         request_id: u64,
@@ -59,9 +61,9 @@ impl RespMessage {
                 | ReqRespError::Anyhow(_)
                 | ReqRespError::IoError(_) => Some(ResponseCode::ServerError),
                 ReqRespError::InvalidData(_) => Some(ResponseCode::InvalidRequest),
-                ReqRespError::Disconnected | ReqRespError::StreamTimedOut(_) => {
-                    Some(ResponseCode::ResourceUnavailable)
-                }
+                ReqRespError::Disconnected
+                | ReqRespError::StreamTimedOut
+                | ReqRespError::TokioTimedOut(_) => Some(ResponseCode::ResourceUnavailable),
             },
             RespMessage::EndOfStream => None,
         }
@@ -69,9 +71,15 @@ impl RespMessage {
 }
 
 #[derive(Debug)]
+pub enum ReqRespMessageError {
+    Inbound { stream_id: u64, err: ReqRespError },
+    Outbound { request_id: u64, err: ReqRespError },
+}
+
+#[derive(Debug)]
 pub enum HandlerEvent {
     Ok(Box<ReqRespMessageReceived>),
-    Err(ReqRespError),
+    Err(ReqRespMessageError),
     Close,
 }
 
@@ -120,7 +128,9 @@ pub struct ReqRespConnectionHandler {
     inbound_stream_id: u64,
     outbound_stream_id: u64,
     inbound_streams: HashMap<u64, InboundStream>,
+    inbound_stream_timeouts: HashSetDelay<u64>,
     outbound_streams: HashMap<u64, OutboundStream>,
+    outbound_stream_timeouts: HashSetDelay<u64>,
     pending_outbound_streams: Vec<OutboundOpenInfo>,
     connection_state: ConnectionState,
 }
@@ -136,6 +146,8 @@ impl ReqRespConnectionHandler {
             inbound_streams: HashMap::new(),
             outbound_streams: HashMap::new(),
             connection_state: ConnectionState::Live,
+            inbound_stream_timeouts: HashSetDelay::new(REQUEST_TIMEOUT),
+            outbound_stream_timeouts: HashSetDelay::new(REQUEST_TIMEOUT),
         }
     }
 
@@ -147,6 +159,7 @@ impl ReqRespConnectionHandler {
             return;
         }
 
+        self.inbound_stream_timeouts.insert(self.inbound_stream_id);
         self.inbound_streams.insert(
             self.inbound_stream_id,
             InboundStream {
@@ -158,7 +171,7 @@ impl ReqRespConnectionHandler {
         self.behaviour_events.push(HandlerEvent::Ok(Box::new(
             ReqRespMessageReceived::Request {
                 stream_id: self.inbound_stream_id,
-                message,
+                message: Box::new(message),
             },
         )));
 
@@ -175,6 +188,8 @@ impl ReqRespConnectionHandler {
             message,
         } = info;
 
+        self.outbound_stream_timeouts
+            .insert(self.outbound_stream_id);
         self.outbound_streams.insert(
             self.outbound_stream_id,
             OutboundStream {
@@ -194,7 +209,7 @@ impl ReqRespConnectionHandler {
         error: StreamUpgradeError<ReqRespError>,
         _info: OutboundOpenInfo,
     ) {
-        error!("REQRESP: Dial upgrade error: {:?}", error);
+        trace!("REQRESP: Dial upgrade error: {:?}", error);
     }
 
     fn request(&mut self, request_id: u64, message: RequestMessage) {
@@ -205,7 +220,10 @@ impl ReqRespConnectionHandler {
             });
         } else {
             self.behaviour_events
-                .push(HandlerEvent::Err(ReqRespError::Disconnected));
+                .push(HandlerEvent::Err(ReqRespMessageError::Outbound {
+                    request_id,
+                    err: ReqRespError::Disconnected,
+                }));
         }
     }
 
@@ -217,7 +235,10 @@ impl ReqRespConnectionHandler {
 
         if let RespMessage::Error(err) = &message {
             self.behaviour_events
-                .push(HandlerEvent::Err(ReqRespError::RawError(err.to_string())));
+                .push(HandlerEvent::Err(ReqRespMessageError::Inbound {
+                    stream_id,
+                    err: ReqRespError::RawError(err.to_string()),
+                }));
         }
 
         if let ConnectionState::Closed = self.connection_state {
@@ -263,6 +284,33 @@ impl ConnectionHandler for ReqRespConnectionHandler {
             ));
         }
 
+        while let Poll::Ready(Some(Ok(stream_id))) =
+            self.inbound_stream_timeouts.poll_expired(context)
+        {
+            if self.inbound_streams.get_mut(&stream_id).is_some() {
+                self.behaviour_events
+                    .push(HandlerEvent::Err(ReqRespMessageError::Inbound {
+                        stream_id,
+                        err: ReqRespError::StreamTimedOut,
+                    }));
+            }
+        }
+
+        while let Poll::Ready(Some(Ok(outbound_id))) =
+            self.outbound_stream_timeouts.poll_expired(context)
+        {
+            if let Some(OutboundStream { request_id, .. }) =
+                self.outbound_streams.remove(&outbound_id)
+            {
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(HandlerEvent::Err(
+                    ReqRespMessageError::Outbound {
+                        request_id,
+                        err: ReqRespError::StreamTimedOut,
+                    },
+                )));
+            }
+        }
+
         let mut streams_to_remove = vec![];
         for (stream_id, inbound_stream) in self.inbound_streams.iter_mut() {
             loop {
@@ -278,8 +326,14 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                             match framed.close().poll_unpin(context) {
                                 Poll::Ready(result) => {
                                     streams_to_remove.push(*stream_id);
+                                    self.inbound_stream_timeouts.remove(stream_id);
                                     if let Err(err) = result {
-                                        self.behaviour_events.push(HandlerEvent::Err(err));
+                                        self.behaviour_events.push(HandlerEvent::Err(
+                                            ReqRespMessageError::Inbound {
+                                                stream_id: *stream_id,
+                                                err,
+                                            },
+                                        ));
                                     }
                                 }
                                 Poll::Pending => {
@@ -304,9 +358,11 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                         Poll::Ready(Ok(framed)) => {
                             let Some(framed) = framed else {
                                 streams_to_remove.push(*stream_id);
+                                self.inbound_stream_timeouts.remove(stream_id);
                                 break;
                             };
 
+                            self.inbound_stream_timeouts.insert(*stream_id);
                             if matches!(self.connection_state, ConnectionState::Closed)
                                 || inbound_stream.response_queue.is_empty()
                             {
@@ -328,7 +384,13 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                         }
                         Poll::Ready(Err(err)) => {
                             streams_to_remove.push(*stream_id);
-                            self.behaviour_events.push(HandlerEvent::Err(err));
+                            self.inbound_stream_timeouts.remove(stream_id);
+                            self.behaviour_events.push(HandlerEvent::Err(
+                                ReqRespMessageError::Inbound {
+                                    stream_id: *stream_id,
+                                    err,
+                                },
+                            ));
                             break;
                         }
                         Poll::Pending => {
@@ -369,8 +431,12 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                 } => {
                     if let ConnectionState::Closed = self.connection_state {
                         entry.get_mut().state = Some(OutboundStreamState::Closing(stream));
-                        self.behaviour_events
-                            .push(HandlerEvent::Err(ReqRespError::Disconnected));
+                        self.behaviour_events.push(HandlerEvent::Err(
+                            ReqRespMessageError::Outbound {
+                                request_id,
+                                err: ReqRespError::Disconnected,
+                            },
+                        ));
                         continue;
                     }
 
@@ -378,6 +444,7 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                         Poll::Ready(response_message) => {
                             let Some(response_message) = response_message else {
                                 entry.remove_entry();
+                                self.outbound_stream_timeouts.remove(&stream_id);
                                 return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
                                     HandlerEvent::Ok(Box::new(
                                         ReqRespMessageReceived::EndOfStream { request_id },
@@ -389,8 +456,12 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                                 Ok(message) => message,
                                 Err(err) => {
                                     entry.remove_entry();
+                                    self.outbound_stream_timeouts.remove(&stream_id);
                                     return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
-                                        HandlerEvent::Err(err),
+                                        HandlerEvent::Err(ReqRespMessageError::Outbound {
+                                            request_id,
+                                            err,
+                                        }),
                                     ));
                                 }
                             };
@@ -401,6 +472,7 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                             ) {
                                 entry.get_mut().state = Some(OutboundStreamState::Closing(stream));
                             } else {
+                                self.outbound_stream_timeouts.insert(stream_id);
                                 entry.get_mut().state =
                                     Some(OutboundStreamState::PendingResponse { stream, message });
                             }
@@ -413,8 +485,11 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                                             message,
                                         },
                                     )),
-                                    RespMessage::Error(req_resp_error) => {
-                                        HandlerEvent::Err(req_resp_error)
+                                    RespMessage::Error(err) => {
+                                        HandlerEvent::Err(ReqRespMessageError::Outbound {
+                                            request_id,
+                                            err,
+                                        })
                                     }
                                     RespMessage::EndOfStream => HandlerEvent::Close,
                                 },
@@ -430,6 +505,12 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                     match Sink::poll_close(Pin::new(&mut stream), context) {
                         Poll::Ready(_) => {
                             entry.remove_entry();
+                            self.outbound_stream_timeouts.remove(&stream_id);
+                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                                HandlerEvent::Ok(Box::new(ReqRespMessageReceived::EndOfStream {
+                                    request_id,
+                                })),
+                            ));
                         }
                         Poll::Pending => {
                             entry.get_mut().state = Some(OutboundStreamState::Closing(stream));

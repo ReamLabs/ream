@@ -15,12 +15,6 @@ use tree_hash::TreeHash;
 
 use super::{MAX_BLOCKS_PER_REQUEST, peer_range_downloader::Range};
 
-/// The size of blobs is 32 * 4096 bytes, which is 131072 bytes or 128 KiB.
-const BLOB_SIZE: u64 = 131_072;
-/// Assume a default average block size if we have no blocks yet
-const DEFAULT_BLOCK_SIZE: u64 = 86_876;
-pub const HUNDRED_MEGA_BYTES: u64 = 100 * 1024 * 1024;
-
 pub struct BlockAndBlobBundle {
     pub block: SignedBeaconBlock,
     pub blobs: HashMap<BlobIdentifier, BlobSidecar>,
@@ -38,36 +32,42 @@ impl BlockAndBlobBundle {
 pub struct BlockCache {
     blocks_and_blobs: HashMap<B256, BlockAndBlobBundle>,
     current_cache_size: u64,
-    target_size: u64,
     initial_parent_root: B256,
     block_ranges_to_retry: Vec<Range>,
+    initial_slot: u64,
     next_start_slot: u64,
     block_roots_in_progress: HashSet<B256>,
     blob_identifiers_in_progress: HashSet<BlobIdentifier>,
 }
 
 impl BlockCache {
-    pub fn new(target_size: u64, initial_parent_root: B256, next_start_slot: u64) -> Self {
+    pub fn new(initial_parent_root: B256, next_start_slot: u64) -> Self {
         Self {
             blocks_and_blobs: HashMap::new(),
             current_cache_size: 0,
-            target_size,
             initial_parent_root,
             block_ranges_to_retry: vec![],
+            initial_slot: next_start_slot,
             next_start_slot,
             block_roots_in_progress: HashSet::new(),
             blob_identifiers_in_progress: HashSet::new(),
         }
     }
 
-    pub fn add_blocks(&mut self, blocks: Vec<SignedBeaconBlock>) -> anyhow::Result<()> {
+    pub fn add_blocks(
+        &mut self,
+        blocks: Vec<SignedBeaconBlock>,
+        is_range: bool,
+    ) -> anyhow::Result<()> {
         // Ensure that all blocks form a chain
-        for (index, block) in blocks.iter().enumerate().rev() {
-            if index > 0 {
-                ensure!(
-                    block.message.parent_root == blocks[index - 1].message.tree_hash_root(),
-                    "Block at index {index} has a parent root that does not match the previous block's tree hash root",
-                );
+        if is_range {
+            for (index, block) in blocks.iter().enumerate().rev() {
+                if index > 0 {
+                    ensure!(
+                        block.message.parent_root == blocks[index - 1].message.tree_hash_root(),
+                        "Block at index {index} has a parent root that does not match the previous block's tree hash root",
+                    );
+                }
             }
         }
 
@@ -141,19 +141,11 @@ impl BlockCache {
     }
 
     pub fn estimated_blocks_to_fetch(&self) -> u64 {
-        if self.blocks_and_blobs.is_empty() || self.current_cache_size == 0 {
-            return self.target_size.div_ceil(DEFAULT_BLOCK_SIZE);
+        if self.next_start_slot.saturating_sub(self.initial_slot) > 30 {
+            return 0;
         }
 
-        let number_of_blocks = self.blocks_and_blobs.len() as u64;
-        let average_block_size = self.current_cache_size / number_of_blocks;
-        let total_blobs: u64 = self.blob_count();
-        let average_blobs_per_block = total_blobs / number_of_blocks;
-        let average_total_size_per_block = average_block_size + average_blobs_per_block * BLOB_SIZE;
-        let total_cache_size = self.current_cache_size + total_blobs * BLOB_SIZE;
-        let remaining_size = self.target_size.saturating_sub(total_cache_size);
-
-        remaining_size.div_ceil(average_total_size_per_block)
+        MAX_BLOCKS_PER_REQUEST
     }
 
     pub fn push_retry_range(&mut self, range: Range) {
@@ -277,51 +269,5 @@ impl Display for DataToFetch {
             DataToFetch::DownloadsInProgress => write!(f, "DownloadsInProgress"),
             DataToFetch::Finished => write!(f, "Finished"),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use alloy_primitives::B256;
-    use ream_bls::BLSSignature;
-    use ream_consensus::electra::beacon_block::BeaconBlock;
-
-    use super::*;
-
-    #[test]
-    fn test_estimated_blocks_to_fetch() {
-        let block_count = 2;
-        let mut blocks = vec![];
-        let mut current_size = 0;
-        let mut parent_root = B256::ZERO;
-        for i in 1..=2 {
-            let block = SignedBeaconBlock {
-                message: BeaconBlock {
-                    slot: i,
-                    parent_root,
-                    ..Default::default()
-                },
-                signature: BLSSignature::infinity(),
-            };
-            parent_root = block.message.tree_hash_root();
-            current_size += block.as_ssz_bytes().len() as u64;
-            blocks.push(block);
-        }
-
-        let mut cache = BlockCache::new(current_size / block_count * 10, B256::ZERO, 1);
-
-        cache.add_blocks(blocks).unwrap();
-
-        assert_eq!(cache.current_cache_size, current_size);
-        assert_eq!(cache.estimated_blocks_to_fetch(), 8);
-    }
-
-    #[test]
-    fn test_empty_cache_estimated_blocks() {
-        let cache = BlockCache::new(HUNDRED_MEGA_BYTES, B256::ZERO, 1);
-        assert_eq!(
-            cache.estimated_blocks_to_fetch(),
-            HUNDRED_MEGA_BYTES.div_ceil(DEFAULT_BLOCK_SIZE)
-        );
     }
 }

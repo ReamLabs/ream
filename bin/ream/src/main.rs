@@ -33,7 +33,7 @@ fn main() {
     // Set the default log level to `info` if not set
     let rust_log = env::var(EnvFilter::DEFAULT_ENV).unwrap_or_default();
     let env_filter = match rust_log.is_empty() {
-        true => EnvFilter::builder().parse_lossy("info,actix_server=warn"),
+        true => EnvFilter::builder().parse_lossy("info,actix_server=warn,discv5=error"),
         false => EnvFilter::builder().parse_lossy(rust_log),
     };
 

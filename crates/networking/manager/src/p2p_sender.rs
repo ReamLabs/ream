@@ -27,7 +27,7 @@ impl P2PSender {
             peer_id,
             connection_id,
             stream_id,
-            message: RespMessage::Response(Box::new(message)),
+            message: Box::new(RespMessage::Response(Box::new(message))),
         })) {
             warn!("Failed to send P2P response: {err}");
         }
@@ -43,7 +43,7 @@ impl P2PSender {
             peer_id,
             connection_id,
             stream_id,
-            message: RespMessage::EndOfStream,
+            message: Box::new(RespMessage::EndOfStream),
         })) {
             warn!("Failed to send end of stream response: {err}");
         }
@@ -60,7 +60,9 @@ impl P2PSender {
             peer_id,
             connection_id,
             stream_id,
-            message: RespMessage::Error(ReqRespError::Anyhow(anyhow!(error.to_string()))),
+            message: Box::new(RespMessage::Error(ReqRespError::Anyhow(anyhow!(
+                error.to_string()
+            )))),
         })) {
             warn!("Failed to send error response: {err}");
         }
