@@ -543,9 +543,6 @@ impl ValidatorService {
             return;
         }
 
-        let seconds_per_slot = network_spec().seconds_per_slot;
-        let timeout_duration = Duration::from_secs(seconds_per_slot / 3);
-
         let mut slot_receiver = self.slot_sender.subscribe();
 
         tokio::select! {
@@ -554,7 +551,7 @@ impl ValidatorService {
                     info!("Received slot {received_slot}, proceeding with attestation");
                 }
             }
-            _ = tokio::time::sleep(timeout_duration) => {
+            _ = tokio::time::sleep(Duration::from_secs(network_spec().seconds_per_slot / 3)) => {
                 info!("One third of slot {slot} has passed, proceeding with attestation");
             }
         }
