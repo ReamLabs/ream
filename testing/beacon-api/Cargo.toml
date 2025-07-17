@@ -12,10 +12,10 @@ version.workspace = true
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
+ream-beacon-api-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-ream-beacon-api-types.workspace = true
 
 # ream
 ream-beacon-chain.workspace = true
