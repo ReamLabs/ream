@@ -1,5 +1,6 @@
 pub mod attester_slashing;
 pub mod beacon_attestation;
+pub mod beacon_block;
 pub mod blob_sidecar;
 pub mod bls_to_execution_change;
 pub mod proposer_slashing;
