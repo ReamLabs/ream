@@ -1068,9 +1068,13 @@ dependencies = [
  "anyhow",
  "ream-beacon-api-types",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "ream-consensus-beacon",
  "ream-consensus-misc",
 =======
+=======
+ "ream-beacon-chain",
+>>>>>>> 5d0c9e8 (fix: add test for gossip block)
  "ream-consensus",
  "ream-network-manager",
  "ream-operation-pool",

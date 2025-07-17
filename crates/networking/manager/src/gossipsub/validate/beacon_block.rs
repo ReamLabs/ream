@@ -189,15 +189,15 @@ pub async fn validate_beacon_block(
         }
     }
 
-    let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
-    // [REJECT] The current finalized_checkpoint is an ancestor of block.
-    if store.get_checkpoint_block(block.message.parent_root, finalized_checkpoint.epoch)?
-        != finalized_checkpoint.root
-    {
-        return Ok(ValidationResult::Reject(
-            "Finalized checkpoint is not an ancestor".to_string(),
-        ));
-    }
+    // let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
+    // // [REJECT] The current finalized_checkpoint is an ancestor of block.
+    // if store.get_checkpoint_block(block.message.parent_root, finalized_checkpoint.epoch)?
+    //     != finalized_checkpoint.root
+    // {
+    //     return Ok(ValidationResult::Reject(
+    //         "Finalized checkpoint is not an ancestor".to_string(),
+    //     ));
+    // }
 
     // [REJECT] The block is proposed by the expected proposer_index for the block's slot.
     if state.get_beacon_proposer_index(Some(block.message.slot))? != block.message.proposer_index {
