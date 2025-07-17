@@ -27,7 +27,7 @@ mod tests {
     const SEPOLIA_GENESIS_TIME: u64 = 1655733600;
     const CURRENT_TIME: u64 = 1752744600;
 
-    pub async fn test_db_setup() -> (BeaconChain, CachedDB, B256) {
+    pub async fn db_setup() -> (BeaconChain, CachedDB, B256) {
         let temp = std::path::PathBuf::from("ream_gossip_test");
         fs::create_dir_all(&temp).unwrap();
         let mut db = ReamDB::new(temp).unwrap();
@@ -125,7 +125,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_validate_beacon_block() {
-        let (beacon_chain, cached_db, block_root) = test_db_setup().await;
+        let (beacon_chain, cached_db, block_root) = db_setup().await;
 
         let (latest_state_in_db, latest_block) = {
             let store = beacon_chain.store.lock().await;

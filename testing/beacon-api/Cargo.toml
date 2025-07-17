@@ -15,9 +15,10 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+ream-beacon-api-types.workspace = true
 
 # ream
-ream-beacon-api-types.workspace = true
+ream-beacon-chain.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
 ream-network-manager.workspace = true
