@@ -2062,7 +2062,7 @@ impl BeaconState {
         let mut committee_offset = 0;
         for committee_index in committee_indices {
             ensure!(committee_index < self.get_committee_count_per_slot(data.target.epoch));
-            let committee = self.get_beacon_committee(data.slot, data.index)?;
+            let committee = self.get_beacon_committee(data.slot, committee_index)?;
             let mut committee_attesters = HashSet::new();
             for (i, &attester_index) in committee.iter().enumerate() {
                 if attestation
@@ -2083,7 +2083,9 @@ impl BeaconState {
         // Bitfield length matches total number of participants
         ensure!(
             attestation.aggregation_bits.len() == committee_offset,
-            "Aggregation bits length must match committee size"
+            "Aggregation bits length must match committee size {} != {}",
+            attestation.aggregation_bits.len(),
+            committee_offset
         );
 
         // Participation flag indices
