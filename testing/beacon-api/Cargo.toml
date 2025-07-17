@@ -19,3 +19,6 @@ tokio.workspace = true
 # ream
 ream-beacon-api-types.workspace = true
 ream-consensus.workspace = true
+ream-network-manager.workspace = true
+ream-operation-pool.workspace = true
+ream-storage.workspace = true
