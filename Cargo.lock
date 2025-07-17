@@ -1067,6 +1067,7 @@ dependencies = [
  "alloy-primitives",
  "anyhow",
  "ream-beacon-api-types",
+ "ream-beacon-chain",
  "ream-consensus",
  "ream-network-manager",
  "ream-operation-pool",
