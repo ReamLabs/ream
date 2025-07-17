@@ -1067,8 +1067,15 @@ dependencies = [
  "alloy-primitives",
  "anyhow",
  "ream-beacon-api-types",
+<<<<<<< HEAD
  "ream-consensus-beacon",
  "ream-consensus-misc",
+=======
+ "ream-consensus",
+ "ream-network-manager",
+ "ream-operation-pool",
+ "ream-storage",
+>>>>>>> df0984a (feat: add beacon gossip validation)
  "serde",
  "serde_json",
  "tokio",
