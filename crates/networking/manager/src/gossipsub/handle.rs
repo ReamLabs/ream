@@ -1,17 +1,28 @@
 use libp2p::gossipsub::Message;
 use ream_beacon_chain::beacon_chain::BeaconChain;
+use ream_consensus_beacon::{
+    blob_sidecar::BlobIdentifier, execution_engine::rpc_types::get_blobs::BlobAndProofV1,
+};
 use ream_consensus_misc::constants::genesis_validators_root;
 use ream_network_spec::networks::network_spec;
-use ream_p2p::gossipsub::{
-    configurations::GossipsubConfig,
-    message::GossipsubMessage,
-    topics::{GossipTopic, GossipTopicKind},
+use ream_p2p::{
+    channel::GossipMessage,
+    gossipsub::{
+        configurations::GossipsubConfig,
+        message::GossipsubMessage,
+        topics::{GossipTopic, GossipTopicKind},
+    },
 };
-use ream_storage::cache::CachedDB;
+use ream_storage::{cache::CachedDB, tables::Table};
+use ream_validator::blob_sidecars::compute_subnet_for_blob_sidecar;
+use ssz::Encode;
 use tracing::{error, info, trace};
 use tree_hash::TreeHash;
 
-use crate::p2p_sender::P2PSender;
+use crate::{
+    gossipsub::validate::{blob_sidecar::validate_blob_sidecar, result::ValidationResult},
+    p2p_sender::P2PSender,
+};
 
 pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
     let mut gossipsub_config = GossipsubConfig::default();
@@ -74,8 +85,8 @@ pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
 pub async fn handle_gossipsub_message(
     message: Message,
     beacon_chain: &BeaconChain,
-    _cached_db: &CachedDB,
-    _p2psender: &P2PSender,
+    cached_db: &CachedDB,
+    p2psender: &P2PSender,
 ) {
     match GossipsubMessage::decode(&message.topic, &message.data) {
         Ok(gossip_message) => match gossip_message {
@@ -141,6 +152,54 @@ pub async fn handle_gossipsub_message(
                     "Blob Sidecar received over gossipsub: root: {}",
                     blob_sidecar.tree_hash_root()
                 );
+
+                match validate_blob_sidecar(
+                    beacon_chain,
+                    *blob_sidecar.clone(),
+                    compute_subnet_for_blob_sidecar(blob_sidecar.index),
+                    cached_db,
+                )
+                .await
+                {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            if let Err(err) = beacon_chain
+                                .store
+                                .lock()
+                                .await
+                                .db
+                                .blobs_and_proofs_provider()
+                                .insert(
+                                    BlobIdentifier::new(
+                                        blob_sidecar.signed_block_header.message.tree_hash_root(),
+                                        blob_sidecar.index,
+                                    ),
+                                    BlobAndProofV1 {
+                                        blob: blob_sidecar.blob.clone(),
+                                        proof: blob_sidecar.kzg_proof,
+                                    },
+                                )
+                            {
+                                error!("Failed to insert blob_sidecar: {err}");
+                            }
+
+                            p2psender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: blob_sidecar.as_ssz_bytes(),
+                            });
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("Blob_sidecar rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Blob_sidecar ignored: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate blob_sidecar: {err}");
+                    }
+                }
             }
             GossipsubMessage::LightClientFinalityUpdate(light_client_finality_update) => {
                 info!(

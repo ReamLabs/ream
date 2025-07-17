@@ -19,6 +19,7 @@ pub struct CachedDB {
     pub cached_proposer_signature: RwLock<LruCache<AddressSlotIdentifier, BLSSignature>>,
     pub cached_bls_to_execution_signature:
         RwLock<LruCache<AddressSlotIdentifier, BLSToExecutionChange>>,
+    pub cached_seen_blob_sidecars: RwLock<LruCache<(u64, u64, u64), ()>>,
 }
 
 impl CachedDB {
@@ -32,6 +33,8 @@ impl CachedDB {
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),
+            cached_seen_blob_sidecars: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap())
+                .into(),
         }
     }
 }

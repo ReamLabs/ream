@@ -23,6 +23,7 @@ url.workspace = true
 
 # ream dependencies
 ream-beacon-chain.workspace = true
+ream-bls.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
 ream-discv5.workspace = true
@@ -32,5 +33,7 @@ ream-fork-choice.workspace = true
 ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
 ream-p2p.workspace = true
+ream-polynomial-commitments.workspace = true
 ream-storage.workspace = true
 ream-syncer.workspace = true
+ream-validator.workspace = true

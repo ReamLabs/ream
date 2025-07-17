@@ -16,7 +16,7 @@ use ream_bls::{
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
-    beacon_block_header::BeaconBlockHeader,
+    beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
     checkpoint::Checkpoint,
     constants::{
         BASE_REWARD_FACTOR, BEACON_STATE_MERKLE_DEPTH, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION,
@@ -2398,8 +2398,14 @@ impl BeaconState {
         Ok(())
     }
 
-    pub fn verify_block_signature(&self, signed_block: &SignedBeaconBlock) -> anyhow::Result<bool> {
-        let proposer = &self.validators[signed_block.message.proposer_index as usize];
+    pub fn verify_block_header_signature(
+        &self,
+        signed_block: &SignedBeaconBlockHeader,
+    ) -> anyhow::Result<bool> {
+        let proposer = self
+            .validators
+            .get(signed_block.message.proposer_index as usize)
+            .ok_or(anyhow!("Invalid block proposer index"))?;
         let signing_root = compute_signing_root(
             signed_block.message.clone(),
             self.get_domain(DOMAIN_BEACON_PROPOSER, None),
@@ -2679,7 +2685,7 @@ impl BeaconState {
 
         // Verify signature
         if validate_result {
-            ensure!(self.verify_block_signature(signed_block)?)
+            ensure!(self.verify_block_header_signature(&signed_block.signed_header())?)
         }
         // Process block
         self.process_block(block, execution_engine).await?;

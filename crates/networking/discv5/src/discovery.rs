@@ -377,7 +377,7 @@ mod tests {
     use alloy_primitives::B256;
     use libp2p::identity::Keypair;
     use ream_consensus_misc::constants::GENESIS_VALIDATORS_ROOT;
-    use ream_network_spec::networks::{DEV, set_network_spec};
+    use ream_network_spec::networks::initialize_test_network_spec;
 
     use super::*;
     use crate::{
@@ -388,7 +388,7 @@ mod tests {
     #[tokio::test]
     async fn test_initial_subnet_setup() -> anyhow::Result<()> {
         let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
-        set_network_spec(DEV.clone());
+        initialize_test_network_spec();
         let key = Keypair::generate_secp256k1();
         let mut config = DiscoveryConfig::default();
         config.attestation_subnets.enable_attestation_subnet(0)?; // Set subnet 0
@@ -430,7 +430,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_discovery_with_subnets() -> anyhow::Result<()> {
-        let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
+        initialize_test_network_spec();
         let key = Keypair::generate_secp256k1();
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::default())
             .table_filter(|_| true)
