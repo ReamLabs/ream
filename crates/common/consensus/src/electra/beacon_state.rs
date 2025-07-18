@@ -748,14 +748,15 @@ impl BeaconState {
 
     /// Return the base reward for the validator defined by ``index`` with respect to the current
     /// ``state``.
-    pub fn get_base_reward(&self, index: u64) -> u64 {
+    pub fn get_base_reward(&self, index: u64, base_reward_per_increment: u64) -> u64 {
         let increments =
             self.validators[index as usize].effective_balance / EFFECTIVE_BALANCE_INCREMENT;
-        increments * self.get_base_reward_per_increment()
+        increments * base_reward_per_increment
     }
 
     pub fn get_proposer_reward(&self, attesting_index: u64) -> u64 {
-        self.get_base_reward(attesting_index) / PROPOSER_REWARD_QUOTIENT
+        self.get_base_reward(attesting_index, self.get_base_reward_per_increment())
+            / PROPOSER_REWARD_QUOTIENT
     }
 
     pub fn get_finality_delay(&self) -> u64 {
@@ -2098,35 +2099,28 @@ impl BeaconState {
             "Attestation signature must be valid"
         );
 
-        let attesting_indices = self.get_attesting_indices(attestation)?;
-        let base_rewards: Vec<_> = attesting_indices
-            .iter()
-            .map(|&index| (index, self.get_base_reward(index)))
-            .collect();
-
-        // Update epoch participation flags
-        let epoch_participation = if data.target.epoch == self.get_current_epoch() {
-            &mut self.current_epoch_participation
-        } else {
-            &mut self.previous_epoch_participation
-        };
-
+        let base_reward_per_increment = self.get_base_reward_per_increment();
         let mut proposer_reward_numerator = 0;
-
-        for (index, base_reward) in base_rewards {
+        for index in self.get_attesting_indices(attestation)? {
+            let index = index as usize;
             for (flag_index, &weight) in PARTICIPATION_FLAG_WEIGHTS.iter().enumerate() {
                 let flag_index = flag_index as u8;
+                let epoch_participation = if data.target.epoch == self.get_current_epoch() {
+                    &mut self.current_epoch_participation
+                } else {
+                    &mut self.previous_epoch_participation
+                };
 
-                if participation_flag_indices.contains(&flag_index) {
-                    let epoch_part =
-                        epoch_participation.get_mut(index as usize).ok_or_else(|| {
-                            anyhow!("Index {} out of bounds in epoch_participation", index)
-                        })?;
+                let epoch_part = epoch_participation.get_mut(index).ok_or_else(|| {
+                    anyhow!("Validator index {index} out of bounds in epoch_participation",)
+                })?;
 
-                    if !Self::has_flag(*epoch_part, flag_index) {
-                        *epoch_part = Self::add_flag(*epoch_part, flag_index);
-                        proposer_reward_numerator += base_reward * weight;
-                    }
+                if participation_flag_indices.contains(&flag_index)
+                    && !Self::has_flag(*epoch_part, flag_index)
+                {
+                    *epoch_part = Self::add_flag(*epoch_part, flag_index);
+                    proposer_reward_numerator +=
+                        self.get_base_reward(index as u64, base_reward_per_increment) * weight;
                 }
             }
         }
@@ -2483,8 +2477,9 @@ impl BeaconState {
             unslashed_participating_balance / EFFECTIVE_BALANCE_INCREMENT;
         let active_increments = self.get_total_active_balance() / EFFECTIVE_BALANCE_INCREMENT;
 
+        let base_reward_per_increment = self.get_base_reward_per_increment();
         for index in self.get_eligible_validator_indices()? {
-            let base_reward = self.get_base_reward(index);
+            let base_reward = self.get_base_reward(index, base_reward_per_increment);
 
             if unslashed_participating_indices.contains(&index) {
                 if !self.is_in_inactivity_leak() {
