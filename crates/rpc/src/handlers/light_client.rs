@@ -126,7 +126,7 @@ pub async fn get_light_client_updates(
                 block.message.parent_root
             )))?;
 
-        let attested_block_root = attested_block.tree_hash_root();
+        let attested_block_root = attested_block.message.tree_hash_root();
         let attested_state = db
             .beacon_state_provider()
             .get(attested_block_root)
@@ -223,7 +223,7 @@ pub async fn get_light_client_finality_update(
         })?
         .ok_or_else(|| ApiError::NotFound("Light client finality update unavailable".into()))?;
 
-    let attested_block_root = attested_block.tree_hash_root();
+    let attested_block_root = attested_block.message.tree_hash_root();
     let attested_state = db
         .beacon_state_provider()
         .get(attested_block_root)

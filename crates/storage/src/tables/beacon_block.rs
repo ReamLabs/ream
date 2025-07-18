@@ -37,7 +37,7 @@ impl Table for BeaconBlockTable {
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
         // insert entry to slot_index table
-        let block_root = value.tree_hash_root();
+        let block_root = value.message.tree_hash_root();
         let slot_index_table = SlotIndexTable {
             db: self.db.clone(),
         };
