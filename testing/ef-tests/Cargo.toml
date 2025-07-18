@@ -29,7 +29,7 @@ tree_hash.workspace = true
 
 # ream dependencies
 ream-bls.workspace = true
-ream-consensus.workspace = true
+ream-consensus = { workspace = true, features = ["test_consensus"] }
 ream-fork-choice.workspace = true
 ream-merkle.workspace = true
 ream-network-spec.workspace = true

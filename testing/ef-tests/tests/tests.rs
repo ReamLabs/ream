@@ -23,7 +23,6 @@ use ream_consensus::{
         execution_payload::ExecutionPayload,
         execution_payload_header::ExecutionPayloadHeader,
     },
-    eth_1_block::Eth1Block,
     eth_1_data::Eth1Data,
     execution_requests::ExecutionRequests,
     fork::Fork,
