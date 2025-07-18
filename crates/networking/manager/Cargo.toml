@@ -9,6 +9,9 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+allow_ancestor_validation = []
+
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true

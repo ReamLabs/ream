@@ -1,10 +1,11 @@
 use anyhow::anyhow;
 use ream_beacon_chain::beacon_chain::BeaconChain;
-use ream_consensus::{
-    constants::MAX_BLOBS_PER_BLOCK_ELECTRA,
+use ream_consensus_beacon::{
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     execution_engine::new_payload_request::NewPayloadRequest,
-    misc::compute_start_slot_at_epoch,
+};
+use ream_consensus_misc::{
+    constants::MAX_BLOBS_PER_BLOCK_ELECTRA, misc::compute_start_slot_at_epoch,
 };
 use ream_execution_engine::rpc_types::payload_status::PayloadStatus;
 use ream_storage::{
@@ -78,7 +79,7 @@ pub async fn validate_gossip_beacon_block(
         return Ok(ValidationResult::Reject("Validator not found".to_string()));
     };
 
-    cached_db.cached_proposer_signature.write().await.put(
+    cached_db.seen_proposer_signature.write().await.put(
         AddressSlotIdentifier {
             address: validator.public_key.clone(),
             slot: block.message.slot,
@@ -90,17 +91,13 @@ pub async fn validate_gossip_beacon_block(
         let validator = &latest_state_in_db.validators
             [signed_bls_execution_change.message.validator_index as usize];
 
-        cached_db
-            .cached_bls_to_execution_signature
-            .write()
-            .await
-            .put(
-                AddressSlotIdentifier {
-                    address: validator.public_key.clone(),
-                    slot: block.message.slot,
-                },
-                signed_bls_execution_change.message.clone(),
-            );
+        cached_db.seen_bls_to_execution_signature.write().await.put(
+            AddressSlotIdentifier {
+                address: validator.public_key.clone(),
+                slot: block.message.slot,
+            },
+            signed_bls_execution_change.message.clone(),
+        );
     }
 
     Ok(ValidationResult::Accept)
@@ -141,7 +138,7 @@ pub async fn validate_beacon_block(
     // [IGNORE] The block is the first block with valid signature received for the proposer for the
     // slot.
     if cached_db
-        .cached_proposer_signature
+        .seen_proposer_signature
         .read()
         .await
         .contains(&AddressSlotIdentifier {
@@ -156,7 +153,7 @@ pub async fn validate_beacon_block(
 
     // [REJECT] The proposer signature, signed_beacon_block.signature, is valid with respect to the
     // proposer_index pubkey.
-    match state.verify_block_signature(block) {
+    match state.verify_block_header_signature(&block.signed_header()) {
         Ok(true) => {}
         Ok(false) => {
             return Ok(ValidationResult::Reject("Invalid signature".to_string()));
@@ -189,15 +186,18 @@ pub async fn validate_beacon_block(
         }
     }
 
-    // let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
-    // // [REJECT] The current finalized_checkpoint is an ancestor of block.
-    // if store.get_checkpoint_block(block.message.parent_root, finalized_checkpoint.epoch)?
-    //     != finalized_checkpoint.root
-    // {
-    //     return Ok(ValidationResult::Reject(
-    //         "Finalized checkpoint is not an ancestor".to_string(),
-    //     ));
-    // }
+    #[cfg(feature = "allow_ancestor_validation")]
+    {
+        let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
+        // [REJECT] The current finalized_checkpoint is an ancestor of block.
+        if store.get_checkpoint_block(block.message.parent_root, finalized_checkpoint.epoch)?
+            != finalized_checkpoint.root
+        {
+            return Ok(ValidationResult::Reject(
+                "Finalized checkpoint is not an ancestor".to_string(),
+            ));
+        }
+    }
 
     // [REJECT] The block is proposed by the expected proposer_index for the block's slot.
     if state.get_beacon_proposer_index(Some(block.message.slot))? != block.message.proposer_index {
@@ -218,7 +218,7 @@ pub async fn validate_beacon_block(
     // [IGNORE] The signed_bls_to_execution_change is the first valid signed bls to execution change
     // received for the validator with index.
     if cached_db
-        .cached_bls_to_execution_signature
+        .seen_bls_to_execution_signature
         .read()
         .await
         .contains(&AddressSlotIdentifier {

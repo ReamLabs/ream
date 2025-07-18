@@ -36,8 +36,9 @@ pub struct SyncCommitteeKey {
 /// In-memory LRU cache.
 #[derive(Debug)]
 pub struct CachedDB {
-    pub proposer_signature: RwLock<LruCache<AddressSlotIdentifier, BLSSignature>>,
-    pub bls_to_execution_signature: RwLock<LruCache<AddressSlotIdentifier, BLSToExecutionChange>>,
+    pub seen_proposer_signature: RwLock<LruCache<AddressSlotIdentifier, BLSSignature>>,
+    pub seen_bls_to_execution_signature:
+        RwLock<LruCache<AddressSlotIdentifier, BLSToExecutionChange>>,
     pub seen_blob_sidecars: RwLock<LruCache<(u64, u64, u64), ()>>,
     pub seen_attestations: RwLock<LruCache<AtestationKey, ()>>,
     pub seen_bls_to_execution_change: RwLock<LruCache<AddressValidaterIndexIdentifier, ()>>,
@@ -50,11 +51,11 @@ pub struct CachedDB {
 impl CachedDB {
     pub fn new() -> Self {
         Self {
-            proposer_signature: LruCache::new(
+            seen_proposer_signature: LruCache::new(
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),
-            bls_to_execution_signature: LruCache::new(
+            seen_bls_to_execution_signature: LruCache::new(
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),
