@@ -1066,22 +1066,19 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "ream-beacon-api-types",
-<<<<<<< HEAD
-<<<<<<< HEAD
+ "ream-beacon-chain",
  "ream-consensus-beacon",
  "ream-consensus-misc",
-=======
-=======
- "ream-beacon-chain",
->>>>>>> 5d0c9e8 (fix: add test for gossip block)
- "ream-consensus",
  "ream-network-manager",
+ "ream-network-spec",
  "ream-operation-pool",
  "ream-storage",
->>>>>>> df0984a (feat: add beacon gossip validation)
  "serde",
  "serde_json",
+ "snap",
  "tokio",
 ]
 

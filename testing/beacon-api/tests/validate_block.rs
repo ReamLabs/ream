@@ -1,28 +1,26 @@
 mod tests {
     const PATH_TO_TEST_DATA_FOLDER: &str = "./tests";
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-        str::FromStr,
-    };
+    use std::{fs, path::PathBuf, str::FromStr};
 
     use alloy_primitives::B256;
-    use ream_beacon_api_types::responses::BeaconVersionedResponse;
+    use anyhow::anyhow;
     use ream_beacon_chain::beacon_chain::BeaconChain;
-    use ream_consensus::{
-        checkpoint::Checkpoint,
-        electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
+    use ream_consensus_beacon::electra::{
+        beacon_block::SignedBeaconBlock, beacon_state::BeaconState,
     };
+    use ream_consensus_misc::checkpoint::Checkpoint;
     use ream_network_manager::gossipsub::validate::{
         beacon_block::validate_gossip_beacon_block, result::ValidationResult,
     };
+    use ream_network_spec::networks::initialize_test_network_spec;
     use ream_operation_pool::OperationPool;
     use ream_storage::{
         cache::CachedDB,
         db::ReamDB,
         tables::{Field, Table},
     };
-    use serde_json::Value;
+    use snap::raw::Decoder;
+    use ssz::Decode;
 
     const SEPOLIA_GENESIS_TIME: u64 = 1655733600;
     const CURRENT_TIME: u64 = 1752744600;
@@ -32,33 +30,31 @@ mod tests {
         fs::create_dir_all(&temp).unwrap();
         let mut db = ReamDB::new(temp).unwrap();
 
-        let ancestor_json_block =
-            read_json_file("./assets/sepolia/blocks/slot_8084160.json").unwrap();
-        let ancestor_beacon_block: BeaconVersionedResponse<SignedBeaconBlock> =
-            serde_json::from_value(ancestor_json_block.clone()).unwrap();
+        let ancestor_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
+            "./assets/sepolia/blocks/slot_8084160.ssz_snappy",
+        )
+        .unwrap();
 
-        let grandparent_json_state =
-            read_json_file("./assets/sepolia/states/slot_8084248.json").unwrap();
-        let grandparent_beacon_state: BeaconVersionedResponse<BeaconState> =
-            serde_json::from_value(grandparent_json_state.clone()).unwrap();
+        let grandparent_beacon_state =
+            read_ssz_snappy_file::<BeaconState>("./assets/sepolia/states/slot_8084248.ssz_snappy")
+                .unwrap();
 
-        let grandparent_json_block =
-            read_json_file("./assets/sepolia/blocks/slot_8084248.json").unwrap();
-        let grandparent_beacon_block: BeaconVersionedResponse<SignedBeaconBlock> =
-            serde_json::from_value(grandparent_json_block.clone()).unwrap();
+        let grandparent_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
+            "./assets/sepolia/blocks/slot_8084248.ssz_snappy",
+        )
+        .unwrap();
 
-        let parent_json_state =
-            read_json_file("./assets/sepolia/states/slot_8084249.json").unwrap();
-        let parent_beacon_state: BeaconVersionedResponse<BeaconState> =
-            serde_json::from_value(parent_json_state.clone()).unwrap();
+        let parent_beacon_state =
+            read_ssz_snappy_file::<BeaconState>("./assets/sepolia/states/slot_8084249.ssz_snappy")
+                .unwrap();
 
-        let parent_json_block =
-            read_json_file("./assets/sepolia/blocks/slot_8084249.json").unwrap();
-        let parent_beacon_block: BeaconVersionedResponse<SignedBeaconBlock> =
-            serde_json::from_value(parent_json_block.clone()).unwrap();
+        let parent_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
+            "./assets/sepolia/blocks/slot_8084249.ssz_snappy",
+        )
+        .unwrap();
 
-        let block_root = parent_beacon_block.data.message.block_root();
-        let grandparent_block_root = grandparent_beacon_block.data.message.block_root();
+        let block_root = parent_beacon_block.message.block_root();
+        let grandparent_block_root = grandparent_beacon_block.message.block_root();
         insert_mock_data(
             &mut db,
             ancestor_beacon_block,
@@ -81,40 +77,40 @@ mod tests {
     #[allow(clippy::too_many_arguments)]
     pub async fn insert_mock_data(
         db: &mut ReamDB,
-        ancestor_beacon_block: BeaconVersionedResponse<SignedBeaconBlock>,
+        ancestor_beacon_block: SignedBeaconBlock,
         grandparent_block_root: B256,
         block_root: B256,
-        grandparent_beacon_state: BeaconVersionedResponse<BeaconState>,
-        grandparent_beacon_block: BeaconVersionedResponse<SignedBeaconBlock>,
-        parent_beacon_block: BeaconVersionedResponse<SignedBeaconBlock>,
-        parent_beacon_state: BeaconVersionedResponse<BeaconState>,
+        grandparent_beacon_state: BeaconState,
+        grandparent_beacon_block: SignedBeaconBlock,
+        parent_beacon_block: SignedBeaconBlock,
+        parent_beacon_state: BeaconState,
     ) {
         let ancestor_checkpoint = Checkpoint {
-            epoch: ancestor_beacon_block.data.message.slot / 32,
-            root: ancestor_beacon_block.data.message.block_root(),
+            epoch: ancestor_beacon_block.message.slot / 32,
+            root: ancestor_beacon_block.message.block_root(),
         };
         db.beacon_block_provider()
             .insert(
-                ancestor_beacon_block.data.message.block_root(),
-                ancestor_beacon_block.data,
+                ancestor_beacon_block.message.block_root(),
+                ancestor_beacon_block,
             )
             .unwrap();
 
-        let slot = parent_beacon_block.data.message.slot;
+        let slot = parent_beacon_block.message.slot;
         db.finalized_checkpoint_provider()
             .insert(ancestor_checkpoint)
             .unwrap();
         db.beacon_block_provider()
-            .insert(grandparent_block_root, grandparent_beacon_block.data)
+            .insert(grandparent_block_root, grandparent_beacon_block)
             .unwrap();
         db.beacon_state_provider()
-            .insert(grandparent_block_root, grandparent_beacon_state.data)
+            .insert(grandparent_block_root, grandparent_beacon_state)
             .unwrap();
         db.beacon_block_provider()
-            .insert(block_root, parent_beacon_block.data)
+            .insert(block_root, parent_beacon_block)
             .unwrap();
         db.beacon_state_provider()
-            .insert(block_root, parent_beacon_state.data)
+            .insert(block_root, parent_beacon_state)
             .unwrap();
         db.slot_index_provider().insert(slot, block_root).unwrap();
         db.genesis_time_provider()
@@ -125,6 +121,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_validate_beacon_block() {
+        initialize_test_network_spec();
         let (beacon_chain, cached_db, block_root) = db_setup().await;
 
         let (latest_state_in_db, latest_block) = {
@@ -143,29 +140,32 @@ mod tests {
         assert_eq!(latest_state_in_db.slot, latest_block.message.slot);
         assert_eq!(latest_block.message.slot, 8084249);
 
-        let incoming_json_block =
-            read_json_file("./assets/sepolia/blocks/slot_8084250.json").unwrap();
-        let incoming_beacon_block: BeaconVersionedResponse<SignedBeaconBlock> =
-            serde_json::from_value(incoming_json_block.clone()).unwrap();
+        let incoming_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
+            "./assets/sepolia/blocks/slot_8084250.ssz_snappy",
+        )
+        .unwrap();
 
-        assert_eq!(incoming_beacon_block.data.message.slot, 8084250);
+        assert_eq!(incoming_beacon_block.message.slot, 8084250);
         assert_eq!(
-            incoming_beacon_block.data.message.block_root(),
+            incoming_beacon_block.message.block_root(),
             B256::from_str("0x9ad84061d301d8b2d2613ffcb83a937a35f789b52ec1975005ef3c6c9faa3c43")
                 .unwrap()
         );
 
         let result =
-            validate_gossip_beacon_block(&beacon_chain, &cached_db, &incoming_beacon_block.data)
+            validate_gossip_beacon_block(&beacon_chain, &cached_db, &incoming_beacon_block)
                 .await
                 .unwrap();
 
         assert!(result == ValidationResult::Accept);
     }
 
-    pub fn read_json_file<P: AsRef<Path>>(file_name: P) -> anyhow::Result<Value> {
-        let path = PathBuf::from(PATH_TO_TEST_DATA_FOLDER).join(file_name);
-        let file_contents = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&file_contents)?)
+    fn read_ssz_snappy_file<T: Decode>(path: &str) -> anyhow::Result<T> {
+        let path = PathBuf::from(PATH_TO_TEST_DATA_FOLDER).join(path);
+
+        let ssz_snappy = std::fs::read(path)?;
+        let mut decoder = Decoder::new();
+        let ssz = decoder.decompress_vec(&ssz_snappy)?;
+        T::from_ssz_bytes(&ssz).map_err(|err| anyhow!("Failed to decode SSZ: {err:?}"))
     }
 }
