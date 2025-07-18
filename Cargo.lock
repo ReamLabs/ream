@@ -1066,6 +1066,8 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "ream-beacon-api-types",
  "ream-beacon-chain",
  "ream-consensus",
@@ -1074,6 +1076,7 @@ dependencies = [
  "ream-storage",
  "serde",
  "serde_json",
+ "snap",
  "tokio",
 ]
 
