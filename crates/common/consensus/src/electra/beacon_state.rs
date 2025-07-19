@@ -714,15 +714,13 @@ impl BeaconState {
         if self.get_current_epoch() == GENESIS_EPOCH {
             return Ok(());
         }
+        let unslashed_participating_indices = self.get_unslashed_participating_indices(
+            TIMELY_TARGET_FLAG_INDEX,
+            self.get_previous_epoch(),
+        )?;
         for index in self.get_eligible_validator_indices()? {
             // Increase the inactivity score of inactive validators
-            if self
-                .get_unslashed_participating_indices(
-                    TIMELY_TARGET_FLAG_INDEX,
-                    self.get_previous_epoch(),
-                )?
-                .contains(&index)
-            {
+            if unslashed_participating_indices.contains(&index) {
                 self.inactivity_scores[index as usize] -=
                     min(1, self.inactivity_scores[index as usize])
             } else {
