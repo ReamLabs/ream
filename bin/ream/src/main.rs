@@ -10,7 +10,7 @@ use ream::cli::{
     validator_node::ValidatorNodeConfig,
     voluntary_exit::VoluntaryExitConfig,
 };
-use ream_beacon_api_types::id;
+use ream_beacon_api_types::id::{ID, ValidatorID};
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus_misc::constants::set_genesis_validator_root;
 use ream_executor::ReamExecutor;
@@ -25,7 +25,8 @@ use ream_storage::{
     tables::Table,
 };
 use ream_validator::{
-    beacon_api_client, validator::ValidatorService, voluntary_exit::process_voluntary_exit,
+    beacon_api_client::BeaconApiClient, validator::ValidatorService,
+    voluntary_exit::process_voluntary_exit,
 };
 use ream_validator_beacon::validator::ValidatorService;
 use ream_validator_lean::service::ValidatorService as LeanValidatorService;
@@ -297,11 +298,11 @@ pub async fn run_voluntary_exit(config: VoluntaryExitConfig) {
         .collect::<Vec<_>>();
 
     let beacon_api_client =
-        beacon_api_client::BeaconApiClient::new(config.beacon_api_endpoint, config.request_timeout)
+        BeaconApiClient::new(config.beacon_api_endpoint, config.request_timeout)
             .expect("Failed to create beacon API client");
 
     let validator_info = beacon_api_client
-        .get_state_validator(id::ID::Head, id::ValidatorID::Index(config.validator_index))
+        .get_state_validator(ID::Head, ValidatorID::Index(config.validator_index))
         .await
         .expect("Failed to get validator info");
 
