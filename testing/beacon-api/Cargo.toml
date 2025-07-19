@@ -12,10 +12,17 @@ version.workspace = true
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
+ream-beacon-api-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+snap.workspace = true
 tokio.workspace = true
 
 # ream
-ream-beacon-api-types.workspace = true
+ream-beacon-chain.workspace = true
 ream-consensus.workspace = true
+ream-network-manager.workspace = true
+ream-operation-pool.workspace = true
+ream-storage.workspace = true
