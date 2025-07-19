@@ -7,8 +7,9 @@ use std::{
 };
 
 use alloy_primitives::Address;
+use alloy_rpc_types_beacon::events::HeadEvent;
 use anyhow::{anyhow, bail};
-use futures::future::try_join_all;
+use futures::{StreamExt, future::try_join_all};
 use ream_beacon_api_types::{
     block::{BroadcastValidation, ProduceBlockData},
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
@@ -27,14 +28,20 @@ use ream_executor::ReamExecutor;
 use ream_keystore::keystore::Keystore;
 use ream_network_spec::networks::network_spec;
 use reqwest::Url;
-use tokio::time::{Instant, MissedTickBehavior, interval_at};
+use tokio::{
+    sync::broadcast,
+    time::{Instant, MissedTickBehavior, interval_at},
+};
 use tracing::{error, info, warn};
 use tree_hash::TreeHash;
 
 use crate::{
     aggregate_and_proof::{AggregateAndProof, SignedAggregateAndProof, sign_aggregate_and_proof},
     attestation::{get_selection_proof, sign_attestation_data},
-    beacon_api_client::BeaconApiClient,
+    beacon_api_client::{
+        BeaconApiClient,
+        event::{BeaconEvent, EventTopic},
+    },
     block::{sign_beacon_block, sign_blinded_beacon_block},
     constants::SYNC_COMMITTEE_SUBNET_COUNT,
     contribution_and_proof::{
@@ -79,6 +86,8 @@ pub struct ValidatorService {
     pub sync_committee_duties: Vec<SyncCommitteeDuty>,
     pub sync_aggregator_infos: Vec<SyncTaskInfo>,
     pub sync_normal_infos: Vec<SyncTaskInfo>,
+    pub highest_slot: u64,
+    pub slot_sender: broadcast::Sender<u64>,
 }
 
 impl ValidatorService {
@@ -90,6 +99,7 @@ impl ValidatorService {
         executor: ReamExecutor,
     ) -> anyhow::Result<Self> {
         let validators = keystores.into_iter().map(Arc::new).collect::<Vec<_>>();
+        let (slot_sender, _) = broadcast::channel(100);
 
         Ok(Self {
             beacon_api_client: Arc::new(BeaconApiClient::new(
@@ -107,6 +117,8 @@ impl ValidatorService {
             sync_committee_duties: Vec::new(),
             sync_aggregator_infos: Vec::new(),
             sync_normal_infos: Vec::new(),
+            highest_slot: 0,
+            slot_sender,
         })
     }
 
@@ -130,8 +142,26 @@ impl ValidatorService {
         };
         interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
 
+        let mut event_stream = match self
+            .beacon_api_client
+            .get_events_stream(&[EventTopic::Head], "validator")
+        {
+            Ok(stream) => stream,
+            Err(err) => {
+                error!("Failed to create event stream: {err:?}");
+                return;
+            }
+        };
+
         loop {
             tokio::select! {
+                Some(event) = event_stream.next() => {
+                    if let BeaconEvent::Head(head_event) = event {
+                        if let Err(err) = self.process_head_event(&head_event) {
+                            warn!("Failed to process head event: {err:?}");
+                        }
+                    }
+                }
                 _ = interval.tick() => {
                     intervals += 1;
                     if intervals % (INTERVALS_PER_SLOT * SLOTS_PER_EPOCH) == 0 {
@@ -151,6 +181,16 @@ impl ValidatorService {
                 }
             }
         }
+    }
+
+    pub fn process_head_event(&mut self, head_event: &HeadEvent) -> anyhow::Result<()> {
+        if head_event.slot > self.highest_slot {
+            self.highest_slot = head_event.slot;
+            info!("Updated highest slot to: {}", self.highest_slot);
+            let _ = self.slot_sender.send(head_event.slot);
+        }
+
+        Ok(())
     }
 
     pub async fn process_aggregator_sync_infos(&mut self, slot: u64) -> anyhow::Result<()> {
@@ -497,12 +537,33 @@ impl ValidatorService {
             .await?)
     }
 
+    pub async fn attestation_wait(&self, slot: u64) {
+        if slot <= self.highest_slot {
+            return;
+        }
+
+        let mut slot_receiver = self.slot_sender.subscribe();
+
+        tokio::select! {
+            Ok(received_slot) = slot_receiver.recv() => {
+                if received_slot >= slot {
+                    info!("Received slot {received_slot}, proceeding with attestation");
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_secs(network_spec().seconds_per_slot / 3)) => {
+                info!("One third of slot {slot} has passed, proceeding with attestation");
+            }
+        }
+    }
+
     pub async fn make_attestation(
         &self,
         slot: u64,
         validator_index: u64,
         committee_index: u64,
     ) -> anyhow::Result<()> {
+        self.attestation_wait(slot).await;
+
         let Some(keystore) = self.validator_index_to_keystore.get(&validator_index) else {
             bail!("Keystore not found for validator: {validator_index}");
         };
