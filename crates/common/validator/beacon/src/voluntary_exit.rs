@@ -14,7 +14,7 @@ use ream_consensus_misc::{
 use ream_network_spec::networks::network_spec;
 use tokio::time::sleep;
 
-use crate::validator::ValidatorService;
+use crate::beacon_api_client::BeaconApiClient;
 
 pub fn sign_voluntary_exit(
     epoch: u64,
@@ -45,15 +45,13 @@ pub fn sign_voluntary_exit(
 }
 
 pub async fn process_voluntary_exit(
-    validator_service: ValidatorService,
+    beacon_api_client: &BeaconApiClient,
     validator_index: u64,
     epoch: u64,
+    private_key: &PrivateKey,
     wait_till_exit: bool,
 ) -> anyhow::Result<()> {
-    let sync_status = validator_service
-        .beacon_api_client
-        .get_node_syncing_status()
-        .await?;
+    let sync_status = beacon_api_client.get_node_syncing_status().await?;
 
     if sync_status.data.is_syncing {
         return Err(anyhow!(
@@ -61,14 +59,14 @@ pub async fn process_voluntary_exit(
         ));
     }
 
-    validator_service
-        .submit_voluntary_exit(validator_index, epoch)
+    let signed_voluntary_exit = sign_voluntary_exit(epoch, validator_index, private_key)?;
+    beacon_api_client
+        .submit_signed_voluntary_exit(signed_voluntary_exit)
         .await?;
 
     if wait_till_exit {
         loop {
-            match validator_service
-                .beacon_api_client
+            match beacon_api_client
                 .get_state_validator(ID::Head, ValidatorID::Index(validator_index))
                 .await?
                 .data
