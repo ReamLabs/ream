@@ -30,6 +30,7 @@ url.workspace = true
 
 # ream dependencies
 ream-account-manager.workspace = true
+ream-beacon-api-types.workspace = true
 ream-checkpoint-sync.workspace = true
 ream-consensus.workspace = true
 ream-discv5.workspace = true
