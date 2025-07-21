@@ -15,7 +15,7 @@ use super::result::ValidationResult;
 
 pub async fn validate_blob_sidecar(
     beacon_chain: &BeaconChain,
-    blob_sidecar: BlobSidecar,
+    blob_sidecar: &BlobSidecar,
     subnet_id: u64,
     cached_db: &CachedDB,
 ) -> anyhow::Result<ValidationResult> {

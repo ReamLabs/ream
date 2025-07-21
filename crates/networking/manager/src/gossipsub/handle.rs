@@ -86,7 +86,7 @@ pub async fn handle_gossipsub_message(
     message: Message,
     beacon_chain: &BeaconChain,
     cached_db: &CachedDB,
-    p2psender: &P2PSender,
+    p2p_sender: &P2PSender,
 ) {
     match GossipsubMessage::decode(&message.topic, &message.data) {
         Ok(gossip_message) => match gossip_message {
@@ -155,7 +155,7 @@ pub async fn handle_gossipsub_message(
 
                 match validate_blob_sidecar(
                     beacon_chain,
-                    *blob_sidecar.clone(),
+                    &blob_sidecar,
                     compute_subnet_for_blob_sidecar(blob_sidecar.index),
                     cached_db,
                 )
@@ -163,6 +163,7 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
+                            let blob_sidecar_bytes = blob_sidecar.as_ssz_bytes();
                             if let Err(err) = beacon_chain
                                 .store
                                 .lock()
@@ -175,7 +176,7 @@ pub async fn handle_gossipsub_message(
                                         blob_sidecar.index,
                                     ),
                                     BlobAndProofV1 {
-                                        blob: blob_sidecar.blob.clone(),
+                                        blob: blob_sidecar.blob,
                                         proof: blob_sidecar.kzg_proof,
                                     },
                                 )
@@ -183,10 +184,10 @@ pub async fn handle_gossipsub_message(
                                 error!("Failed to insert blob_sidecar: {err}");
                             }
 
-                            p2psender.send_gossip(GossipMessage {
+                            p2p_sender.send_gossip(GossipMessage {
                                 topic: GossipTopic::from_topic_hash(&message.topic)
                                     .expect("invalid topic hash"),
-                                data: blob_sidecar.as_ssz_bytes(),
+                                data: blob_sidecar_bytes,
                             });
                         }
                         ValidationResult::Reject(reason) => {

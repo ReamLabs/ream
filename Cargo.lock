@@ -5290,7 +5290,6 @@ dependencies = [
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
- "itertools 0.14.0",
  "ream-bls",
  "serde",
  "serde_json",
