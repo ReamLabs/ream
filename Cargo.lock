@@ -5283,23 +5283,18 @@ dependencies = [
 name = "ream-consensus-misc"
 version = "0.1.0"
 dependencies = [
- "alloy-consensus",
  "alloy-primitives",
  "alloy-rlp",
  "anyhow",
- "async-trait",
  "ethereum_hashing",
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "itertools 0.14.0",
  "ream-bls",
- "ream-merkle",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2 0.10.8",
- "snap",
  "ssz_types",
  "thiserror 2.0.12",
  "tree_hash",
