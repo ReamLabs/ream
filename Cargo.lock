@@ -5143,16 +5143,15 @@ dependencies = [
  "ream-discv5",
  "ream-executor",
  "ream-keystore",
- "ream-lean-network",
- "ream-lean-validator",
  "ream-network-manager",
  "ream-network-spec",
  "ream-node",
  "ream-operation-pool",
  "ream-p2p",
- "ream-rpc",
+ "ream-rpc-beacon",
  "ream-storage",
- "ream-validator",
+ "ream-validator-beacon",
+ "ream-validator-lean",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -5282,6 +5281,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-consensus-lean"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "ream-pqc",
+ "serde",
+ "ssz_types",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
 name = "ream-consensus-misc"
 version = "0.1.0"
 dependencies = [
@@ -5405,34 +5418,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-lean-consensus"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "ethereum_ssz",
- "ethereum_ssz_derive",
- "ream-pqc",
- "serde",
- "ssz_types",
- "tree_hash",
- "tree_hash_derive",
-]
-
-[[package]]
-name = "ream-lean-network"
-version = "0.1.0"
-dependencies = [
- "tracing",
-]
-
-[[package]]
-name = "ream-lean-validator"
-version = "0.1.0"
-dependencies = [
- "tracing",
-]
-
-[[package]]
 name = "ream-light-client"
 version = "0.1.0"
 dependencies = [
@@ -5483,7 +5468,7 @@ dependencies = [
  "ream-polynomial-commitments",
  "ream-storage",
  "ream-syncer",
- "ream-validator",
+ "ream-validator-beacon",
  "tokio",
  "tracing",
  "tree_hash",
@@ -5545,7 +5530,7 @@ dependencies = [
  "ream-executor",
  "ream-light-client",
  "ream-network-spec",
- "ream-validator",
+ "ream-validator-beacon",
  "serde",
  "serde_yaml",
  "sha2 0.10.8",
@@ -5600,7 +5585,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-rpc"
+name = "ream-rpc-beacon"
 version = "0.1.0"
 dependencies = [
  "actix-web",
@@ -5632,6 +5617,10 @@ dependencies = [
  "tracing",
  "tree_hash",
 ]
+
+[[package]]
+name = "ream-rpc-lean"
+version = "0.1.0"
 
 [[package]]
 name = "ream-runtime"
@@ -5685,7 +5674,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-validator"
+name = "ream-validator-beacon"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
@@ -5715,6 +5704,13 @@ dependencies = [
  "tree_hash",
  "tree_hash_derive",
  "url",
+]
+
+[[package]]
+name = "ream-validator-lean"
+version = "0.1.0"
+dependencies = [
+ "tracing",
 ]
 
 [[package]]

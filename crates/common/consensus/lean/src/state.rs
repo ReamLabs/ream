@@ -8,6 +8,7 @@ use crate::validator::Validator;
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BeamState {
     pub genesis_time: u64,
-    pub validators: VariableList<Validator, ssz_types::typenum::U1000000>, /* Up to 1 million
-                                                                            * validators */
+
+    /// Up to 1 million validators
+    pub validators: VariableList<Validator, ssz_types::typenum::U1000000>,
 }

@@ -1,5 +1,5 @@
 [package]
-name = "ream-lean-network"
+name = "ream-validator-lean"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true

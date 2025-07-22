@@ -6,4 +6,4 @@ use tree_hash_derive::TreeHash;
 pub struct PQSignature {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct Pubkey {}
+pub struct PublicKey {}

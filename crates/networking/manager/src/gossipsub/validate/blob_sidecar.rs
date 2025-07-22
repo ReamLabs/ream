@@ -9,7 +9,7 @@ use ream_storage::{
     cache::CachedDB,
     tables::{Field, Table},
 };
-use ream_validator::blob_sidecars::compute_subnet_for_blob_sidecar;
+use ream_validator_beacon::blob_sidecars::compute_subnet_for_blob_sidecar;
 
 use super::result::ValidationResult;
 

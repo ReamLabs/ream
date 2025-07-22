@@ -9,7 +9,7 @@ use ream_light_client::{
     finality_update::LightClientFinalityUpdate, optimistic_update::LightClientOptimisticUpdate,
 };
 use ream_network_spec::networks::network_spec;
-use ream_validator::{
+use ream_validator_beacon::{
     aggregate_and_proof::AggregateAndProof, contribution_and_proof::SignedContributionAndProof,
 };
 use ssz::Decode;

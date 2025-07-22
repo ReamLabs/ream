@@ -1,5 +1,5 @@
 [package]
-name = "ream-lean-validator"
+name = "ream-rpc-lean"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -10,4 +10,3 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-tracing = { workspace = true, features = ["log"] }

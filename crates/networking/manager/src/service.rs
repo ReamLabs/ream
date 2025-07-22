@@ -15,7 +15,7 @@ use ream_network_spec::networks::network_spec;
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
     config::NetworkConfig,
-    network::{Network, ReamNetworkEvent},
+    network::beacon::{Network, ReamNetworkEvent},
     network_state::NetworkState,
 };
 use ream_storage::{cache::CachedDB, db::ReamDB};

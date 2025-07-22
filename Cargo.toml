@@ -7,6 +7,7 @@ members = [
     "crates/common/beacon_chain",
     "crates/common/checkpoint_sync",
     "crates/common/consensus/beacon",
+    "crates/common/consensus/lean",
     "crates/common/consensus/misc",
     "crates/common/execution_engine",
     "crates/common/executor",
@@ -16,19 +17,18 @@ members = [
     "crates/common/node",
     "crates/common/operation_pool",
     "crates/common/polynomial_commitments",
-    "crates/common/validator",
+    "crates/common/validator/beacon",
+    "crates/common/validator/lean",
     "crates/crypto/bls",
     "crates/crypto/keystore",
     "crates/crypto/merkle",
     "crates/crypto/pqc",
-    "crates/lean/consensus",
-    "crates/lean/network",
-    "crates/lean/validator",
     "crates/networking/discv5",
     "crates/networking/manager",
     "crates/networking/p2p",
     "crates/networking/syncer",
-    "crates/rpc",
+    "crates/rpc/beacon",
+    "crates/rpc/lean",
     "crates/runtime",
     "crates/storage",
     "testing/beacon-api",
@@ -60,9 +60,7 @@ actix-web-lab = "0.24.1"
 aes = "0.8.4"
 alloy-consensus = { version = "1.0", default-features = false }
 alloy-primitives = { version = "1.1", features = ['serde'] }
-alloy-rlp = { version = "0.3.8", default-features = false, features = [
-    "derive",
-] }
+alloy-rlp = { version = "0.3.8", default-features = false, features = ["derive"] }
 alloy-rpc-types-beacon = "1.0.8"
 alloy-rpc-types-eth = "1.0.7"
 anyhow = "1.0"
@@ -84,24 +82,7 @@ hashsig = { git = "https://github.com/b-wagn/hash-sig" }
 itertools = "0.14"
 jsonwebtoken = "9.3.1"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }
-libp2p = { version = "0.55", default-features = false, features = [
-    "identify",
-    "yamux",
-    "noise",
-    "dns",
-    "serde",
-    "tcp",
-    "tokio",
-    "plaintext",
-    "secp256k1",
-    "macros",
-    "ecdsa",
-    "metrics",
-    "quic",
-    "upnp",
-    "gossipsub",
-    "ping",
-] }
+libp2p = { version = "0.55", default-features = false, features = ["identify", "yamux", "noise", "dns", "serde", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
 libp2p-identity = "0.2"
 libp2p-mplex = "0.43"
 lru = "0.15.0"
@@ -121,14 +102,7 @@ ssz_types = "0.11"
 tempdir = "0.3.7"
 tempfile = "3.19"
 thiserror = "2.0.11"
-tokio = { version = "1.42", features = [
-    "rt",
-    "rt-multi-thread",
-    "sync",
-    "signal",
-    "time",
-    "macros",
-] }
+tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
@@ -141,9 +115,7 @@ url = "2.5"
 ream-account-manager = { path = "crates/account_manager" }
 ream-beacon-api-types = { path = "crates/common/beacon_api_types" }
 ream-beacon-chain = { path = "crates/common/beacon_chain" }
-ream-bls = { path = "crates/crypto/bls", features = [
-    "zkcrypto",
-] } # Default feature is zkcrypto
+ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
 ream-checkpoint-sync = { path = "crates/common/checkpoint_sync" }
 ream-consensus-beacon = { path = "crates/common/consensus/beacon" }
 ream-consensus-misc = { path = "crates/common/consensus/misc" }
@@ -152,8 +124,6 @@ ream-execution-engine = { path = "crates/common/execution_engine" }
 ream-executor = { path = "crates/common/executor" }
 ream-fork-choice = { path = "crates/common/fork_choice" }
 ream-keystore = { path = "crates/crypto/keystore" }
-ream-lean-network = { path = "crates/lean/network" }
-ream-lean-validator = { path = "crates/lean/validator" }
 ream-light-client = { path = "crates/common/light_client" }
 ream-merkle = { path = "crates/crypto/merkle" }
 ream-network-manager = { path = "crates/networking/manager" }
@@ -163,10 +133,11 @@ ream-operation-pool = { path = "crates/common/operation_pool" }
 ream-p2p = { path = "crates/networking/p2p" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-pqc = { path = "crates/crypto/pqc" }
-ream-rpc = { path = "crates/rpc" }
+ream-rpc-beacon = { path = "crates/rpc/beacon" }
 ream-storage = { path = "crates/storage" }
 ream-syncer = { path = "crates/networking/syncer" }
-ream-validator = { path = "crates/common/validator" }
+ream-validator-beacon = { path = "crates/common/validator/beacon" }
+ream-validator-lean = { path = "crates/common/validator/lean" }
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }

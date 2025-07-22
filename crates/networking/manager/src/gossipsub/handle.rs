@@ -14,7 +14,7 @@ use ream_p2p::{
     },
 };
 use ream_storage::{cache::CachedDB, tables::Table};
-use ream_validator::blob_sidecars::compute_subnet_for_blob_sidecar;
+use ream_validator_beacon::blob_sidecars::compute_subnet_for_blob_sidecar;
 use ssz::Encode;
 use tracing::{error, info, trace};
 use tree_hash::TreeHash;

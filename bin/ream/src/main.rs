@@ -15,13 +15,15 @@ use ream_executor::ReamExecutor;
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::set_network_spec;
 use ream_operation_pool::OperationPool;
-use ream_rpc::{config::RpcServerConfig, start_server};
+use ream_p2p::network::lean::NetworkService as LeanNetworkService;
+use ream_rpc_beacon::{config::RpcServerConfig, start_server};
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
     tables::Table,
 };
-use ream_validator::validator::ValidatorService;
+use ream_validator_beacon::validator::ValidatorService;
+use ream_validator_lean::service::ValidatorService as LeanValidatorService;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -77,8 +79,8 @@ fn main() {
 pub async fn run_lean_node(_config: LeanNodeConfig, executor: ReamExecutor) {
     info!("starting up lean node...");
 
-    let network_service = ream_lean_network::service::NetworkService::new().await;
-    let validator_service = ream_lean_validator::service::ValidatorService::new().await;
+    let network_service = LeanNetworkService::new().await;
+    let validator_service = LeanValidatorService::new().await;
 
     let network_future = executor.spawn(async move {
         network_service.start().await;

@@ -36,4 +36,4 @@ ream-p2p.workspace = true
 ream-polynomial-commitments.workspace = true
 ream-storage.workspace = true
 ream-syncer.workspace = true
-ream-validator.workspace = true
+ream-validator-beacon.workspace = true

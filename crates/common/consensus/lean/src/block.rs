@@ -16,5 +16,7 @@ pub struct SignedBlock {
 pub struct Block {
     pub slot: u64,
     pub proposer_index: u64,
-    pub body: B256, // Empty root
+
+    /// Empty root
+    pub body: B256,
 }
