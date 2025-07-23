@@ -37,20 +37,3 @@ pub async fn prepare_beacon_proposer(
 
     Ok(HttpResponse::Ok().body("Preparation information has been received."))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_prepare_beacon_proposer_endpoint_exists() {
-        // Minimal test to satisfy CI requirements
-        // The actual endpoint functionality is tested through:
-        // 1. Unit tests in operation_pool for the expiration logic
-        // 2. Integration tests with a running beacon node
-
-        // This test just verifies the handler module compiles and basic types work
-        let error = ApiError::BadRequest("Empty request body".to_string());
-        let _ = error; // Simply verify we can create the error type
-    }
-}
