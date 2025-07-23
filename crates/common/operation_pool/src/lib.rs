@@ -68,10 +68,19 @@ impl OperationPool {
         self.signed_bls_to_execution_changes.write().remove(&root);
     }
 
-    pub fn insert_proposer_preparation(&self, validator_index: u64, fee_recipient: Address, submission_epoch: u64) {
-        self.proposer_preparations
-            .write()
-            .insert(validator_index, ProposerPreparation { fee_recipient, submission_epoch });
+    pub fn insert_proposer_preparation(
+        &self,
+        validator_index: u64,
+        fee_recipient: Address,
+        submission_epoch: u64,
+    ) {
+        self.proposer_preparations.write().insert(
+            validator_index,
+            ProposerPreparation {
+                fee_recipient,
+                submission_epoch,
+            },
+        );
     }
 
     pub fn get_proposer_preparation(&self, validator_index: u64) -> Option<Address> {
@@ -90,13 +99,11 @@ impl OperationPool {
     }
 
     pub fn clean_proposer_preparations(&self, current_epoch: u64) {
-        self.proposer_preparations
-            .write()
-            .retain(|_, preparation| {
-                // Keep preparations that are still valid
-                // They persist through the epoch of submission and for 2 more epochs after that
-                current_epoch <= preparation.submission_epoch + 2
-            });
+        self.proposer_preparations.write().retain(|_, preparation| {
+            // Keep preparations that are still valid
+            // They persist through the epoch of submission and for 2 more epochs after that
+            current_epoch <= preparation.submission_epoch + 2
+        });
     }
 }
 
@@ -176,11 +183,14 @@ mod tests {
 
         // Test exact boundary - submission at epoch 100 is valid through epoch 102
         operation_pool.insert_proposer_preparation(1, fee_recipient, 100);
-        
+
         // Should be valid at epoch 102
         operation_pool.clean_proposer_preparations(102);
-        assert_eq!(operation_pool.get_proposer_preparation(1), Some(fee_recipient));
-        
+        assert_eq!(
+            operation_pool.get_proposer_preparation(1),
+            Some(fee_recipient)
+        );
+
         // Should be expired at epoch 103
         operation_pool.clean_proposer_preparations(103);
         assert_eq!(operation_pool.get_proposer_preparation(1), None);

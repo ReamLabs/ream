@@ -4,10 +4,9 @@ use actix_web::{
     HttpResponse, Responder, post,
     web::{Data, Json},
 };
-use alloy_primitives::Address;
 use ream_beacon_api_types::{error::ApiError, request::PrepareBeaconProposerItem};
 use ream_fork_choice::store::Store;
-use ream_operation_pool::{OperationPool, ProposerPreparation};
+use ream_operation_pool::OperationPool;
 use ream_storage::db::ReamDB;
 
 #[post("/validator/prepare_beacon_proposer")]
@@ -29,7 +28,11 @@ pub async fn prepare_beacon_proposer(
         .map_err(|err| ApiError::InternalError(format!("Failed to get current epoch: {err}")))?;
 
     for item in items {
-        operation_pool.insert_proposer_preparation(item.validator_index, item.fee_recipient, current_epoch);
+        operation_pool.insert_proposer_preparation(
+            item.validator_index,
+            item.fee_recipient,
+            current_epoch,
+        );
     }
 
     Ok(HttpResponse::Ok().body("Preparation information has been received."))
@@ -38,6 +41,8 @@ pub async fn prepare_beacon_proposer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy_primitives::Address;
+    use ream_operation_pool::ProposerPreparation;
 
     #[test]
     fn test_proposer_preparation_struct() {
@@ -45,16 +50,16 @@ mod tests {
         // Verify the ProposerPreparation struct works correctly
         let fee_recipient = Address::from([0x42; 20]);
         let submission_epoch = 100u64;
-        
+
         let preparation = ProposerPreparation {
             fee_recipient,
             submission_epoch,
         };
-        
+
         assert_eq!(preparation.fee_recipient, fee_recipient);
         assert_eq!(preparation.submission_epoch, submission_epoch);
     }
-    
+
     #[test]
     fn test_api_error_creation() {
         // Test that our error handling works

@@ -254,7 +254,8 @@ impl Store {
 
                 // Clean expired proposer preparations
                 let current_epoch = self.get_current_store_epoch()?;
-                self.operation_pool.clean_proposer_preparations(current_epoch);
+                self.operation_pool
+                    .clean_proposer_preparations(current_epoch);
 
                 if let Some(beacon_block) = self
                     .db
