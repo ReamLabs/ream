@@ -252,6 +252,10 @@ impl Store {
                 self.operation_pool
                     .clean_signed_voluntary_exits(&beacon_state);
 
+                // Clean expired proposer preparations
+                let current_epoch = self.get_current_store_epoch()?;
+                self.operation_pool.clean_proposer_preparations(current_epoch);
+
                 if let Some(beacon_block) = self
                     .db
                     .beacon_block_provider()
