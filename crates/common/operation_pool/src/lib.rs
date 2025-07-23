@@ -78,14 +78,14 @@ impl OperationPool {
         self.proposer_preparations
             .read()
             .get(&validator_index)
-            .map(|prep| prep.fee_recipient)
+            .map(|preparation| preparation.fee_recipient)
     }
 
     pub fn get_all_proposer_preparations(&self) -> HashMap<u64, Address> {
         self.proposer_preparations
             .read()
             .iter()
-            .map(|(&index, prep)| (index, prep.fee_recipient))
+            .map(|(&index, preparation)| (index, preparation.fee_recipient))
             .collect()
     }
 
