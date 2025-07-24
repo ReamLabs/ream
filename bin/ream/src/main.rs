@@ -24,11 +24,10 @@ use ream_storage::{
     dir::setup_data_dir,
     tables::Table,
 };
-use ream_validator::{
+use ream_validator_beacon::{
     beacon_api_client::BeaconApiClient, validator::ValidatorService,
     voluntary_exit::process_voluntary_exit,
 };
-use ream_validator_beacon::validator::ValidatorService;
 use ream_validator_lean::service::ValidatorService as LeanValidatorService;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
