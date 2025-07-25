@@ -3,7 +3,7 @@ use ream_consensus_beacon::{
     attester_slashing::AttesterSlashing, blob_sidecar::BlobSidecar,
     bls_to_execution_change::BLSToExecutionChange, electra::beacon_block::SignedBeaconBlock,
     proposer_slashing::ProposerSlashing, single_attestation::SingleAttestation,
-    sync_committee::SyncCommittee,
+    sync_committee::SyncCommittee, voluntary_exit::VoluntaryExit,
 };
 use ream_consensus_misc::constants::genesis_validators_root;
 use ream_light_client::{
@@ -33,6 +33,7 @@ pub enum GossipsubMessage {
     SyncCommitteeContributionAndProof(Box<SignedContributionAndProof>),
     LightClientFinalityUpdate(Box<LightClientFinalityUpdate>),
     LightClientOptimisticUpdate(Box<LightClientOptimisticUpdate>),
+    VoluntaryExit(Box<VoluntaryExit>),
 }
 
 impl GossipsubMessage {
@@ -82,8 +83,8 @@ impl GossipsubMessage {
             GossipTopicKind::LightClientOptimisticUpdate => Ok(Self::LightClientOptimisticUpdate(
                 Box::new(LightClientOptimisticUpdate::from_ssz_bytes(data)?),
             )),
-            _ => Err(GossipsubError::InvalidTopic(format!(
-                "Topic not supported: {topic:?}"
+            GossipTopicKind::VoluntaryExit => Ok(Self::VoluntaryExit(Box::new(
+                VoluntaryExit::from_ssz_bytes(data)?,
             ))),
         }
     }

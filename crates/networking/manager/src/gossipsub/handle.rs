@@ -79,6 +79,10 @@ pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
             fork: network_spec().fork_digest(genesis_validators_root()),
             kind: GossipTopicKind::BlobSidecar(0),
         },
+        GossipTopic {
+            fork: network_spec().fork_digest(genesis_validators_root()),
+            kind: GossipTopicKind::VoluntaryExit,
+        },
     ]);
 
     gossipsub_config
@@ -239,6 +243,12 @@ pub async fn handle_gossipsub_message(
                 info!(
                     "Light Client Optimistic Update received over gossipsub: root: {}",
                     light_client_optimistic_update.tree_hash_root()
+                );
+            }
+            GossipsubMessage::VoluntaryExit(voluntary_exit) => {
+                info!(
+                    "Voluntary Exit received over gossipsub: root: {}",
+                    voluntary_exit.tree_hash_root()
                 );
             }
         },
