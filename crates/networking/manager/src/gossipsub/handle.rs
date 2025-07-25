@@ -107,7 +107,7 @@ pub async fn handle_gossipsub_message(
                 );
 
                 match validate_beacon_attestation(
-                    *single_attestation.clone(),
+                    &single_attestation,
                     beacon_chain,
                     subnet_id,
                     cached_db,

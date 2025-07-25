@@ -17,7 +17,7 @@ use ream_validator_beacon::attestation::compute_subnet_for_attestation;
 use super::result::ValidationResult;
 
 pub async fn validate_beacon_attestation(
-    attestation: SingleAttestation,
+    attestation: &SingleAttestation,
     beacon_chain: &BeaconChain,
     attestation_subnet_id: u64,
     cached_db: &CachedDB,
