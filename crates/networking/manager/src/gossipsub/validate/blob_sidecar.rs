@@ -115,7 +115,7 @@ pub async fn validate_blob_sidecar(
     // block_header.proposer_index, blob_sidecar.index) with valid header signature, sidecar
     // inclusion proof, and kzg proof.
     let tuple = (header.slot, header.proposer_index, blob_sidecar.index);
-    let mut seen = cached_db.cached_seen_blob_sidecars.write().await;
+    let mut seen = cached_db.seen_blob_sidecars.write().await;
     if seen.contains(&tuple) {
         return Ok(ValidationResult::Ignore(
             "Duplicate blob sidecar for (slot, proposer_index, index)".to_string(),

@@ -13,28 +13,35 @@ pub struct AddressSlotIdentifier {
     pub slot: u64,
 }
 
+#[derive(Debug, Hash, Eq, PartialEq, Default)]
+pub struct AtestationKey {
+    pub attestation_subnet_id: u64,
+    pub target_epoch: u64,
+    pub participating_validator_index: u64,
+}
+
 /// In-memory LRU cache.
 #[derive(Debug)]
 pub struct CachedDB {
-    pub cached_proposer_signature: RwLock<LruCache<AddressSlotIdentifier, BLSSignature>>,
-    pub cached_bls_to_execution_signature:
-        RwLock<LruCache<AddressSlotIdentifier, BLSToExecutionChange>>,
-    pub cached_seen_blob_sidecars: RwLock<LruCache<(u64, u64, u64), ()>>,
+    pub proposer_signature: RwLock<LruCache<AddressSlotIdentifier, BLSSignature>>,
+    pub bls_to_execution_signature: RwLock<LruCache<AddressSlotIdentifier, BLSToExecutionChange>>,
+    pub seen_blob_sidecars: RwLock<LruCache<(u64, u64, u64), ()>>,
+    pub seen_attestations: RwLock<LruCache<AtestationKey, ()>>,
 }
 
 impl CachedDB {
     pub fn new() -> Self {
         Self {
-            cached_proposer_signature: LruCache::new(
+            proposer_signature: LruCache::new(
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),
-            cached_bls_to_execution_signature: LruCache::new(
+            bls_to_execution_signature: LruCache::new(
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),
-            cached_seen_blob_sidecars: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap())
-                .into(),
+            seen_blob_sidecars: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
+            seen_attestations: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
         }
     }
 }

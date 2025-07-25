@@ -1,8 +1,9 @@
 use libp2p::gossipsub::TopicHash;
 use ream_consensus_beacon::{
-    attestation::Attestation, attester_slashing::AttesterSlashing, blob_sidecar::BlobSidecar,
+    attester_slashing::AttesterSlashing, blob_sidecar::BlobSidecar,
     bls_to_execution_change::BLSToExecutionChange, electra::beacon_block::SignedBeaconBlock,
-    proposer_slashing::ProposerSlashing, sync_committee::SyncCommittee,
+    proposer_slashing::ProposerSlashing, single_attestation::SingleAttestation,
+    sync_committee::SyncCommittee,
 };
 use ream_consensus_misc::constants::genesis_validators_root;
 use ream_light_client::{
@@ -26,7 +27,7 @@ pub enum GossipsubMessage {
     ProposerSlashing(Box<ProposerSlashing>),
     AggregateAndProof(Box<AggregateAndProof>),
     BlobSidecar(Box<BlobSidecar>),
-    BeaconAttestation(Box<Attestation>),
+    BeaconAttestation((Box<SingleAttestation>, u64)),
     SyncCommittee(Box<SyncCommittee>),
     BlsToExecutionChange(Box<BLSToExecutionChange>),
     SyncCommitteeContributionAndProof(Box<SignedContributionAndProof>),
@@ -59,8 +60,9 @@ impl GossipsubMessage {
             GossipTopicKind::AggregateAndProof => Ok(Self::AggregateAndProof(Box::new(
                 AggregateAndProof::from_ssz_bytes(data)?,
             ))),
-            GossipTopicKind::BeaconAttestation(_) => Ok(Self::BeaconAttestation(Box::new(
-                Attestation::from_ssz_bytes(data)?,
+            GossipTopicKind::BeaconAttestation(subnet_id) => Ok(Self::BeaconAttestation((
+                Box::new(SingleAttestation::from_ssz_bytes(data)?),
+                subnet_id,
             ))),
             GossipTopicKind::BlsToExecutionChange => Ok(Self::BlsToExecutionChange(Box::new(
                 BLSToExecutionChange::from_ssz_bytes(data)?,

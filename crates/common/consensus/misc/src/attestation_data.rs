@@ -5,7 +5,7 @@ use tree_hash_derive::TreeHash;
 
 use crate::checkpoint::Checkpoint;
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Hash)]
 pub struct AttestationData {
     #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,

@@ -20,7 +20,10 @@ use tracing::{error, info, trace};
 use tree_hash::TreeHash;
 
 use crate::{
-    gossipsub::validate::{blob_sidecar::validate_blob_sidecar, result::ValidationResult},
+    gossipsub::validate::{
+        beacon_attestation::validate_beacon_attestation, blob_sidecar::validate_blob_sidecar,
+        result::ValidationResult,
+    },
     p2p_sender::P2PSender,
 };
 
@@ -97,14 +100,38 @@ pub async fn handle_gossipsub_message(
                     signed_block.message.block_root()
                 );
             }
-            GossipsubMessage::BeaconAttestation(attestation) => {
+            GossipsubMessage::BeaconAttestation((single_attestation, subnet_id)) => {
                 info!(
                     "Beacon Attestation received over gossipsub: root: {}",
-                    attestation.tree_hash_root()
+                    single_attestation.tree_hash_root()
                 );
 
-                if let Err(err) = beacon_chain.process_attestation(*attestation, true).await {
-                    error!("Failed to process gossipsub attestation: {err}");
+                match validate_beacon_attestation(
+                    *single_attestation.clone(),
+                    beacon_chain,
+                    subnet_id,
+                    cached_db,
+                )
+                .await
+                {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: single_attestation.as_ssz_bytes(),
+                            });
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("Attestation rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Attestation ignored: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate attestation: {err}");
+                    }
                 }
             }
             GossipsubMessage::BlsToExecutionChange(bls_to_execution_change) => {

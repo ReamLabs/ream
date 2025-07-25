@@ -2,6 +2,7 @@ use std::sync::OnceLock;
 
 use alloy_primitives::{B256, aliases::B32, fixed_bytes};
 
+pub const ATTESTATION_PROPAGATION_SLOT_RANGE: u64 = 32;
 pub const BASE_REWARDS_PER_EPOCH: u64 = 4;
 pub const BASE_REWARD_FACTOR: u64 = 64;
 pub const BEACON_STATE_MERKLE_DEPTH: u64 = 6;
