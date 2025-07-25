@@ -3,7 +3,7 @@ use ream_consensus_beacon::{
     attester_slashing::AttesterSlashing, blob_sidecar::BlobSidecar,
     bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_block::SignedBeaconBlock,
     proposer_slashing::ProposerSlashing, single_attestation::SingleAttestation,
-    sync_committee::SyncCommittee, voluntary_exit::VoluntaryExit,
+    voluntary_exit::VoluntaryExit,
 };
 use ream_consensus_misc::constants::genesis_validators_root;
 use ream_light_client::{
@@ -12,6 +12,7 @@ use ream_light_client::{
 use ream_network_spec::networks::network_spec;
 use ream_validator_beacon::{
     aggregate_and_proof::AggregateAndProof, contribution_and_proof::SignedContributionAndProof,
+    sync_committee::SyncCommitteeMessage,
 };
 use ssz::Decode;
 
@@ -28,7 +29,7 @@ pub enum GossipsubMessage {
     AggregateAndProof(Box<AggregateAndProof>),
     BlobSidecar(Box<BlobSidecar>),
     BeaconAttestation((Box<SingleAttestation>, u64)),
-    SyncCommittee(Box<SyncCommittee>),
+    SyncCommittee((Box<SyncCommitteeMessage>, u64)),
     BlsToExecutionChange(Box<SignedBLSToExecutionChange>),
     SyncCommitteeContributionAndProof(Box<SignedContributionAndProof>),
     LightClientFinalityUpdate(Box<LightClientFinalityUpdate>),
@@ -50,8 +51,9 @@ impl GossipsubMessage {
             GossipTopicKind::BeaconBlock => Ok(Self::BeaconBlock(Box::new(
                 SignedBeaconBlock::from_ssz_bytes(data)?,
             ))),
-            GossipTopicKind::SyncCommittee(_) => Ok(Self::SyncCommittee(Box::new(
-                SyncCommittee::from_ssz_bytes(data)?,
+            GossipTopicKind::SyncCommittee(subnet_id) => Ok(Self::SyncCommittee((
+                Box::new(SyncCommitteeMessage::from_ssz_bytes(data)?),
+                subnet_id,
             ))),
             GossipTopicKind::SyncCommitteeContributionAndProof => {
                 Ok(Self::SyncCommitteeContributionAndProof(Box::new(

@@ -23,6 +23,7 @@ use crate::{
     gossipsub::validate::{
         beacon_attestation::validate_beacon_attestation, blob_sidecar::validate_blob_sidecar,
         bls_to_execution_change::validate_bls_to_execution_change, result::ValidationResult,
+        sync_committee::validate_sync_committee,
     },
     p2p_sender::P2PSender,
 };
@@ -175,12 +176,36 @@ pub async fn handle_gossipsub_message(
                     aggregate_and_proof.tree_hash_root()
                 );
             }
-            GossipsubMessage::SyncCommittee(sync_committee) => {
+            GossipsubMessage::SyncCommittee((sync_committee, subnet_id)) => {
                 info!(
                     "Sync Committee received over gossipsub: root: {}",
                     sync_committee.tree_hash_root()
                 );
+
+                match validate_sync_committee(&sync_committee, beacon_chain, subnet_id, cached_db)
+                    .await
+                {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: sync_committee.as_ssz_bytes(),
+                            });
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("Sync committee message rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Sync committee message ignored: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate sync committee message: {err}");
+                    }
+                }
             }
+
             GossipsubMessage::SyncCommitteeContributionAndProof(
                 _sync_committee_contribution_and_proof,
             ) => {}

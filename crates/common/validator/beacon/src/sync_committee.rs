@@ -16,6 +16,7 @@ use ream_consensus_misc::{
 };
 use ream_network_spec::networks::network_spec;
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode, Encode};
 use ssz_types::{BitVector, typenum::U512};
 use tree_hash_derive::TreeHash;
 
@@ -31,6 +32,7 @@ pub struct SyncAggregatorSelectionData {
     pub subcommittee_index: u64,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SyncCommitteeMessage {
     pub slot: u64,
     pub beacon_block_root: B256,

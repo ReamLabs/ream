@@ -26,6 +26,13 @@ pub struct AddressValidaterIndexIdentifier {
     pub validator_index: u64,
 }
 
+#[derive(Debug, Hash, Eq, PartialEq, Default, Clone)]
+pub struct SyncCommitteeKey {
+    pub subnet_id: u64,
+    pub slot: u64,
+    pub validator_index: u64,
+}
+
 /// In-memory LRU cache.
 #[derive(Debug)]
 pub struct CachedDB {
@@ -34,6 +41,7 @@ pub struct CachedDB {
     pub seen_blob_sidecars: RwLock<LruCache<(u64, u64, u64), ()>>,
     pub seen_attestations: RwLock<LruCache<AtestationKey, ()>>,
     pub seen_bls_to_execution_change: RwLock<LruCache<AddressValidaterIndexIdentifier, ()>>,
+    pub seen_sync_messages: RwLock<LruCache<SyncCommitteeKey, ()>>,
 }
 
 impl CachedDB {
@@ -51,6 +59,7 @@ impl CachedDB {
             seen_attestations: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
             seen_bls_to_execution_change: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap())
                 .into(),
+            seen_sync_messages: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
         }
     }
 }
