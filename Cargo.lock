@@ -5137,6 +5137,7 @@ dependencies = [
  "hashbrown 0.15.3",
  "rand 0.8.5",
  "ream-account-manager",
+ "ream-beacon-api-types",
  "ream-checkpoint-sync",
  "ream-consensus-beacon",
  "ream-consensus-misc",
