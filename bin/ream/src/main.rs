@@ -5,7 +5,7 @@ use ream::cli::{
     Cli, Commands,
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
-    import_keystores::{load_keystore_directory, load_password_file, process_password},
+    import_keystores::{load_keystore_directory, load_password_from_config, process_password},
     lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig,
     voluntary_exit::VoluntaryExitConfig,
@@ -212,15 +212,10 @@ pub async fn run_validator_node(config: ValidatorNodeConfig, executor: ReamExecu
 
     set_network_spec(config.network.clone());
 
-    let password = process_password({
-        if let Some(ref password_file) = config.password_file {
-            load_password_file(password_file).expect("Failed to read password from password file")
-        } else if let Some(password_str) = config.password {
-            password_str
-        } else {
-            panic!("Expected either password or password-file to be set")
-        }
-    });
+    let password = process_password(
+        load_password_from_config(config.password_file.as_ref(), config.password)
+            .expect("Failed to load password"),
+    );
 
     let keystores = load_keystore_directory(&config.import_keystores)
         .expect("Failed to load keystore directory")
@@ -276,15 +271,10 @@ pub async fn run_voluntary_exit(config: VoluntaryExitConfig) {
 
     set_network_spec(config.network.clone());
 
-    let password = process_password({
-        if let Some(ref password_file) = config.password_file {
-            load_password_file(password_file).expect("Failed to read password from password file")
-        } else if let Some(password_str) = config.password {
-            password_str
-        } else {
-            panic!("Expected either password or password-file to be set")
-        }
-    });
+    let password = process_password(
+        load_password_from_config(config.password_file.as_ref(), config.password)
+            .expect("Failed to load password"),
+    );
 
     let keystores = load_keystore_directory(&config.import_keystores)
         .expect("Failed to load keystore directory")

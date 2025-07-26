@@ -29,6 +29,21 @@ pub fn load_keystore_directory(config: &PathBuf) -> anyhow::Result<Vec<Encrypted
         .collect::<Vec<_>>())
 }
 
+pub fn load_password_from_config(
+    password_file: Option<&PathBuf>,
+    password: Option<String>,
+) -> anyhow::Result<String> {
+    if let Some(password_file) = password_file {
+        load_password_file(password_file)
+    } else if let Some(password_str) = password {
+        Ok(password_str)
+    } else {
+        Err(anyhow!(
+            "Expected either password or password-file to be set"
+        ))
+    }
+}
+
 pub fn process_password(password: String) -> String {
     password
         .nfkd()
