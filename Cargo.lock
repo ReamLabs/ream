@@ -1066,11 +1066,19 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "ream-beacon-api-types",
+ "ream-beacon-chain",
  "ream-consensus-beacon",
  "ream-consensus-misc",
+ "ream-network-manager",
+ "ream-network-spec",
+ "ream-operation-pool",
+ "ream-storage",
  "serde",
  "serde_json",
+ "snap",
  "tokio",
 ]
 

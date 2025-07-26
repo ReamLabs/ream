@@ -16,12 +16,13 @@ use ream_p2p::{
 use ream_storage::{cache::CachedDB, tables::Table};
 use ream_validator_beacon::blob_sidecars::compute_subnet_for_blob_sidecar;
 use ssz::Encode;
-use tracing::{error, info, trace};
+use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 
 use crate::{
     gossipsub::validate::{
-        beacon_attestation::validate_beacon_attestation, blob_sidecar::validate_blob_sidecar,
+        beacon_attestation::validate_beacon_attestation,
+        beacon_block::validate_gossip_beacon_block, blob_sidecar::validate_blob_sidecar,
         result::ValidationResult,
     },
     p2p_sender::P2PSender,
@@ -103,6 +104,40 @@ pub async fn handle_gossipsub_message(
                     signed_block.message.slot,
                     signed_block.message.block_root()
                 );
+
+                let validation_result = match validate_gossip_beacon_block(
+                    beacon_chain,
+                    cached_db,
+                    &signed_block,
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(err) => {
+                        warn!("Failed to validate gossipsub beacon block: {err}");
+                        return;
+                    }
+                };
+
+                match validation_result {
+                    ValidationResult::Accept => {
+                        let signed_block_bytes = signed_block.as_ssz_bytes();
+                        if let Err(err) = beacon_chain.process_block(*signed_block).await {
+                            error!("Failed to process gossipsub beacon block: {err}");
+                        }
+                        p2p_sender.send_gossip(GossipMessage {
+                            topic: GossipTopic::from_topic_hash(&message.topic)
+                                .expect("invalid topic hash"),
+                            data: signed_block_bytes,
+                        });
+                    }
+                    ValidationResult::Ignore(reason) => {
+                        warn!("Ignoring gossipsub beacon block: {reason}");
+                    }
+                    ValidationResult::Reject(reason) => {
+                        warn!("Rejecting gossipsub beacon block: {reason}");
+                    }
+                }
             }
             GossipsubMessage::BeaconAttestation((single_attestation, subnet_id)) => {
                 info!(
@@ -183,7 +218,6 @@ pub async fn handle_gossipsub_message(
                     "Blob Sidecar received over gossipsub: root: {}",
                     blob_sidecar.tree_hash_root()
                 );
-
                 match validate_blob_sidecar(
                     beacon_chain,
                     &blob_sidecar,
