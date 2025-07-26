@@ -1,6 +1,8 @@
 use anyhow::anyhow;
 use ream_beacon_chain::beacon_chain::BeaconChain;
-use ream_consensus_beacon::{bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState};
+use ream_consensus_beacon::{
+    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
+};
 use ream_network_spec::networks::network_spec;
 use ream_storage::{
     cache::{AddressValidaterIndexIdentifier, CachedDB},
@@ -23,14 +25,16 @@ pub async fn validate_bls_to_execution_change(
         .get(head_root)?
         .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
 
-    // [IGNORE] current_epoch >= CAPELLA_FORK_EPOCH, where current_epoch is defined by the current wall-clock time.
+    // [IGNORE] current_epoch >= CAPELLA_FORK_EPOCH, where current_epoch is defined by the current
+    // wall-clock time.
     if state.get_current_epoch() < network_spec().capella_fork_epoch {
         return Ok(ValidationResult::Ignore(
             "Current epoch is before Capella fork".into(),
         ));
     }
 
-    // [IGNORE] The signed_bls_to_execution_change is the first valid signed bls to execution change received for the validator with index
+    // [IGNORE] The signed_bls_to_execution_change is the first valid signed bls to execution change
+    // received for the validator with index
     let key = AddressValidaterIndexIdentifier {
         address: signed.message.from_bls_public_key.clone(),
         validator_index: signed.message.validator_index,
@@ -53,7 +57,6 @@ pub async fn validate_bls_to_execution_change(
             "All of the conditions within process_bls_to_execution_change pass validation fail: {err}"
         )));
     }
-
 
     cached_db
         .seen_bls_to_execution_change

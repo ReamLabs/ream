@@ -21,7 +21,8 @@ use tree_hash::TreeHash;
 
 use crate::{
     gossipsub::validate::{
-        beacon_attestation::validate_beacon_attestation, blob_sidecar::validate_blob_sidecar, bls_to_execution_change::validate_bls_to_execution_change, result::ValidationResult
+        beacon_attestation::validate_beacon_attestation, blob_sidecar::validate_blob_sidecar,
+        bls_to_execution_change::validate_bls_to_execution_change, result::ValidationResult,
     },
     p2p_sender::P2PSender,
 };
