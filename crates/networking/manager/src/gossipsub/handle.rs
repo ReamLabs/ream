@@ -21,8 +21,7 @@ use tree_hash::TreeHash;
 
 use crate::{
     gossipsub::validate::{
-        beacon_attestation::validate_beacon_attestation, blob_sidecar::validate_blob_sidecar,
-        result::ValidationResult,
+        beacon_attestation::validate_beacon_attestation, blob_sidecar::validate_blob_sidecar, bls_to_execution_change::validate_bls_to_execution_change, result::ValidationResult
     },
     p2p_sender::P2PSender,
 };
@@ -134,11 +133,36 @@ pub async fn handle_gossipsub_message(
                     }
                 }
             }
-            GossipsubMessage::BlsToExecutionChange(bls_to_execution_change) => {
+            GossipsubMessage::BlsToExecutionChange(signed_bls_to_execution_change) => {
                 info!(
-                    "Bls To Execution Change received over gossipsub: root: {}",
-                    bls_to_execution_change.tree_hash_root()
+                    "BLS to Execution Change received over gossipsub: root: {}",
+                    signed_bls_to_execution_change.tree_hash_root()
                 );
+
+                match validate_bls_to_execution_change(
+                    &signed_bls_to_execution_change,
+                    beacon_chain,
+                    cached_db,
+                )
+                .await
+                {
+                    Ok(ValidationResult::Accept) => {
+                        p2p_sender.send_gossip(GossipMessage {
+                            topic: GossipTopic::from_topic_hash(&message.topic)
+                                .expect("invalid topic hash"),
+                            data: signed_bls_to_execution_change.as_ssz_bytes(),
+                        });
+                    }
+                    Ok(ValidationResult::Reject(reason)) => {
+                        info!("BLS to Execution Change rejected: {reason}");
+                    }
+                    Ok(ValidationResult::Ignore(reason)) => {
+                        info!("BLS to Execution Change ignored: {reason}");
+                    }
+                    Err(err) => {
+                        error!("Could not validate BLS to Execution Change: {err}");
+                    }
+                }
             }
             GossipsubMessage::AggregateAndProof(aggregate_and_proof) => {
                 info!(

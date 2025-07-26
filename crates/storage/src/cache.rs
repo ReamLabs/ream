@@ -20,6 +20,12 @@ pub struct AtestationKey {
     pub participating_validator_index: u64,
 }
 
+#[derive(Debug, Hash, Eq, PartialEq, Default)]
+pub struct AddressValidaterIndexIdentifier {
+    pub address: PublicKey,
+    pub validator_index: u64,
+}
+
 /// In-memory LRU cache.
 #[derive(Debug)]
 pub struct CachedDB {
@@ -27,6 +33,7 @@ pub struct CachedDB {
     pub bls_to_execution_signature: RwLock<LruCache<AddressSlotIdentifier, BLSToExecutionChange>>,
     pub seen_blob_sidecars: RwLock<LruCache<(u64, u64, u64), ()>>,
     pub seen_attestations: RwLock<LruCache<AtestationKey, ()>>,
+    pub seen_bls_to_execution_change: RwLock<LruCache<AddressValidaterIndexIdentifier, ()>>
 }
 
 impl CachedDB {
@@ -42,6 +49,7 @@ impl CachedDB {
             .into(),
             seen_blob_sidecars: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
             seen_attestations: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
+            seen_bls_to_execution_change: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
         }
     }
 }

@@ -1,7 +1,7 @@
 use libp2p::gossipsub::TopicHash;
 use ream_consensus_beacon::{
     attester_slashing::AttesterSlashing, blob_sidecar::BlobSidecar,
-    bls_to_execution_change::BLSToExecutionChange, electra::beacon_block::SignedBeaconBlock,
+    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_block::SignedBeaconBlock,
     proposer_slashing::ProposerSlashing, single_attestation::SingleAttestation,
     sync_committee::SyncCommittee,
 };
@@ -29,7 +29,7 @@ pub enum GossipsubMessage {
     BlobSidecar(Box<BlobSidecar>),
     BeaconAttestation((Box<SingleAttestation>, u64)),
     SyncCommittee(Box<SyncCommittee>),
-    BlsToExecutionChange(Box<BLSToExecutionChange>),
+    BlsToExecutionChange(Box<SignedBLSToExecutionChange>),
     SyncCommitteeContributionAndProof(Box<SignedContributionAndProof>),
     LightClientFinalityUpdate(Box<LightClientFinalityUpdate>),
     LightClientOptimisticUpdate(Box<LightClientOptimisticUpdate>),
@@ -65,7 +65,7 @@ impl GossipsubMessage {
                 subnet_id,
             ))),
             GossipTopicKind::BlsToExecutionChange => Ok(Self::BlsToExecutionChange(Box::new(
-                BLSToExecutionChange::from_ssz_bytes(data)?,
+                SignedBLSToExecutionChange::from_ssz_bytes(data)?,
             ))),
             GossipTopicKind::AttesterSlashing => Ok(Self::AttesterSlashing(Box::new(
                 AttesterSlashing::from_ssz_bytes(data)?,
