@@ -13,6 +13,7 @@ use ream_consensus_misc::{
 };
 use ream_network_spec::networks::network_spec;
 use tokio::time::sleep;
+use tracing::info;
 
 use crate::beacon_api_client::BeaconApiClient;
 
@@ -66,6 +67,7 @@ pub async fn process_voluntary_exit(
 
     if wait_till_exit {
         loop {
+            sleep(Duration::from_secs(network_spec().seconds_per_slot)).await;
             match beacon_api_client
                 .get_state_validator(ID::Head, ValidatorID::Index(validator_index))
                 .await?
@@ -73,18 +75,16 @@ pub async fn process_voluntary_exit(
                 .status
             {
                 ValidatorStatus::ActiveExiting => {
-                    println!(
+                    info!(
                         "Voluntary exit has been published to beacon chain but validator has not yet exited."
                     );
-                    sleep(Duration::from_secs(network_spec().seconds_per_slot)).await;
                 }
                 ValidatorStatus::ExitedSlashed | ValidatorStatus::ExitedUnslashed => {
-                    println!("Validator has successfully exited");
+                    info!("Validator has successfully exited");
                     break;
                 }
                 _ => {
-                    println!("Voluntary exit has not yet been published to beacon chain.");
-                    sleep(Duration::from_secs(network_spec().seconds_per_slot)).await;
+                    info!("Voluntary exit has not yet been published to beacon chain.");
                 }
             }
         }
