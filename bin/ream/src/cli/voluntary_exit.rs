@@ -49,9 +49,6 @@ pub struct VoluntaryExitConfig {
     #[arg(long, help = "The validator index to exit")]
     pub validator_index: u64,
 
-    #[arg(long, help = "The epoch for the voluntary exit")]
-    pub epoch: u64,
-
     #[arg(long, help = "Wait until the validator has fully exited")]
     pub wait: bool,
 }

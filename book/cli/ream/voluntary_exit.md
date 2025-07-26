@@ -6,7 +6,7 @@ Perform voluntary exit for a validator
 $ ream voluntary_exit --help
 ```
 ```txt
-Usage: ream voluntary_exit [OPTIONS] --import-keystores <IMPORT_KEYSTORES> --validator-index <VALIDATOR_INDEX> --epoch <EPOCH>
+Usage: ream voluntary_exit [OPTIONS] --import-keystores <IMPORT_KEYSTORES> --validator-index <VALIDATOR_INDEX>
 
 Options:
   -v, --verbosity <VERBOSITY>
@@ -25,8 +25,6 @@ Options:
           The password to use for keystores. It's recommended to use password-file over this in order to prevent your keystore password from appearing in the shell history
       --validator-index <VALIDATOR_INDEX>
           The validator index to exit
-      --epoch <EPOCH>
-          The epoch for the voluntary exit
       --wait
           Wait until the validator has fully exited
   -h, --help

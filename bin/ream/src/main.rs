@@ -1,4 +1,8 @@
-use std::{env, process, sync::Arc};
+use std::{
+    env, process,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use clap::Parser;
 use ream::cli::{
@@ -12,7 +16,10 @@ use ream::cli::{
 };
 use ream_beacon_api_types::id::{ID, ValidatorID};
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-use ream_consensus_misc::constants::set_genesis_validator_root;
+use ream_consensus_misc::{
+    constants::{INTERVALS_PER_SLOT, set_genesis_validator_root},
+    misc::compute_epoch_at_slot,
+};
 use ream_executor::ReamExecutor;
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::set_network_spec;
@@ -300,10 +307,15 @@ pub async fn run_voluntary_exit(config: VoluntaryExitConfig) {
         .find(|keystore| keystore.public_key == validator_info.data.validator.public_key)
         .expect("No keystore found for the specified validator index");
 
+    let genesis = beacon_api_client
+        .get_genesis()
+        .await
+        .expect("Failed to get genesis information");
+
     match process_voluntary_exit(
         &beacon_api_client,
         config.validator_index,
-        config.epoch,
+        get_current_epoch(genesis.data.genesis_time),
         &keystore.private_key,
         config.wait,
     )
@@ -312,4 +324,19 @@ pub async fn run_voluntary_exit(config: VoluntaryExitConfig) {
         Ok(()) => info!("Voluntary exit completed successfully"),
         Err(err) => error!("Voluntary exit failed: {err}"),
     }
+}
+
+/// Calculates the current epoch from genesis time
+fn get_current_epoch(genesis_time: u64) -> u64 {
+    let seconds_per_slot = ream_network_spec::networks::network_spec().seconds_per_slot;
+    let seconds_per_interval = seconds_per_slot / INTERVALS_PER_SLOT;
+
+    let genesis_instant = UNIX_EPOCH + Duration::from_secs(genesis_time);
+    let elapsed = SystemTime::now()
+        .duration_since(genesis_instant)
+        .expect("System Time is before the genesis time");
+
+    let intervals = elapsed.as_secs() / seconds_per_interval;
+    let slot = intervals / INTERVALS_PER_SLOT;
+    compute_epoch_at_slot(slot)
 }
