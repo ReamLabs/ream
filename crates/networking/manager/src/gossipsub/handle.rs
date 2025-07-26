@@ -23,7 +23,7 @@ use crate::{
     gossipsub::validate::{
         beacon_attestation::validate_beacon_attestation, blob_sidecar::validate_blob_sidecar,
         bls_to_execution_change::validate_bls_to_execution_change, result::ValidationResult,
-        sync_committee::validate_sync_committee,
+        sync_committee::validate_sync_committee, voluntary_exit::validate_voluntary_exit,
     },
     p2p_sender::P2PSender,
 };
@@ -300,6 +300,27 @@ pub async fn handle_gossipsub_message(
                     "Voluntary Exit received over gossipsub: root: {}",
                     voluntary_exit.tree_hash_root()
                 );
+
+                match validate_voluntary_exit(&voluntary_exit, beacon_chain, cached_db).await {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: voluntary_exit.as_ssz_bytes(),
+                            });
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("voluntary_exit rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("voluntary_exit ignored: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate voluntary_exit: {err}");
+                    }
+                }
             }
         },
         Err(err) => {

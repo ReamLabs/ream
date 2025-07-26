@@ -42,6 +42,7 @@ pub struct CachedDB {
     pub seen_attestations: RwLock<LruCache<AtestationKey, ()>>,
     pub seen_bls_to_execution_change: RwLock<LruCache<AddressValidaterIndexIdentifier, ()>>,
     pub seen_sync_messages: RwLock<LruCache<SyncCommitteeKey, ()>>,
+    pub seen_voluntary_exit: RwLock<LruCache<u64, ()>>,
 }
 
 impl CachedDB {
@@ -60,6 +61,10 @@ impl CachedDB {
             seen_bls_to_execution_change: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap())
                 .into(),
             seen_sync_messages: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
+            seen_voluntary_exit: LruCache::new(
+                NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
+            )
+            .into(),
         }
     }
 }
