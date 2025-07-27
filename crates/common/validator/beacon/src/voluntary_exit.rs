@@ -67,10 +67,7 @@ pub async fn process_voluntary_exit(
         .await
     {
         match err {
-            ValidatorError::RequestFailedWithMessage {
-                status_code: _,
-                message,
-            } => {
+            ValidatorError::RequestFailedWithMessage { messag, .. } => {
                 return Err(anyhow!("Failed to submit voluntary exit: {message}"));
             }
             _ => return Err(anyhow!("Failed to submit voluntary exit: {err}")),
