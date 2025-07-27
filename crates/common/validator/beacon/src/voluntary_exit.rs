@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use ream_beacon_api_types::{
+    error::ValidatorError,
     id::{ID, ValidatorID},
     validator::ValidatorStatus,
 };
@@ -61,9 +62,20 @@ pub async fn process_voluntary_exit(
     }
 
     let signed_voluntary_exit = sign_voluntary_exit(epoch, validator_index, private_key)?;
-    beacon_api_client
+    if let Err(err) = beacon_api_client
         .submit_signed_voluntary_exit(signed_voluntary_exit)
-        .await?;
+        .await
+    {
+        match err {
+            ValidatorError::RequestFailedWithMessage {
+                status_code: _,
+                message,
+            } => {
+                return Err(anyhow!("Failed to submit voluntary exit: {message}"));
+            }
+            _ => return Err(anyhow!("Failed to submit voluntary exit: {err}")),
+        }
+    }
 
     if wait_till_exit {
         loop {

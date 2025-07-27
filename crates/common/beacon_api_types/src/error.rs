@@ -48,6 +48,12 @@ pub enum ValidatorError {
     #[error("Request failed with status code: {status_code}")]
     RequestFailed { status_code: reqwest::StatusCode },
 
+    #[error("Request failed with status code: {status_code}, message: {message}")]
+    RequestFailedWithMessage {
+        status_code: reqwest::StatusCode,
+        message: String,
+    },
+
     #[error("Failed to decode SSZ response: {0}")]
     SszDecodeError(String),
 
