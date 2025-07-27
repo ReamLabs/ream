@@ -329,14 +329,12 @@ pub async fn run_voluntary_exit(config: VoluntaryExitConfig) {
 /// Calculates the current epoch from genesis time
 fn get_current_epoch(genesis_time: u64) -> u64 {
     let seconds_per_slot = ream_network_spec::networks::network_spec().seconds_per_slot;
-    let seconds_per_interval = seconds_per_slot / INTERVALS_PER_SLOT;
 
     let genesis_instant = UNIX_EPOCH + Duration::from_secs(genesis_time);
     let elapsed = SystemTime::now()
         .duration_since(genesis_instant)
         .expect("System Time is before the genesis time");
 
-    let intervals = elapsed.as_secs() / seconds_per_interval;
-    let slot = intervals / INTERVALS_PER_SLOT;
+    let slot = elapsed.as_secs() / seconds_per_slot;
     compute_epoch_at_slot(slot)
 }
