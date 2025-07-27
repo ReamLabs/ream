@@ -19,7 +19,7 @@ use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus_misc::{constants::set_genesis_validator_root, misc::compute_epoch_at_slot};
 use ream_executor::ReamExecutor;
 use ream_network_manager::service::NetworkManagerService;
-use ream_network_spec::networks::set_network_spec;
+use ream_network_spec::networks::{network_spec, set_network_spec};
 use ream_operation_pool::OperationPool;
 use ream_p2p::network::lean::NetworkService as LeanNetworkService;
 use ream_rpc_beacon::{config::RpcServerConfig, start_server};
@@ -330,6 +330,6 @@ fn get_current_epoch(genesis_time: u64) -> u64 {
             .duration_since(UNIX_EPOCH + Duration::from_secs(genesis_time))
             .expect("System Time is before the genesis time")
             .as_secs()
-            / ream_network_spec::networks::network_spec().seconds_per_slot,
+            / network_spec().seconds_per_slot,
     )
 }
