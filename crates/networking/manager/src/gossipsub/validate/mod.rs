@@ -1,6 +1,7 @@
 pub mod beacon_attestation;
 pub mod blob_sidecar;
 pub mod bls_to_execution_change;
+pub mod proposer_slashing;
 pub mod result;
 pub mod sync_committee;
 pub mod voluntary_exit;

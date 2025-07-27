@@ -43,6 +43,7 @@ pub struct CachedDB {
     pub seen_bls_to_execution_change: RwLock<LruCache<AddressValidaterIndexIdentifier, ()>>,
     pub seen_sync_messages: RwLock<LruCache<SyncCommitteeKey, ()>>,
     pub seen_voluntary_exit: RwLock<LruCache<u64, ()>>,
+    pub seen_proposer_slashings: RwLock<LruCache<u64, ()>>,
 }
 
 impl CachedDB {
@@ -56,12 +57,27 @@ impl CachedDB {
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),
-            seen_blob_sidecars: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
-            seen_attestations: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
-            seen_bls_to_execution_change: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap())
-                .into(),
-            seen_sync_messages: LruCache::new(NonZeroUsize::new(LRU_CACHE_SIZE).unwrap()).into(),
+            seen_blob_sidecars: LruCache::new(
+                NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
+            )
+            .into(),
+            seen_attestations: LruCache::new(
+                NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
+            )
+            .into(),
+            seen_bls_to_execution_change: LruCache::new(
+                NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
+            )
+            .into(),
+            seen_sync_messages: LruCache::new(
+                NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
+            )
+            .into(),
             seen_voluntary_exit: LruCache::new(
+                NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
+            )
+            .into(),
+            seen_proposer_slashings: LruCache::new(
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),

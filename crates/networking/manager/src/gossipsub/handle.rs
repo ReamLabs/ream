@@ -22,7 +22,8 @@ use tree_hash::TreeHash;
 use crate::{
     gossipsub::validate::{
         beacon_attestation::validate_beacon_attestation, blob_sidecar::validate_blob_sidecar,
-        bls_to_execution_change::validate_bls_to_execution_change, result::ValidationResult,
+        bls_to_execution_change::validate_bls_to_execution_change,
+        proposer_slashing::validate_proposer_slashing, result::ValidationResult,
         sync_committee::validate_sync_committee, voluntary_exit::validate_voluntary_exit,
     },
     p2p_sender::P2PSender,
@@ -227,6 +228,28 @@ pub async fn handle_gossipsub_message(
                     "Proposer Slashing received over gossipsub: root: {}",
                     proposer_slashing.tree_hash_root()
                 );
+
+                match validate_proposer_slashing(&proposer_slashing, beacon_chain, cached_db).await
+                {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: proposer_slashing.as_ssz_bytes(),
+                            });
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("Proposer slashing rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Proposer slashing ignored: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate proposer slashing: {err}");
+                    }
+                }
             }
             GossipsubMessage::BlobSidecar(blob_sidecar) => {
                 info!(
