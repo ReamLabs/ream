@@ -53,15 +53,17 @@ pub async fn process_voluntary_exit(
     private_key: &PrivateKey,
     wait_till_exit: bool,
 ) -> anyhow::Result<()> {
-    let sync_status = beacon_api_client.get_node_syncing_status().await?;
-
-    if sync_status.data.is_syncing {
+    if beacon_api_client
+        .get_node_syncing_status()
+        .await?
+        .data
+        .is_syncing
+    {
         bail!("Cannot process voluntary exit while node is syncing");
     }
 
-    let signed_voluntary_exit = sign_voluntary_exit(epoch, validator_index, private_key)?;
     if let Err(err) = beacon_api_client
-        .submit_signed_voluntary_exit(signed_voluntary_exit)
+        .submit_signed_voluntary_exit(sign_voluntary_exit(epoch, validator_index, private_key)?)
         .await
     {
         match err {
