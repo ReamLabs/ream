@@ -16,10 +16,7 @@ use ream::cli::{
 };
 use ream_beacon_api_types::id::{ID, ValidatorID};
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-use ream_consensus_misc::{
-    constants::{INTERVALS_PER_SLOT, set_genesis_validator_root},
-    misc::compute_epoch_at_slot,
-};
+use ream_consensus_misc::{constants::set_genesis_validator_root, misc::compute_epoch_at_slot};
 use ream_executor::ReamExecutor;
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::set_network_spec;
