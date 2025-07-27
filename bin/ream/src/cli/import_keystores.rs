@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use ream_keystore::keystore::EncryptedKeystore;
 use unicode_normalization::UnicodeNormalization;
 
@@ -38,9 +38,7 @@ pub fn load_password_from_config(
     } else if let Some(password_str) = password {
         Ok(password_str)
     } else {
-        Err(anyhow!(
-            "Expected either password or password-file to be set"
-        ))
+        bail!("Expected either password or password-file to be set")
     }
 }
 

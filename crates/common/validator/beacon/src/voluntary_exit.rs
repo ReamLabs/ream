@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use ream_beacon_api_types::{
     error::ValidatorError,
     id::{ID, ValidatorID},
@@ -56,9 +56,7 @@ pub async fn process_voluntary_exit(
     let sync_status = beacon_api_client.get_node_syncing_status().await?;
 
     if sync_status.data.is_syncing {
-        return Err(anyhow!(
-            "Cannot process voluntary exit while node is syncing"
-        ));
+        bail!("Cannot process voluntary exit while node is syncing");
     }
 
     let signed_voluntary_exit = sign_voluntary_exit(epoch, validator_index, private_key)?;
@@ -68,9 +66,9 @@ pub async fn process_voluntary_exit(
     {
         match err {
             ValidatorError::RequestFailedWithMessage { message, .. } => {
-                return Err(anyhow!("Failed to submit voluntary exit: {message}"));
+                bail!("Failed to submit voluntary exit: {message}");
             }
-            _ => return Err(anyhow!("Failed to submit voluntary exit: {err}")),
+            _ => bail!("Failed to submit voluntary exit: {err}"),
         }
     }
 
