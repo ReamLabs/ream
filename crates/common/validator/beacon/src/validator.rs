@@ -28,7 +28,7 @@ use ream_executor::ReamExecutor;
 use ream_keystore::keystore::Keystore;
 use ream_network_spec::networks::beacon_network_spec;
 use reqwest::Url;
-use tokio::time::{Instant, MissedTickBehavior, interval_at};
+use tokio::time::{Instant, MissedTickBehavior, interval_at, sleep};
 use tracing::{error, info, warn};
 use tree_hash::TreeHash;
 
@@ -505,6 +505,11 @@ impl ValidatorService {
         validator_index: u64,
         committee_index: u64,
     ) -> anyhow::Result<()> {
+        sleep(Duration::from_secs(
+            beacon_network_spec().seconds_per_slot / 3,
+        ))
+        .await;
+
         let Some(keystore) = self.validator_index_to_keystore.get(&validator_index) else {
             bail!("Keystore not found for validator: {validator_index}");
         };
