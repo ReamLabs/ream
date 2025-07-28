@@ -20,14 +20,10 @@ pub async fn validate_gossip_beacon_block(
     cached_db: &CachedDB,
     block: &SignedBeaconBlock,
 ) -> anyhow::Result<ValidationResult> {
-    let latest_state_in_db = {
-        let store = beacon_chain.store.lock().await;
-
-        store.db.get_latest_state()?
-    };
+    let latest_state = beacon_chain.store.lock().await.db.get_latest_state()?;
 
     // Validate incoming block
-    match validate_beacon_block(beacon_chain, cached_db, block, &latest_state_in_db, false).await? {
+    match validate_beacon_block(beacon_chain, cached_db, block, &latest_state, false).await? {
         ValidationResult::Accept => {}
         ValidationResult::Ignore(reason) => {
             return Ok(ValidationResult::Ignore(reason));
@@ -70,12 +66,10 @@ pub async fn validate_gossip_beacon_block(
         }
     };
 
-    let validator = if let Some(validator) = latest_state_in_db
+    let Some(validator) = latest_state
         .validators
         .get(block.message.proposer_index as usize)
-    {
-        validator
-    } else {
+    else {
         return Ok(ValidationResult::Reject("Validator not found".to_string()));
     };
 
@@ -88,8 +82,8 @@ pub async fn validate_gossip_beacon_block(
     );
 
     for signed_bls_execution_change in block.message.body.bls_to_execution_changes.iter() {
-        let validator = &latest_state_in_db.validators
-            [signed_bls_execution_change.message.validator_index as usize];
+        let validator =
+            &latest_state.validators[signed_bls_execution_change.message.validator_index as usize];
 
         cached_db.seen_bls_to_execution_signature.write().await.put(
             AddressSlotIdentifier {
@@ -128,12 +122,9 @@ pub async fn validate_beacon_block(
         ));
     }
 
-    let validator =
-        if let Some(validator) = state.validators.get(block.message.proposer_index as usize) {
-            validator
-        } else {
-            return Ok(ValidationResult::Reject("Validator not found".to_string()));
-        };
+    let Some(validator) = state.validators.get(block.message.proposer_index as usize) else {
+        return Ok(ValidationResult::Reject("Validator not found".to_string()));
+    };
 
     // [IGNORE] The block is the first block with valid signature received for the proposer for the
     // slot.
@@ -172,9 +163,9 @@ pub async fn validate_beacon_block(
     {
         Some(parent_block) => {
             // [REJECT] The block is from a higher slot than its parent.
-            if block.message.slot > parent_block.message.slot + 1 {
+            if block.message.slot <= parent_block.message.slot {
                 return Ok(ValidationResult::Reject(
-                    "Block is from a higher slot than expected".to_string(),
+                    "Block is not from a higher slot".to_string(),
                 ));
             }
         }
@@ -186,7 +177,7 @@ pub async fn validate_beacon_block(
         }
     }
 
-    #[cfg(feature = "allow_ancestor_validation")]
+    #[cfg(not(feature = "disable_ancestor_validation"))]
     {
         let finalized_checkpoint = store.db.finalized_checkpoint_provider().get()?;
         // [REJECT] The current finalized_checkpoint is an ancestor of block.

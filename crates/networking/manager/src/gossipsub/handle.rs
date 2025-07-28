@@ -21,7 +21,12 @@ use tree_hash::TreeHash;
 
 use crate::{
     gossipsub::validate::{
-        attester_slashing::validate_attester_slashing, beacon_attestation::validate_beacon_attestation, beacon_block::validate_gossip_beacon_block, blob_sidecar::validate_blob_sidecar, bls_to_execution_change::validate_bls_to_execution_change, proposer_slashing::validate_proposer_slashing, result::ValidationResult, sync_committee::validate_sync_committee, voluntary_exit::validate_voluntary_exit
+        attester_slashing::validate_attester_slashing,
+        beacon_attestation::validate_beacon_attestation,
+        beacon_block::validate_gossip_beacon_block, blob_sidecar::validate_blob_sidecar,
+        bls_to_execution_change::validate_bls_to_execution_change,
+        proposer_slashing::validate_proposer_slashing, result::ValidationResult,
+        sync_committee::validate_sync_committee, voluntary_exit::validate_voluntary_exit,
     },
     p2p_sender::P2PSender,
 };

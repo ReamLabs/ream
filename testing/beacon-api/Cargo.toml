@@ -24,7 +24,7 @@ tokio.workspace = true
 ream-beacon-chain.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
-ream-network-manager.workspace = true
+ream-network-manager = { workspace = true, features = ["disable_ancestor_validation"] }
 ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
 ream-storage.workspace = true
