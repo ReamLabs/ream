@@ -21,6 +21,7 @@ use tree_hash::TreeHash;
 
 use crate::{
     gossipsub::validate::{
+        attester_slashing::validate_attester_slashing,
         beacon_attestation::validate_beacon_attestation, blob_sidecar::validate_blob_sidecar,
         bls_to_execution_change::validate_bls_to_execution_change,
         proposer_slashing::validate_proposer_slashing, result::ValidationResult,
@@ -153,19 +154,21 @@ pub async fn handle_gossipsub_message(
                 )
                 .await
                 {
-                    Ok(ValidationResult::Accept) => {
-                        p2p_sender.send_gossip(GossipMessage {
-                            topic: GossipTopic::from_topic_hash(&message.topic)
-                                .expect("invalid topic hash"),
-                            data: signed_bls_to_execution_change.as_ssz_bytes(),
-                        });
-                    }
-                    Ok(ValidationResult::Reject(reason)) => {
-                        info!("BLS to Execution Change rejected: {reason}");
-                    }
-                    Ok(ValidationResult::Ignore(reason)) => {
-                        info!("BLS to Execution Change ignored: {reason}");
-                    }
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: signed_bls_to_execution_change.as_ssz_bytes(),
+                            });
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("BLS to Execution Change rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("BLS to Execution Change ignored: {reason}");
+                        }
+                    },
                     Err(err) => {
                         error!("Could not validate BLS to Execution Change: {err}");
                     }
@@ -206,7 +209,6 @@ pub async fn handle_gossipsub_message(
                     }
                 }
             }
-
             GossipsubMessage::SyncCommitteeContributionAndProof(
                 _sync_committee_contribution_and_proof,
             ) => {}
@@ -216,11 +218,32 @@ pub async fn handle_gossipsub_message(
                     attester_slashing.tree_hash_root()
                 );
 
-                if let Err(err) = beacon_chain
-                    .process_attester_slashing(*attester_slashing)
-                    .await
+                match validate_attester_slashing(&attester_slashing, beacon_chain, cached_db).await
                 {
-                    error!("Failed to process gossipsub attester slashing: {err}");
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: attester_slashing.as_ssz_bytes(),
+                            });
+                            if let Err(err) = beacon_chain
+                                .process_attester_slashing(*attester_slashing)
+                                .await
+                            {
+                                error!("Failed to process gossipsub attester slashing: {err}");
+                            }
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("Attester slashing rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Attester slashing ignored: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate attester slashing: {err}");
+                    }
                 }
             }
             GossipsubMessage::ProposerSlashing(proposer_slashing) => {

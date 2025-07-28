@@ -1,3 +1,4 @@
+pub mod attester_slashing;
 pub mod beacon_attestation;
 pub mod blob_sidecar;
 pub mod bls_to_execution_change;

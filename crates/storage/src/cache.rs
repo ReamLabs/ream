@@ -44,6 +44,7 @@ pub struct CachedDB {
     pub seen_sync_messages: RwLock<LruCache<SyncCommitteeKey, ()>>,
     pub seen_voluntary_exit: RwLock<LruCache<u64, ()>>,
     pub seen_proposer_slashings: RwLock<LruCache<u64, ()>>,
+    pub prior_seen_attester_slashing_indices: RwLock<LruCache<u64, ()>>,
 }
 
 impl CachedDB {
@@ -78,6 +79,10 @@ impl CachedDB {
             )
             .into(),
             seen_proposer_slashings: LruCache::new(
+                NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
+            )
+            .into(),
+            prior_seen_attester_slashing_indices: LruCache::new(
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),
