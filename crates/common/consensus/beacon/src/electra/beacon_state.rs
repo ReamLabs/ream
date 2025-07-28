@@ -41,10 +41,11 @@ use ream_consensus_misc::{
         NEXT_SYNC_COMMITTEE_INDEX, PARTICIPATION_FLAG_WEIGHTS, PENDING_CONSOLIDATIONS_LIMIT,
         PENDING_PARTIAL_WITHDRAWALS_LIMIT, PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX,
         PROPOSER_REWARD_QUOTIENT, PROPOSER_WEIGHT, SAFETY_DECAY, SHARD_COMMITTEE_PERIOD,
-        SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE, SYNC_REWARD_WEIGHT,
-        TARGET_COMMITTEE_SIZE, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
-        TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT, UNSET_DEPOSIT_REQUESTS_START_INDEX,
-        WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA,
+        SLOTS_PER_EPOCH, SLOTS_PER_HISTORICAL_ROOT, SYNC_COMMITTEE_SIZE,
+        SYNC_COMMITTEE_SUBNET_COUNT, SYNC_REWARD_WEIGHT, TARGET_COMMITTEE_SIZE,
+        TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX, TIMELY_TARGET_FLAG_INDEX, UINT64_MAX,
+        UINT64_MAX_SQRT, UNSET_DEPOSIT_REQUESTS_START_INDEX, WEIGHT_DENOMINATOR,
+        WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA,
     },
     deposit_message::DepositMessage,
     eth_1_data::Eth1Data,
@@ -53,7 +54,8 @@ use ream_consensus_misc::{
     misc::{
         bytes_to_int64, compute_activation_exit_epoch, compute_committee, compute_domain,
         compute_epoch_at_slot, compute_shuffled_index, compute_signing_root,
-        compute_start_slot_at_epoch, get_committee_indices, is_sorted_and_unique,
+        compute_start_slot_at_epoch, compute_sync_committee_period, get_committee_indices,
+        is_sorted_and_unique,
     },
     validator::Validator,
 };
@@ -2723,6 +2725,29 @@ impl BeaconState {
             .filter(|withdrawal| withdrawal.validator_index == validator_index)
             .map(|withdrawal| withdrawal.amount)
             .sum()
+    }
+
+    pub fn get_sync_subcommittee_pubkeys(&self, subcommittee_index: u64) -> Vec<PublicKey> {
+        let sync_committee;
+
+        // Committees assigned to `slot` sign for `slot - 1`
+        let next_slot_epoch = compute_epoch_at_slot(self.slot + 1);
+
+        if compute_sync_committee_period(self.get_current_epoch())
+            == compute_sync_committee_period(next_slot_epoch)
+        {
+            sync_committee = &self.current_sync_committee;
+        } else {
+            sync_committee = &self.next_sync_committee;
+        }
+
+        // Return pubkeys for the subcommittee index
+        let sync_subcommittee_size = SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT;
+
+        let i = subcommittee_index * sync_subcommittee_size;
+        (i..i + sync_subcommittee_size)
+            .map(|j| sync_committee.public_keys[j as usize].clone())
+            .collect::<Vec<PublicKey>>()
     }
 
     pub fn switch_to_compounding_validator(&mut self, index: u64) -> anyhow::Result<()> {

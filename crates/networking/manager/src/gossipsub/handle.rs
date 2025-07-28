@@ -210,8 +210,13 @@ pub async fn handle_gossipsub_message(
                 }
             }
             GossipsubMessage::SyncCommitteeContributionAndProof(
-                _sync_committee_contribution_and_proof,
-            ) => {}
+                sync_committee_contribution_and_proof,
+            ) => {
+                info!(
+                    "Sync Committee Contribution and Proof received over gossipsub: root: {}",
+                    sync_committee_contribution_and_proof.tree_hash_root()
+                );
+            }
             GossipsubMessage::AttesterSlashing(attester_slashing) => {
                 info!(
                     "Attester Slashing received over gossipsub: root: {}",
