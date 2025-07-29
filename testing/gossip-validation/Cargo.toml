@@ -1,0 +1,30 @@
+[package]
+name = "gossip-validation"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-primitives.workspace = true
+anyhow.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
+ream-beacon-api-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+snap.workspace = true
+tokio.workspace = true
+
+# ream
+ream-beacon-chain.workspace = true
+ream-consensus-beacon.workspace = true
+ream-consensus-misc.workspace = true
+ream-network-manager = { workspace = true, features = ["disable_ancestor_validation"] }
+ream-network-spec.workspace = true
+ream-operation-pool.workspace = true
+ream-storage.workspace = true

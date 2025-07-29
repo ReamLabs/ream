@@ -2568,6 +2568,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 
 [[package]]
+name = "gossip-validation"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "ream-beacon-api-types",
+ "ream-beacon-chain",
+ "ream-consensus-beacon",
+ "ream-consensus-misc",
+ "ream-network-manager",
+ "ream-network-spec",
+ "ream-operation-pool",
+ "ream-storage",
+ "serde",
+ "serde_json",
+ "snap",
+ "tokio",
+]
+
+[[package]]
 name = "group"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

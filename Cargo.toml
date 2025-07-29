@@ -33,6 +33,7 @@ members = [
     "crates/storage",
     "testing/beacon-api",
     "testing/ef-tests",
+    "testing/gossip-validation",
 ]
 resolver = "2"
 exclude = ["book/cli"]
