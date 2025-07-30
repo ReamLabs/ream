@@ -5163,6 +5163,7 @@ dependencies = [
  "ream-beacon-api-types",
  "ream-checkpoint-sync",
  "ream-consensus-beacon",
+ "ream-consensus-lean",
  "ream-consensus-misc",
  "ream-discv5",
  "ream-executor",
@@ -5309,10 +5310,12 @@ name = "ream-consensus-lean"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "ethereum_hashing",
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "ream-pqc",
  "serde",
+ "serde_json",
  "ssz_types",
  "tree_hash",
  "tree_hash_derive",
