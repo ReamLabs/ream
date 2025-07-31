@@ -1,13 +1,13 @@
 use ream_pqc::PublicKey;
 use ream_pqc::PQSignature;
 use serde::{Deserialize, Serialize};
-use ssz_derive::{Decode, Encode};
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    rc::{Rc, Weak},
+use ssz_types::{
+    VariableList,
+    typenum::{
+        U16777216, // 2**24
+    },
 };
-use tree_hash_derive::TreeHash;
+use std::collections::HashMap;
 
 use crate::{
     block::Block,
@@ -17,66 +17,58 @@ use crate::{
     is_justifiable_slot,
     process_block,
     QueueItem,
-    state::State,
+    SLOT_DURATION,
+    state::LeanState,
     vote::{Vote, VoteData},
 };
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+// TODO: Add back #[derive(TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Staker {
-    pub validator_id: u64,
+    pub validator_id: usize,
     pub public_key: PublicKey, // Additional to 3SF-mini
-    pub network: Weak<RefCell<P2PNetwork>>,
     pub chain: HashMap<Hash, Block>,
-    pub post_states: HashMap<Hash, State>,
-    pub known_votes: Vec<Vote>,
-    pub new_votes: Vec<Vote>,
+    pub time: usize, // TODO: update the time so on_tick() works properly
+    // TODO: Add back proper networking instead
+    // pub network: Weak<RefCell<P2PNetwork>>,
+    pub post_states: HashMap<Hash, LeanState>,
+    pub known_votes: VariableList<Vote, U16777216>,
+    pub new_votes: VariableList<Vote, U16777216>,
     pub dependencies: HashMap<Hash, Vec<QueueItem>>,
     pub genesis_hash: Hash,
-    pub num_validators: u64,
-    pub safe_target: Option<Hash>,
+    // TODO: Proper validator key handling from static config
+    pub num_validators: usize,
+    pub safe_target: Hash,
     pub head: Hash,
 }
 
 impl Staker {
     pub fn new(
-        validator_id: u64,
-        network: &Rc<RefCell<P2PNetwork>>,
+        validator_id: usize,
         genesis_block: &Block,
-        genesis_state: &State,
+        genesis_state: &LeanState,
     ) -> Staker {
         let genesis_hash = genesis_block.compute_hash();
         let mut chain = HashMap::<Hash, Block>::new();
         chain.insert(genesis_hash, genesis_block.clone());
 
-        let mut post_states = HashMap::<Hash, State>::new();
+        let mut post_states = HashMap::<Hash, LeanState>::new();
         post_states.insert(genesis_hash, genesis_state.clone());
 
         Staker {
             validator_id,
             public_key: PublicKey {},
-            network: Rc::downgrade(network),
             chain,
+            time: 0,
             post_states,
-            known_votes: Vec::<Vote>::new(),
-            new_votes: Vec::<Vote>::new(),
+            known_votes: VariableList::<Vote, U16777216>::empty(),
+            new_votes: VariableList::<Vote, U16777216>::empty(),
             dependencies: HashMap::<Hash, Vec<QueueItem>>::new(),
             genesis_hash,
-            num_validators: genesis_state.config.num_validators,
-            safe_target: None,
+            num_validators: genesis_state.stakers.len(),
+            safe_target: genesis_hash,
             head: genesis_hash,
         }
-    }
-
-    /// A helper function that returns the Staker's network reference
-    /// by abstracting away Reference Counted implementation.
-    ///
-    /// Using `self.get_network()` is recommended over using `self.network` directly.
-    ///
-    /// Learn more: https://doc.rust-lang.org/std/rc/
-    fn get_network(&self) -> Rc<RefCell<P2PNetwork>> {
-        self.network // Weak<RefCell<P2PNetwork>>
-            .upgrade() // Option<Rc<RefCell<P2PNetwork>>>
-            .unwrap() // Rc<RefCell<P2PNetwork>>
     }
 
     pub fn latest_justified_hash(&self) -> Option<Hash> {
@@ -114,11 +106,12 @@ impl Staker {
                 .find(|known_vote| *known_vote == *new_vote)
                 .is_none()
             {
-                self.known_votes.push(new_vote.clone());
+                // TODO: proper error handling
+                let _ = self.known_votes.push(new_vote.clone());
             }
         }
 
-        self.new_votes.clear();
+        self.new_votes = VariableList::empty();
         self.recompute_head();
     }
 
@@ -130,7 +123,7 @@ impl Staker {
 
     // Called every second
     pub fn tick(&mut self) {
-        let time_in_slot = self.get_network().borrow().time % SLOT_DURATION;
+        let time_in_slot = self.time % SLOT_DURATION;
 
         // t=0: propose a block
         if time_in_slot == 0 {
@@ -148,15 +141,15 @@ impl Staker {
         // one honest node receives by this time, every honest node will receive by
         // the general attestation deadline)
         } else if time_in_slot == SLOT_DURATION * 2 / 4 {
-            self.safe_target = Some(self.compute_safe_target());
+            self.safe_target = self.compute_safe_target();
         // Deadline to accept attestations except for those included in a block
         } else if time_in_slot == SLOT_DURATION * 3 / 4 {
             self.accept_new_votes();
         }
     }
 
-    fn get_current_slot(&self) -> u64 {
-        self.get_network().borrow().time / SLOT_DURATION + 2
+    fn get_current_slot(&self) -> usize {
+        self.time / SLOT_DURATION + 2
     }
 
     // Called when it's the staker's turn to propose a block
@@ -172,11 +165,12 @@ impl Staker {
         let head_state = self.post_states.get(&self.head).unwrap();
         let mut new_block = Block {
             slot: new_slot,
+            proposer_index: self.validator_id,
             parent: Some(self.head),
-            votes: Vec::new(),
+            votes: VariableList::empty(),
             state_root: None,
         };
-        let mut state: State;
+        let mut state: LeanState;
 
         // Keep attempt to add valid votes from the list of available votes
         loop {
@@ -199,7 +193,10 @@ impl Staker {
                 break;
             }
 
-            new_block.votes.append(&mut new_votes_to_add);
+            for vote in new_votes_to_add {
+                // TODO: proper error handling
+                let _ = new_block.votes.push(vote);
+            }
         }
 
         new_block.state_root = Some(state.compute_hash());
@@ -208,21 +205,21 @@ impl Staker {
         self.chain.insert(new_hash, new_block.clone());
         self.post_states.insert(new_hash, state);
 
-        self.get_network()
-            .borrow_mut()
-            .submit(QueueItem::BlockItem(new_block), self.validator_id);
+        // TODO: submit to actual network
+        // self.get_network()
+        //     .borrow_mut()
+        //     .submit(QueueItem::BlockItem(new_block), self.validator_id);
     }
 
     // Called when it's the staker's turn to vote
     fn vote(&mut self) {
         let state = self.post_states.get(&self.head).unwrap();
         let mut target_block = self.chain.get(&self.head).unwrap();
-        let safe_target = self.safe_target.unwrap_or(self.genesis_hash);
 
         // If there is no very recent safe target, then vote for the k'th ancestor
         // of the head
         for _ in 0..3 {
-            if target_block.slot > self.chain.get(&safe_target).unwrap().slot {
+            if target_block.slot > self.chain.get(&self.safe_target).unwrap().slot {
                 target_block = self.chain.get(&target_block.parent.unwrap()).unwrap();
             }
         }
@@ -259,9 +256,10 @@ impl Staker {
 
         self.receive(&QueueItem::VoteItem(vote.clone()));
 
-        self.get_network()
-            .borrow_mut()
-            .submit(QueueItem::VoteItem(vote), self.validator_id);
+        // TODO: submit to actual network
+        // self.get_network()
+        //     .borrow_mut()
+        //     .submit(QueueItem::VoteItem(vote), self.validator_id);
     }
 
     // Called by the p2p network
@@ -289,7 +287,8 @@ impl Staker {
                                 .find(|known_vote| *known_vote == *vote)
                                 .is_none()
                             {
-                                self.known_votes.push(vote.clone());
+                                // TODO: proper error handling
+                                let _ = self.known_votes.push(vote.clone());
                             }
                         }
 
@@ -332,7 +331,8 @@ impl Staker {
                 if is_known_vote || is_new_vote {
                     return;
                 } else if self.chain.contains_key(&vote.data.head) {
-                    self.new_votes.push(vote.clone());
+                    // TODO: proper error handling
+                    let _ = self.new_votes.push(vote.clone());
                 } else {
                     self.dependencies
                         .entry(vote.data.head)
