@@ -2,24 +2,32 @@ use ethereum_hashing::hash;
 use ream_pqc::PQSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use tree_hash_derive::TreeHash;
+use ssz_types::{
+    VariableList,
+    typenum::{
+        U16777216, // 2**24
+    },
+};
 
-use crate::Hash;
+use crate::{
+    Hash,
+    vote::Vote,
+};
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+// TODO: Add back #[derive(TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct SignedBlock {
     pub message: Block,
     pub signature: PQSignature,
 }
 
-#[derive(
-    Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Default,
-)]
+// TODO: Add back #[derive(TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Default)]
 pub struct Block {
-    pub slot: u64,
-    pub proposer_index: u64,
+    pub slot: usize,
+    pub proposer_index: usize,
     pub parent: Option<Hash>,
-    pub votes: Vec<Vote>,
+    pub votes: VariableList<Vote, U16777216>,
     pub state_root: Option<Hash>,
 }
 

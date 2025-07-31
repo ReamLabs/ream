@@ -1,29 +1,38 @@
+use ethereum_hashing::hash;
 use serde::{Deserialize, Serialize};
-use ssz_derive::{Decode, Encode};
-use ssz_types::VariableList;
+use ssz_types::{
+    VariableList,
+    typenum::{
+        U4096, // 2**12
+        // U16777216, // 2**24
+    },
+};
 use std::collections::HashMap;
-use tree_hash_derive::TreeHash;
 
 use crate::{
-    staker::Staker
+    staker::Staker,
     Hash,
 };
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+// TODO: Add back #[derive(Encode, Decode, TreeHash)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct LeanState {
-    pub genesis_time: u64,
-    pub stakers: VariableList<Staker, ssz_types::typenum::U1000000>,
+    pub genesis_time: usize,
+    pub stakers: VariableList<Staker, U4096>,
+    pub num_validators: usize,
 
     pub latest_justified_hash: Hash,
     pub latest_justified_slot: usize,
     pub latest_finalized_hash: Hash,
     pub latest_finalized_slot: usize,
-    pub historical_block_hashes: Vec<Option<Hash>>,
-    pub justified_slots: Vec<bool>,
+
+    pub historical_block_hashes: VariableList<Option<Hash>, U4096>,
+    pub justified_slots: VariableList<bool, U4096>,
+
     pub justifications: HashMap<Hash, Vec<bool>>,
 }
 
-impl State {
+impl LeanState {
     pub fn compute_hash(&self) -> Hash {
         let serialized = serde_json::to_string(self).unwrap();
         Hash::from_slice(&hash(serialized.as_bytes()))
