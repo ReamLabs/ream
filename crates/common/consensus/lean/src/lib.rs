@@ -14,7 +14,7 @@ use ssz_types::{
     },
 };
 
-use crate::{block::Block, state::LeanState, vote::Vote};
+use crate::{block::Block, state::LeanState, vote::SignedVote, vote::Vote};
 
 pub type Hash = B256;
 
@@ -24,7 +24,7 @@ pub const SLOT_DURATION: usize = 12;
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum QueueItem {
     BlockItem(Block),
-    VoteItem(Vote),
+    VoteItem(SignedVote),
 }
 
 // We allow justification of slots either <= 5 or a perfect square or oblong after
@@ -63,47 +63,47 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
         // Ignore votes whose source is not already justified,
         // or whose target is not in the history, or whose target is not a
         // valid justifiable slot
-        if !state.justified_slots[vote.data.source_slot]
-            || Some(vote.data.source) != state.historical_block_hashes[vote.data.source_slot]
-            || Some(vote.data.target) != state.historical_block_hashes[vote.data.target_slot]
-            || vote.data.target_slot <= vote.data.source_slot
-            || !is_justifiable_slot(&state.latest_finalized_slot, &vote.data.target_slot)
+        if !state.justified_slots[vote.source_slot]
+            || Some(vote.source) != state.historical_block_hashes[vote.source_slot]
+            || Some(vote.target) != state.historical_block_hashes[vote.target_slot]
+            || vote.target_slot <= vote.source_slot
+            || !is_justifiable_slot(&state.latest_finalized_slot, &vote.target_slot)
         {
             continue;
         }
 
         // Track attempts to justify new hashes
-        if !state.justifications.contains_key(&vote.data.target) {
+        if !state.justifications.contains_key(&vote.target) {
             state
                 .justifications
-                .insert(vote.data.target, vec![false; state.num_validators]);
+                .insert(vote.target, vec![false; state.num_validators]);
         }
 
-        if !state.justifications[&vote.data.target][vote.data.validator_id] {
-            state.justifications.get_mut(&vote.data.target).unwrap()[vote.data.validator_id] = true;
+        if !state.justifications[&vote.target][vote.validator_id] {
+            state.justifications.get_mut(&vote.target).unwrap()[vote.validator_id] = true;
         }
 
-        let count = state.justifications[&vote.data.target]
+        let count = state.justifications[&vote.target]
             .iter()
             .fold(0, |sum, justification| sum + *justification as usize);
 
         // If 2/3 voted for the same new valid hash to justify
         if count == (2 * state.num_validators) / 3 {
-            state.latest_justified_hash = vote.data.target;
-            state.latest_justified_slot = vote.data.target_slot;
-            state.justified_slots[vote.data.target_slot] = true;
+            state.latest_justified_hash = vote.target;
+            state.latest_justified_slot = vote.target_slot;
+            state.justified_slots[vote.target_slot] = true;
 
-            state.justifications.remove(&vote.data.target).unwrap();
+            state.justifications.remove(&vote.target).unwrap();
 
             // Finalization: if the target is the next valid justifiable
             // hash after the source
-            let is_target_next_valid_justifiable_slot = !((vote.data.source_slot + 1)
-                ..vote.data.target_slot)
+            let is_target_next_valid_justifiable_slot = !((vote.source_slot + 1)
+                ..vote.target_slot)
                 .any(|slot| is_justifiable_slot(&state.latest_finalized_slot, &slot));
 
             if is_target_next_valid_justifiable_slot {
-                state.latest_finalized_hash = vote.data.source;
-                state.latest_finalized_slot = vote.data.source_slot;
+                state.latest_finalized_hash = vote.source;
+                state.latest_finalized_slot = vote.source_slot;
             }
         }
     }
@@ -140,13 +140,13 @@ pub fn get_fork_choice_head(
 
     // Sort votes by ascending slots to ensure that new votes are inserted last
     let mut sorted_votes = votes.clone();
-    sorted_votes.sort_by_key(|vote| vote.data.slot);
+    sorted_votes.sort_by_key(|vote| vote.slot);
 
     // Prepare a map of validator_id -> their vote
     let mut latest_votes = HashMap::<usize, Vote>::new();
 
     for vote in votes {
-        let validator_id = vote.data.validator_id;
+        let validator_id = vote.validator_id;
         latest_votes.insert(validator_id, vote.clone());
     }
 
@@ -155,8 +155,8 @@ pub fn get_fork_choice_head(
     let mut vote_weights = HashMap::<Hash, usize>::new();
 
     for vote in latest_votes.values() {
-        if blocks.contains_key(&vote.data.head) {
-            let mut block_hash = vote.data.head;
+        if blocks.contains_key(&vote.head) {
+            let mut block_hash = vote.head;
             while blocks.get(&block_hash).unwrap().slot > blocks.get(&root).unwrap().slot {
                 let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
                 vote_weights.insert(block_hash, current_weights + 1);
