@@ -1,17 +1,17 @@
+use std::collections::HashMap;
+
 use ethereum_hashing::hash;
 use serde::{Deserialize, Serialize};
 use ssz_types::{
     VariableList,
     typenum::{
         U4096, // 2**12
-        // U16777216, // 2**24
     },
 };
-use std::collections::HashMap;
 
 use crate::{
-    staker::Staker,
     Hash,
+    staker::Staker,
 };
 
 // TODO: Add back #[derive(Encode, Decode, TreeHash)]

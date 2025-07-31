@@ -9,10 +9,7 @@ use ssz_types::{
     },
 };
 
-use crate::{
-    Hash,
-    vote::Vote,
-};
+use crate::{Hash, vote::Vote};
 
 // TODO: Add back #[derive(TreeHash)]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]

@@ -1,5 +1,6 @@
-use ream_pqc::PublicKey;
-use ream_pqc::PQSignature;
+use std::collections::HashMap;
+
+use ream_pqc::{PQSignature, PublicKey};
 use serde::{Deserialize, Serialize};
 use ssz_types::{
     VariableList,
@@ -7,17 +8,11 @@ use ssz_types::{
         U16777216, // 2**24
     },
 };
-use std::collections::HashMap;
 
 use crate::{
+    Hash, QueueItem, SLOT_DURATION,
     block::Block,
-    get_fork_choice_head,
-    get_latest_justified_hash,
-    Hash,
-    is_justifiable_slot,
-    process_block,
-    QueueItem,
-    SLOT_DURATION,
+    get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot, process_block,
     state::LeanState,
     vote::{Vote, VoteData},
 };
@@ -43,11 +38,7 @@ pub struct Staker {
 }
 
 impl Staker {
-    pub fn new(
-        validator_id: usize,
-        genesis_block: &Block,
-        genesis_state: &LeanState,
-    ) -> Staker {
+    pub fn new(validator_id: usize, genesis_block: &Block, genesis_state: &LeanState) -> Staker {
         let genesis_hash = genesis_block.compute_hash();
         let mut chain = HashMap::<Hash, Block>::new();
         chain.insert(genesis_hash, genesis_block.clone());
@@ -76,12 +67,9 @@ impl Staker {
     }
 
     pub fn latest_finalized_hash(&self) -> Option<Hash> {
-        match self.post_states.get(&self.head) {
-            Some(state) => {
-                Some(state.latest_finalized_hash)
-            },
-            None => None
-        }
+        self.post_states
+            .get(&self.head)
+            .map(|state| state.latest_finalized_hash)
     }
 
     /// Compute the latest block that the staker is allowed to choose as the target
@@ -102,10 +90,7 @@ impl Staker {
         let mut known_votes = self.known_votes.clone().into_iter();
 
         for new_vote in &self.new_votes {
-            if known_votes
-                .find(|known_vote| *known_vote == *new_vote)
-                .is_none()
-            {
+            if !known_votes.any(|known_vote| known_vote == *new_vote) {
                 // TODO: proper error handling
                 let _ = self.known_votes.push(new_vote.clone());
             }
@@ -174,16 +159,12 @@ impl Staker {
 
         // Keep attempt to add valid votes from the list of available votes
         loop {
-            state = process_block(&head_state, &new_block);
+            state = process_block(head_state, &new_block);
 
             let mut new_votes_to_add = Vec::<Vote>::new();
             for vote in self.known_votes.clone().into_iter() {
                 if vote.data.source == state.latest_justified_hash
-                    && new_block.votes
-                        .clone()
-                        .into_iter()
-                        .find(|v| *v == vote)
-                        .is_none()
+                    && !new_block.votes.clone().into_iter().any(|v| v == vote)
                 {
                     new_votes_to_add.push(vote);
                 }
@@ -275,7 +256,7 @@ impl Staker {
 
                 match self.post_states.get(&block.parent.unwrap()) {
                     Some(parent_state) => {
-                        let state = process_block(&parent_state, &block);
+                        let state = process_block(parent_state, block);
 
                         self.chain.insert(block_hash, block.clone());
                         self.post_states.insert(block_hash, state);
@@ -283,10 +264,7 @@ impl Staker {
                         let mut known_votes = self.known_votes.clone().into_iter();
 
                         for vote in &block.votes {
-                            if known_votes
-                                .find(|known_vote| *known_vote == *vote)
-                                .is_none()
-                            {
+                            if !known_votes.any(|known_vote| known_vote == *vote) {
                                 // TODO: proper error handling
                                 let _ = self.known_votes.push(vote.clone());
                             }
@@ -309,7 +287,7 @@ impl Staker {
                         // process later once we actually see the parent
                         self.dependencies
                             .entry(block.parent.unwrap())
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(queue_item.clone());
                     }
                 }
@@ -319,24 +297,23 @@ impl Staker {
                     .known_votes
                     .clone()
                     .into_iter()
-                    .find(|known_vote| known_vote == vote)
-                    .is_some();
+                    .any(|known_vote| known_vote == *vote);
+
                 let is_new_vote = self
                     .new_votes
                     .clone()
                     .into_iter()
-                    .find(|new_vote| new_vote == vote)
-                    .is_some();
+                    .any(|new_vote| new_vote == *vote);
 
                 if is_known_vote || is_new_vote {
-                    return;
+                    // Do nothing
                 } else if self.chain.contains_key(&vote.data.head) {
                     // TODO: proper error handling
                     let _ = self.new_votes.push(vote.clone());
                 } else {
                     self.dependencies
                         .entry(vote.data.head)
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(queue_item.clone());
                 }
             }

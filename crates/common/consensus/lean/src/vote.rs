@@ -1,5 +1,5 @@
-use ream_pqc::PQSignature;
 use ethereum_hashing::hash;
+use ream_pqc::PQSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
