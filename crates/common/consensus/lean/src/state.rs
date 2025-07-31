@@ -9,10 +9,7 @@ use ssz_types::{
     },
 };
 
-use crate::{
-    Hash,
-    staker::Staker,
-};
+use crate::{Hash, staker::Staker};
 
 // TODO: Add back #[derive(Encode, Decode, TreeHash)]
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
