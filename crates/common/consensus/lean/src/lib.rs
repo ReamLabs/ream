@@ -170,14 +170,10 @@ pub fn get_fork_choice_head(
 
     for (hash, block) in blocks {
         if block.parent.is_some() && *vote_weights.get(hash).unwrap_or(&0) >= min_score {
-            match children_map.get_mut(&block.parent.unwrap()) {
-                Some(child_hashes) => {
-                    child_hashes.push(*hash);
-                }
-                None => {
-                    children_map.insert(block.parent.unwrap(), vec![*hash]);
-                }
-            }
+            children_map
+                .entry(block.parent.unwrap())
+                .or_insert_with(Vec::new)
+                .push(*hash);
         }
     }
 
