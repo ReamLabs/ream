@@ -14,7 +14,7 @@ use crate::{
     block::Block,
     get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot, process_block,
     state::LeanState,
-    vote::{Vote, VoteData},
+    vote::{SignedVote, Vote},
 };
 
 // TODO: Add back #[derive(TreeHash)]
@@ -163,7 +163,7 @@ impl Staker {
 
             let mut new_votes_to_add = Vec::<Vote>::new();
             for vote in self.known_votes.clone().into_iter() {
-                if vote.data.source == state.latest_justified_hash
+                if vote.source == state.latest_justified_hash
                     && !new_block.votes.clone().into_iter().any(|v| v == vote)
                 {
                     new_votes_to_add.push(vote);
@@ -211,7 +211,7 @@ impl Staker {
             target_block = self.chain.get(&target_block.parent.unwrap()).unwrap();
         }
 
-        let vote_data = VoteData {
+        let vote = Vote {
             validator_id: self.validator_id,
             slot: self.get_current_slot(),
             head: self.head,
@@ -222,8 +222,8 @@ impl Staker {
             source_slot: state.latest_justified_slot,
         };
 
-        let vote = Vote {
-            data: vote_data,
+        let signed_vote = SignedVote {
+            data: vote,
             signature: PQSignature {},
         };
 
@@ -235,7 +235,7 @@ impl Staker {
             &state.latest_justified_slot
         );
 
-        self.receive(&QueueItem::VoteItem(vote.clone()));
+        self.receive(&QueueItem::VoteItem(signed_vote.clone()));
 
         // TODO: submit to actual network
         // self.get_network()
@@ -297,19 +297,19 @@ impl Staker {
                     .known_votes
                     .clone()
                     .into_iter()
-                    .any(|known_vote| known_vote == *vote);
+                    .any(|known_vote| known_vote == vote.data);
 
                 let is_new_vote = self
                     .new_votes
                     .clone()
                     .into_iter()
-                    .any(|new_vote| new_vote == *vote);
+                    .any(|new_vote| new_vote == vote.data);
 
                 if is_known_vote || is_new_vote {
                     // Do nothing
                 } else if self.chain.contains_key(&vote.data.head) {
                     // TODO: proper error handling
-                    let _ = self.new_votes.push(vote.clone());
+                    let _ = self.new_votes.push(vote.data.clone());
                 } else {
                     self.dependencies
                         .entry(vote.data.head)
