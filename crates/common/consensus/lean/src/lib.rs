@@ -97,14 +97,9 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
 
             // Finalization: if the target is the next valid justifiable
             // hash after the source
-            let mut is_target_next_valid_justifiable_slot = true;
-
-            for slot in (vote.data.source_slot + 1)..vote.data.target_slot {
-                if is_justifiable_slot(&state.latest_finalized_slot, &slot) {
-                    is_target_next_valid_justifiable_slot = false;
-                    break;
-                }
-            }
+            let is_target_next_valid_justifiable_slot = !((vote.data.source_slot + 1)
+                ..vote.data.target_slot)
+                .any(|slot| is_justifiable_slot(&state.latest_finalized_slot, &slot));
 
             if is_target_next_valid_justifiable_slot {
                 state.latest_finalized_hash = vote.data.source;
