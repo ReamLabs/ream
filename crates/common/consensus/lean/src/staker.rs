@@ -17,7 +17,7 @@ use crate::{
     vote::{SignedVote, Vote},
 };
 
-// TODO: Add back #[derive(TreeHash)]
+// TODO: Split to Staker and Service
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Staker {
     pub validator_id: usize,
