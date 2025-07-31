@@ -1,7 +1,9 @@
 pub mod block;
-pub mod state;
 pub mod staker;
+pub mod state;
 pub mod vote;
+
+use std::collections::HashMap;
 
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
@@ -11,13 +13,8 @@ use ssz_types::{
         U16777216, // 2**24
     },
 };
-use std::collections::HashMap;
 
-use crate::{
-    block::Block,
-    state::LeanState,
-    vote::Vote,
-};
+use crate::{block::Block, state::LeanState, vote::Vote};
 
 pub type Hash = B256;
 
@@ -66,7 +63,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
         // Ignore votes whose source is not already justified,
         // or whose target is not in the history, or whose target is not a
         // valid justifiable slot
-        if state.justified_slots[vote.data.source_slot] == false
+        if !state.justified_slots[vote.data.source_slot]
             || Some(vote.data.source) != state.historical_block_hashes[vote.data.source_slot]
             || Some(vote.data.target) != state.historical_block_hashes[vote.data.target_slot]
             || vote.data.target_slot <= vote.data.source_slot
@@ -124,12 +121,10 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
 
 // Get the highest-slot justified block that we know about
 pub fn get_latest_justified_hash(post_states: &HashMap<Hash, LeanState>) -> Option<Hash> {
-    let latest_justified_hash = post_states
+    post_states
         .values()
         .max_by_key(|state| state.latest_justified_slot)
-        .map(|state| state.latest_justified_hash);
-
-    latest_justified_hash
+        .map(|state| state.latest_justified_hash)
 }
 
 // Use LMD GHOST to get the head, given a particular root (usually the
@@ -167,7 +162,7 @@ pub fn get_fork_choice_head(
     // for any descendant of a block also counts as a vote for that block
     let mut vote_weights = HashMap::<Hash, usize>::new();
 
-    for (_validator_id, vote) in &latest_votes {
+    for vote in latest_votes.values() {
         if blocks.contains_key(&vote.data.head) {
             let mut block_hash = vote.data.head;
             while blocks.get(&block_hash).unwrap().slot > blocks.get(&root).unwrap().slot {
@@ -209,7 +204,7 @@ pub fn get_fork_choice_head(
                     .max_by_key(|child_hash| {
                         let vote_weight = vote_weights.get(*child_hash).unwrap_or(&0);
                         let slot = blocks.get(*child_hash).unwrap().slot;
-                        (*vote_weight, slot, (*child_hash).clone())
+                        (*vote_weight, slot, *(*child_hash))
                     })
                     .unwrap();
             }
