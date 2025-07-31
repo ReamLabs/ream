@@ -7,13 +7,13 @@ use tree_hash_derive::TreeHash;
 use crate::Hash;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct Vote {
-    pub data: VoteData,
+pub struct SignedVote {
+    pub data: Vote,
     pub signature: PQSignature,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct VoteData {
+pub struct Vote {
     pub validator_id: usize,
     pub slot: usize,
     pub head: Hash,
