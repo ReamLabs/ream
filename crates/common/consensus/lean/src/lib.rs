@@ -74,12 +74,9 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
 
         // Track attempts to justify new hashes
         if !state.justifications.contains_key(&vote.data.target) {
-            let mut empty_justifications = Vec::<bool>::with_capacity(state.num_validators);
-            empty_justifications.resize(state.num_validators, false);
-
             state
                 .justifications
-                .insert(vote.data.target, empty_justifications);
+                .insert(vote.data.target, vec![false; state.num_validators]);
         }
 
         if !state.justifications[&vote.data.target][vote.data.validator_id] {
