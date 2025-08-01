@@ -41,17 +41,28 @@ impl Staker {
         let genesis_hash = genesis_block.tree_hash_root();
 
         Staker {
+            // This node's validator ID
             validator_id,
+            // Hook to the p2p network
             network,
+            // {block_hash: block} for all blocks that we know about
+            chain: HashMap::from([(genesis_hash, genesis_block)]),
+            // {block_hash: post_state} for all blocks that we know about
+            post_states: HashMap::from([(genesis_hash, genesis_state)]),
+            // Votes that we have received and taken into account
             known_votes: Vec::new(),
+            // Votes that we have received but not yet taken into account
             new_votes: Vec::new(),
+            // Objects that we will process once we have processed their parents
             dependencies: HashMap::new(),
+            // Initialize the chain with the genesis block
             genesis_hash,
             num_validators: genesis_state.config.num_validators,
+            // Block that it is safe to use to vote as the target
+            // Diverge from Python implementation: Use genesis hash instead of `None`
             safe_target: genesis_hash,
+            // Head of the chain
             head: genesis_hash,
-            chain: HashMap::from([(genesis_hash, genesis_block)]),
-            post_states: HashMap::from([(genesis_hash, genesis_state)]),
         }
     }
 
@@ -145,6 +156,7 @@ impl Staker {
             slot: new_slot,
             parent: self.head,
             votes: VariableList::empty(),
+            // Diverged from Python implementation: Using `B256::ZERO` instead of `None`)
             state_root: B256::ZERO,
         };
         let mut state: LeanState;

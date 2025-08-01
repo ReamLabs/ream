@@ -21,6 +21,7 @@ pub struct LeanState {
     pub historical_block_hashes: VariableList<B256, U4096>,
     pub justified_slots: VariableList<bool, U4096>,
 
+    // Diverged from Python implementation:
     // Originally `justifications: Dict[str, List[bool]]`
     pub justifications_roots: VariableList<B256, U4096>,
     pub justifications_roots_validators: BitList<U16777216>,
