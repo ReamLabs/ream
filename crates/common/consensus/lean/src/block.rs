@@ -13,7 +13,9 @@ pub struct SignedBlock {
     pub signature: PQSignature,
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(
+    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
+)]
 pub struct Block {
     pub slot: u64,
     pub parent: B256,
