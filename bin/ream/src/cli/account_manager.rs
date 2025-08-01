@@ -1,5 +1,5 @@
 use anyhow::ensure;
-use bip32::Mnemonic;
+use bip39::Mnemonic;
 use clap::Parser;
 use rand::rngs::OsRng;
 use tracing::warn;
@@ -58,8 +58,10 @@ impl AccountManagerConfig {
         if let Some(phrase) = &self.seed_phrase {
             phrase.clone()
         } else {
-            let mnemonic = Mnemonic::random(OsRng, Default::default());
-            let phrase = mnemonic.phrase().to_string();
+            // Generate a random 12-word mnemonic using the correct bip39 v2.0 API
+            let entropy = rand::random::<[u8; 16]>(); // 128 bits for 12 words
+            let mnemonic = Mnemonic::from_entropy_in(bip39::Language::English, &entropy).unwrap();
+            let phrase = mnemonic.words().collect::<Vec<_>>().join(" ");
             warn!("⚠️  IMPORTANT: Generated new seed phrase: {phrase}");
             warn!(
                 "⚠️  Please save this seed phrase somewhere safe. You will need it to recover your keys."
