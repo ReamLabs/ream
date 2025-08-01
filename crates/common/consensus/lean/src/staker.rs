@@ -86,8 +86,7 @@ impl Staker {
 
         for new_vote in &self.new_votes {
             if !known_votes.any(|known_vote| known_vote == *new_vote) {
-                // TODO: proper error handling
-                let _ = self.known_votes.push(new_vote.clone());
+                self.known_votes.push(new_vote.clone()).expect("Failed to push new_vote to known_votes");
             }
         }
 
@@ -170,7 +169,7 @@ impl Staker {
 
             for vote in new_votes_to_add {
                 // TODO: proper error handling
-                let _ = new_block.votes.push(vote);
+                new_block.votes.push(vote).expect("Failed to add vote to new_block");
             }
         }
 
@@ -259,8 +258,7 @@ impl Staker {
 
                         for vote in &block.votes {
                             if !known_votes.any(|known_vote| known_vote == *vote) {
-                                // TODO: proper error handling
-                                let _ = self.known_votes.push(vote.clone());
+                                self.known_votes.push(vote.clone()).expect("Failed to push vote to known_votes");
                             }
                         }
 
@@ -302,8 +300,7 @@ impl Staker {
                 if is_known_vote || is_new_vote {
                     // Do nothing
                 } else if self.chain.contains_key(&vote.data.head) {
-                    // TODO: proper error handling
-                    let _ = self.new_votes.push(vote.data.clone());
+                    self.new_votes.push(vote.data.clone()).expect("Failed to push vote to new_votes");
                 } else {
                     self.dependencies
                         .entry(vote.data.head)
