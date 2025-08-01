@@ -45,7 +45,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
     // Track historical blocks in the state
     state
         .historical_block_hashes
-        .push(Some(block.parent))
+        .push(block.parent)
         .expect("Failed to add block.parent to historical_block_hashes");
     state
         .justified_slots
@@ -57,9 +57,11 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
             .justified_slots
             .push(false)
             .expect("Failed to prefill justified_slots");
+
         state
             .historical_block_hashes
-            .push(None)
+            // Divergent from Python ref implementation: uses `B256::ZERO` instead of `None`
+            .push(B256::ZERO)
             .expect("Failed to prefill historical_block_hashes");
     }
 
@@ -69,8 +71,8 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
         // or whose target is not in the history, or whose target is not a
         // valid justifiable slot
         if !state.justified_slots[vote.source_slot as usize]
-            || Some(vote.source) != state.historical_block_hashes[vote.source_slot as usize]
-            || Some(vote.target) != state.historical_block_hashes[vote.target_slot as usize]
+            || vote.source != state.historical_block_hashes[vote.source_slot as usize]
+            || vote.target != state.historical_block_hashes[vote.target_slot as usize]
             || vote.target_slot <= vote.source_slot
             || !is_justifiable_slot(&state.latest_finalized_slot, &vote.target_slot)
         {

@@ -175,7 +175,7 @@ impl Staker {
             }
         }
 
-        new_block.state_root = state.compute_hash();
+        new_block.state_root = state.tree_hash_root();
         let new_hash = new_block.tree_hash_root();
 
         self.chain.insert(new_hash, new_block.clone());
