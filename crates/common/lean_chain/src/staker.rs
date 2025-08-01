@@ -1,10 +1,10 @@
 use alloy_primitives::B256;
-use ream_pqc::{PQSignature, PublicKey};
-use serde::{Deserialize, Serialize};
-use ssz_types::{typenum::U4096, VariableList};
+use ream_p2p::network::lean::NetworkService;
+use ream_pqc::PQSignature;
+use ssz_types::VariableList;
 use std::collections::HashMap;
-
-use crate::{
+use std::sync::{Arc, Mutex};
+use ream_consensus_lean::{
     QueueItem, SLOT_DURATION,
     block::Block,
     get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot, process_block,
@@ -12,36 +12,29 @@ use crate::{
     vote::{SignedVote, Vote},
 };
 
-// TODO: Split to Staker and Service
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Staker {
     pub validator_id: u64,
-    pub public_key: PublicKey, // Additional to 3SF-mini
     pub chain: HashMap<B256, Block>,
-    pub time: u64, // TODO: update the time so on_tick() works properly
-    // TODO: Add back proper networking instead
-    // pub network: Arc<Mutex<P2PNetwork>>,
+    pub network: Arc<Mutex<NetworkService>>,
     pub post_states: HashMap<B256, LeanState>,
-    pub known_votes: VariableList<Vote, U4096>,
-    pub new_votes: VariableList<Vote, U4096>,
+    pub known_votes: Vec<Vote>,
+    pub new_votes: Vec<Vote>,
     pub dependencies: HashMap<B256, Vec<QueueItem>>,
     pub genesis_hash: B256,
-    // TODO: Proper validator key handling from static config
     pub num_validators: u64,
     pub safe_target: B256,
     pub head: B256,
 }
 
 impl Staker {
-    pub fn new(validator_id: u64, genesis_block: Block, genesis_state: LeanState) -> Staker {
+    pub fn new(validator_id: u64, network: Arc<Mutex<NetworkService>>, genesis_block: Block, genesis_state: LeanState) -> Staker {
         let genesis_hash = genesis_block.compute_hash();
 
         Staker {
             validator_id,
-            public_key: PublicKey {},
-            time: 0,
-            known_votes: VariableList::empty(),
-            new_votes: VariableList::empty(),
+            network: network,
+            known_votes: Vec::new(),
+            new_votes: Vec::new(),
             dependencies: HashMap::new(),
             genesis_hash,
             num_validators: genesis_state.config.num_validators,
@@ -81,11 +74,11 @@ impl Staker {
 
         for new_vote in &self.new_votes {
             if !known_votes.any(|known_vote| known_vote == *new_vote) {
-                self.known_votes.push(new_vote.clone()).expect("Failed to push new_vote to known_votes");
+                self.known_votes.push(new_vote.clone());
             }
         }
 
-        self.new_votes = VariableList::empty();
+        self.new_votes = Vec::new();
         self.recompute_head();
     }
 
@@ -97,7 +90,7 @@ impl Staker {
 
     // Called every second
     pub fn tick(&mut self) {
-        let time_in_slot = self.time % SLOT_DURATION;
+        let time_in_slot = self.network.lock().unwrap().time % SLOT_DURATION;
 
         // t=0: propose a block
         if time_in_slot == 0 {
@@ -123,7 +116,7 @@ impl Staker {
     }
 
     fn get_current_slot(&self) -> u64 {
-        self.time / SLOT_DURATION + 2
+        self.network.lock().unwrap().time / SLOT_DURATION + 2
     }
 
     // Called when it's the staker's turn to propose a block
@@ -253,7 +246,7 @@ impl Staker {
 
                         for vote in &block.votes {
                             if !known_votes.any(|known_vote| known_vote == *vote) {
-                                self.known_votes.push(vote.clone()).expect("Failed to push vote to known_votes");
+                                self.known_votes.push(vote.clone());
                             }
                         }
 
@@ -295,7 +288,7 @@ impl Staker {
                 if is_known_vote || is_new_vote {
                     // Do nothing
                 } else if self.chain.contains_key(&vote.data.head) {
-                    self.new_votes.push(vote.data.clone()).expect("Failed to push vote to new_votes");
+                    self.new_votes.push(vote.data.clone());
                 } else {
                     self.dependencies
                         .entry(vote.data.head)
