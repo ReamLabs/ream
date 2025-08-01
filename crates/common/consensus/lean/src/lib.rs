@@ -40,14 +40,12 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
     let mut state = pre_state.clone();
 
     // Track historical blocks in the state
-    // TODO: proper error handlings
-    let _ = state.historical_block_hashes.push(block.parent);
-    let _ = state.justified_slots.push(false);
+    state.historical_block_hashes.push(block.parent).expect("Failed to add block.parent to historical_block_hashes");
+    state.justified_slots.push(false).expect("Failed to add to justified_slots");
 
     while state.historical_block_hashes.len() < block.slot as usize {
-        // TODO: proper error handlings
-        let _ = state.justified_slots.push(false);
-        let _ = state.historical_block_hashes.push(None);
+        state.justified_slots.push(false).expect("Failed to prefill justified_slots");
+        state.historical_block_hashes.push(None).expect("Failed to prefill historical_block_hashes");
     }
 
     // Process votes
