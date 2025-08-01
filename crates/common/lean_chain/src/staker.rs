@@ -1,9 +1,4 @@
 use alloy_primitives::B256;
-use ream_p2p::network::lean::NetworkService;
-use ream_pqc::PQSignature;
-use ssz_types::VariableList;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use ream_consensus_lean::{
     QueueItem, SLOT_DURATION,
     block::Block,
@@ -11,6 +6,12 @@ use ream_consensus_lean::{
     state::LeanState,
     vote::{SignedVote, Vote},
 };
+use ream_p2p::network::lean::NetworkService;
+use ream_pqc::PQSignature;
+use ssz_types::VariableList;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tracing::info;
 
 pub struct Staker {
     pub validator_id: u64,
@@ -123,7 +124,7 @@ impl Staker {
     fn propose_block(&mut self) {
         let new_slot = self.get_current_slot();
 
-        println!(
+        info!(
             "proposing (Staker {}), head = {}",
             self.validator_id,
             self.chain.get(&self.head).unwrap().slot
@@ -208,7 +209,7 @@ impl Staker {
             signature: PQSignature {},
         };
 
-        println!(
+        info!(
             "voting (Staker {}), head = {}, t = {}, s = {}",
             self.validator_id,
             &self.chain.get(&self.head).unwrap().slot,
