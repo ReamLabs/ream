@@ -179,10 +179,7 @@ pub fn get_fork_choice_head(
         // Original Python impl uses `block.parent` to imply that the block has a parent,
         // So for Rust, we use `block.parent != B256::ZERO` instead.
         if block.parent != B256::ZERO && *vote_weights.get(hash).unwrap_or(&0) >= min_score {
-            children_map
-                .entry(block.parent)
-                .or_default()
-                .push(*hash);
+            children_map.entry(block.parent).or_default().push(*hash);
         }
     }
 
