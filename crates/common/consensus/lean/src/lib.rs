@@ -16,9 +16,6 @@ use ssz_types::{
 
 use crate::{block::Block, state::LeanState, vote::SignedVote, vote::Vote};
 
-pub type Hash = B256;
-
-pub const ZERO_HASH: Hash = Hash::ZERO;
 pub const SLOT_DURATION: usize = 12;
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -112,7 +109,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
 }
 
 // Get the highest-slot justified block that we know about
-pub fn get_latest_justified_hash(post_states: &HashMap<Hash, LeanState>) -> Option<Hash> {
+pub fn get_latest_justified_hash(post_states: &HashMap<B256, LeanState>) -> Option<B256> {
     post_states
         .values()
         .max_by_key(|state| state.latest_justified_slot)
@@ -122,15 +119,15 @@ pub fn get_latest_justified_hash(post_states: &HashMap<Hash, LeanState>) -> Opti
 // Use LMD GHOST to get the head, given a particular root (usually the
 // latest known justified block)
 pub fn get_fork_choice_head(
-    blocks: &HashMap<Hash, Block>,
-    provided_root: &Hash,
-    votes: &VariableList<Vote, U16777216>,
+    blocks: &HashMap<B256, Block>,
+    provided_root: &B256,
+    votes: &VariableList<Vote, U4096>,
     min_score: usize,
-) -> Hash {
+) -> B256 {
     let mut root = *provided_root;
 
     // Start at genesis by default
-    if *root == ZERO_HASH {
+    if *root == B256::ZERO {
         root = blocks
             .iter()
             .min_by_key(|(_, block)| block.slot)
@@ -152,7 +149,7 @@ pub fn get_fork_choice_head(
 
     // For each block, count the number of votes for that block. A vote
     // for any descendant of a block also counts as a vote for that block
-    let mut vote_weights = HashMap::<Hash, usize>::new();
+    let mut vote_weights = HashMap::<B256, usize>::new();
 
     for vote in latest_votes.values() {
         if blocks.contains_key(&vote.head) {
@@ -166,7 +163,7 @@ pub fn get_fork_choice_head(
     }
 
     // Identify the children of each block
-    let mut children_map = HashMap::<Hash, Vec<Hash>>::new();
+    let mut children_map = HashMap::<B256, Vec<B256>>::new();
 
     for (hash, block) in blocks {
         if block.parent.is_some() && *vote_weights.get(hash).unwrap_or(&0) >= min_score {
