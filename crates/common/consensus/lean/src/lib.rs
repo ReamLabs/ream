@@ -128,6 +128,8 @@ pub fn get_fork_choice_head(
             .unwrap();
     }
 
+    // Identify latest votes
+
     // Sort votes by ascending slots to ensure that new votes are inserted last
     let mut sorted_votes = votes.clone();
     sorted_votes.sort_by_key(|vote| vote.slot);
@@ -135,7 +137,7 @@ pub fn get_fork_choice_head(
     // Prepare a map of validator_id -> their vote
     let mut latest_votes = HashMap::<u64, Vote>::new();
 
-    for vote in votes {
+    for vote in sorted_votes {
         let validator_id = vote.validator_id;
         latest_votes.insert(validator_id, vote.clone());
     }
