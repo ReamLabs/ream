@@ -1,5 +1,4 @@
 use alloy_primitives::B256;
-use ethereum_hashing::hash;
 use ream_pqc::PQSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -21,11 +20,4 @@ pub struct Vote {
     pub target_slot: u64,
     pub source: B256,
     pub source_slot: u64,
-}
-
-impl Vote {
-    pub fn compute_hash(&self) -> B256 {
-        let serialized = serde_json::to_string(self).unwrap();
-        B256::from_slice(&hash(serialized.as_bytes()))
-    }
 }

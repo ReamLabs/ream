@@ -1,7 +1,10 @@
 use alloy_primitives::B256;
 use ethereum_hashing::hash;
 use serde::{Deserialize, Serialize};
-use ssz_types::{BitList, VariableList, typenum::{Unsigned, U4096, U16777216}};
+use ssz_types::{
+    BitList, VariableList,
+    typenum::{U4096, U16777216, Unsigned},
+};
 
 use crate::config::Config;
 
@@ -35,13 +38,19 @@ impl LeanState {
 
     pub fn initialize_justifications_for_root(&mut self, root: &B256) {
         if !self.justifications_roots.contains(root) {
-            self.justifications_roots.push(root.clone()).expect("Failed to insert root into justifications_roots");
+            self.justifications_roots
+                .push(*root)
+                .expect("Failed to insert root into justifications_roots");
         }
     }
 
     pub fn set_justification(&mut self, root: &B256, validator_id: &u64, value: bool) {
-        let index = self.get_justifications_roots_index(root).expect("Failed to find the justifications index to set");
-        self.justifications_roots_validators.set(index * U4096::to_usize() + *validator_id as usize, value).expect("Failed to set justification bit");
+        let index = self
+            .get_justifications_roots_index(root)
+            .expect("Failed to find the justifications index to set");
+        self.justifications_roots_validators
+            .set(index * U4096::to_usize() + *validator_id as usize, value)
+            .expect("Failed to set justification bit");
     }
 
     pub fn count_justifications(&self, root: &B256) -> u64 {
@@ -52,16 +61,18 @@ impl LeanState {
         let start_range = index * U4096::to_usize();
         let end_range = start_range + U4096::to_usize();
 
-        self
-            .justifications_roots_validators
-            .as_slice()[start_range..end_range]
+        self.justifications_roots_validators.as_slice()[start_range..end_range]
             .iter()
-            .fold(0, |acc, justification_bits| acc + justification_bits.count_ones()) as u64
+            .fold(0, |acc, justification_bits| {
+                acc + justification_bits.count_ones()
+            }) as u64
     }
 
     pub fn remove_justifications(&mut self, root: &B256) {
         // Remove from `state.justifications_roots`
-        let index = self.get_justifications_roots_index(root).expect("Failed to find the justifications index to remove");
+        let index = self
+            .get_justifications_roots_index(root)
+            .expect("Failed to find the justifications index to remove");
         self.justifications_roots.remove(index);
 
         let start_range = index * U4096::to_usize();
@@ -69,7 +80,9 @@ impl LeanState {
 
         // Remove from `state.justifications_roots_validators`
         for i in start_range..end_range {
-            self.justifications_roots_validators.set(i, false).expect("Failed to remove justifications");
+            self.justifications_roots_validators
+                .set(i, false)
+                .expect("Failed to remove justifications");
         }
     }
 }
