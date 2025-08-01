@@ -1,12 +1,10 @@
 pub mod block;
 pub mod config;
-pub mod staker;
 pub mod state;
 pub mod vote;
 
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
-use ssz_types::{typenum::U4096, VariableList};
 use std::collections::HashMap;
 
 use crate::{block::Block, state::LeanState, vote::SignedVote, vote::Vote};
@@ -114,7 +112,7 @@ pub fn get_latest_justified_hash(post_states: &HashMap<B256, LeanState>) -> Opti
 pub fn get_fork_choice_head(
     blocks: &HashMap<B256, Block>,
     provided_root: &B256,
-    votes: &VariableList<Vote, U4096>,
+    votes: &Vec<Vote>,
     min_score: u64,
 ) -> B256 {
     let mut root = *provided_root;
