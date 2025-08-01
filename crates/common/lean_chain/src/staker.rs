@@ -15,6 +15,7 @@ use ream_p2p::network::lean::NetworkService;
 use ream_pqc::PQSignature;
 use ssz_types::VariableList;
 use tracing::info;
+use tree_hash::TreeHash;
 
 pub struct Staker {
     pub validator_id: u64,
@@ -37,7 +38,7 @@ impl Staker {
         genesis_block: Block,
         genesis_state: LeanState,
     ) -> Staker {
-        let genesis_hash = genesis_block.compute_hash();
+        let genesis_hash = genesis_block.tree_hash_root();
 
         Staker {
             validator_id,
@@ -142,9 +143,9 @@ impl Staker {
         let head_state = self.post_states.get(&self.head).unwrap();
         let mut new_block = Block {
             slot: new_slot,
-            parent: Some(self.head),
+            parent: self.head,
             votes: VariableList::empty(),
-            state_root: None,
+            state_root: B256::ZERO,
         };
         let mut state: LeanState;
 
@@ -174,8 +175,8 @@ impl Staker {
             }
         }
 
-        new_block.state_root = Some(state.compute_hash());
-        let new_hash = new_block.compute_hash();
+        new_block.state_root = state.compute_hash();
+        let new_hash = new_block.tree_hash_root();
 
         self.chain.insert(new_hash, new_block.clone());
         self.post_states.insert(new_hash, state);
@@ -195,14 +196,14 @@ impl Staker {
         // of the head
         for _ in 0..3 {
             if target_block.slot > self.chain.get(&self.safe_target).unwrap().slot {
-                target_block = self.chain.get(&target_block.parent.unwrap()).unwrap();
+                target_block = self.chain.get(&target_block.parent).unwrap();
             }
         }
 
         // If the latest finalized slot is very far back, then only some slots are
         // valid to justify, make sure the target is one of those
         while !is_justifiable_slot(&state.latest_finalized_slot, &target_block.slot) {
-            target_block = self.chain.get(&target_block.parent.unwrap()).unwrap();
+            target_block = self.chain.get(&target_block.parent).unwrap();
         }
 
         let vote = Vote {
@@ -210,7 +211,7 @@ impl Staker {
             slot: self.get_current_slot(),
             head: self.head,
             head_slot: self.chain.get(&self.head).unwrap().slot,
-            target: target_block.compute_hash(),
+            target: target_block.tree_hash_root(),
             target_slot: target_block.slot,
             source: state.latest_justified_hash,
             source_slot: state.latest_justified_slot,
@@ -241,14 +242,14 @@ impl Staker {
     fn receive(&mut self, queue_item: &QueueItem) {
         match queue_item {
             QueueItem::BlockItem(block) => {
-                let block_hash = block.compute_hash();
+                let block_hash = block.tree_hash_root();
 
                 // If the block is already known, ignore it
                 if self.chain.contains_key(&block_hash) {
                     return;
                 }
 
-                match self.post_states.get(&block.parent.unwrap()) {
+                match self.post_states.get(&block.parent) {
                     Some(parent_state) => {
                         let state = process_block(parent_state, block);
 
@@ -279,7 +280,7 @@ impl Staker {
                         // If we have not yet seen the block's parent, ignore for now,
                         // process later once we actually see the parent
                         self.dependencies
-                            .entry(block.parent.unwrap())
+                            .entry(block.parent)
                             .or_default()
                             .push(queue_item.clone());
                     }

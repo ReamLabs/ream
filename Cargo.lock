@@ -5456,6 +5456,7 @@ dependencies = [
  "ssz_types",
  "tokio",
  "tracing",
+ "tree_hash",
 ]
 
 [[package]]
