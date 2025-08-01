@@ -17,9 +17,9 @@ pub enum QueueItem {
     VoteItem(SignedVote),
 }
 
-// We allow justification of slots either <= 5 or a perfect square or oblong after
-// the latest finalized slot. This gives us a backoff technique and ensures
-// finality keeps progressing even under high latency
+/// We allow justification of slots either <= 5 or a perfect square or oblong after
+/// the latest finalized slot. This gives us a backoff technique and ensures
+/// finality keeps progressing even under high latency
 pub fn is_justifiable_slot(finalized_slot: &u64, candidate_slot: &u64) -> bool {
     assert!(
         candidate_slot >= finalized_slot,
@@ -33,7 +33,7 @@ pub fn is_justifiable_slot(finalized_slot: &u64, candidate_slot: &u64) -> bool {
     || (delta as f64 + 0.25).sqrt() % 1.0 == 0.5 // any x^2+x
 }
 
-// Given a state, output the new state after processing that block
+/// Given a state, output the new state after processing that block
 pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
     let mut state = pre_state.clone();
 
@@ -99,7 +99,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
     state
 }
 
-// Get the highest-slot justified block that we know about
+/// Get the highest-slot justified block that we know about
 pub fn get_latest_justified_hash(post_states: &HashMap<B256, LeanState>) -> Option<B256> {
     post_states
         .values()
@@ -107,8 +107,8 @@ pub fn get_latest_justified_hash(post_states: &HashMap<B256, LeanState>) -> Opti
         .map(|state| state.latest_justified_hash)
 }
 
-// Use LMD GHOST to get the head, given a particular root (usually the
-// latest known justified block)
+/// Use LMD GHOST to get the head, given a particular root (usually the
+/// latest known justified block)
 pub fn get_fork_choice_head(
     blocks: &HashMap<B256, Block>,
     provided_root: &B256,
