@@ -45,7 +45,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
     // Track historical blocks in the state
     state
         .historical_block_hashes
-        .push(block.parent)
+        .push(Some(block.parent))
         .expect("Failed to add block.parent to historical_block_hashes");
     state
         .justified_slots
@@ -167,7 +167,7 @@ pub fn get_fork_choice_head(
             while blocks.get(&block_hash).unwrap().slot > blocks.get(&root).unwrap().slot {
                 let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
                 vote_weights.insert(block_hash, current_weights + 1);
-                block_hash = blocks.get(&block_hash).unwrap().parent.unwrap();
+                block_hash = blocks.get(&block_hash).unwrap().parent;
             }
         }
     }
@@ -176,9 +176,11 @@ pub fn get_fork_choice_head(
     let mut children_map = HashMap::<B256, Vec<B256>>::new();
 
     for (hash, block) in blocks {
-        if block.parent.is_some() && *vote_weights.get(hash).unwrap_or(&0) >= min_score {
+        // Original Python impl uses `block.parent` to imply that the block has a parent,
+        // So for Rust, we use `block.parent != B256::ZERO` instead.
+        if block.parent != B256::ZERO && *vote_weights.get(hash).unwrap_or(&0) >= min_score {
             children_map
-                .entry(block.parent.unwrap())
+                .entry(block.parent)
                 .or_default()
                 .push(*hash);
         }

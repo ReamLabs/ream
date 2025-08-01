@@ -15,6 +15,7 @@ serde.workspace = true
 ssz_types.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+tree_hash.workspace = true
 
 # ream dependencies
 ream-consensus-lean.workspace = true

@@ -1,36 +1,22 @@
 use alloy_primitives::B256;
-use ethereum_hashing::hash;
 use ream_pqc::PQSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use ssz_types::{
-    VariableList,
-    typenum::{
-        U16777216, // 2**24
-    },
-};
+use ssz_types::{VariableList, typenum::U4096};
+use tree_hash_derive::TreeHash;
 
 use crate::vote::Vote;
 
-// TODO: Add back #[derive(TreeHash)]
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedBlock {
     pub message: Block,
     pub signature: PQSignature,
 }
 
-// TODO: Add back #[derive(TreeHash)]
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Default)]
+#[derive(Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Block {
     pub slot: u64,
-    pub parent: Option<B256>,
-    pub votes: VariableList<Vote, U16777216>,
-    pub state_root: Option<B256>,
-}
-
-impl Block {
-    pub fn compute_hash(&self) -> B256 {
-        let serialized = serde_json::to_string(self).unwrap();
-        B256::from_slice(&hash(serialized.as_bytes()))
-    }
+    pub parent: B256,
+    pub votes: VariableList<Vote, U4096>,
+    pub state_root: B256,
 }
