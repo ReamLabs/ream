@@ -83,13 +83,13 @@ impl Staker {
         self.recompute_head();
     }
 
-    // Done upon processing new votes or a new block
+    /// Done upon processing new votes or a new block
     fn recompute_head(&mut self) {
         let justified_hash = get_latest_justified_hash(&self.post_states).expect("Failed to get latest_justified_hash from post_states");
         self.head = get_fork_choice_head(&self.chain, &justified_hash, &self.known_votes, 0);
     }
 
-    // Called every second
+    /// Called every second
     pub fn tick(&mut self) {
         let time_in_slot = self.network.lock().unwrap().time % SLOT_DURATION;
 
@@ -120,7 +120,7 @@ impl Staker {
         self.network.lock().unwrap().time / SLOT_DURATION + 2
     }
 
-    // Called when it's the staker's turn to propose a block
+    /// Called when it's the staker's turn to propose a block
     fn propose_block(&mut self) {
         let new_slot = self.get_current_slot();
 
@@ -174,7 +174,7 @@ impl Staker {
         //     .submit(QueueItem::BlockItem(new_block), self.validator_id);
     }
 
-    // Called when it's the staker's turn to vote
+    /// Called when it's the staker's turn to vote
     fn vote(&mut self) {
         let state = self.post_states.get(&self.head).unwrap();
         let mut target_block = self.chain.get(&self.head).unwrap();
@@ -225,7 +225,7 @@ impl Staker {
         //     .submit(QueueItem::VoteItem(vote), self.validator_id);
     }
 
-    // Called by the p2p network
+    /// Called by the p2p network
     fn receive(&mut self, queue_item: &QueueItem) {
         match queue_item {
             QueueItem::BlockItem(block) => {
