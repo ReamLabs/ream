@@ -15,10 +15,10 @@ use crate::{
 // TODO: Split to Staker and Service
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Staker {
-    pub validator_id: usize,
+    pub validator_id: u64,
     pub public_key: PublicKey, // Additional to 3SF-mini
     pub chain: HashMap<B256, Block>,
-    pub time: usize, // TODO: update the time so on_tick() works properly
+    pub time: u64, // TODO: update the time so on_tick() works properly
     // TODO: Add back proper networking instead
     // pub network: Weak<RefCell<P2PNetwork>>,
     pub post_states: HashMap<B256, LeanState>,
@@ -27,13 +27,13 @@ pub struct Staker {
     pub dependencies: HashMap<B256, Vec<QueueItem>>,
     pub genesis_hash: B256,
     // TODO: Proper validator key handling from static config
-    pub num_validators: usize,
+    pub num_validators: u64,
     pub safe_target: B256,
     pub head: B256,
 }
 
 impl Staker {
-    pub fn new(validator_id: usize, genesis_block: &Block, genesis_state: &LeanState) -> Staker {
+    pub fn new(validator_id: u64, genesis_block: &Block, genesis_state: &LeanState) -> Staker {
         let genesis_hash = genesis_block.compute_hash();
         let mut chain = HashMap::<B256, Block>::new();
         chain.insert(genesis_hash, genesis_block.clone());
@@ -128,7 +128,7 @@ impl Staker {
         }
     }
 
-    fn get_current_slot(&self) -> usize {
+    fn get_current_slot(&self) -> u64 {
         self.time / SLOT_DURATION + 2
     }
 

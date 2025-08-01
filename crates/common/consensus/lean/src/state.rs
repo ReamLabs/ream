@@ -12,9 +12,9 @@ pub struct LeanState {
     pub config: Config,
 
     pub latest_justified_hash: B256,
-    pub latest_justified_slot: usize,
+    pub latest_justified_slot: u64,
     pub latest_finalized_hash: B256,
-    pub latest_finalized_slot: usize,
+    pub latest_finalized_slot: u64,
 
     pub historical_block_hashes: VariableList<Option<B256>, U4096>,
     pub justified_slots: VariableList<bool, U4096>,

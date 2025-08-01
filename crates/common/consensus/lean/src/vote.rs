@@ -13,14 +13,14 @@ pub struct SignedVote {
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Vote {
-    pub validator_id: usize,
-    pub slot: usize,
+    pub validator_id: u64,
+    pub slot: u64,
     pub head: B256,
-    pub head_slot: usize,
+    pub head_slot: u64,
     pub target: B256,
-    pub target_slot: usize,
+    pub target_slot: u64,
     pub source: B256,
-    pub source_slot: usize,
+    pub source_slot: u64,
 }
 
 impl Vote {
