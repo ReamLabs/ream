@@ -33,27 +33,22 @@ pub struct Staker {
 }
 
 impl Staker {
-    pub fn new(validator_id: u64, genesis_block: &Block, genesis_state: &LeanState) -> Staker {
+    pub fn new(validator_id: u64, genesis_block: Block, genesis_state: LeanState) -> Staker {
         let genesis_hash = genesis_block.compute_hash();
-        let mut chain = HashMap::<B256, Block>::new();
-        chain.insert(genesis_hash, genesis_block.clone());
-
-        let mut post_states = HashMap::<B256, LeanState>::new();
-        post_states.insert(genesis_hash, genesis_state.clone());
 
         Staker {
             validator_id,
             public_key: PublicKey {},
-            chain,
             time: 0,
-            post_states,
-            known_votes: VariableList::<Vote, U4096>::empty(),
-            new_votes: VariableList::<Vote, U4096>::empty(),
-            dependencies: HashMap::<B256, Vec<QueueItem>>::new(),
+            known_votes: VariableList::empty(),
+            new_votes: VariableList::empty(),
+            dependencies: HashMap::new(),
             genesis_hash,
             num_validators: genesis_state.config.num_validators,
             safe_target: genesis_hash,
             head: genesis_hash,
+            chain: HashMap::from([(genesis_hash, genesis_block)]),
+            post_states: HashMap::from([(genesis_hash, genesis_state)]),
         }
     }
 
