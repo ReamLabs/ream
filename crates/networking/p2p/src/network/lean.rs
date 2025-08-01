@@ -1,10 +1,12 @@
 use tracing::info;
 
-pub struct NetworkService {}
+pub struct NetworkService {
+    pub time: u64,
+}
 
 impl NetworkService {
     pub async fn new() -> Self {
-        NetworkService {}
+        NetworkService { time: 0 }
     }
 
     pub async fn start(self) {

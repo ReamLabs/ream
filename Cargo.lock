@@ -2133,7 +2133,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4983,7 +4983,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5309,10 +5309,12 @@ name = "ream-consensus-lean"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "ethereum_hashing",
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "ream-pqc",
  "serde",
+ "serde_json",
  "ssz_types",
  "tree_hash",
  "tree_hash_derive",
@@ -5439,6 +5441,22 @@ dependencies = [
  "serde_json",
  "sha2 0.10.8",
  "ssz_types",
+]
+
+[[package]]
+name = "ream-lean-chain"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "ream-consensus-lean",
+ "ream-network-spec",
+ "ream-p2p",
+ "ream-pqc",
+ "serde",
+ "ssz_types",
+ "tokio",
+ "tracing",
+ "tree_hash",
 ]
 
 [[package]]
@@ -6077,7 +6095,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6090,7 +6108,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6646,8 +6664,7 @@ dependencies = [
 [[package]]
 name = "ssz_types"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75b55bedc9a18ed2860a46d6beb4f4082416ee1d60be0cc364cebdcdddc7afd4"
+source = "git+https://github.com/ReamLabs/ssz_types?branch=removable-variable-list#01de4ea4385064ca3985bfc3ab24e825f107c64c"
 dependencies = [
  "ethereum_serde_utils",
  "ethereum_ssz",
@@ -6812,7 +6829,7 @@ dependencies = [
  "getrandom 0.3.2",
  "once_cell",
  "rustix 1.0.5",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
