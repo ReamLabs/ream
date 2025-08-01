@@ -5504,7 +5504,6 @@ dependencies = [
  "ream-execution-engine",
  "ream-executor",
  "ream-fork-choice",
- "ream-lean-chain",
  "ream-network-spec",
  "ream-operation-pool",
  "ream-p2p",
