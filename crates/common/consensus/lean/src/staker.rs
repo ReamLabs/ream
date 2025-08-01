@@ -1,14 +1,8 @@
-use std::collections::HashMap;
-
 use alloy_primitives::B256;
 use ream_pqc::{PQSignature, PublicKey};
 use serde::{Deserialize, Serialize};
-use ssz_types::{
-    VariableList,
-    typenum::{
-        U16777216, // 2**24
-    },
-};
+use ssz_types::{typenum::U4096, VariableList};
+use std::collections::HashMap;
 
 use crate::{
     QueueItem, SLOT_DURATION,
@@ -27,9 +21,9 @@ pub struct Staker {
     pub time: usize, // TODO: update the time so on_tick() works properly
     // TODO: Add back proper networking instead
     // pub network: Weak<RefCell<P2PNetwork>>,
-    pub known_votes: VariableList<Vote, U16777216>,
-    pub new_votes: VariableList<Vote, U16777216>,
     pub post_states: HashMap<B256, LeanState>,
+    pub known_votes: VariableList<Vote, U4096>,
+    pub new_votes: VariableList<Vote, U4096>,
     pub dependencies: HashMap<B256, Vec<QueueItem>>,
     pub genesis_hash: B256,
     // TODO: Proper validator key handling from static config
@@ -53,12 +47,11 @@ impl Staker {
             chain,
             time: 0,
             post_states,
-            known_votes: VariableList::<Vote, U16777216>::empty(),
-            new_votes: VariableList::<Vote, U16777216>::empty(),
-            dependencies: HashMap::<Hash, Vec<QueueItem>>::new(),
+            known_votes: VariableList::<Vote, U4096>::empty(),
+            new_votes: VariableList::<Vote, U4096>::empty(),
             dependencies: HashMap::<B256, Vec<QueueItem>>::new(),
             genesis_hash,
-            num_validators: genesis_state.stakers.len(),
+            num_validators: genesis_state.config.num_validators,
             safe_target: genesis_hash,
             head: genesis_hash,
         }

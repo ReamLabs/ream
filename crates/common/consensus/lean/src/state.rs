@@ -1,22 +1,15 @@
-use std::collections::HashMap;
-
 use alloy_primitives::B256;
 use ethereum_hashing::hash;
 use serde::{Deserialize, Serialize};
-use ssz_types::{
-    VariableList,
-    typenum::{
-        U4096, // 2**12
-    },
-};
+use ssz_types::{typenum::U4096, VariableList};
+use std::collections::HashMap;
 
+use crate::config::Config;
 
 // TODO: Add back #[derive(Encode, Decode, TreeHash)]
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct LeanState {
-    pub genesis_time: usize,
-    pub stakers: VariableList<Staker, U4096>,
-    pub num_validators: usize,
+    pub config: Config,
 
     pub latest_justified_hash: B256,
     pub latest_justified_slot: usize,

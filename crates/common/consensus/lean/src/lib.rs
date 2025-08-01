@@ -1,18 +1,13 @@
 pub mod block;
+pub mod config;
 pub mod staker;
 pub mod state;
 pub mod vote;
 
-use std::collections::HashMap;
-
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
-use ssz_types::{
-    VariableList,
-    typenum::{
-        U16777216, // 2**24
-    },
-};
+use ssz_types::{typenum::U4096, VariableList};
+use std::collections::HashMap;
 
 use crate::{block::Block, state::LeanState, vote::SignedVote, vote::Vote};
 
@@ -73,7 +68,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
         if !state.justifications.contains_key(&vote.target) {
             state
                 .justifications
-                .insert(vote.target, vec![false; state.num_validators]);
+                .insert(vote.target, vec![false; state.config.num_validators]);
         }
 
         if !state.justifications[&vote.target][vote.validator_id] {
@@ -85,7 +80,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
             .fold(0, |sum, justification| sum + *justification as usize);
 
         // If 2/3 voted for the same new valid hash to justify
-        if count == (2 * state.num_validators) / 3 {
+        if count == (2 * state.config.num_validators) / 3 {
             state.latest_justified_hash = vote.target;
             state.latest_justified_slot = vote.target_slot;
             state.justified_slots[vote.target_slot] = true;
