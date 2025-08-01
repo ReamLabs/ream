@@ -45,10 +45,6 @@ impl Staker {
             validator_id,
             // Hook to the p2p network
             network,
-            // {block_hash: block} for all blocks that we know about
-            chain: HashMap::from([(genesis_hash, genesis_block)]),
-            // {block_hash: post_state} for all blocks that we know about
-            post_states: HashMap::from([(genesis_hash, genesis_state)]),
             // Votes that we have received and taken into account
             known_votes: Vec::new(),
             // Votes that we have received but not yet taken into account
@@ -63,6 +59,10 @@ impl Staker {
             safe_target: genesis_hash,
             // Head of the chain
             head: genesis_hash,
+            // {block_hash: block} for all blocks that we know about
+            chain: HashMap::from([(genesis_hash, genesis_block)]),
+            // {block_hash: post_state} for all blocks that we know about
+            post_states: HashMap::from([(genesis_hash, genesis_state)]),
         }
     }
 
