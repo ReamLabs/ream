@@ -1,15 +1,15 @@
 use alloy_primitives::B256;
-use ethereum_hashing::hash;
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitList, VariableList,
     typenum::{U4096, U16777216, Unsigned},
 };
+use tree_hash_derive::TreeHash;
 
 use crate::config::Config;
 
-// TODO: Add back #[derive(Encode, Decode, TreeHash)]
-#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct LeanState {
     pub config: Config,
 
@@ -18,7 +18,7 @@ pub struct LeanState {
     pub latest_finalized_hash: B256,
     pub latest_finalized_slot: u64,
 
-    pub historical_block_hashes: VariableList<Option<B256>, U4096>,
+    pub historical_block_hashes: VariableList<B256, U4096>,
     pub justified_slots: VariableList<bool, U4096>,
 
     // Originally `justifications: Dict[str, List[bool]]`
@@ -27,11 +27,6 @@ pub struct LeanState {
 }
 
 impl LeanState {
-    pub fn compute_hash(&self) -> B256 {
-        let serialized = serde_json::to_string(self).unwrap();
-        B256::from_slice(&hash(serialized.as_bytes()))
-    }
-
     fn get_justifications_roots_index(&self, root: &B256) -> Option<usize> {
         self.justifications_roots.iter().position(|r| r == root)
     }
