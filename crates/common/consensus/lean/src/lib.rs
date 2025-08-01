@@ -60,7 +60,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
 
         state
             .historical_block_hashes
-            // Divergent from Python ref implementation: uses `B256::ZERO` instead of `None`
+            // Diverged from Python implementation: uses `B256::ZERO` instead of `None`
             .push(B256::ZERO)
             .expect("Failed to prefill historical_block_hashes");
     }

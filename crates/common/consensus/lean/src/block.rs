@@ -18,7 +18,9 @@ pub struct SignedBlock {
 )]
 pub struct Block {
     pub slot: u64,
+    // Diverged from Python implementation: Disallow `None` (uses `B256::ZERO` instead)
     pub parent: B256,
     pub votes: VariableList<Vote, U4096>,
+    // Diverged from Python implementation: Disallow `None` (uses `B256::ZERO` instead)
     pub state_root: B256,
 }
