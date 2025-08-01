@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use alloy_primitives::B256;
 use ream_pqc::{PQSignature, PublicKey};
 use serde::{Deserialize, Serialize};
 use ssz_types::{
@@ -10,7 +11,7 @@ use ssz_types::{
 };
 
 use crate::{
-    Hash, QueueItem, SLOT_DURATION,
+    QueueItem, SLOT_DURATION,
     block::Block,
     get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot, process_block,
     state::LeanState,
@@ -22,28 +23,28 @@ use crate::{
 pub struct Staker {
     pub validator_id: usize,
     pub public_key: PublicKey, // Additional to 3SF-mini
-    pub chain: HashMap<Hash, Block>,
+    pub chain: HashMap<B256, Block>,
     pub time: usize, // TODO: update the time so on_tick() works properly
     // TODO: Add back proper networking instead
     // pub network: Weak<RefCell<P2PNetwork>>,
-    pub post_states: HashMap<Hash, LeanState>,
     pub known_votes: VariableList<Vote, U16777216>,
     pub new_votes: VariableList<Vote, U16777216>,
-    pub dependencies: HashMap<Hash, Vec<QueueItem>>,
-    pub genesis_hash: Hash,
+    pub post_states: HashMap<B256, LeanState>,
+    pub dependencies: HashMap<B256, Vec<QueueItem>>,
+    pub genesis_hash: B256,
     // TODO: Proper validator key handling from static config
     pub num_validators: usize,
-    pub safe_target: Hash,
-    pub head: Hash,
+    pub safe_target: B256,
+    pub head: B256,
 }
 
 impl Staker {
     pub fn new(validator_id: usize, genesis_block: &Block, genesis_state: &LeanState) -> Staker {
         let genesis_hash = genesis_block.compute_hash();
-        let mut chain = HashMap::<Hash, Block>::new();
+        let mut chain = HashMap::<B256, Block>::new();
         chain.insert(genesis_hash, genesis_block.clone());
 
-        let mut post_states = HashMap::<Hash, LeanState>::new();
+        let mut post_states = HashMap::<B256, LeanState>::new();
         post_states.insert(genesis_hash, genesis_state.clone());
 
         Staker {
@@ -55,6 +56,7 @@ impl Staker {
             known_votes: VariableList::<Vote, U16777216>::empty(),
             new_votes: VariableList::<Vote, U16777216>::empty(),
             dependencies: HashMap::<Hash, Vec<QueueItem>>::new(),
+            dependencies: HashMap::<B256, Vec<QueueItem>>::new(),
             genesis_hash,
             num_validators: genesis_state.stakers.len(),
             safe_target: genesis_hash,
@@ -62,18 +64,18 @@ impl Staker {
         }
     }
 
-    pub fn latest_justified_hash(&self) -> Option<Hash> {
+    pub fn latest_justified_hash(&self) -> Option<B256> {
         get_latest_justified_hash(&self.post_states)
     }
 
-    pub fn latest_finalized_hash(&self) -> Option<Hash> {
+    pub fn latest_finalized_hash(&self) -> Option<B256> {
         self.post_states
             .get(&self.head)
             .map(|state| state.latest_finalized_hash)
     }
 
     /// Compute the latest block that the staker is allowed to choose as the target
-    fn compute_safe_target(&self) -> Hash {
+    fn compute_safe_target(&self) -> B256 {
         let justified_hash = get_latest_justified_hash(&self.post_states).unwrap();
 
         get_fork_choice_head(
