@@ -78,28 +78,18 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
         }
 
         // Track attempts to justify new hashes
-        if !state.justifications.contains_key(&vote.target) {
-            state.justifications.insert(
-                vote.target,
-                vec![false; state.config.num_validators as usize],
-            );
-        }
+        state.initialize_justifications_for_root(&vote.target);
+        state.set_justification(&vote.target, &vote.validator_id, true);
 
-        if !state.justifications[&vote.target][vote.validator_id as usize] {
-            state.justifications.get_mut(&vote.target).unwrap()[vote.validator_id as usize] = true;
-        }
-
-        let count = state.justifications[&vote.target]
-            .iter()
-            .fold(0, |sum, justification| sum + *justification as usize);
+        let count = state.count_justifications(&vote.target);
 
         // If 2/3 voted for the same new valid hash to justify
-        if count == (2 * state.config.num_validators as usize) / 3 {
+        if count == (2 * state.config.num_validators) / 3 {
             state.latest_justified_hash = vote.target;
             state.latest_justified_slot = vote.target_slot;
             state.justified_slots[vote.target_slot as usize] = true;
 
-            state.justifications.remove(&vote.target).unwrap();
+            state.remove_justifications(&vote.target);
 
             // Finalization: if the target is the next valid justifiable
             // hash after the source
