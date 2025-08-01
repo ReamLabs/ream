@@ -1,8 +1,9 @@
+use std::collections::HashMap;
+
 use alloy_primitives::B256;
 use ethereum_hashing::hash;
 use serde::{Deserialize, Serialize};
-use ssz_types::{typenum::U4096, VariableList};
-use std::collections::HashMap;
+use ssz_types::{VariableList, typenum::U4096};
 
 use crate::config::Config;
 

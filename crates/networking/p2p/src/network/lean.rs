@@ -6,9 +6,7 @@ pub struct NetworkService {
 
 impl NetworkService {
     pub async fn new() -> Self {
-        NetworkService {
-            time: 0,
-        }
+        NetworkService { time: 0 }
     }
 
     pub async fn start(self) {

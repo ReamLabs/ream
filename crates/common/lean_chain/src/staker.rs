@@ -1,3 +1,8 @@
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
 use alloy_primitives::B256;
 use ream_consensus_lean::{
     QueueItem, SLOT_DURATION,
@@ -9,8 +14,6 @@ use ream_consensus_lean::{
 use ream_p2p::network::lean::NetworkService;
 use ream_pqc::PQSignature;
 use ssz_types::VariableList;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use tracing::info;
 
 pub struct Staker {
@@ -28,12 +31,17 @@ pub struct Staker {
 }
 
 impl Staker {
-    pub fn new(validator_id: u64, network: Arc<Mutex<NetworkService>>, genesis_block: Block, genesis_state: LeanState) -> Staker {
+    pub fn new(
+        validator_id: u64,
+        network: Arc<Mutex<NetworkService>>,
+        genesis_block: Block,
+        genesis_state: LeanState,
+    ) -> Staker {
         let genesis_hash = genesis_block.compute_hash();
 
         Staker {
             validator_id,
-            network: network,
+            network,
             known_votes: Vec::new(),
             new_votes: Vec::new(),
             dependencies: HashMap::new(),
@@ -85,7 +93,8 @@ impl Staker {
 
     /// Done upon processing new votes or a new block
     fn recompute_head(&mut self) {
-        let justified_hash = get_latest_justified_hash(&self.post_states).expect("Failed to get latest_justified_hash from post_states");
+        let justified_hash = get_latest_justified_hash(&self.post_states)
+            .expect("Failed to get latest_justified_hash from post_states");
         self.head = get_fork_choice_head(&self.chain, &justified_hash, &self.known_votes, 0);
     }
 
@@ -158,7 +167,10 @@ impl Staker {
 
             for vote in new_votes_to_add {
                 // TODO: proper error handling
-                new_block.votes.push(vote).expect("Failed to add vote to new_block");
+                new_block
+                    .votes
+                    .push(vote)
+                    .expect("Failed to add vote to new_block");
             }
         }
 
