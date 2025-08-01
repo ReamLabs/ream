@@ -20,7 +20,7 @@ pub struct Staker {
     pub chain: HashMap<B256, Block>,
     pub time: u64, // TODO: update the time so on_tick() works properly
     // TODO: Add back proper networking instead
-    // pub network: Weak<RefCell<P2PNetwork>>,
+    // pub network: Arc<Mutex<P2PNetwork>>,
     pub post_states: HashMap<B256, LeanState>,
     pub known_votes: VariableList<Vote, U4096>,
     pub new_votes: VariableList<Vote, U4096>,
