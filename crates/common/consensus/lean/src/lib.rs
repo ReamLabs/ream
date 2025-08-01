@@ -3,11 +3,16 @@ pub mod config;
 pub mod state;
 pub mod vote;
 
-use alloy_primitives::B256;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{block::Block, state::LeanState, vote::SignedVote, vote::Vote};
+use alloy_primitives::B256;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    block::Block,
+    state::LeanState,
+    vote::{SignedVote, Vote},
+};
 
 pub const SLOT_DURATION: u64 = 12;
 
@@ -38,12 +43,24 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
     let mut state = pre_state.clone();
 
     // Track historical blocks in the state
-    state.historical_block_hashes.push(block.parent).expect("Failed to add block.parent to historical_block_hashes");
-    state.justified_slots.push(false).expect("Failed to add to justified_slots");
+    state
+        .historical_block_hashes
+        .push(block.parent)
+        .expect("Failed to add block.parent to historical_block_hashes");
+    state
+        .justified_slots
+        .push(false)
+        .expect("Failed to add to justified_slots");
 
     while state.historical_block_hashes.len() < block.slot as usize {
-        state.justified_slots.push(false).expect("Failed to prefill justified_slots");
-        state.historical_block_hashes.push(None).expect("Failed to prefill historical_block_hashes");
+        state
+            .justified_slots
+            .push(false)
+            .expect("Failed to prefill justified_slots");
+        state
+            .historical_block_hashes
+            .push(None)
+            .expect("Failed to prefill historical_block_hashes");
     }
 
     // Process votes
@@ -62,9 +79,10 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
 
         // Track attempts to justify new hashes
         if !state.justifications.contains_key(&vote.target) {
-            state
-                .justifications
-                .insert(vote.target, vec![false; state.config.num_validators as usize]);
+            state.justifications.insert(
+                vote.target,
+                vec![false; state.config.num_validators as usize],
+            );
         }
 
         if !state.justifications[&vote.target][vote.validator_id as usize] {
@@ -85,8 +103,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
 
             // Finalization: if the target is the next valid justifiable
             // hash after the source
-            let is_target_next_valid_justifiable_slot = !((vote.source_slot + 1)
-                ..vote.target_slot)
+            let is_target_next_valid_justifiable_slot = !((vote.source_slot + 1)..vote.target_slot)
                 .any(|slot| is_justifiable_slot(&state.latest_finalized_slot, &slot));
 
             if is_target_next_valid_justifiable_slot {
@@ -112,7 +129,7 @@ pub fn get_latest_justified_hash(post_states: &HashMap<B256, LeanState>) -> Opti
 pub fn get_fork_choice_head(
     blocks: &HashMap<B256, Block>,
     provided_root: &B256,
-    votes: &Vec<Vote>,
+    votes: &[Vote],
     min_score: u64,
 ) -> B256 {
     let mut root = *provided_root;
@@ -129,7 +146,7 @@ pub fn get_fork_choice_head(
     // Identify latest votes
 
     // Sort votes by ascending slots to ensure that new votes are inserted last
-    let mut sorted_votes = votes.clone();
+    let mut sorted_votes = votes.to_owned();
     sorted_votes.sort_by_key(|vote| vote.slot);
 
     // Prepare a map of validator_id -> their vote
@@ -162,7 +179,7 @@ pub fn get_fork_choice_head(
         if block.parent.is_some() && *vote_weights.get(hash).unwrap_or(&0) >= min_score {
             children_map
                 .entry(block.parent.unwrap())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(*hash);
         }
     }
