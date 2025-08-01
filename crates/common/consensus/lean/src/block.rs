@@ -23,7 +23,6 @@ pub struct SignedBlock {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Default)]
 pub struct Block {
     pub slot: u64,
-    pub proposer_index: u64,
     pub parent: Option<B256>,
     pub votes: VariableList<Vote, U16777216>,
     pub state_root: Option<B256>,

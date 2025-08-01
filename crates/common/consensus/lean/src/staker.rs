@@ -145,7 +145,6 @@ impl Staker {
         let head_state = self.post_states.get(&self.head).unwrap();
         let mut new_block = Block {
             slot: new_slot,
-            proposer_index: self.validator_id,
             parent: Some(self.head),
             votes: VariableList::empty(),
             state_root: None,
