@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use crate::{block::Block, state::LeanState, vote::SignedVote, vote::Vote};
 
-pub const SLOT_DURATION: usize = 12;
+pub const SLOT_DURATION: u64 = 12;
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum QueueItem {
@@ -22,7 +22,7 @@ pub enum QueueItem {
 // We allow justification of slots either <= 5 or a perfect square or oblong after
 // the latest finalized slot. This gives us a backoff technique and ensures
 // finality keeps progressing even under high latency
-pub fn is_justifiable_slot(finalized_slot: &usize, candidate_slot: &usize) -> bool {
+pub fn is_justifiable_slot(finalized_slot: &u64, candidate_slot: &u64) -> bool {
     assert!(
         candidate_slot >= finalized_slot,
         "Candidate slot ({candidate_slot}) is less than finalized slot ({finalized_slot})"
@@ -44,7 +44,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
     let _ = state.historical_block_hashes.push(block.parent);
     let _ = state.justified_slots.push(false);
 
-    while state.historical_block_hashes.len() < block.slot {
+    while state.historical_block_hashes.len() < block.slot as usize {
         // TODO: proper error handlings
         let _ = state.justified_slots.push(false);
         let _ = state.historical_block_hashes.push(None);
@@ -55,9 +55,9 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
         // Ignore votes whose source is not already justified,
         // or whose target is not in the history, or whose target is not a
         // valid justifiable slot
-        if !state.justified_slots[vote.source_slot]
-            || Some(vote.source) != state.historical_block_hashes[vote.source_slot]
-            || Some(vote.target) != state.historical_block_hashes[vote.target_slot]
+        if !state.justified_slots[vote.source_slot as usize]
+            || Some(vote.source) != state.historical_block_hashes[vote.source_slot as usize]
+            || Some(vote.target) != state.historical_block_hashes[vote.target_slot as usize]
             || vote.target_slot <= vote.source_slot
             || !is_justifiable_slot(&state.latest_finalized_slot, &vote.target_slot)
         {
@@ -68,11 +68,11 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
         if !state.justifications.contains_key(&vote.target) {
             state
                 .justifications
-                .insert(vote.target, vec![false; state.config.num_validators]);
+                .insert(vote.target, vec![false; state.config.num_validators as usize]);
         }
 
-        if !state.justifications[&vote.target][vote.validator_id] {
-            state.justifications.get_mut(&vote.target).unwrap()[vote.validator_id] = true;
+        if !state.justifications[&vote.target][vote.validator_id as usize] {
+            state.justifications.get_mut(&vote.target).unwrap()[vote.validator_id as usize] = true;
         }
 
         let count = state.justifications[&vote.target]
@@ -80,10 +80,10 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
             .fold(0, |sum, justification| sum + *justification as usize);
 
         // If 2/3 voted for the same new valid hash to justify
-        if count == (2 * state.config.num_validators) / 3 {
+        if count == (2 * state.config.num_validators as usize) / 3 {
             state.latest_justified_hash = vote.target;
             state.latest_justified_slot = vote.target_slot;
-            state.justified_slots[vote.target_slot] = true;
+            state.justified_slots[vote.target_slot as usize] = true;
 
             state.justifications.remove(&vote.target).unwrap();
 
@@ -117,7 +117,7 @@ pub fn get_fork_choice_head(
     blocks: &HashMap<B256, Block>,
     provided_root: &B256,
     votes: &VariableList<Vote, U4096>,
-    min_score: usize,
+    min_score: u64,
 ) -> B256 {
     let mut root = *provided_root;
 
@@ -135,7 +135,7 @@ pub fn get_fork_choice_head(
     sorted_votes.sort_by_key(|vote| vote.slot);
 
     // Prepare a map of validator_id -> their vote
-    let mut latest_votes = HashMap::<usize, Vote>::new();
+    let mut latest_votes = HashMap::<u64, Vote>::new();
 
     for vote in votes {
         let validator_id = vote.validator_id;
@@ -144,7 +144,7 @@ pub fn get_fork_choice_head(
 
     // For each block, count the number of votes for that block. A vote
     // for any descendant of a block also counts as a vote for that block
-    let mut vote_weights = HashMap::<B256, usize>::new();
+    let mut vote_weights = HashMap::<B256, u64>::new();
 
     for vote in latest_votes.values() {
         if blocks.contains_key(&vote.head) {

@@ -4,5 +4,5 @@ use tree_hash_derive::TreeHash;
 
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Config {
-    pub num_validators: usize,
+    pub num_validators: u64,
 }
