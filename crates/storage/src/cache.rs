@@ -1,8 +1,10 @@
 use std::num::NonZeroUsize;
 
+use alloy_primitives::{B256, U128};
 use lru::LruCache;
 use ream_bls::{BLSSignature, PublicKey};
 use ream_consensus_beacon::bls_to_execution_change::BLSToExecutionChange;
+use ssz_types::BitVector;
 use tokio::sync::RwLock;
 
 const LRU_CACHE_SIZE: usize = 64;
@@ -46,6 +48,7 @@ pub struct CachedDB {
     pub seen_voluntary_exit: RwLock<LruCache<u64, ()>>,
     pub seen_proposer_slashings: RwLock<LruCache<u64, ()>>,
     pub prior_seen_attester_slashing_indices: RwLock<LruCache<u64, ()>>,
+    pub seen_sync_contribution: RwLock<LruCache<(u64, B256, u64), BitVector<U128>>>,
 }
 
 impl CachedDB {
@@ -84,6 +87,10 @@ impl CachedDB {
             )
             .into(),
             prior_seen_attester_slashing_indices: LruCache::new(
+                NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
+            )
+            .into(),
+            seen_sync_contribution: LruCache::new(
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),
