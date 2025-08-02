@@ -29,8 +29,8 @@ impl NetworkState {
         direction: Direction,
         enr: Option<Enr>,
     ) {
-        let mut peer_table = self.peer_table.write();
-        peer_table
+        self.peer_table
+            .write()
             .entry(peer_id)
             .and_modify(|cached_peer| {
                 if let Some(address_ref) = &address {
@@ -43,6 +43,15 @@ impl NetworkState {
                 }
             })
             .or_insert(CachedPeer::new(peer_id, address, state, direction, enr));
+    }
+
+    pub fn update_peer_state(&self, peer_id: PeerId, state: ConnectionState) {
+        self.peer_table
+            .write()
+            .entry(peer_id)
+            .and_modify(|cached_peer| {
+                cached_peer.state = state;
+            });
     }
 
     pub fn write_meta_data_to_disk(&self) -> anyhow::Result<()> {

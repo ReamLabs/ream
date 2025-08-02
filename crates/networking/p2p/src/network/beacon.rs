@@ -456,6 +456,7 @@ impl Network {
                     Direction::Outbound,
                     None,
                 );
+                self.peers_to_ping.remove(&peer_id);
                 None
             }
             // We only handle this for incoming connections
@@ -483,6 +484,21 @@ impl Network {
                 }
 
                 None
+            }
+            SwarmEvent::ConnectionClosed {
+                peer_id,
+                num_established,
+                ..
+            } => {
+                if num_established == 0 {
+                    self.network_state
+                        .update_peer_state(peer_id, ConnectionState::Disconnected);
+                    self.peers_to_ping.remove(&peer_id);
+                    trace!("Peer {peer_id} connection closed. Removed from peers_to_ping.");
+                    Some(ReamNetworkEvent::PeerDisconnected(peer_id))
+                } else {
+                    None
+                }
             }
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
                 ReamBehaviourEvent::Identify(_) => None,

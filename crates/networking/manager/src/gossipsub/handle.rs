@@ -143,7 +143,7 @@ pub async fn handle_gossipsub_message(
                 }
             }
             GossipsubMessage::BeaconAttestation((single_attestation, subnet_id)) => {
-                info!(
+                trace!(
                     "Beacon Attestation received over gossipsub: root: {}",
                     single_attestation.tree_hash_root()
                 );
@@ -172,7 +172,7 @@ pub async fn handle_gossipsub_message(
                         }
                     },
                     Err(err) => {
-                        error!("Could not validate attestation: {err}");
+                        trace!("Could not validate attestation: {err}");
                     }
                 }
             }
