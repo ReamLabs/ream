@@ -77,8 +77,9 @@ impl Staker {
     }
 
     /// Compute the latest block that the staker is allowed to choose as the target
-    fn compute_safe_target(&self) -> B256 {
-        let justified_hash = get_latest_justified_hash(&self.post_states).unwrap();
+    fn compute_safe_target(&self) -> anyhow::Result<B256> {
+        let justified_hash = get_latest_justified_hash(&self.post_states)
+            .ok_or_else(|| anyhow::anyhow!("No justified hash found in post states"))?;
 
         get_fork_choice_head(
             &self.chain,
@@ -90,65 +91,80 @@ impl Staker {
 
     /// Process new votes that the staker has received. Vote processing is done
     /// at a particular time, because of safe target and view merge rule
-    fn accept_new_votes(&mut self) {
+    fn accept_new_votes(&mut self) -> anyhow::Result<()> {
         for new_vote in self.new_votes.drain(..) {
             if !self.known_votes.contains(&new_vote) {
                 self.known_votes.push(new_vote);
             }
         }
 
-        self.recompute_head();
+        self.recompute_head()?;
+        Ok(())
     }
 
     /// Done upon processing new votes or a new block
-    fn recompute_head(&mut self) {
+    fn recompute_head(&mut self) -> anyhow::Result<()> {
         let justified_hash = get_latest_justified_hash(&self.post_states)
-            .expect("Failed to get latest_justified_hash from post_states");
-        self.head = get_fork_choice_head(&self.chain, &justified_hash, &self.known_votes, 0);
+            .ok_or_else(|| anyhow::anyhow!("Failed to get latest_justified_hash from post_states"))?;
+        self.head = get_fork_choice_head(&self.chain, &justified_hash, &self.known_votes, 0)?;
+        Ok(())
     }
 
     /// Called every second
-    pub fn tick(&mut self) {
-        let time_in_slot = self.network.lock().unwrap().time % SLOT_DURATION;
+    pub fn tick(&mut self) -> anyhow::Result<()> {
+        let current_slot = self.get_current_slot()?;
+        let time_in_slot = {
+            let network = self.network.lock()
+                .map_err(|e| anyhow::anyhow!("Failed to acquire network lock: {}", e))?;
+            network.time % SLOT_DURATION
+        };
 
         // t=0: propose a block
         if time_in_slot == 0 {
-            if self.get_current_slot() % self.num_validators == self.validator_id {
+            if current_slot % self.num_validators == self.validator_id {
                 // View merge mechanism: a node accepts attestations that it received
                 // <= 1/4 before slot start, or attestations in the latest block
-                self.accept_new_votes();
-                self.propose_block();
+                self.accept_new_votes()?;
+                self.propose_block()?;
             }
         // t=1/4: vote
         } else if time_in_slot == SLOT_DURATION / 4 {
-            self.vote();
+            self.vote()?;
         // t=2/4: compute the safe target (this must be done here to ensure
         // that, assuming network latency assumptions are satisfied, anything that
         // one honest node receives by this time, every honest node will receive by
         // the general attestation deadline)
         } else if time_in_slot == SLOT_DURATION * 2 / 4 {
-            self.safe_target = self.compute_safe_target();
+            self.safe_target = self.compute_safe_target()?;
         // Deadline to accept attestations except for those included in a block
         } else if time_in_slot == SLOT_DURATION * 3 / 4 {
-            self.accept_new_votes();
+            self.accept_new_votes()?;
         }
+
+        Ok(())
     }
 
-    fn get_current_slot(&self) -> u64 {
-        self.network.lock().unwrap().time / SLOT_DURATION + 2
+    fn get_current_slot(&self) -> anyhow::Result<u64> {
+        let network = self.network.lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire network lock: {}", e))?;
+        Ok(network.time / SLOT_DURATION + 2)
     }
 
     /// Called when it's the staker's turn to propose a block
-    fn propose_block(&mut self) {
-        let new_slot = self.get_current_slot();
+    fn propose_block(&mut self) -> anyhow::Result<()> {
+        let new_slot = self.get_current_slot()?;
+
+        let head_block = self.chain.get(&self.head)
+            .ok_or_else(|| anyhow::anyhow!("Head block not found for hash: {}", self.head))?;
 
         info!(
             "proposing (Staker {}), head = {}",
             self.validator_id,
-            self.chain.get(&self.head).unwrap().slot
+            head_block.slot
         );
 
-        let head_state = self.post_states.get(&self.head).unwrap();
+        let head_state = self.post_states.get(&self.head)
+            .ok_or_else(|| anyhow::anyhow!("Head state not found for hash: {}", self.head))?;
         let mut new_block = Block {
             slot: new_slot,
             parent: self.head,
@@ -160,7 +176,7 @@ impl Staker {
 
         // Keep attempt to add valid votes from the list of available votes
         loop {
-            state = process_block(head_state, &new_block);
+            state = process_block(head_state, &new_block)?;
 
             let new_votes_to_add = self
                 .known_votes
@@ -178,7 +194,7 @@ impl Staker {
                 new_block
                     .votes
                     .push(vote)
-                    .expect("Failed to add vote to new_block");
+                    .map_err(|e| anyhow::anyhow!("Failed to add vote to new_block: {:?}", e))?;
             }
         }
 
@@ -192,32 +208,43 @@ impl Staker {
         // self.get_network()
         //     .borrow_mut()
         //     .submit(QueueItem::BlockItem(new_block), self.validator_id);
+
+        Ok(())
     }
 
     /// Called when it's the staker's turn to vote
-    fn vote(&mut self) {
-        let state = self.post_states.get(&self.head).unwrap();
-        let mut target_block = self.chain.get(&self.head).unwrap();
+    fn vote(&mut self) -> anyhow::Result<()> {
+        let state = self.post_states.get(&self.head)
+            .ok_or_else(|| anyhow::anyhow!("Head state not found for hash: {}", self.head))?;
+        let mut target_block = self.chain.get(&self.head)
+            .ok_or_else(|| anyhow::anyhow!("Head block not found for hash: {}", self.head))?;
 
         // If there is no very recent safe target, then vote for the k'th ancestor
         // of the head
         for _ in 0..3 {
-            if target_block.slot > self.chain.get(&self.safe_target).unwrap().slot {
-                target_block = self.chain.get(&target_block.parent).unwrap();
+            let safe_target_block = self.chain.get(&self.safe_target)
+                .ok_or_else(|| anyhow::anyhow!("Safe target block not found for hash: {}", self.safe_target))?;
+            if target_block.slot > safe_target_block.slot {
+                target_block = self.chain.get(&target_block.parent)
+                    .ok_or_else(|| anyhow::anyhow!("Parent block not found for hash: {}", target_block.parent))?;
             }
         }
 
         // If the latest finalized slot is very far back, then only some slots are
         // valid to justify, make sure the target is one of those
         while !is_justifiable_slot(&state.latest_finalized_slot, &target_block.slot) {
-            target_block = self.chain.get(&target_block.parent).unwrap();
+            target_block = self.chain.get(&target_block.parent)
+                .ok_or_else(|| anyhow::anyhow!("Parent block not found for hash: {}", target_block.parent))?;
         }
+
+        let head_block = self.chain.get(&self.head)
+            .ok_or_else(|| anyhow::anyhow!("Head block not found for hash: {}", self.head))?;
 
         let vote = Vote {
             validator_id: self.validator_id,
-            slot: self.get_current_slot(),
+            slot: self.get_current_slot()?,
             head: self.head,
-            head_slot: self.chain.get(&self.head).unwrap().slot,
+            head_slot: head_block.slot,
             target: target_block.tree_hash_root(),
             target_slot: target_block.slot,
             source: state.latest_justified_hash,
@@ -232,33 +259,35 @@ impl Staker {
         info!(
             "voting (Staker {}), head = {}, t = {}, s = {}",
             self.validator_id,
-            &self.chain.get(&self.head).unwrap().slot,
+            &head_block.slot,
             &target_block.slot,
             &state.latest_justified_slot
         );
 
-        self.receive(QueueItem::VoteItem(signed_vote));
+        self.receive(QueueItem::VoteItem(signed_vote))?;
 
         // TODO: submit to actual network
         // self.get_network()
         //     .borrow_mut()
         //     .submit(QueueItem::VoteItem(vote), self.validator_id);
+
+        Ok(())
     }
 
     /// Called by the p2p network
-    fn receive(&mut self, queue_item: QueueItem) {
+    fn receive(&mut self, queue_item: QueueItem) -> anyhow::Result<()> {
         match queue_item {
             QueueItem::BlockItem(block) => {
                 let block_hash = block.tree_hash_root();
 
                 // If the block is already known, ignore it
                 if self.chain.contains_key(&block_hash) {
-                    return;
+                    return Ok(());
                 }
 
                 match self.post_states.get(&block.parent) {
                     Some(parent_state) => {
-                        let state = process_block(parent_state, &block);
+                        let state = process_block(parent_state, &block)?;
 
                         for vote in &block.votes {
                             if !self.known_votes.contains(vote) {
@@ -269,12 +298,12 @@ impl Staker {
                         self.chain.insert(block_hash, block);
                         self.post_states.insert(block_hash, state);
 
-                        self.recompute_head();
+                        self.recompute_head()?;
 
                         // Once we have received a block, also process all of its dependencies
                         if let Some(queue_items) = self.dependencies.remove(&block_hash) {
                             for item in queue_items {
-                                self.receive(item);
+                                self.receive(item)?;
                             }
                         }
                     }
@@ -304,5 +333,7 @@ impl Staker {
                 }
             }
         }
+
+        Ok(())
     }
 }

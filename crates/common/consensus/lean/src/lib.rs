@@ -3,10 +3,10 @@ pub mod config;
 pub mod state;
 pub mod vote;
 
-use std::collections::HashMap;
-
 use alloy_primitives::B256;
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::{
     block::Block,
@@ -41,30 +41,30 @@ pub fn is_justifiable_slot(finalized_slot: &u64, candidate_slot: &u64) -> bool {
 }
 
 /// Given a state, output the new state after processing that block
-pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
+pub fn process_block(pre_state: &LeanState, block: &Block) -> anyhow::Result<LeanState> {
     let mut state = pre_state.clone();
 
     // Track historical blocks in the state
     state
         .historical_block_hashes
         .push(block.parent)
-        .expect("Failed to add block.parent to historical_block_hashes");
+        .map_err(|err| anyhow!("Failed to add block.parent to historical_block_hashes: {err:?}"))?;
     state
         .justified_slots
         .push(false)
-        .expect("Failed to add to justified_slots");
+        .map_err(|err| anyhow!("Failed to add to justified_slots: {err:?}"))?;
 
     while state.historical_block_hashes.len() < block.slot as usize {
         state
             .justified_slots
             .push(false)
-            .expect("Failed to prefill justified_slots");
+            .map_err(|err| anyhow!("Failed to prefill justified_slots: {err:?}"))?;
 
         state
             .historical_block_hashes
             // Diverged from Python implementation: uses `B256::ZERO` instead of `None`
             .push(B256::ZERO)
-            .expect("Failed to prefill historical_block_hashes");
+            .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
     }
 
     // Process votes
@@ -82,10 +82,10 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
         }
 
         // Track attempts to justify new hashes
-        state.initialize_justifications_for_root(&vote.target);
-        state.set_justification(&vote.target, &vote.validator_id, true);
+        state.initialize_justifications_for_root(&vote.target)?;
+        state.set_justification(&vote.target, &vote.validator_id, true)?;
 
-        let count = state.count_justifications(&vote.target);
+        let count = state.count_justifications(&vote.target)?;
 
         // If 2/3 voted for the same new valid hash to justify
         if count == (2 * state.config.num_validators) / 3 {
@@ -93,7 +93,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
             state.latest_justified_slot = vote.target_slot;
             state.justified_slots[vote.target_slot as usize] = true;
 
-            state.remove_justifications(&vote.target);
+            state.remove_justifications(&vote.target)?;
 
             // Finalization: if the target is the next valid justifiable
             // hash after the source
@@ -107,7 +107,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> LeanState {
         }
     }
 
-    state
+    Ok(state)
 }
 
 /// Get the highest-slot justified block that we know about
@@ -125,7 +125,7 @@ pub fn get_fork_choice_head(
     provided_root: &B256,
     votes: &[Vote],
     min_score: u64,
-) -> B256 {
+) -> anyhow::Result<B256> {
     let mut root = *provided_root;
 
     // Start at genesis by default
@@ -134,7 +134,7 @@ pub fn get_fork_choice_head(
             .iter()
             .min_by_key(|(_, block)| block.slot)
             .map(|(hash, _)| *hash)
-            .unwrap();
+            .ok_or_else(|| anyhow!("No blocks found to determine genesis"))?;
     }
 
     // Identify latest votes
@@ -158,10 +158,18 @@ pub fn get_fork_choice_head(
     for vote in latest_votes.values() {
         if blocks.contains_key(&vote.head) {
             let mut block_hash = vote.head;
-            while blocks.get(&block_hash).unwrap().slot > blocks.get(&root).unwrap().slot {
+            while {
+                let current_block = blocks.get(&block_hash)
+                    .ok_or_else(|| anyhow!("Block not found for hash: {}", block_hash))?;
+                let root_block = blocks.get(&root)
+                    .ok_or_else(|| anyhow!("Root block not found for hash: {}", root))?;
+                current_block.slot > root_block.slot
+            } {
                 let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
                 vote_weights.insert(block_hash, current_weights + 1);
-                block_hash = blocks.get(&block_hash).unwrap().parent;
+                let current_block = blocks.get(&block_hash)
+                    .ok_or_else(|| anyhow!("Block not found for hash: {}", block_hash))?;
+                block_hash = current_block.parent;
             }
         }
     }
@@ -184,17 +192,19 @@ pub fn get_fork_choice_head(
     loop {
         match children_map.get(&current_root) {
             None => {
-                break current_root;
+                break Ok(current_root);
             }
             Some(children) => {
                 current_root = *children
                     .iter()
                     .max_by_key(|child_hash| {
                         let vote_weight = vote_weights.get(*child_hash).unwrap_or(&0);
-                        let slot = blocks.get(*child_hash).unwrap().slot;
+                        let slot = blocks.get(*child_hash)
+                            .map(|block| block.slot)
+                            .unwrap_or(0);
                         (*vote_weight, slot, *(*child_hash))
                     })
-                    .unwrap();
+                    .ok_or_else(|| anyhow!("No children found for current root: {}", current_root))?;
             }
         }
     }
