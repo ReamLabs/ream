@@ -5,6 +5,7 @@ members = [
     "crates/account_manager",
     "crates/common/beacon_api_types",
     "crates/common/chain/beacon",
+    "crates/common/chain/lean",
     "crates/common/checkpoint_sync",
     "crates/common/consensus/beacon",
     "crates/common/consensus/lean",
@@ -12,7 +13,6 @@ members = [
     "crates/common/execution_engine",
     "crates/common/executor",
     "crates/common/fork_choice",
-    "crates/common/lean_chain",
     "crates/common/light_client",
     "crates/common/network_spec",
     "crates/common/node",
@@ -118,6 +118,7 @@ ream-account-manager = { path = "crates/account_manager" }
 ream-beacon-api-types = { path = "crates/common/beacon_api_types" }
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
 ream-chain-beacon = { path = "crates/common/chain/beacon" }
+ream-chain-lean = { path = "crates/common/chain/lean" }
 ream-checkpoint-sync = { path = "crates/common/checkpoint_sync" }
 ream-consensus-beacon = { path = "crates/common/consensus/beacon" }
 ream-consensus-lean = { path = "crates/common/consensus/lean" }
@@ -127,7 +128,6 @@ ream-execution-engine = { path = "crates/common/execution_engine" }
 ream-executor = { path = "crates/common/executor" }
 ream-fork-choice = { path = "crates/common/fork_choice" }
 ream-keystore = { path = "crates/crypto/keystore" }
-ream-lean-chain = { path = "crates/common/lean_chain" }
 ream-light-client = { path = "crates/common/light_client" }
 ream-merkle = { path = "crates/crypto/merkle" }
 ream-network-manager = { path = "crates/networking/manager" }
