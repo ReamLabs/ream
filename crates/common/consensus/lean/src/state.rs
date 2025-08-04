@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitList, VariableList,
-    typenum::{U4096, U16777216, Unsigned},
+    typenum::{U4096, U262144, U16777216, Unsigned},
 };
 use tree_hash_derive::TreeHash;
 
@@ -18,18 +18,26 @@ pub struct LeanState {
     pub latest_finalized_hash: B256,
     pub latest_finalized_slot: u64,
 
-    pub historical_block_hashes: VariableList<B256, U4096>,
-    pub justified_slots: VariableList<bool, U4096>,
+    pub historical_block_hashes: VariableList<B256, U262144>,
+    pub justified_slots: VariableList<bool, U262144>,
 
     // Diverged from Python implementation:
     // Originally `justifications: Dict[str, List[bool]]`
-    pub justifications_roots: VariableList<B256, U4096>,
+    pub justifications_roots: VariableList<B256, U262144>,
     pub justifications_roots_validators: BitList<U16777216>,
 }
 
 impl LeanState {
     fn get_justifications_roots_index(&self, root: &B256) -> Option<usize> {
         self.justifications_roots.iter().position(|r| r == root)
+    }
+
+    fn get_justifications_roots_range(&self, index: &usize) -> (usize, usize) {
+        // Start from index * MAX_HISTORICAL_BLOCK_HASHES, ends at start + VALIDATOR_REGISTRY_LIMIT
+        let start_range = index * U262144::to_usize();
+        let end_range = start_range + U4096::to_usize();
+
+        (start_range, end_range)
     }
 
     pub fn initialize_justifications_for_root(&mut self, root: &B256) {
@@ -45,7 +53,7 @@ impl LeanState {
             .get_justifications_roots_index(root)
             .expect("Failed to find the justifications index to set");
         self.justifications_roots_validators
-            .set(index * U4096::to_usize() + *validator_id as usize, value)
+            .set(index * U262144::to_usize() + *validator_id as usize, value)
             .expect("Failed to set justification bit");
     }
 
@@ -54,8 +62,7 @@ impl LeanState {
             .get_justifications_roots_index(root)
             .expect("Could not find justifications for the provided block root");
 
-        let start_range = index * U4096::to_usize();
-        let end_range = start_range + U4096::to_usize();
+        let (start_range, end_range) = self.get_justifications_roots_range(&index);
 
         self.justifications_roots_validators.as_slice()[start_range..end_range]
             .iter()
@@ -71,8 +78,7 @@ impl LeanState {
             .expect("Failed to find the justifications index to remove");
         self.justifications_roots.remove(index);
 
-        let start_range = index * U4096::to_usize();
-        let end_range = start_range + U4096::to_usize();
+        let (start_range, end_range) = self.get_justifications_roots_range(&index);
 
         // Remove from `state.justifications_roots_validators`
         for i in start_range..end_range {
