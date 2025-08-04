@@ -135,7 +135,7 @@ pub fn get_fork_choice_head(
             .iter()
             .min_by_key(|(_, block)| block.slot)
             .map(|(hash, _)| *hash)
-            .ok_or_else(|| anyhow!("No blocks found to determine genesis"))?;
+            .ok_or_else(|| anyhow!("No blocks found to calculate fork choice"))?;
     }
 
     // Identify latest votes
@@ -162,18 +162,18 @@ pub fn get_fork_choice_head(
             while {
                 let current_block = blocks
                     .get(&block_hash)
-                    .ok_or_else(|| anyhow!("Block not found for hash: {}", block_hash))?;
+                    .ok_or_else(|| anyhow!("Block not found for vote head: {}", block_hash))?;
                 let root_block = blocks
                     .get(&root)
-                    .ok_or_else(|| anyhow!("Root block not found for hash: {}", root))?;
+                    .ok_or_else(|| anyhow!("Block not found for root: {}", root))?;
                 current_block.slot > root_block.slot
             } {
                 let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
                 vote_weights.insert(block_hash, current_weights + 1);
-                let current_block = blocks
+                block_hash = blocks
                     .get(&block_hash)
-                    .ok_or_else(|| anyhow!("Block not found for hash: {}", block_hash))?;
-                block_hash = current_block.parent;
+                    .map(|block| block.parent)
+                    .ok_or_else(|| anyhow!("Block not found for block parent: {}", block_hash))?;
             }
         }
     }
