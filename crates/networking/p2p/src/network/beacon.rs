@@ -480,7 +480,6 @@ impl Network {
                         self.network_state.meta_data.read().seq_number,
                     ));
                     self.send_request(peer_id, ping_message);
-                    self.peers_to_ping.insert(peer_id);
                 }
 
                 None
@@ -569,7 +568,6 @@ impl Network {
                     Direction::Outbound,
                     Some(enr.clone()),
                 );
-                self.peers_to_ping.insert_at(peer_id, Duration::ZERO);
             }
         }
     }
@@ -780,6 +778,7 @@ impl Network {
                         cached_peer.state = ConnectionState::Connected;
                         cached_peer.status = Some(status);
                     });
+                self.peers_to_ping.insert(peer_id);
             }
         }
     }
