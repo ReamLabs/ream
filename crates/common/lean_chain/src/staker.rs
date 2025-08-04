@@ -271,14 +271,11 @@ impl Staker {
 
                         self.recompute_head();
 
-                        // Once we have received a block, also process all of
-                        // its dependencies
-                        if let Some(queue_items) = self.dependencies.get(&block_hash) {
-                            for item in queue_items.clone() {
+                        // Once we have received a block, also process all of its dependencies
+                        if let Some(queue_items) = self.dependencies.remove(&block_hash) {
+                            for item in queue_items {
                                 self.receive(item);
                             }
-
-                            self.dependencies.remove(&block_hash);
                         }
                     }
                     None => {
