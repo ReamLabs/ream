@@ -15,6 +15,8 @@ use crate::{
 };
 
 pub const SLOT_DURATION: u64 = 12;
+pub const MAX_HISTORICAL_BLOCK_HASHES: u64 = 262144;
+pub const VALIDATOR_REGISTRY_LIMIT: u64 = 4096;
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum QueueItem {

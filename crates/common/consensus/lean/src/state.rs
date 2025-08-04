@@ -3,11 +3,15 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitList, VariableList,
-    typenum::{U4096, U262144, U16777216, Unsigned},
+    typenum::{U4096, U262144, U1073741824, Unsigned},
 };
 use tree_hash_derive::TreeHash;
 
-use crate::config::Config;
+use crate::{
+    config::Config
+    MAX_HISTORICAL_BLOCK_HASHES,
+    VALIDATOR_REGISTRY_LIMIT,
+};
 
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct LeanState {
@@ -24,7 +28,9 @@ pub struct LeanState {
     // Diverged from Python implementation:
     // Originally `justifications: Dict[str, List[bool]]`
     pub justifications_roots: VariableList<B256, U262144>,
-    pub justifications_roots_validators: BitList<U16777216>,
+    // The size is MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT
+    // to accommodate equivalent to `justifications[root][validator_id]`
+    pub justifications_roots_validators: BitList<U1073741824>,
 }
 
 impl LeanState {
@@ -33,9 +39,8 @@ impl LeanState {
     }
 
     fn get_justifications_roots_range(&self, index: &usize) -> (usize, usize) {
-        // Start from index * MAX_HISTORICAL_BLOCK_HASHES, ends at start + VALIDATOR_REGISTRY_LIMIT
-        let start_range = index * U262144::to_usize();
-        let end_range = start_range + U4096::to_usize();
+        let start_range = index * MAX_HISTORICAL_BLOCK_HASHES;
+        let end_range = start_range + VALIDATOR_REGISTRY_LIMIT;
 
         (start_range, end_range)
     }
