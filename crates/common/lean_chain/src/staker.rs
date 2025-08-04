@@ -91,10 +91,8 @@ impl Staker {
     /// Process new votes that the staker has received. Vote processing is done
     /// at a particular time, because of safe target and view merge rule
     fn accept_new_votes(&mut self) {
-        let mut known_votes = self.known_votes.clone().into_iter();
-
         for new_vote in &self.new_votes {
-            if !known_votes.any(|known_vote| known_vote == *new_vote) {
+            if !self.known_votes.contains(new_vote) {
                 self.known_votes.push(new_vote.clone());
             }
         }
@@ -165,14 +163,13 @@ impl Staker {
         loop {
             state = process_block(head_state, &new_block);
 
-            let mut new_votes_to_add = Vec::<Vote>::new();
-            for vote in self.known_votes.clone().into_iter() {
-                if vote.source == state.latest_justified_hash
-                    && !new_block.votes.clone().into_iter().any(|v| v == vote)
-                {
-                    new_votes_to_add.push(vote);
-                }
-            }
+            let new_votes_to_add = self
+                .known_votes
+                .clone()
+                .into_iter()
+                .filter(|vote| vote.source == state.latest_justified_hash)
+                .filter(|vote| !new_block.votes.contains(vote))
+                .collect::<Vec<_>>();
 
             if new_votes_to_add.is_empty() {
                 break;
