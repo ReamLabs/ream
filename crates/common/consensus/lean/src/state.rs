@@ -3,12 +3,12 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitList, VariableList,
-    typenum::{U4096, U262144, U1073741824, Unsigned},
+    typenum::{U262144, U1073741824, Unsigned},
 };
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    config::Config
+    config::Config,
     MAX_HISTORICAL_BLOCK_HASHES,
     VALIDATOR_REGISTRY_LIMIT,
 };
@@ -39,8 +39,8 @@ impl LeanState {
     }
 
     fn get_justifications_roots_range(&self, index: &usize) -> (usize, usize) {
-        let start_range = index * MAX_HISTORICAL_BLOCK_HASHES;
-        let end_range = start_range + VALIDATOR_REGISTRY_LIMIT;
+        let start_range = index * MAX_HISTORICAL_BLOCK_HASHES as usize;
+        let end_range = start_range + VALIDATOR_REGISTRY_LIMIT as usize;
 
         (start_range, end_range)
     }
