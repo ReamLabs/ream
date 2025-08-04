@@ -91,13 +91,12 @@ impl Staker {
     /// Process new votes that the staker has received. Vote processing is done
     /// at a particular time, because of safe target and view merge rule
     fn accept_new_votes(&mut self) {
-        for new_vote in &self.new_votes {
-            if !self.known_votes.contains(new_vote) {
-                self.known_votes.push(new_vote.clone());
+        for new_vote in self.new_votes.drain(..) {
+            if !self.known_votes.contains(&new_vote) {
+                self.known_votes.push(new_vote);
             }
         }
 
-        self.new_votes = Vec::new();
         self.recompute_head();
     }
 
@@ -176,7 +175,6 @@ impl Staker {
             }
 
             for vote in new_votes_to_add {
-                // TODO: proper error handling
                 new_block
                     .votes
                     .push(vote)
@@ -239,7 +237,7 @@ impl Staker {
             &state.latest_justified_slot
         );
 
-        self.receive(&QueueItem::VoteItem(signed_vote.clone()));
+        self.receive(QueueItem::VoteItem(signed_vote));
 
         // TODO: submit to actual network
         // self.get_network()
@@ -248,7 +246,7 @@ impl Staker {
     }
 
     /// Called by the p2p network
-    fn receive(&mut self, queue_item: &QueueItem) {
+    fn receive(&mut self, queue_item: QueueItem) {
         match queue_item {
             QueueItem::BlockItem(block) => {
                 let block_hash = block.tree_hash_root();
@@ -260,18 +258,16 @@ impl Staker {
 
                 match self.post_states.get(&block.parent) {
                     Some(parent_state) => {
-                        let state = process_block(parent_state, block);
-
-                        self.chain.insert(block_hash, block.clone());
-                        self.post_states.insert(block_hash, state);
-
-                        let mut known_votes = self.known_votes.clone().into_iter();
+                        let state = process_block(parent_state, &block);
 
                         for vote in &block.votes {
-                            if !known_votes.any(|known_vote| known_vote == *vote) {
+                            if !self.known_votes.contains(vote) {
                                 self.known_votes.push(vote.clone());
                             }
                         }
+
+                        self.chain.insert(block_hash, block);
+                        self.post_states.insert(block_hash, state);
 
                         self.recompute_head();
 
@@ -279,7 +275,7 @@ impl Staker {
                         // its dependencies
                         if let Some(queue_items) = self.dependencies.get(&block_hash) {
                             for item in queue_items.clone() {
-                                self.receive(&item);
+                                self.receive(item);
                             }
 
                             self.dependencies.remove(&block_hash);
@@ -291,32 +287,23 @@ impl Staker {
                         self.dependencies
                             .entry(block.parent)
                             .or_default()
-                            .push(queue_item.clone());
+                            .push(QueueItem::BlockItem(block));
                     }
                 }
             }
             QueueItem::VoteItem(vote) => {
-                let is_known_vote = self
-                    .known_votes
-                    .clone()
-                    .into_iter()
-                    .any(|known_vote| known_vote == vote.data);
-
-                let is_new_vote = self
-                    .new_votes
-                    .clone()
-                    .into_iter()
-                    .any(|new_vote| new_vote == vote.data);
+                let is_known_vote = self.known_votes.contains(&vote.data);
+                let is_new_vote = self.new_votes.contains(&vote.data);
 
                 if is_known_vote || is_new_vote {
                     // Do nothing
                 } else if self.chain.contains_key(&vote.data.head) {
-                    self.new_votes.push(vote.data.clone());
+                    self.new_votes.push(vote.data);
                 } else {
                     self.dependencies
                         .entry(vote.data.head)
                         .or_default()
-                        .push(queue_item.clone());
+                        .push(QueueItem::VoteItem(vote));
                 }
             }
         }
