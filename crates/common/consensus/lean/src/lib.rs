@@ -3,10 +3,11 @@ pub mod config;
 pub mod state;
 pub mod vote;
 
+use std::collections::HashMap;
+
 use alloy_primitives::B256;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use crate::{
     block::Block,
@@ -159,15 +160,18 @@ pub fn get_fork_choice_head(
         if blocks.contains_key(&vote.head) {
             let mut block_hash = vote.head;
             while {
-                let current_block = blocks.get(&block_hash)
+                let current_block = blocks
+                    .get(&block_hash)
                     .ok_or_else(|| anyhow!("Block not found for hash: {}", block_hash))?;
-                let root_block = blocks.get(&root)
+                let root_block = blocks
+                    .get(&root)
                     .ok_or_else(|| anyhow!("Root block not found for hash: {}", root))?;
                 current_block.slot > root_block.slot
             } {
                 let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
                 vote_weights.insert(block_hash, current_weights + 1);
-                let current_block = blocks.get(&block_hash)
+                let current_block = blocks
+                    .get(&block_hash)
                     .ok_or_else(|| anyhow!("Block not found for hash: {}", block_hash))?;
                 block_hash = current_block.parent;
             }
@@ -199,12 +203,12 @@ pub fn get_fork_choice_head(
                     .iter()
                     .max_by_key(|child_hash| {
                         let vote_weight = vote_weights.get(*child_hash).unwrap_or(&0);
-                        let slot = blocks.get(*child_hash)
-                            .map(|block| block.slot)
-                            .unwrap_or(0);
+                        let slot = blocks.get(*child_hash).map(|block| block.slot).unwrap_or(0);
                         (*vote_weight, slot, *(*child_hash))
                     })
-                    .ok_or_else(|| anyhow!("No children found for current root: {}", current_root))?;
+                    .ok_or_else(|| {
+                        anyhow!("No children found for current root: {}", current_root)
+                    })?;
             }
         }
     }

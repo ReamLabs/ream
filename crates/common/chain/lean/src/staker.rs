@@ -104,8 +104,9 @@ impl Staker {
 
     /// Done upon processing new votes or a new block
     fn recompute_head(&mut self) -> anyhow::Result<()> {
-        let justified_hash = get_latest_justified_hash(&self.post_states)
-            .ok_or_else(|| anyhow::anyhow!("Failed to get latest_justified_hash from post_states"))?;
+        let justified_hash = get_latest_justified_hash(&self.post_states).ok_or_else(|| {
+            anyhow::anyhow!("Failed to get latest_justified_hash from post_states")
+        })?;
         self.head = get_fork_choice_head(&self.chain, &justified_hash, &self.known_votes, 0)?;
         Ok(())
     }
@@ -114,7 +115,9 @@ impl Staker {
     pub fn tick(&mut self) -> anyhow::Result<()> {
         let current_slot = self.get_current_slot()?;
         let time_in_slot = {
-            let network = self.network.lock()
+            let network = self
+                .network
+                .lock()
                 .map_err(|e| anyhow::anyhow!("Failed to acquire network lock: {}", e))?;
             network.time % SLOT_DURATION
         };
@@ -145,7 +148,9 @@ impl Staker {
     }
 
     fn get_current_slot(&self) -> anyhow::Result<u64> {
-        let network = self.network.lock()
+        let network = self
+            .network
+            .lock()
             .map_err(|e| anyhow::anyhow!("Failed to acquire network lock: {}", e))?;
         Ok(network.time / SLOT_DURATION + 2)
     }
@@ -154,16 +159,19 @@ impl Staker {
     fn propose_block(&mut self) -> anyhow::Result<()> {
         let new_slot = self.get_current_slot()?;
 
-        let head_block = self.chain.get(&self.head)
+        let head_block = self
+            .chain
+            .get(&self.head)
             .ok_or_else(|| anyhow::anyhow!("Head block not found for hash: {}", self.head))?;
 
         info!(
             "proposing (Staker {}), head = {}",
-            self.validator_id,
-            head_block.slot
+            self.validator_id, head_block.slot
         );
 
-        let head_state = self.post_states.get(&self.head)
+        let head_state = self
+            .post_states
+            .get(&self.head)
             .ok_or_else(|| anyhow::anyhow!("Head state not found for hash: {}", self.head))?;
         let mut new_block = Block {
             slot: new_slot,
@@ -214,30 +222,39 @@ impl Staker {
 
     /// Called when it's the staker's turn to vote
     fn vote(&mut self) -> anyhow::Result<()> {
-        let state = self.post_states.get(&self.head)
+        let state = self
+            .post_states
+            .get(&self.head)
             .ok_or_else(|| anyhow::anyhow!("Head state not found for hash: {}", self.head))?;
-        let mut target_block = self.chain.get(&self.head)
+        let mut target_block = self
+            .chain
+            .get(&self.head)
             .ok_or_else(|| anyhow::anyhow!("Head block not found for hash: {}", self.head))?;
 
         // If there is no very recent safe target, then vote for the k'th ancestor
         // of the head
         for _ in 0..3 {
-            let safe_target_block = self.chain.get(&self.safe_target)
-                .ok_or_else(|| anyhow::anyhow!("Safe target block not found for hash: {}", self.safe_target))?;
+            let safe_target_block = self.chain.get(&self.safe_target).ok_or_else(|| {
+                anyhow::anyhow!("Safe target block not found for hash: {}", self.safe_target)
+            })?;
             if target_block.slot > safe_target_block.slot {
-                target_block = self.chain.get(&target_block.parent)
-                    .ok_or_else(|| anyhow::anyhow!("Parent block not found for hash: {}", target_block.parent))?;
+                target_block = self.chain.get(&target_block.parent).ok_or_else(|| {
+                    anyhow::anyhow!("Parent block not found for hash: {}", target_block.parent)
+                })?;
             }
         }
 
         // If the latest finalized slot is very far back, then only some slots are
         // valid to justify, make sure the target is one of those
         while !is_justifiable_slot(&state.latest_finalized_slot, &target_block.slot) {
-            target_block = self.chain.get(&target_block.parent)
-                .ok_or_else(|| anyhow::anyhow!("Parent block not found for hash: {}", target_block.parent))?;
+            target_block = self.chain.get(&target_block.parent).ok_or_else(|| {
+                anyhow::anyhow!("Parent block not found for hash: {}", target_block.parent)
+            })?;
         }
 
-        let head_block = self.chain.get(&self.head)
+        let head_block = self
+            .chain
+            .get(&self.head)
             .ok_or_else(|| anyhow::anyhow!("Head block not found for hash: {}", self.head))?;
 
         let vote = Vote {
@@ -258,10 +275,7 @@ impl Staker {
 
         info!(
             "voting (Staker {}), head = {}, t = {}, s = {}",
-            self.validator_id,
-            &head_block.slot,
-            &target_block.slot,
-            &state.latest_justified_slot
+            self.validator_id, &head_block.slot, &target_block.slot, &state.latest_justified_slot
         );
 
         self.receive(QueueItem::VoteItem(signed_vote))?;

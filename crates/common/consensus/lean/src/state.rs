@@ -44,8 +44,9 @@ impl LeanState {
             justified_slots: VariableList::empty(),
 
             justifications_roots: VariableList::empty(),
-            justifications_roots_validators: BitList::with_capacity(0)
-                .map_err(|err| anyhow!("Failed to initialize state's justifications_roots_validators: {err:?}"))?,
+            justifications_roots_validators: BitList::with_capacity(0).map_err(|err| {
+                anyhow!("Failed to initialize state's justifications_roots_validators: {err:?}")
+            })?,
         })
     }
 
@@ -55,9 +56,9 @@ impl LeanState {
 
     pub fn initialize_justifications_for_root(&mut self, root: &B256) -> anyhow::Result<()> {
         if !self.justifications_roots.contains(root) {
-            self.justifications_roots
-                .push(*root)
-                .map_err(|err| anyhow!("Failed to insert root into justifications_roots: {err:?}"))?;
+            self.justifications_roots.push(*root).map_err(|err| {
+                anyhow!("Failed to insert root into justifications_roots: {err:?}")
+            })?;
 
             let old_length = self.justifications_roots_validators.len();
             let new_length = old_length + VALIDATOR_REGISTRY_LIMIT as usize;
@@ -68,7 +69,11 @@ impl LeanState {
             for (i, bit) in self.justifications_roots_validators.iter().enumerate() {
                 new_justifications_roots_validators
                     .set(i, bit)
-                    .map_err(|err| anyhow!("Failed to initialize justification bits to existing values: {err:?}"))?;
+                    .map_err(|err| {
+                        anyhow!(
+                            "Failed to initialize justification bits to existing values: {err:?}"
+                        )
+                    })?;
             }
 
             for i in old_length..new_length {
@@ -82,7 +87,12 @@ impl LeanState {
         Ok(())
     }
 
-    pub fn set_justification(&mut self, root: &B256, validator_id: &u64, value: bool) -> anyhow::Result<()> {
+    pub fn set_justification(
+        &mut self,
+        root: &B256,
+        validator_id: &u64,
+        value: bool,
+    ) -> anyhow::Result<()> {
         let index = self
             .get_justifications_roots_index(root)
             .ok_or(anyhow!("Failed to find the justifications index to set"))?;
@@ -104,7 +114,8 @@ impl LeanState {
 
         let start_range = index * VALIDATOR_REGISTRY_LIMIT as usize;
 
-        Ok(self.justifications_roots_validators
+        Ok(self
+            .justifications_roots_validators
             .iter()
             .skip(start_range)
             .take(VALIDATOR_REGISTRY_LIMIT as usize)
@@ -121,26 +132,37 @@ impl LeanState {
 
         let new_length = self.justifications_roots.len() * VALIDATOR_REGISTRY_LIMIT as usize;
         let mut new_justifications_roots_validators =
-            BitList::<U1073741824>::with_capacity(new_length)
-                .map_err(|e| anyhow!("Failed to recreate state's justifications_roots_validators: {:?}", e))?;
+            BitList::<U1073741824>::with_capacity(new_length).map_err(|e| {
+                anyhow!(
+                    "Failed to recreate state's justifications_roots_validators: {:?}",
+                    e
+                )
+            })?;
 
         // Take left side of the list (if any)
-        for (i, justification_bit) in self.justifications_roots_validators
+        for (i, justification_bit) in self
+            .justifications_roots_validators
             .iter()
             .take(index * VALIDATOR_REGISTRY_LIMIT as usize)
-            .enumerate() {
+            .enumerate()
+        {
             new_justifications_roots_validators
                 .set(i, justification_bit)
                 .map_err(|e| anyhow!("Failed to set new justification bit: {:?}", e))?;
         }
 
         // Take right side of the list (if any)
-        for (i, justification_bit) in self.justifications_roots_validators
+        for (i, justification_bit) in self
+            .justifications_roots_validators
             .iter()
             .skip((index + 1) * VALIDATOR_REGISTRY_LIMIT as usize)
-            .enumerate() {
+            .enumerate()
+        {
             new_justifications_roots_validators
-                .set(index * VALIDATOR_REGISTRY_LIMIT as usize + i, justification_bit)
+                .set(
+                    index * VALIDATOR_REGISTRY_LIMIT as usize + i,
+                    justification_bit,
+                )
                 .map_err(|e| anyhow!("Failed to set new justification bit: {:?}", e))?;
         }
 
@@ -158,7 +180,9 @@ mod test {
         let mut state = LeanState::new(1).unwrap();
 
         // Initialize 1st root
-        state.initialize_justifications_for_root(&B256::repeat_byte(1)).unwrap();
+        state
+            .initialize_justifications_for_root(&B256::repeat_byte(1))
+            .unwrap();
         assert_eq!(state.justifications_roots.len(), 1);
         assert_eq!(
             state.justifications_roots_validators.len(),
@@ -166,7 +190,9 @@ mod test {
         );
 
         // Initialize an existing root should result in same lengths
-        state.initialize_justifications_for_root(&B256::repeat_byte(1)).unwrap();
+        state
+            .initialize_justifications_for_root(&B256::repeat_byte(1))
+            .unwrap();
         assert_eq!(state.justifications_roots.len(), 1);
         assert_eq!(
             state.justifications_roots_validators.len(),
@@ -174,7 +200,9 @@ mod test {
         );
 
         // Initialize 2nd root
-        state.initialize_justifications_for_root(&B256::repeat_byte(2)).unwrap();
+        state
+            .initialize_justifications_for_root(&B256::repeat_byte(2))
+            .unwrap();
         assert_eq!(state.justifications_roots.len(), 2);
         assert_eq!(
             state.justifications_roots_validators.len(),
@@ -191,7 +219,9 @@ mod test {
 
         // Set for 1st root
         state.initialize_justifications_for_root(&root0).unwrap();
-        state.set_justification(&root0, &validator_id, true).unwrap();
+        state
+            .set_justification(&root0, &validator_id, true)
+            .unwrap();
         assert!(
             state
                 .justifications_roots_validators
@@ -201,7 +231,9 @@ mod test {
 
         // Set for 2nd root
         state.initialize_justifications_for_root(&root1).unwrap();
-        state.set_justification(&root1, &validator_id, true).unwrap();
+        state
+            .set_justification(&root1, &validator_id, true)
+            .unwrap();
         assert!(
             state
                 .justifications_roots_validators
