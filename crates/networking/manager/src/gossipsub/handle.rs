@@ -1,5 +1,5 @@
 use libp2p::gossipsub::Message;
-use ream_beacon_chain::beacon_chain::BeaconChain;
+use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     blob_sidecar::BlobIdentifier, execution_engine::rpc_types::get_blobs::BlobAndProofV1,
 };

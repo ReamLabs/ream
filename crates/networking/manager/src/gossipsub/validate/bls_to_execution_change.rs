@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use ream_beacon_chain::beacon_chain::BeaconChain;
+use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
 };

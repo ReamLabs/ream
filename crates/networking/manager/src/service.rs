@@ -4,7 +4,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use ream_beacon_chain::beacon_chain::BeaconChain;
+use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_discv5::{
     config::DiscoveryConfig,
     subnet::{AttestationSubnets, SyncCommitteeSubnets},

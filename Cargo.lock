@@ -2569,7 +2569,7 @@ dependencies = [
  "anyhow",
  "ethereum_ssz",
  "ethereum_ssz_derive",
- "ream-beacon-chain",
+ "ream-chain-beacon",
  "ream-consensus-beacon",
  "ream-consensus-misc",
  "ream-network-manager",
@@ -5215,26 +5215,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-beacon-chain"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "ethereum_ssz",
- "ethereum_ssz_derive",
- "ream-consensus-beacon",
- "ream-consensus-misc",
- "ream-execution-engine",
- "ream-fork-choice",
- "ream-network-spec",
- "ream-operation-pool",
- "ream-p2p",
- "ream-storage",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "ream-bls"
 version = "0.1.0"
 dependencies = [
@@ -5251,6 +5231,26 @@ dependencies = [
  "thiserror 2.0.12",
  "tree_hash",
  "tree_hash_derive",
+]
+
+[[package]]
+name = "ream-chain-beacon"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "ream-consensus-beacon",
+ "ream-consensus-misc",
+ "ream-execution-engine",
+ "ream-fork-choice",
+ "ream-network-spec",
+ "ream-operation-pool",
+ "ream-p2p",
+ "ream-storage",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -5478,8 +5478,8 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "libp2p",
- "ream-beacon-chain",
  "ream-bls",
+ "ream-chain-beacon",
  "ream-consensus-beacon",
  "ream-consensus-misc",
  "ream-discv5",
@@ -5684,8 +5684,8 @@ dependencies = [
  "libp2p",
  "libp2p-identity",
  "libp2p-mplex",
- "ream-beacon-chain",
  "ream-bls",
+ "ream-chain-beacon",
  "ream-consensus-beacon",
  "ream-consensus-misc",
  "ream-executor",

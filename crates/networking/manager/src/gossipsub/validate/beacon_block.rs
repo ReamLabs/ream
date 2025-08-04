@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use ream_beacon_chain::beacon_chain::BeaconChain;
+use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     execution_engine::new_payload_request::NewPayloadRequest,

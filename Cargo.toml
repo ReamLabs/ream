@@ -4,7 +4,7 @@ members = [
     "bin/ream",
     "crates/account_manager",
     "crates/common/beacon_api_types",
-    "crates/common/beacon_chain",
+    "crates/common/chain/beacon",
     "crates/common/checkpoint_sync",
     "crates/common/consensus/beacon",
     "crates/common/consensus/lean",
@@ -115,8 +115,8 @@ url = "2.5"
 # ream dependencies
 ream-account-manager = { path = "crates/account_manager" }
 ream-beacon-api-types = { path = "crates/common/beacon_api_types" }
-ream-beacon-chain = { path = "crates/common/beacon_chain" }
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
+ream-chain-beacon = { path = "crates/common/chain/beacon" }
 ream-checkpoint-sync = { path = "crates/common/checkpoint_sync" }
 ream-consensus-beacon = { path = "crates/common/consensus/beacon" }
 ream-consensus-misc = { path = "crates/common/consensus/misc" }

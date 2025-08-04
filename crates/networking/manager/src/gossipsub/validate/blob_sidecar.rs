@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use ream_beacon_chain::beacon_chain::BeaconChain;
+use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{blob_sidecar::BlobSidecar, electra::beacon_state::BeaconState};
 use ream_consensus_misc::{
     constants::MAX_BLOBS_PER_BLOCK_ELECTRA, misc::compute_start_slot_at_epoch,

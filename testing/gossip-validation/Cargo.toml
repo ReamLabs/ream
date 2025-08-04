@@ -20,7 +20,7 @@ snap.workspace = true
 tokio.workspace = true
 
 # ream
-ream-beacon-chain.workspace = true
+ream-chain-beacon.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
 ream-network-manager = { workspace = true, features = ["disable_ancestor_validation"] }
