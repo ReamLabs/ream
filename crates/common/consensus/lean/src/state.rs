@@ -54,35 +54,39 @@ impl LeanState {
     }
 
     pub fn initialize_justifications_for_root(&mut self, root: &B256) -> anyhow::Result<()> {
-        if !self.justifications_roots.contains(root) {
-            self.justifications_roots.push(*root).map_err(|err| {
-                anyhow!("Failed to insert root into justifications_roots: {err:?}")
-            })?;
-
-            let old_length = self.justifications_roots_validators.len();
-            let new_length = old_length + VALIDATOR_REGISTRY_LIMIT as usize;
-
-            let mut new_justifications_roots_validators = BitList::with_capacity(new_length)
-                .map_err(|err| anyhow!("Failed to initialize new justification bits: {err:?}"))?;
-
-            for (i, bit) in self.justifications_roots_validators.iter().enumerate() {
-                new_justifications_roots_validators
-                    .set(i, bit)
-                    .map_err(|err| {
-                        anyhow!(
-                            "Failed to initialize justification bits to existing values: {err:?}"
-                        )
-                    })?;
-            }
-
-            for i in old_length..new_length {
-                new_justifications_roots_validators
-                    .set(i, false)
-                    .map_err(|err| anyhow!("Failed to zero-fill justification bits: {err:?}"))?;
-            }
-
-            self.justifications_roots_validators = new_justifications_roots_validators;
+        // Return early if the justifications are already initialized
+        if self.justifications_roots.contains(root) {
+            return Ok(());
         }
+
+        self.justifications_roots.push(*root).map_err(|err| {
+            anyhow!("Failed to insert root into justifications_roots: {err:?}")
+        })?;
+
+        let old_length = self.justifications_roots_validators.len();
+        let new_length = old_length + VALIDATOR_REGISTRY_LIMIT as usize;
+
+        let mut new_justifications_roots_validators = BitList::with_capacity(new_length)
+            .map_err(|err| anyhow!("Failed to initialize new justification bits: {err:?}"))?;
+
+        for (i, bit) in self.justifications_roots_validators.iter().enumerate() {
+            new_justifications_roots_validators
+                .set(i, bit)
+                .map_err(|err| {
+                    anyhow!(
+                        "Failed to initialize justification bits to existing values: {err:?}"
+                    )
+                })?;
+        }
+
+        for i in old_length..new_length {
+            new_justifications_roots_validators
+                .set(i, false)
+                .map_err(|err| anyhow!("Failed to zero-fill justification bits: {err:?}"))?;
+        }
+
+        self.justifications_roots_validators = new_justifications_roots_validators;
+
         Ok(())
     }
 
