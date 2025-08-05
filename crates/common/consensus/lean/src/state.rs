@@ -54,14 +54,13 @@ impl LeanState {
     }
 
     pub fn initialize_justifications_for_root(&mut self, root: &B256) -> anyhow::Result<()> {
-        // Return early if the justifications are already initialized
         if self.justifications_roots.contains(root) {
             return Ok(());
         }
 
-        self.justifications_roots.push(*root).map_err(|err| {
-            anyhow!("Failed to insert root into justifications_roots: {err:?}")
-        })?;
+        self.justifications_roots
+            .push(*root)
+            .map_err(|err| anyhow!("Failed to insert root into justifications_roots: {err:?}"))?;
 
         let old_length = self.justifications_roots_validators.len();
         let new_length = old_length + VALIDATOR_REGISTRY_LIMIT as usize;
@@ -73,9 +72,7 @@ impl LeanState {
             new_justifications_roots_validators
                 .set(i, bit)
                 .map_err(|err| {
-                    anyhow!(
-                        "Failed to initialize justification bits to existing values: {err:?}"
-                    )
+                    anyhow!("Failed to initialize justification bits to existing values: {err:?}")
                 })?;
         }
 
@@ -96,9 +93,9 @@ impl LeanState {
         validator_id: &u64,
         value: bool,
     ) -> anyhow::Result<()> {
-        let index = self
-            .get_justifications_roots_index(root)
-            .ok_or(anyhow!("Failed to find the justifications index to set"))?;
+        let index = self.get_justifications_roots_index(root).ok_or_else(|| {
+            anyhow!("Failed to find the justifications index to set for root: {root}")
+        })?;
 
         self.justifications_roots_validators
             .set(
@@ -113,7 +110,7 @@ impl LeanState {
     pub fn count_justifications(&self, root: &B256) -> anyhow::Result<u64> {
         let index = self
             .get_justifications_roots_index(root)
-            .ok_or_else(|| anyhow!("Could not find justifications for the provided block root"))?;
+            .ok_or_else(|| anyhow!("Could not find justifications for root: {root}"))?;
 
         let start_range = index * VALIDATOR_REGISTRY_LIMIT as usize;
 
@@ -128,18 +125,15 @@ impl LeanState {
     }
 
     pub fn remove_justifications(&mut self, root: &B256) -> anyhow::Result<()> {
-        let index = self
-            .get_justifications_roots_index(root)
-            .ok_or_else(|| anyhow!("Failed to find the justifications index to remove"))?;
+        let index = self.get_justifications_roots_index(root).ok_or_else(|| {
+            anyhow!("Failed to find the justifications index to remove for root: {root}")
+        })?;
         self.justifications_roots.remove(index);
 
         let new_length = self.justifications_roots.len() * VALIDATOR_REGISTRY_LIMIT as usize;
         let mut new_justifications_roots_validators =
-            BitList::<U1073741824>::with_capacity(new_length).map_err(|e| {
-                anyhow!(
-                    "Failed to recreate state's justifications_roots_validators: {:?}",
-                    e
-                )
+            BitList::<U1073741824>::with_capacity(new_length).map_err(|err| {
+                anyhow!("Failed to recreate state's justifications_roots_validators: {err:?}")
             })?;
 
         // Take left side of the list (if any)
@@ -151,7 +145,7 @@ impl LeanState {
         {
             new_justifications_roots_validators
                 .set(i, justification_bit)
-                .map_err(|e| anyhow!("Failed to set new justification bit: {:?}", e))?;
+                .map_err(|err| anyhow!("Failed to set new justification bit: {err:?}"))?;
         }
 
         // Take right side of the list (if any)
@@ -166,7 +160,7 @@ impl LeanState {
                     index * VALIDATOR_REGISTRY_LIMIT as usize + i,
                     justification_bit,
                 )
-                .map_err(|e| anyhow!("Failed to set new justification bit: {:?}", e))?;
+                .map_err(|err| anyhow!("Failed to set new justification bit: {err:?}"))?;
         }
 
         self.justifications_roots_validators = new_justifications_roots_validators;

@@ -162,10 +162,10 @@ pub fn get_fork_choice_head(
             while {
                 let current_block = blocks
                     .get(&block_hash)
-                    .ok_or_else(|| anyhow!("Block not found for vote head: {}", block_hash))?;
+                    .ok_or_else(|| anyhow!("Block not found for vote head: {block_hash}"))?;
                 let root_block = blocks
                     .get(&root)
-                    .ok_or_else(|| anyhow!("Block not found for root: {}", root))?;
+                    .ok_or_else(|| anyhow!("Block not found for root: {root}"))?;
                 current_block.slot > root_block.slot
             } {
                 let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
@@ -173,7 +173,7 @@ pub fn get_fork_choice_head(
                 block_hash = blocks
                     .get(&block_hash)
                     .map(|block| block.parent)
-                    .ok_or_else(|| anyhow!("Block not found for block parent: {}", block_hash))?;
+                    .ok_or_else(|| anyhow!("Block not found for block parent: {block_hash}"))?;
             }
         }
     }
@@ -206,9 +206,7 @@ pub fn get_fork_choice_head(
                         let slot = blocks.get(*child_hash).map(|block| block.slot).unwrap_or(0);
                         (*vote_weight, slot, *(*child_hash))
                     })
-                    .ok_or_else(|| {
-                        anyhow!("No children found for current root: {}", current_root)
-                    })?;
+                    .ok_or_else(|| anyhow!("No children found for current root: {current_root}"))?;
             }
         }
     }

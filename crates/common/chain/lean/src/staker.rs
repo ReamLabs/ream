@@ -118,7 +118,7 @@ impl Staker {
             let network = self
                 .network
                 .lock()
-                .map_err(|e| anyhow::anyhow!("Failed to acquire network lock: {}", e))?;
+                .map_err(|err| anyhow::anyhow!("Failed to acquire network lock: {err:?}"))?;
             network.time % SLOT_DURATION
         };
 
@@ -151,7 +151,7 @@ impl Staker {
         let network = self
             .network
             .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire network lock: {}", e))?;
+            .map_err(|err| anyhow::anyhow!("Failed to acquire network lock: {err:?}"))?;
         Ok(network.time / SLOT_DURATION + 2)
     }
 
@@ -162,7 +162,7 @@ impl Staker {
         let head_block = self
             .chain
             .get(&self.head)
-            .ok_or_else(|| anyhow::anyhow!("Head block not found for hash: {}", self.head))?;
+            .ok_or_else(|| anyhow::anyhow!("Block not found in chain for head: {}", self.head))?;
 
         info!(
             "proposing (Staker {}), head = {}",
@@ -172,7 +172,7 @@ impl Staker {
         let head_state = self
             .post_states
             .get(&self.head)
-            .ok_or_else(|| anyhow::anyhow!("Head state not found for hash: {}", self.head))?;
+            .ok_or_else(|| anyhow::anyhow!("Post state not found for head: {}", self.head))?;
         let mut new_block = Block {
             slot: new_slot,
             parent: self.head,
@@ -202,7 +202,7 @@ impl Staker {
                 new_block
                     .votes
                     .push(vote)
-                    .map_err(|e| anyhow::anyhow!("Failed to add vote to new_block: {:?}", e))?;
+                    .map_err(|err| anyhow::anyhow!("Failed to add vote to new_block: {err:?}"))?;
             }
         }
 
@@ -225,21 +225,24 @@ impl Staker {
         let state = self
             .post_states
             .get(&self.head)
-            .ok_or_else(|| anyhow::anyhow!("Head state not found for hash: {}", self.head))?;
+            .ok_or_else(|| anyhow::anyhow!("Post state not found for head: {}", self.head))?;
         let mut target_block = self
             .chain
             .get(&self.head)
-            .ok_or_else(|| anyhow::anyhow!("Head block not found for hash: {}", self.head))?;
+            .ok_or_else(|| anyhow::anyhow!("Block not found in chain for head: {}", self.head))?;
 
         // If there is no very recent safe target, then vote for the k'th ancestor
         // of the head
         for _ in 0..3 {
             let safe_target_block = self.chain.get(&self.safe_target).ok_or_else(|| {
-                anyhow::anyhow!("Safe target block not found for hash: {}", self.safe_target)
+                anyhow::anyhow!("Block not found for safe target hash: {}", self.safe_target)
             })?;
             if target_block.slot > safe_target_block.slot {
                 target_block = self.chain.get(&target_block.parent).ok_or_else(|| {
-                    anyhow::anyhow!("Parent block not found for hash: {}", target_block.parent)
+                    anyhow::anyhow!(
+                        "Block not found for target block's parent hash: {}",
+                        target_block.parent
+                    )
                 })?;
             }
         }
@@ -248,14 +251,17 @@ impl Staker {
         // valid to justify, make sure the target is one of those
         while !is_justifiable_slot(&state.latest_finalized_slot, &target_block.slot) {
             target_block = self.chain.get(&target_block.parent).ok_or_else(|| {
-                anyhow::anyhow!("Parent block not found for hash: {}", target_block.parent)
+                anyhow::anyhow!(
+                    "Block not found for target block's parent hash: {}",
+                    target_block.parent
+                )
             })?;
         }
 
         let head_block = self
             .chain
             .get(&self.head)
-            .ok_or_else(|| anyhow::anyhow!("Head block not found for hash: {}", self.head))?;
+            .ok_or_else(|| anyhow::anyhow!("Block not found for head: {}", self.head))?;
 
         let vote = Vote {
             validator_id: self.validator_id,
