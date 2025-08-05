@@ -31,8 +31,8 @@ pub struct LeanState {
 }
 
 impl LeanState {
-    pub fn new(num_validators: u64) -> anyhow::Result<LeanState> {
-        Ok(LeanState {
+    pub fn new(num_validators: u64) -> LeanState {
+        LeanState {
             config: Config { num_validators },
 
             latest_justified_hash: B256::ZERO,
@@ -44,10 +44,9 @@ impl LeanState {
             justified_slots: VariableList::empty(),
 
             justifications_roots: VariableList::empty(),
-            justifications_roots_validators: BitList::with_capacity(0).map_err(|err| {
-                anyhow!("Failed to initialize state's justifications_roots_validators: {err:?}")
-            })?,
-        })
+            justifications_roots_validators: BitList::with_capacity(0)
+                .expect("Failed to initialize an empty BitList"),
+        }
     }
 
     fn get_justifications_roots_index(&self, root: &B256) -> Option<usize> {
@@ -177,7 +176,7 @@ mod test {
 
     #[test]
     fn initialize_justifications_for_root() {
-        let mut state = LeanState::new(1).unwrap();
+        let mut state = LeanState::new(1);
 
         // Initialize 1st root
         state
@@ -212,7 +211,7 @@ mod test {
 
     #[test]
     fn set_justification() {
-        let mut state = LeanState::new(1).unwrap();
+        let mut state = LeanState::new(1);
         let root0 = B256::repeat_byte(1);
         let root1 = B256::repeat_byte(2);
         let validator_id = 7u64;
@@ -244,7 +243,7 @@ mod test {
 
     #[test]
     fn count_justifications() {
-        let mut state = LeanState::new(1).unwrap();
+        let mut state = LeanState::new(1);
         let root0 = B256::repeat_byte(1);
         let root1 = B256::repeat_byte(2);
 
@@ -271,7 +270,7 @@ mod test {
     #[test]
     fn remove_justifications() {
         // Assuming 3 roots & 4 validators
-        let mut state = LeanState::new(3).unwrap();
+        let mut state = LeanState::new(3);
         let root0 = B256::repeat_byte(1);
         let root1 = B256::repeat_byte(2);
         let root2 = B256::repeat_byte(3);
