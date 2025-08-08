@@ -1,0 +1,28 @@
+[package]
+name = "ream-lean-api-types"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+actix-web.workspace = true
+alloy-primitives.workspace = true
+anyhow.workspace = true
+ethereum_serde_utils.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+# ream dependencies
+ream-bls.workspace = true
+ream-consensus-lean.workspace = true
+ream-consensus-misc.workspace = true

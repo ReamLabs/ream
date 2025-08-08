@@ -37,6 +37,7 @@ use ream_p2p::{
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
 use ream_rpc_beacon::{config::RpcServerConfig, start_server};
+use ream_rpc_lean::{config::LeanRpcServerConfig, start_lean_server};
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
@@ -132,6 +133,12 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         }
     };
 
+    let server_config = LeanRpcServerConfig::new(
+        config.http_address,
+        config.http_port,
+        config.http_allow_origin,
+    );
+
     set_lean_network_spec(network);
 
     // Initialize the lean chain with genesis block and state.
@@ -175,6 +182,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         }
     });
 
+    let http_future =
+        executor.spawn(async move { start_lean_server(server_config, lean_chain).await });
+
     tokio::select! {
         _ = chain_future => {
             info!("Chain service has stopped unexpectedly");
@@ -184,6 +194,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         }
         _ = validator_future => {
             info!("Validator service has stopped unexpectedly");
+        }
+        _ = http_future => {
+            info!("RPC service has stopped unexpectedly");
         }
     }
 }

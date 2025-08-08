@@ -5174,6 +5174,7 @@ dependencies = [
  "ream-operation-pool",
  "ream-p2p",
  "ream-rpc-beacon",
+ "ream-rpc-lean",
  "ream-storage",
  "ream-validator-beacon",
  "ream-validator-lean",
@@ -5464,6 +5465,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-lean-api-types"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "ream-bls",
+ "ream-consensus-lean",
+ "ream-consensus-misc",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "url",
+]
+
+[[package]]
 name = "ream-light-client"
 version = "0.1.0"
 dependencies = [
@@ -5669,6 +5690,38 @@ dependencies = [
 [[package]]
 name = "ream-rpc-lean"
 version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "actix-web-lab",
+ "alloy-primitives",
+ "discv5",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "hashbrown 0.15.3",
+ "libp2p",
+ "parking_lot",
+ "ream-beacon-api-types",
+ "ream-bls",
+ "ream-chain-lean",
+ "ream-consensus-beacon",
+ "ream-consensus-misc",
+ "ream-execution-engine",
+ "ream-fork-choice",
+ "ream-lean-api-types",
+ "ream-light-client",
+ "ream-network-spec",
+ "ream-node",
+ "ream-operation-pool",
+ "ream-p2p",
+ "serde",
+ "serde_json",
+ "ssz_types",
+ "thiserror 2.0.12",
+ "tokio",
+ "tracing",
+ "tree_hash",
+]
 
 [[package]]
 name = "ream-runtime"
