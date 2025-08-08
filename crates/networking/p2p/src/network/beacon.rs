@@ -1,9 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
-    io,
     num::{NonZeroU8, NonZeroUsize},
-    pin::Pin,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -12,26 +10,16 @@ use anyhow::anyhow;
 use delay_map::{HashMapDelay, HashSetDelay};
 use discv5::{Enr, enr::CombinedPublicKey};
 use libp2p::{
-    Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
+    Multiaddr, PeerId, Swarm, SwarmBuilder,
     connection_limits::{self, ConnectionLimits},
-    core::{
-        ConnectedPoint,
-        muxing::StreamMuxerBox,
-        transport::Boxed,
-        upgrade::{SelectUpgrade, Version},
-    },
-    dns::Transport as DnsTransport,
+    core::ConnectedPoint,
     futures::StreamExt,
     gossipsub::{Event as GossipsubEvent, IdentTopic as Topic, Message, MessageAuthenticity},
     identify,
     multiaddr::Protocol,
-    noise::Config as NoiseConfig,
     swarm::{self, ConnectionId, NetworkBehaviour, SwarmEvent},
-    tcp::{Config as TcpConfig, tokio::Transport as TcpTransport},
-    yamux,
 };
 use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Secp256k1PublicKey};
-use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use parking_lot::{Mutex, RwLock};
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
@@ -42,13 +30,13 @@ use tokio::{
     time::interval,
 };
 use tracing::{error, info, trace, warn};
-use yamux::Config as YamuxConfig;
 
 use crate::{
     channel::{P2PCallbackResponse, P2PMessage, P2PRequest, P2PResponse},
     config::NetworkConfig,
     constants::{PING_INTERVAL_DURATION, TARGET_PEER_COUNT},
     gossipsub::{GossipsubBehaviour, snappy::SnappyTransform, topics::GossipTopic},
+    network::misc::{Executor, build_transport},
     network_state::NetworkState,
     peer::{CachedPeer, ConnectionState, Direction},
     req_resp::{
@@ -99,14 +87,6 @@ pub enum ReamNetworkEvent {
     GossipsubMessage {
         message: Message,
     },
-}
-
-struct Executor(ReamExecutor);
-
-impl libp2p::swarm::Executor for Executor {
-    fn exec(&self, f: Pin<Box<dyn futures::Future<Output = ()> + Send>>) {
-        self.0.spawn(f);
-    }
 }
 
 pub struct Network {
@@ -822,26 +802,6 @@ impl Network {
 
         self.swarm.behaviour_mut().gossipsub.unsubscribe(&topic)
     }
-}
-
-pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, StreamMuxerBox)>> {
-    // mplex config
-    let mut mplex_config = MplexConfig::new();
-    mplex_config.set_max_buffer_size(256);
-    mplex_config.set_max_buffer_behaviour(MaxBufferBehaviour::Block);
-
-    let yamux_config = YamuxConfig::default();
-
-    let tcp = TcpTransport::new(TcpConfig::default().nodelay(true))
-        .upgrade(Version::V1)
-        .authenticate(NoiseConfig::new(&local_private_key).expect("Noise disabled"))
-        .multiplex(SelectUpgrade::new(yamux_config, mplex_config))
-        .timeout(Duration::from_secs(10));
-    let transport = tcp.boxed();
-
-    let transport = DnsTransport::system(transport)?.boxed();
-
-    Ok(transport)
 }
 
 #[cfg(test)]
