@@ -28,6 +28,7 @@ use crate::{
         GossipsubBehaviour, lean::configurations::LeanGossipsubConfig, snappy::SnappyTransform,
     },
     network::misc::{Executor, build_transport},
+    peer::ConnectionState,
 };
 
 #[derive(NetworkBehaviour)]
@@ -63,7 +64,7 @@ pub struct LeanNetworkConfig {
 pub struct LeanNetworkService {
     lean_chain: Arc<RwLock<LeanChain>>,
     swarm: Swarm<ReamBehaviour>,
-    peer_table: RwLock<Vec<PeerId>>,
+    peer_table: RwLock<HashMap<PeerId, ConnectionState>>,
 }
 
 impl LeanNetworkService {
@@ -133,7 +134,7 @@ impl LeanNetworkService {
                 .with_swarm_config(|_| config)
                 .build()
         };
-        let peer_table = RwLock::new(Vec::new());
+        let peer_table = RwLock::new(HashMap::new());
 
         Ok(LeanNetworkService {
             lean_chain,
@@ -180,6 +181,20 @@ impl LeanNetworkService {
                 Some(ReamBehaviourEvent::Identify(_)) => None,
                 _ => None,
             },
+            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                self.peer_table
+                    .write()
+                    .await
+                    .insert(peer_id, ConnectionState::Connected);
+                None
+            }
+            SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                self.peer_table
+                    .write()
+                    .await
+                    .insert(peer_id, ConnectionState::Disconnected);
+                None
+            }
             _ => None,
         }
     }
@@ -218,8 +233,11 @@ impl LeanNetworkService {
             }
 
             if let Some(peer_id) = peer_id_from_enr(&enr) {
-                info!("Connected to peer: {peer_id:?}",);
-                self.peer_table.write().await.push(peer_id);
+                info!("Dialing peer: {peer_id:?}",);
+                self.peer_table
+                    .write()
+                    .await
+                    .insert(peer_id, ConnectionState::Connecting);
             }
         }
     }
