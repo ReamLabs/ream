@@ -151,7 +151,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         }
     });
     let network_future = executor.spawn(async move {
-        if let Err(err) = network_service.start().await {
+        if let Err(err) = network_service.start(config.bootnodes).await {
             panic!("Network service exited with error: {err}");
         }
     });

@@ -57,4 +57,11 @@ impl Bootnodes {
             Bootnodes::Custom(bootnodes) => bootnodes,
         }
     }
+
+    pub fn get_static_lean_peers() -> Vec<Enr> {
+        let peers: Vec<Enr> = serde_yaml::from_str(include_str!("../resources/lean_peers.yaml"))
+            .expect("should deserialize bootnodes");
+
+        peers
+    }
 }
