@@ -20,7 +20,7 @@ use tracing::info;
 
 use crate::{
     gossipsub::{
-        GossipsubBehaviour, beacon::configurations::GossipsubConfig, snappy::SnappyTransform,
+        GossipsubBehaviour, lean::configurations::LeanGossipsubConfig, snappy::SnappyTransform,
     },
     network::misc::{Executor, build_transport},
 };
@@ -47,7 +47,7 @@ pub enum ReamNetworkEvent {
 }
 
 pub struct LeanNetworkConfig {
-    pub gossipsub_config: GossipsubConfig,
+    pub gossipsub_config: LeanGossipsubConfig,
 }
 
 /// NetworkService is responsible for the following:

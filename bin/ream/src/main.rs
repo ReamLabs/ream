@@ -33,7 +33,7 @@ use ream_network_spec::networks::{
 };
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
-    gossipsub::beacon::configurations::GossipsubConfig,
+    gossipsub::lean::configurations::LeanGossipsubConfig,
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
 use ream_rpc_beacon::{config::RpcServerConfig, start_server};
@@ -146,7 +146,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
     let chain_service = LeanChainService::new(lean_chain.clone(), chain_receiver).await;
     let network_service = LeanNetworkService::new(
         Arc::new(LeanNetworkConfig {
-            gossipsub_config: GossipsubConfig::default(),
+            gossipsub_config: LeanGossipsubConfig::default(),
         }),
         lean_chain.clone(),
         executor.clone(),
