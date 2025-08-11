@@ -2,12 +2,10 @@ use std::{
     collections::HashMap,
     num::{NonZeroU8, NonZeroUsize},
     sync::Arc,
-    time::Instant,
 };
 
 use anyhow::anyhow;
-use discv5::{Enr, multiaddr::Protocol};
-use enr::CombinedPublicKey;
+use discv5::multiaddr::Protocol;
 use futures::StreamExt;
 use libp2p::{
     Multiaddr, SwarmBuilder,
@@ -16,7 +14,7 @@ use libp2p::{
     identify,
     swarm::{Config, NetworkBehaviour, Swarm, SwarmEvent},
 };
-use libp2p_identity::{Keypair, PeerId, secp256k1::PublicKey as Secp256k1PublicKey};
+use libp2p_identity::{Keypair, PeerId};
 use ream_chain_lean::lean_chain::LeanChain;
 use ream_executor::ReamExecutor;
 use tokio::sync::RwLock;
@@ -134,12 +132,11 @@ impl LeanNetworkService {
                 .with_swarm_config(|_| config)
                 .build()
         };
-        let peer_table = RwLock::new(HashMap::new());
 
         Ok(LeanNetworkService {
             lean_chain,
             swarm,
-            peer_table,
+            peer_table: RwLock::new(HashMap::new()),
         })
     }
 
@@ -150,17 +147,8 @@ impl LeanNetworkService {
             self.lean_chain.read().await.head
         );
 
-        let initial_peers = match peer_config {
-            Bootnodes::Default => Bootnodes::get_static_lean_peers(),
-            Bootnodes::None => vec![],
-            Bootnodes::Custom(enrs) => [enrs, Bootnodes::get_static_lean_peers()].concat(),
-        };
-        let mut peers = HashMap::new();
-        for peer in initial_peers {
-            peers.insert(peer, None);
-        }
-
-        self.connect_to_peers(peers).await;
+        self.connect_to_peers(peer_config.get_static_lean_peers())
+            .await;
         loop {
             tokio::select! {
                 Some(event) = self.swarm.next() => {
@@ -199,40 +187,24 @@ impl LeanNetworkService {
         }
     }
 
-    async fn connect_to_peers(&mut self, peers: HashMap<Enr, Option<Instant>>) {
+    async fn connect_to_peers(&mut self, peers: Vec<Multiaddr>) {
         trace!("Discovered peers: {peers:?}");
-        for (enr, _) in peers {
-            let mut multiaddrs: Vec<Multiaddr> = Vec::new();
-            if let Some(ip) = enr.ip4()
-                && let Some(tcp) = enr.tcp4()
-            {
-                let mut multiaddr: Multiaddr = ip.into();
-                multiaddr.push(Protocol::Tcp(tcp));
-                multiaddrs.push(multiaddr);
-            }
-            if let Some(ip6) = enr.ip6()
-                && let Some(tcp6) = enr.tcp6()
-            {
-                let mut multiaddr: Multiaddr = ip6.into();
-                multiaddr.push(Protocol::Tcp(tcp6));
-                multiaddrs.push(multiaddr);
-            }
-
+        for peer in peers {
             let mut successfully_dialed = false;
-            for multiaddr in multiaddrs {
-                if let Err(err) = self.swarm.dial(multiaddr) {
-                    warn!("Failed to dial peer: {err:?}");
-                } else {
-                    successfully_dialed = true;
-                }
+            if let Err(err) = self.swarm.dial(peer.clone()) {
+                warn!("Failed to dial peer: {err:?}");
+            } else {
+                successfully_dialed = true;
             }
 
             if !successfully_dialed {
-                trace!("Failed to dial any multiaddr for peer: {:?}", enr);
+                trace!("Failed to dial any multiaddr for peer: {peer:?}");
                 continue;
             }
 
-            if let Some(peer_id) = peer_id_from_enr(&enr) {
+            if let Some(Protocol::P2p(peer_id)) =
+                peer.iter().find(|p| matches!(p, Protocol::P2p(_)))
+            {
                 info!("Dialing peer: {peer_id:?}",);
                 self.peer_table
                     .write()
@@ -240,18 +212,5 @@ impl LeanNetworkService {
                     .insert(peer_id, ConnectionState::Connecting);
             }
         }
-    }
-}
-
-pub fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
-    match enr.public_key() {
-        CombinedPublicKey::Secp256k1(public_key) => {
-            let encoded_public_key = public_key.to_encoded_point(true);
-            let public_key = Secp256k1PublicKey::try_from_bytes(encoded_public_key.as_bytes())
-                .ok()?
-                .into();
-            Some(PeerId::from_public_key(&public_key))
-        }
-        _ => None,
     }
 }
