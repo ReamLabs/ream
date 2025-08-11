@@ -16,10 +16,8 @@ use ream_validator_beacon::{
 };
 use ssz::Decode;
 
-use super::{
-    error::GossipsubError,
-    topics::{GossipTopic, GossipTopicKind},
-};
+use super::topics::{GossipTopic, GossipTopicKind};
+use crate::gossipsub::error::GossipsubError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GossipsubMessage {

@@ -4,7 +4,7 @@ use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
 use tokio::sync::mpsc;
 
 use crate::{
-    gossipsub::topics::GossipTopic,
+    gossipsub::beacon::topics::GossipTopic,
     req_resp::{
         handler::RespMessage,
         messages::{ResponseMessage, status::Status},

@@ -5,7 +5,7 @@ use alloy_primitives::{
 };
 use libp2p::gossipsub::{IdentTopic as Topic, TopicHash};
 
-use super::error::GossipsubError;
+use crate::gossipsub::error::GossipsubError;
 
 pub const TOPIC_PREFIX: &str = "eth2";
 pub const ENCODING_POSTFIX: &str = "ssz_snappy";

@@ -40,6 +40,7 @@ unsigned-varint = { version = "0.8", features = ["codec"] }
 # ream dependencies
 ream-chain-lean.workspace = true
 ream-consensus-beacon.workspace = true
+ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
 ream-discv5.workspace = true
 ream-executor.workspace = true

@@ -7,7 +7,7 @@ use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_p2p::{
     channel::GossipMessage,
-    gossipsub::{
+    gossipsub::beacon::{
         configurations::GossipsubConfig,
         message::GossipsubMessage,
         topics::{GossipTopic, GossipTopicKind},

@@ -8,6 +8,7 @@ use futures::StreamExt;
 use libp2p::{
     SwarmBuilder,
     connection_limits::{self, ConnectionLimits},
+    gossipsub::MessageAuthenticity,
     identify,
     swarm::{Config, NetworkBehaviour, Swarm, SwarmEvent},
 };
@@ -17,12 +18,21 @@ use ream_executor::ReamExecutor;
 use tokio::sync::RwLock;
 use tracing::info;
 
-use crate::network::misc::{Executor, build_transport};
+use crate::{
+    gossipsub::{
+        GossipsubBehaviour, beacon::configurations::GossipsubConfig, snappy::SnappyTransform,
+    },
+    network::misc::{Executor, build_transport},
+};
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
     pub identify: identify::Behaviour,
-    pub connection_registry: connection_limits::Behaviour,
+
+    /// The gossip domain: gossipsub
+    pub gossipsub: GossipsubBehaviour,
+
+    pub connection_limits: connection_limits::Behaviour,
 }
 
 #[derive(Debug)]
@@ -34,6 +44,10 @@ pub enum ReamNetworkEvent {
     Ping(PeerId),
     MetaData(PeerId),
     DisconnectPeer(PeerId),
+}
+
+pub struct LeanNetworkConfig {
+    pub gossipsub_config: GossipsubConfig,
 }
 
 /// NetworkService is responsible for the following:
@@ -48,6 +62,7 @@ pub struct LeanNetworkService {
 
 impl LeanNetworkService {
     pub async fn new(
+        config: Arc<LeanNetworkConfig>,
         lean_chain: Arc<RwLock<LeanChain>>,
         executor: ReamExecutor,
     ) -> anyhow::Result<Self> {
@@ -61,6 +76,19 @@ impl LeanNetworkService {
         };
 
         let local_key = Keypair::generate_secp256k1();
+
+        let gossipsub = {
+            let snappy_transform =
+                SnappyTransform::new(config.gossipsub_config.config.max_transmit_size());
+            GossipsubBehaviour::new_with_transform(
+                MessageAuthenticity::Anonymous,
+                config.gossipsub_config.config.clone(),
+                None,
+                snappy_transform,
+            )
+            .map_err(|err| anyhow!("Failed to create gossipsub behaviour: {err:?}"))?
+        };
+
         let identify = {
             let local_public_key = local_key.public();
             let identify_config =
@@ -73,8 +101,9 @@ impl LeanNetworkService {
 
         let behaviour = {
             ReamBehaviour {
+                gossipsub,
                 identify,
-                connection_registry: connection_limits,
+                connection_limits,
             }
         };
 

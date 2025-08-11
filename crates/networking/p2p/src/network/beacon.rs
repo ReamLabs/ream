@@ -35,7 +35,7 @@ use crate::{
     channel::{P2PCallbackResponse, P2PMessage, P2PRequest, P2PResponse},
     config::NetworkConfig,
     constants::{PING_INTERVAL_DURATION, TARGET_PEER_COUNT},
-    gossipsub::{GossipsubBehaviour, snappy::SnappyTransform, topics::GossipTopic},
+    gossipsub::{GossipsubBehaviour, beacon::topics::GossipTopic, snappy::SnappyTransform},
     network::misc::{Executor, build_transport},
     network_state::NetworkState,
     peer::{CachedPeer, ConnectionState, Direction},
@@ -823,7 +823,7 @@ mod tests {
     use super::*;
     use crate::{
         config::NetworkConfig,
-        gossipsub::{configurations::GossipsubConfig, topics::GossipTopicKind},
+        gossipsub::beacon::{configurations::GossipsubConfig, topics::GossipTopicKind},
     };
 
     async fn create_network(

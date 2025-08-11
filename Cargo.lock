@@ -5572,6 +5572,7 @@ dependencies = [
  "parking_lot",
  "ream-chain-lean",
  "ream-consensus-beacon",
+ "ream-consensus-lean",
  "ream-consensus-misc",
  "ream-discv5",
  "ream-executor",

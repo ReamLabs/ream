@@ -32,7 +32,10 @@ use ream_network_spec::networks::{
     beacon_network_spec, set_beacon_network_spec, set_lean_network_spec,
 };
 use ream_operation_pool::OperationPool;
-use ream_p2p::network::lean::LeanNetworkService;
+use ream_p2p::{
+    gossipsub::beacon::configurations::GossipsubConfig,
+    network::lean::{LeanNetworkConfig, LeanNetworkService},
+};
 use ream_rpc_beacon::{config::RpcServerConfig, start_server};
 use ream_storage::{
     db::{ReamDB, reset_db},
@@ -141,9 +144,15 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
     // TODO 1: Load keystores from the config.
     // TODO 2: Add RPC service for lean node.
     let chain_service = LeanChainService::new(lean_chain.clone(), chain_receiver).await;
-    let network_service = LeanNetworkService::new(lean_chain.clone(), executor.clone())
-        .await
-        .expect("Failed to create network service");
+    let network_service = LeanNetworkService::new(
+        Arc::new(LeanNetworkConfig {
+            gossipsub_config: GossipsubConfig::default(),
+        }),
+        lean_chain.clone(),
+        executor.clone(),
+    )
+    .await
+    .expect("Failed to create network service");
 
     let validator_service =
         LeanValidatorService::new(lean_chain.clone(), Vec::new(), chain_sender).await;
