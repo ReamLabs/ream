@@ -1,18 +1,12 @@
-use std::{
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::sync::Arc;
 
 use ream_chain_lean::{
-    lean_chain::LeanChain, service::LeanChainServiceMessage, slot::get_current_slot,
+    clock::create_lean_clock_interval, lean_chain::LeanChain, service::LeanChainServiceMessage,
+    slot::get_current_slot,
 };
 use ream_consensus_lean::{QueueItem, VoteItem};
-use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_network_spec::networks::lean_network_spec;
-use tokio::{
-    sync::{RwLock, mpsc},
-    time::{Instant, MissedTickBehavior, interval_at},
-};
+use tokio::sync::{RwLock, mpsc};
 use tracing::info;
 
 // TODO: We need to replace this after PQC integration.
@@ -61,34 +55,15 @@ impl ValidatorService {
     }
 
     pub async fn start(self) {
-        // TODO: Duplicate clock logic from LeanChainService. May need to refactor later.
-
-        // Get the Lean network specification.
-        let network_spec = lean_network_spec();
-        let seconds_per_slot = network_spec.seconds_per_slot;
-        let genesis_time = network_spec.genesis_time;
+        let genesis_time = lean_network_spec().genesis_time;
 
         info!(
             "ValidatorService started with {} validator(s), genesis_time={genesis_time}",
             self.keystores.len()
         );
 
-        // Calculate the genesis instant from the genesis time (in seconds).
-        let genesis_instant = UNIX_EPOCH + Duration::from_secs(genesis_time);
-
-        // Assume genesis time is "always" in the future,
-        // as we don't support syncing features yet.
-        let interval_start = Instant::now()
-            + genesis_instant
-                .duration_since(SystemTime::now())
-                .expect("Genesis time is in the past");
-
         let mut tick_count = 0u64;
-        let mut interval = interval_at(
-            interval_start,
-            Duration::from_secs(seconds_per_slot / INTERVALS_PER_SLOT),
-        );
-        interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
+        let mut interval = create_lean_clock_interval().expect("Failed to create clock interval");
 
         loop {
             tokio::select! {
