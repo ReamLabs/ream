@@ -1,6 +1,8 @@
 use std::{cmp::max, fs, path::PathBuf};
 
 use anyhow::anyhow;
+use discv5::{Enr, multiaddr::Protocol};
+use libp2p::Multiaddr;
 use ssz::Decode;
 
 use crate::{constants::MAX_PAYLOAD_SIZE, req_resp::messages::meta_data::GetMetaDataV2};
@@ -27,4 +29,29 @@ pub fn read_meta_data_from_disk(path: PathBuf) -> anyhow::Result<GetMetaDataV2> 
 
     GetMetaDataV2::from_ssz_bytes(&fs::read(meta_data_path)?)
         .map_err(|err| anyhow!("Failed to decode meta data: {err:?}"))
+}
+
+pub fn to_multiaddrs(enrs: Vec<Enr>) -> Vec<Multiaddr> {
+    let mut multiaddrs: Vec<Multiaddr> = Vec::new();
+    for enr in enrs {
+        if let Some(peer_id) = crate::network::beacon::Network::peer_id_from_enr(&enr) {
+            if let Some(ip) = enr.ip4()
+                && let Some(tcp) = enr.tcp4()
+            {
+                let mut multiaddr: Multiaddr = ip.into();
+                multiaddr.push(Protocol::Tcp(tcp));
+                multiaddr.push(Protocol::P2p(peer_id));
+                multiaddrs.push(multiaddr);
+            }
+            if let Some(ip6) = enr.ip6()
+                && let Some(tcp6) = enr.tcp6()
+            {
+                let mut multiaddr: Multiaddr = ip6.into();
+                multiaddr.push(Protocol::Tcp(tcp6));
+                multiaddr.push(Protocol::P2p(peer_id));
+                multiaddrs.push(multiaddr);
+            }
+        }
+    }
+    multiaddrs
 }

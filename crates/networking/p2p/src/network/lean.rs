@@ -62,7 +62,7 @@ pub struct LeanNetworkConfig {
 pub struct LeanNetworkService {
     lean_chain: Arc<RwLock<LeanChain>>,
     swarm: Swarm<ReamBehaviour>,
-    peer_table: RwLock<HashMap<PeerId, ConnectionState>>,
+    peer_table: parking_lot::RwLock<HashMap<PeerId, ConnectionState>>,
 }
 
 impl LeanNetworkService {
@@ -136,7 +136,7 @@ impl LeanNetworkService {
         Ok(LeanNetworkService {
             lean_chain,
             swarm,
-            peer_table: RwLock::new(HashMap::new()),
+            peer_table: parking_lot::RwLock::new(HashMap::new()),
         })
     }
 
@@ -172,14 +172,12 @@ impl LeanNetworkService {
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 self.peer_table
                     .write()
-                    .await
                     .insert(peer_id, ConnectionState::Connected);
                 None
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 self.peer_table
                     .write()
-                    .await
                     .insert(peer_id, ConnectionState::Disconnected);
                 None
             }
@@ -208,7 +206,6 @@ impl LeanNetworkService {
                 info!("Dialing peer: {peer_id:?}",);
                 self.peer_table
                     .write()
-                    .await
                     .insert(peer_id, ConnectionState::Connecting);
             }
         }

@@ -1,9 +1,11 @@
 use std::str::FromStr;
 
 use anyhow::anyhow;
-use discv5::{Enr, multiaddr::Protocol};
+use discv5::Enr;
 use libp2p::Multiaddr;
 use ream_network_spec::networks::Network;
+
+use crate::utils::to_multiaddrs;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum Bootnodes {
@@ -86,7 +88,7 @@ impl Bootnodes {
                     serde_yaml::from_str(include_str!("../resources/lean_peers.yaml"))
                         .expect("should deserialize static lean peers");
                 static_peers.extend(enrs.clone());
-                Self::to_multiaddrs(static_peers)
+                to_multiaddrs(static_peers)
             }
             Bootnodes::Multiaddr(multiaddrs) => {
                 let mut static_peers: Vec<Multiaddr> =
@@ -96,30 +98,5 @@ impl Bootnodes {
                 static_peers
             }
         }
-    }
-
-    pub fn to_multiaddrs(enrs: Vec<Enr>) -> Vec<Multiaddr> {
-        let mut multiaddrs: Vec<Multiaddr> = Vec::new();
-        for enr in enrs {
-            if let Some(peer_id) = crate::network::beacon::Network::peer_id_from_enr(&enr) {
-                if let Some(ip) = enr.ip4()
-                    && let Some(tcp) = enr.tcp4()
-                {
-                    let mut multiaddr: Multiaddr = ip.into();
-                    multiaddr.push(Protocol::Tcp(tcp));
-                    multiaddr.push(Protocol::P2p(peer_id));
-                    multiaddrs.push(multiaddr);
-                }
-                if let Some(ip6) = enr.ip6()
-                    && let Some(tcp6) = enr.tcp6()
-                {
-                    let mut multiaddr: Multiaddr = ip6.into();
-                    multiaddr.push(Protocol::Tcp(tcp6));
-                    multiaddr.push(Protocol::P2p(peer_id));
-                    multiaddrs.push(multiaddr);
-                }
-            }
-        }
-        multiaddrs
     }
 }
