@@ -1,10 +1,11 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use anyhow::{Result, anyhow};
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_network_spec::networks::lean_network_spec;
 use tokio::time::{Instant, Interval, MissedTickBehavior, interval_at};
 
-pub fn create_lean_clock_interval() -> anyhow::Result<Interval> {
+pub fn create_lean_clock_interval() -> Result<Interval> {
     let network_spec = lean_network_spec();
     let seconds_per_slot = network_spec.seconds_per_slot;
     let genesis_time = network_spec.genesis_time;
@@ -14,7 +15,7 @@ pub fn create_lean_clock_interval() -> anyhow::Result<Interval> {
     let interval_start = Instant::now()
         + genesis_instant
             .duration_since(SystemTime::now())
-            .map_err(|_| anyhow::anyhow!("Genesis time is in the past"))?;
+            .map_err(|_| anyhow!("Genesis time is in the past"))?;
 
     let mut interval = interval_at(
         interval_start,
