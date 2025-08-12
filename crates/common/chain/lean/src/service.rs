@@ -4,7 +4,7 @@ use alloy_primitives::B256;
 use ream_consensus_lean::{QueueItem, VoteItem, block::Block, process_block};
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{RwLock, mpsc};
-use tracing::info;
+use tracing::{error, info};
 use tree_hash::TreeHash;
 
 use crate::{clock::create_lean_clock_interval, lean_chain::LeanChain, slot::get_current_slot};
@@ -48,7 +48,14 @@ impl LeanChainService {
         info!("LeanChainService started with genesis_time={genesis_time}");
 
         let mut tick_count = 0u64;
-        let mut interval = create_lean_clock_interval().expect("Failed to create clock interval");
+
+        let mut interval = match create_lean_clock_interval() {
+            Ok(interval) => interval,
+            Err(err) => {
+                error!("Failed to create clock interval: {err}");
+                return;
+            }
+        };
 
         loop {
             tokio::select! {

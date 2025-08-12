@@ -7,7 +7,7 @@ use ream_chain_lean::{
 use ream_consensus_lean::{QueueItem, VoteItem};
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{RwLock, mpsc};
-use tracing::info;
+use tracing::{error, info};
 
 // TODO: We need to replace this after PQC integration.
 // For now, we only need ID for keystore.
@@ -63,7 +63,14 @@ impl ValidatorService {
         );
 
         let mut tick_count = 0u64;
-        let mut interval = create_lean_clock_interval().expect("Failed to create clock interval");
+
+        let mut interval = match create_lean_clock_interval() {
+            Ok(interval) => interval,
+            Err(err) => {
+                error!("Failed to create clock interval: {err}");
+                return;
+            }
+        };
 
         loop {
             tokio::select! {
