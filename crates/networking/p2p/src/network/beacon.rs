@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::anyhow;
 use delay_map::{HashMapDelay, HashSetDelay};
-use discv5::{Enr, enr::CombinedPublicKey};
+use discv5::Enr;
 use libp2p::{
     Multiaddr, PeerId, Swarm, SwarmBuilder,
     connection_limits::{self, ConnectionLimits},
@@ -19,7 +19,7 @@ use libp2p::{
     multiaddr::Protocol,
     swarm::{self, ConnectionId, NetworkBehaviour, SwarmEvent},
 };
-use libp2p_identity::{Keypair, PublicKey, secp256k1, secp256k1::PublicKey as Secp256k1PublicKey};
+use libp2p_identity::{Keypair, PublicKey, secp256k1};
 use parking_lot::{Mutex, RwLock};
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
@@ -36,7 +36,7 @@ use crate::{
     config::NetworkConfig,
     constants::{PING_INTERVAL_DURATION, TARGET_PEER_COUNT},
     gossipsub::{GossipsubBehaviour, beacon::topics::GossipTopic, snappy::SnappyTransform},
-    network::misc::{Executor, build_transport},
+    network::misc::{Executor, build_transport, peer_id_from_enr},
     network_state::NetworkState,
     peer::{CachedPeer, ConnectionState, Direction},
     req_resp::{
@@ -274,19 +274,6 @@ impl Network {
     /// Returns the cached peer from the peer table.
     pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
         self.network_state.peer_table.read().get(id).cloned()
-    }
-
-    pub fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
-        match enr.public_key() {
-            CombinedPublicKey::Secp256k1(public_key) => {
-                let encoded_public_key = public_key.to_encoded_point(true);
-                let public_key = Secp256k1PublicKey::try_from_bytes(encoded_public_key.as_bytes())
-                    .ok()?
-                    .into();
-                Some(PeerId::from_public_key(&public_key))
-            }
-            _ => None,
-        }
     }
 
     /// Starts monitoring for network events. The network worker awaits for different types
@@ -540,7 +527,7 @@ impl Network {
                 continue;
             }
 
-            if let Some(peer_id) = Network::peer_id_from_enr(&enr) {
+            if let Some(peer_id) = peer_id_from_enr(&enr) {
                 self.network_state.upsert_peer(
                     peer_id,
                     None,
@@ -886,7 +873,7 @@ mod tests {
         let enr = Enr::builder().build(&enr_key).unwrap();
 
         let expected = PeerId::from_public_key(&libp2p_keypair.public());
-        let actual = Network::peer_id_from_enr(&enr).expect("peer id");
+        let actual = peer_id_from_enr(&enr).expect("peer id");
 
         assert_eq!(expected, actual);
     }
@@ -990,8 +977,8 @@ mod tests {
         let mut network_1 = runtime
             .block_on(create_network(
                 "127.0.0.1".parse::<IpAddr>().unwrap(),
-                9000,
-                9001,
+                9090,
+                9091,
                 vec![],
                 true,
                 gossip_topics.clone(),
@@ -1001,8 +988,8 @@ mod tests {
         let mut network_2 = runtime
             .block_on(create_network(
                 "127.0.0.1".parse::<IpAddr>().unwrap(),
-                9002,
-                9003,
+                9092,
+                9093,
                 vec![network_1_enr],
                 false,
                 gossip_topics.clone(),

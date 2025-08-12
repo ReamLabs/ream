@@ -4,7 +4,7 @@ use actix_web::{HttpResponse, Responder, get, web::Data};
 use discv5::Enr;
 use ream_api_types_beacon::{error::ApiError, responses::DataResponse};
 use ream_p2p::{
-    network::beacon::Network, network_state::NetworkState,
+    network::misc::peer_id_from_enr, network_state::NetworkState,
     req_resp::messages::meta_data::GetMetaDataV2,
 };
 use serde::{Deserialize, Serialize};
@@ -20,7 +20,7 @@ pub struct Identity {
 
 impl Identity {
     pub fn new(enr: Enr, metadata: GetMetaDataV2) -> Self {
-        let peer_id = Network::peer_id_from_enr(&enr).expect("Unable to convert enr to peer id");
+        let peer_id = peer_id_from_enr(&enr).expect("Unable to convert enr to peer id");
         Self {
             peer_id: peer_id.to_string(),
             enr: enr.to_base64(),

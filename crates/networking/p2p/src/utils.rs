@@ -5,7 +5,10 @@ use discv5::{Enr, multiaddr::Protocol};
 use libp2p::Multiaddr;
 use ssz::Decode;
 
-use crate::{constants::MAX_PAYLOAD_SIZE, req_resp::messages::meta_data::GetMetaDataV2};
+use crate::{
+    constants::MAX_PAYLOAD_SIZE, network::misc::peer_id_from_enr,
+    req_resp::messages::meta_data::GetMetaDataV2,
+};
 
 pub const META_DATA_FILE_NAME: &str = "meta_data.ssz";
 
@@ -34,7 +37,7 @@ pub fn read_meta_data_from_disk(path: PathBuf) -> anyhow::Result<GetMetaDataV2> 
 pub fn to_multiaddrs(enrs: Vec<Enr>) -> Vec<Multiaddr> {
     let mut multiaddrs: Vec<Multiaddr> = Vec::new();
     for enr in enrs {
-        if let Some(peer_id) = crate::network::beacon::Network::peer_id_from_enr(&enr) {
+        if let Some(peer_id) = peer_id_from_enr(&enr) {
             if let Some(ip) = enr.ip4()
                 && let Some(tcp) = enr.tcp4()
             {

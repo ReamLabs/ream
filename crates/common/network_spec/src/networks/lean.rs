@@ -8,7 +8,7 @@ use serde::Deserialize;
 /// Static specification of the Lean Chain network.
 pub static LEAN_NETWORK_SPEC: OnceLock<Arc<LeanNetworkSpec>> = OnceLock::new();
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Default)]
 #[serde(rename_all = "UPPERCASE")]
 pub struct LeanNetworkSpec {
     pub genesis_time: u64,

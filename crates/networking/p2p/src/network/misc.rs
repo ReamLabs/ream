@@ -1,5 +1,7 @@
 use std::{io, pin::Pin, time::Duration};
 
+use discv5::Enr;
+use enr::CombinedPublicKey;
 use libp2p::{
     Transport,
     core::{
@@ -12,7 +14,7 @@ use libp2p::{
     tcp::{Config as TcpConfig, tokio::Transport as TcpTransport},
     yamux,
 };
-use libp2p_identity::{Keypair, PeerId};
+use libp2p_identity::{Keypair, PeerId, secp256k1::PublicKey as Secp256k1PublicKey};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use ream_executor::ReamExecutor;
 use yamux::Config as YamuxConfig;
@@ -43,4 +45,17 @@ pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, 
     let transport = DnsTransport::system(transport)?.boxed();
 
     Ok(transport)
+}
+
+pub fn peer_id_from_enr(enr: &Enr) -> Option<PeerId> {
+    match enr.public_key() {
+        CombinedPublicKey::Secp256k1(public_key) => {
+            let encoded_public_key = public_key.to_encoded_point(true);
+            let public_key = Secp256k1PublicKey::try_from_bytes(encoded_public_key.as_bytes())
+                .ok()?
+                .into();
+            Some(PeerId::from_public_key(&public_key))
+        }
+        _ => None,
+    }
 }

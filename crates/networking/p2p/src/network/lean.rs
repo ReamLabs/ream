@@ -16,9 +16,10 @@ use libp2p::{
 };
 use libp2p_identity::{Keypair, PeerId};
 use ream_chain_lean::lean_chain::LeanChain;
+use ream_discv5::lean::LeanDiscoveryConfig;
 use ream_executor::ReamExecutor;
 use tokio::sync::RwLock;
-use tracing::{info, trace, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::{
     bootnodes::Bootnodes,
@@ -52,6 +53,7 @@ pub enum ReamNetworkEvent {
 
 pub struct LeanNetworkConfig {
     pub gossipsub_config: LeanGossipsubConfig,
+    pub discovery_config: LeanDiscoveryConfig,
 }
 
 /// NetworkService is responsible for the following:
@@ -140,13 +142,28 @@ impl LeanNetworkService {
         })
     }
 
-    pub async fn start(mut self, peer_config: Bootnodes) -> anyhow::Result<()> {
+    pub async fn start(
+        mut self,
+        peer_config: Bootnodes,
+        config: LeanDiscoveryConfig,
+    ) -> anyhow::Result<()> {
         info!("LeanNetworkService started");
         info!(
             "Current LeanChain head: {}",
             self.lean_chain.read().await.head
         );
 
+        let mut multi_addr: Multiaddr = config.socket_address.into();
+        multi_addr.push(Protocol::Tcp(config.socket_port));
+
+        match self.swarm.listen_on(multi_addr.clone()) {
+            Ok(listener_id) => {
+                info!("Listening on {multi_addr:?}: {listener_id:?} ");
+            }
+            Err(err) => {
+                error!("Failed to start libp2p peer listen on {multi_addr:?}, error: {err:?}",);
+            }
+        }
         self.connect_to_peers(peer_config.get_static_lean_peers())
             .await;
         loop {
@@ -165,20 +182,35 @@ impl LeanNetworkService {
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {
         match event {
-            SwarmEvent::Behaviour(_) => match None {
-                Some(ReamBehaviourEvent::Identify(_)) => None,
-                _ => None,
-            },
+            SwarmEvent::Behaviour(_) => None,
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 self.peer_table
                     .write()
                     .insert(peer_id, ConnectionState::Connected);
+                info!("Connected to peer: {peer_id:?}");
                 None
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 self.peer_table
                     .write()
                     .insert(peer_id, ConnectionState::Disconnected);
+                info!("Disconnected from peer: {peer_id:?}");
+                None
+            }
+            SwarmEvent::IncomingConnection {
+                local_addr,
+                send_back_addr,
+                ..
+            } => {
+                info!("Incoming connection from {send_back_addr:?} to {local_addr:?}");
+                None
+            }
+            SwarmEvent::Dialing { peer_id, .. } => {
+                info!("Dialing {peer_id:?}");
+                None
+            }
+            SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                warn!("Failed to connect to {peer_id:?}: {error:?}");
                 None
             }
             _ => None,
@@ -209,5 +241,97 @@ impl LeanNetworkService {
                     .insert(peer_id, ConnectionState::Connecting);
             }
         }
+    }
+}
+
+#[allow(unused_imports)]
+mod tests {
+    use std::{
+        net::Ipv4Addr,
+        num::{NonZeroU8, NonZeroUsize},
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
+
+    use futures::StreamExt;
+    use libp2p::{
+        Multiaddr, SwarmBuilder, connection_limits, identify, identity,
+        multiaddr::Protocol,
+        swarm::{NetworkBehaviour, SwarmEvent},
+    };
+    use libp2p_identity::secp256k1::Keypair;
+    use ream_chain_lean::lean_chain::LeanChain;
+    use ream_network_spec::networks::{LeanNetworkSpec, Network, set_lean_network_spec};
+    use tokio::time::timeout;
+    use tracing::info;
+
+    use super::*;
+    use crate::{bootnodes::Bootnodes, network::misc::build_transport};
+
+    #[tokio::test]
+    async fn test_two_lean_nodes_connection() -> anyhow::Result<()> {
+        tracing_subscriber::fmt::init();
+
+        set_lean_network_spec(LeanNetworkSpec::default().into());
+
+        let lean_chain1 = Arc::new(RwLock::new(LeanChain::default()));
+        let lean_chain2 = Arc::new(RwLock::new(LeanChain::default()));
+
+        let executor1 = ReamExecutor::new();
+        let executor2 = ReamExecutor::new();
+
+        let config1 = Arc::new(LeanNetworkConfig {
+            gossipsub_config: LeanGossipsubConfig::default(),
+            discovery_config: LeanDiscoveryConfig {
+                socket_address: Ipv4Addr::new(127, 0, 0, 1).into(),
+                socket_port: 9000,
+                ..Default::default()
+            },
+        });
+
+        let config2 = Arc::new(LeanNetworkConfig {
+            gossipsub_config: LeanGossipsubConfig::default(),
+            discovery_config: LeanDiscoveryConfig {
+                socket_address: Ipv4Addr::new(127, 0, 0, 1).into(),
+                socket_port: 9001,
+                ..Default::default()
+            },
+        });
+
+        let node1 =
+            LeanNetworkService::new(config1.clone(), lean_chain1, executor1.unwrap()).await?;
+
+        let node2 =
+            LeanNetworkService::new(config2.clone(), lean_chain2, executor2.unwrap()).await?;
+
+        let node1_peer_id = *node1.swarm.local_peer_id();
+
+        let mut node1_addr: Multiaddr = config1.discovery_config.socket_address.into();
+        node1_addr.push(Protocol::Tcp(config1.discovery_config.socket_port));
+        node1_addr.push(Protocol::P2p(node1_peer_id));
+
+        let node1_handle = tokio::spawn(async move {
+            let bootnodes = Bootnodes::Default;
+
+            node1
+                .start(bootnodes, config1.discovery_config.clone())
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let node2_handle = tokio::spawn(async move {
+            let bootnodes = Bootnodes::Multiaddr(vec![node1_addr]);
+
+            node2
+                .start(bootnodes, config2.discovery_config.clone())
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        node1_handle.abort();
+        node2_handle.abort();
+
+        Ok(())
     }
 }
