@@ -15,7 +15,7 @@ pub fn create_lean_clock_interval() -> anyhow::Result<Interval> {
     let interval_start = Instant::now()
         + genesis_instant
             .duration_since(SystemTime::now())
-            .map_err(|_| anyhow!("Genesis time is in the past"))?;
+            .map_err(|err| anyhow!("Genesis time is in the past: {err}"))?;
 
     let mut interval = interval_at(
         interval_start,
