@@ -5758,6 +5758,7 @@ dependencies = [
 name = "ream-validator-lean"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "ream-chain-lean",
  "ream-consensus-lean",
  "ream-consensus-misc",

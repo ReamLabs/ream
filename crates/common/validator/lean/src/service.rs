@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use ream_chain_lean::{
     clock::create_lean_clock_interval, lean_chain::LeanChain, service::LeanChainServiceMessage,
     slot::get_current_slot,
@@ -7,7 +8,7 @@ use ream_chain_lean::{
 use ream_consensus_lean::{QueueItem, VoteItem};
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{RwLock, mpsc};
-use tracing::{error, info};
+use tracing::info;
 
 // TODO: We need to replace this after PQC integration.
 // For now, we only need ID for keystore.
@@ -54,7 +55,7 @@ impl ValidatorService {
         }
     }
 
-    pub async fn start(self) {
+    pub async fn start(self) -> anyhow::Result<()> {
         let genesis_time = lean_network_spec().genesis_time;
 
         info!(
@@ -64,13 +65,8 @@ impl ValidatorService {
 
         let mut tick_count = 0u64;
 
-        let mut interval = match create_lean_clock_interval() {
-            Ok(interval) => interval,
-            Err(err) => {
-                error!("Failed to create clock interval: {err}");
-                return;
-            }
-        };
+        let mut interval = create_lean_clock_interval()
+            .map_err(|err| anyhow!("Failed to create clock interval: {err}"))?;
 
         loop {
             tokio::select! {

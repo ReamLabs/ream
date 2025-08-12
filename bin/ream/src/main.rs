@@ -160,7 +160,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
 
     // Start the services concurrently.
     let chain_future = executor.spawn(async move {
-        chain_service.start().await;
+        if let Err(err) = chain_service.start().await {
+            panic!("Chain service exited with error: {err}");
+        }
     });
     let network_future = executor.spawn(async move {
         if let Err(err) = network_service.start().await {
@@ -168,7 +170,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         }
     });
     let validator_future = executor.spawn(async move {
-        validator_service.start().await;
+        if let Err(err) = validator_service.start().await {
+            panic!("Validator service exited with error: {err}");
+        }
     });
 
     tokio::select! {
