@@ -13,12 +13,11 @@ pub fn create_lean_clock_interval() -> anyhow::Result<Interval> {
             .duration_since(SystemTime::now())
             .map_err(|err| anyhow!("Genesis time is in the past: {err}"))?;
 
-    Ok({
-        let mut interval = interval_at(
-            interval_start,
-            Duration::from_secs(lean_network_spec().seconds_per_slot / INTERVALS_PER_SLOT),
-        );
-        interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
-        interval
-    })
+    let mut interval = interval_at(
+        interval_start,
+        Duration::from_secs(lean_network_spec().seconds_per_slot / INTERVALS_PER_SLOT),
+    );
+    interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
+
+    Ok(interval)
 }
