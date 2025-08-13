@@ -56,11 +56,10 @@ impl ValidatorService {
     }
 
     pub async fn start(self) -> anyhow::Result<()> {
-        let genesis_time = lean_network_spec().genesis_time;
-
         info!(
-            "ValidatorService started with {} validator(s), genesis_time={genesis_time}",
-            self.keystores.len()
+            "ValidatorService started with {} validator(s), genesis_time={}",
+            self.keystores.len(),
+            lean_network_spec().genesis_time
         );
 
         let mut tick_count = 0u64;
