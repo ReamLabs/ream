@@ -35,6 +35,7 @@ tokio-io-timeout = "1"
 tokio-util.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber.workspace = true
+tracing-test.workspace = true
 tree_hash.workspace = true
 unsigned-varint = { version = "0.8", features = ["codec"] }
 

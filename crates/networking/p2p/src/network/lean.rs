@@ -250,14 +250,14 @@ mod tests {
     use libp2p::{Multiaddr, multiaddr::Protocol};
     use ream_chain_lean::lean_chain::LeanChain;
     use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
+    use tracing_test::traced_test;
 
     use super::*;
     use crate::bootnodes::Bootnodes;
 
     #[tokio::test]
+    #[traced_test]
     async fn test_two_lean_nodes_connection() -> anyhow::Result<()> {
-        tracing_subscriber::fmt::init();
-
         set_lean_network_spec(LeanNetworkSpec::default().into());
 
         let lean_chain1 = Arc::new(RwLock::new(LeanChain::default()));
@@ -295,13 +295,6 @@ mod tests {
             let bootnodes = Bootnodes::Default;
 
             node1.start(bootnodes).await.unwrap();
-
-            tokio::time::sleep(Duration::from_secs(2)).await;
-
-            let binding = node1.peer_table.read();
-            let peer = binding.get(&node2_peer_id).unwrap();
-            assert_eq!(peer, &ConnectionState::Connected);
-            assert_eq!(binding.len(), 1);
         });
 
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -310,17 +303,22 @@ mod tests {
             let bootnodes = Bootnodes::Multiaddr(vec![node1_addr]);
 
             node2.start(bootnodes).await.unwrap();
-
-            tokio::time::sleep(Duration::from_secs(2)).await;
-
-            let binding = node2.peer_table.read();
-            let peer = binding.get(&node1_peer_id).unwrap();
-            assert_eq!(peer, &ConnectionState::Connected);
-            assert_eq!(binding.len(), 1);
         });
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
 
         node1_handle.abort();
         node2_handle.abort();
+
+        assert!(logs_contain(&format!(
+            "Dialing peer: PeerId(\"{node1_peer_id}\")"
+        )));
+        assert!(logs_contain(&format!(
+            "Connected to peer: PeerId(\"{node1_peer_id}\")"
+        )));
+        assert!(logs_contain(&format!(
+            "Connected to peer: PeerId(\"{node2_peer_id}\")"
+        )));
 
         Ok(())
     }
