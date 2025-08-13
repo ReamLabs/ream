@@ -57,7 +57,7 @@ impl ValidatorService {
 
     pub async fn start(self) -> anyhow::Result<()> {
         info!(
-            "ValidatorService started with {} validator(s), genesis_time={}",
+            "ValidatorService started with {} validator(s), genesis_time: {}",
             self.keystores.len(),
             lean_network_spec().genesis_time
         );
