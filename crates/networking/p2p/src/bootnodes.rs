@@ -32,22 +32,22 @@ impl FromStr for Bootnodes {
                     return Ok(Bootnodes::Custom(enrs));
                 }
 
-                if let Ok(addrs) = s
+                if let Ok(addresses) = s
                     .split(',')
                     .map(Multiaddr::from_str)
                     .collect::<Result<Vec<_>, _>>()
                 {
-                    return Ok(Bootnodes::Multiaddr(addrs));
+                    return Ok(Bootnodes::Multiaddr(addresses));
                 }
 
-                Err(anyhow!("Failed to parse bootnodes as ENR or Multiaddr"))
+                Err(anyhow!("Failed to parse {s} as ENR or Multiaddr"))
             }
         }
     }
 }
 
 impl Bootnodes {
-    pub fn to_enrs(self, network: Network) -> Vec<Enr> {
+    pub fn to_enrs_beacon(self, network: Network) -> Vec<Enr> {
         let bootnodes: Vec<Enr> = match network {
             Network::Mainnet => {
                 serde_yaml::from_str(include_str!("../resources/bootnodes_mainnet.yaml"))
@@ -76,7 +76,7 @@ impl Bootnodes {
         }
     }
 
-    pub fn get_static_lean_peers(&self) -> Vec<Multiaddr> {
+    pub fn to_multiaddrs_lean(&self) -> Vec<Multiaddr> {
         match self {
             Bootnodes::Default => {
                 serde_yaml::from_str(include_str!("../resources/lean_peers.yaml"))
@@ -87,8 +87,8 @@ impl Bootnodes {
                 let mut static_peers: Vec<Enr> =
                     serde_yaml::from_str(include_str!("../resources/lean_peers.yaml"))
                         .expect("should deserialize static lean peers");
-                static_peers.extend(enrs.clone());
-                to_multiaddrs(static_peers)
+                static_peers.extend(enrs.iter().cloned());
+                to_multiaddrs(&static_peers)
             }
             Bootnodes::Multiaddr(multiaddrs) => {
                 let mut static_peers: Vec<Multiaddr> =

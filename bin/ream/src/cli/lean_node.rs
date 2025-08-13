@@ -4,7 +4,7 @@ use clap::Parser;
 use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
 
-use crate::cli::constants::{DEFAULT_DISCOVERY_PORT, DEFAULT_SOCKET_ADDRESS, DEFAULT_SOCKET_PORT};
+use crate::cli::constants::{DEFAULT_SOCKET_ADDRESS, DEFAULT_SOCKET_PORT};
 
 use crate::cli::constants::{DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT};
 

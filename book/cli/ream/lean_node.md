@@ -19,8 +19,6 @@ Options:
           Set P2P socket address [default: 0.0.0.0]
       --socket-port <SOCKET_PORT>
           Set P2P socket port (TCP) [default: 9000]
-      --discovery-port <DISCOVERY_PORT>
-          Discovery 5 listening port (UDP) [default: 9000]
   -h, --help
           Print help
 ```

@@ -24,7 +24,6 @@ use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
 };
-use ream_discv5::lean::LeanDiscoveryConfig;
 use ream_executor::ReamExecutor;
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::{
@@ -126,17 +125,12 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
     // TODO 1: Load keystores from the config.
     let chain_service =
         LeanChainService::new(lean_chain.clone(), chain_receiver, chain_sender.clone()).await;
-    let gossipsub_config = LeanGossipsubConfig::default();
-    let discovery_config = LeanDiscoveryConfig::new(
-        config.socket_address,
-        config.socket_port,
-        config.discovery_port,
-    );
 
-    let network_service = LeanNetworkService::new(
+    let mut network_service = LeanNetworkService::new(
         Arc::new(LeanNetworkConfig {
-            gossipsub_config,
-            discovery_config: discovery_config.clone(),
+            gossipsub_config: LeanGossipsubConfig::default(),
+            socket_address: config.socket_address,
+            socket_port: config.socket_port,
         }),
         lean_chain.clone(),
         executor.clone(),
@@ -160,10 +154,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         }
     });
     let network_future = executor.spawn(async move {
-        if let Err(err) = network_service
-            .start(config.bootnodes, discovery_config)
-            .await
-        {
+        if let Err(err) = network_service.start(config.bootnodes).await {
             panic!("Network service exited with error: {err}");
         }
     });

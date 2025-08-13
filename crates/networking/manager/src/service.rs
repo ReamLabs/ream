@@ -69,7 +69,7 @@ impl NetworkManagerService {
 
         let bootnodes = config
             .bootnodes
-            .to_enrs(beacon_network_spec().network.clone());
+            .to_enrs_beacon(beacon_network_spec().network.clone());
         let discv5_config = DiscoveryConfig {
             discv5_config,
             bootnodes,

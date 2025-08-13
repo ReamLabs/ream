@@ -34,10 +34,10 @@ pub fn read_meta_data_from_disk(path: PathBuf) -> anyhow::Result<GetMetaDataV2> 
         .map_err(|err| anyhow!("Failed to decode meta data: {err:?}"))
 }
 
-pub fn to_multiaddrs(enrs: Vec<Enr>) -> Vec<Multiaddr> {
+pub fn to_multiaddrs(enrs: &[Enr]) -> Vec<Multiaddr> {
     let mut multiaddrs: Vec<Multiaddr> = Vec::new();
     for enr in enrs {
-        if let Some(peer_id) = peer_id_from_enr(&enr) {
+        if let Some(peer_id) = peer_id_from_enr(enr) {
             if let Some(ip) = enr.ip4()
                 && let Some(tcp) = enr.tcp4()
             {
