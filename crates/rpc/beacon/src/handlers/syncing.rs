@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use actix_web::{HttpResponse, Responder, get, web::Data};
-use ream_beacon_api_types::{
+use ream_api_types_beacon::{
     error::ApiError,
     responses::{DataResponse, EXECUTION_OPTIMISTIC},
     sync::SyncStatus,

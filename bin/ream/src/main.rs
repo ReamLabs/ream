@@ -16,7 +16,7 @@ use ream::cli::{
     validator_node::ValidatorNodeConfig,
     voluntary_exit::VoluntaryExitConfig,
 };
-use ream_beacon_api_types::id::{ID, ValidatorID};
+use ream_api_types_beacon::id::{ID, ValidatorID};
 use ream_chain_lean::{
     genesis as lean_genesis,
     lean_chain::LeanChain,
@@ -181,7 +181,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
             panic!("Validator service exited with error: {err}");
         }
     });
-
     let http_future =
         executor.spawn(async move { start_lean_server(server_config, lean_chain).await });
 

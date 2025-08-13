@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use alloy_primitives::B256;
 use anyhow::{Ok, anyhow};
-use ream_beacon_api_types::responses::{ETH_CONSENSUS_VERSION_HEADER, VERSION};
+use ream_api_types_beacon::responses::{ETH_CONSENSUS_VERSION_HEADER, VERSION};
 use ream_bls::PublicKey;
 use ream_consensus_beacon::electra::blinded_beacon_block::SignedBlindedBeaconBlock;
 use reqwest::StatusCode;

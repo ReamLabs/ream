@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, bail};
-use ream_beacon_api_types::{
+use ream_api_types_beacon::{
     error::ValidatorError,
     id::{ID, ValidatorID},
     validator::ValidatorStatus,

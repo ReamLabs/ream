@@ -6,7 +6,7 @@ use actix_web::{
 };
 use discv5::Enr;
 use libp2p::{Multiaddr, PeerId};
-use ream_beacon_api_types::{error::ApiError, responses::DataResponse};
+use ream_api_types_beacon::{error::ApiError, responses::DataResponse};
 use ream_p2p::{
     network_state::NetworkState,
     peer::{ConnectionState, Direction},

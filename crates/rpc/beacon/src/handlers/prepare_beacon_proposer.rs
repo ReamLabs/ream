@@ -4,7 +4,7 @@ use actix_web::{
     HttpResponse, Responder, post,
     web::{Data, Json},
 };
-use ream_beacon_api_types::{error::ApiError, request::PrepareBeaconProposerItem};
+use ream_api_types_beacon::{error::ApiError, request::PrepareBeaconProposerItem};
 use ream_fork_choice::store::Store;
 use ream_operation_pool::OperationPool;
 use ream_storage::db::ReamDB;

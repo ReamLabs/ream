@@ -1068,7 +1068,7 @@ dependencies = [
  "anyhow",
  "ethereum_ssz",
  "ethereum_ssz_derive",
- "ream-beacon-api-types",
+ "ream-api-types-beacon",
  "ream-consensus-beacon",
  "ream-consensus-misc",
  "serde",
@@ -5160,7 +5160,7 @@ dependencies = [
  "hashbrown 0.15.3",
  "rand 0.8.5",
  "ream-account-manager",
- "ream-beacon-api-types",
+ "ream-api-types-beacon",
  "ream-chain-lean",
  "ream-checkpoint-sync",
  "ream-consensus-beacon",
@@ -5197,7 +5197,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-beacon-api-types"
+name = "ream-api-types-beacon"
 version = "0.1.0"
 dependencies = [
  "actix-web",
@@ -5214,6 +5214,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.12",
  "url",
+]
+
+[[package]]
+name = "ream-api-types-lean"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5465,26 +5477,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-lean-api-types"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "alloy-primitives",
- "anyhow",
- "ethereum_serde_utils",
- "ethereum_ssz",
- "ethereum_ssz_derive",
- "ream-bls",
- "ream-consensus-lean",
- "ream-consensus-misc",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.12",
- "url",
-]
-
-[[package]]
 name = "ream-light-client"
 version = "0.1.0"
 dependencies = [
@@ -5667,7 +5659,7 @@ dependencies = [
  "hashbrown 0.15.3",
  "libp2p",
  "parking_lot",
- "ream-beacon-api-types",
+ "ream-api-types-beacon",
  "ream-bls",
  "ream-consensus-beacon",
  "ream-consensus-misc",
@@ -5692,35 +5684,12 @@ name = "ream-rpc-lean"
 version = "0.1.0"
 dependencies = [
  "actix-web",
- "actix-web-lab",
- "alloy-primitives",
- "discv5",
- "ethereum_serde_utils",
- "ethereum_ssz",
- "ethereum_ssz_derive",
- "hashbrown 0.15.3",
- "libp2p",
  "parking_lot",
- "ream-beacon-api-types",
- "ream-bls",
+ "ream-api-types-beacon",
+ "ream-api-types-lean",
  "ream-chain-lean",
- "ream-consensus-beacon",
- "ream-consensus-misc",
- "ream-execution-engine",
- "ream-fork-choice",
- "ream-lean-api-types",
- "ream-light-client",
- "ream-network-spec",
- "ream-node",
- "ream-operation-pool",
- "ream-p2p",
- "serde",
- "serde_json",
- "ssz_types",
- "thiserror 2.0.12",
  "tokio",
  "tracing",
- "tree_hash",
 ]
 
 [[package]]
@@ -5787,7 +5756,7 @@ dependencies = [
  "ethereum_ssz_derive",
  "eventsource-client",
  "futures",
- "ream-beacon-api-types",
+ "ream-api-types-beacon",
  "ream-bls",
  "ream-consensus-beacon",
  "ream-consensus-misc",

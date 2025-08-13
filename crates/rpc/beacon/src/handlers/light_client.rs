@@ -3,7 +3,7 @@ use actix_web::{
     web::{Data, Path, Query},
 };
 use alloy_primitives::B256;
-use ream_beacon_api_types::{
+use ream_api_types_beacon::{
     error::ApiError,
     responses::{
         DataVersionedResponse, ETH_CONSENSUS_VERSION_HEADER, JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE,

@@ -4,7 +4,7 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
-use ream_beacon_api_types::{
+use ream_api_types_beacon::{
     error::ApiError,
     id::{ID, ValidatorID},
     query::{AttestationQuery, IdQuery, StatusQuery},

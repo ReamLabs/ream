@@ -1,5 +1,5 @@
 [package]
-name = "ream-beacon-api-types"
+name = "ream-api-types-beacon"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true

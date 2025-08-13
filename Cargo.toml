@@ -116,7 +116,8 @@ url = "2.5"
 
 # ream dependencies
 ream-account-manager = { path = "crates/account_manager" }
-ream-beacon-api-types = { path = "crates/common/api_types/beacon" }
+ream-api-types-beacon = { path = "crates/common/api_types/beacon" }
+ream-api-types-lean = { path = "crates/common/api_types/lean" }
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
 ream-chain-beacon = { path = "crates/common/chain/beacon" }
 ream-chain-lean = { path = "crates/common/chain/lean" }
@@ -129,7 +130,6 @@ ream-execution-engine = { path = "crates/common/execution_engine" }
 ream-executor = { path = "crates/common/executor" }
 ream-fork-choice = { path = "crates/common/fork_choice" }
 ream-keystore = { path = "crates/crypto/keystore" }
-ream-lean-api-types = { path = "crates/common/api_types/lean" }
 ream-light-client = { path = "crates/common/light_client" }
 ream-merkle = { path = "crates/crypto/merkle" }
 ream-network-manager = { path = "crates/networking/manager" }

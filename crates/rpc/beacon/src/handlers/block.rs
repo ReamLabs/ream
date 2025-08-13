@@ -3,7 +3,7 @@ use actix_web::{
     web::{Data, Json, Path},
 };
 use alloy_primitives::B256;
-use ream_beacon_api_types::{
+use ream_api_types_beacon::{
     error::ApiError,
     id::{ID, ValidatorID},
     responses::{

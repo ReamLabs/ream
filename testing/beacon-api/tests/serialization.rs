@@ -4,7 +4,7 @@ use std::{
 };
 
 use alloy_primitives::b256;
-use ream_beacon_api_types::responses::BeaconVersionedResponse;
+use ream_api_types_beacon::responses::BeaconVersionedResponse;
 use ream_consensus_beacon::electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
 use serde_json::Value;
 

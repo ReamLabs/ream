@@ -5,7 +5,7 @@ use actix_web::{
     web::{Data, Path},
 };
 use hashbrown::HashMap;
-use ream_beacon_api_types::{
+use ream_api_types_beacon::{
     error::ApiError,
     id::ID,
     responses::{

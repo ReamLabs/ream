@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use actix_web::{HttpResponse, Responder, get, web::Data};
 use discv5::Enr;
-use ream_beacon_api_types::{error::ApiError, responses::DataResponse};
+use ream_api_types_beacon::{error::ApiError, responses::DataResponse};
 use ream_p2p::{
     network::beacon::Network, network_state::NetworkState,
     req_resp::messages::meta_data::GetMetaDataV2,

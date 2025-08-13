@@ -28,7 +28,7 @@ tracing.workspace = true
 tree_hash.workspace = true
 
 #ream-dependencies
-ream-beacon-api-types.workspace = true
+ream-api-types-beacon.workspace = true
 ream-bls.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true

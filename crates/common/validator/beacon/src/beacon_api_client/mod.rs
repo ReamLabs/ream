@@ -9,7 +9,7 @@ use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
-use ream_beacon_api_types::{
+use ream_api_types_beacon::{
     block::{BroadcastValidation, FullBlockData, ProduceBlockData, ProduceBlockResponse},
     committee::BeaconCommitteeSubscription,
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},

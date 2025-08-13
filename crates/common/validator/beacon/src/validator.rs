@@ -9,7 +9,7 @@ use std::{
 use alloy_primitives::Address;
 use anyhow::{anyhow, bail};
 use futures::future::try_join_all;
-use ream_beacon_api_types::{
+use ream_api_types_beacon::{
     block::{BroadcastValidation, ProduceBlockData},
     duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     id::{ID, ValidatorID},

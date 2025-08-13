@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use actix_web::{HttpResponse, Responder, get};
 use alloy_primitives::{Address, aliases::B32};
-use ream_beacon_api_types::{error::ApiError, responses::DataResponse};
+use ream_api_types_beacon::{error::ApiError, responses::DataResponse};
 use ream_consensus_misc::constants::beacon::{
     DOMAIN_AGGREGATE_AND_PROOF, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX,
 };

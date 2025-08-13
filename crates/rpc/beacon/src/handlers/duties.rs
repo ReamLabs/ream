@@ -2,7 +2,7 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path},
 };
-use ream_beacon_api_types::{
+use ream_api_types_beacon::{
     duties::{AttesterDuty, ProposerDuty},
     error::ApiError,
     id::ID,

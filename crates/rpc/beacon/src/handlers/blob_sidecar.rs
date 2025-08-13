@@ -3,7 +3,7 @@ use actix_web::{
     web::{Data, Path},
 };
 use actix_web_lab::extract::Query;
-use ream_beacon_api_types::{
+use ream_api_types_beacon::{
     error::ApiError, id::ID, query::BlobSidecarQuery, responses::BeaconVersionedResponse,
 };
 use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
