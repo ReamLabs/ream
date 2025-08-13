@@ -6,22 +6,19 @@ use ream_network_spec::networks::lean_network_spec;
 use tokio::time::{Instant, Interval, MissedTickBehavior, interval_at};
 
 pub fn create_lean_clock_interval() -> anyhow::Result<Interval> {
-    let network_spec = lean_network_spec();
-    let seconds_per_slot = network_spec.seconds_per_slot;
-    let genesis_time = network_spec.genesis_time;
-
-    let genesis_instant = UNIX_EPOCH + Duration::from_secs(genesis_time);
+    let genesis_instant = UNIX_EPOCH + Duration::from_secs(lean_network_spec().genesis_time);
 
     let interval_start = Instant::now()
         + genesis_instant
             .duration_since(SystemTime::now())
             .map_err(|err| anyhow!("Genesis time is in the past: {err}"))?;
 
-    let mut interval = interval_at(
-        interval_start,
-        Duration::from_secs(seconds_per_slot / INTERVALS_PER_SLOT),
-    );
-    interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
-
-    Ok(interval)
+    Ok({
+        let mut interval = interval_at(
+            interval_start,
+            Duration::from_secs(lean_network_spec().seconds_per_slot / INTERVALS_PER_SLOT),
+        );
+        interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
+        interval
+    })
 }

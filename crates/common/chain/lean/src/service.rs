@@ -44,9 +44,10 @@ impl LeanChainService {
     }
 
     pub async fn start(mut self) -> anyhow::Result<()> {
-        let genesis_time = lean_network_spec().genesis_time;
-
-        info!("LeanChainService started with genesis_time={genesis_time}");
+        info!(
+            "LeanChainService started with genesis_time: {}",
+            lean_network_spec().genesis_time
+        );
 
         let mut tick_count = 0u64;
 
