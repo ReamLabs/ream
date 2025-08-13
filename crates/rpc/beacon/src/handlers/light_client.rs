@@ -13,7 +13,8 @@ use ream_api_types_beacon::{
 use ream_consensus_misc::constants::beacon::{EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SLOTS_PER_EPOCH};
 use ream_light_client::{
     bootstrap::LightClientBootstrap, finality_update::LightClientFinalityUpdate,
-    header::LightClientHeader, update::LightClientUpdate,
+    header::LightClientHeader, optimistic_update::LightClientOptimisticUpdate,
+    update::LightClientUpdate,
 };
 use ream_storage::{
     db::ReamDB,
@@ -281,6 +282,80 @@ pub async fn get_light_client_finality_update(
             .content_type(JSON_CONTENT_TYPE)
             .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
             .json(DataVersionedResponse::new(finality_update)),
+    };
+
+    Ok(response)
+}
+
+#[get("/beacon/light_client/optimistic_update")]
+pub async fn get_light_client_optimistic_update(
+    db: Data<ReamDB>,
+    http_request: HttpRequest,
+) -> Result<impl Responder, ApiError> {
+    // Get the latest head block root from the latest slot
+    let latest_slot = db
+        .slot_index_provider()
+        .get_highest_slot()
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get latest slot, error: {err:?}"))
+        })?
+        .ok_or_else(|| ApiError::NotFound("Light client optimistic update unavailable".into()))?;
+
+    let head_block_root = db
+        .slot_index_provider()
+        .get(latest_slot)
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get block root for latest slot, error: {err:?}"
+            ))
+        })?
+        .ok_or_else(|| ApiError::NotFound("Light client optimistic update unavailable".into()))?;
+
+    // Get the head block
+    let head_block = db
+        .beacon_block_provider()
+        .get(head_block_root)
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get head block, error: {err:?}"))
+        })?
+        .ok_or_else(|| ApiError::NotFound("Light client optimistic update unavailable".into()))?;
+
+    // Get the attested block (parent of head block)
+    let attested_block = db
+        .beacon_block_provider()
+        .get(head_block.message.parent_root)
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get attested block, error: {err:?}"))
+        })?
+        .ok_or_else(|| ApiError::NotFound("Light client optimistic update unavailable".into()))?;
+
+    // Create the optimistic update
+    let attested_header = LightClientHeader::new(&attested_block).map_err(|err| {
+        ApiError::InternalError(format!(
+            "Failed to create attested light client header: {err:?}"
+        ))
+    })?;
+
+    let optimistic_update = LightClientOptimisticUpdate {
+        attested_header,
+        sync_aggregate: head_block.message.body.sync_aggregate,
+        signature_slot: head_block.message.slot,
+    };
+
+    // Check Accept header for response format
+    let response = match http_request
+        .headers()
+        .get("accept")
+        .and_then(|header| header.to_str().ok())
+    {
+        Some(SSZ_CONTENT_TYPE) => HttpResponse::Ok()
+            .content_type(SSZ_CONTENT_TYPE)
+            .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
+            .body(optimistic_update.as_ssz_bytes()),
+        _ => HttpResponse::Ok()
+            .content_type(JSON_CONTENT_TYPE)
+            .insert_header((ETH_CONSENSUS_VERSION_HEADER, VERSION))
+            .json(DataVersionedResponse::new(optimistic_update)),
     };
 
     Ok(response)

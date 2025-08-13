@@ -9,7 +9,8 @@ use crate::handlers::{
     committee::get_committees,
     header::{get_headers, get_headers_from_block},
     light_client::{
-        get_light_client_bootstrap, get_light_client_finality_update, get_light_client_updates,
+        get_light_client_bootstrap, get_light_client_finality_update,
+        get_light_client_optimistic_update, get_light_client_updates,
     },
     pool::{
         get_bls_to_execution_changes, get_voluntary_exits, post_bls_to_execution_changes,
@@ -58,6 +59,7 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(get_light_client_bootstrap)
         .service(get_light_client_updates)
         .service(get_light_client_finality_update)
+        .service(get_light_client_optimistic_update)
         .service(get_blind_block)
         .service(post_validator_liveness);
 }
