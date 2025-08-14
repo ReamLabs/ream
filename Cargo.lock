@@ -2139,8 +2139,18 @@ dependencies = [
 [[package]]
 name = "ethereum_hashing"
 version = "0.7.0"
-source = "git+https://github.com/ReamLabs/ethereum_hashing.git#26e19aedff4d5bd5fd2c0923c7fbafdc8a8c0821"
+source = "git+https://github.com/ReamLabs/ethereum_hashing.git?rev=c14a9ad96436e6b8b631faf49a3666e4558b71ae"
 dependencies = [
+ "ring",
+ "sha2 0.10.8",
+]
+
+[[package]]
+name = "ethereum_hashing"
+version = "0.7.0"
+source = "git+https://github.com/ReamLabs/ethereum_hashing.git#c14a9ad96436e6b8b631faf49a3666e4558b71ae"
+dependencies = [
+ "ring",
  "sha2 0.10.8",
 ]
 
@@ -5301,7 +5311,7 @@ dependencies = [
  "alloy-rlp",
  "anyhow",
  "async-trait",
- "ethereum_hashing",
+ "ethereum_hashing 0.7.0 (git+https://github.com/ReamLabs/ethereum_hashing.git?rev=c14a9ad96436e6b8b631faf49a3666e4558b71ae)",
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
@@ -5328,7 +5338,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
- "ethereum_hashing",
+ "ethereum_hashing 0.7.0 (git+https://github.com/ReamLabs/ethereum_hashing.git?rev=c14a9ad96436e6b8b631faf49a3666e4558b71ae)",
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "ream-consensus-misc",
@@ -5347,7 +5357,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "anyhow",
- "ethereum_hashing",
+ "ethereum_hashing 0.7.0 (git+https://github.com/ReamLabs/ethereum_hashing.git?rev=c14a9ad96436e6b8b631faf49a3666e4558b71ae)",
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
@@ -5424,7 +5434,7 @@ dependencies = [
  "alloy-rlp",
  "anyhow",
  "async-trait",
- "ethereum_hashing",
+ "ethereum_hashing 0.7.0 (git+https://github.com/ReamLabs/ethereum_hashing.git?rev=c14a9ad96436e6b8b631faf49a3666e4558b71ae)",
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
@@ -5486,7 +5496,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
- "ethereum_hashing",
+ "ethereum_hashing 0.7.0 (git+https://github.com/ReamLabs/ethereum_hashing.git?rev=c14a9ad96436e6b8b631faf49a3666e4558b71ae)",
  "serde",
 ]
 
@@ -5602,7 +5612,7 @@ dependencies = [
  "alloy-rlp",
  "anyhow",
  "async-trait",
- "ethereum_hashing",
+ "ethereum_hashing 0.7.0 (git+https://github.com/ReamLabs/ethereum_hashing.git?rev=c14a9ad96436e6b8b631faf49a3666e4558b71ae)",
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
@@ -5728,7 +5738,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-beacon",
  "anyhow",
- "ethereum_hashing",
+ "ethereum_hashing 0.7.0 (git+https://github.com/ReamLabs/ethereum_hashing.git?rev=c14a9ad96436e6b8b631faf49a3666e4558b71ae)",
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
@@ -7178,7 +7188,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee44f4cef85f88b4dea21c0b1f58320bdf35715cf56d840969487cff00613321"
 dependencies = [
  "alloy-primitives",
- "ethereum_hashing",
+ "ethereum_hashing 0.7.0 (git+https://github.com/ReamLabs/ethereum_hashing.git)",
  "ethereum_ssz",
  "smallvec",
  "typenum",

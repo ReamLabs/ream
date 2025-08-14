@@ -73,7 +73,7 @@ delay_map = "0.4.1"
 directories = { version = "6.0.0" }
 discv5 = { version = "0.9.0", features = ["libp2p"] }
 enr = "0.13.0"
-ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }
+ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git", rev = "c14a9ad96436e6b8b631faf49a3666e4558b71ae" }
 ethereum_serde_utils = "0.8"
 ethereum_ssz = "0.9"
 ethereum_ssz_derive = "0.9"
