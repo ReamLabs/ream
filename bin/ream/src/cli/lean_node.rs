@@ -1,12 +1,13 @@
-use std::{net::IpAddr, {net::IpAddr, sync::Arc}};
+use std::{net::IpAddr, sync::Arc};
 
 use clap::Parser;
 use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
 
-use crate::cli::constants::{DEFAULT_SOCKET_ADDRESS, DEFAULT_SOCKET_PORT};
-
-use crate::cli::constants::{DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT};
+use crate::cli::constants::{
+    DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_SOCKET_ADDRESS,
+    DEFAULT_SOCKET_PORT,
+};
 
 #[derive(Debug, Parser)]
 pub struct LeanNodeConfig {
@@ -33,9 +34,6 @@ pub struct LeanNodeConfig {
 
     #[arg(long, help = "Set P2P socket port (TCP)", default_value_t = DEFAULT_SOCKET_PORT)]
     pub socket_port: u16,
-
-    #[arg(long, help = "Discovery 5 listening port (UDP)", default_value_t = DEFAULT_DISCOVERY_PORT)]
-    pub discovery_port: u16,
 
     #[arg(long, help = "Set HTTP address", default_value_t = DEFAULT_HTTP_ADDRESS)]
     pub http_address: IpAddr,

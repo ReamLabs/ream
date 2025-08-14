@@ -83,20 +83,8 @@ impl Bootnodes {
                     .expect("should deserialize static lean peers")
             }
             Bootnodes::None => vec![],
-            Bootnodes::Custom(enrs) => {
-                let mut static_peers: Vec<Enr> =
-                    serde_yaml::from_str(include_str!("../resources/lean_peers.yaml"))
-                        .expect("should deserialize static lean peers");
-                static_peers.extend(enrs.iter().cloned());
-                to_multiaddrs(&static_peers)
-            }
-            Bootnodes::Multiaddr(multiaddrs) => {
-                let mut static_peers: Vec<Multiaddr> =
-                    serde_yaml::from_str(include_str!("../resources/lean_peers.yaml"))
-                        .expect("should deserialize static lean peers");
-                static_peers.extend(multiaddrs.clone());
-                static_peers
-            }
+            Bootnodes::Custom(enrs) => to_multiaddrs(enrs),
+            Bootnodes::Multiaddr(multiaddrs) => multiaddrs.to_vec(),
         }
     }
 }

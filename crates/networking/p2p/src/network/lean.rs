@@ -16,10 +16,11 @@ use libp2p::{
     swarm::{Config, NetworkBehaviour, Swarm, SwarmEvent},
 };
 use libp2p_identity::{Keypair, PeerId};
+use parking_lot::RwLock as ParkingRwLock;
 use ream_chain_lean::lean_chain::LeanChain;
 use ream_executor::ReamExecutor;
 use tokio::sync::RwLock;
-use tracing::{error, info, trace, warn};
+use tracing::{info, trace, warn};
 
 use crate::{
     bootnodes::Bootnodes,
@@ -66,7 +67,7 @@ pub struct LeanNetworkService {
     lean_chain: Arc<RwLock<LeanChain>>,
     network_config: Arc<LeanNetworkConfig>,
     swarm: Swarm<ReamBehaviour>,
-    peer_table: parking_lot::RwLock<HashMap<PeerId, ConnectionState>>,
+    peer_table: ParkingRwLock<HashMap<PeerId, ConnectionState>>,
 }
 
 impl LeanNetworkService {
@@ -137,38 +138,40 @@ impl LeanNetworkService {
                 .build()
         };
 
-        Ok(LeanNetworkService {
+        let mut lean_network_service = LeanNetworkService {
             lean_chain,
             network_config,
             swarm,
-            peer_table: parking_lot::RwLock::new(HashMap::new()),
-        })
+            peer_table: ParkingRwLock::new(HashMap::new()),
+        };
+
+        let mut multi_addr: Multiaddr = lean_network_service.network_config.socket_address.into();
+        multi_addr.push(Protocol::Tcp(
+            lean_network_service.network_config.socket_port,
+        ));
+
+        lean_network_service
+            .swarm
+            .listen_on(multi_addr.clone())
+            .map_err(|err| {
+                anyhow!("Failed to start libp2p peer listen on {multi_addr:?}, error: {err:?}")
+            })?;
+
+        Ok(lean_network_service)
     }
 
-    pub async fn start(&mut self, peer_config: Bootnodes) -> anyhow::Result<()> {
+    pub async fn start(&mut self, bootnodes: Bootnodes) -> anyhow::Result<()> {
         info!("LeanNetworkService started");
         info!(
             "Current LeanChain head: {}",
             self.lean_chain.read().await.head
         );
 
-        let mut multi_addr: Multiaddr = self.network_config.socket_address.into();
-        multi_addr.push(Protocol::Tcp(self.network_config.socket_port));
-
-        match self.swarm.listen_on(multi_addr.clone()) {
-            Ok(listener_id) => {
-                info!("Listening on {multi_addr:?}: {listener_id:?} ");
-            }
-            Err(err) => {
-                error!("Failed to start libp2p peer listen on {multi_addr:?}, error: {err:?}",);
-            }
-        }
-        self.connect_to_peers(peer_config.to_multiaddrs_lean())
-            .await;
+        self.connect_to_peers(bootnodes.to_multiaddrs_lean()).await;
         loop {
             tokio::select! {
                 Some(event) = self.swarm.next() => {
-                    if let Some(event) = self.parse_lean_swarm_event(event).await {
+                    if let Some(event) = self.parse_swarm_event(event).await {
                         info!("Swarm event: {event:?}");
                     }
                 }
@@ -176,7 +179,7 @@ impl LeanNetworkService {
         }
     }
 
-    async fn parse_lean_swarm_event(
+    async fn parse_swarm_event(
         &mut self,
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {
@@ -219,20 +222,14 @@ impl LeanNetworkService {
     async fn connect_to_peers(&mut self, peers: Vec<Multiaddr>) {
         trace!("Discovered peers: {peers:?}");
         for peer in peers {
-            let mut successfully_dialed = false;
             if let Err(err) = self.swarm.dial(peer.clone()) {
                 warn!("Failed to dial peer: {err:?}");
-            } else {
-                successfully_dialed = true;
-            }
-
-            if !successfully_dialed {
-                trace!("Failed to dial any multiaddr for peer: {peer:?}");
                 continue;
             }
 
-            if let Some(Protocol::P2p(peer_id)) =
-                peer.iter().find(|p| matches!(p, Protocol::P2p(_)))
+            if let Some(Protocol::P2p(peer_id)) = peer
+                .iter()
+                .find(|protocol| matches!(protocol, Protocol::P2p(_)))
             {
                 info!("Dialing peer: {peer_id:?}",);
                 self.peer_table

@@ -126,6 +126,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
     let chain_service =
         LeanChainService::new(lean_chain.clone(), chain_receiver, chain_sender.clone()).await;
 
+    // Starts the network service by listening on the specified socket address and port.
     let mut network_service = LeanNetworkService::new(
         Arc::new(LeanNetworkConfig {
             gossipsub_config: LeanGossipsubConfig::default(),
