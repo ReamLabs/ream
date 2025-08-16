@@ -5326,6 +5326,7 @@ dependencies = [
  "anyhow",
  "ream-consensus-lean",
  "ream-consensus-misc",
+ "ream-metrics-lean",
  "ream-network-spec",
  "ream-pqc",
  "serde",

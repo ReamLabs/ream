@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 4s
+  scrape_timeout: 4s
+  evaluation_interval: 10s
+
+# scrape configuration for trin hosts and the prometheus/grafana instance itself
+scrape_configs:
+  # Node exporter metrics
+  - job_name: "lean_node"
+    static_configs:
+      - targets:
+        - host.docker.internal:8080
+        - localhost:8080
+        labels:
+          instance: local_node
+    fallback_scrape_protocol: PrometheusText0.0.4
