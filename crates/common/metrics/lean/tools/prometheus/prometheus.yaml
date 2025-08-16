@@ -3,9 +3,7 @@ global:
   scrape_timeout: 4s
   evaluation_interval: 10s
 
-# scrape configuration for trin hosts and the prometheus/grafana instance itself
 scrape_configs:
-  # Node exporter metrics
   - job_name: "lean_node"
     static_configs:
       - targets:
