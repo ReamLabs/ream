@@ -6,7 +6,7 @@ use ream_p2p::bootnodes::Bootnodes;
 
 use crate::cli::constants::{
     DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_SOCKET_ADDRESS,
-    DEFAULT_SOCKET_PORT,
+    DEFAULT_SOCKET_PORT, DEFAULT_METRICS_ADDRESS, DEFAULT_METRICS_ENABLED, DEFAULT_METRICS_PORT,
 };
 
 #[derive(Debug, Parser)]
@@ -43,4 +43,13 @@ pub struct LeanNodeConfig {
 
     #[arg(long, default_value_t = DEFAULT_HTTP_ALLOW_ORIGIN)]
     pub http_allow_origin: bool,
+
+    #[arg(long = "metrics", default_value_t = DEFAULT_METRICS_ENABLED)]
+    pub enable_metrics: bool,
+
+    #[arg(long, help = "Set metrics address", default_value_t = DEFAULT_METRICS_ADDRESS)]
+    pub metrics_address: IpAddr,
+
+    #[arg(long, help = "Set metrics port", default_value_t = DEFAULT_METRICS_PORT)]
+    pub metrics_port: u16,
 }
