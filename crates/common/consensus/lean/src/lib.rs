@@ -8,10 +8,7 @@ use std::collections::HashMap;
 
 use alloy_primitives::B256;
 use anyhow::anyhow;
-use ream_metrics_lean::{
-    FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, PROCESS_BLOCK_TIME, PROCESS_VOTE_TIME,
-    set_int_gauge_vec, start_timer_vec, stop_timer,
-};
+use ream_metrics_lean::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, helpers::set_int_gauge_vec};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -51,7 +48,6 @@ pub fn is_justifiable_slot(finalized_slot: &u64, candidate_slot: &u64) -> bool {
 /// Given a state, output the new state after processing that block
 pub fn process_block(pre_state: &LeanState, block: &Block) -> anyhow::Result<LeanState> {
     set_int_gauge_vec(&HEAD_SLOT, block.slot as i64, &[]);
-    let timer = start_timer_vec(&PROCESS_BLOCK_TIME, &["process_block"]);
 
     let mut state = pre_state.clone();
 
@@ -80,8 +76,6 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> anyhow::Result<Lea
 
     // Process votes
     for vote in &block.votes {
-        let process_vote_timer = start_timer_vec(&PROCESS_VOTE_TIME, &["process_vote"]);
-
         // Ignore votes whose source is not already justified,
         // or whose target is not in the history, or whose target is not a
         // valid justifiable slot
@@ -120,10 +114,8 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> anyhow::Result<Lea
                 set_int_gauge_vec(&FINALIZED_SLOT, state.latest_finalized.slot as i64, &[]);
             }
         }
-        stop_timer(process_vote_timer);
     }
 
-    stop_timer(timer);
     Ok(state)
 }
 
