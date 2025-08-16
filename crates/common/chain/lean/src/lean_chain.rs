@@ -6,6 +6,10 @@ use ream_consensus_lean::{
     block::Block, checkpoint::Checkpoint, get_fork_choice_head, get_latest_justified_hash,
     is_justifiable_slot, process_block, state::LeanState, vote::Vote,
 };
+use ream_metrics_lean::{
+    PROPOSE_BLOCK_TIME,
+    helpers::{start_timer_vec, stop_timer},
+};
 use ssz_types::VariableList;
 use tree_hash::TreeHash;
 
@@ -96,8 +100,8 @@ impl LeanChain {
     }
 
     pub fn propose_block(&mut self) -> anyhow::Result<Block> {
+        let initialize_block_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
         let new_slot = get_current_slot();
-
         let head_state = self
             .post_states
             .get(&self.head)
@@ -109,9 +113,12 @@ impl LeanChain {
             // Diverged from Python implementation: Using `B256::ZERO` instead of `None`)
             state_root: B256::ZERO,
         };
+        stop_timer(initialize_block_timer);
+
         let mut state: LeanState;
 
         // Keep attempt to add valid votes from the list of available votes
+        let add_votes_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_votes_to_block"]);
         loop {
             state = process_block(head_state, &new_block)?;
 
@@ -134,11 +141,21 @@ impl LeanChain {
                     .map_err(|err| anyhow!("Failed to add vote to new_block: {err:?}"))?;
             }
         }
+        stop_timer(add_votes_timer);
 
+        // Compute the state root
+        let compute_state_root_timer =
+            start_timer_vec(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
         new_block.state_root = state.tree_hash_root();
+        stop_timer(compute_state_root_timer);
 
+        // Compute the block root
+        let compute_block_root_timer =
+            start_timer_vec(&PROPOSE_BLOCK_TIME, &["compute_block_root"]);
         let digest = new_block.tree_hash_root();
+        stop_timer(compute_block_root_timer);
 
+        // Saves block and state to the internal view
         self.chain.insert(digest, new_block.clone());
         self.post_states.insert(digest, state);
 

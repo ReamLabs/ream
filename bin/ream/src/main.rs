@@ -1,5 +1,7 @@
 use std::{
-    env, process,
+    env,
+    net::SocketAddr,
+    process,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -112,6 +114,16 @@ fn main() {
 /// Besides the shared state, each service holds the channels to communicate with each other.
 pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
     info!("starting up lean node...");
+
+    // Initialize prometheus metrics
+    if config.enable_metrics {
+        let address = SocketAddr::new(config.metrics_address, config.metrics_port);
+        prometheus_exporter::start(address).expect("Failed to start prometheus exporter");
+        info!(
+            "Metrics started on {}:{}",
+            config.metrics_address, config.metrics_port
+        );
+    }
 
     set_lean_network_spec(config.network);
 

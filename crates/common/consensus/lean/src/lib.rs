@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 use alloy_primitives::B256;
 use anyhow::anyhow;
+use ream_metrics_lean::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, helpers::set_int_gauge_vec};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -46,6 +47,8 @@ pub fn is_justifiable_slot(finalized_slot: &u64, candidate_slot: &u64) -> bool {
 
 /// Given a state, output the new state after processing that block
 pub fn process_block(pre_state: &LeanState, block: &Block) -> anyhow::Result<LeanState> {
+    set_int_gauge_vec(&HEAD_SLOT, block.slot as i64, &[]);
+
     let mut state = pre_state.clone();
 
     // Track historical blocks in the state
@@ -96,6 +99,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> anyhow::Result<Lea
             state.latest_justified.root = vote.target.root;
             state.latest_justified.slot = vote.target.slot;
             state.justified_slots[vote.target.slot as usize] = true;
+            set_int_gauge_vec(&JUSTIFIED_SLOT, state.latest_justified.slot as i64, &[]);
 
             state.remove_justifications(&vote.target.root)?;
 
@@ -107,6 +111,7 @@ pub fn process_block(pre_state: &LeanState, block: &Block) -> anyhow::Result<Lea
             if is_target_next_valid_justifiable_slot {
                 state.latest_finalized.root = vote.source.root;
                 state.latest_finalized.slot = vote.source.slot;
+                set_int_gauge_vec(&FINALIZED_SLOT, state.latest_finalized.slot as i64, &[]);
             }
         }
     }
