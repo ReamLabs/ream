@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use alloy_primitives::{Address, B256};
+use alloy_primitives::{Address, B256, map::HashSet};
 use parking_lot::RwLock;
 use ream_consensus_beacon::{
-    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
-    voluntary_exit::SignedVoluntaryExit,
+    attester_slashing::AttesterSlashing, bls_to_execution_change::SignedBLSToExecutionChange,
+    electra::beacon_state::BeaconState, voluntary_exit::SignedVoluntaryExit,
 };
 use tree_hash::TreeHash;
 
@@ -19,6 +19,7 @@ pub struct OperationPool {
     signed_voluntary_exits: RwLock<HashMap<u64, SignedVoluntaryExit>>,
     signed_bls_to_execution_changes: RwLock<HashMap<B256, SignedBLSToExecutionChange>>,
     proposer_preparations: RwLock<HashMap<u64, ProposerPreparation>>,
+    attester_slashings: RwLock<HashSet<AttesterSlashing>>,
 }
 
 impl OperationPool {
@@ -104,6 +105,14 @@ impl OperationPool {
             // They persist through the epoch of submission and for 2 more epochs after that
             current_epoch <= preparation.submission_epoch + 2
         });
+    }
+
+    pub fn insert_attester_slashing(&self, slashing: AttesterSlashing) {
+        self.attester_slashings.write().insert(slashing);
+    }
+
+    pub fn get_all_attester_slashings(&self) -> Vec<AttesterSlashing> {
+        self.attester_slashings.read().iter().cloned().collect()
     }
 }
 
