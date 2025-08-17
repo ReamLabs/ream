@@ -25,6 +25,8 @@ Options:
           Set HTTP Port [default: 5052]
       --http-allow-origin
 
+      --enable-quic
+          Enable QUIC
   -h, --help
           Print help
 ```

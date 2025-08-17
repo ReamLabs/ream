@@ -2,6 +2,7 @@ use std::{io, pin::Pin, time::Duration};
 
 use discv5::Enr;
 use enr::CombinedPublicKey;
+use futures::future::Either;
 use libp2p::{
     Transport,
     core::{
@@ -27,7 +28,10 @@ impl libp2p::swarm::Executor for Executor {
     }
 }
 
-pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, StreamMuxerBox)>> {
+pub fn build_transport(
+    local_private_key: Keypair,
+    quic_support: bool,
+) -> io::Result<Boxed<(PeerId, StreamMuxerBox)>> {
     // mplex config
     let mut mplex_config = MplexConfig::new();
     mplex_config.set_max_buffer_size(256);
@@ -40,7 +44,20 @@ pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, 
         .authenticate(NoiseConfig::new(&local_private_key).expect("Noise disabled"))
         .multiplex(SelectUpgrade::new(yamux_config, mplex_config))
         .timeout(Duration::from_secs(10));
-    let transport = tcp.boxed();
+
+    let transport = if quic_support {
+        let quic_config = libp2p::quic::Config::new(&local_private_key);
+        let quic = libp2p::quic::tokio::Transport::new(quic_config);
+        let transport = tcp
+            .or_transport(quic)
+            .map(|either_output, _| match either_output {
+                Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
+                Either::Right((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
+            });
+        transport.boxed()
+    } else {
+        tcp.boxed()
+    };
 
     let transport = DnsTransport::system(transport)?.boxed();
 
