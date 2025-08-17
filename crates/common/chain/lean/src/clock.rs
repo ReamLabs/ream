@@ -11,7 +11,16 @@ pub fn create_lean_clock_interval() -> anyhow::Result<Interval> {
     let interval_start = Instant::now()
         + genesis_instant
             .duration_since(SystemTime::now())
-            .map_err(|err| anyhow!("Genesis time is in the past: {err}"))?;
+            .map_err(|err| {
+                anyhow!(format!(
+                    "Genesis time is {:?} but should be greater than {:?}: {err}",
+                    lean_network_spec().genesis_time,
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                ))
+            })?;
 
     let mut interval = interval_at(
         interval_start,
