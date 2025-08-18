@@ -56,7 +56,7 @@ pub async fn get_peer_count(
     Ok(HttpResponse::Ok().json(DataResponse::new(peer_count)))
 }
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Default, Debug, Clone, Serialize)]
 pub struct PeerCount {
     #[serde(with = "serde_utils::quoted_u64")]
     pub disconnected: u64,

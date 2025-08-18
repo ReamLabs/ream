@@ -209,8 +209,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
             panic!("Validator service exited with error: {err}");
         }
     });
-    let http_future = executor
-        .spawn(async move { start_lean_server(server_config, lean_chain_reader, peer_table).await });
+    let http_future = executor.spawn(async move {
+        start_lean_server(server_config, lean_chain_reader, peer_table).await
+    });
 
     tokio::select! {
         _ = chain_future => {

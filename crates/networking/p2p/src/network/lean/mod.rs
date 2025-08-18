@@ -16,7 +16,7 @@ use libp2p::{
     swarm::{Config, NetworkBehaviour, Swarm, SwarmEvent},
 };
 use libp2p_identity::{Keypair, PeerId};
-use parking_lot::RwLock as ParkingRwLock;
+use parking_lot::Mutex;
 use ream_chain_lean::{
     lean_chain::LeanChainReader, messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest,
 };
@@ -79,7 +79,7 @@ pub struct LeanNetworkService {
     lean_chain: LeanChainReader,
     network_config: Arc<LeanNetworkConfig>,
     swarm: Swarm<ReamBehaviour>,
-    peer_table: Arc<ParkingRwLock<HashMap<PeerId, ConnectionState>>>,
+    peer_table: Arc<Mutex<HashMap<PeerId, ConnectionState>>>,
     chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
     outbound_p2p_request: UnboundedReceiver<LeanP2PRequest>,
 }
@@ -152,7 +152,7 @@ impl LeanNetworkService {
             lean_chain,
             network_config: network_config.clone(),
             swarm,
-            peer_table: Arc::new(ParkingRwLock::new(HashMap::new())),
+            peer_table: Arc::new(Mutex::new(HashMap::new())),
             chain_message_sender,
             outbound_p2p_request,
         };
@@ -260,15 +260,17 @@ impl LeanNetworkService {
             }
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 self.peer_table
-                    .write()
+                    .lock()
                     .insert(peer_id, ConnectionState::Connected);
+
                 info!("Connected to peer: {peer_id:?}");
                 None
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 self.peer_table
-                    .write()
+                    .lock()
                     .insert(peer_id, ConnectionState::Disconnected);
+
                 info!("Disconnected from peer: {peer_id:?}");
                 Some(ReamNetworkEvent::PeerDisconnected(peer_id))
             }
@@ -346,13 +348,13 @@ impl LeanNetworkService {
             {
                 info!("Dialing peer: {peer_id:?}",);
                 self.peer_table
-                    .write()
+                    .lock()
                     .insert(peer_id, ConnectionState::Connecting);
             }
         }
     }
 
-    pub fn peer_table(&self) -> Arc<ParkingRwLock<HashMap<PeerId, ConnectionState>>> {
+    pub fn peer_table(&self) -> Arc<Mutex<HashMap<PeerId, ConnectionState>>> {
         self.peer_table.clone()
     }
 
