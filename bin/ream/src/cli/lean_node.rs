@@ -32,7 +32,7 @@ pub struct LeanNodeConfig {
     #[arg(long, help = "Set P2P socket address", default_value_t = DEFAULT_SOCKET_ADDRESS)]
     pub socket_address: IpAddr,
 
-    #[arg(long, help = "Set P2P socket port (TCP)", default_value_t = DEFAULT_SOCKET_PORT)]
+    #[arg(long, help = "Set P2P socket port (QUIC)", default_value_t = DEFAULT_SOCKET_PORT)]
     pub socket_port: u16,
 
     #[arg(long, help = "Set HTTP address", default_value_t = DEFAULT_HTTP_ADDRESS)]

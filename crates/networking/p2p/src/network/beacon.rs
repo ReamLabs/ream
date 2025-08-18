@@ -166,7 +166,7 @@ impl Network {
             }
         };
 
-        let transport = build_transport(Keypair::from(local_key.clone()), false)
+        let transport = build_transport(Keypair::from(local_key.clone()))
             .map_err(|err| anyhow!("Failed to build transport: {err:?}"))?;
 
         let swarm = {

@@ -135,7 +135,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         }),
         lean_chain.clone(),
         executor.clone(),
-        true,
     )
     .await
     .expect("Failed to create network service");

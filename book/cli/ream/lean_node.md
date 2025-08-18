@@ -18,7 +18,7 @@ Options:
       --socket-address <SOCKET_ADDRESS>
           Set P2P socket address [default: 0.0.0.0]
       --socket-port <SOCKET_PORT>
-          Set P2P socket port (TCP) [default: 9000]
+          Set P2P socket port (QUIC) [default: 9000]
       --http-address <HTTP_ADDRESS>
           Set HTTP address [default: 127.0.0.1]
       --http-port <HTTP_PORT>

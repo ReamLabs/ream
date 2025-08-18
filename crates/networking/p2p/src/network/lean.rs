@@ -27,7 +27,7 @@ use crate::{
     gossipsub::{
         GossipsubBehaviour, lean::configurations::LeanGossipsubConfig, snappy::SnappyTransform,
     },
-    network::misc::{Executor, build_transport},
+    network::misc::Executor,
     peer::ConnectionState,
 };
 
@@ -75,7 +75,6 @@ impl LeanNetworkService {
         network_config: Arc<LeanNetworkConfig>,
         lean_chain: Arc<RwLock<LeanChain>>,
         executor: ReamExecutor,
-        enable_quic: bool,
     ) -> anyhow::Result<Self> {
         let connection_limits = {
             let limits = ConnectionLimits::default()
@@ -118,23 +117,16 @@ impl LeanNetworkService {
             }
         };
 
-        let transport = build_transport(local_key.clone(), enable_quic)
-            .map_err(|err| anyhow!("Failed to build transport: {err:?}"))?;
-
         let swarm = {
             let config = Config::with_executor(Executor(executor))
                 .with_notify_handler_buffer_size(NonZeroUsize::new(7).expect("Not zero"))
                 .with_per_connection_event_buffer_size(4)
                 .with_dial_concurrency_factor(NonZeroU8::new(1).unwrap());
 
-            let builder = SwarmBuilder::with_existing_identity(local_key.clone())
+            SwarmBuilder::with_existing_identity(local_key.clone())
                 .with_tokio()
-                .with_other_transport(|_key| transport)
-                .expect("initializing swarm");
-
-            builder
-                .with_behaviour(|_| behaviour)
-                .expect("initializing swarm")
+                .with_quic()
+                .with_behaviour(|_| behaviour)?
                 .with_swarm_config(|_| config)
                 .build()
         };
@@ -147,16 +139,10 @@ impl LeanNetworkService {
         };
 
         let mut multi_addr: Multiaddr = lean_network_service.network_config.socket_address.into();
-        if enable_quic {
-            multi_addr.push(Protocol::Udp(
-                lean_network_service.network_config.socket_port,
-            ));
-            multi_addr.push(Protocol::QuicV1);
-        } else {
-            multi_addr.push(Protocol::Tcp(
-                lean_network_service.network_config.socket_port,
-            ));
-        }
+        multi_addr.push(Protocol::Udp(
+            lean_network_service.network_config.socket_port,
+        ));
+        multi_addr.push(Protocol::QuicV1);
         info!("Listening on {multi_addr:?}");
 
         lean_network_service
@@ -270,7 +256,6 @@ mod tests {
     }
 
     pub async fn setup_lean_node(
-        quic: bool,
         socket_port: u16,
     ) -> anyhow::Result<(LeanNetworkService, Multiaddr)> {
         ensure_network_spec_init();
@@ -282,8 +267,7 @@ mod tests {
             socket_address: Ipv4Addr::new(127, 0, 0, 1).into(),
             socket_port,
         });
-        let node =
-            LeanNetworkService::new(config.clone(), lean_chain, executor.unwrap(), quic).await?;
+        let node = LeanNetworkService::new(config.clone(), lean_chain, executor.unwrap()).await?;
         let multi_addr: Multiaddr = config.socket_address.into();
         Ok((node, multi_addr))
     }
@@ -295,8 +279,8 @@ mod tests {
         let socket_port1 = 9000;
         let socket_port2 = 9001;
 
-        let (mut node1, mut node1_addr) = setup_lean_node(true, socket_port1).await?;
-        let (mut node2, _) = setup_lean_node(true, socket_port2).await?;
+        let (mut node1, mut node1_addr) = setup_lean_node(socket_port1).await?;
+        let (mut node2, _) = setup_lean_node(socket_port2).await?;
 
         let node1_peer_id = node1.local_peer_id();
         let node2_peer_id = node2.local_peer_id();

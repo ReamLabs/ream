@@ -27,10 +27,7 @@ impl libp2p::swarm::Executor for Executor {
     }
 }
 
-pub fn build_transport(
-    local_private_key: Keypair,
-    quic_support: bool,
-) -> io::Result<Boxed<(PeerId, StreamMuxerBox)>> {
+pub fn build_transport(local_private_key: Keypair) -> io::Result<Boxed<(PeerId, StreamMuxerBox)>> {
     // mplex config
     let mut mplex_config = MplexConfig::new();
     mplex_config.set_max_buffer_size(256);
@@ -43,15 +40,7 @@ pub fn build_transport(
         .authenticate(NoiseConfig::new(&local_private_key).expect("Noise disabled"))
         .multiplex(SelectUpgrade::new(yamux_config, mplex_config))
         .timeout(Duration::from_secs(10));
-
-    let transport = if quic_support {
-        let quic_config = libp2p::quic::Config::new(&local_private_key);
-        let quic = libp2p::quic::tokio::Transport::new(quic_config);
-        let transport = quic.map(|output, _| (output.0, StreamMuxerBox::new(output.1)));
-        transport.boxed()
-    } else {
-        tcp.boxed()
-    };
+    let transport = tcp.boxed();
 
     let transport = DnsTransport::system(transport)?.boxed();
 
