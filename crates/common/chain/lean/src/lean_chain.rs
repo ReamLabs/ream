@@ -6,7 +6,7 @@ use ream_consensus_lean::{
     block::Block, checkpoint::Checkpoint, get_fork_choice_head, get_latest_justified_hash,
     is_justifiable_slot, process_block, state::LeanState, vote::Vote,
 };
-use ream_metrics_lean::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
+use ream_metrics::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
 use ssz_types::VariableList;
 use tree_hash::TreeHash;
 

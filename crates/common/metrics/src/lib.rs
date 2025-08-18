@@ -30,7 +30,6 @@ lazy_static::lazy_static! {
     );
 }
 
-
 /// Create a new gauge metric
 pub fn create_int_gauge_vec(name: &str, help: &str, label_names: &[&str]) -> IntGaugeVec {
     let registry = default_registry();
