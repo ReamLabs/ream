@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use alloy_primitives::B256;
 use anyhow::anyhow;
-use ream_metrics_lean::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, helpers::set_int_gauge_vec};
+use ream_metrics_lean::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
 use serde::{Deserialize, Serialize};
 
 use crate::{
