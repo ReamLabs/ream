@@ -16,13 +16,6 @@ Simply start docker compose in this `metrics/` folder:
 docker compose up
 ```
 
-If you'd like to run the metrics as part of the overall docker compose stack, you may define the parent's `compose.override.yml` file to include this metrics' `compose.yml` file in an override:
-
-```shell
-# Metrics is included in the compose.override-example.yml file
-cp compose.override-example.yml compose.override.yml
-```
-
 ## Enable metrics on lean node
 
 Don't forget to run the lean node with metrics exporting on. Example:
@@ -30,7 +23,6 @@ Don't forget to run the lean node with metrics exporting on. Example:
 ```bash
 cargo run --release lean_node --network ephemery --metrics
 ```
-
 
 ## View the Dashboard
 
