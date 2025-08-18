@@ -43,7 +43,4 @@ pub struct LeanNodeConfig {
 
     #[arg(long, default_value_t = DEFAULT_HTTP_ALLOW_ORIGIN)]
     pub http_allow_origin: bool,
-
-    #[arg(long, help = "Enable QUIC")]
-    pub enable_quic: bool,
 }

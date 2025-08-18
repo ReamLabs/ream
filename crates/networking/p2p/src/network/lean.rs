@@ -288,60 +288,12 @@ mod tests {
         Ok((node, multi_addr))
     }
 
-    // Test to check connection between 2 TCP lean nodes
-    #[tokio::test]
-    #[traced_test]
-    async fn test_two_tcp_lean_nodes_connection() -> anyhow::Result<()> {
-        let socket_port1 = 9000;
-        let socket_port2 = 9001;
-
-        let (mut node1, mut node1_addr) = setup_lean_node(false, socket_port1).await?;
-        let (mut node2, _) = setup_lean_node(false, socket_port2).await?;
-
-        let node1_peer_id = node1.local_peer_id();
-        let node2_peer_id = node2.local_peer_id();
-
-        node1_addr.push(Protocol::Tcp(socket_port1));
-        node1_addr.push(Protocol::P2p(node1_peer_id));
-
-        let node1_handle = tokio::spawn(async move {
-            let bootnodes = Bootnodes::Default;
-
-            node1.start(bootnodes).await.unwrap();
-        });
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let node2_handle = tokio::spawn(async move {
-            let bootnodes = Bootnodes::Multiaddr(vec![node1_addr]);
-
-            node2.start(bootnodes).await.unwrap();
-        });
-
-        tokio::time::sleep(Duration::from_secs(2)).await;
-
-        node1_handle.abort();
-        node2_handle.abort();
-
-        assert!(logs_contain(&format!(
-            "Dialing peer: PeerId(\"{node1_peer_id}\")"
-        )));
-        assert!(logs_contain(&format!(
-            "Connected to peer: PeerId(\"{node1_peer_id}\")"
-        )));
-        assert!(logs_contain(&format!(
-            "Connected to peer: PeerId(\"{node2_peer_id}\")"
-        )));
-
-        Ok(())
-    }
-
     // Test to check connection between 2 QUIC lean nodes
     #[tokio::test]
     #[traced_test]
     async fn test_two_quic_lean_nodes_connection() -> anyhow::Result<()> {
-        let socket_port1 = 9002;
-        let socket_port2 = 9003;
+        let socket_port1 = 9000;
+        let socket_port2 = 9001;
 
         let (mut node1, mut node1_addr) = setup_lean_node(true, socket_port1).await?;
         let (mut node2, _) = setup_lean_node(true, socket_port2).await?;
@@ -351,54 +303,6 @@ mod tests {
 
         node1_addr.push(Protocol::Udp(socket_port1));
         node1_addr.push(Protocol::QuicV1);
-        node1_addr.push(Protocol::P2p(node1_peer_id));
-
-        let node1_handle = tokio::spawn(async move {
-            let bootnodes = Bootnodes::Default;
-
-            node1.start(bootnodes).await.unwrap();
-        });
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let node2_handle = tokio::spawn(async move {
-            let bootnodes = Bootnodes::Multiaddr(vec![node1_addr]);
-
-            node2.start(bootnodes).await.unwrap();
-        });
-
-        tokio::time::sleep(Duration::from_secs(2)).await;
-
-        node1_handle.abort();
-        node2_handle.abort();
-
-        assert!(logs_contain(&format!(
-            "Dialing peer: PeerId(\"{node1_peer_id}\")"
-        )));
-        assert!(logs_contain(&format!(
-            "Connected to peer: PeerId(\"{node1_peer_id}\")"
-        )));
-        assert!(logs_contain(&format!(
-            "Connected to peer: PeerId(\"{node2_peer_id}\")"
-        )));
-
-        Ok(())
-    }
-
-    // Test to check connection between 1 TCP lean node and 1 QUIC lean node
-    #[tokio::test]
-    #[traced_test]
-    async fn test_quic_tcp_lean_nodes_connection() -> anyhow::Result<()> {
-        let socket_port1 = 9004;
-        let socket_port2 = 9005;
-
-        let (mut node1, mut node1_addr) = setup_lean_node(false, socket_port1).await?;
-        let (mut node2, _) = setup_lean_node(true, socket_port2).await?;
-
-        let node1_peer_id = node1.local_peer_id();
-        let node2_peer_id = node2.local_peer_id();
-
-        node1_addr.push(Protocol::Tcp(socket_port1));
         node1_addr.push(Protocol::P2p(node1_peer_id));
 
         let node1_handle = tokio::spawn(async move {

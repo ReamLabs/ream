@@ -2,7 +2,6 @@ use std::{io, pin::Pin, time::Duration};
 
 use discv5::Enr;
 use enr::CombinedPublicKey;
-use futures::future::Either;
 use libp2p::{
     Transport,
     core::{
@@ -48,12 +47,7 @@ pub fn build_transport(
     let transport = if quic_support {
         let quic_config = libp2p::quic::Config::new(&local_private_key);
         let quic = libp2p::quic::tokio::Transport::new(quic_config);
-        let transport = tcp
-            .or_transport(quic)
-            .map(|either_output, _| match either_output {
-                Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
-                Either::Right((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
-            });
+        let transport = quic.map(|output, _| (output.0, StreamMuxerBox::new(output.1)));
         transport.boxed()
     } else {
         tcp.boxed()
