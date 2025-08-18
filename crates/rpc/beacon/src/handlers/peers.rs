@@ -59,13 +59,13 @@ pub async fn get_peer_count(
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct PeerCount {
     #[serde(with = "serde_utils::quoted_u64")]
-    disconnected: u64,
+    pub disconnected: u64,
     #[serde(with = "serde_utils::quoted_u64")]
-    connecting: u64,
+    pub connecting: u64,
     #[serde(with = "serde_utils::quoted_u64")]
-    connected: u64,
+    pub connected: u64,
     #[serde(with = "serde_utils::quoted_u64")]
-    disconnecting: u64,
+    pub disconnecting: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]

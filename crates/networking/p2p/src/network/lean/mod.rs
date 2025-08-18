@@ -79,7 +79,7 @@ pub struct LeanNetworkService {
     lean_chain: LeanChainReader,
     network_config: Arc<LeanNetworkConfig>,
     swarm: Swarm<ReamBehaviour>,
-    peer_table: ParkingRwLock<HashMap<PeerId, ConnectionState>>,
+    peer_table: Arc<ParkingRwLock<HashMap<PeerId, ConnectionState>>>,
     chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
     outbound_p2p_request: UnboundedReceiver<LeanP2PRequest>,
 }
@@ -152,7 +152,7 @@ impl LeanNetworkService {
             lean_chain,
             network_config: network_config.clone(),
             swarm,
-            peer_table: ParkingRwLock::new(HashMap::new()),
+            peer_table: Arc::new(ParkingRwLock::new(HashMap::new())),
             chain_message_sender,
             outbound_p2p_request,
         };
@@ -350,6 +350,10 @@ impl LeanNetworkService {
                     .insert(peer_id, ConnectionState::Connecting);
             }
         }
+    }
+
+    pub fn peer_table(&self) -> Arc<ParkingRwLock<HashMap<PeerId, ConnectionState>>> {
+        self.peer_table.clone()
     }
 
     pub fn local_peer_id(&self) -> PeerId {

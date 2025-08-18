@@ -180,6 +180,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
     .await
     .expect("Failed to create network service");
 
+    let peer_table = network_service.peer_table();
+
     let keystores = load_validator_registry(&config.validator_registry_path)
         .expect("Failed to load validator registry");
     let validator_service =
@@ -207,8 +209,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
             panic!("Validator service exited with error: {err}");
         }
     });
-    let http_future =
-        executor.spawn(async move { start_lean_server(server_config, lean_chain_reader).await });
+    let http_future = executor
+        .spawn(async move { start_lean_server(server_config, lean_chain_reader, peer_table).await });
 
     tokio::select! {
         _ = chain_future => {

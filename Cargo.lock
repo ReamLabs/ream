@@ -5736,10 +5736,13 @@ name = "ream-rpc-lean"
 version = "0.1.0"
 dependencies = [
  "actix-web",
+ "libp2p",
  "parking_lot",
  "ream-api-types-beacon",
  "ream-api-types-lean",
  "ream-chain-lean",
+ "ream-p2p",
+ "ream-rpc-beacon",
  "tokio",
  "tracing",
 ]
