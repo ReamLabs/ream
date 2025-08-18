@@ -5326,7 +5326,7 @@ dependencies = [
  "anyhow",
  "ream-consensus-lean",
  "ream-consensus-misc",
- "ream-metrics-lean",
+ "ream-metrics",
  "ream-network-spec",
  "ream-pqc",
  "serde",
@@ -5397,7 +5397,7 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "ream-consensus-misc",
- "ream-metrics-lean",
+ "ream-metrics",
  "ream-pqc",
  "serde",
  "serde_json",
@@ -5557,7 +5557,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-metrics-lean"
+name = "ream-metrics"
 version = "0.1.0"
 dependencies = [
  "lazy_static",

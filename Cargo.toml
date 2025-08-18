@@ -15,7 +15,7 @@ members = [
     "crates/common/executor",
     "crates/common/fork_choice",
     "crates/common/light_client",
-    "crates/common/metrics/lean",
+    "crates/common/metrics",
     "crates/common/network_spec",
     "crates/common/node",
     "crates/common/operation_pool",
@@ -136,7 +136,7 @@ ream-fork-choice = { path = "crates/common/fork_choice" }
 ream-keystore = { path = "crates/crypto/keystore" }
 ream-light-client = { path = "crates/common/light_client" }
 ream-merkle = { path = "crates/crypto/merkle" }
-ream-metrics-lean = { path = "crates/common/metrics/lean" }
+ream-metrics = { path = "crates/common/metrics" }
 ream-network-manager = { path = "crates/networking/manager" }
 ream-network-spec = { path = "crates/common/network_spec" }
 ream-node = { path = "crates/common/node" }
