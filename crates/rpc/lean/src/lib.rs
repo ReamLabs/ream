@@ -1,8 +1,11 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use actix_web::{App, HttpServer, middleware, web::Data};
 use config::LeanRpcServerConfig;
+use libp2p::PeerId;
+use parking_lot::RwLock as ParkingRwLock;
 use ream_chain_lean::lean_chain::LeanChain;
+use ream_p2p::peer::ConnectionState;
 use tokio::sync::RwLock;
 use tracing::info;
 
@@ -16,6 +19,7 @@ pub mod routes;
 pub async fn start_lean_server(
     server_config: LeanRpcServerConfig,
     lean_chain: Arc<RwLock<LeanChain>>,
+    peer_table: Arc<ParkingRwLock<HashMap<PeerId, ConnectionState>>>,
 ) -> std::io::Result<()> {
     info!(
         "starting HTTP server on {:?}",
@@ -26,6 +30,7 @@ pub async fn start_lean_server(
         App::new()
             .wrap(middleware::Logger::default())
             .app_data(Data::new(lean_chain.clone()))
+            .app_data(Data::new(peer_table.clone()))
             .configure(register_routers)
     })
     .bind(server_config.http_socket_address)?

@@ -174,6 +174,11 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
     .await
     .expect("Failed to create network service");
 
+    let peer_table = network_service.peer_table();
+
+    let validator_service =
+        LeanValidatorService::new(lean_chain.clone(), Vec::new(), chain_sender).await;
+
     let server_config = LeanRpcServerConfig::new(
         config.http_address,
         config.http_port,
@@ -196,8 +201,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
             panic!("Validator service exited with error: {err}");
         }
     });
-    let http_future =
-        executor.spawn(async move { start_lean_server(server_config, lean_chain).await });
+    let http_future = executor
+        .spawn(async move { start_lean_server(server_config, lean_chain, peer_table).await });
 
     tokio::select! {
         _ = chain_future => {
