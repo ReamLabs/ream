@@ -44,7 +44,7 @@ pub struct LeanNodeConfig {
     #[arg(long, default_value_t = DEFAULT_HTTP_ALLOW_ORIGIN)]
     pub http_allow_origin: bool,
 
-    #[arg(long = "metrics", default_value_t = DEFAULT_METRICS_ENABLED)]
+    #[arg(long = "metrics", help = "Enable metrics", default_value_t = DEFAULT_METRICS_ENABLED)]
     pub enable_metrics: bool,
 
     #[arg(long, help = "Set metrics address", default_value_t = DEFAULT_METRICS_ADDRESS)]

@@ -25,6 +25,12 @@ Options:
           Set HTTP Port [default: 5052]
       --http-allow-origin
 
+      --metrics
+          Enable metrics
+      --metrics-address <METRICS_ADDRESS>
+          Set metrics address [default: 127.0.0.1]
+      --metrics-port <METRICS_PORT>
+          Set metrics port [default: 8080]
   -h, --help
           Print help
 ```
