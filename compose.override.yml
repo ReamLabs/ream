@@ -1,4 +1,0 @@
-version: "3.8"
-include:
-  # Enable metrics services e.g. Prometheus and Grafana
-  - ./crates/common/metrics/lean/compose.yml
