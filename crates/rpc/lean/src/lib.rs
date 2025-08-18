@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use actix_web::{App, HttpServer, middleware, web::Data};
 use config::LeanRpcServerConfig;
 use libp2p::PeerId;
-use parking_lot::RwLock as ParkingRwLock;
+use parking_lot::Mutex;
 use ream_chain_lean::lean_chain::LeanChain;
 use ream_p2p::peer::ConnectionState;
 use tokio::sync::RwLock;
@@ -19,7 +19,7 @@ pub mod routes;
 pub async fn start_lean_server(
     server_config: LeanRpcServerConfig,
     lean_chain: Arc<RwLock<LeanChain>>,
-    peer_table: Arc<ParkingRwLock<HashMap<PeerId, ConnectionState>>>,
+    peer_table: Arc<Mutex<HashMap<PeerId, ConnectionState>>>,
 ) -> std::io::Result<()> {
     info!(
         "starting HTTP server on {:?}",

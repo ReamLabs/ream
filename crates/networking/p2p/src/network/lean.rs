@@ -16,7 +16,7 @@ use libp2p::{
     swarm::{Config, NetworkBehaviour, Swarm, SwarmEvent},
 };
 use libp2p_identity::{Keypair, PeerId};
-use parking_lot::RwLock as ParkingRwLock;
+use parking_lot::Mutex;
 use ream_chain_lean::{lean_chain::LeanChain, service::LeanChainServiceMessage};
 use ream_consensus_lean::{QueueItem, VoteItem};
 use ream_executor::ReamExecutor;
@@ -71,7 +71,7 @@ pub struct LeanNetworkService {
     lean_chain: Arc<RwLock<LeanChain>>,
     network_config: Arc<LeanNetworkConfig>,
     swarm: Swarm<ReamBehaviour>,
-    peer_table: Arc<ParkingRwLock<HashMap<PeerId, ConnectionState>>>,
+    peer_table: Arc<Mutex<HashMap<PeerId, ConnectionState>>>,
     chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
 }
 
@@ -141,7 +141,7 @@ impl LeanNetworkService {
             lean_chain,
             network_config: network_config.clone(),
             swarm,
-            peer_table: Arc::new(ParkingRwLock::new(HashMap::new())),
+            peer_table: Arc::new(Mutex::new(HashMap::new())),
             chain_message_sender,
         };
 
@@ -253,16 +253,16 @@ impl LeanNetworkService {
                 None
             }
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                self.peer_table
-                    .write()
-                    .insert(peer_id, ConnectionState::Connected);
+                let mut table = self.peer_table.lock();
+
+                table.insert(peer_id, ConnectionState::Connected);
                 info!("Connected to peer: {peer_id:?}");
                 None
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                self.peer_table
-                    .write()
-                    .insert(peer_id, ConnectionState::Disconnected);
+                let mut table = self.peer_table.lock();
+
+                table.insert(peer_id, ConnectionState::Disconnected);
                 info!("Disconnected from peer: {peer_id:?}");
                 Some(ReamNetworkEvent::PeerDisconnected(peer_id))
             }
@@ -295,14 +295,14 @@ impl LeanNetworkService {
                 .find(|protocol| matches!(protocol, Protocol::P2p(_)))
             {
                 info!("Dialing peer: {peer_id:?}",);
-                self.peer_table
-                    .write()
-                    .insert(peer_id, ConnectionState::Connecting);
+                let mut table = self.peer_table.lock();
+
+                table.insert(peer_id, ConnectionState::Connecting);
             }
         }
     }
 
-    pub fn peer_table(&self) -> Arc<ParkingRwLock<HashMap<PeerId, ConnectionState>>> {
+    pub fn peer_table(&self) -> Arc<Mutex<HashMap<PeerId, ConnectionState>>> {
         self.peer_table.clone()
     }
 

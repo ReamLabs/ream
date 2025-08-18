@@ -158,9 +158,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         ..Default::default()
     };
 
-    let validator_service =
-        LeanValidatorService::new(lean_chain.clone(), Vec::new(), chain_sender.clone()).await;
-
     let mut network_service = LeanNetworkService::new(
         Arc::new(LeanNetworkConfig {
             gossipsub_config,
@@ -169,7 +166,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         }),
         lean_chain.clone(),
         executor.clone(),
-        chain_sender,
+        chain_sender.clone(),
     )
     .await
     .expect("Failed to create network service");
