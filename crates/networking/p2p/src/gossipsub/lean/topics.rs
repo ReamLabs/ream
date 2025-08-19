@@ -1,20 +1,17 @@
 use LeanGossipTopicKind::*;
-use alloy_primitives::{
-    aliases::B32,
-    hex::{FromHex, ToHexExt},
-};
+use alloy_primitives::hex::ToHexExt;
 use libp2p::gossipsub::{IdentTopic as Topic, TopicHash};
 
 use crate::gossipsub::error::GossipsubError;
 
-pub const TOPIC_PREFIX: &str = "eth2";
+pub const TOPIC_PREFIX: &str = "leanconsensus";
 pub const ENCODING_POSTFIX: &str = "ssz_snappy";
 pub const LEAN_BLOCK_TOPIC: &str = "lean_block";
 pub const LEAN_VOTE_TOPIC: &str = "lean_vote";
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct LeanGossipTopic {
-    pub fork: B32,
+    pub fork: String,
     pub kind: LeanGossipTopicKind,
 }
 
@@ -31,9 +28,7 @@ impl LeanGossipTopic {
             )));
         }
 
-        let fork = B32::from_hex(topic_parts[1]).map_err(|err| {
-            GossipsubError::InvalidTopic(format!("Invalid topic fork: {topic:?} {err:?}"))
-        })?;
+        let fork = topic_parts[1].to_string();
         let kind = match topic_parts[2] {
             LEAN_BLOCK_TOPIC => LeanGossipTopicKind::LeanBlock,
             LEAN_VOTE_TOPIC => LeanGossipTopicKind::LeanVote,
@@ -79,9 +74,8 @@ impl From<LeanGossipTopic> for TopicHash {
             LeanBlock => LEAN_BLOCK_TOPIC,
             LeanVote => LEAN_VOTE_TOPIC,
         };
-
         TopicHash::from_raw(format!(
-            "/{}/{}/{}{}",
+            "/{}/{}/{}/{}",
             TOPIC_PREFIX,
             val.fork.encode_hex(),
             kind_str,

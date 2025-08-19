@@ -11,21 +11,25 @@ use futures::StreamExt;
 use libp2p::{
     Multiaddr, SwarmBuilder,
     connection_limits::{self, ConnectionLimits},
-    gossipsub::MessageAuthenticity,
+    gossipsub::{Event as GossipsubEvent, IdentTopic, MessageAuthenticity},
     identify,
     swarm::{Config, NetworkBehaviour, Swarm, SwarmEvent},
 };
 use libp2p_identity::{Keypair, PeerId};
 use parking_lot::RwLock as ParkingRwLock;
-use ream_chain_lean::lean_chain::LeanChain;
+use ream_chain_lean::{lean_chain::LeanChain, service::LeanChainServiceMessage};
+use ream_consensus_lean::{QueueItem, VoteItem};
 use ream_executor::ReamExecutor;
-use tokio::sync::RwLock;
+use ssz::Encode;
+use tokio::sync::{RwLock, mpsc::UnboundedSender};
 use tracing::{info, trace, warn};
 
 use crate::{
     bootnodes::Bootnodes,
     gossipsub::{
-        GossipsubBehaviour, lean::configurations::LeanGossipsubConfig, snappy::SnappyTransform,
+        GossipsubBehaviour,
+        lean::{configurations::LeanGossipsubConfig, message::LeanGossipsubMessage},
+        snappy::SnappyTransform,
     },
     network::misc::Executor,
     peer::ConnectionState,
@@ -68,6 +72,7 @@ pub struct LeanNetworkService {
     network_config: Arc<LeanNetworkConfig>,
     swarm: Swarm<ReamBehaviour>,
     peer_table: ParkingRwLock<HashMap<PeerId, ConnectionState>>,
+    chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
 }
 
 impl LeanNetworkService {
@@ -75,6 +80,7 @@ impl LeanNetworkService {
         network_config: Arc<LeanNetworkConfig>,
         lean_chain: Arc<RwLock<LeanChain>>,
         executor: ReamExecutor,
+        chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
     ) -> anyhow::Result<Self> {
         let connection_limits = {
             let limits = ConnectionLimits::default()
@@ -133,9 +139,10 @@ impl LeanNetworkService {
 
         let mut lean_network_service = LeanNetworkService {
             lean_chain,
-            network_config,
+            network_config: network_config.clone(),
             swarm,
             peer_table: ParkingRwLock::new(HashMap::new()),
+            chain_message_sender,
         };
 
         let mut multi_addr: Multiaddr = lean_network_service.network_config.socket_address.into();
@@ -151,6 +158,15 @@ impl LeanNetworkService {
             .map_err(|err| {
                 anyhow!("Failed to start libp2p peer listen on {multi_addr:?}, error: {err:?}")
             })?;
+
+        for topic in &network_config.gossipsub_config.topics {
+            lean_network_service
+                .swarm
+                .behaviour_mut()
+                .gossipsub
+                .subscribe(&IdentTopic::from(topic.clone()))
+                .map_err(|err| anyhow!("subscribe to {topic} failed: {err:?}"))?;
+        }
 
         Ok(lean_network_service)
     }
@@ -170,6 +186,7 @@ impl LeanNetworkService {
                         info!("Swarm event: {event:?}");
                     }
                 }
+
             }
         }
     }
@@ -179,7 +196,62 @@ impl LeanNetworkService {
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {
         match event {
-            SwarmEvent::Behaviour(_) => None,
+            SwarmEvent::Behaviour(ReamBehaviourEvent::Gossipsub(gossipsub_event)) => {
+                if let GossipsubEvent::Message { message, .. } = gossipsub_event {
+                    match LeanGossipsubMessage::decode(&message.topic, &message.data) {
+                        Ok(LeanGossipsubMessage::Block(signed_block)) => {
+                            if let Err(err) =
+                                self.chain_message_sender.send(LeanChainServiceMessage {
+                                    item: QueueItem::BlockItem((signed_block).data.clone()),
+                                })
+                            {
+                                warn!(
+                                    "failed to send block for slot {} item to chain: {err:?}",
+                                    signed_block.data.slot
+                                );
+                            }
+                            if let Err(err) = self
+                                .swarm
+                                .behaviour_mut()
+                                .gossipsub
+                                .publish(message.topic, signed_block.as_ssz_bytes())
+                            {
+                                warn!(
+                                    "publish block for slot {} failed: {err:?}",
+                                    signed_block.data.slot
+                                );
+                            }
+                        }
+                        Ok(LeanGossipsubMessage::Vote(signed_vote)) => {
+                            if let Err(err) =
+                                self.chain_message_sender.send(LeanChainServiceMessage {
+                                    item: QueueItem::VoteItem(VoteItem::Signed(
+                                        (*signed_vote).clone(),
+                                    )),
+                                })
+                            {
+                                warn!(
+                                    "failed to send vote for slot {} to chain: {err:?}",
+                                    signed_vote.data.slot
+                                );
+                            }
+                            if let Err(err) = self
+                                .swarm
+                                .behaviour_mut()
+                                .gossipsub
+                                .publish(message.topic, signed_vote.as_ssz_bytes())
+                            {
+                                warn!(
+                                    "publish vote for slot {} failed: {err:?}",
+                                    signed_vote.data.slot
+                                );
+                            }
+                        }
+                        Err(err) => warn!("gossip decode failed: {err:?}"),
+                    }
+                }
+                None
+            }
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 self.peer_table
                     .write()
@@ -242,6 +314,7 @@ mod tests {
     use libp2p::{Multiaddr, multiaddr::Protocol};
     use ream_chain_lean::lean_chain::LeanChain;
     use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
+    use tokio::sync::mpsc;
     use tracing_test::traced_test;
 
     use super::*;
@@ -267,7 +340,10 @@ mod tests {
             socket_address: Ipv4Addr::new(127, 0, 0, 1).into(),
             socket_port,
         });
-        let node = LeanNetworkService::new(config.clone(), lean_chain, executor.unwrap()).await?;
+        let (sender, _receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
+
+        let node =
+            LeanNetworkService::new(config.clone(), lean_chain, executor.unwrap(), sender).await?;
         let multi_addr: Multiaddr = config.socket_address.into();
         Ok((node, multi_addr))
     }

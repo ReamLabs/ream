@@ -33,7 +33,10 @@ use ream_network_spec::networks::{
 };
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
-    gossipsub::lean::configurations::LeanGossipsubConfig,
+    gossipsub::lean::{
+        configurations::LeanGossipsubConfig,
+        topics::{LeanGossipTopic, LeanGossipTopicKind},
+    },
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
 use ream_rpc_beacon::{config::RpcServerConfig, start_server};
@@ -138,21 +141,38 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
     let chain_service =
         LeanChainService::new(lean_chain.clone(), chain_receiver, chain_sender.clone()).await;
 
-    // Starts the network service by listening on the specified socket address and port.
+    let fork = "devnet0".to_string();
+    let topics: Vec<LeanGossipTopic> = vec![
+        LeanGossipTopic {
+            fork: fork.clone(),
+            kind: LeanGossipTopicKind::LeanBlock,
+        },
+        LeanGossipTopic {
+            fork,
+            kind: LeanGossipTopicKind::LeanVote,
+        },
+    ];
+
+    let gossipsub_config = LeanGossipsubConfig {
+        topics,
+        ..Default::default()
+    };
+
+    let validator_service =
+        LeanValidatorService::new(lean_chain.clone(), Vec::new(), chain_sender.clone()).await;
+
     let mut network_service = LeanNetworkService::new(
         Arc::new(LeanNetworkConfig {
-            gossipsub_config: LeanGossipsubConfig::default(),
+            gossipsub_config,
             socket_address: config.socket_address,
             socket_port: config.socket_port,
         }),
         lean_chain.clone(),
         executor.clone(),
+        chain_sender,
     )
     .await
     .expect("Failed to create network service");
-
-    let validator_service =
-        LeanValidatorService::new(lean_chain.clone(), Vec::new(), chain_sender).await;
 
     let server_config = LeanRpcServerConfig::new(
         config.http_address,
