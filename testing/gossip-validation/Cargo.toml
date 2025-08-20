@@ -17,6 +17,7 @@ ethereum_ssz_derive.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snap.workspace = true
+tempdir.workspace = true
 tokio.workspace = true
 
 # ream
@@ -28,5 +29,3 @@ ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
 ream-storage.workspace = true
 
-[dev-dependencies]
-tempdir = "0.3.7" 
