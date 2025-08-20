@@ -27,3 +27,6 @@ ream-network-manager = { workspace = true, features = ["disable_ancestor_validat
 ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
 ream-storage.workspace = true
+
+[dev-dependencies]  
+serial_test = "3.2"

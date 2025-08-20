@@ -56,7 +56,8 @@ update-book-cli: build-debug ## Update book cli documentation.
 
 .PHONY: test
 test: # Run all tests.
-	cargo test --workspace -- --nocapture
+	cargo test --workspace --exclude ream-network-manager -- --nocapture
+	cargo test -p ream-network-manager -- --nocapture --test-threads=1
 
 clean-deps:
 	cargo +nightly udeps --workspace --tests --all-targets --release --exclude ef-tests

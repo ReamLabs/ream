@@ -5,8 +5,9 @@ mod tests {
     use alloy_primitives::B256;
     use anyhow::anyhow;
     use ream_chain_beacon::beacon_chain::BeaconChain;
-    use ream_consensus_beacon::electra::{
-        beacon_block::SignedBeaconBlock, beacon_state::BeaconState,
+    use ream_consensus_beacon::{
+        bls_to_execution_change::BLSToExecutionChange,
+        electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     };
     use ream_consensus_misc::checkpoint::Checkpoint;
     use ream_network_manager::gossipsub::validate::{
@@ -15,10 +16,11 @@ mod tests {
     use ream_network_spec::networks::initialize_test_network_spec;
     use ream_operation_pool::OperationPool;
     use ream_storage::{
-        cache::CachedDB,
+        cache::{AddressSlotIdentifier, CachedDB},
         db::ReamDB,
         tables::{Field, Table},
     };
+    use serial_test::serial;
     use snap::raw::Decoder;
     use ssz::Decode;
 
@@ -120,6 +122,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     pub async fn test_validate_beacon_block() {
         initialize_test_network_spec();
         let (beacon_chain, cached_db, block_root) = db_setup().await;
@@ -158,6 +161,153 @@ mod tests {
                 .unwrap();
 
         assert!(result == ValidationResult::Accept);
+    }
+
+    #[tokio::test]
+    #[serial]
+    pub async fn test_future_slot_block_is_ignored() {
+        initialize_test_network_spec();
+        let (beacon_chain, cached_db, _block_root) = db_setup().await;
+
+        let mut incoming_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
+            "./assets/sepolia/blocks/slot_8084250.ssz_snappy",
+        )
+        .unwrap();
+        let future_slot = beacon_chain.store.lock().await.get_current_slot().unwrap() + 10;
+        incoming_beacon_block.message.slot = future_slot;
+
+        let result =
+            validate_gossip_beacon_block(&beacon_chain, &cached_db, &incoming_beacon_block)
+                .await
+                .unwrap();
+        assert!(
+            matches!(result, ValidationResult::Ignore(reason) if reason.contains("future slot"))
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    pub async fn test_block_at_or_before_finalized_slot_is_ignored() {
+        initialize_test_network_spec();
+        let (beacon_chain, cached_db, _block_root) = db_setup().await;
+
+        let ancestor_block = read_ssz_snappy_file::<SignedBeaconBlock>(
+            "./assets/sepolia/blocks/slot_8084160.ssz_snappy",
+        )
+        .unwrap();
+
+        let result = validate_gossip_beacon_block(&beacon_chain, &cached_db, &ancestor_block)
+            .await
+            .unwrap();
+        assert!(
+            matches!(result, ValidationResult::Ignore(reason) if reason.contains("latest finalized slot"))
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    pub async fn test_validator_not_found_rejects() {
+        initialize_test_network_spec();
+        let (beacon_chain, cached_db, _block_root) = db_setup().await;
+
+        let mut incoming_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
+            "./assets/sepolia/blocks/slot_8084250.ssz_snappy",
+        )
+        .unwrap();
+
+        // Mutate proposer index to a very high index
+        incoming_beacon_block.message.proposer_index = 999999;
+
+        let result =
+            validate_gossip_beacon_block(&beacon_chain, &cached_db, &incoming_beacon_block)
+                .await
+                .unwrap();
+        assert!(
+            matches!(result, ValidationResult::Reject(reason) if reason.contains("Validator not found"))
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    pub async fn test_duplicate_proposer_signature_is_ignored() {
+        initialize_test_network_spec();
+        let (beacon_chain, cached_db, _block_root) = db_setup().await;
+
+        let incoming_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
+            "./assets/sepolia/blocks/slot_8084250.ssz_snappy",
+        )
+        .unwrap();
+
+        // Inserting the proposer signature into cache ahead of time
+        {
+            let state = beacon_chain
+                .store
+                .lock()
+                .await
+                .db
+                .get_latest_state()
+                .unwrap();
+            let validator =
+                &state.validators[incoming_beacon_block.message.proposer_index as usize];
+            cached_db.seen_proposer_signature.write().await.put(
+                AddressSlotIdentifier {
+                    address: validator.public_key.clone(),
+                    slot: incoming_beacon_block.message.slot,
+                },
+                incoming_beacon_block.signature.clone(),
+            );
+        }
+
+        let result =
+            validate_gossip_beacon_block(&beacon_chain, &cached_db, &incoming_beacon_block)
+                .await
+                .unwrap();
+        assert!(
+            matches!(result, ValidationResult::Ignore(reason) if reason.contains("already received"))
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    pub async fn test_bls_to_execution_change_duplicate_is_ignored() {
+        initialize_test_network_spec();
+        let (beacon_chain, cached_db, _block_root) = db_setup().await;
+
+        let incoming_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
+            "./assets/sepolia/blocks/slot_8084250.ssz_snappy",
+        )
+        .unwrap();
+
+        {
+            let state = beacon_chain
+                .store
+                .lock()
+                .await
+                .db
+                .get_latest_state()
+                .unwrap();
+            let validator =
+                &state.validators[incoming_beacon_block.message.proposer_index as usize];
+            cached_db.seen_bls_to_execution_signature.write().await.put(
+                AddressSlotIdentifier {
+                    address: validator.public_key.clone(),
+                    slot: incoming_beacon_block.message.slot,
+                },
+                BLSToExecutionChange {
+                    validator_index: 0,
+                    from_bls_public_key: Default::default(),
+                    to_execution_address: Default::default(),
+                },
+            );
+        }
+
+        let result =
+            validate_gossip_beacon_block(&beacon_chain, &cached_db, &incoming_beacon_block)
+                .await
+                .unwrap();
+        assert!(
+            matches!(result, ValidationResult::Ignore(reason) if reason.contains("Signature already received"))
+        );
     }
 
     fn read_ssz_snappy_file<T: Decode>(path: &str) -> anyhow::Result<T> {
