@@ -28,5 +28,5 @@ ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
 ream-storage.workspace = true
 
-[dev-dependencies]  
-serial_test = "3.2"
+[dev-dependencies]
+tempdir = "0.3.7" 

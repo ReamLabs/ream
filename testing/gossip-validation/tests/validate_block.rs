@@ -1,6 +1,6 @@
 mod tests {
     const PATH_TO_TEST_DATA_FOLDER: &str = "./tests";
-    use std::{fs, path::PathBuf, str::FromStr};
+    use std::{path::PathBuf, str::FromStr};
 
     use alloy_primitives::B256;
     use anyhow::anyhow;
@@ -20,17 +20,17 @@ mod tests {
         db::ReamDB,
         tables::{Field, Table},
     };
-    use serial_test::serial;
     use snap::raw::Decoder;
     use ssz::Decode;
+    use tempdir::TempDir;
 
     const SEPOLIA_GENESIS_TIME: u64 = 1655733600;
     const CURRENT_TIME: u64 = 1752744600;
 
     pub async fn db_setup() -> (BeaconChain, CachedDB, B256) {
-        let temp = std::path::PathBuf::from("ream_gossip_test");
-        fs::create_dir_all(&temp).unwrap();
-        let mut db = ReamDB::new(temp).unwrap();
+        let temp_dir = TempDir::new("ream_gossip_test").unwrap();
+        let temp_path = temp_dir.path().to_path_buf();
+        let mut db = ReamDB::new(temp_path).unwrap();
 
         let ancestor_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
             "./assets/sepolia/blocks/slot_8084160.ssz_snappy",
@@ -122,7 +122,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     pub async fn test_validate_beacon_block() {
         initialize_test_network_spec();
         let (beacon_chain, cached_db, block_root) = db_setup().await;
@@ -164,7 +163,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     pub async fn test_future_slot_block_is_ignored() {
         initialize_test_network_spec();
         let (beacon_chain, cached_db, _block_root) = db_setup().await;
@@ -186,7 +184,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     pub async fn test_block_at_or_before_finalized_slot_is_ignored() {
         initialize_test_network_spec();
         let (beacon_chain, cached_db, _block_root) = db_setup().await;
@@ -205,7 +202,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     pub async fn test_validator_not_found_rejects() {
         initialize_test_network_spec();
         let (beacon_chain, cached_db, _block_root) = db_setup().await;
@@ -228,7 +224,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     pub async fn test_duplicate_proposer_signature_is_ignored() {
         initialize_test_network_spec();
         let (beacon_chain, cached_db, _block_root) = db_setup().await;
@@ -268,7 +263,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     pub async fn test_bls_to_execution_change_duplicate_is_ignored() {
         initialize_test_network_spec();
         let (beacon_chain, cached_db, _block_root) = db_setup().await;
