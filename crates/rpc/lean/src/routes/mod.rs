@@ -1,8 +1,13 @@
 pub mod lean;
+pub mod node;
 use actix_web::web::{ServiceConfig, scope};
 
 pub fn get_v0_routes(config: &mut ServiceConfig) {
-    config.service(scope("/lean/v0").configure(lean::register_lean_routes));
+    config.service(
+        scope("/lean/v0")
+            .configure(lean::register_lean_routes)
+            .configure(node::register_node_routes),
+    );
 }
 
 pub fn register_routers(config: &mut ServiceConfig) {
