@@ -81,6 +81,7 @@ pub async fn get_voluntary_exits(
 pub async fn post_voluntary_exits(
     db: Data<ReamDB>,
     operation_pool: Data<Arc<OperationPool>>,
+    network_manager: Data<NetworkManagerService>, // <-- Inject NetworkManagerService
     signed_voluntary_exit: Json<SignedVoluntaryExit>,
 ) -> Result<impl Responder, ApiError> {
     let highest_slot = db
@@ -104,8 +105,20 @@ pub async fn post_voluntary_exits(
             ))
         })?;
 
+    let message = signed_voluntary_exit.as_ssz_bytes();
+
     operation_pool.insert_signed_voluntary_exit(signed_voluntary_exit);
-    // TODO: publish voluntary exit to peers (gossipsub) - https://github.com/ReamLabs/ream/issues/556
+
+    network_manager
+        .as_ref()
+        .p2p_sender
+        .send_gossip(GossipMessage {
+            topic: GossipTopic {
+                fork: beacon_state.fork.current_version,
+                kind: GossipTopicKind::VoluntaryExit,
+            },
+            data: message,
+        });
 
     Ok(HttpResponse::Ok())
 }
