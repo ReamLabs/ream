@@ -74,8 +74,6 @@ pub async fn post_bls_to_execution_changes(
             },
             data: signed_bls_to_execution_change.as_ssz_bytes(),
         });
-    // TODO: publish bls_to_execution_change to peers (gossipsub) - https://github.com/ReamLabs/ream/issues/556
-
     Ok(HttpResponse::Ok())
 }
 
