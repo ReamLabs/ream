@@ -2591,18 +2591,22 @@ dependencies = [
  "anyhow",
  "ethereum_ssz",
  "ethereum_ssz_derive",
+ "libp2p",
  "ream-chain-beacon",
  "ream-consensus-beacon",
  "ream-consensus-misc",
+ "ream-executor",
  "ream-network-manager",
  "ream-network-spec",
  "ream-operation-pool",
+ "ream-p2p",
  "ream-storage",
  "serde",
  "serde_json",
  "snap",
  "tempdir",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
