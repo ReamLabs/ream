@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use ream_consensus_lean::{QueueItem, VoteItem, block::Block, process_block};
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{RwLock, mpsc};
-use tracing::info;
+use tracing::{info, warn};
 use tree_hash::TreeHash;
 
 use crate::{clock::create_lean_clock_interval, lean_chain::LeanChain, slot::get_current_slot};
@@ -24,7 +24,7 @@ pub struct LeanChainService {
     lean_chain: Arc<RwLock<LeanChain>>,
     receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
     sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
-
+    outbound_gossip: mpsc::UnboundedSender<QueueItem>,
     // Objects that we will process once we have processed their parents
     dependencies: HashMap<B256, Vec<QueueItem>>,
 }
@@ -34,11 +34,13 @@ impl LeanChainService {
         lean_chain: Arc<RwLock<LeanChain>>,
         receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
         sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
+        outbound_gossip: mpsc::UnboundedSender<QueueItem>,
     ) -> Self {
         LeanChainService {
             lean_chain,
             receiver,
             sender,
+            outbound_gossip,
             dependencies: HashMap::new(),
         }
     }
@@ -78,7 +80,10 @@ impl LeanChainService {
                     tick_count += 1;
                 }
                 Some(message) = self.receiver.recv() => {
-                    self.handle_message(message).await;
+                    self.handle_message(message.clone()).await;
+                    if let Err(err) = self.outbound_gossip.send(message.item) {
+                        warn!("Failed to send item to outbound gossip channel: {err:?}");
+                    }
                 }
             }
         }

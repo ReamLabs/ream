@@ -23,6 +23,7 @@ use ream_chain_lean::{
     service::{LeanChainService, LeanChainServiceMessage},
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
+use ream_consensus_lean::QueueItem;
 use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
 };
@@ -136,10 +137,16 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
 
     // Initialize the services that will run in the lean node.
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
+    let (outbound_p2p_sender, outbound_p2p_receiver) = mpsc::unbounded_channel::<QueueItem>();
 
     // TODO 1: Load keystores from the config.
-    let chain_service =
-        LeanChainService::new(lean_chain.clone(), chain_receiver, chain_sender.clone()).await;
+    let chain_service = LeanChainService::new(
+        lean_chain.clone(),
+        chain_receiver,
+        chain_sender.clone(),
+        outbound_p2p_sender,
+    )
+    .await;
 
     let fork = "devnet0".to_string();
     let topics: Vec<LeanGossipTopic> = vec![
@@ -170,6 +177,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         lean_chain.clone(),
         executor.clone(),
         chain_sender,
+        outbound_p2p_receiver,
     )
     .await
     .expect("Failed to create network service");

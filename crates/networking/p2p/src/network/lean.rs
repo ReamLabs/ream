@@ -21,14 +21,20 @@ use ream_chain_lean::{lean_chain::LeanChain, service::LeanChainServiceMessage};
 use ream_consensus_lean::{QueueItem, VoteItem};
 use ream_executor::ReamExecutor;
 use ssz::Encode;
-use tokio::sync::{RwLock, mpsc::UnboundedSender};
+use tokio::sync::{
+    RwLock,
+    mpsc::{UnboundedReceiver, UnboundedSender},
+};
 use tracing::{info, trace, warn};
 
 use crate::{
     bootnodes::Bootnodes,
     gossipsub::{
         GossipsubBehaviour,
-        lean::{configurations::LeanGossipsubConfig, message::LeanGossipsubMessage},
+        lean::{
+            configurations::LeanGossipsubConfig, message::LeanGossipsubMessage,
+            topics::LeanGossipTopicKind,
+        },
         snappy::SnappyTransform,
     },
     network::misc::Executor,
@@ -73,6 +79,7 @@ pub struct LeanNetworkService {
     swarm: Swarm<ReamBehaviour>,
     peer_table: ParkingRwLock<HashMap<PeerId, ConnectionState>>,
     chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
+    outbound_p2p_request: UnboundedReceiver<QueueItem>,
 }
 
 impl LeanNetworkService {
@@ -81,6 +88,7 @@ impl LeanNetworkService {
         lean_chain: Arc<RwLock<LeanChain>>,
         executor: ReamExecutor,
         chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
+        outbound_p2p_request: UnboundedReceiver<QueueItem>,
     ) -> anyhow::Result<Self> {
         let connection_limits = {
             let limits = ConnectionLimits::default()
@@ -143,6 +151,7 @@ impl LeanNetworkService {
             swarm,
             peer_table: ParkingRwLock::new(HashMap::new()),
             chain_message_sender,
+            outbound_p2p_request,
         };
 
         let mut multi_addr: Multiaddr = lean_network_service.network_config.socket_address.into();
@@ -181,12 +190,61 @@ impl LeanNetworkService {
         self.connect_to_peers(bootnodes.to_multiaddrs_lean()).await;
         loop {
             tokio::select! {
+                Some(item) = self.outbound_p2p_request.recv() => {
+                    match item {
+                        QueueItem::BlockItem(block) => {
+                            if let Err(err) = self.swarm
+                                .behaviour_mut()
+                                .gossipsub
+                                .publish(
+                                    self.network_config
+                                        .gossipsub_config
+                                        .topics
+                                        .iter()
+                                        .find(|block_topic| matches!(block_topic.kind, LeanGossipTopicKind::LeanBlock))
+                                        .map(|block_topic| IdentTopic::from(block_topic.clone()))
+                                        .expect("LeanBlock topic configured"),
+                                    block.as_ssz_bytes(),
+                                )
+                            {
+                                warn!("publish block for slot {} failed: {err:?}", block.slot);
+                            } else {
+                                info!("broadcasted block for slot {}", block.slot);
+                            }
+                        }
+                        QueueItem::VoteItem(vote) => {
+                            let (bytes, slot) = match &vote {
+                                VoteItem::Signed(signed) => (signed.as_ssz_bytes(), signed.data.slot),
+                                VoteItem::Unsigned(unsigned) => (unsigned.as_ssz_bytes(), unsigned.slot),
+                            };
+
+                            if let Err(err) = self.swarm
+                                .behaviour_mut()
+                                .gossipsub
+                                .publish(
+                                    self.network_config
+                                        .gossipsub_config
+                                        .topics
+                                        .iter()
+                                        .find(|vote_topic| matches!(vote_topic.kind, LeanGossipTopicKind::LeanVote))
+                                        .map(|vote_topic| IdentTopic::from(vote_topic.clone()))
+                                        .expect("LeanVote topic configured"),
+                                    bytes,
+                                )
+                            {
+                                warn!("publish vote for slot {slot} failed: {err:?}");
+                            } else {
+                                info!("broadcasted vote for slot {slot}");
+                            }
+                        }
+                    }
+                }
+
                 Some(event) = self.swarm.next() => {
                     if let Some(event) = self.parse_swarm_event(event).await {
                         info!("Swarm event: {event:?}");
                     }
                 }
-
             }
         }
     }
@@ -210,17 +268,6 @@ impl LeanNetworkService {
                                     signed_block.data.slot
                                 );
                             }
-                            if let Err(err) = self
-                                .swarm
-                                .behaviour_mut()
-                                .gossipsub
-                                .publish(message.topic, signed_block.as_ssz_bytes())
-                            {
-                                warn!(
-                                    "publish block for slot {} failed: {err:?}",
-                                    signed_block.data.slot
-                                );
-                            }
                         }
                         Ok(LeanGossipsubMessage::Vote(signed_vote)) => {
                             if let Err(err) =
@@ -232,17 +279,6 @@ impl LeanNetworkService {
                             {
                                 warn!(
                                     "failed to send vote for slot {} to chain: {err:?}",
-                                    signed_vote.data.slot
-                                );
-                            }
-                            if let Err(err) = self
-                                .swarm
-                                .behaviour_mut()
-                                .gossipsub
-                                .publish(message.topic, signed_vote.as_ssz_bytes())
-                            {
-                                warn!(
-                                    "publish vote for slot {} failed: {err:?}",
                                     signed_vote.data.slot
                                 );
                             }
@@ -341,9 +377,16 @@ mod tests {
             socket_port,
         });
         let (sender, _receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
-
-        let node =
-            LeanNetworkService::new(config.clone(), lean_chain, executor.unwrap(), sender).await?;
+        let (_outbound_request_sender_unused, outbound_request_receiver) =
+            mpsc::unbounded_channel::<QueueItem>();
+        let node = LeanNetworkService::new(
+            config.clone(),
+            lean_chain,
+            executor.unwrap(),
+            sender,
+            outbound_request_receiver,
+        )
+        .await?;
         let multi_addr: Multiaddr = config.socket_address.into();
         Ok((node, multi_addr))
     }

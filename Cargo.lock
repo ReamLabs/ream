@@ -5216,6 +5216,7 @@ dependencies = [
  "ream-chain-lean",
  "ream-checkpoint-sync",
  "ream-consensus-beacon",
+ "ream-consensus-lean",
  "ream-consensus-misc",
  "ream-discv5",
  "ream-executor",
