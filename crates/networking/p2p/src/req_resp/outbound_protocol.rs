@@ -13,6 +13,7 @@ use futures::{
 };
 use libp2p::{OutboundUpgrade, bytes::Buf, core::UpgradeInfo};
 use ream_consensus_beacon::{blob_sidecar::BlobSidecar, electra::beacon_block::SignedBeaconBlock};
+use ream_consensus_lean::block::SignedBlock as LeanSignedBlock;
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_network_spec::networks::beacon_network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};
@@ -29,7 +30,10 @@ use super::{
     error::ReqRespError,
     handler::RespMessage,
     inbound_protocol::ResponseCode,
-    messages::{RequestMessage, meta_data::GetMetaDataV2, ping::Ping, status::Status},
+    messages::{
+        RequestMessage, lean_status::LeanStatus, meta_data::GetMetaDataV2, ping::Ping,
+        status::Status,
+    },
     protocol_id::{ProtocolId, SupportedProtocol},
 };
 use crate::{req_resp::messages::ResponseMessage, utils::max_message_size};
@@ -221,6 +225,17 @@ impl Decoder for OutboundSSZSnappyCodec {
                         SupportedProtocol::BlobSidecarsByRootV1 => Ok(Some(RespMessage::Response(
                             Box::new(ResponseMessage::BlobSidecarsByRoot(
                                 BlobSidecar::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                            )),
+                        ))),
+                        SupportedProtocol::LeanBlocksByRootV1 => Ok(Some(RespMessage::Response(
+                            Box::new(ResponseMessage::LeanBlocksByRoot(
+                                LeanSignedBlock::from_ssz_bytes(&buf)
+                                    .map_err(ReqRespError::from)?,
+                            )),
+                        ))),
+                        SupportedProtocol::LeanStatusV1 => Ok(Some(RespMessage::Response(
+                            Box::new(ResponseMessage::LeanStatus(
+                                LeanStatus::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
                             )),
                         ))),
                     }

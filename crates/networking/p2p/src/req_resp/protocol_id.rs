@@ -1,4 +1,5 @@
 const PROTOCOL_PREFIX: &str = "/eth2/beacon_chain/req";
+const LEAN_PROTOCOL_PREFIX: &str = "/leanconsensus/req";
 
 #[derive(Debug, Clone)]
 pub struct ProtocolId {
@@ -9,11 +10,17 @@ pub struct ProtocolId {
 impl ProtocolId {
     pub fn new(protocol: SupportedProtocol) -> Self {
         // Protocol identification `/ProtocolPrefix/MessageName/SchemaVersion/Encoding`
+        let prefix = if protocol.is_lean_consensus() {
+            LEAN_PROTOCOL_PREFIX // Lean consensus doesn't specify encoding in protocol ID
+        } else {
+            PROTOCOL_PREFIX
+        };
+
         let protocol_id = format!(
             "{}/{}/{}/ssz_snappy",
-            PROTOCOL_PREFIX,
+            prefix,
             protocol.message_name(),
-            protocol.schema_version()
+            protocol.schema_version(),
         );
         ProtocolId {
             protocol_id,
@@ -37,11 +44,20 @@ pub enum SupportedProtocol {
     BlobSidecarsByRootV1,
     GetMetaDataV2,
     GoodbyeV1,
+    LeanBlocksByRootV1,
+    LeanStatusV1,
     PingV1,
     StatusV1,
 }
 
 impl SupportedProtocol {
+    pub fn is_lean_consensus(&self) -> bool {
+        matches!(
+            self,
+            SupportedProtocol::LeanBlocksByRootV1 | SupportedProtocol::LeanStatusV1
+        )
+    }
+
     pub fn message_name(&self) -> &str {
         match self {
             SupportedProtocol::BeaconBlocksByRangeV2 => "beacon_blocks_by_range",
@@ -50,6 +66,8 @@ impl SupportedProtocol {
             SupportedProtocol::BlobSidecarsByRootV1 => "blob_sidecars_by_root",
             SupportedProtocol::GetMetaDataV2 => "metadata",
             SupportedProtocol::GoodbyeV1 => "goodbye",
+            SupportedProtocol::LeanBlocksByRootV1 => "lean_blocks_by_root",
+            SupportedProtocol::LeanStatusV1 => "status",
             SupportedProtocol::PingV1 => "ping",
             SupportedProtocol::StatusV1 => "status",
         }
@@ -63,6 +81,8 @@ impl SupportedProtocol {
             SupportedProtocol::BlobSidecarsByRootV1 => "1",
             SupportedProtocol::GetMetaDataV2 => "2",
             SupportedProtocol::GoodbyeV1 => "1",
+            SupportedProtocol::LeanBlocksByRootV1 => "1",
+            SupportedProtocol::LeanStatusV1 => "1",
             SupportedProtocol::PingV1 => "1",
             SupportedProtocol::StatusV1 => "1",
         }
@@ -78,6 +98,8 @@ impl SupportedProtocol {
             SupportedProtocol::BeaconBlocksByRootV2,
             SupportedProtocol::BlobSidecarsByRangeV1,
             SupportedProtocol::BlobSidecarsByRootV1,
+            SupportedProtocol::LeanBlocksByRootV1,
+            SupportedProtocol::LeanStatusV1,
         ]
         .into_iter()
         .map(ProtocolId::new)
@@ -94,6 +116,8 @@ impl SupportedProtocol {
             SupportedProtocol::BeaconBlocksByRootV2 => true,
             SupportedProtocol::BlobSidecarsByRangeV1 => true,
             SupportedProtocol::BlobSidecarsByRootV1 => true,
+            SupportedProtocol::LeanBlocksByRootV1 => true,
+            SupportedProtocol::LeanStatusV1 => false,
         }
     }
 }

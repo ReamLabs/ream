@@ -41,6 +41,8 @@ use crate::{
     req_resp::messages::{
         beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
         blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
+        lean_blocks::LeanBlocksByRootV1Request,
+        lean_status::LeanStatus,
     },
     utils::max_message_size,
 };
@@ -204,6 +206,15 @@ impl Decoder for InboundSSZSnappyCodec {
                                 .map_err(ReqRespError::from)?,
                         )))
                     }
+                    SupportedProtocol::LeanBlocksByRootV1 => {
+                        Ok(Some(RequestMessage::LeanBlocksByRoot(
+                            LeanBlocksByRootV1Request::from_ssz_bytes(&buf)
+                                .map_err(ReqRespError::from)?,
+                        )))
+                    }
+                    SupportedProtocol::LeanStatusV1 => Ok(Some(RequestMessage::LeanStatus(
+                        LeanStatus::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                    ))),
                     SupportedProtocol::GetMetaDataV2 => Err(ReqRespError::InvalidData(
                         "GetMetaDataV2 is already handled above".to_string(),
                     )),
