@@ -1,19 +1,19 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use alloy_primitives::B256;
 use anyhow::anyhow;
-use ream_consensus_lean::{QueueItem, VoteItem, block::Block, process_block};
+use ream_consensus_lean::{VoteItem, block::Block, process_block};
 use ream_network_spec::networks::lean_network_spec;
-use tokio::sync::{RwLock, mpsc};
-use tracing::{info, warn};
+use tokio::sync::mpsc;
+use tracing::{error, info, warn};
 use tree_hash::TreeHash;
 
-use crate::{clock::create_lean_clock_interval, lean_chain::LeanChain, slot::get_current_slot};
-
-#[derive(Debug, Clone)]
-pub struct LeanChainServiceMessage {
-    pub item: QueueItem,
-}
+use crate::{
+    clock::create_lean_clock_interval,
+    lean_chain::LeanChainWriter,
+    messages::{LeanChainServiceMessage, ProduceBlockMessage, QueueItem},
+    slot::get_current_slot,
+};
 
 /// LeanChainService is responsible for updating the [LeanChain] state. `LeanChain` is updated when:
 /// 1. Every third (t=2/4) and fourth (t=3/4) ticks.
@@ -21,7 +21,7 @@ pub struct LeanChainServiceMessage {
 ///
 /// NOTE: This service will be the core service to implement `receive()` function.
 pub struct LeanChainService {
-    lean_chain: Arc<RwLock<LeanChain>>,
+    lean_chain: LeanChainWriter,
     receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
     sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     outbound_gossip: mpsc::UnboundedSender<QueueItem>,
@@ -31,7 +31,7 @@ pub struct LeanChainService {
 
 impl LeanChainService {
     pub async fn new(
-        lean_chain: Arc<RwLock<LeanChain>>,
+        lean_chain: LeanChainWriter,
         receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
         sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
         outbound_gossip: mpsc::UnboundedSender<QueueItem>,
@@ -80,22 +80,51 @@ impl LeanChainService {
                     tick_count += 1;
                 }
                 Some(message) = self.receiver.recv() => {
-                    self.handle_message(message.clone()).await;
-                    if let Err(err) = self.outbound_gossip.send(message.item) {
-                        warn!("Failed to send item to outbound gossip channel: {err:?}");
+                    match message {
+                        LeanChainServiceMessage::ProduceBlock(produce_block_message) => {
+                            if let Err(err) = self.handle_produce_block(produce_block_message).await {
+                                error!("Failed to handle produce block message: {err}");
+                            }
+                        }
+                        LeanChainServiceMessage::QueueItem(queue_item) => {
+                            self.handle_queue_item(queue_item.clone()).await;
+                            if let Err(err) = self.outbound_gossip.send(queue_item) {
+                                warn!("Failed to send item to outbound gossip channel: {err:?}");
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    async fn handle_message(&mut self, message: LeanChainServiceMessage) {
-        self.handle_item(message.item).await;
+    async fn handle_produce_block(
+        &mut self,
+        produce_block_message: ProduceBlockMessage,
+    ) -> anyhow::Result<()> {
+        let slot = produce_block_message.slot;
+        let new_block = {
+            let mut lean_chain = self.lean_chain.write().await;
+
+            // Accept new votes and modify the lean chain.
+            lean_chain.accept_new_votes()?;
+
+            // Build a block and propose the block.
+            lean_chain.propose_block(slot)?
+        };
+
+        // Send the produced block back to the requester
+        produce_block_message
+            .response
+            .send(new_block)
+            .map_err(|err| anyhow!("Failed to send produced block: {err:?}"))?;
+
+        Ok(())
     }
 
-    async fn handle_item(&mut self, item: QueueItem) {
+    async fn handle_queue_item(&mut self, item: QueueItem) {
         match item {
-            QueueItem::BlockItem(block) => {
+            QueueItem::Block(block) => {
                 let block_hash = block.tree_hash_root();
                 info!(
                     "Received block at slot {} with hash {block_hash:?} from parent {:?}",
@@ -103,7 +132,7 @@ impl LeanChainService {
                 );
                 let _ = self.handle_block(block).await;
             }
-            QueueItem::VoteItem(vote_item) => {
+            QueueItem::Vote(vote_item) => {
                 match &vote_item {
                     VoteItem::Signed(signed_vote) => {
                         let vote = &signed_vote.data;
@@ -156,7 +185,7 @@ impl LeanChainService {
                 // by sending them to this service itself.
                 if let Some(queue_items) = self.dependencies.remove(&block_hash) {
                     for item in queue_items {
-                        self.sender.send(LeanChainServiceMessage { item })?;
+                        self.sender.send(LeanChainServiceMessage::QueueItem(item))?;
                     }
                 }
             }
@@ -166,7 +195,7 @@ impl LeanChainService {
                 self.dependencies
                     .entry(block.parent)
                     .or_default()
-                    .push(QueueItem::BlockItem(block));
+                    .push(QueueItem::Block(block));
             }
         }
 
@@ -198,7 +227,7 @@ impl LeanChainService {
             self.dependencies
                 .entry(vote.head.root)
                 .or_default()
-                .push(QueueItem::VoteItem(VoteItem::Unsigned(vote)));
+                .push(QueueItem::Vote(VoteItem::Unsigned(vote)));
         }
     }
 }

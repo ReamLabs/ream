@@ -5229,6 +5229,7 @@ dependencies = [
  "ream-rpc-beacon",
  "ream-rpc-lean",
  "ream-storage",
+ "ream-sync",
  "ream-validator-beacon",
  "ream-validator-lean",
  "tokio",
@@ -5331,6 +5332,7 @@ dependencies = [
  "ream-metrics",
  "ream-network-spec",
  "ream-pqc",
+ "ream-sync",
  "serde",
  "ssz_types",
  "tokio",
@@ -5654,6 +5656,7 @@ dependencies = [
  "ream-executor",
  "ream-light-client",
  "ream-network-spec",
+ "ream-sync",
  "ream-validator-beacon",
  "serde",
  "serde_yaml",
@@ -5785,6 +5788,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-sync"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
 name = "ream-syncer"
 version = "0.1.0"
 dependencies = [
@@ -5850,6 +5860,7 @@ dependencies = [
  "ream-consensus-lean",
  "ream-consensus-misc",
  "ream-network-spec",
+ "ream-sync",
  "tokio",
  "tracing",
 ]

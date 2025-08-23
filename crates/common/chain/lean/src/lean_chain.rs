@@ -7,10 +7,14 @@ use ream_consensus_lean::{
     is_justifiable_slot, process_block, state::LeanState, vote::Vote,
 };
 use ream_metrics::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
+use ream_sync::rwlock::{Reader, Writer};
 use ssz_types::VariableList;
 use tree_hash::TreeHash;
 
 use crate::slot::get_current_slot;
+
+pub type LeanChainWriter = Writer<LeanChain>;
+pub type LeanChainReader = Reader<LeanChain>;
 
 /// [LeanChain] represents the state that the Lean node should maintain.
 ///
@@ -96,7 +100,7 @@ impl LeanChain {
         Ok(())
     }
 
-    pub fn propose_block(&mut self, slot: u64) -> anyhow::Result<Block> {
+    pub fn propose_block(&self, slot: u64) -> anyhow::Result<Block> {
         let initialize_block_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
         let head_state = self
             .post_states
@@ -144,16 +148,6 @@ impl LeanChain {
             start_timer_vec(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
         new_block.state_root = state.tree_hash_root();
         stop_timer(compute_state_root_timer);
-
-        // Compute the block root
-        let compute_block_root_timer =
-            start_timer_vec(&PROPOSE_BLOCK_TIME, &["compute_block_root"]);
-        let digest = new_block.tree_hash_root();
-        stop_timer(compute_block_root_timer);
-
-        // Saves block and state to the internal view
-        self.chain.insert(digest, new_block.clone());
-        self.post_states.insert(digest, state);
 
         Ok(new_block)
     }

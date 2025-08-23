@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use actix_web::{App, HttpServer, middleware, web::Data};
 use config::LeanRpcServerConfig;
-use ream_chain_lean::lean_chain::LeanChain;
-use tokio::sync::RwLock;
+use ream_chain_lean::lean_chain::LeanChainReader;
 use tracing::info;
 
 use crate::routes::register_routers;
@@ -15,7 +12,7 @@ pub mod routes;
 /// Start the Lean API server.
 pub async fn start_lean_server(
     server_config: LeanRpcServerConfig,
-    lean_chain: Arc<RwLock<LeanChain>>,
+    lean_chain: LeanChainReader,
 ) -> std::io::Result<()> {
     info!(
         "starting HTTP server on {:?}",

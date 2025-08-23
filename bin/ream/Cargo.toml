@@ -48,5 +48,6 @@ ream-p2p.workspace = true
 ream-rpc-beacon.workspace = true
 ream-rpc-lean.workspace = true
 ream-storage.workspace = true
+ream-sync.workspace = true
 ream-validator-beacon.workspace = true
 ream-validator-lean.workspace = true

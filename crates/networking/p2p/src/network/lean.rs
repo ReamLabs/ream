@@ -17,14 +17,14 @@ use libp2p::{
 };
 use libp2p_identity::{Keypair, PeerId};
 use parking_lot::RwLock as ParkingRwLock;
-use ream_chain_lean::{lean_chain::LeanChain, service::LeanChainServiceMessage};
-use ream_consensus_lean::{QueueItem, VoteItem};
+use ream_chain_lean::{
+    lean_chain::LeanChainReader,
+    messages::{LeanChainServiceMessage, QueueItem},
+};
+use ream_consensus_lean::VoteItem;
 use ream_executor::ReamExecutor;
 use ssz::Encode;
-use tokio::sync::{
-    RwLock,
-    mpsc::{UnboundedReceiver, UnboundedSender},
-};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{info, trace, warn};
 
 use crate::{
@@ -74,7 +74,7 @@ pub struct LeanNetworkConfig {
 ///
 /// TBD: It will be best if we reuse the existing NetworkManagerService for the beacon node.
 pub struct LeanNetworkService {
-    lean_chain: Arc<RwLock<LeanChain>>,
+    lean_chain: LeanChainReader,
     network_config: Arc<LeanNetworkConfig>,
     swarm: Swarm<ReamBehaviour>,
     peer_table: ParkingRwLock<HashMap<PeerId, ConnectionState>>,
@@ -85,7 +85,7 @@ pub struct LeanNetworkService {
 impl LeanNetworkService {
     pub async fn new(
         network_config: Arc<LeanNetworkConfig>,
-        lean_chain: Arc<RwLock<LeanChain>>,
+        lean_chain: LeanChainReader,
         executor: ReamExecutor,
         chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
         outbound_p2p_request: UnboundedReceiver<QueueItem>,
@@ -192,7 +192,7 @@ impl LeanNetworkService {
             tokio::select! {
                 Some(item) = self.outbound_p2p_request.recv() => {
                     match item {
-                        QueueItem::BlockItem(block) => {
+                        QueueItem::Block(block) => {
                             if let Err(err) = self.swarm
                                 .behaviour_mut()
                                 .gossipsub
@@ -212,7 +212,7 @@ impl LeanNetworkService {
                                 info!("broadcasted block for slot {}", block.slot);
                             }
                         }
-                        QueueItem::VoteItem(vote) => {
+                        QueueItem::Vote(vote) => {
                             let (bytes, slot) = match &vote {
                                 VoteItem::Signed(signed) => (signed.as_ssz_bytes(), signed.data.slot),
                                 VoteItem::Unsigned(unsigned) => (unsigned.as_ssz_bytes(), unsigned.slot),
@@ -259,9 +259,10 @@ impl LeanNetworkService {
                     match LeanGossipsubMessage::decode(&message.topic, &message.data) {
                         Ok(LeanGossipsubMessage::Block(signed_block)) => {
                             if let Err(err) =
-                                self.chain_message_sender.send(LeanChainServiceMessage {
-                                    item: QueueItem::BlockItem((signed_block).data.clone()),
-                                })
+                                self.chain_message_sender
+                                    .send(LeanChainServiceMessage::QueueItem(QueueItem::Block(
+                                        (signed_block).data.clone(),
+                                    )))
                             {
                                 warn!(
                                     "failed to send block for slot {} item to chain: {err:?}",
@@ -271,11 +272,10 @@ impl LeanNetworkService {
                         }
                         Ok(LeanGossipsubMessage::Vote(signed_vote)) => {
                             if let Err(err) =
-                                self.chain_message_sender.send(LeanChainServiceMessage {
-                                    item: QueueItem::VoteItem(VoteItem::Signed(
-                                        (*signed_vote).clone(),
-                                    )),
-                                })
+                                self.chain_message_sender
+                                    .send(LeanChainServiceMessage::QueueItem(QueueItem::Vote(
+                                        VoteItem::Signed((*signed_vote).clone()),
+                                    )))
                             {
                                 warn!(
                                     "failed to send vote for slot {} to chain: {err:?}",
@@ -350,6 +350,7 @@ mod tests {
     use libp2p::{Multiaddr, multiaddr::Protocol};
     use ream_chain_lean::lean_chain::LeanChain;
     use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
+    use ream_sync::rwlock::Writer;
     use tokio::sync::mpsc;
     use tracing_test::traced_test;
 
@@ -369,8 +370,8 @@ mod tests {
     ) -> anyhow::Result<(LeanNetworkService, Multiaddr)> {
         ensure_network_spec_init();
 
-        let lean_chain = Arc::new(RwLock::new(LeanChain::default()));
-        let executor = ReamExecutor::new();
+        let (_, lean_chain_reader) = Writer::new(LeanChain::default());
+        let executor = ReamExecutor::new().expect("Failed to create executor");
         let config = Arc::new(LeanNetworkConfig {
             gossipsub_config: LeanGossipsubConfig::default(),
             socket_address: Ipv4Addr::new(127, 0, 0, 1).into(),
@@ -381,8 +382,8 @@ mod tests {
             mpsc::unbounded_channel::<QueueItem>();
         let node = LeanNetworkService::new(
             config.clone(),
-            lean_chain,
-            executor.unwrap(),
+            lean_chain_reader,
+            executor,
             sender,
             outbound_request_receiver,
         )

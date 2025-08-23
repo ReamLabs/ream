@@ -20,10 +20,10 @@ use ream_api_types_beacon::id::{ID, ValidatorID};
 use ream_chain_lean::{
     genesis as lean_genesis,
     lean_chain::LeanChain,
-    service::{LeanChainService, LeanChainServiceMessage},
+    messages::{LeanChainServiceMessage, QueueItem},
+    service::LeanChainService,
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-use ream_consensus_lean::QueueItem;
 use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
 };
@@ -47,12 +47,13 @@ use ream_storage::{
     dir::setup_data_dir,
     tables::Table,
 };
+use ream_sync::rwlock::Writer;
 use ream_validator_beacon::{
     beacon_api_client::BeaconApiClient, validator::ValidatorService,
     voluntary_exit::process_voluntary_exit,
 };
 use ream_validator_lean::service::ValidatorService as LeanValidatorService;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -133,7 +134,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
 
     // Initialize the lean chain with genesis block and state.
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
-    let lean_chain = Arc::new(RwLock::new(LeanChain::new(genesis_block, genesis_state)));
+    let (lean_chain_writer, lean_chain_reader) =
+        Writer::new(LeanChain::new(genesis_block, genesis_state));
 
     // Initialize the services that will run in the lean node.
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
@@ -141,7 +143,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
 
     // TODO 1: Load keystores from the config.
     let chain_service = LeanChainService::new(
-        lean_chain.clone(),
+        lean_chain_writer,
         chain_receiver,
         chain_sender.clone(),
         outbound_p2p_sender,
@@ -166,7 +168,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
     };
 
     let validator_service =
-        LeanValidatorService::new(lean_chain.clone(), Vec::new(), chain_sender.clone()).await;
+        LeanValidatorService::new(lean_chain_reader.clone(), Vec::new(), chain_sender.clone())
+            .await;
 
     let mut network_service = LeanNetworkService::new(
         Arc::new(LeanNetworkConfig {
@@ -174,7 +177,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
             socket_address: config.socket_address,
             socket_port: config.socket_port,
         }),
-        lean_chain.clone(),
+        lean_chain_reader.clone(),
         executor.clone(),
         chain_sender,
         outbound_p2p_receiver,
@@ -205,7 +208,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         }
     });
     let http_future =
-        executor.spawn(async move { start_lean_server(server_config, lean_chain).await });
+        executor.spawn(async move { start_lean_server(server_config, lean_chain_reader).await });
 
     tokio::select! {
         _ = chain_future => {

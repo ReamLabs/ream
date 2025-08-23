@@ -1,0 +1,14 @@
+[package]
+name = "ream-sync"
+description = "This crate is for rust synchronization primitives"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+tokio.workspace = true

@@ -1,12 +1,12 @@
-use std::sync::Arc;
-
 use anyhow::anyhow;
 use ream_chain_lean::{
-    clock::create_lean_clock_interval, lean_chain::LeanChain, service::LeanChainServiceMessage,
+    clock::create_lean_clock_interval,
+    lean_chain::LeanChainReader,
+    messages::{LeanChainServiceMessage, QueueItem},
 };
-use ream_consensus_lean::{QueueItem, VoteItem};
+use ream_consensus_lean::VoteItem;
 use ream_network_spec::networks::lean_network_spec;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, oneshot};
 use tracing::info;
 
 // TODO: We need to replace this after PQC integration.
@@ -24,14 +24,14 @@ pub struct LeanKeystore {
 ///
 /// NOTE: Other ticks should be handled by the other services, such as [LeanChainService].
 pub struct ValidatorService {
-    lean_chain: Arc<RwLock<LeanChain>>,
+    lean_chain: LeanChainReader,
     keystores: Vec<LeanKeystore>,
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
 }
 
 impl ValidatorService {
     pub async fn new(
-        lean_chain: Arc<RwLock<LeanChain>>,
+        lean_chain: LeanChainReader,
         keystores: Vec<LeanKeystore>,
         chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     ) -> Self {
@@ -80,14 +80,14 @@ impl ValidatorService {
                             if let Some(keystore) = self.is_proposer(slot) {
                                 info!("Validator {} proposing block for slot {slot} (tick {tick_count})", keystore.id);
 
-                                // Acquire the write lock. `accept_new_votes` and `build_block` will modify the lean chain.
-                                let mut lean_chain = self.lean_chain.write().await;
+                                let (tx, rx) = oneshot::channel();
+                                self.chain_sender
+                                    .send(LeanChainServiceMessage::produce_block(slot, tx))
+                                    .expect("Failed to send vote to LeanChainService");
 
-                                // Accept new votes and modify the lean chain.
-                                lean_chain.accept_new_votes().expect("Failed to accept new votes");
 
-                                // Build a block and propose the block.
-                                let new_block = lean_chain.propose_block(slot).expect("Failed to build block");
+                                // Wait for the block to be produced.
+                                let new_block = rx.await.expect("Failed to receive block from LeanChainService");
 
                                 info!(
                                     "Validator {} built block: slot={}, parent={:?}, votes={}, state_root={:?}",
@@ -99,7 +99,11 @@ impl ValidatorService {
                                 );
 
                                 // TODO 1: Sign the block with the keystore.
-                                // TODO 2: Send the block to the network.
+
+                                // Send block to the LeanChainService.
+                                self.chain_sender
+                                    .send(LeanChainServiceMessage::QueueItem(QueueItem::Block(new_block)))
+                                    .expect("Failed to send vote to LeanChainService");
                             } else {
                                 let proposer_index = slot % lean_network_spec().num_validators;
                                 info!("Not proposer for slot {slot} (proposer is validator {proposer_index}), skipping");
@@ -120,16 +124,12 @@ impl ValidatorService {
                                 vote
                             }).collect::<Vec<_>>();
 
+                            // TODO 1: Sign the votes with the keystore.
                             for vote in votes {
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage {
-                                        item: QueueItem::VoteItem(VoteItem::Unsigned(vote)),
-                                    })
+                                    .send(LeanChainServiceMessage::QueueItem(QueueItem::Vote(VoteItem::Unsigned(vote))))
                                     .expect("Failed to send vote to LeanChainService");
                             }
-
-                            // TODO 1: Sign the votes with the keystore.
-                            // TODO 2: Send the votes to the network.
                         }
                         _ => {
                             // Other ticks (t=2/4, t=3/4): Do nothing.

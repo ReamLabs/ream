@@ -23,12 +23,6 @@ pub enum VoteItem {
     Unsigned(Vote),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub enum QueueItem {
-    BlockItem(Block),
-    VoteItem(VoteItem),
-}
-
 /// We allow justification of slots either <= 5 or a perfect square or oblong after
 /// the latest finalized slot. This gives us a backoff technique and ensures
 /// finality keeps progressing even under high latency
