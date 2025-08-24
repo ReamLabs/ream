@@ -23,6 +23,7 @@ discv5.workspace = true
 hashbrown.workspace = true
 prometheus_exporter.workspace = true
 rand.workspace = true
+rand_chacha.workspace = true
 tokio.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }

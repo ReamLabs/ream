@@ -360,13 +360,16 @@ pub async fn run_account_manager(mut config: AccountManagerConfig) {
         .expect("Invalid account manager configuration");
 
     info!(
-        "Account manager configuration: lifetime={}, chunk_size={}",
-        config.lifetime, config.chunk_size
+        "Account manager configuration: lifetime={}, chunk_size={}, activation_epoch={}, num_active_epochs={}",
+        config.lifetime, config.chunk_size, config.activation_epoch, config.num_active_epochs
     );
 
     let seed_phrase = config.get_seed_phrase();
-    ream_account_manager::generate_keys(&seed_phrase);
-
+    let (_public_key, _private_key) = ream_account_manager::generate_keys(
+        &seed_phrase,
+        config.activation_epoch,
+        config.num_active_epochs,
+    );
     info!("Account manager completed successfully");
 }
 

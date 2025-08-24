@@ -150,6 +150,10 @@ mod tests {
             "30",
             "--chunk-size",
             "10",
+            "--activation-epoch",
+            "100",
+            "--num-active-epochs",
+            "5",
         ]);
 
         match cli.command {
@@ -157,6 +161,8 @@ mod tests {
                 assert_eq!(config.verbosity, 2);
                 assert_eq!(config.lifetime, 30);
                 assert_eq!(config.chunk_size, 10);
+                assert_eq!(config.activation_epoch, 100);
+                assert_eq!(config.num_active_epochs, 5);
             }
             _ => unreachable!("This test should only validate the account manager cli"),
         }
