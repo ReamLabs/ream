@@ -35,14 +35,12 @@ impl PQVerifiable for Signature {
             return Err(VerificationError::InvalidMessageLength(message.len()));
         }
 
-        let message_array: [u8; MESSAGE_LENGTH] = message
-            .try_into()
-            .map_err(|_| VerificationError::InvalidMessageLength(message.len()))?;
-
         Ok(<HashSigScheme as SignatureScheme>::verify(
             &public_key.inner,
             epoch,
-            &message_array,
+            &message
+                .try_into()
+                .map_err(|_| VerificationError::InvalidMessageLength(message.len()))?,
             &self.inner,
         ))
     }
