@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use ream_pqc::PQSignature;
+use ream_post_quantum_crypto::PQSignature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{VariableList, typenum::U4096};

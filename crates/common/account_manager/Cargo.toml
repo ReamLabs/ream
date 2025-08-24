@@ -17,4 +17,4 @@ sha2.workspace = true
 tracing.workspace = true
 
 # ream dependencies
-ream-pqc.workspace = true
+ream-post-quantum-crypto.workspace = true

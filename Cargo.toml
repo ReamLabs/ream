@@ -26,7 +26,7 @@ members = [
     "crates/crypto/bls",
     "crates/crypto/keystore",
     "crates/crypto/merkle",
-    "crates/crypto/pqc",
+    "crates/crypto/post_quantum",
     "crates/networking/discv5",
     "crates/networking/manager",
     "crates/networking/p2p",
@@ -144,7 +144,7 @@ ream-node = { path = "crates/common/node" }
 ream-operation-pool = { path = "crates/common/operation_pool" }
 ream-p2p = { path = "crates/networking/p2p" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
-ream-pqc = { path = "crates/crypto/pqc" }
+ream-post-quantum-crypto = { path = "crates/crypto/post_quantum" }
 ream-rpc-beacon = { path = "crates/rpc/beacon" }
 ream-rpc-lean = { path = "crates/rpc/lean" }
 ream-storage = { path = "crates/storage" }

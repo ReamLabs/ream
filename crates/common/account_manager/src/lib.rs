@@ -1,6 +1,6 @@
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use ream_pqc::hashsig::{private_key::PrivateKey, public_key::PublicKey};
+use ream_post_quantum_crypto::hashsig::{private_key::PrivateKey, public_key::PublicKey};
 use sha2::{Digest, Sha256};
 use tracing::info;
 
