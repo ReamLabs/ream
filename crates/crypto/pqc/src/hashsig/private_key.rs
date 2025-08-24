@@ -41,11 +41,14 @@ impl PQSignable for PrivateKey {
             .try_into()
             .map_err(|_| SigningError::InvalidMessageLength(message.len()))?;
 
-        let mut rng = rand::rng();
-
         Ok(Signature::new(
-            <HashSigScheme as SignatureScheme>::sign(&mut rng, &self.inner, epoch, &message_array)
-                .map_err(SigningError::SigningFailed)?,
+            <HashSigScheme as SignatureScheme>::sign(
+                &mut rand::rng(),
+                &self.inner,
+                epoch,
+                &message_array,
+            )
+            .map_err(SigningError::SigningFailed)?,
         ))
     }
 }
