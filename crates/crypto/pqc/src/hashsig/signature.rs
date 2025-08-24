@@ -1,9 +1,6 @@
 use hashsig::{MESSAGE_LENGTH, signature::SignatureScheme};
 
-use crate::{
-    hashsig::{private_key::HashSigScheme, public_key::PublicKey},
-    traits::PQVerifiable,
-};
+use crate::hashsig::{private_key::HashSigScheme, public_key::PublicKey};
 
 type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
 
@@ -15,10 +12,8 @@ impl Signature {
     pub fn new(inner: HashSigSignature) -> Self {
         Self { inner }
     }
-}
 
-impl PQVerifiable for Signature {
-    fn verify(
+    pub fn verify(
         &self,
         message: &[u8; MESSAGE_LENGTH],
         public_key: &PublicKey,

@@ -1,5 +1,4 @@
 pub mod hashsig;
-pub mod traits;
 
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};

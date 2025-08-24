@@ -7,10 +7,7 @@ use hashsig::{
 };
 use rand::Rng;
 
-use crate::{
-    hashsig::{errors::SigningError, public_key::PublicKey, signature::Signature},
-    traits::PQSignable,
-};
+use crate::hashsig::{errors::SigningError, public_key::PublicKey, signature::Signature};
 
 pub type HashSigScheme = SIGWinternitzLifetime18W4;
 pub type HashSigPrivateKey = <HashSigScheme as SignatureScheme>::SecretKey;
@@ -34,17 +31,13 @@ impl PrivateKey {
 
         (PublicKey::new(public_key), Self::new(private_key))
     }
-}
 
-impl PQSignable for PrivateKey {
-    type Error = SigningError;
-
-    fn sign<R: Rng>(
+    pub fn sign<R: Rng>(
         &self,
         rng: &mut R,
         message: &[u8; MESSAGE_LENGTH],
         epoch: u32,
-    ) -> anyhow::Result<Signature, Self::Error> {
+    ) -> anyhow::Result<Signature, SigningError> {
         Ok(Signature::new(
             <HashSigScheme as SignatureScheme>::sign(rng, &self.inner, epoch, message)
                 .map_err(SigningError::SigningFailed)?,
@@ -56,10 +49,7 @@ impl PQSignable for PrivateKey {
 mod tests {
     use rand::rng;
 
-    use crate::{
-        hashsig::private_key::PrivateKey,
-        traits::{PQSignable, PQVerifiable},
-    };
+    use crate::hashsig::private_key::PrivateKey;
 
     #[test]
     fn test_sign_and_verify() {
