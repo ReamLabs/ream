@@ -1,15 +1,10 @@
-use hashsig::{
-    MESSAGE_LENGTH,
-    signature::{
-        SignatureScheme,
-        generalized_xmss::instantiations_poseidon::lifetime_2_to_the_18::winternitz::SIGWinternitzLifetime18W4,
-    },
-};
+use hashsig::{MESSAGE_LENGTH, signature::SignatureScheme};
 use rand::Rng;
 
-use crate::hashsig::{errors::SigningError, public_key::PublicKey, signature::Signature};
+use crate::hashsig::{
+    HashSigScheme, errors::SigningError, public_key::PublicKey, signature::Signature,
+};
 
-pub type HashSigScheme = SIGWinternitzLifetime18W4;
 pub type HashSigPrivateKey = <HashSigScheme as SignatureScheme>::SecretKey;
 
 pub struct PrivateKey {

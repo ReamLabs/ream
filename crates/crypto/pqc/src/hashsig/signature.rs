@@ -1,6 +1,6 @@
 use hashsig::{MESSAGE_LENGTH, signature::SignatureScheme};
 
-use crate::hashsig::{private_key::HashSigScheme, public_key::PublicKey};
+use crate::hashsig::{HashSigScheme, public_key::PublicKey};
 
 type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
 

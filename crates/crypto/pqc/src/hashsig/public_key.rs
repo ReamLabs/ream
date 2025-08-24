@@ -1,6 +1,6 @@
 use hashsig::signature::SignatureScheme;
 
-use crate::hashsig::private_key::HashSigScheme;
+use crate::hashsig::HashSigScheme;
 
 type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
 
