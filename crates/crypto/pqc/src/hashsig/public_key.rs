@@ -1,6 +1,7 @@
 use hashsig::signature::SignatureScheme;
 
 use crate::hashsig::private_key::HashSigScheme;
+
 type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
 
 pub struct PublicKey {

@@ -13,6 +13,8 @@ version.workspace = true
 hashsig.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
-ream-pqc.workspace = true
 sha2.workspace = true
 tracing.workspace = true
+
+# ream dependencies
+ream-pqc.workspace = true

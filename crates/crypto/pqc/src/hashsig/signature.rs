@@ -1,9 +1,10 @@
 use hashsig::{MESSAGE_LENGTH, signature::SignatureScheme};
 
 use crate::{
-    hashsig::{private_key::HashSigScheme, public_key::PublicKey},
+    hashsig::{errors::VerificationError, private_key::HashSigScheme, public_key::PublicKey},
     traits::PQVerifiable,
 };
+
 type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
 
 pub struct Signature {
@@ -14,12 +15,6 @@ impl Signature {
     pub fn new(inner: HashSigSignature) -> Self {
         Self { inner }
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum VerificationError {
-    #[error("Message length must be exactly {MESSAGE_LENGTH} bytes, got {0}")]
-    InvalidMessageLength(usize),
 }
 
 impl PQVerifiable for Signature {
@@ -38,9 +33,7 @@ impl PQVerifiable for Signature {
         Ok(<HashSigScheme as SignatureScheme>::verify(
             &public_key.inner,
             epoch,
-            &message
-                .try_into()
-                .map_err(|_| VerificationError::InvalidMessageLength(message.len()))?,
+            &message.try_into()?,
             &self.inner,
         ))
     }

@@ -68,18 +68,4 @@ impl AccountManagerConfig {
             "default_seed_phrase".to_string()
         }
     }
-
-    // pub fn get_seed_phrase(&self) -> String {
-    //     if let Some(phrase) = &self.seed_phrase {
-    //         phrase.clone()
-    //     } else {
-    //         let mnemonic = Mnemonic::random(OsRng, Default::default());
-    //         let phrase = mnemonic.phrase().to_string();
-    //         warn!("⚠️  IMPORTANT: Generated new seed phrase: {phrase}");
-    //         warn!(
-    //             "⚠️  Please save this seed phrase somewhere safe. You will need it to recover
-    // your keys."         );
-    //         phrase
-    //     }
-    // }
 }

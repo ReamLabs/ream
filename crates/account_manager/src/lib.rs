@@ -1,6 +1,6 @@
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use ream_pqc::hashsig::keystore;
+use ream_pqc::hashsig::{private_key::PrivateKey, public_key::PublicKey};
 use sha2::{Digest, Sha256};
 use tracing::info;
 
@@ -8,7 +8,7 @@ pub fn generate_keys(
     seed_phrase: &str,
     activation_epoch: usize,
     num_active_epochs: usize,
-) -> (ream_pqc::hashsig::PublicKey, ream_pqc::hashsig::PrivateKey) {
+) -> (PublicKey, PrivateKey) {
     info!("Generating beam chain validator keys.....");
 
     // Hash the seed phrase to get a 32-byte seed
@@ -24,7 +24,7 @@ pub fn generate_keys(
         activation_epoch, num_active_epochs
     );
     let (public_key, private_key) =
-        keystore::generate(&mut rng, activation_epoch, num_active_epochs);
+        PrivateKey::generate(&mut rng, activation_epoch, num_active_epochs);
     info!("Key generation complete");
 
     (public_key, private_key)
