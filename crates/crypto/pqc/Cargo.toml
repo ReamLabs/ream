@@ -10,6 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+anyhow.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
 hashsig.workspace = true

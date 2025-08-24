@@ -1,7 +1,7 @@
 use hashsig::{MESSAGE_LENGTH, signature::SignatureScheme};
 
 use crate::{
-    hashsig::{errors::VerificationError, private_key::HashSigScheme, public_key::PublicKey},
+    hashsig::{private_key::HashSigScheme, public_key::PublicKey},
     traits::PQVerifiable,
 };
 
@@ -18,22 +18,16 @@ impl Signature {
 }
 
 impl PQVerifiable for Signature {
-    type Error = VerificationError;
-
     fn verify(
         &self,
-        message: &[u8],
+        message: &[u8; MESSAGE_LENGTH],
         public_key: &PublicKey,
         epoch: u32,
-    ) -> Result<bool, Self::Error> {
-        if message.len() != MESSAGE_LENGTH {
-            return Err(VerificationError::InvalidMessageLength(message.len()));
-        }
-
+    ) -> anyhow::Result<bool> {
         Ok(<HashSigScheme as SignatureScheme>::verify(
             &public_key.inner,
             epoch,
-            &message.try_into()?,
+            message,
             &self.inner,
         ))
     }

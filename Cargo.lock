@@ -5680,6 +5680,7 @@ dependencies = [
 name = "ream-pqc"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "hashsig",

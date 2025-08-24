@@ -39,19 +39,15 @@ impl PrivateKey {
 impl PQSignable for PrivateKey {
     type Error = SigningError;
 
-    fn sign(&self, message: &[u8], epoch: u32) -> Result<Signature, Self::Error> {
-        if message.len() != MESSAGE_LENGTH {
-            return Err(SigningError::InvalidMessageLength(message.len()));
-        }
-
+    fn sign<R: Rng>(
+        &self,
+        rng: &mut R,
+        message: &[u8; MESSAGE_LENGTH],
+        epoch: u32,
+    ) -> Result<Signature, Self::Error> {
         Ok(Signature::new(
-            <HashSigScheme as SignatureScheme>::sign(
-                &mut rand::rng(),
-                &self.inner,
-                epoch,
-                &message.try_into()?,
-            )
-            .map_err(SigningError::SigningFailed)?,
+            <HashSigScheme as SignatureScheme>::sign(rng, &self.inner, epoch, message)
+                .map_err(SigningError::SigningFailed)?,
         ))
     }
 }
@@ -77,10 +73,10 @@ mod tests {
         let epoch = 5;
 
         // Create a test message (32 bytes as required by hashsig)
-        let message = vec![0u8; 32];
+        let message = [0u8; 32];
 
         // Sign the message
-        let result = private_key.sign(&message, epoch);
+        let result = private_key.sign(&mut rng, &message, epoch);
 
         assert!(result.is_ok(), "Signing should succeed");
         let signature = result.unwrap();
