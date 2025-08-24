@@ -37,16 +37,14 @@ impl PQSignable for PrivateKey {
             return Err(SigningError::InvalidMessageLength(message.len()));
         }
 
-        let message_array: [u8; MESSAGE_LENGTH] = message
-            .try_into()
-            .map_err(|_| SigningError::InvalidMessageLength(message.len()))?;
-
         Ok(Signature::new(
             <HashSigScheme as SignatureScheme>::sign(
                 &mut rand::rng(),
                 &self.inner,
                 epoch,
-                &message_array,
+                &message
+                    .try_into()
+                    .map_err(|_| SigningError::InvalidMessageLength(message.len()))?,
             )
             .map_err(SigningError::SigningFailed)?,
         ))
