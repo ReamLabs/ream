@@ -26,13 +26,18 @@ use tracing::debug;
 use unsigned_varint::codec::Uvi;
 
 use super::{
+    beacon::{messages::RequestMessage, protocol_id::ProtocolId},
     error::ReqRespError,
     handler::RespMessage,
     inbound_protocol::ResponseCode,
-    messages::{RequestMessage, meta_data::GetMetaDataV2, ping::Ping, status::Status},
-    protocol_id::{ProtocolId, SupportedProtocol},
 };
-use crate::{req_resp::messages::ResponseMessage, utils::max_message_size};
+use crate::{
+    req_resp::beacon::{
+        messages::{ResponseMessage, meta_data::GetMetaDataV2, ping::Ping, status::Status},
+        protocol_id::SupportedProtocol,
+    },
+    utils::max_message_size,
+};
 
 #[derive(Debug, Clone)]
 pub struct OutboundReqRespProtocol {

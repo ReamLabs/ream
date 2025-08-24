@@ -2,26 +2,11 @@ use std::time::Instant;
 
 use discv5::Enr;
 use libp2p::{Multiaddr, PeerId};
-use serde::Serialize;
 
-use crate::req_resp::messages::{meta_data::GetMetaDataV2, status::Status};
-
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum ConnectionState {
-    Connected,
-    Connecting,
-    Disconnected,
-    Disconnecting,
-}
-
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Direction {
-    Inbound,
-    Outbound,
-    Unknown,
-}
+use crate::{
+    network::peer::{ConnectionState, Direction},
+    req_resp::beacon::messages::{meta_data::GetMetaDataV2, status::Status},
+};
 
 #[derive(Clone, Debug)]
 pub struct CachedPeer {

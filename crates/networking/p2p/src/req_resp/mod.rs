@@ -1,13 +1,14 @@
+pub mod beacon;
 pub mod configurations;
 pub mod error;
 pub mod handler;
 pub mod inbound_protocol;
-pub mod messages;
+pub mod lean;
 pub mod outbound_protocol;
-pub mod protocol_id;
 
 use std::task::{Context, Poll};
 
+use beacon::messages::RequestMessage;
 use handler::{
     HandlerEvent, ReqRespConnectionHandler, ReqRespMessageError, ReqRespMessageReceived,
     RespMessage,
@@ -22,7 +23,6 @@ use libp2p::{
         ToSwarm,
     },
 };
-use messages::RequestMessage;
 use tracing::{debug, trace};
 
 /// Maximum number of concurrent requests per protocol ID that a client may issue.

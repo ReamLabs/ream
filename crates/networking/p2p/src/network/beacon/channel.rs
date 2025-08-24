@@ -6,8 +6,8 @@ use tokio::sync::mpsc;
 use crate::{
     gossipsub::beacon::topics::GossipTopic,
     req_resp::{
+        beacon::messages::{ResponseMessage, status::Status},
         handler::RespMessage,
-        messages::{ResponseMessage, status::Status},
     },
 };
 

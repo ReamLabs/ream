@@ -27,6 +27,7 @@ use ssz::Encode;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{info, trace, warn};
 
+use super::peer::ConnectionState;
 use crate::{
     bootnodes::Bootnodes,
     gossipsub::{
@@ -38,7 +39,6 @@ use crate::{
         snappy::SnappyTransform,
     },
     network::misc::Executor,
-    peer::ConnectionState,
 };
 
 #[derive(NetworkBehaviour)]

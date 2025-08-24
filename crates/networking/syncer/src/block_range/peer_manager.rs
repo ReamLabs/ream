@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use libp2p::PeerId;
 use ream_consensus_misc::constants::beacon::SLOTS_PER_EPOCH;
-use ream_p2p::{network_state::NetworkState, peer::CachedPeer};
+use ream_p2p::network::beacon::{network_state::NetworkState, peer::CachedPeer};
 use tracing::warn;
 
 #[derive(Debug, Clone)]

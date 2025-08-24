@@ -30,17 +30,20 @@ use tracing::debug;
 use unsigned_varint::codec::Uvi;
 
 use super::{
+    beacon::{
+        messages::{RequestMessage, meta_data::GetMetaDataV2},
+        protocol_id::{ProtocolId, SupportedProtocol},
+    },
     error::ReqRespError,
     handler::RespMessage,
-    messages::{
-        RequestMessage, goodbye::Goodbye, meta_data::GetMetaDataV2, ping::Ping, status::Status,
-    },
-    protocol_id::{ProtocolId, SupportedProtocol},
 };
 use crate::{
-    req_resp::messages::{
-        beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+    req_resp::beacon::messages::{
         blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
+        blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+        goodbye::Goodbye,
+        ping::Ping,
+        status::Status,
     },
     utils::max_message_size,
 };

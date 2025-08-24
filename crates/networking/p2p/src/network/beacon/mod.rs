@@ -1,3 +1,8 @@
+pub mod channel;
+pub mod network_state;
+pub mod peer;
+pub mod utils;
+
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -7,6 +12,7 @@ use std::{
 };
 
 use anyhow::anyhow;
+use channel::{P2PCallbackResponse, P2PMessage, P2PRequest, P2PResponse};
 use delay_map::{HashMapDelay, HashSetDelay};
 use discv5::Enr;
 use libp2p::{
@@ -20,7 +26,9 @@ use libp2p::{
     swarm::{self, ConnectionId, NetworkBehaviour, SwarmEvent},
 };
 use libp2p_identity::{Keypair, PublicKey, secp256k1};
+use network_state::NetworkState;
 use parking_lot::{Mutex, RwLock};
+use peer::CachedPeer;
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
 use ream_executor::ReamExecutor;
@@ -30,29 +38,30 @@ use tokio::{
     time::interval,
 };
 use tracing::{error, info, trace, warn};
+use utils::read_meta_data_from_disk;
 
+use super::peer::Direction;
 use crate::{
-    channel::{P2PCallbackResponse, P2PMessage, P2PRequest, P2PResponse},
     config::NetworkConfig,
     constants::{PING_INTERVAL_DURATION, TARGET_PEER_COUNT},
     gossipsub::{GossipsubBehaviour, beacon::topics::GossipTopic, snappy::SnappyTransform},
-    network::misc::{Executor, build_transport, peer_id_from_enr},
-    network_state::NetworkState,
-    peer::{CachedPeer, ConnectionState, Direction},
+    network::{
+        misc::{Executor, build_transport, peer_id_from_enr},
+        peer::ConnectionState,
+    },
     req_resp::{
         ReqResp, ReqRespMessage,
-        configurations::REQUEST_TIMEOUT,
-        handler::{ReqRespMessageError, ReqRespMessageReceived, RespMessage},
-        messages::{
+        beacon::messages::{
             RequestMessage, ResponseMessage,
-            beacon_blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
             blob_sidecars::BlobSidecarsByRootV1Request,
+            blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
             meta_data::GetMetaDataV2,
             ping::Ping,
             status::Status,
         },
+        configurations::REQUEST_TIMEOUT,
+        handler::{ReqRespMessageError, ReqRespMessageReceived, RespMessage},
     },
-    utils::read_meta_data_from_disk,
 };
 
 #[derive(NetworkBehaviour)]

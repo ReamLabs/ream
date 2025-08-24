@@ -7,8 +7,8 @@ use actix_web::{
 use discv5::Enr;
 use libp2p::{Multiaddr, PeerId};
 use ream_api_types_beacon::{error::ApiError, responses::DataResponse};
-use ream_p2p::{
-    network_state::NetworkState,
+use ream_p2p::network::{
+    beacon::network_state::NetworkState,
     peer::{ConnectionState, Direction},
 };
 use serde::Serialize;
@@ -44,29 +44,19 @@ pub async fn get_peer(
 pub async fn get_peer_count(
     network_state: Data<Arc<NetworkState>>,
 ) -> Result<impl Responder, ApiError> {
-    let mut connected = 0;
-    let mut connecting = 0;
-    let mut disconnected = 0;
-    let mut disconnecting = 0;
-
+    let mut peer_count = PeerCount::default();
     for peer in network_state.peer_table.read().values() {
         match peer.state {
-            ConnectionState::Connected => connected += 1,
-            ConnectionState::Connecting => connecting += 1,
-            ConnectionState::Disconnected => disconnected += 1,
-            ConnectionState::Disconnecting => disconnecting += 1,
+            ConnectionState::Connected => peer_count.connected += 1,
+            ConnectionState::Connecting => peer_count.connecting += 1,
+            ConnectionState::Disconnected => peer_count.disconnected += 1,
+            ConnectionState::Disconnecting => peer_count.disconnecting += 1,
         }
     }
-
-    Ok(HttpResponse::Ok().json(DataResponse::new(&PeerCount {
-        connected,
-        connecting,
-        disconnected,
-        disconnecting,
-    })))
+    Ok(HttpResponse::Ok().json(DataResponse::new(peer_count)))
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct PeerCount {
     #[serde(with = "serde_utils::quoted_u64")]
     disconnected: u64,

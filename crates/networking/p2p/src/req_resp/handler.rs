@@ -21,10 +21,10 @@ use libp2p::{
 use tracing::{error, trace};
 
 use super::{
+    beacon::messages::{RequestMessage, ResponseMessage},
     configurations::REQUEST_TIMEOUT,
     error::ReqRespError,
     inbound_protocol::{InboundFramed, InboundOutput, InboundReqRespProtocol, ResponseCode},
-    messages::{RequestMessage, ResponseMessage},
     outbound_protocol::{OutboundFramed, OutboundReqRespProtocol},
 };
 use crate::req_resp::ConnectionRequest;

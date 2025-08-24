@@ -13,7 +13,7 @@ use ream_fork_choice::{
 };
 use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
-use ream_p2p::req_resp::messages::status::Status;
+use ream_p2p::req_resp::beacon::messages::status::Status;
 use ream_storage::{
     db::ReamDB,
     tables::{Field, Table},

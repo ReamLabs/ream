@@ -7,8 +7,8 @@ use ream_consensus_beacon::{
 };
 use ream_executor::ReamExecutor;
 use ream_p2p::{
-    channel::{P2PCallbackResponse, P2PMessage, P2PRequest},
-    req_resp::messages::ResponseMessage,
+    network::beacon::channel::{P2PCallbackResponse, P2PMessage, P2PRequest},
+    req_resp::beacon::messages::ResponseMessage,
 };
 use ssz::Encode;
 use tokio::{

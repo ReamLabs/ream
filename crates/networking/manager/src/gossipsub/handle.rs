@@ -6,12 +6,12 @@ use ream_consensus_beacon::{
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_p2p::{
-    channel::GossipMessage,
     gossipsub::beacon::{
         configurations::GossipsubConfig,
         message::GossipsubMessage,
         topics::{GossipTopic, GossipTopicKind},
     },
+    network::beacon::channel::GossipMessage,
 };
 use ream_storage::{cache::CachedDB, tables::Table};
 use ream_validator_beacon::blob_sidecars::compute_subnet_for_blob_sidecar;

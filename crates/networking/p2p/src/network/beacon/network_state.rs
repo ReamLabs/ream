@@ -6,10 +6,10 @@ use libp2p::{Multiaddr, PeerId};
 use parking_lot::RwLock;
 use ssz::Encode;
 
+use super::{peer::CachedPeer, utils::META_DATA_FILE_NAME};
 use crate::{
-    peer::{CachedPeer, ConnectionState, Direction},
-    req_resp::messages::{meta_data::GetMetaDataV2, status::Status},
-    utils::META_DATA_FILE_NAME,
+    network::peer::{ConnectionState, Direction},
+    req_resp::beacon::messages::{meta_data::GetMetaDataV2, status::Status},
 };
 
 pub struct NetworkState {

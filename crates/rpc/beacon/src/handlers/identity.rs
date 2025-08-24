@@ -4,8 +4,8 @@ use actix_web::{HttpResponse, Responder, get, web::Data};
 use discv5::Enr;
 use ream_api_types_beacon::{error::ApiError, responses::DataResponse};
 use ream_p2p::{
-    network::misc::peer_id_from_enr, network_state::NetworkState,
-    req_resp::messages::meta_data::GetMetaDataV2,
+    network::{beacon::network_state::NetworkState, misc::peer_id_from_enr},
+    req_resp::beacon::messages::meta_data::GetMetaDataV2,
 };
 use serde::{Deserialize, Serialize};
 
