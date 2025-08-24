@@ -44,7 +44,7 @@ impl PQSignable for PrivateKey {
         rng: &mut R,
         message: &[u8; MESSAGE_LENGTH],
         epoch: u32,
-    ) -> Result<Signature, Self::Error> {
+    ) -> anyhow::Result<Signature, Self::Error> {
         Ok(Signature::new(
             <HashSigScheme as SignatureScheme>::sign(rng, &self.inner, epoch, message)
                 .map_err(SigningError::SigningFailed)?,
