@@ -4,14 +4,14 @@ use crate::{
     hashsig::{private_key::HashSigScheme, public_key::PublicKey},
     traits::PQVerifiable,
 };
-type HashSigSignatureInner = <HashSigScheme as SignatureScheme>::Signature;
+type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
 
 pub struct Signature {
-    pub inner: HashSigSignatureInner,
+    pub inner: HashSigSignature,
 }
 
 impl Signature {
-    pub fn new(inner: HashSigSignatureInner) -> Self {
+    pub fn new(inner: HashSigSignature) -> Self {
         Self { inner }
     }
 }
