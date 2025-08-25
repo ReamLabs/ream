@@ -5717,6 +5717,7 @@ dependencies = [
  "ream-execution-engine",
  "ream-fork-choice",
  "ream-light-client",
+ "ream-network-manager",
  "ream-network-spec",
  "ream-node",
  "ream-operation-pool",

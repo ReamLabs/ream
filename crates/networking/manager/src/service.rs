@@ -32,7 +32,7 @@ use crate::{
 pub struct NetworkManagerService {
     pub beacon_chain: Arc<BeaconChain>,
     manager_receiver: mpsc::UnboundedReceiver<ReamNetworkEvent>,
-    p2p_sender: P2PSender,
+    pub p2p_sender: P2PSender,
     pub network_state: Arc<NetworkState>,
     pub block_range_syncer: BlockRangeSyncer,
     pub ream_db: ReamDB,

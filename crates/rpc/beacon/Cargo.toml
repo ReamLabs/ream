@@ -35,6 +35,7 @@ ream-consensus-misc.workspace = true
 ream-execution-engine.workspace = true
 ream-fork-choice.workspace = true
 ream-light-client.workspace = true
+ream-network-manager.workspace = true
 ream-network-spec.workspace = true
 ream-node.workspace = true
 ream-operation-pool.workspace = true
