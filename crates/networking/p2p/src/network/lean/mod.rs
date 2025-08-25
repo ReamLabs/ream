@@ -39,11 +39,15 @@ use crate::{
         snappy::SnappyTransform,
     },
     network::misc::Executor,
+    req_resp::{Chain, ReqResp, ReqRespMessage},
 };
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
     pub identify: identify::Behaviour,
+
+    /// The request-response domain
+    pub req_resp: ReqResp,
 
     /// The gossip domain: gossipsub
     pub gossipsub: GossipsubBehaviour,
@@ -125,6 +129,7 @@ impl LeanNetworkService {
 
         let behaviour = {
             ReamBehaviour {
+                req_resp: ReqResp::new(Chain::Lean),
                 gossipsub,
                 identify,
                 connection_limits,
@@ -255,38 +260,10 @@ impl LeanNetworkService {
     ) -> Option<ReamNetworkEvent> {
         match event {
             SwarmEvent::Behaviour(ReamBehaviourEvent::Gossipsub(gossipsub_event)) => {
-                if let GossipsubEvent::Message { message, .. } = gossipsub_event {
-                    match LeanGossipsubMessage::decode(&message.topic, &message.data) {
-                        Ok(LeanGossipsubMessage::Block(signed_block)) => {
-                            if let Err(err) =
-                                self.chain_message_sender
-                                    .send(LeanChainServiceMessage::QueueItem(QueueItem::Block(
-                                        (signed_block).data.clone(),
-                                    )))
-                            {
-                                warn!(
-                                    "failed to send block for slot {} item to chain: {err:?}",
-                                    signed_block.data.slot
-                                );
-                            }
-                        }
-                        Ok(LeanGossipsubMessage::Vote(signed_vote)) => {
-                            if let Err(err) =
-                                self.chain_message_sender
-                                    .send(LeanChainServiceMessage::QueueItem(QueueItem::Vote(
-                                        VoteItem::Signed((*signed_vote).clone()),
-                                    )))
-                            {
-                                warn!(
-                                    "failed to send vote for slot {} to chain: {err:?}",
-                                    signed_vote.data.slot
-                                );
-                            }
-                        }
-                        Err(err) => warn!("gossip decode failed: {err:?}"),
-                    }
-                }
-                None
+                self.handle_gossipsub_event(gossipsub_event)
+            }
+            SwarmEvent::Behaviour(ReamBehaviourEvent::ReqResp(req_resp_event)) => {
+                self.handle_request_response_event(req_resp_event)
             }
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 self.peer_table
@@ -316,6 +293,48 @@ impl LeanNetworkService {
             }
             _ => None,
         }
+    }
+
+    fn handle_gossipsub_event(&mut self, event: GossipsubEvent) -> Option<ReamNetworkEvent> {
+        if let GossipsubEvent::Message { message, .. } = event {
+            match LeanGossipsubMessage::decode(&message.topic, &message.data) {
+                Ok(LeanGossipsubMessage::Block(signed_block)) => {
+                    if let Err(err) =
+                        self.chain_message_sender
+                            .send(LeanChainServiceMessage::QueueItem(QueueItem::Block(
+                                (signed_block).data.clone(),
+                            )))
+                    {
+                        warn!(
+                            "failed to send block for slot {} item to chain: {err:?}",
+                            signed_block.data.slot
+                        );
+                    }
+                }
+                Ok(LeanGossipsubMessage::Vote(signed_vote)) => {
+                    if let Err(err) =
+                        self.chain_message_sender
+                            .send(LeanChainServiceMessage::QueueItem(QueueItem::Vote(
+                                VoteItem::Signed((*signed_vote).clone()),
+                            )))
+                    {
+                        warn!(
+                            "failed to send vote for slot {} to chain: {err:?}",
+                            signed_vote.data.slot
+                        );
+                    }
+                }
+                Err(err) => warn!("gossip decode failed: {err:?}"),
+            }
+        }
+        None
+    }
+
+    fn handle_request_response_event(
+        &mut self,
+        _event: ReqRespMessage,
+    ) -> Option<ReamNetworkEvent> {
+        None
     }
 
     async fn connect_to_peers(&mut self, peers: Vec<Multiaddr>) {
