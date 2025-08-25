@@ -87,9 +87,15 @@ impl LeanChainService {
                             }
                         }
                         LeanChainServiceMessage::QueueItem(queue_item) => {
-                            self.handle_queue_item(queue_item.clone()).await;
-                            if let Err(err) = self.outbound_gossip.send(queue_item) {
-                                warn!("Failed to send item to outbound gossip channel: {err:?}");
+                            match self.handle_queue_item(queue_item.clone()).await {
+                                Ok(()) => {
+                                    if let Err(err) = self.outbound_gossip.send(queue_item) {
+                                        warn!("Failed to send item to outbound gossip channel: {err:?}");
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!("Could not publish: processing failed {err:?}");
+                                }
                             }
                         }
                     }
@@ -122,7 +128,7 @@ impl LeanChainService {
         Ok(())
     }
 
-    async fn handle_queue_item(&mut self, item: QueueItem) {
+    async fn handle_queue_item(&mut self, item: QueueItem) -> anyhow::Result<()> {
         match item {
             QueueItem::Block(block) => {
                 let block_hash = block.tree_hash_root();
@@ -130,7 +136,7 @@ impl LeanChainService {
                     "Received block at slot {} with hash {block_hash:?} from parent {:?}",
                     block.slot, block.parent
                 );
-                let _ = self.handle_block(block).await;
+                self.handle_block(block).await
             }
             QueueItem::Vote(vote_item) => {
                 match &vote_item {
@@ -149,7 +155,7 @@ impl LeanChainService {
                     }
                 }
 
-                self.handle_vote(vote_item).await;
+                self.handle_vote(vote_item).await
             }
         }
     }
@@ -202,7 +208,7 @@ impl LeanChainService {
         Ok(())
     }
 
-    async fn handle_vote(&mut self, vote_item: VoteItem) {
+    async fn handle_vote(&mut self, vote_item: VoteItem) -> anyhow::Result<()> {
         let vote = match vote_item {
             VoteItem::Signed(vote) => {
                 // TODO: Validate the signature.
@@ -229,5 +235,7 @@ impl LeanChainService {
                 .or_default()
                 .push(QueueItem::Vote(VoteItem::Unsigned(vote)));
         }
+
+        Ok(())
     }
 }
