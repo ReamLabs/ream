@@ -21,13 +21,17 @@ use libp2p::{
 use tracing::{error, trace};
 
 use super::{
-    beacon::messages::{RequestMessage, ResponseMessage},
-    configurations::REQUEST_TIMEOUT,
-    error::ReqRespError,
-    inbound_protocol::{InboundFramed, InboundOutput, InboundReqRespProtocol, ResponseCode},
+    ConnectionRequest,
+    beacon::messages::BeaconRequestMessage,
+    inbound_protocol::{InboundFramed, InboundOutput, InboundReqRespProtocol},
     outbound_protocol::{OutboundFramed, OutboundReqRespProtocol},
 };
-use crate::req_resp::ConnectionRequest;
+use crate::req_resp::{
+    configurations::REQUEST_TIMEOUT,
+    error::ReqRespError,
+    inbound_protocol::ResponseCode,
+    messages::{RequestMessage, ResponseMessage},
+};
 
 #[derive(Debug)]
 pub enum ReqRespMessageReceived {
@@ -71,12 +75,6 @@ impl RespMessage {
 }
 
 #[derive(Debug)]
-pub enum ReqRespMessageError {
-    Inbound { stream_id: u64, err: ReqRespError },
-    Outbound { request_id: u64, err: ReqRespError },
-}
-
-#[derive(Debug)]
 pub enum HandlerEvent {
     Ok(Box<ReqRespMessageReceived>),
     Err(ReqRespMessageError),
@@ -115,13 +113,6 @@ pub struct OutboundOpenInfo {
     pub message: RequestMessage,
 }
 
-#[derive(Debug)]
-enum ConnectionState {
-    Live,
-    ShuttingDown,
-    Closed,
-}
-
 pub struct ReqRespConnectionHandler {
     listen_protocol: SubstreamProtocol<InboundReqRespProtocol, ()>,
     behaviour_events: Vec<HandlerEvent>,
@@ -154,7 +145,7 @@ impl ReqRespConnectionHandler {
     fn on_fully_negotiated_inbound(&mut self, inbound_output: InboundOutput<Stream>, _info: ()) {
         let (message, inbound_framed) = inbound_output;
 
-        if let RequestMessage::Goodbye(_) = message {
+        if let RequestMessage::Beacon(BeaconRequestMessage::Goodbye(_)) = message {
             self.shutdown();
             return;
         }
@@ -612,4 +603,17 @@ async fn send_response_message_to_inbound_stream(
         Ok(_) => Ok(None),
         Err(err) => Err(err),
     }
+}
+
+#[derive(Debug)]
+pub enum ReqRespMessageError {
+    Inbound { stream_id: u64, err: ReqRespError },
+    Outbound { request_id: u64, err: ReqRespError },
+}
+
+#[derive(Debug)]
+pub enum ConnectionState {
+    Live,
+    ShuttingDown,
+    Closed,
 }

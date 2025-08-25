@@ -16,11 +16,12 @@ use ream_consensus_beacon::{blob_sidecar::BlobSidecar, electra::beacon_block::Si
 use ssz_derive::{Decode, Encode};
 use status::Status;
 
-use super::protocol_id::{ProtocolId, SupportedProtocol};
+use super::protocol_id::BeaconSupportedProtocol;
+use crate::req_resp::protocol_id::{ProtocolId, SupportedProtocol};
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 #[ssz(enum_behaviour = "transparent")]
-pub enum RequestMessage {
+pub enum BeaconRequestMessage {
     MetaData(Arc<GetMetaDataV2>),
     Goodbye(Goodbye),
     Status(Status),
@@ -31,24 +32,40 @@ pub enum RequestMessage {
     BlobSidecarsByRoot(BlobSidecarsByRootV1Request),
 }
 
-impl RequestMessage {
+impl BeaconRequestMessage {
     pub fn supported_protocols(&self) -> Vec<ProtocolId> {
         match self {
-            RequestMessage::MetaData(_) => vec![ProtocolId::new(SupportedProtocol::GetMetaDataV2)],
-            RequestMessage::Goodbye(_) => vec![ProtocolId::new(SupportedProtocol::GoodbyeV1)],
-            RequestMessage::Status(_) => vec![ProtocolId::new(SupportedProtocol::StatusV1)],
-            RequestMessage::Ping(_) => vec![ProtocolId::new(SupportedProtocol::PingV1)],
-            RequestMessage::BeaconBlocksByRange(_) => {
-                vec![ProtocolId::new(SupportedProtocol::BeaconBlocksByRangeV2)]
+            BeaconRequestMessage::MetaData(_) => vec![ProtocolId::new(SupportedProtocol::Beacon(
+                BeaconSupportedProtocol::StatusV1,
+            ))],
+            BeaconRequestMessage::Goodbye(_) => vec![ProtocolId::new(SupportedProtocol::Beacon(
+                BeaconSupportedProtocol::GoodbyeV1,
+            ))],
+            BeaconRequestMessage::Status(_) => vec![ProtocolId::new(SupportedProtocol::Beacon(
+                BeaconSupportedProtocol::StatusV1,
+            ))],
+            BeaconRequestMessage::Ping(_) => vec![ProtocolId::new(SupportedProtocol::Beacon(
+                BeaconSupportedProtocol::PingV1,
+            ))],
+            BeaconRequestMessage::BeaconBlocksByRange(_) => {
+                vec![ProtocolId::new(SupportedProtocol::Beacon(
+                    BeaconSupportedProtocol::BeaconBlocksByRangeV2,
+                ))]
             }
-            RequestMessage::BeaconBlocksByRoot(_) => {
-                vec![ProtocolId::new(SupportedProtocol::BeaconBlocksByRootV2)]
+            BeaconRequestMessage::BeaconBlocksByRoot(_) => {
+                vec![ProtocolId::new(SupportedProtocol::Beacon(
+                    BeaconSupportedProtocol::BeaconBlocksByRootV2,
+                ))]
             }
-            RequestMessage::BlobSidecarsByRange(_) => {
-                vec![ProtocolId::new(SupportedProtocol::BlobSidecarsByRangeV1)]
+            BeaconRequestMessage::BlobSidecarsByRange(_) => {
+                vec![ProtocolId::new(SupportedProtocol::Beacon(
+                    BeaconSupportedProtocol::BlobSidecarsByRangeV1,
+                ))]
             }
-            RequestMessage::BlobSidecarsByRoot(_) => {
-                vec![ProtocolId::new(SupportedProtocol::BlobSidecarsByRootV1)]
+            BeaconRequestMessage::BlobSidecarsByRoot(_) => {
+                vec![ProtocolId::new(SupportedProtocol::Beacon(
+                    BeaconSupportedProtocol::BlobSidecarsByRootV1,
+                ))]
             }
         }
     }
@@ -56,7 +73,7 @@ impl RequestMessage {
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 #[ssz(enum_behaviour = "transparent")]
-pub enum ResponseMessage {
+pub enum BeaconResponseMessage {
     MetaData(Arc<GetMetaDataV2>),
     Goodbye(Goodbye),
     Status(Status),

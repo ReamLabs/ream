@@ -8,7 +8,7 @@ use ream_consensus_beacon::{
 use ream_executor::ReamExecutor;
 use ream_p2p::{
     network::beacon::channel::{P2PCallbackResponse, P2PMessage, P2PRequest},
-    req_resp::beacon::messages::ResponseMessage,
+    req_resp::beacon::messages::BeaconResponseMessage,
 };
 use ssz::Encode;
 use tokio::{
@@ -53,7 +53,9 @@ impl PeerRangeDownloader {
             while let Some(response) = rx.recv().await {
                 match response {
                     Ok(P2PCallbackResponse::ResponseMessage(message)) => {
-                        if let ResponseMessage::BeaconBlocksByRange(blocks) = *message {
+                        if let BeaconResponseMessage::BeaconBlocksByRange(blocks) =
+                            message.as_ref().clone()
+                        {
                             info!(
                                 "Received block response with slot {} length {}",
                                 blocks.message.slot,
@@ -106,7 +108,9 @@ impl PeerRootsDownloader {
             while let Some(response) = rx.recv().await {
                 match response {
                     Ok(P2PCallbackResponse::ResponseMessage(message)) => {
-                        if let ResponseMessage::BeaconBlocksByRoot(blocks) = *message {
+                        if let BeaconResponseMessage::BeaconBlocksByRoot(blocks) =
+                            message.as_ref().clone()
+                        {
                             info!(
                                 "Received block response with slot {} length {}",
                                 blocks.message.slot,
@@ -159,7 +163,9 @@ impl PeerBlobIdentifierDownloader {
             while let Some(response) = rx.recv().await {
                 match response {
                     Ok(P2PCallbackResponse::ResponseMessage(message)) => {
-                        if let ResponseMessage::BlobSidecarsByRoot(blob_sidecar) = *message {
+                        if let BeaconResponseMessage::BlobSidecarsByRoot(blob_sidecar) =
+                            message.as_ref().clone()
+                        {
                             info!(
                                 "Received blob sidecar response with index {} length {}",
                                 blob_sidecar.index,

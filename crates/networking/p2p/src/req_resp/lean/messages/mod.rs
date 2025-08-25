@@ -1,26 +1,31 @@
 pub mod blocks;
 pub mod status;
 
-use blocks::BlocksByRootV1Request;
+use blocks::LeanBlocksByRootV1Request;
 use ream_consensus_lean::block::SignedBlock;
 use ssz_derive::{Decode, Encode};
-use status::Status;
+use status::LeanStatus;
 
-use super::protocol_id::{ProtocolId, SupportedProtocol};
+use super::protocol_id::LeanSupportedProtocol;
+use crate::req_resp::protocol_id::{ProtocolId, SupportedProtocol};
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 #[ssz(enum_behaviour = "transparent")]
-pub enum RequestMessage {
-    Status(Status),
-    BlocksByRoot(BlocksByRootV1Request),
+pub enum LeanRequestMessage {
+    Status(LeanStatus),
+    BlocksByRoot(LeanBlocksByRootV1Request),
 }
 
-impl RequestMessage {
+impl LeanRequestMessage {
     pub fn supported_protocols(&self) -> Vec<ProtocolId> {
         match self {
-            RequestMessage::Status(_) => vec![ProtocolId::new(SupportedProtocol::StatusV1)],
-            RequestMessage::BlocksByRoot(_) => {
-                vec![ProtocolId::new(SupportedProtocol::BlocksByRootV1)]
+            LeanRequestMessage::Status(_) => vec![ProtocolId::new(SupportedProtocol::Lean(
+                LeanSupportedProtocol::StatusV1,
+            ))],
+            LeanRequestMessage::BlocksByRoot(_) => {
+                vec![ProtocolId::new(SupportedProtocol::Lean(
+                    LeanSupportedProtocol::BlocksByRootV1,
+                ))]
             }
         }
     }
@@ -28,7 +33,7 @@ impl RequestMessage {
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 #[ssz(enum_behaviour = "transparent")]
-pub enum ResponseMessage {
-    Status(Status),
+pub enum LeanResponseMessage {
+    Status(LeanStatus),
     BlocksByRoot(SignedBlock),
 }

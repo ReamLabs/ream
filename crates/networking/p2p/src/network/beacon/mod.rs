@@ -50,9 +50,9 @@ use crate::{
         peer::ConnectionState,
     },
     req_resp::{
-        ReqResp, ReqRespMessage,
+        Chain, ReqResp, ReqRespMessage,
         beacon::messages::{
-            RequestMessage, ResponseMessage,
+            BeaconRequestMessage, BeaconResponseMessage,
             blob_sidecars::BlobSidecarsByRootV1Request,
             blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
             meta_data::GetMetaDataV2,
@@ -61,6 +61,7 @@ use crate::{
         },
         configurations::REQUEST_TIMEOUT,
         handler::{ReqRespMessageError, ReqRespMessageReceived, RespMessage},
+        messages::{RequestMessage, ResponseMessage},
     },
 };
 
@@ -91,7 +92,7 @@ pub enum ReamNetworkEvent {
         peer_id: PeerId,
         stream_id: u64,
         connection_id: ConnectionId,
-        message: RequestMessage,
+        message: BeaconRequestMessage,
     },
     GossipsubMessage {
         message: Message,
@@ -129,7 +130,7 @@ impl Network {
             Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
         discovery.discover_peers(QueryType::Peers, 16);
 
-        let req_resp = ReqResp::new();
+        let req_resp = ReqResp::new(Chain::Beacon);
 
         let gossipsub = {
             let snappy_transform =
@@ -312,28 +313,28 @@ impl Network {
                     match event {
                         P2PMessage::Request(request) => match request {
                             P2PRequest::BlockRange { peer_id, start, count, callback } => {
-                                if let Some(request_id) = self.send_request(peer_id, RequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request::new(start, count))) {
+                                if let Some(request_id) = self.send_request(peer_id, BeaconRequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request::new(start, count))) {
                                     self.callbacks.insert(request_id, callback);
                                 } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
                                     warn!("Failed to send error response: {err:?}");
                                 }
                             },
                             P2PRequest::BlockRoots { peer_id, roots, callback } => {
-                                if let Some(request_id) = self.send_request(peer_id, RequestMessage::BeaconBlocksByRoot(BeaconBlocksByRootV2Request::new(roots))) {
+                                if let Some(request_id) = self.send_request(peer_id, BeaconRequestMessage::BeaconBlocksByRoot(BeaconBlocksByRootV2Request::new(roots))) {
                                     self.callbacks.insert(request_id, callback);
                                 } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
                                     warn!("Failed to send error response: {err:?}");
                                 }
                             },
                             P2PRequest::BlobIdentifiers { peer_id, blob_identifiers, callback } => {
-                                if let Some(request_id) = self.send_request(peer_id, RequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request::new(blob_identifiers))) {
+                                if let Some(request_id) = self.send_request(peer_id, BeaconRequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request::new(blob_identifiers))) {
                                     self.callbacks.insert(request_id, callback);
                                 } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
                                     warn!("Failed to send error response: {err:?}");
                                 }
                             }
                             P2PRequest::Status { peer_id, status } => {
-                                self.send_request(peer_id, RequestMessage::Status(status));
+                                self.send_request(peer_id, BeaconRequestMessage::Status(status));
                             }
                         },
                         P2PMessage::Response(P2PResponse {peer_id, connection_id, stream_id, message}) => {
@@ -352,7 +353,8 @@ impl Network {
                         continue;
                     }
 
-                    let ping_message = RequestMessage::Ping(Ping::new(self.network_state.meta_data.read().seq_number));
+                    let ping_message = BeaconRequestMessage::Ping(Ping::new(self.network_state.meta_data.read().seq_number));
+
                     self.send_request(peer_id, ping_message);
 
                     self.peers_to_ping.insert(peer_id);
@@ -402,18 +404,34 @@ impl Network {
         }
     }
 
-    fn send_request(&mut self, peer_id: PeerId, message: RequestMessage) -> Option<u64> {
+    fn send_request(&mut self, peer_id: PeerId, message: BeaconRequestMessage) -> Option<u64> {
         if !self.swarm.is_connected(&peer_id) {
             return None;
         }
 
         let request_id = self.request_id();
-        self.swarm
-            .behaviour_mut()
-            .req_resp
-            .send_request(peer_id, request_id, message);
+        self.swarm.behaviour_mut().req_resp.send_request(
+            peer_id,
+            request_id,
+            RequestMessage::Beacon(message),
+        );
 
         Some(request_id)
+    }
+
+    fn send_response(
+        &mut self,
+        peer_id: PeerId,
+        connection_id: ConnectionId,
+        stream_id: u64,
+        message: BeaconResponseMessage,
+    ) {
+        self.swarm.behaviour_mut().req_resp.send_response(
+            peer_id,
+            connection_id,
+            stream_id,
+            RespMessage::Response(Box::new(ResponseMessage::Beacon(message.into()))),
+        );
     }
 
     async fn parse_swarm_event(
@@ -450,9 +468,9 @@ impl Network {
                 } else {
                     // send status request to the peer
                     let status_message =
-                        RequestMessage::Status(self.network_state.status.read().clone());
+                        BeaconRequestMessage::Status(self.network_state.status.read().clone());
                     self.send_request(peer_id, status_message);
-                    let ping_message = RequestMessage::Ping(Ping::new(
+                    let ping_message = BeaconRequestMessage::Ping(Ping::new(
                         self.network_state.meta_data.read().seq_number,
                     ));
                     self.send_request(peer_id, ping_message);
@@ -581,144 +599,155 @@ impl Network {
         };
 
         match message {
-            ReqRespMessageReceived::Request { stream_id, message } => match *message {
-                RequestMessage::MetaData(get_meta_data_v2) => {
-                    trace!(
-                        ?peer_id,
-                        ?stream_id,
-                        ?connection_id,
-                        ?get_meta_data_v2,
-                        "Received GetMetaDataV2 request"
-                    );
-                    self.swarm.behaviour_mut().req_resp.send_response(
-                        peer_id,
-                        connection_id,
-                        stream_id,
-                        RespMessage::Response(Box::new(ResponseMessage::MetaData(
-                            self.network_state.meta_data.read().clone().into(),
-                        ))),
-                    );
-                    None
-                }
-                RequestMessage::Ping(ping) => {
-                    trace!(
-                        ?peer_id,
-                        ?stream_id,
-                        ?connection_id,
-                        ?ping,
-                        "Received Ping request"
-                    );
-                    self.swarm.behaviour_mut().req_resp.send_response(
-                        peer_id,
-                        connection_id,
-                        stream_id,
-                        RespMessage::Response(Box::new(ResponseMessage::Ping(Ping::new(
-                            self.network_state.meta_data.read().seq_number,
-                        )))),
-                    );
-                    None
-                }
-                RequestMessage::Goodbye(goodbye) => {
-                    trace!(
-                        ?peer_id,
-                        ?stream_id,
-                        ?connection_id,
-                        ?goodbye,
-                        "Received Goodbye message"
-                    );
-                    None
-                }
-                RequestMessage::Status(status) => {
-                    trace!(
-                        ?peer_id,
-                        ?stream_id,
-                        ?connection_id,
-                        ?status,
-                        "Received Status request"
-                    );
+            ReqRespMessageReceived::Request { stream_id, message } => {
+                if let RequestMessage::Beacon(message) = *message {
+                    match message {
+                        BeaconRequestMessage::MetaData(get_meta_data_v2) => {
+                            trace!(
+                                ?peer_id,
+                                ?stream_id,
+                                ?connection_id,
+                                ?get_meta_data_v2,
+                                "Received GetMetaDataV2 request"
+                            );
+                            let response = BeaconResponseMessage::MetaData(
+                                self.network_state.meta_data.read().clone().into(),
+                            );
+                            self.send_response(peer_id, connection_id, stream_id, response);
+                            None
+                        }
+                        BeaconRequestMessage::Ping(ping) => {
+                            trace!(
+                                ?peer_id,
+                                ?stream_id,
+                                ?connection_id,
+                                ?ping,
+                                "Received Ping request"
+                            );
+                            let response = BeaconResponseMessage::Ping(Ping::new(
+                                self.network_state.meta_data.read().seq_number,
+                            ));
+                            self.send_response(peer_id, connection_id, stream_id, response);
+                            None
+                        }
+                        BeaconRequestMessage::Goodbye(goodbye) => {
+                            trace!(
+                                ?peer_id,
+                                ?stream_id,
+                                ?connection_id,
+                                ?goodbye,
+                                "Received Goodbye message"
+                            );
+                            None
+                        }
+                        BeaconRequestMessage::Status(status) => {
+                            trace!(
+                                ?peer_id,
+                                ?stream_id,
+                                ?connection_id,
+                                ?status,
+                                "Received Status request"
+                            );
 
-                    self.handle_status_req_resp_event(peer_id, status.clone());
+                            self.handle_status_req_resp_event(peer_id, status.clone());
 
-                    Some(ReamNetworkEvent::RequestMessage {
-                        peer_id,
-                        stream_id,
-                        connection_id,
-                        message: RequestMessage::Status(status),
-                    })
+                            Some(ReamNetworkEvent::RequestMessage {
+                                peer_id,
+                                stream_id,
+                                connection_id,
+                                message: BeaconRequestMessage::Status(status),
+                            })
+                        }
+                        _ => Some(ReamNetworkEvent::RequestMessage {
+                            peer_id,
+                            stream_id,
+                            connection_id,
+                            message,
+                        }),
+                    }
+                } else {
+                    warn!(
+                        "Received unexpected Lean request message: {:?} from peer: {:?}",
+                        message, peer_id
+                    );
+                    None
                 }
-                _ => Some(ReamNetworkEvent::RequestMessage {
-                    peer_id,
-                    stream_id,
-                    connection_id,
-                    message: *message,
-                }),
-            },
+            }
             ReqRespMessageReceived::Response {
                 request_id,
                 message,
             } => {
-                match *message.clone() {
-                    ResponseMessage::MetaData(meta_data) => {
-                        trace!(
-                            ?peer_id,
-                            ?request_id,
-                            "Received MetaData response: seq_number: {}",
-                            meta_data.seq_number
-                        );
-
-                        self.network_state
-                            .peer_table
-                            .write()
-                            .entry(peer_id)
-                            .and_modify(|cached_peer| {
-                                cached_peer.meta_data = Some(meta_data.as_ref().clone());
-                            });
-                    }
-                    ResponseMessage::Ping(ping) => {
-                        trace!(
-                            ?peer_id,
-                            ?request_id,
-                            "Received Ping response: seq_number: {}",
-                            ping.sequence_number
-                        );
-
-                        let cached_peer =
-                            self.network_state.peer_table.read().get(&peer_id).cloned();
-                        if let Some(cached_peer) = cached_peer
-                            && (cached_peer.meta_data.is_none()
-                                || ping.sequence_number
-                                    != cached_peer
-                                        .meta_data
-                                        .as_ref()
-                                        .map_or(0, |meta_data| meta_data.seq_number))
-                        {
-                            let meta_data_message = RequestMessage::MetaData(
-                                self.network_state.meta_data.read().clone().into(),
+                if let ResponseMessage::Beacon(beacon_response_message) = *message {
+                    match beacon_response_message.as_ref() {
+                        BeaconResponseMessage::MetaData(meta_data) => {
+                            trace!(
+                                ?peer_id,
+                                ?request_id,
+                                "Received MetaData response: seq_number: {}",
+                                meta_data.seq_number
                             );
-                            self.send_request(peer_id, meta_data_message);
+
+                            self.network_state
+                                .peer_table
+                                .write()
+                                .entry(peer_id)
+                                .and_modify(|cached_peer| {
+                                    cached_peer.meta_data = Some(meta_data.as_ref().clone());
+                                });
                         }
-                    }
-                    ResponseMessage::Status(status) => {
-                        trace!(
-                            ?peer_id,
-                            ?request_id,
-                            "Received Status response: fork_digest: {}, head_slot: {}",
-                            status.fork_digest,
-                            status.head_slot
-                        );
+                        BeaconResponseMessage::Ping(ping) => {
+                            trace!(
+                                ?peer_id,
+                                ?request_id,
+                                "Received Ping response: seq_number: {}",
+                                ping.sequence_number
+                            );
 
-                        self.handle_status_req_resp_event(peer_id, status);
-                    }
-                    _ => {}
-                }
+                            let cached_peer =
+                                self.network_state.peer_table.read().get(&peer_id).cloned();
+                            if let Some(cached_peer) = cached_peer
+                                && (cached_peer.meta_data.is_none()
+                                    || ping.sequence_number
+                                        != cached_peer
+                                            .meta_data
+                                            .as_ref()
+                                            .map_or(0, |meta_data| meta_data.seq_number))
+                            {
+                                let meta_data_message = BeaconRequestMessage::MetaData(
+                                    self.network_state.meta_data.read().clone().into(),
+                                );
+                                self.send_request(peer_id, meta_data_message);
+                            }
+                        }
+                        BeaconResponseMessage::Status(status) => {
+                            trace!(
+                                ?peer_id,
+                                ?request_id,
+                                "Received Status response: fork_digest: {}, head_slot: {}",
+                                status.fork_digest,
+                                status.head_slot
+                            );
 
-                self.callbacks.update_timeout(&request_id, REQUEST_TIMEOUT);
-                if let Some(callback) = self.callbacks.get(&request_id)
-                    && let Err(err) = callback
-                        .send(Ok(P2PCallbackResponse::ResponseMessage(message)))
-                        .await
-                {
-                    warn!("Failed to send response: {err:?}");
+                            self.handle_status_req_resp_event(peer_id, status.clone());
+                        }
+                        _ => {}
+                    }
+
+                    self.callbacks.update_timeout(&request_id, REQUEST_TIMEOUT);
+                    if let Some(callback) = self.callbacks.get(&request_id)
+                        && let Err(err) = callback
+                            .send(Ok(P2PCallbackResponse::ResponseMessage(
+                                beacon_response_message,
+                            )))
+                            .await
+                    {
+                        warn!("Failed to send response: {err:?}");
+                    }
+                } else {
+                    warn!(
+                        "Received unexpected Lean response message: {:?} from peer: {:?}",
+                        message, peer_id
+                    );
                 }
 
                 None
@@ -1082,7 +1111,7 @@ mod tests {
                         peer_id,
                         stream_id,
                         connection_id,
-                        message: RequestMessage::Status(status),
+                        message: BeaconRequestMessage::Status(status) ,
                     }) = network_1.parse_swarm_event(event).await {
                                 network_1
                                     .swarm
@@ -1092,9 +1121,7 @@ mod tests {
                                         peer_id,
                                         connection_id,
                                         stream_id,
-                                        RespMessage::Response(Box::new(ResponseMessage::Status(
-                                            status,
-                                        ))),
+                                        RespMessage::Response(Box::new(ResponseMessage::Beacon(BeaconResponseMessage::Status(status).into()))),
                                     );
                     }
                 }};

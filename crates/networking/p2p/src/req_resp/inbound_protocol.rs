@@ -31,25 +31,36 @@ use unsigned_varint::codec::Uvi;
 
 use super::{
     beacon::{
-        messages::{RequestMessage, meta_data::GetMetaDataV2},
-        protocol_id::{ProtocolId, SupportedProtocol},
+        messages::{BeaconRequestMessage, meta_data::GetMetaDataV2},
+        protocol_id::BeaconSupportedProtocol,
     },
-    error::ReqRespError,
     handler::RespMessage,
 };
 use crate::{
-    req_resp::beacon::messages::{
-        blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
-        blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
-        goodbye::Goodbye,
-        ping::Ping,
-        status::Status,
+    req_resp::{
+        Chain,
+        beacon::messages::{
+            blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
+            blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+            goodbye::Goodbye,
+            ping::Ping,
+            status::Status,
+        },
+        error::ReqRespError,
+        lean::{
+            messages::{LeanRequestMessage, blocks::LeanBlocksByRootV1Request, status::LeanStatus},
+            protocol_id::LeanSupportedProtocol,
+        },
+        messages::RequestMessage,
+        protocol_id::{ProtocolId, SupportedProtocol},
     },
     utils::max_message_size,
 };
 
 #[derive(Debug, Clone)]
-pub struct InboundReqRespProtocol {}
+pub struct InboundReqRespProtocol {
+    pub chain: Chain,
+}
 
 pub type InboundOutput<S> = (RequestMessage, InboundFramed<S>);
 pub type InboundFramed<S> =
@@ -79,8 +90,10 @@ where
             );
 
             match info.protocol {
-                SupportedProtocol::GetMetaDataV2 => Ok((
-                    RequestMessage::MetaData(GetMetaDataV2::default().into()),
+                SupportedProtocol::Beacon(BeaconSupportedProtocol::GetMetaDataV2) => Ok((
+                    RequestMessage::Beacon(BeaconRequestMessage::MetaData(
+                        GetMetaDataV2::default().into(),
+                    )),
                     socket,
                 )),
                 _ => match timeout(Duration::from_secs(15), socket.into_future()).await {
@@ -101,7 +114,7 @@ impl UpgradeInfo for InboundReqRespProtocol {
     type InfoIter = Vec<Self::Info>;
 
     fn protocol_info(&self) -> Self::InfoIter {
-        SupportedProtocol::supported_protocols()
+        SupportedProtocol::supported_protocols(self.chain)
     }
 }
 
@@ -157,9 +170,11 @@ impl Decoder for InboundSSZSnappyCodec {
     type Error = ReqRespError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if self.protocol.protocol == SupportedProtocol::GetMetaDataV2 {
-            return Ok(Some(RequestMessage::MetaData(
-                GetMetaDataV2::default().into(),
+        if self.protocol.protocol
+            == SupportedProtocol::Beacon(BeaconSupportedProtocol::GetMetaDataV2)
+        {
+            return Ok(Some(RequestMessage::Beacon(
+                BeaconRequestMessage::MetaData(GetMetaDataV2::default().into()),
             )));
         }
 
@@ -174,42 +189,63 @@ impl Decoder for InboundSSZSnappyCodec {
             Ok(_) => {
                 src.advance(decoder.get_ref().position() as usize);
                 match self.protocol.protocol {
-                    SupportedProtocol::GoodbyeV1 => Ok(Some(RequestMessage::Goodbye(
-                        Goodbye::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
-                    ))),
-                    SupportedProtocol::StatusV1 => Ok(Some(RequestMessage::Status(
-                        Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
-                    ))),
-                    SupportedProtocol::PingV1 => Ok(Some(RequestMessage::Ping(
-                        Ping::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
-                    ))),
-                    SupportedProtocol::BeaconBlocksByRangeV2 => {
-                        Ok(Some(RequestMessage::BeaconBlocksByRange(
-                            BeaconBlocksByRangeV2Request::from_ssz_bytes(&buf)
-                                .map_err(ReqRespError::from)?,
-                        )))
+                    SupportedProtocol::Beacon(beacon_supported_protocol) => {
+                        let request_message = match beacon_supported_protocol {
+                            BeaconSupportedProtocol::GoodbyeV1 => BeaconRequestMessage::Goodbye(
+                                Goodbye::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                            ),
+                            BeaconSupportedProtocol::StatusV1 => BeaconRequestMessage::Status(
+                                Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                            ),
+                            BeaconSupportedProtocol::PingV1 => BeaconRequestMessage::Ping(
+                                Ping::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                            ),
+                            BeaconSupportedProtocol::BeaconBlocksByRangeV2 => {
+                                BeaconRequestMessage::BeaconBlocksByRange(
+                                    BeaconBlocksByRangeV2Request::from_ssz_bytes(&buf)
+                                        .map_err(ReqRespError::from)?,
+                                )
+                            }
+                            BeaconSupportedProtocol::BeaconBlocksByRootV2 => {
+                                BeaconRequestMessage::BeaconBlocksByRoot(
+                                    BeaconBlocksByRootV2Request::from_ssz_bytes(&buf)
+                                        .map_err(ReqRespError::from)?,
+                                )
+                            }
+                            BeaconSupportedProtocol::BlobSidecarsByRangeV1 => {
+                                BeaconRequestMessage::BlobSidecarsByRange(
+                                    BlobSidecarsByRangeV1Request::from_ssz_bytes(&buf)
+                                        .map_err(ReqRespError::from)?,
+                                )
+                            }
+                            BeaconSupportedProtocol::BlobSidecarsByRootV1 => {
+                                BeaconRequestMessage::BlobSidecarsByRoot(
+                                    BlobSidecarsByRootV1Request::from_ssz_bytes(&buf)
+                                        .map_err(ReqRespError::from)?,
+                                )
+                            }
+                            BeaconSupportedProtocol::GetMetaDataV2 => {
+                                return Err(ReqRespError::InvalidData(
+                                    "GetMetaDataV2 is already handled above".to_string(),
+                                ));
+                            }
+                        };
+                        Ok(Some(RequestMessage::Beacon(request_message)))
                     }
-                    SupportedProtocol::BeaconBlocksByRootV2 => {
-                        Ok(Some(RequestMessage::BeaconBlocksByRoot(
-                            BeaconBlocksByRootV2Request::from_ssz_bytes(&buf)
-                                .map_err(ReqRespError::from)?,
-                        )))
+                    SupportedProtocol::Lean(lean_supported_protocol) => {
+                        let request_message = match lean_supported_protocol {
+                            LeanSupportedProtocol::StatusV1 => LeanRequestMessage::Status(
+                                LeanStatus::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                            ),
+                            LeanSupportedProtocol::BlocksByRootV1 => {
+                                LeanRequestMessage::BlocksByRoot(
+                                    LeanBlocksByRootV1Request::from_ssz_bytes(&buf)
+                                        .map_err(ReqRespError::from)?,
+                                )
+                            }
+                        };
+                        Ok(Some(RequestMessage::Lean(request_message)))
                     }
-                    SupportedProtocol::BlobSidecarsByRangeV1 => {
-                        Ok(Some(RequestMessage::BlobSidecarsByRange(
-                            BlobSidecarsByRangeV1Request::from_ssz_bytes(&buf)
-                                .map_err(ReqRespError::from)?,
-                        )))
-                    }
-                    SupportedProtocol::BlobSidecarsByRootV1 => {
-                        Ok(Some(RequestMessage::BlobSidecarsByRoot(
-                            BlobSidecarsByRootV1Request::from_ssz_bytes(&buf)
-                                .map_err(ReqRespError::from)?,
-                        )))
-                    }
-                    SupportedProtocol::GetMetaDataV2 => Err(ReqRespError::InvalidData(
-                        "GetMetaDataV2 is already handled above".to_string(),
-                    )),
                 }
             }
             Err(err) => Err(ReqRespError::from(err)),

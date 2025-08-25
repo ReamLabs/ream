@@ -2,7 +2,10 @@ use anyhow::anyhow;
 use libp2p::{PeerId, swarm::ConnectionId};
 use ream_p2p::{
     network::beacon::channel::{GossipMessage, P2PMessage, P2PResponse},
-    req_resp::{beacon::messages::ResponseMessage, error::ReqRespError, handler::RespMessage},
+    req_resp::{
+        beacon::messages::BeaconResponseMessage, error::ReqRespError, handler::RespMessage,
+        messages::ResponseMessage,
+    },
 };
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -21,13 +24,15 @@ impl P2PSender {
         peer_id: PeerId,
         connection_id: ConnectionId,
         stream_id: u64,
-        message: ResponseMessage,
+        message: BeaconResponseMessage,
     ) {
         if let Err(err) = self.0.send(P2PMessage::Response(P2PResponse {
             peer_id,
             connection_id,
             stream_id,
-            message: Box::new(RespMessage::Response(Box::new(message))),
+            message: Box::new(RespMessage::Response(Box::new(ResponseMessage::Beacon(
+                message.into(),
+            )))),
         })) {
             warn!("Failed to send P2P response: {err}");
         }

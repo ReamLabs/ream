@@ -1,36 +1,6 @@
-const PROTOCOL_PREFIX: &str = "/eth2/beacon_chain/req";
-
-#[derive(Debug, Clone)]
-pub struct ProtocolId {
-    pub protocol_id: String,
-    pub protocol: SupportedProtocol,
-}
-
-impl ProtocolId {
-    pub fn new(protocol: SupportedProtocol) -> Self {
-        // Protocol identification `/ProtocolPrefix/MessageName/SchemaVersion/Encoding`
-        let protocol_id = format!(
-            "{}/{}/{}/ssz_snappy",
-            PROTOCOL_PREFIX,
-            protocol.message_name(),
-            protocol.schema_version()
-        );
-        ProtocolId {
-            protocol_id,
-            protocol,
-        }
-    }
-}
-
-impl AsRef<str> for ProtocolId {
-    fn as_ref(&self) -> &str {
-        &self.protocol_id
-    }
-}
-
 /// All valid protocol name and version combinations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SupportedProtocol {
+pub enum BeaconSupportedProtocol {
     BeaconBlocksByRangeV2,
     BeaconBlocksByRootV2,
     BlobSidecarsByRangeV1,
@@ -41,59 +11,43 @@ pub enum SupportedProtocol {
     StatusV1,
 }
 
-impl SupportedProtocol {
+impl BeaconSupportedProtocol {
     pub fn message_name(&self) -> &str {
         match self {
-            SupportedProtocol::BeaconBlocksByRangeV2 => "beacon_blocks_by_range",
-            SupportedProtocol::BeaconBlocksByRootV2 => "beacon_blocks_by_root",
-            SupportedProtocol::BlobSidecarsByRangeV1 => "blob_sidecars_by_range",
-            SupportedProtocol::BlobSidecarsByRootV1 => "blob_sidecars_by_root",
-            SupportedProtocol::GetMetaDataV2 => "metadata",
-            SupportedProtocol::GoodbyeV1 => "goodbye",
-            SupportedProtocol::PingV1 => "ping",
-            SupportedProtocol::StatusV1 => "status",
+            BeaconSupportedProtocol::BeaconBlocksByRangeV2 => "beacon_blocks_by_range",
+            BeaconSupportedProtocol::BeaconBlocksByRootV2 => "beacon_blocks_by_root",
+            BeaconSupportedProtocol::BlobSidecarsByRangeV1 => "blob_sidecars_by_range",
+            BeaconSupportedProtocol::BlobSidecarsByRootV1 => "blob_sidecars_by_root",
+            BeaconSupportedProtocol::GetMetaDataV2 => "metadata",
+            BeaconSupportedProtocol::GoodbyeV1 => "goodbye",
+            BeaconSupportedProtocol::PingV1 => "ping",
+            BeaconSupportedProtocol::StatusV1 => "status",
         }
     }
 
     pub fn schema_version(&self) -> &str {
         match self {
-            SupportedProtocol::BeaconBlocksByRangeV2 => "2",
-            SupportedProtocol::BeaconBlocksByRootV2 => "2",
-            SupportedProtocol::BlobSidecarsByRangeV1 => "1",
-            SupportedProtocol::BlobSidecarsByRootV1 => "1",
-            SupportedProtocol::GetMetaDataV2 => "2",
-            SupportedProtocol::GoodbyeV1 => "1",
-            SupportedProtocol::PingV1 => "1",
-            SupportedProtocol::StatusV1 => "1",
+            BeaconSupportedProtocol::BeaconBlocksByRangeV2 => "2",
+            BeaconSupportedProtocol::BeaconBlocksByRootV2 => "2",
+            BeaconSupportedProtocol::BlobSidecarsByRangeV1 => "1",
+            BeaconSupportedProtocol::BlobSidecarsByRootV1 => "1",
+            BeaconSupportedProtocol::GetMetaDataV2 => "2",
+            BeaconSupportedProtocol::GoodbyeV1 => "1",
+            BeaconSupportedProtocol::PingV1 => "1",
+            BeaconSupportedProtocol::StatusV1 => "1",
         }
-    }
-
-    pub fn supported_protocols() -> Vec<ProtocolId> {
-        vec![
-            SupportedProtocol::GetMetaDataV2,
-            SupportedProtocol::GoodbyeV1,
-            SupportedProtocol::PingV1,
-            SupportedProtocol::StatusV1,
-            SupportedProtocol::BeaconBlocksByRangeV2,
-            SupportedProtocol::BeaconBlocksByRootV2,
-            SupportedProtocol::BlobSidecarsByRangeV1,
-            SupportedProtocol::BlobSidecarsByRootV1,
-        ]
-        .into_iter()
-        .map(ProtocolId::new)
-        .collect()
     }
 
     pub fn has_context_bytes(&self) -> bool {
         match self {
-            SupportedProtocol::GetMetaDataV2 => false,
-            SupportedProtocol::GoodbyeV1 => false,
-            SupportedProtocol::PingV1 => false,
-            SupportedProtocol::StatusV1 => false,
-            SupportedProtocol::BeaconBlocksByRangeV2 => true,
-            SupportedProtocol::BeaconBlocksByRootV2 => true,
-            SupportedProtocol::BlobSidecarsByRangeV1 => true,
-            SupportedProtocol::BlobSidecarsByRootV1 => true,
+            BeaconSupportedProtocol::GetMetaDataV2 => false,
+            BeaconSupportedProtocol::GoodbyeV1 => false,
+            BeaconSupportedProtocol::PingV1 => false,
+            BeaconSupportedProtocol::StatusV1 => false,
+            BeaconSupportedProtocol::BeaconBlocksByRangeV2 => true,
+            BeaconSupportedProtocol::BeaconBlocksByRootV2 => true,
+            BeaconSupportedProtocol::BlobSidecarsByRangeV1 => true,
+            BeaconSupportedProtocol::BlobSidecarsByRootV1 => true,
         }
     }
 }

@@ -1,3 +1,7 @@
+pub mod config;
+pub mod handlers;
+pub mod routes;
+
 use std::sync::Arc;
 
 use actix_web::{App, HttpServer, middleware, web::Data};
@@ -9,10 +13,6 @@ use ream_storage::db::ReamDB;
 use tracing::info;
 
 use crate::routes::register_routers;
-
-pub mod config;
-pub mod handlers;
-pub mod routes;
 
 /// Start the Beacon API server.
 pub async fn start_server(

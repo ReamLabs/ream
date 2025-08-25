@@ -13,6 +13,7 @@ use futures::{
 };
 use libp2p::{OutboundUpgrade, bytes::Buf, core::UpgradeInfo};
 use ream_consensus_beacon::{blob_sidecar::BlobSidecar, electra::beacon_block::SignedBeaconBlock};
+use ream_consensus_lean::block::SignedBlock;
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_network_spec::networks::beacon_network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};
@@ -25,16 +26,23 @@ use tokio_util::{
 use tracing::debug;
 use unsigned_varint::codec::Uvi;
 
-use super::{
-    beacon::{messages::RequestMessage, protocol_id::ProtocolId},
-    error::ReqRespError,
-    handler::RespMessage,
-    inbound_protocol::ResponseCode,
-};
+use super::{beacon::messages::BeaconRequestMessage, handler::RespMessage};
 use crate::{
-    req_resp::beacon::{
-        messages::{ResponseMessage, meta_data::GetMetaDataV2, ping::Ping, status::Status},
-        protocol_id::SupportedProtocol,
+    req_resp::{
+        beacon::{
+            messages::{
+                BeaconResponseMessage, meta_data::GetMetaDataV2, ping::Ping, status::Status,
+            },
+            protocol_id::BeaconSupportedProtocol,
+        },
+        error::ReqRespError,
+        inbound_protocol::ResponseCode,
+        lean::{
+            messages::{LeanResponseMessage, status::LeanStatus},
+            protocol_id::LeanSupportedProtocol,
+        },
+        messages::{RequestMessage, ResponseMessage},
+        protocol_id::{ProtocolId, SupportedProtocol},
     },
     utils::max_message_size,
 };
@@ -99,7 +107,7 @@ impl Encoder<RequestMessage> for OutboundSSZSnappyCodec {
 
     fn encode(&mut self, item: RequestMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let bytes = match item {
-            RequestMessage::MetaData(_) => return Ok(()),
+            RequestMessage::Beacon(BeaconRequestMessage::MetaData(_)) => return Ok(()),
             message => message.as_ssz_bytes(),
         };
 
@@ -186,48 +194,73 @@ impl Decoder for OutboundSSZSnappyCodec {
                 self.context_bytes = None;
                 if ResponseCode::Success == response_code {
                     match self.protocol.protocol {
-                        SupportedProtocol::GoodbyeV1 => Ok(Some(RespMessage::Error(
-                            ReqRespError::InvalidData("Goodbye has no response".to_string()),
-                        ))),
-                        SupportedProtocol::GetMetaDataV2 => Ok(Some(RespMessage::Response(
-                            Box::new(ResponseMessage::MetaData(
-                                GetMetaDataV2::from_ssz_bytes(&buf)
-                                    .map_err(ReqRespError::from)?
-                                    .into(),
-                            )),
-                        ))),
-                        SupportedProtocol::StatusV1 => Ok(Some(RespMessage::Response(Box::new(
-                            ResponseMessage::Status(
-                                Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
-                            ),
-                        )))),
-                        SupportedProtocol::PingV1 => Ok(Some(RespMessage::Response(Box::new(
-                            ResponseMessage::Ping(
-                                Ping::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
-                            ),
-                        )))),
-                        SupportedProtocol::BeaconBlocksByRangeV2 => Ok(Some(
-                            RespMessage::Response(Box::new(ResponseMessage::BeaconBlocksByRange(
-                                SignedBeaconBlock::from_ssz_bytes(&buf)
-                                    .map_err(ReqRespError::from)?,
-                            ))),
-                        )),
-                        SupportedProtocol::BeaconBlocksByRootV2 => Ok(Some(RespMessage::Response(
-                            Box::new(ResponseMessage::BeaconBlocksByRoot(
-                                SignedBeaconBlock::from_ssz_bytes(&buf)
-                                    .map_err(ReqRespError::from)?,
-                            )),
-                        ))),
-                        SupportedProtocol::BlobSidecarsByRangeV1 => Ok(Some(
-                            RespMessage::Response(Box::new(ResponseMessage::BlobSidecarsByRange(
-                                BlobSidecar::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
-                            ))),
-                        )),
-                        SupportedProtocol::BlobSidecarsByRootV1 => Ok(Some(RespMessage::Response(
-                            Box::new(ResponseMessage::BlobSidecarsByRoot(
-                                BlobSidecar::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
-                            )),
-                        ))),
+                        SupportedProtocol::Beacon(beacon_supported_protocol) => {
+                            let response_message = match beacon_supported_protocol {
+                                BeaconSupportedProtocol::GoodbyeV1 => {
+                                    return Ok(Some(RespMessage::Error(
+                                        ReqRespError::InvalidData(
+                                            "Goodbye has no response".to_string(),
+                                        ),
+                                    )));
+                                }
+                                BeaconSupportedProtocol::GetMetaDataV2 => {
+                                    BeaconResponseMessage::MetaData(
+                                        GetMetaDataV2::from_ssz_bytes(&buf)
+                                            .map_err(ReqRespError::from)?
+                                            .into(),
+                                    )
+                                }
+                                BeaconSupportedProtocol::StatusV1 => BeaconResponseMessage::Status(
+                                    Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                                ),
+                                BeaconSupportedProtocol::PingV1 => BeaconResponseMessage::Ping(
+                                    Ping::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                                ),
+                                BeaconSupportedProtocol::BeaconBlocksByRangeV2 => {
+                                    BeaconResponseMessage::BeaconBlocksByRange(
+                                        SignedBeaconBlock::from_ssz_bytes(&buf)
+                                            .map_err(ReqRespError::from)?,
+                                    )
+                                }
+                                BeaconSupportedProtocol::BeaconBlocksByRootV2 => {
+                                    BeaconResponseMessage::BeaconBlocksByRoot(
+                                        SignedBeaconBlock::from_ssz_bytes(&buf)
+                                            .map_err(ReqRespError::from)?,
+                                    )
+                                }
+                                BeaconSupportedProtocol::BlobSidecarsByRangeV1 => {
+                                    BeaconResponseMessage::BlobSidecarsByRange(
+                                        BlobSidecar::from_ssz_bytes(&buf)
+                                            .map_err(ReqRespError::from)?,
+                                    )
+                                }
+                                BeaconSupportedProtocol::BlobSidecarsByRootV1 => {
+                                    BeaconResponseMessage::BlobSidecarsByRoot(
+                                        BlobSidecar::from_ssz_bytes(&buf)
+                                            .map_err(ReqRespError::from)?,
+                                    )
+                                }
+                            };
+                            Ok(Some(RespMessage::Response(Box::new(
+                                ResponseMessage::Beacon(response_message.into()),
+                            ))))
+                        }
+                        SupportedProtocol::Lean(lean_supported_protocol) => {
+                            let response_message = match lean_supported_protocol {
+                                LeanSupportedProtocol::StatusV1 => LeanResponseMessage::Status(
+                                    LeanStatus::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                                ),
+                                LeanSupportedProtocol::BlocksByRootV1 => {
+                                    LeanResponseMessage::BlocksByRoot(
+                                        SignedBlock::from_ssz_bytes(&buf)
+                                            .map_err(ReqRespError::from)?,
+                                    )
+                                }
+                            };
+                            Ok(Some(RespMessage::Response(Box::new(
+                                ResponseMessage::Lean(response_message),
+                            ))))
+                        }
                     }
                 } else {
                     Ok(Some(RespMessage::Error(

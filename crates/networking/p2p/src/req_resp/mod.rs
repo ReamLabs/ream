@@ -4,11 +4,12 @@ pub mod error;
 pub mod handler;
 pub mod inbound_protocol;
 pub mod lean;
+pub mod messages;
 pub mod outbound_protocol;
+pub mod protocol_id;
 
 use std::task::{Context, Poll};
 
-use beacon::messages::RequestMessage;
 use handler::{
     HandlerEvent, ReqRespConnectionHandler, ReqRespMessageError, ReqRespMessageReceived,
     RespMessage,
@@ -23,11 +24,17 @@ use libp2p::{
         ToSwarm,
     },
 };
+use messages::RequestMessage;
 use tracing::{debug, trace};
 
 /// Maximum number of concurrent requests per protocol ID that a client may issue.
 pub const MAX_CONCURRENT_REQUESTS: usize = 2;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Chain {
+    Beacon,
+    Lean,
+}
 #[derive(Debug)]
 pub struct ReqRespMessage {
     pub peer_id: PeerId,
@@ -50,11 +57,15 @@ pub enum ConnectionRequest {
 
 pub struct ReqResp {
     pub events: Vec<ToSwarm<ReqRespMessage, ConnectionRequest>>,
+    pub chain: Chain,
 }
 
 impl ReqResp {
-    pub fn new() -> Self {
-        ReqResp { events: vec![] }
+    pub fn new(chain: Chain) -> Self {
+        ReqResp {
+            events: vec![],
+            chain,
+        }
     }
 
     pub fn send_request(&mut self, peer_id: PeerId, request_id: u64, message: RequestMessage) {
@@ -86,12 +97,6 @@ impl ReqResp {
     }
 }
 
-impl Default for ReqResp {
-    fn default() -> Self {
-        ReqResp::new()
-    }
-}
-
 impl NetworkBehaviour for ReqResp {
     type ConnectionHandler = ReqRespConnectionHandler;
 
@@ -107,7 +112,8 @@ impl NetworkBehaviour for ReqResp {
         debug!(
             "REQRESP: Handling established inbound connection {connection_id:?} {peer:?} {_remote_addr:?}",
         );
-        let listen_protocol = SubstreamProtocol::new(InboundReqRespProtocol {}, ());
+        let listen_protocol =
+            SubstreamProtocol::new(InboundReqRespProtocol { chain: self.chain }, ());
 
         Ok(ReqRespConnectionHandler::new(listen_protocol))
     }
@@ -123,7 +129,8 @@ impl NetworkBehaviour for ReqResp {
         debug!(
             "REQRESP: Handling established outbound connection {connection_id:?} {peer:?} {_addr:?}",
         );
-        let listen_protocol = SubstreamProtocol::new(InboundReqRespProtocol {}, ());
+        let listen_protocol =
+            SubstreamProtocol::new(InboundReqRespProtocol { chain: self.chain }, ());
         Ok(ReqRespConnectionHandler::new(listen_protocol))
     }
 

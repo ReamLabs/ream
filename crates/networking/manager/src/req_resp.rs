@@ -5,7 +5,7 @@ use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
 use ream_p2p::{
     network::beacon::network_state::NetworkState,
     req_resp::beacon::messages::{
-        RequestMessage, ResponseMessage,
+        BeaconRequestMessage, BeaconResponseMessage,
         blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
         blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
     },
@@ -19,13 +19,13 @@ pub async fn handle_req_resp_message(
     peer_id: PeerId,
     stream_id: u64,
     connection_id: ConnectionId,
-    message: RequestMessage,
+    message: BeaconRequestMessage,
     p2p_sender: &P2PSender,
     ream_db: &ReamDB,
     network_state: Arc<NetworkState>,
 ) {
     match message {
-        RequestMessage::Status(status) => {
+        BeaconRequestMessage::Status(status) => {
             trace!(
                 ?peer_id,
                 ?stream_id,
@@ -38,12 +38,12 @@ pub async fn handle_req_resp_message(
                 peer_id,
                 connection_id,
                 stream_id,
-                ResponseMessage::Status(network_state.status.read().clone()),
+                BeaconResponseMessage::Status(network_state.status.read().clone()),
             );
 
             p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
         }
-        RequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request {
+        BeaconRequestMessage::BeaconBlocksByRange(BeaconBlocksByRangeV2Request {
             start_slot,
             count,
             ..
@@ -74,13 +74,13 @@ pub async fn handle_req_resp_message(
                     peer_id,
                     connection_id,
                     stream_id,
-                    ResponseMessage::BeaconBlocksByRange(block),
+                    BeaconResponseMessage::BeaconBlocksByRange(block),
                 );
             }
 
             p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
         }
-        RequestMessage::BeaconBlocksByRoot(BeaconBlocksByRootV2Request { inner }) => {
+        BeaconRequestMessage::BeaconBlocksByRoot(BeaconBlocksByRootV2Request { inner }) => {
             for block_root in inner {
                 let Ok(Some(block)) = ream_db.beacon_block_provider().get(block_root) else {
                     trace!("No block found for root {block_root}");
@@ -97,13 +97,16 @@ pub async fn handle_req_resp_message(
                     peer_id,
                     connection_id,
                     stream_id,
-                    ResponseMessage::BeaconBlocksByRoot(block),
+                    BeaconResponseMessage::BeaconBlocksByRoot(block),
                 );
             }
 
             p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
         }
-        RequestMessage::BlobSidecarsByRange(BlobSidecarsByRangeV1Request { start_slot, count }) => {
+        BeaconRequestMessage::BlobSidecarsByRange(BlobSidecarsByRangeV1Request {
+            start_slot,
+            count,
+        }) => {
             for slot in start_slot..start_slot + count {
                 let Ok(Some(block_root)) = ream_db.slot_index_provider().get(slot) else {
                     trace!("No block root found for slot {slot}");
@@ -163,14 +166,14 @@ pub async fn handle_req_resp_message(
                         peer_id,
                         connection_id,
                         stream_id,
-                        ResponseMessage::BlobSidecarsByRange(blob_sidecar),
+                        BeaconResponseMessage::BlobSidecarsByRange(blob_sidecar),
                     );
                 }
             }
 
             p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
         }
-        RequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request { inner }) => {
+        BeaconRequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request { inner }) => {
             for blob_identifier in inner {
                 let Ok(Some(blob_and_proof)) =
                     ream_db.blobs_and_proofs_provider().get(blob_identifier)
@@ -219,7 +222,7 @@ pub async fn handle_req_resp_message(
                     peer_id,
                     connection_id,
                     stream_id,
-                    ResponseMessage::BlobSidecarsByRoot(blob_sidecar),
+                    BeaconResponseMessage::BlobSidecarsByRoot(blob_sidecar),
                 );
             }
             p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
