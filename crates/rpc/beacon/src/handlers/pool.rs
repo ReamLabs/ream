@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use actix_web::{
     HttpResponse, Responder, get, post,
@@ -123,9 +123,7 @@ pub async fn post_voluntary_exits(
 pub async fn post_sync_committees(
     db: Data<ReamDB>,
     network_manager: Data<Arc<NetworkManagerService>>,
-    sync_committee_message: Json<SyncCommitteeMessage>,
-    // NOTE: Spec allows multiple messages; we start with single for now to match existing
-    // patterns.
+    sync_committee_messages: Json<Vec<SyncCommitteeMessage>>,
 ) -> Result<impl Responder, ApiError> {
     let highest_slot = db
         .slot_index_provider()
@@ -138,78 +136,123 @@ pub async fn post_sync_committees(
         ))?;
     let beacon_state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
 
-    let sync_committee_message = sync_committee_message.into_inner();
-
-    // Basic slot sanity: require current slot to reduce spam; can be relaxed with clock disparity
-    // if needed
-    if sync_committee_message.slot != beacon_state.slot {
-        return Err(ApiError::BadRequest(format!(
-            "Sync committee message slot must match current slot: current slot={}, expected slot={}, signature={:?}",
-            sync_committee_message.slot, beacon_state.slot, sync_committee_message.signature
-        )));
+    let sync_committee_messages = sync_committee_messages.into_inner();
+    if sync_committee_messages.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Empty sync committee messages".to_string(),
+        ));
     }
 
-    // Ensure validator is assigned to current or next sync committee period
-    let epoch = compute_epoch_at_slot(sync_committee_message.slot);
-    is_assigned_to_sync_committee(&beacon_state, epoch, sync_committee_message.validator_index)
-        .map_err(|err| {
-            ApiError::BadRequest(format!(
+    // Validate all messages and collect errors; cache subnets to reuse later
+    let mut error_messages: Vec<String> = Vec::new();
+    let mut subnets_by_index: HashMap<usize, _> = HashMap::new();
+    for (i, sync_committee_message) in sync_committee_messages.iter().enumerate() {
+        // Slot sanity check, can be relaxed if clock drift is allowed
+        if sync_committee_message.slot != beacon_state.slot {
+            error_messages.push(format!(
+                "Sync committee message slot must match current slot: current slot={}, expected slot={}, signature={:?}",
+                sync_committee_message.slot, beacon_state.slot, sync_committee_message.signature
+            ));
+            continue;
+        }
+
+        // verify validator is assigned to sync committee
+        let epoch = compute_epoch_at_slot(sync_committee_message.slot);
+        if let Err(err) = is_assigned_to_sync_committee(
+            &beacon_state,
+            epoch,
+            sync_committee_message.validator_index,
+        ) {
+            error_messages.push(format!(
                 "Validator is not assigned to sync committee: validator_index={}, signature={:?}, err={:?}",
-                sync_committee_message.validator_index,
-                sync_committee_message.signature,
-                err
-            ))
-        })?;
+                sync_committee_message.validator_index, sync_committee_message.signature, err
+            ));
+            continue;
+        }
 
-    // Verify signature against DOMAIN_SYNC_COMMITTEE
-    let signing_root = compute_signing_root(
-        &sync_committee_message,
-        beacon_state.get_domain(DOMAIN_SYNC_COMMITTEE, Some(epoch)),
-    );
-    let pubkey = &beacon_state
-        .validators
-        .get(sync_committee_message.validator_index as usize)
-        .ok_or_else(|| {
-            ApiError::BadRequest(format!(
-                "Validator with index {} not found, signature={:?}",
-                sync_committee_message.validator_index, sync_committee_message.signature
-            ))
-        })?
-        .public_key;
+        // Signature verification
+        let signing_root = compute_signing_root(
+            sync_committee_message,
+            beacon_state.get_domain(DOMAIN_SYNC_COMMITTEE, Some(epoch)),
+        );
+        let pubkey = match beacon_state
+            .validators
+            .get(sync_committee_message.validator_index as usize)
+        {
+            Some(validator) => &validator.public_key,
+            None => {
+                error_messages.push(format!(
+                    "Validator with index {} not found, signature={:?}",
+                    sync_committee_message.validator_index, sync_committee_message.signature
+                ));
+                continue;
+            }
+        };
+        match sync_committee_message
+            .signature
+            .verify(pubkey, signing_root.as_ref())
+        {
+            Ok(true) => {}
+            Ok(false) => {
+                error_messages.push(format!(
+                    "Invalid sync committee signature: signature={:?}",
+                    sync_committee_message.signature
+                ));
+                continue;
+            }
+            Err(err) => {
+                error_messages.push(format!(
+                    "BLS verification error: {err:?}, signature={:?}",
+                    sync_committee_message.signature
+                ));
+                continue;
+            }
+        }
 
-    if !sync_committee_message
-        .signature
-        .verify(pubkey, signing_root.as_slice())
-        .map_err(|err| {
-            ApiError::BadRequest(format!(
-                "BLS verification error: {err:?}, signature={:?}",
-                sync_committee_message.signature
-            ))
-        })?
-    {
+        match compute_subnets_for_sync_committee(
+            &beacon_state,
+            sync_committee_message.validator_index,
+        ) {
+            Ok(subnets) => {
+                subnets_by_index.insert(i, subnets);
+            }
+            Err(err) => {
+                error_messages.push(format!(
+                    "Failed to compute sync committee subnets: signature={:?}, err={:?}",
+                    sync_committee_message.signature, err
+                ));
+                continue;
+            }
+        }
+    }
+
+    if !error_messages.is_empty() {
         return Err(ApiError::BadRequest(format!(
-            "Invalid sync committee signature: signature={:?}",
-            sync_committee_message.signature
+            "One or more sync committee messages failed:\n{}",
+            error_messages.join("\n")
         )));
     }
 
-    // Gossip to all relevant subnets for this validator
-    let subnets =
-        compute_subnets_for_sync_committee(&beacon_state, sync_committee_message.validator_index)
-            .map_err(|err| {
-            ApiError::BadRequest(format!(
-                "Failed to compute sync committee subnets: signature={:?}, err={:?}",
-                sync_committee_message.signature, err
-            ))
-        })?;
-    for subnet_id in subnets {
-        network_manager.p2p_sender.send_gossip(GossipMessage {
-            topic: GossipTopic {
-                fork: beacon_state.fork.current_version,
-                kind: GossipTopicKind::SyncCommittee(subnet_id),
-            },
-            data: sync_committee_message.as_ssz_bytes(),
-        });
+    // Gossip all messages now that validation passed for all, reusing precomputed subnets
+    for (i, sync_committee_message) in sync_committee_messages.into_iter().enumerate() {
+        let subnets = match subnets_by_index.get(&i) {
+            Some(s) => s,
+            None => {
+                return Err(ApiError::InternalError(format!(
+                    "precomputed subnets missing for message index {}, validator_index={}, signature={:?}",
+                    i, sync_committee_message.validator_index, sync_committee_message.signature
+                )));
+            }
+        };
+        for &subnet_id in subnets {
+            network_manager.p2p_sender.send_gossip(GossipMessage {
+                topic: GossipTopic {
+                    fork: beacon_state.fork.current_version,
+                    kind: GossipTopicKind::SyncCommittee(subnet_id),
+                },
+                data: sync_committee_message.as_ssz_bytes(),
+            });
+        }
     }
 
     Ok(HttpResponse::Ok())
