@@ -5723,6 +5723,7 @@ dependencies = [
  "ream-operation-pool",
  "ream-p2p",
  "ream-storage",
+ "ream-validator-beacon",
  "serde",
  "serde_json",
  "ssz_types",

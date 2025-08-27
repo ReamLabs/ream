@@ -41,3 +41,4 @@ ream-node.workspace = true
 ream-operation-pool.workspace = true
 ream-p2p.workspace = true
 ream-storage.workspace = true
+ream-validator-beacon.workspace = true
