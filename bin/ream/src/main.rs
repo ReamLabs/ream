@@ -171,6 +171,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
             gossipsub_config,
             socket_address: config.socket_address,
             socket_port: config.socket_port,
+            secret_key_path: config.secret_key_path,
         }),
         lean_chain_reader.clone(),
         executor.clone(),

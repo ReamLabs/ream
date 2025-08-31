@@ -32,6 +32,9 @@ pub struct LeanNodeConfig {
     #[arg(long, help = "The path to the validator registry")]
     pub validator_registry_path: PathBuf,
 
+    #[arg(long, help = "The path to the protobuf encoded secp256k1 libp2p key")]
+    pub secret_key_path: Option<PathBuf>,
+
     #[arg(long, help = "Set P2P socket address", default_value_t = DEFAULT_SOCKET_ADDRESS)]
     pub socket_address: IpAddr,
 

@@ -1,11 +1,12 @@
 use std::{
     collections::HashMap,
+    fs,
     net::IpAddr,
     num::{NonZeroU8, NonZeroUsize},
     sync::Arc,
 };
 
-use anyhow::anyhow;
+use anyhow::{anyhow, ensure};
 use discv5::multiaddr::Protocol;
 use futures::StreamExt;
 use libp2p::{
@@ -15,7 +16,7 @@ use libp2p::{
     identify,
     swarm::{Config, NetworkBehaviour, Swarm, SwarmEvent},
 };
-use libp2p_identity::{Keypair, PeerId};
+use libp2p_identity::{KeyType, Keypair, PeerId};
 use parking_lot::Mutex;
 use ream_chain_lean::{
     lean_chain::LeanChainReader, messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest,
@@ -68,6 +69,7 @@ pub struct LeanNetworkConfig {
     pub gossipsub_config: LeanGossipsubConfig,
     pub socket_address: IpAddr,
     pub socket_port: u16,
+    pub secret_key_path: Option<std::path::PathBuf>,
 }
 
 /// NetworkService is responsible for the following:
@@ -101,7 +103,24 @@ impl LeanNetworkService {
             connection_limits::Behaviour::new(limits)
         };
 
-        let local_key = Keypair::generate_secp256k1();
+        let local_key = if let Some(ref path) = network_config.secret_key_path {
+            let bytes = fs::read(path).map_err(|err| {
+                anyhow!("failed to read secret key file {}: {err}", path.display())
+            })?;
+
+            let keypair = Keypair::from_protobuf_encoding(&bytes).map_err(|err| {
+                anyhow!("failed to decode protobuf encoded libp2p keypair: {err}")
+            })?;
+
+            ensure!(
+                keypair.key_type() == KeyType::Secp256k1,
+                "provided keypair that is not secp256k1"
+            );
+
+            keypair
+        } else {
+            Keypair::generate_secp256k1()
+        };
 
         let gossipsub = {
             let snappy_transform =
@@ -396,6 +415,7 @@ mod tests {
             gossipsub_config: LeanGossipsubConfig::default(),
             socket_address: Ipv4Addr::new(127, 0, 0, 1).into(),
             socket_port,
+            secret_key_path: None,
         });
         let (sender, _receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
         let (_outbound_request_sender_unused, outbound_request_receiver) =
