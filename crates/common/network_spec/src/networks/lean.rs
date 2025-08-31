@@ -3,7 +3,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use ream_consensus_misc::constants::lean::JUSTIFICATION_LOOKBACK_SLOTS;
 use serde::Deserialize;
 
 /// Static specification of the Lean Chain network.
@@ -29,7 +28,7 @@ impl LeanNetworkSpec {
 
         Arc::new(Self {
             genesis_time: current_timestamp + 3,
-            justification_lookback_slots: JUSTIFICATION_LOOKBACK_SLOTS,
+            justification_lookback_slots: 3,
             seconds_per_slot: 4,
             num_validators: 4,
         })
