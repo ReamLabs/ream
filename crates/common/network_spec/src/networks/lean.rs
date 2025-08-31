@@ -3,6 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use ream_consensus_misc::constants::lean::JUSTIFICATION_LOOKBACK_SLOTS;
 use serde::Deserialize;
 
 /// Static specification of the Lean Chain network.
@@ -12,6 +13,7 @@ pub static LEAN_NETWORK_SPEC: OnceLock<Arc<LeanNetworkSpec>> = OnceLock::new();
 #[serde(rename_all = "UPPERCASE")]
 pub struct LeanNetworkSpec {
     pub genesis_time: u64,
+    pub justification_lookback_slots: u64,
     pub seconds_per_slot: u64,
     pub num_validators: u64,
 }
@@ -27,6 +29,7 @@ impl LeanNetworkSpec {
 
         Arc::new(Self {
             genesis_time: current_timestamp + 3,
+            justification_lookback_slots: JUSTIFICATION_LOOKBACK_SLOTS,
             seconds_per_slot: 4,
             num_validators: 4,
         })
