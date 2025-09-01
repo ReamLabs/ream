@@ -8,7 +8,7 @@ use ream_api_types_beacon::responses::{DataResponse, DataVersionedResponse};
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_consensus_beacon::{
     attester_slashing::AttesterSlashing, bls_to_execution_change::SignedBLSToExecutionChange,
-    voluntary_exit::SignedVoluntaryExit,
+    proposer_slashing::ProposerSlashing, voluntary_exit::SignedVoluntaryExit,
 };
 use ream_network_manager::service::NetworkManagerService;
 use ream_operation_pool::OperationPool;
@@ -177,4 +177,14 @@ pub async fn post_attester_slashings(
     operation_pool.insert_attester_slashing(attester_slashing);
 
     Ok(HttpResponse::Ok())
+}
+
+/// GET /eth/v2/beacon/pool/proposer_slashings
+#[get("/beacon/pool/prposer_slashings")]
+pub async fn get_proposer_slashings(
+    operation_pool: Data<Arc<OperationPool>>,
+) -> Result<impl Responder, ApiError> {
+    Ok(HttpResponse::Ok().json(DataVersionedResponse::new(
+        operation_pool.get_all_proposer_slahsings(),
+    )))
 }

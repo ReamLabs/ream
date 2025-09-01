@@ -13,8 +13,9 @@ use crate::handlers::{
         get_light_client_optimistic_update, get_light_client_updates,
     },
     pool::{
-        get_attester_slashings, get_bls_to_execution_changes, get_voluntary_exits,
-        post_attester_slashings, post_bls_to_execution_changes, post_voluntary_exits,
+        get_attester_slashings, get_bls_to_execution_changes, get_proposer_slashings,
+        get_voluntary_exits, post_attester_slashings, post_bls_to_execution_changes,
+        post_voluntary_exits,
     },
     state::{
         get_pending_consolidations, get_pending_deposits, get_pending_partial_withdrawals,
@@ -61,7 +62,8 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(get_light_client_finality_update)
         .service(get_light_client_optimistic_update)
         .service(get_blind_block)
-        .service(post_validator_liveness);
+        .service(post_validator_liveness)
+        .service(get_proposer_slashings);
 }
 
 pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {
