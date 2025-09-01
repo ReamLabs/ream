@@ -4,7 +4,8 @@ use alloy_primitives::{Address, B256, map::HashSet};
 use parking_lot::RwLock;
 use ream_consensus_beacon::{
     attester_slashing::AttesterSlashing, bls_to_execution_change::SignedBLSToExecutionChange,
-    electra::beacon_state::BeaconState, voluntary_exit::SignedVoluntaryExit,
+    electra::beacon_state::BeaconState, proposer_slashing::ProposerSlashing,
+    voluntary_exit::SignedVoluntaryExit,
 };
 use tree_hash::TreeHash;
 
@@ -20,6 +21,7 @@ pub struct OperationPool {
     signed_bls_to_execution_changes: RwLock<HashMap<B256, SignedBLSToExecutionChange>>,
     proposer_preparations: RwLock<HashMap<u64, ProposerPreparation>>,
     attester_slashings: RwLock<HashSet<AttesterSlashing>>,
+    proposer_slashings: RwLock<HashSet<ProposerSlashing>>,
 }
 
 impl OperationPool {
@@ -113,6 +115,14 @@ impl OperationPool {
 
     pub fn get_all_attester_slashings(&self) -> Vec<AttesterSlashing> {
         self.attester_slashings.read().iter().cloned().collect()
+    }
+
+    pub fn get_all_proposer_slahsings(&self) -> Vec<ProposerSlashing> {
+        self.proposer_slashings.read().iter().cloned().collect()
+    }
+
+    pub fn insert_proposer_slashing(&self, slashing: ProposerSlashing) {
+        self.proposer_slashings.write().insert(slashing);
     }
 }
 
