@@ -130,7 +130,7 @@ pub async fn post_voluntary_exits(
 
 /// GET /eth/v2/beacon/pool/attester_slashings
 #[get("/beacon/pool/attester_slashings")]
-pub async fn get_pool_attester_slashings(
+pub async fn get_attester_slashings(
     operation_pool: Data<Arc<OperationPool>>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::Ok().json(DataVersionedResponse::new(
@@ -140,7 +140,7 @@ pub async fn get_pool_attester_slashings(
 
 /// POST /eth/v2/beacon/pool/attester_slashings
 #[post("/beacon/pool/attester_slashings")]
-pub async fn post_pool_attester_slashings(
+pub async fn post_attester_slashings(
     db: Data<ReamDB>,
     operation_pool: Data<Arc<OperationPool>>,
     network_manager: Data<Arc<NetworkManagerService>>,
