@@ -188,3 +188,40 @@ pub async fn get_proposer_slashings(
         operation_pool.get_all_proposer_slahsings(),
     )))
 }
+
+/// POST /eth/v2/beacon/pool/proposer_slashing
+#[post("/beacon/poo/proposer_slashings")]
+pub async fn post_proposer_slashings(
+    db: Data<ReamDB>,
+    operation_pool: Data<Arc<OperationPool>>,
+    network_manager: Data<Arc<NetworkManagerService>>,
+    proposer_slashing: Json<ProposerSlashing>,
+) -> Result<impl Responder, ApiError> {
+    let proposer_slashing = proposer_slashing.into_inner();
+
+    let highest_slot = db
+        .slot_index_provider()
+        .get_highest_slot()
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get_highest_slot, error: {err:?}"))
+        })?
+        .ok_or(ApiError::NotFound(
+            "Failed to find highest slot".to_string(),
+        ))?;
+    let beacon_state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
+
+    // TODO: Validate proposer slashing
+
+    network_manager.p2p_sender.send_gossip(GossipMessage {
+        topic: {
+            GossipTopic {
+                fork: beacon_state.fork.current_version,
+                kind: GossipTopicKind::ProposerSlashing,
+            }
+        },
+        data: proposer_slashing.as_ssz_bytes(),
+    });
+    operation_pool.insert_proposer_slashing(proposer_slashing);
+
+    Ok(HttpResponse::Ok())
+}
