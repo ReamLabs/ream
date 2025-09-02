@@ -16,7 +16,7 @@ use ream_operation_pool::OperationPool;
 use ream_p2p::req_resp::beacon::messages::status::Status;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table},
+    tables::{field::Field, table::Table},
 };
 use tokio::sync::Mutex;
 use tracing::warn;

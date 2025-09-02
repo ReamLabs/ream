@@ -10,10 +10,9 @@ use ream_consensus_beacon::{
 use snap::raw::{Decoder, Encoder};
 use ssz::{Decode, Encode};
 
-use super::Table;
-use crate::errors::StoreError;
+use crate::{errors::StoreError, tables::table::Table};
 
-pub const BLOB_FOLDER_NAME: &str = "blobs";
+pub(crate) const BLOB_FOLDER_NAME: &str = "beacon_blobs";
 
 pub struct BlobsAndProofsTable {
     pub data_dir: PathBuf,
@@ -72,8 +71,8 @@ mod tests {
     use crate::{
         errors::StoreError,
         tables::{
-            Table,
-            blobs_and_proofs::{BLOB_FOLDER_NAME, BlobsAndProofsTable},
+            beacon::blobs_and_proofs::{BLOB_FOLDER_NAME, BlobsAndProofsTable},
+            table::Table,
         },
     };
 

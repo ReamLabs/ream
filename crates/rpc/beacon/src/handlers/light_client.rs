@@ -18,7 +18,7 @@ use ream_light_client::{
 };
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table},
+    tables::{field::Field, table::Table},
 };
 use ssz::Encode;
 use tree_hash::TreeHash;

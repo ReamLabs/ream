@@ -13,7 +13,7 @@ use ream_p2p::{
     },
     network::beacon::channel::GossipMessage,
 };
-use ream_storage::{cache::CachedDB, tables::Table};
+use ream_storage::{cache::CachedDB, tables::table::Table};
 use ream_validator_beacon::blob_sidecars::compute_subnet_for_blob_sidecar;
 use ssz::Encode;
 use tracing::{error, info, trace, warn};

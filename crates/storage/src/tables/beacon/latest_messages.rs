@@ -3,15 +3,17 @@ use std::sync::Arc;
 use ream_consensus_beacon::fork_choice::latest_message::LatestMessage;
 use redb::{Database, Durability, TableDefinition};
 
-use super::{SSZEncoding, Table};
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{ssz_encoder::SSZEncoding, table::Table},
+};
 
 /// Table definition for the Latest Message table
 ///
 /// Key: latest_messages
 /// Value: LatestMessage
-pub const LATEST_MESSAGES_TABLE: TableDefinition<u64, SSZEncoding<LatestMessage>> =
-    TableDefinition::new("latest_messages");
+pub(crate) const LATEST_MESSAGES_TABLE: TableDefinition<u64, SSZEncoding<LatestMessage>> =
+    TableDefinition::new("beacon_latest_messages");
 
 pub struct LatestMessagesTable {
     pub db: Arc<Database>,

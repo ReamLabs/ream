@@ -19,7 +19,7 @@ use ream_consensus_misc::{
 };
 use ream_fork_choice::store::Store;
 use ream_operation_pool::OperationPool;
-use ream_storage::{db::ReamDB, tables::Field};
+use ream_storage::{db::ReamDB, tables::field::Field};
 use serde::Serialize;
 
 use super::state::get_state_from_id;

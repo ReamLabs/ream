@@ -8,7 +8,7 @@ use ream_consensus_misc::{
 };
 use ream_storage::{
     cache::{CachedDB, SyncCommitteeKey},
-    tables::Table,
+    tables::table::Table,
 };
 use ream_validator_beacon::sync_committee::{
     SyncCommitteeMessage, compute_subnets_for_sync_committee,

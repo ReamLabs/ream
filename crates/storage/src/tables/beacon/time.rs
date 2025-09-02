@@ -2,15 +2,14 @@ use std::sync::Arc;
 
 use redb::{Database, Durability, TableDefinition};
 
-use super::Field;
-use crate::errors::StoreError;
+use crate::{errors::StoreError, tables::field::Field};
 
 /// Table definition for the Time table
 ///
 /// Value: u64
-pub const TIME_FIELD: TableDefinition<&str, u64> = TableDefinition::new("time");
+pub(crate) const TIME_FIELD: TableDefinition<&str, u64> = TableDefinition::new("beacon_time");
 
-pub const TIME_KEY: &str = "time_key";
+const TIME_KEY: &str = "time_key";
 
 pub struct TimeField {
     pub db: Arc<Database>,

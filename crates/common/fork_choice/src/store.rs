@@ -26,7 +26,7 @@ use ream_operation_pool::OperationPool;
 use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, MultimapTable, Table},
+    tables::{field::Field, multimap_table::MultimapTable, table::Table},
 };
 use tree_hash::TreeHash;
 

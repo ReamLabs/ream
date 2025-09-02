@@ -26,7 +26,7 @@ use ream_p2p::{
     network::beacon::{channel::P2PMessage, network_state::NetworkState},
     req_resp::MAX_CONCURRENT_REQUESTS,
 };
-use ream_storage::tables::Table;
+use ream_storage::tables::table::Table;
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::sleep};
 use tracing::{info, warn};
 

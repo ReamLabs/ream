@@ -3,16 +3,15 @@ use std::sync::Arc;
 use alloy_primitives::map::HashSet;
 use redb::{Database, Durability, TableDefinition};
 
-use super::Field;
-use crate::errors::StoreError;
+use crate::{errors::StoreError, tables::field::Field};
 
 /// Table definition for the Equivocating_Indices table
 ///
 /// Value: Vec<u64>
-pub const EQUIVOCATING_INDICES_FIELD: TableDefinition<&str, Vec<u64>> =
-    TableDefinition::new("equivocating_indices");
+pub(crate) const EQUIVOCATING_INDICES_FIELD: TableDefinition<&str, Vec<u64>> =
+    TableDefinition::new("beacon_equivocating_indices");
 
-pub const EQUIVOCATING_INDICES_KEY: &str = "equivocating_indices_key";
+const EQUIVOCATING_INDICES_KEY: &str = "equivocating_indices_key";
 
 pub struct EquivocatingIndicesField {
     pub db: Arc<Database>,

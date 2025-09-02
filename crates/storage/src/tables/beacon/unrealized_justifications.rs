@@ -4,17 +4,19 @@ use alloy_primitives::B256;
 use ream_consensus_misc::checkpoint::Checkpoint;
 use redb::{Database, Durability, TableDefinition};
 
-use super::{SSZEncoding, Table};
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{ssz_encoder::SSZEncoding, table::Table},
+};
 
 /// Table definition for the Unrealized Justifications table
 ///
 /// Key: unrealized_justifications
 /// Value: Checkpoint
-pub const UNREALIZED_JUSTIFICATIONS_TABLE: TableDefinition<
+pub(crate) const UNREALIZED_JUSTIFICATIONS_TABLE: TableDefinition<
     SSZEncoding<B256>,
     SSZEncoding<Checkpoint>,
-> = TableDefinition::new("unrealized_justifications");
+> = TableDefinition::new("beacon_unrealized_justifications");
 
 pub struct UnrealizedJustificationsTable {
     pub db: Arc<Database>,

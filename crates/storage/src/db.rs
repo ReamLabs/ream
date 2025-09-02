@@ -8,31 +8,33 @@ use tracing::info;
 use crate::{
     errors::StoreError,
     tables::{
-        Table,
-        beacon_block::{BEACON_BLOCK_TABLE, BeaconBlockTable},
-        beacon_state::{BEACON_STATE_TABLE, BeaconStateTable},
-        blobs_and_proofs::{BLOB_FOLDER_NAME, BlobsAndProofsTable},
-        block_timeliness::{BLOCK_TIMELINESS_TABLE, BlockTimelinessTable},
-        checkpoint_states::{CHECKPOINT_STATES_TABLE, CheckpointStatesTable},
-        equivocating_indices::{EQUIVOCATING_INDICES_FIELD, EquivocatingIndicesField},
-        finalized_checkpoint::{FINALIZED_CHECKPOINT_FIELD, FinalizedCheckpointField},
-        genesis_time::{GENESIS_TIME_FIELD, GenesisTimeField},
-        justified_checkpoint::{JUSTIFIED_CHECKPOINT_FIELD, JustifiedCheckpointField},
-        latest_messages::{LATEST_MESSAGES_TABLE, LatestMessagesTable},
-        parent_root_index::{PARENT_ROOT_INDEX_MULTIMAP_TABLE, ParentRootIndexMultimapTable},
-        proposer_boost_root::{PROPOSER_BOOST_ROOT_FIELD, ProposerBoostRootField},
-        slot_index::{SLOT_INDEX_TABLE, SlotIndexTable},
-        state_root_index::{STATE_ROOT_INDEX_TABLE, StateRootIndexTable},
-        time::{TIME_FIELD, TimeField},
-        unrealized_finalized_checkpoint::{
-            UNREALIZED_FINALIZED_CHECKPOINT_FIELD, UnrealizedFinalizedCheckpointField,
+        beacon::{
+            beacon_block::{BEACON_BLOCK_TABLE, BeaconBlockTable},
+            beacon_state::{BEACON_STATE_TABLE, BeaconStateTable},
+            blobs_and_proofs::{BLOB_FOLDER_NAME, BlobsAndProofsTable},
+            block_timeliness::{BLOCK_TIMELINESS_TABLE, BlockTimelinessTable},
+            checkpoint_states::{CHECKPOINT_STATES_TABLE, CheckpointStatesTable},
+            equivocating_indices::{EQUIVOCATING_INDICES_FIELD, EquivocatingIndicesField},
+            finalized_checkpoint::{FINALIZED_CHECKPOINT_FIELD, FinalizedCheckpointField},
+            genesis_time::{GENESIS_TIME_FIELD, GenesisTimeField},
+            justified_checkpoint::{JUSTIFIED_CHECKPOINT_FIELD, JustifiedCheckpointField},
+            latest_messages::{LATEST_MESSAGES_TABLE, LatestMessagesTable},
+            parent_root_index::{PARENT_ROOT_INDEX_MULTIMAP_TABLE, ParentRootIndexMultimapTable},
+            proposer_boost_root::{PROPOSER_BOOST_ROOT_FIELD, ProposerBoostRootField},
+            slot_index::{SLOT_INDEX_TABLE, SlotIndexTable},
+            state_root_index::{STATE_ROOT_INDEX_TABLE, StateRootIndexTable},
+            time::{TIME_FIELD, TimeField},
+            unrealized_finalized_checkpoint::{
+                UNREALIZED_FINALIZED_CHECKPOINT_FIELD, UnrealizedFinalizedCheckpointField,
+            },
+            unrealized_justifications::{
+                UNREALIZED_JUSTIFICATIONS_TABLE, UnrealizedJustificationsTable,
+            },
+            unrealized_justified_checkpoint::{
+                UNREALIZED_JUSTIFED_CHECKPOINT_FIELD, UnrealizedJustifiedCheckpointField,
+            },
         },
-        unrealized_justifications::{
-            UNREALIZED_JUSTIFICATIONS_TABLE, UnrealizedJustificationsTable,
-        },
-        unrealized_justified_checkpoint::{
-            UNREALIZED_JUSTIFED_CHECKPOINT_FIELD, UnrealizedJustifiedCheckpointField,
-        },
+        table::Table,
     },
 };
 

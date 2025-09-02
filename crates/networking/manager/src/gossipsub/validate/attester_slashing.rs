@@ -5,7 +5,7 @@ use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     attester_slashing::AttesterSlashing, electra::beacon_state::BeaconState,
 };
-use ream_storage::{cache::CachedDB, tables::Table};
+use ream_storage::{cache::CachedDB, tables::table::Table};
 
 use super::result::ValidationResult;
 

@@ -16,7 +16,7 @@ use ream_consensus_misc::{
 };
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table},
+    tables::{field::Field, table::Table},
 };
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;

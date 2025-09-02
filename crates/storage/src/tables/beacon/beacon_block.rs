@@ -6,17 +6,22 @@ use redb::{Database, Durability, TableDefinition};
 use tree_hash::TreeHash;
 
 use super::{
-    MultimapTable, SSZEncoding, Table, parent_root_index::ParentRootIndexMultimapTable,
-    slot_index::SlotIndexTable, state_root_index::StateRootIndexTable,
+    parent_root_index::ParentRootIndexMultimapTable, slot_index::SlotIndexTable,
+    state_root_index::StateRootIndexTable,
 };
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{multimap_table::MultimapTable, ssz_encoder::SSZEncoding, table::Table},
+};
 
 /// Table definition for the Beacon Block table
 ///
 /// Key: block_id
 /// Value: BeaconBlock
-pub const BEACON_BLOCK_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<SignedBeaconBlock>> =
-    TableDefinition::new("beacon_block");
+pub(crate) const BEACON_BLOCK_TABLE: TableDefinition<
+    SSZEncoding<B256>,
+    SSZEncoding<SignedBeaconBlock>,
+> = TableDefinition::new("beacon_block");
 
 pub struct BeaconBlockTable {
     pub db: Arc<Database>,

@@ -3,15 +3,17 @@ use std::sync::Arc;
 use alloy_primitives::B256;
 use redb::{Database, Durability, ReadableTable, TableDefinition};
 
-use super::{SSZEncoding, Table};
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{ssz_encoder::SSZEncoding, table::Table},
+};
 
 /// Table definition for the Slot Index table
 ///
 /// Key: slot number
 /// Value: block_root
-pub const SLOT_INDEX_TABLE: TableDefinition<u64, SSZEncoding<B256>> =
-    TableDefinition::new("slot_index");
+pub(crate) const SLOT_INDEX_TABLE: TableDefinition<u64, SSZEncoding<B256>> =
+    TableDefinition::new("beacon_slot_index");
 
 pub struct SlotIndexTable {
     pub db: Arc<Database>,

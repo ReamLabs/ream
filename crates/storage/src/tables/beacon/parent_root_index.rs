@@ -3,17 +3,19 @@ use std::sync::Arc;
 use alloy_primitives::B256;
 use redb::{Database, Durability, MultimapTableDefinition};
 
-use super::{MultimapTable, SSZEncoding};
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{multimap_table::MultimapTable, ssz_encoder::SSZEncoding},
+};
 
 /// Table definition for the Parent Root Index Multimap table
 ///
 /// Key: ParentRoot
 /// Value: BlockRoot's
-pub const PARENT_ROOT_INDEX_MULTIMAP_TABLE: MultimapTableDefinition<
+pub(crate) const PARENT_ROOT_INDEX_MULTIMAP_TABLE: MultimapTableDefinition<
     SSZEncoding<B256>,
     SSZEncoding<B256>,
-> = MultimapTableDefinition::new("parent_root_index_multimap");
+> = MultimapTableDefinition::new("beacon_parent_root_index_multimap");
 
 pub struct ParentRootIndexMultimapTable {
     pub db: Arc<Database>,

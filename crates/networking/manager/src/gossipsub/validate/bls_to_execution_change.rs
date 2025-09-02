@@ -6,7 +6,7 @@ use ream_consensus_beacon::{
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
     cache::{AddressValidaterIndexIdentifier, CachedDB},
-    tables::Table,
+    tables::table::Table,
 };
 
 use super::result::ValidationResult;

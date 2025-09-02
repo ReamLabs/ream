@@ -3,16 +3,20 @@ use std::sync::Arc;
 use ream_consensus_misc::checkpoint::Checkpoint;
 use redb::{Database, Durability, TableDefinition};
 
-use super::{Field, SSZEncoding};
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{field::Field, ssz_encoder::SSZEncoding},
+};
 
 /// Table definition for the Unrealized_Justified_Checkpoint table
 ///
 /// Value: Checkpoint
-pub const UNREALIZED_JUSTIFED_CHECKPOINT_FIELD: TableDefinition<&str, SSZEncoding<Checkpoint>> =
-    TableDefinition::new("unrealized_justified_checkpoint");
+pub(crate) const UNREALIZED_JUSTIFED_CHECKPOINT_FIELD: TableDefinition<
+    &str,
+    SSZEncoding<Checkpoint>,
+> = TableDefinition::new("beacon_unrealized_justified_checkpoint");
 
-pub const UNREALIZED_JUSTIFED_CHECKPOINT_KEY: &str = "unrealized_justified_checkpoint_key";
+const UNREALIZED_JUSTIFED_CHECKPOINT_KEY: &str = "unrealized_justified_checkpoint_key";
 
 pub struct UnrealizedJustifiedCheckpointField {
     pub db: Arc<Database>,

@@ -4,17 +4,19 @@ use ream_consensus_beacon::electra::beacon_state::BeaconState;
 use ream_consensus_misc::checkpoint::Checkpoint;
 use redb::{Database, Durability, TableDefinition};
 
-use super::{SSZEncoding, Table};
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{ssz_encoder::SSZEncoding, table::Table},
+};
 
 /// Table definition for the Checkpoint States table
 ///
 /// Key: checkpoint_states
 /// Value: BeaconState
-pub const CHECKPOINT_STATES_TABLE: TableDefinition<
+pub(crate) const CHECKPOINT_STATES_TABLE: TableDefinition<
     SSZEncoding<Checkpoint>,
     SSZEncoding<BeaconState>,
-> = TableDefinition::new("checkpoint_states");
+> = TableDefinition::new("beacon_checkpoint_states");
 
 pub struct CheckpointStatesTable {
     pub db: Arc<Database>,

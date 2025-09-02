@@ -3,7 +3,7 @@ use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     electra::beacon_state::BeaconState, voluntary_exit::SignedVoluntaryExit,
 };
-use ream_storage::{cache::CachedDB, tables::Table};
+use ream_storage::{cache::CachedDB, tables::table::Table};
 
 use super::result::ValidationResult;
 

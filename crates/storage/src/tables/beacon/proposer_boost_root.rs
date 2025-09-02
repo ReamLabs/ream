@@ -3,16 +3,18 @@ use std::sync::Arc;
 use alloy_primitives::{B256, FixedBytes};
 use redb::{Database, Durability, TableDefinition};
 
-use super::{Field, SSZEncoding};
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{field::Field, ssz_encoder::SSZEncoding},
+};
 
 /// Table definition for the Proposer_Boost_Root table
 ///
 /// Value: Root
-pub const PROPOSER_BOOST_ROOT_FIELD: TableDefinition<&str, SSZEncoding<B256>> =
-    TableDefinition::new("proposer_boost_root");
+pub(crate) const PROPOSER_BOOST_ROOT_FIELD: TableDefinition<&str, SSZEncoding<B256>> =
+    TableDefinition::new("beacon_proposer_boost_root");
 
-pub const PROPOSER_BOOST_ROOT_KEY: &str = "proposer_boost_root_key";
+const PROPOSER_BOOST_ROOT_KEY: &str = "proposer_boost_root_key";
 
 pub struct ProposerBoostRootField {
     pub db: Arc<Database>,

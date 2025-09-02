@@ -20,7 +20,7 @@ use ream_consensus_misc::constants::beacon::{
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
     db::ReamDB,
-    tables::{Field, Table},
+    tables::{field::Field, table::Table},
 };
 use serde::{Deserialize, Serialize};
 use ssz::Encode;

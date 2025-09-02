@@ -3,15 +3,17 @@ use std::sync::Arc;
 use alloy_primitives::B256;
 use redb::{Database, Durability, TableDefinition};
 
-use super::{SSZEncoding, Table};
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{ssz_encoder::SSZEncoding, table::Table},
+};
 
 /// Table definition for the State Root Index table
 ///
 /// Key: state_root
 /// Value: block_root
-pub const STATE_ROOT_INDEX_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<B256>> =
-    TableDefinition::new("state_root_index");
+pub(crate) const STATE_ROOT_INDEX_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<B256>> =
+    TableDefinition::new("beacon_state_root_index");
 
 pub struct StateRootIndexTable {
     pub db: Arc<Database>,

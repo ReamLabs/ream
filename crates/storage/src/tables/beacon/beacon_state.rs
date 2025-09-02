@@ -4,14 +4,16 @@ use alloy_primitives::B256;
 use ream_consensus_beacon::electra::beacon_state::BeaconState;
 use redb::{Database, Durability, TableDefinition};
 
-use super::{SSZEncoding, Table};
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{ssz_encoder::SSZEncoding, table::Table},
+};
 
 /// Table definition for the Beacon State table
 ///
 /// Key: block_root
 /// Value: BeaconState
-pub const BEACON_STATE_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<BeaconState>> =
+pub(crate) const BEACON_STATE_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<BeaconState>> =
     TableDefinition::new("beacon_state");
 
 pub struct BeaconStateTable {

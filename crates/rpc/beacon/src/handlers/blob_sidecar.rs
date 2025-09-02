@@ -7,7 +7,7 @@ use ream_api_types_beacon::{
     error::ApiError, id::ID, query::BlobSidecarQuery, responses::BeaconVersionedResponse,
 };
 use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
-use ream_storage::{db::ReamDB, tables::Table};
+use ream_storage::{db::ReamDB, tables::table::Table};
 use tree_hash::TreeHash;
 
 use crate::handlers::block::get_beacon_block_from_id;

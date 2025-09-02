@@ -3,15 +3,17 @@ use std::sync::Arc;
 use alloy_primitives::B256;
 use redb::{Database, Durability, TableDefinition};
 
-use super::{SSZEncoding, Table};
-use crate::errors::StoreError;
+use crate::{
+    errors::StoreError,
+    tables::{ssz_encoder::SSZEncoding, table::Table},
+};
 
 /// Table definition for the Block Timeliness table
 ///
 /// Key: block_timeliness
 /// Value: bool
-pub const BLOCK_TIMELINESS_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<bool>> =
-    TableDefinition::new("block_timeliness");
+pub(crate) const BLOCK_TIMELINESS_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<bool>> =
+    TableDefinition::new("beacon_block_timeliness");
 
 pub struct BlockTimelinessTable {
     pub db: Arc<Database>,

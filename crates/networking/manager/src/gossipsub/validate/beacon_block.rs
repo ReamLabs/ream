@@ -10,7 +10,7 @@ use ream_consensus_misc::{
 use ream_execution_engine::rpc_types::payload_status::PayloadStatus;
 use ream_storage::{
     cache::{AddressSlotIdentifier, CachedDB},
-    tables::{Field, Table},
+    tables::{field::Field, table::Table},
 };
 
 use super::result::ValidationResult;

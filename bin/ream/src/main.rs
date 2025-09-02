@@ -43,7 +43,7 @@ use ream_rpc_lean::{config::LeanRpcServerConfig, start_lean_server};
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
-    tables::Table,
+    tables::table::Table,
 };
 use ream_sync::rwlock::Writer;
 use ream_validator_beacon::{

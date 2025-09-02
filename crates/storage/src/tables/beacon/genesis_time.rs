@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use redb::{Database, Durability, TableDefinition};
 
-use super::Field;
-use crate::errors::StoreError;
+use crate::{errors::StoreError, tables::field::Field};
 
 /// Table definition for the Genesis_Time table
 ///
 /// Value: u64
-pub const GENESIS_TIME_FIELD: TableDefinition<&str, u64> = TableDefinition::new("genesis_time");
+pub(crate) const GENESIS_TIME_FIELD: TableDefinition<&str, u64> =
+    TableDefinition::new("beacon_genesis_time");
 
-pub const GENESIS_TIME_KEY: &str = "genesis_time_key";
+const GENESIS_TIME_KEY: &str = "genesis_time_key";
 
 pub struct GenesisTimeField {
     pub db: Arc<Database>,
