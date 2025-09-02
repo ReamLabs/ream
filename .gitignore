@@ -27,3 +27,6 @@ testing/ef-tests/mainnet/*
 
 # DS_Store: Desktop Services Store
 .DS_Store
+
+# keystore
+.keystore

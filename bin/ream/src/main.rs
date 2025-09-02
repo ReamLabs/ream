@@ -1,12 +1,14 @@
 use std::{
-    env,
+    env, fs,
     net::SocketAddr,
+    path::Path,
     process,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use clap::Parser;
+use rayon::prelude::*;
 use ream::cli::{
     Cli, Commands,
     account_manager::AccountManagerConfig,
@@ -16,6 +18,7 @@ use ream::cli::{
     validator_node::ValidatorNodeConfig,
     voluntary_exit::VoluntaryExitConfig,
 };
+use ream_account_manager::{keystore::QsKeystore, message_types::MessageType};
 use ream_api_types_beacon::id::{ID, ValidatorID};
 use ream_chain_lean::{
     genesis as lean_genesis, lean_chain::LeanChain, messages::LeanChainServiceMessage,
@@ -367,7 +370,22 @@ pub async fn run_validator_node(config: ValidatorNodeConfig, executor: ReamExecu
 /// This function initializes the account manager by validating the configuration,
 /// generating keys, and starting the account manager service.
 pub async fn run_account_manager(mut config: AccountManagerConfig) {
-    info!("starting up account manager...");
+    println!(
+        r#"
+        
+        ╔═══════════════════════════════════════════════════════╗
+        ║               REAM ACCOUNT MANAGER                    ║
+        ║                                                       ║
+        ║    ┌─ Generating Keys ─┐                              ║
+        ║    │ ████████████████ │ ▓▓▓ Cryptographic Keys        ║
+        ║    │ ████████████████ │ ▓▓▓ Message Attestation       ║
+        ║    └──────────────────┘                               ║
+        ║                                                       ║
+        ║    🔐 Secure • 🔑 Deterministic • 📝 Multi-Purpose    ║
+        ╚═══════════════════════════════════════════════════════╝
+        
+    "#
+    );
 
     // Validate the configuration
     config
@@ -381,17 +399,58 @@ pub async fn run_account_manager(mut config: AccountManagerConfig) {
 
     let seed_phrase = config.get_seed_phrase();
 
+    // Create keystore directory if it doesn't exist
+    let default_path = "./.keystore/".to_string();
+    let keystore_path = config.path.as_ref().unwrap_or(&default_path);
+    let keystore_dir = Path::new(keystore_path);
+    if !keystore_dir.exists() {
+        fs::create_dir_all(keystore_dir).expect("Failed to create keystore directory");
+        info!("Created keystore directory: {:?}", keystore_dir);
+    }
+
     // Measure key generation time
     let start_time = Instant::now();
-    let (_public_key, _private_key) = ream_account_manager::generate_keys(
-        &seed_phrase,
-        config.activation_epoch,
-        config.num_active_epochs,
-    );
+
+    // Parallelize key generation for each message type
+    let message_types: Vec<MessageType> = MessageType::iter().collect();
+
+    message_types
+        .par_iter()
+        .enumerate()
+        .for_each(|(index, &message_type)| {
+            let (_public_key, _private_key) = ream_account_manager::generate_keys(
+                &seed_phrase,
+                index as u32,
+                config.activation_epoch,
+                config.num_active_epochs,
+                config.passphrase.as_deref().unwrap_or(""),
+            );
+
+            // Create keystore file using QsKeystore
+            let keystore = QsKeystore::from_seed_phrase(
+                &seed_phrase,
+                config.lifetime as u32,
+                config.activation_epoch as u32,
+                Some(format!("Ream validator keystore for {:?}", message_type)),
+                Some(format!("m/44'/60'/0'/0/{}", index)),
+            );
+
+            // Write keystore to file with enum name
+            let filename = format!("{:?}.json", message_type);
+            let keystore_file_path = keystore_dir.join(filename);
+            let keystore_json = keystore.to_json().expect("Failed to serialize keystore");
+
+            fs::write(&keystore_file_path, keystore_json).expect("Failed to write keystore file");
+
+            info!("Keystore written to: {:?}", keystore_file_path);
+            // info!("Public key for {:?}: {:?}", message_type, public_key.inner.to_string());
+        });
     let duration = start_time.elapsed();
     info!("Key generation complete, took {:?}", duration);
 
     info!("Account manager completed successfully");
+
+    process::exit(0);
 }
 
 /// Runs the voluntary exit process.

@@ -70,7 +70,8 @@ alloy-rpc-types-beacon = "1.0.8"
 alloy-rpc-types-eth = "1.0.7"
 anyhow = "1.0"
 async-trait = "0.1.86"
-bip32 = "0.5.3"
+bip39 = "2.0.0"
+chrono = { version = "0.4", features = ["serde"] }
 clap = "4"
 delay_map = "0.4.1"
 directories = { version = "6.0.0" }
@@ -84,6 +85,7 @@ eventsource-client = "0.15.0"
 futures = "0.3"
 hashbrown = "0.15.3"
 hashsig = { git = "https://github.com/b-wagn/hash-sig", rev = "287517a763edba7e518b0c1ee5beb868f26f1f66" }
+hex = "0.4"
 itertools = "0.14"
 jsonwebtoken = "9.3.1"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }
@@ -96,6 +98,7 @@ parking_lot = "0.12.3"
 prometheus_exporter = "0.8.5"
 rand = "0.9"
 rand_chacha = "0.9"
+rayon = "1.11.0"
 redb = { version = "2.4.0" }
 reqwest = { version = "0.12", features = ["json"] }
 rstest = "0.25"
@@ -104,6 +107,7 @@ serde = { version = '1.0', features = ['derive', "rc"] }
 serde_json = "1.0.139"
 serde_yaml = "0.9"
 sha2 = "0.10"
+sha3 = "0.10.8"
 snap = "1.1"
 ssz_types = { git = "https://github.com/ReamLabs/ssz_types", branch = "removable-variable-list" }
 tempdir = "0.3.7"
@@ -118,6 +122,7 @@ tree_hash = "0.10"
 tree_hash_derive = "0.10"
 unicode-normalization = "0.1.24"
 url = "2.5"
+uuid = { version = "1.0", features = ["serde"] }
 
 # ream dependencies
 ream-account-manager = { path = "crates/common/account_manager" }
