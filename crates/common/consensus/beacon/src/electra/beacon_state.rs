@@ -1570,10 +1570,10 @@ impl BeaconState {
         Ok(sync_committee_indices)
     }
 
-    pub fn process_proposer_slashing(
-        &mut self,
+    pub fn validate_proposer_slashing(
+        &self,
         proposer_slashing: &ProposerSlashing,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<u64> {
         let header_1 = &proposer_slashing.signed_header_1.message;
         let header_2 = &proposer_slashing.signed_header_2.message;
 
@@ -1621,6 +1621,13 @@ impl BeaconState {
             );
         }
 
+        Ok(proposer_index)
+    }
+    pub fn process_proposer_slashing(
+        &mut self,
+        proposer_slashing: &ProposerSlashing,
+    ) -> anyhow::Result<()> {
+        let proposer_index = self.validate_proposer_slashing(proposer_slashing)?;
         // Slash the validator
         self.slash_validator(proposer_index, None)
     }

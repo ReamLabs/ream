@@ -210,8 +210,13 @@ pub async fn post_proposer_slashings(
         ))?;
     let beacon_state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
 
-    // TODO: Validate proposer slashing
-
+    beacon_state
+        .validate_proposer_slashing(&proposer_slashing)
+        .map_err(|err| {
+            ApiError::BadRequest(format!(
+                "Invalid proposer slashing, it will never pass validation so it's rejected: {err:?}"
+            ))
+        })?;
     network_manager.p2p_sender.send_gossip(GossipMessage {
         topic: {
             GossipTopic {
