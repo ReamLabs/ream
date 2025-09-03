@@ -213,11 +213,16 @@ impl LeanState {
     }
 
     fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
+        // Send latest head slot to metrics
+        set_int_gauge_vec(&HEAD_SLOT, block.slot as i64, &[]);
+
         self.process_block_header(block).expect("Failed to process block header");
         self.process_operations(&block.body).expect("Failed to process block operations");
 
-        set_int_gauge_vec(&HEAD_SLOT, block.slot as i64, &[]);
+        Ok(())
+    }
 
+    fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
         // Track historical blocks in the state
         self
             .historical_block_hashes
@@ -243,8 +248,17 @@ impl LeanState {
                 .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
         }
 
-        // Process votes
-        for vote in &block.body.votes {
+        Ok(())
+    }
+
+    fn process_operations(&mut self, body: &BlockBody) -> anyhow::Result<()> {
+        // Process attestations
+        self.process_attestations(&body.votes)?;
+        Ok(())
+    }
+
+    fn process_attestations(&mut self, votes: &VariableList<Vote, U4096>) -> anyhow::Result<()> {
+        for vote in votes {
             // Ignore votes whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
@@ -285,20 +299,6 @@ impl LeanState {
             }
         }
 
-        Ok(())
-    }
-
-    fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn process_operations(&mut self, body: &BlockBody) -> anyhow::Result<()> {
-        // Process attestations
-        self.process_attestations(&body.votes)?;
-        Ok(())
-    }
-
-    fn process_attestations(&mut self, votes: &VariableList<Vote, U4096>) -> anyhow::Result<()> {
         Ok(())
     }
 }
