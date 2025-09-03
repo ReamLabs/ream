@@ -8,6 +8,7 @@ use ssz_types::{
     BitList, VariableList,
     typenum::{U262144, U1073741824, U4096},
 };
+use tracing::info;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
@@ -345,9 +346,11 @@ impl LeanState {
             if 3 * count >= (2 * self.config.num_validators) {
                 self.latest_justified = vote.target.clone();
                 self.justified_slots[vote.target.slot as usize] = true;
-                set_int_gauge_vec(&JUSTIFIED_SLOT, self.latest_justified.slot as i64, &[]);
 
                 self.remove_justifications(&vote.target.root)?;
+
+                info!("Block justified: checkpoint={:?}, num_votes={count}", vote.target);
+                set_int_gauge_vec(&JUSTIFIED_SLOT, self.latest_justified.slot as i64, &[]);
 
                 // Finalization: if the target is the next valid justifiable
                 // hash after the source
@@ -356,6 +359,8 @@ impl LeanState {
 
                 if is_target_next_valid_justifiable_slot {
                     self.latest_finalized = vote.source.clone();
+
+                    info!("Block finalized: checkpoint={:?}", vote.source);
                     set_int_gauge_vec(&FINALIZED_SLOT, self.latest_finalized.slot as i64, &[]);
                 }
             }

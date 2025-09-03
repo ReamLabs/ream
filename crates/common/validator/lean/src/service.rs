@@ -8,6 +8,7 @@ use ream_network_spec::networks::lean_network_spec;
 use ream_post_quantum_crypto::PQSignature;
 use tokio::sync::{mpsc, oneshot};
 use tracing::info;
+use tree_hash::TreeHash;
 
 use crate::registry::LeanKeystore;
 
@@ -73,9 +74,10 @@ impl ValidatorService {
                                 let new_block = rx.await.expect("Failed to receive block from LeanChainService");
 
                                 info!(
-                                    "Validator {} built block: slot={}, parent={:?}, votes={}, state_root={:?}",
+                                    "Validator {} built block: slot={}, root={:?}, parent={:?}, votes={}, state_root={:?}",
                                     keystore.validator_id,
                                     new_block.slot,
+                                    new_block.tree_hash_root(),
                                     new_block.parent_root,
                                     new_block.body.votes.len(),
                                     new_block.state_root
@@ -101,9 +103,15 @@ impl ValidatorService {
                             info!("Starting vote phase at slot {slot} (tick {tick_count}): {} validator(s) voting", self.keystores.len());
 
                             // Build the vote from LeanChain, and modify its validator ID
-                            let vote_template = self.lean_chain.read().await.build_vote().expect("Failed to build vote");
+                            let vote_template = self.lean_chain.read().await.build_vote(slot).expect("Failed to build vote");
 
-                            info!("Built vote template for head {:?} at slot {} with target {:?}", vote_template.head, vote_template.slot, vote_template.target.slot);
+                            info!(
+                                "Built vote template for head={:?}, slot={}, source={:?}, target={:?}",
+                                vote_template.head,
+                                vote_template.slot,
+                                vote_template.source,
+                                vote_template.target
+                            );
 
                             // TODO: Sign the vote with the keystore.
                             let signed_votes = self.keystores.iter().map(|keystore| {
