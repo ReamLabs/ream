@@ -292,9 +292,9 @@ impl LeanState {
             let count = self.count_justifications(&vote.target.root)?;
 
             // If 2/3 voted for the same new valid hash to justify
-            if count == (2 * self.config.num_validators) / 3 {
                 self.latest_justified.root = vote.target.root;
                 self.latest_justified.slot = vote.target.slot;
+            if 3 * count >= (2 * self.config.num_validators) {
                 self.justified_slots[vote.target.slot as usize] = true;
                 set_int_gauge_vec(&JUSTIFIED_SLOT, self.latest_justified.slot as i64, &[]);
 
