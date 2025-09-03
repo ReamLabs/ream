@@ -4,7 +4,6 @@ use alloy_primitives::B256;
 use anyhow::anyhow;
 use ream_consensus_lean::{
     block::{Block, SignedBlock},
-    process_block,
     vote::SignedVote,
 };
 use ream_network_spec::networks::lean_network_spec;
@@ -171,8 +170,8 @@ impl LeanChainService {
 
         match lean_chain.post_states.get(&block.parent_root) {
             Some(parent_state) => {
-                let mut state = process_block(parent_state, &block)?;
-                state.state_transition(&signed_block, true, false)?;
+                let mut state = parent_state.clone();
+                state.state_transition(&SignedBlock { message: block.clone(), signature: PQSignature::default() }, true, false)?;
 
                 for vote in &block.body.votes {
                     if !lean_chain.known_votes.contains(vote) {

@@ -1,6 +1,7 @@
 use alloy_primitives::B256;
 use anyhow::anyhow;
 use ream_consensus_misc::constants::lean::VALIDATOR_REGISTRY_LIMIT;
+use ream_metrics::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -10,7 +11,7 @@ use ssz_types::{
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::{block::{Block, BlockBody, BlockHeader, SignedBlock}, checkpoint::Checkpoint, config::Config, vote::Vote};
+use crate::{block::{Block, BlockBody, BlockHeader, SignedBlock}, checkpoint::Checkpoint, config::Config, is_justifiable_slot, vote::Vote};
 
 /// Represents the state of the Lean chain.
 ///
@@ -214,6 +215,75 @@ impl LeanState {
     fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
         self.process_block_header(block).expect("Failed to process block header");
         self.process_operations(&block.body).expect("Failed to process block operations");
+
+        set_int_gauge_vec(&HEAD_SLOT, block.slot as i64, &[]);
+
+        // Track historical blocks in the state
+        self
+            .historical_block_hashes
+            .push(block.parent_root)
+            .map_err(|err| {
+                anyhow!("Failed to add block.parent_root to historical_block_hashes: {err:?}")
+            })?;
+        self
+            .justified_slots
+            .push(false)
+            .map_err(|err| anyhow!("Failed to add to justified_slots: {err:?}"))?;
+
+        while self.historical_block_hashes.len() < block.slot as usize {
+            self
+                .justified_slots
+                .push(false)
+                .map_err(|err| anyhow!("Failed to prefill justified_slots: {err:?}"))?;
+
+            self
+                .historical_block_hashes
+                // Diverged from Python implementation: uses `B256::ZERO` instead of `None`
+                .push(B256::ZERO)
+                .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
+        }
+
+        // Process votes
+        for vote in &block.body.votes {
+            // Ignore votes whose source is not already justified,
+            // or whose target is not in the history, or whose target is not a
+            // valid justifiable slot
+            if !self.justified_slots[vote.source.slot as usize]
+                || vote.source.root != self.historical_block_hashes[vote.source.slot as usize]
+                || vote.target.root != self.historical_block_hashes[vote.target.slot as usize]
+                || vote.target.slot <= vote.source.slot
+                || !is_justifiable_slot(&self.latest_finalized.slot, &vote.target.slot)
+            {
+                continue;
+            }
+
+            // Track attempts to justify new hashes
+            self.initialize_justifications_for_root(&vote.target.root)?;
+            self.set_justification(&vote.target.root, &vote.validator_id, true)?;
+
+            let count = self.count_justifications(&vote.target.root)?;
+
+            // If 2/3 voted for the same new valid hash to justify
+            if count == (2 * self.config.num_validators) / 3 {
+                self.latest_justified.root = vote.target.root;
+                self.latest_justified.slot = vote.target.slot;
+                self.justified_slots[vote.target.slot as usize] = true;
+                set_int_gauge_vec(&JUSTIFIED_SLOT, self.latest_justified.slot as i64, &[]);
+
+                self.remove_justifications(&vote.target.root)?;
+
+                // Finalization: if the target is the next valid justifiable
+                // hash after the source
+                let is_target_next_valid_justifiable_slot = !((vote.source.slot + 1)..vote.target.slot)
+                    .any(|slot| is_justifiable_slot(&self.latest_finalized.slot, &slot));
+
+                if is_target_next_valid_justifiable_slot {
+                    self.latest_finalized.root = vote.source.root;
+                    self.latest_finalized.slot = vote.source.slot;
+                    set_int_gauge_vec(&FINALIZED_SLOT, self.latest_finalized.slot as i64, &[]);
+                }
+            }
+        }
 
         Ok(())
     }

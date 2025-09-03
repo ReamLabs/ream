@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use ream_consensus_lean::{
     block::{Block, BlockBody, SignedBlock},
     checkpoint::Checkpoint,
-    get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot, process_block,
+    get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot,
     state::LeanState,
     vote::Vote,
 };
@@ -129,12 +129,12 @@ impl LeanChain {
         };
         stop_timer(initialize_block_timer);
 
-        let mut state: LeanState;
+        // Clone state so we can apply the new block to get a new state
+        let mut state = head_state.clone();
 
         // Keep attempt to add valid votes from the list of available votes
         let add_votes_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_votes_to_block"]);
         loop {
-            state = process_block(head_state, &new_block.message)?;
             state.state_transition(&new_block, true, false)?;
 
             let new_votes_to_add = self
