@@ -299,20 +299,41 @@ impl LeanState {
             // Ignore votes whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
-            if !self.justified_slots[vote.source.slot as usize]
-                // Not yet implemented from leanSpec:
-                // // This condition is missing in 3sf mini but has been added here because
-                // // we don't want to re-introduce the target again for remaining votes if
-                // // the slot is already justified and its tracking already cleared out
-                // // from justifications map
-                // || self.justified_slots[vote.target.slot as usize]
-                || vote.source.root != self.historical_block_hashes[vote.source.slot as usize]
-                || vote.target.root != self.historical_block_hashes[vote.target.slot as usize]
-                || vote.target.slot <= vote.source.slot
-                || !is_justifiable_slot(&self.latest_finalized.slot, &vote.target.slot)
-            {
+            if !self.justified_slots[vote.source.slot as usize] {
+                info!("Skipping vote. Source slot not justified: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
                 continue;
             }
+
+            // This condition is missing in 3sf mini but has been added here because
+            // we don't want to re-introduce the target again for remaining votes if
+            // the slot is already justified and its tracking already cleared out
+            // from justifications map
+            if self.justified_slots[vote.target.slot as usize] {
+                info!("Skipping vote. Target slot already justified: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                continue;
+            }
+
+            if vote.source.root != self.historical_block_hashes[vote.source.slot as usize] {
+                info!("Skipping vote. Source block not in historical block hashes: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                continue;
+            }
+
+            if vote.target.root != self.historical_block_hashes[vote.target.slot as usize] {
+                info!("Skipping vote. Target block not in historical block hashes: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                continue;
+            }
+
+            if vote.target.slot <= vote.source.slot {
+                info!("Skipping vote. Target slot not greater than source slot: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                continue;
+            }
+
+            if !is_justifiable_slot(&self.latest_finalized.slot, &vote.target.slot) {
+                info!("Skipping vote. Target slot not justifiable: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                continue;
+            }
+
+            info!("Processing vote: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
 
             // Track attempts to justify new hashes
             self.initialize_justifications_for_root(&vote.target.root)?;
