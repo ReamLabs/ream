@@ -18,7 +18,7 @@ use crate::{block::Block, state::LeanState, vote::Vote};
 pub fn is_justifiable_slot(finalized_slot: &u64, candidate_slot: &u64) -> bool {
     assert!(
         candidate_slot >= finalized_slot,
-        "Candidate slot ({candidate_slot}) is less than finalized slot ({finalized_slot})"
+        "Candidate slot ({candidate_slot}) must be more than or equal to finalized slot ({finalized_slot})"
     );
 
     let delta = candidate_slot - finalized_slot;

@@ -1,0 +1,5 @@
+error: unexpected argument '--data-dir' found
+
+Usage: ream lean_node --network <NETWORK> --validator-registry-path <VALIDATOR_REGISTRY_PATH>
+
+For more information, try '--help'.

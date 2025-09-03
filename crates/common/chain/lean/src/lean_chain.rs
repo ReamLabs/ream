@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use alloy_primitives::B256;
 use anyhow::anyhow;
 use ream_consensus_lean::{
-    block::{Block, BlockBody},
+    block::{Block, BlockBody, SignedBlock},
     checkpoint::Checkpoint,
     get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot, process_block,
     state::LeanState,
@@ -11,6 +11,7 @@ use ream_consensus_lean::{
 };
 use ream_metrics::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
+use ream_post_quantum_crypto::PQSignature;
 use ream_storage::db::lean::LeanDB;
 use ream_sync::rwlock::{Reader, Writer};
 use tokio::sync::Mutex;
@@ -115,13 +116,16 @@ impl LeanChain {
             .post_states
             .get(&self.head)
             .ok_or_else(|| anyhow!("Post state not found for head: {}", self.head))?;
-        let mut new_block = Block {
-            slot,
-            proposer_index: slot % lean_network_spec().num_validators,
-            parent_root: self.head,
-            // Diverged from Python implementation: Using `B256::ZERO` instead of `None`)
-            state_root: B256::ZERO,
-            body: BlockBody::default(),
+        let mut new_block = SignedBlock {
+            message: Block {
+                slot,
+                proposer_index: slot % lean_network_spec().num_validators,
+                parent_root: self.head,
+                // Diverged from Python implementation: Using `B256::ZERO` instead of `None`)
+                state_root: B256::ZERO,
+                body: BlockBody::default(),
+            },
+            signature: PQSignature::default(),
         };
         stop_timer(initialize_block_timer);
 
@@ -130,14 +134,15 @@ impl LeanChain {
         // Keep attempt to add valid votes from the list of available votes
         let add_votes_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_votes_to_block"]);
         loop {
-            state = process_block(head_state, &new_block)?;
+            state = process_block(head_state, &new_block.message)?;
+            state.state_transition(&new_block, true, false)?;
 
             let new_votes_to_add = self
                 .known_votes
                 .clone()
                 .into_iter()
                 .filter(|vote| vote.source.root == state.latest_justified.root)
-                .filter(|vote| !new_block.body.votes.contains(vote))
+                .filter(|vote| !new_block.message.body.votes.contains(vote))
                 .collect::<Vec<_>>();
 
             if new_votes_to_add.is_empty() {
@@ -146,6 +151,7 @@ impl LeanChain {
 
             for vote in new_votes_to_add {
                 new_block
+                    .message
                     .body
                     .votes
                     .push(vote)
@@ -157,10 +163,10 @@ impl LeanChain {
         // Compute the state root
         let compute_state_root_timer =
             start_timer_vec(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
-        new_block.state_root = state.tree_hash_root();
+        new_block.message.state_root = state.tree_hash_root();
         stop_timer(compute_state_root_timer);
 
-        Ok(new_block)
+        Ok(new_block.message)
     }
 
     pub fn build_vote(&self) -> anyhow::Result<Vote> {

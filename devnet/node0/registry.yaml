@@ -1,0 +1,3 @@
+validators:
+  - validator_id: 0
+    keystore_path: "devnet/node0/keystore0.json"

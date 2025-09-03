@@ -5,11 +5,12 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitList, VariableList,
-    typenum::{U262144, U1073741824},
+    typenum::{U262144, U1073741824, U4096},
 };
+use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::{block::BlockHeader, checkpoint::Checkpoint, config::Config};
+use crate::{block::{Block, BlockBody, BlockHeader, SignedBlock}, checkpoint::Checkpoint, config::Config, vote::Vote};
 
 /// Represents the state of the Lean chain.
 ///
@@ -168,6 +169,66 @@ impl LeanState {
         }
 
         self.justifications_roots_validators = new_justifications_roots_validators;
+        Ok(())
+    }
+
+    pub fn state_transition(&mut self, signed_block: &SignedBlock, valid_signatures: bool, validate_result: bool) -> anyhow::Result<()> {
+        assert!(valid_signatures, "Signatures are not valid");
+
+        let block = &signed_block.message;
+
+        // Process slots (including those with no blocks) since block
+        self.process_slots(block.slot).expect("Failed to process slots");
+
+        // Process block
+        self.process_block(&block).expect("Failed to process block");
+
+        // Verify state root
+        if validate_result {
+            assert!(block.state_root == self.tree_hash_root(), "Block's state root does not match transitioned state root");
+        }
+
+        Ok(())
+    }
+
+    fn process_slots(&mut self, slot: u64) -> anyhow::Result<()> {
+        assert!(self.slot < slot);
+
+        // while self.slot < slot {
+        //     self.process_slot().expect("Failed to process slot");
+        //     self.slot += 1;
+        // }
+
+        Ok(())
+    }
+
+    fn process_slot(&mut self) -> anyhow::Result<()> {
+        // Cache latest block header state root
+        if self.latest_block_header.state_root == B256::ZERO {
+            self.latest_block_header.state_root = self.tree_hash_root();
+        }
+
+        Ok(())
+    }
+
+    fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
+        self.process_block_header(block).expect("Failed to process block header");
+        self.process_operations(&block.body).expect("Failed to process block operations");
+
+        Ok(())
+    }
+
+    fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn process_operations(&mut self, body: &BlockBody) -> anyhow::Result<()> {
+        // Process attestations
+        self.process_attestations(&body.votes)?;
+        Ok(())
+    }
+
+    fn process_attestations(&mut self, votes: &VariableList<Vote, U4096>) -> anyhow::Result<()> {
         Ok(())
     }
 }

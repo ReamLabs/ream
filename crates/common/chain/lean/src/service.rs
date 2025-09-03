@@ -171,7 +171,8 @@ impl LeanChainService {
 
         match lean_chain.post_states.get(&block.parent_root) {
             Some(parent_state) => {
-                let state = process_block(parent_state, &block)?;
+                let mut state = process_block(parent_state, &block)?;
+                state.state_transition(&signed_block, true, false)?;
 
                 for vote in &block.body.votes {
                     if !lean_chain.known_votes.contains(vote) {
