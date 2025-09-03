@@ -195,10 +195,10 @@ impl LeanState {
     fn process_slots(&mut self, slot: u64) -> anyhow::Result<()> {
         assert!(self.slot < slot);
 
-        // while self.slot < slot {
-        //     self.process_slot().expect("Failed to process slot");
-        //     self.slot += 1;
-        // }
+        while self.slot < slot {
+            self.process_slot().expect("Failed to process slot");
+            self.slot += 1;
+        }
 
         Ok(())
     }
@@ -212,7 +212,7 @@ impl LeanState {
         Ok(())
     }
 
-    fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
+    pub fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
         // Send latest head slot to metrics
         set_int_gauge_vec(&HEAD_SLOT, block.slot as i64, &[]);
 
@@ -230,6 +230,7 @@ impl LeanState {
             .map_err(|err| {
                 anyhow!("Failed to add block.parent_root to historical_block_hashes: {err:?}")
             })?;
+
         self
             .justified_slots
             .push(false)

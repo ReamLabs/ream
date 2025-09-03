@@ -135,7 +135,7 @@ impl LeanChain {
         // Keep attempt to add valid votes from the list of available votes
         let add_votes_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_votes_to_block"]);
         loop {
-            state.state_transition(&new_block, true, false)?;
+            state.process_block(&new_block.message)?;
 
             let new_votes_to_add = self
                 .known_votes
@@ -159,6 +159,10 @@ impl LeanChain {
             }
         }
         stop_timer(add_votes_timer);
+
+        // Now that new votes are completely added to the block,
+        // finally transition the state with the new block
+        state.state_transition(&new_block, true, false)?;
 
         // Compute the state root
         let compute_state_root_timer =
