@@ -292,9 +292,8 @@ impl LeanState {
             let count = self.count_justifications(&vote.target.root)?;
 
             // If 2/3 voted for the same new valid hash to justify
-                self.latest_justified.root = vote.target.root;
-                self.latest_justified.slot = vote.target.slot;
             if 3 * count >= (2 * self.config.num_validators) {
+                self.latest_justified = vote.target.clone();
                 self.justified_slots[vote.target.slot as usize] = true;
                 set_int_gauge_vec(&JUSTIFIED_SLOT, self.latest_justified.slot as i64, &[]);
 
@@ -306,8 +305,7 @@ impl LeanState {
                     .any(|slot| is_justifiable_slot(&self.latest_finalized.slot, &slot));
 
                 if is_target_next_valid_justifiable_slot {
-                    self.latest_finalized.root = vote.source.root;
-                    self.latest_finalized.slot = vote.source.slot;
+                    self.latest_finalized = vote.source.clone();
                     set_int_gauge_vec(&FINALIZED_SLOT, self.latest_finalized.slot as i64, &[]);
                 }
             }
