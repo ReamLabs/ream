@@ -213,7 +213,7 @@ impl LeanState {
         Ok(())
     }
 
-    pub fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
+    fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
         // Send latest head slot to metrics
         set_int_gauge_vec(&HEAD_SLOT, block.slot as i64, &[]);
 
@@ -224,9 +224,8 @@ impl LeanState {
     }
 
     fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
-        // Not yet implemented from leanSpec: Verify that the slots match
-        // assert_eq!(block.slot, self.slot, "Block slot number does not match state slot number");
-
+        // Verify that the slots match
+        assert_eq!(block.slot, self.slot, "Block slot number does not match state slot number");
         // Verify that the block is newer than latest block header
         assert!(block.slot > self.latest_block_header.slot, "Block slot number is not greater than latest block header slot number");
         // Verify that the proposer index is the correct index
@@ -311,7 +310,7 @@ impl LeanState {
         Ok(())
     }
 
-    fn process_attestations(&mut self, votes: &VariableList<Vote, U4096>) -> anyhow::Result<()> {
+    pub fn process_attestations(&mut self, votes: &VariableList<Vote, U4096>) -> anyhow::Result<()> {
         for vote in votes {
             // Ignore votes whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
