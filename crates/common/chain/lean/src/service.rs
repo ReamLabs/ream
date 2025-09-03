@@ -171,7 +171,14 @@ impl LeanChainService {
         match lean_chain.post_states.get(&block.parent_root) {
             Some(parent_state) => {
                 let mut state = parent_state.clone();
-                state.state_transition(&SignedBlock { message: block.clone(), signature: PQSignature::default() }, true, false)?;
+                state.state_transition(
+                    &SignedBlock {
+                        message: block.clone(),
+                        signature: PQSignature::default(),
+                    },
+                    true,
+                    false,
+                )?;
 
                 for vote in &block.body.votes {
                     if !lean_chain.known_votes.contains(vote) {

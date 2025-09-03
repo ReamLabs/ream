@@ -4,9 +4,10 @@ pub mod config;
 pub mod state;
 pub mod vote;
 
+use std::collections::HashMap;
+
 use alloy_primitives::B256;
 use anyhow::anyhow;
-use std::collections::HashMap;
 
 use crate::{block::Block, state::LeanState, vote::Vote};
 

@@ -217,7 +217,7 @@ impl LeanChain {
             // This field will eventually be set by the `ValidatorService` with the actual validator
             // IDs.
             validator_id: 0,
-            slot: slot,
+            slot,
             head: Checkpoint {
                 root: self.head,
                 slot: head_block.slot,

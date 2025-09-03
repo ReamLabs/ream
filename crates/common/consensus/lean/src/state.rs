@@ -6,13 +6,19 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitList, VariableList,
-    typenum::{U262144, U1073741824, U4096},
+    typenum::{U4096, U262144, U1073741824},
 };
 use tracing::info;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::{block::{Block, BlockBody, BlockHeader, SignedBlock}, checkpoint::Checkpoint, config::Config, is_justifiable_slot, vote::Vote};
+use crate::{
+    block::{Block, BlockBody, BlockHeader, SignedBlock},
+    checkpoint::Checkpoint,
+    config::Config,
+    is_justifiable_slot,
+    vote::Vote,
+};
 
 /// Represents the state of the Lean chain.
 ///
@@ -174,21 +180,30 @@ impl LeanState {
         Ok(())
     }
 
-    pub fn state_transition(&mut self, signed_block: &SignedBlock, valid_signatures: bool, validate_result: bool) -> anyhow::Result<()> {
+    pub fn state_transition(
+        &mut self,
+        signed_block: &SignedBlock,
+        valid_signatures: bool,
+        validate_result: bool,
+    ) -> anyhow::Result<()> {
         // Verify signatures
         assert!(valid_signatures, "Signatures are not valid");
 
         let block = &signed_block.message;
 
         // Process slots (including those with no blocks) since block
-        self.process_slots(block.slot).expect("Failed to process slots");
+        self.process_slots(block.slot)
+            .expect("Failed to process slots");
 
         // Process block
-        self.process_block(&block).expect("Failed to process block");
+        self.process_block(block).expect("Failed to process block");
 
         // Verify state root
         if validate_result {
-            assert!(block.state_root == self.tree_hash_root(), "Block's state root does not match transitioned state root");
+            assert!(
+                block.state_root == self.tree_hash_root(),
+                "Block's state root does not match transitioned state root"
+            );
         }
 
         Ok(())
@@ -226,14 +241,25 @@ impl LeanState {
 
     fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
         // Verify that the slots match
-        assert_eq!(block.slot, self.slot, "Block slot number does not match state slot number");
+        assert_eq!(
+            block.slot, self.slot,
+            "Block slot number does not match state slot number"
+        );
         // Verify that the block is newer than latest block header
-        assert!(block.slot > self.latest_block_header.slot, "Block slot number is not greater than latest block header slot number");
+        assert!(
+            block.slot > self.latest_block_header.slot,
+            "Block slot number is not greater than latest block header slot number"
+        );
         // Verify that the proposer index is the correct index
-        assert_eq!(block.proposer_index, block.slot % self.config.num_validators, "Block proposer index does not match the expected proposer index");
+        assert_eq!(
+            block.proposer_index,
+            block.slot % self.config.num_validators,
+            "Block proposer index does not match the expected proposer index"
+        );
 
         // Not yet implemented from leanSpec: Verify that the parent matches
-        // assert_eq!(block.parent_root, self.latest_block_header.tree_hash_root(), "Block parent root does not match latest block header root");
+        // assert_eq!(block.parent_root, self.latest_block_header.tree_hash_root(), "Block parent
+        // root does not match latest block header root");
 
         // If this was first block post genesis, 3sf mini special treatment is required
         // to correctly set genesis block root as already justified and finalized.
@@ -247,8 +273,7 @@ impl LeanState {
         }
 
         // now that we can vote on parent, push it at its correct slot index in the structures
-        self
-            .historical_block_hashes
+        self.historical_block_hashes
             .push(block.parent_root)
             .map_err(|err| {
                 anyhow!("Failed to add block.parent_root to historical_block_hashes: {err:?}")
@@ -257,21 +282,18 @@ impl LeanState {
         // genesis block is always justified
         let is_justified = self.latest_block_header.slot == 0;
 
-        self
-            .justified_slots
+        self.justified_slots
             .push(is_justified)
             .map_err(|err| anyhow!("Failed to add to justified_slots: {err:?}"))?;
 
         // if there were empty slots, push zero hash for those ancestors
         let num_empty_slots = block.slot - self.latest_block_header.slot - 1;
         for _ in 0..num_empty_slots {
-            self
-                .historical_block_hashes
+            self.historical_block_hashes
                 .push(B256::ZERO)
                 .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
 
-            self
-                .justified_slots
+            self.justified_slots
                 .push(false)
                 .map_err(|err| anyhow!("Failed to prefill justified_slots: {err:?}"))?;
         }
@@ -295,13 +317,19 @@ impl LeanState {
         Ok(())
     }
 
-    pub fn process_attestations(&mut self, votes: &VariableList<Vote, U4096>) -> anyhow::Result<()> {
+    pub fn process_attestations(
+        &mut self,
+        votes: &VariableList<Vote, U4096>,
+    ) -> anyhow::Result<()> {
         for vote in votes {
             // Ignore votes whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
             if !self.justified_slots[vote.source.slot as usize] {
-                info!("Skipping vote. Source slot not justified: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                info!(
+                    "Skipping vote. Source slot not justified: validator_id={}, source={:?}, target={:?}",
+                    vote.validator_id, vote.source, vote.target
+                );
                 continue;
             }
 
@@ -310,31 +338,49 @@ impl LeanState {
             // the slot is already justified and its tracking already cleared out
             // from justifications map
             if self.justified_slots[vote.target.slot as usize] {
-                info!("Skipping vote. Target slot already justified: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                info!(
+                    "Skipping vote. Target slot already justified: validator_id={}, source={:?}, target={:?}",
+                    vote.validator_id, vote.source, vote.target
+                );
                 continue;
             }
 
             if vote.source.root != self.historical_block_hashes[vote.source.slot as usize] {
-                info!("Skipping vote. Source block not in historical block hashes: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                info!(
+                    "Skipping vote. Source block not in historical block hashes: validator_id={}, source={:?}, target={:?}",
+                    vote.validator_id, vote.source, vote.target
+                );
                 continue;
             }
 
             if vote.target.root != self.historical_block_hashes[vote.target.slot as usize] {
-                info!("Skipping vote. Target block not in historical block hashes: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                info!(
+                    "Skipping vote. Target block not in historical block hashes: validator_id={}, source={:?}, target={:?}",
+                    vote.validator_id, vote.source, vote.target
+                );
                 continue;
             }
 
             if vote.target.slot <= vote.source.slot {
-                info!("Skipping vote. Target slot not greater than source slot: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                info!(
+                    "Skipping vote. Target slot not greater than source slot: validator_id={}, source={:?}, target={:?}",
+                    vote.validator_id, vote.source, vote.target
+                );
                 continue;
             }
 
             if !is_justifiable_slot(&self.latest_finalized.slot, &vote.target.slot) {
-                info!("Skipping vote. Target slot not justifiable: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+                info!(
+                    "Skipping vote. Target slot not justifiable: validator_id={}, source={:?}, target={:?}",
+                    vote.validator_id, vote.source, vote.target
+                );
                 continue;
             }
 
-            info!("Processing vote: validator_id={}, source={:?}, target={:?}", vote.validator_id, vote.source, vote.target);
+            info!(
+                "Processing vote: validator_id={}, source={:?}, target={:?}",
+                vote.validator_id, vote.source, vote.target
+            );
 
             // Track attempts to justify new hashes
             self.initialize_justifications_for_root(&vote.target.root)?;
@@ -349,12 +395,16 @@ impl LeanState {
 
                 self.remove_justifications(&vote.target.root)?;
 
-                info!("Block justified: checkpoint={:?}, num_votes={count}", vote.target);
+                info!(
+                    "Block justified: checkpoint={:?}, num_votes={count}",
+                    vote.target
+                );
                 set_int_gauge_vec(&JUSTIFIED_SLOT, self.latest_justified.slot as i64, &[]);
 
                 // Finalization: if the target is the next valid justifiable
                 // hash after the source
-                let is_target_next_valid_justifiable_slot = !((vote.source.slot + 1)..vote.target.slot)
+                let is_target_next_valid_justifiable_slot = !((vote.source.slot + 1)
+                    ..vote.target.slot)
                     .any(|slot| is_justifiable_slot(&self.latest_finalized.slot, &slot));
 
                 if is_target_next_valid_justifiable_slot {
