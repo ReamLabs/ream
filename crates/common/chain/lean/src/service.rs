@@ -158,8 +158,7 @@ impl LeanChainService {
             // TODO: Validate the signature.
         }
 
-        let block = signed_block.message;
-        let block_hash = block.tree_hash_root();
+        let block_hash = signed_block.message.tree_hash_root();
 
         let mut lean_chain = self.lean_chain.write().await;
 
@@ -168,25 +167,21 @@ impl LeanChainService {
             return Ok(());
         }
 
-        match lean_chain.post_states.get(&block.parent_root) {
+        match lean_chain
+            .post_states
+            .get(&signed_block.message.parent_root)
+        {
             Some(parent_state) => {
                 let mut state = parent_state.clone();
-                state.state_transition(
-                    &SignedBlock {
-                        message: block.clone(),
-                        signature: PQSignature::default(),
-                    },
-                    true,
-                    false,
-                )?;
+                state.state_transition(&signed_block, true, false)?;
 
-                for vote in &block.body.votes {
+                for vote in &signed_block.message.body.votes {
                     if !lean_chain.known_votes.contains(vote) {
                         lean_chain.known_votes.push(vote.clone());
                     }
                 }
 
-                lean_chain.chain.insert(block_hash, block);
+                lean_chain.chain.insert(block_hash, signed_block.message);
                 lean_chain.post_states.insert(block_hash, state);
 
                 lean_chain.recompute_head()?;
@@ -228,9 +223,9 @@ impl LeanChainService {
                 // If we have not yet seen the block's parent, ignore for now,
                 // process later once we actually see the parent
                 self.dependencies
-                    .entry(block.parent_root)
+                    .entry(signed_block.message.parent_root)
                     .or_default()
-                    .push(QueueItem::Block(block));
+                    .push(QueueItem::Block(signed_block.message));
             }
         }
 
