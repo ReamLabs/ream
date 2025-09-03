@@ -190,7 +190,7 @@ pub async fn get_proposer_slashings(
 }
 
 /// POST /eth/v2/beacon/pool/proposer_slashing
-#[post("/beacon/poo/proposer_slashings")]
+#[post("/beacon/pool/proposer_slashings")]
 pub async fn post_proposer_slashings(
     db: Data<ReamDB>,
     operation_pool: Data<Arc<OperationPool>>,
@@ -217,6 +217,7 @@ pub async fn post_proposer_slashings(
                 "Invalid proposer slashing, it will never pass validation so it's rejected: {err:?}"
             ))
         })?;
+
     network_manager.p2p_sender.send_gossip(GossipMessage {
         topic: {
             GossipTopic {

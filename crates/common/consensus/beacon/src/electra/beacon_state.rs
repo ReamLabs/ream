@@ -1570,6 +1570,7 @@ impl BeaconState {
         Ok(sync_committee_indices)
     }
 
+    /// check if the given proposer slashing is valid and returns the index of proposer to be slashed
     pub fn validate_proposer_slashing(
         &self,
         proposer_slashing: &ProposerSlashing,
@@ -1623,6 +1624,7 @@ impl BeaconState {
 
         Ok(proposer_index)
     }
+
     pub fn process_proposer_slashing(
         &mut self,
         proposer_slashing: &ProposerSlashing,
