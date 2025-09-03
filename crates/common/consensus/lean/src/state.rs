@@ -234,17 +234,16 @@ impl LeanState {
         // Not yet implemented from leanSpec: Verify that the parent matches
         // assert_eq!(block.parent_root, self.latest_block_header.tree_hash_root(), "Block parent root does not match latest block header root");
 
-        // Not yet implemented from leanSpec:
-        // // If this was first block post genesis, 3sf mini special treatment is required
-        // // to correctly set genesis block root as already justified and finalized.
-        // // This is not possible at the time of genesis state generation and are set at
-        // // zero bytes because genesis block is calculated using genesis state causing a
-        // // circular dependancy
-        // if self.latest_block_header.slot == 0 {
-        //     // block.parent_root is the genesis root
-        //     self.latest_justified.root = block.parent_root;
-        //     self.latest_finalized.root = block.parent_root;
-        // }
+        // If this was first block post genesis, 3sf mini special treatment is required
+        // to correctly set genesis block root as already justified and finalized.
+        // This is not possible at the time of genesis state generation and are set at
+        // zero bytes because genesis block is calculated using genesis state causing a
+        // circular dependancy
+        if self.latest_block_header.slot == 0 {
+            // block.parent_root is the genesis root
+            self.latest_justified.root = block.parent_root;
+            self.latest_finalized.root = block.parent_root;
+        }
 
         // now that we can vote on parent, push it at its correct slot index in the structures
         self
@@ -262,44 +261,29 @@ impl LeanState {
             .push(is_justified)
             .map_err(|err| anyhow!("Failed to add to justified_slots: {err:?}"))?;
 
-        while self.historical_block_hashes.len() < block.slot as usize {
+        // if there were empty slots, push zero hash for those ancestors
+        let num_empty_slots = block.slot - self.latest_block_header.slot - 1;
+        for _ in 0..num_empty_slots {
+            self
+                .historical_block_hashes
+                .push(B256::ZERO)
+                .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
+
             self
                 .justified_slots
                 .push(false)
                 .map_err(|err| anyhow!("Failed to prefill justified_slots: {err:?}"))?;
-
-            self
-                .historical_block_hashes
-                // Diverged from Python implementation: uses `B256::ZERO` instead of `None`
-                .push(B256::ZERO)
-                .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
         }
 
         // Not yet implemented from leanSpec:
-        // // if there were empty slots, push zero hash for those ancestors
-        // let num_empty_slots = block.slot - self.latest_block_header.slot;
-
-        // Not yet implemented from leanSpec:
-        // for _ in 0..num_empty_slots {
-        //     self
-        //         .historical_block_hashes
-        //         .push(B256::ZERO)
-        //         .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
-
-        //     self
-        //         .justified_slots
-        //         .push(false)
-        //         .map_err(|err| anyhow!("Failed to prefill justified_slots: {err:?}"))?;
-        // }
-
-        // Not yet implemented from leanSpec:
-        // self.latest_block_header = BlockHeader {
-        //     slot: block.slot,
-        //     proposer_index: block.proposer_index,
-        //     parent_root: block.parent_root,
-        //     state_root: B256::ZERO, // Overwritten in the next process_slot call
-        //     body_root: block.body.tree_hash_root(),
-        // };
+        self.latest_block_header = BlockHeader {
+            slot: block.slot,
+            proposer_index: block.proposer_index,
+            parent_root: block.parent_root,
+            // Overwritten in the next process_slot call
+            state_root: B256::ZERO,
+            body_root: block.body.tree_hash_root(),
+        };
 
         Ok(())
     }
