@@ -47,8 +47,8 @@ impl ValidatorService {
 
         let mut tick_count = 0u64;
 
-        // Start from slot 1, will be incremented for every slot boundary.
-        let mut slot = 1;
+        // Start from slot 0, will be incremented for every slot boundary.
+        let mut slot = 0;
 
         let mut interval = create_lean_clock_interval()
             .map_err(|err| anyhow!("Failed to create clock interval: {err}"))?;
@@ -68,7 +68,6 @@ impl ValidatorService {
                                 self.chain_sender
                                     .send(LeanChainServiceMessage::ProduceBlock { slot, sender: tx })
                                     .expect("Failed to send vote to LeanChainService");
-
 
                                 // Wait for the block to be produced.
                                 let new_block = rx.await.expect("Failed to receive block from LeanChainService");

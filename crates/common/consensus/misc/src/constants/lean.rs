@@ -3,5 +3,5 @@
 pub const INTERVALS_PER_SLOT: u64 = 4;
 pub const MAX_HISTORICAL_BLOCK_HASHES: u64 = 262144;
 pub const SLOT_DURATION: u64 = 12;
-pub const SLOT_OFFSET: u64 = 2;
+pub const SLOT_OFFSET: u64 = 1;
 pub const VALIDATOR_REGISTRY_LIMIT: u64 = 4096;

@@ -8,9 +8,8 @@ use tree_hash::TreeHash;
 
 fn genesis_block(state_root: B256) -> Block {
     Block {
-        slot: 1,
-        // Round-robin proposer selection for genesis
-        proposer_index: 1,
+        slot: 0,
+        proposer_index: 0,
         parent_root: B256::ZERO,
         state_root,
         body: BlockBody::default(),
