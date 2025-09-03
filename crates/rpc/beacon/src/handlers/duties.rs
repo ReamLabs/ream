@@ -8,7 +8,7 @@ use ream_api_types_beacon::{
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_consensus_misc::{constants::beacon::SLOTS_PER_EPOCH, misc::compute_start_slot_at_epoch};
-use ream_storage::db::ReamDB;
+use ream_storage::beacon::db::ReamBeaconDB as ReamDB;
 
 use crate::handlers::state::get_state_from_id;
 

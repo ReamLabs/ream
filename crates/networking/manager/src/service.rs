@@ -17,7 +17,7 @@ use ream_p2p::{
     config::NetworkConfig,
     network::beacon::{Network, ReamNetworkEvent, network_state::NetworkState},
 };
-use ream_storage::{cache::CachedDB, db::ReamDB};
+use ream_storage::{beacon::db::ReamBeaconDB as ReamDB, cache::CachedDB};
 use ream_syncer::block_range::BlockRangeSyncer;
 use tokio::{sync::mpsc, time::interval};
 use tracing::{error, info};

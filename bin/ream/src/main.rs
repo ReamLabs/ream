@@ -42,8 +42,9 @@ use ream_p2p::{
 use ream_rpc_beacon::{config::RpcServerConfig, start_server};
 use ream_rpc_lean::{config::LeanRpcServerConfig, start_lean_server};
 use ream_storage::{
-    db::{ReamDB, reset_db},
+    beacon::db::{ReamBeaconDB, reset_db},
     dir::setup_data_dir,
+    lean::db::ReamLeanDB,
     tables::table::Table,
 };
 use ream_sync::rwlock::Writer;
@@ -133,10 +134,21 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
 
     set_lean_network_spec(config.network);
 
+    let ream_dir = setup_data_dir(APP_NAME, config.data_dir.clone(), config.ephemeral)
+        .expect("Unable to initialize database directory");
+
+    if config.purge_db {
+        reset_db(ream_dir.clone()).expect("Unable to delete database");
+    }
+
+    let ream_db = ReamLeanDB::new(ream_dir.clone()).expect("unable to init Ream Lean Database");
+
+    info!("ream lean database initialized ");
+
     // Initialize the lean chain with genesis block and state.
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
     let (lean_chain_writer, lean_chain_reader) =
-        Writer::new(LeanChain::new(genesis_block, genesis_state));
+        Writer::new(LeanChain::new(genesis_block, genesis_state, ream_db));
 
     // Initialize the services that will run in the lean node.
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
@@ -251,7 +263,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
         reset_db(ream_dir.clone()).expect("Unable to delete database");
     }
 
-    let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
+    let ream_db = ReamBeaconDB::new(ream_dir.clone()).expect("unable to init Ream Database");
 
     info!("ream database initialized ");
 

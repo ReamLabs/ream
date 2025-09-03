@@ -15,7 +15,7 @@ use ream_light_client::{
     update::LightClientUpdate,
 };
 use ream_storage::{
-    db::ReamDB,
+    beacon::db::ReamBeaconDB as ReamDB,
     tables::{field::Field, table::Table},
 };
 use ssz::Encode;

@@ -46,12 +46,12 @@ pub const REDB_FILE: &str = "ream.redb";
 pub const REDB_CACHE_SIZE: usize = 1_024 * 1_024 * 1_024;
 
 #[derive(Clone, Debug)]
-pub struct ReamDB {
+pub struct ReamBeaconDB {
     pub db: Arc<Database>,
     pub data_dir: PathBuf,
 }
 
-impl ReamDB {
+impl ReamBeaconDB {
     pub fn new(data_dir: PathBuf) -> Result<Self, StoreError> {
         let db = Builder::new()
             .set_cache_size(REDB_CACHE_SIZE)

@@ -10,7 +10,7 @@ use ream_p2p::{
         blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
     },
 };
-use ream_storage::{db::ReamDB, tables::table::Table};
+use ream_storage::{beacon::db::ReamBeaconDB as ReamDB, tables::table::Table};
 use tracing::{info, trace, warn};
 
 use crate::p2p_sender::P2PSender;

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::anyhow;
@@ -11,7 +11,9 @@ use ream_consensus_lean::{
 };
 use ream_metrics::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
+use ream_storage::{dir::setup_data_dir, lean::db::ReamLeanDB as ReamDB};
 use ream_sync::rwlock::{Reader, Writer};
+use tokio::sync::Mutex;
 use tree_hash::TreeHash;
 
 use crate::slot::get_current_slot;
@@ -23,8 +25,9 @@ pub type LeanChainReader = Reader<LeanChain>;
 ///
 /// Most of the fields are based on the Python implementation of [`Staker`](https://github.com/ethereum/research/blob/d225a6775a9b184b5c1fd6c830cc58a375d9535f/3sf-mini/p2p.py#L15-L42),
 /// but doesn't include `validator_id` as a node should manage multiple validators.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Clone)]
 pub struct LeanChain {
+    pub store: Arc<Mutex<ReamDB>>,
     pub chain: HashMap<B256, Block>,
     pub post_states: HashMap<B256, LeanState>,
     pub known_votes: Vec<Vote>,
@@ -36,10 +39,12 @@ pub struct LeanChain {
 }
 
 impl LeanChain {
-    pub fn new(genesis_block: Block, genesis_state: LeanState) -> LeanChain {
+    pub fn new(genesis_block: Block, genesis_state: LeanState, db: ReamDB) -> LeanChain {
         let genesis_hash = genesis_block.tree_hash_root();
 
         LeanChain {
+            // Database
+            store: Arc::new(Mutex::new(db)),
             // Votes that we have received and taken into account
             known_votes: Vec::new(),
             // Votes that we have received but not yet taken into account
@@ -229,5 +234,24 @@ impl LeanChain {
             .values()
             .find(|block| block.slot == slot)
             .cloned()
+    }
+}
+
+impl Default for LeanChain {
+    fn default() -> Self {
+        let ream_dir = setup_data_dir("lean_node", None, true)
+            .expect("Unable to initialize database directory");
+        let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Lean Database");
+        Self {
+            store: Arc::new(Mutex::new(ream_db)),
+            chain: HashMap::new(),
+            post_states: HashMap::new(),
+            known_votes: Vec::new(),
+            head: B256::default(),
+            safe_target: B256::default(),
+            new_votes: Vec::new(),
+            genesis_hash: B256::default(),
+            num_validators: 0,
+        }
     }
 }

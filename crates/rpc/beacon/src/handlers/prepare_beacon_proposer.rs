@@ -8,7 +8,7 @@ use ream_api_types_beacon::request::PrepareBeaconProposerItem;
 use ream_api_types_common::error::ApiError;
 use ream_fork_choice::store::Store;
 use ream_operation_pool::OperationPool;
-use ream_storage::db::ReamDB;
+use ream_storage::beacon::db::ReamBeaconDB as ReamDB;
 
 #[post("/validator/prepare_beacon_proposer")]
 pub async fn prepare_beacon_proposer(

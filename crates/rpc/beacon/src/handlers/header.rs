@@ -9,7 +9,7 @@ use ream_api_types_beacon::{
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_consensus_misc::beacon_block_header::SignedBeaconBlockHeader;
-use ream_storage::{db::ReamDB, tables::table::Table};
+use ream_storage::{beacon::db::ReamBeaconDB as ReamDB, tables::table::Table};
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
 

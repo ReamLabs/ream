@@ -16,7 +16,7 @@ use ream_p2p::{
     gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
     network::beacon::channel::GossipMessage,
 };
-use ream_storage::db::ReamDB;
+use ream_storage::beacon::db::ReamBeaconDB as ReamDB;
 use ssz::Encode;
 
 use crate::handlers::state::get_state_from_id;

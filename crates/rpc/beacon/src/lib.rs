@@ -9,7 +9,7 @@ use config::RpcServerConfig;
 use ream_execution_engine::ExecutionEngine;
 use ream_operation_pool::OperationPool;
 use ream_p2p::network::beacon::network_state::NetworkState;
-use ream_storage::db::ReamDB;
+use ream_storage::beacon::db::ReamBeaconDB as ReamDB;
 use tracing::info;
 
 use crate::routes::register_routers;

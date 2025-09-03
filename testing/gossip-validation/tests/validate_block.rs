@@ -16,8 +16,8 @@ mod tests {
     use ream_network_spec::networks::initialize_test_network_spec;
     use ream_operation_pool::OperationPool;
     use ream_storage::{
+        beacon::db::ReamBeaconDB as ReamDB,
         cache::{AddressSlotIdentifier, CachedDB},
-        db::ReamDB,
         tables::{field::Field, table::Table},
     };
     use snap::raw::Decoder;

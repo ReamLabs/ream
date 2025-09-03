@@ -14,7 +14,7 @@ use ream_consensus_misc::{
     misc::compute_sync_committee_period,
 };
 use ream_storage::{
-    db::ReamDB,
+    beacon::db::ReamBeaconDB as ReamDB,
     tables::{field::Field, table::Table},
 };
 use serde::{Deserialize, Serialize};
