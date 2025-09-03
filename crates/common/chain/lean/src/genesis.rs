@@ -28,16 +28,8 @@ pub fn setup_genesis() -> (Block, LeanState) {
         let network_spec = lean_network_spec();
         (network_spec.num_validators, network_spec.genesis_time)
     };
-    let mut genesis_state = genesis_state(num_validators, genesis_time);
-    genesis_state
-        .historical_block_hashes
-        .push(B256::ZERO)
-        .expect("Failed to add genesis block hash");
-    genesis_state
-        .justified_slots
-        .push(true)
-        .expect("Failed to add genesis justified slot");
 
+    let genesis_state = genesis_state(num_validators, genesis_time);
     let genesis_block = genesis_block(genesis_state.tree_hash_root());
 
     (genesis_block, genesis_state)
