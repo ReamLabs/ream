@@ -224,16 +224,30 @@ impl LeanState {
     }
 
     fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
-        // // Verify that the slots match
+        // Not yet implemented from leanSpec: Verify that the slots match
         // assert_eq!(block.slot, self.slot, "Block slot number does not match state slot number");
+
         // Verify that the block is newer than latest block header
         assert!(block.slot > self.latest_block_header.slot, "Block slot number is not greater than latest block header slot number");
         // Verify that the proposer index is the correct index
         assert_eq!(block.proposer_index, block.slot % self.config.num_validators, "Block proposer index does not match the expected proposer index");
-        // // Verify that the parent matches
+
+        // Not yet implemented from leanSpec: Verify that the parent matches
         // assert_eq!(block.parent_root, self.latest_block_header.tree_hash_root(), "Block parent root does not match latest block header root");
 
-        // Track historical blocks in the state
+        // Not yet implemented from leanSpec:
+        // // If this was first block post genesis, 3sf mini special treatment is required
+        // // to correctly set genesis block root as already justified and finalized.
+        // // This is not possible at the time of genesis state generation and are set at
+        // // zero bytes because genesis block is calculated using genesis state causing a
+        // // circular dependancy
+        // if self.latest_block_header.slot == 0 {
+        //     // block.parent_root is the genesis root
+        //     self.latest_justified.root = block.parent_root;
+        //     self.latest_finalized.root = block.parent_root;
+        // }
+
+        // now that we can vote on parent, push it at its correct slot index in the structures
         self
             .historical_block_hashes
             .push(block.parent_root)
@@ -262,6 +276,32 @@ impl LeanState {
                 .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
         }
 
+        // Not yet implemented from leanSpec:
+        // // if there were empty slots, push zero hash for those ancestors
+        // let num_empty_slots = block.slot - self.latest_block_header.slot;
+
+        // Not yet implemented from leanSpec:
+        // for _ in 0..num_empty_slots {
+        //     self
+        //         .historical_block_hashes
+        //         .push(B256::ZERO)
+        //         .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
+
+        //     self
+        //         .justified_slots
+        //         .push(false)
+        //         .map_err(|err| anyhow!("Failed to prefill justified_slots: {err:?}"))?;
+        // }
+
+        // Not yet implemented from leanSpec:
+        // self.latest_block_header = BlockHeader {
+        //     slot: block.slot,
+        //     proposer_index: block.proposer_index,
+        //     parent_root: block.parent_root,
+        //     state_root: B256::ZERO, // Overwritten in the next process_slot call
+        //     body_root: block.body.tree_hash_root(),
+        // };
+
         Ok(())
     }
 
@@ -277,6 +317,12 @@ impl LeanState {
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
             if !self.justified_slots[vote.source.slot as usize]
+                // Not yet implemented from leanSpec:
+                // // This condition is missing in 3sf mini but has been added here because
+                // // we don't want to re-introduce the target again for remaining votes if
+                // // the slot is already justified and its tracking already cleared out
+                // // from justifications map
+                // || self.justified_slots[vote.target.slot as usize]
                 || vote.source.root != self.historical_block_hashes[vote.source.slot as usize]
                 || vote.target.root != self.historical_block_hashes[vote.target.slot as usize]
                 || vote.target.slot <= vote.source.slot
