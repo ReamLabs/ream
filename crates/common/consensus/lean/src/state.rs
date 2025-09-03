@@ -174,6 +174,7 @@ impl LeanState {
     }
 
     pub fn state_transition(&mut self, signed_block: &SignedBlock, valid_signatures: bool, validate_result: bool) -> anyhow::Result<()> {
+        // Verify signatures
         assert!(valid_signatures, "Signatures are not valid");
 
         let block = &signed_block.message;
@@ -196,7 +197,7 @@ impl LeanState {
         assert!(self.slot < slot);
 
         while self.slot < slot {
-            self.process_slot().expect("Failed to process slot");
+            self.process_slot()?;
             self.slot += 1;
         }
 
@@ -216,8 +217,8 @@ impl LeanState {
         // Send latest head slot to metrics
         set_int_gauge_vec(&HEAD_SLOT, block.slot as i64, &[]);
 
-        self.process_block_header(block).expect("Failed to process block header");
-        self.process_operations(&block.body).expect("Failed to process block operations");
+        self.process_block_header(block)?;
+        self.process_operations(&block.body)?;
 
         Ok(())
     }
