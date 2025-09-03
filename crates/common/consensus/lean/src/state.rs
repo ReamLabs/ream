@@ -223,6 +223,10 @@ impl LeanState {
     }
 
     fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
+        // Verify that the block is newer than latest block header
+        assert!(block.slot > self.latest_block_header.slot, "Block slot number is not greater than latest block header slot number");
+        // Verify that the proposer index is the correct index
+        assert_eq!(block.proposer_index, block.slot % self.config.num_validators, "Block proposer index does not match the expected proposer index");
         // Track historical blocks in the state
         self
             .historical_block_hashes
