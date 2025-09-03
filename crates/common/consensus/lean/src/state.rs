@@ -241,9 +241,12 @@ impl LeanState {
                 anyhow!("Failed to add block.parent_root to historical_block_hashes: {err:?}")
             })?;
 
+        // genesis block is always justified
+        let is_justified = self.latest_block_header.slot == 0;
+
         self
             .justified_slots
-            .push(false)
+            .push(is_justified)
             .map_err(|err| anyhow!("Failed to add to justified_slots: {err:?}"))?;
 
         while self.historical_block_hashes.len() < block.slot as usize {
