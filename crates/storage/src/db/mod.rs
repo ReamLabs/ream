@@ -34,8 +34,7 @@ use crate::{
     },
 };
 
-pub const REDB_BEACON_FILE: &str = "ream.redb";
-pub const REDB_LEAN_FILE: &str = "lean.redb";
+pub const REDB_FILE: &str = "ream.redb";
 
 /// The size of the cache for the database
 ///
@@ -48,10 +47,10 @@ pub struct ReamDB {
 }
 
 impl ReamDB {
-    pub fn new(data_dir: PathBuf) -> Result<Self, StoreError> {
+    fn new(data_dir: PathBuf) -> Result<Self, StoreError> {
         let db = Builder::new()
             .set_cache_size(REDB_CACHE_SIZE)
-            .create(data_dir.join(REDB_BEACON_FILE))?;
+            .create(data_dir.join(REDB_FILE))?;
 
         Ok(ReamDB { db: Arc::new(db) })
     }
@@ -88,7 +87,7 @@ impl ReamDB {
     }
 
     pub fn init_lean_db(data_dir: PathBuf) -> Result<LeanDB, StoreError> {
-        let ream_db = ReamDB::new(data_dir.clone())?;
+        let ream_db = ReamDB::new(data_dir)?;
 
         let write_txn = ream_db.db.begin_write()?;
         write_txn.open_table(LEAN_BLOCK_TABLE)?;
@@ -99,7 +98,6 @@ impl ReamDB {
 
         Ok(LeanDB {
             db: ream_db.db.clone(),
-            data_dir,
         })
     }
 }

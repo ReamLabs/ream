@@ -18,7 +18,7 @@ macro_rules! test_fork_choice {
                 };
                 use ream_network_spec::networks::initialize_test_network_spec;
                 use ream_storage::{
-                    db::beacon::BeaconDB,
+                    db::{ReamDB, beacon::BeaconDB},
                     tables::{table::Table, field::Field},
                     dir::setup_data_dir
                 };
@@ -129,7 +129,7 @@ macro_rules! test_fork_choice {
                                 .expect("Failed to read anchor_block.ssz_snappy");
 
                         let ream_dir = setup_data_dir("ream", None, true).expect("Failed to create data dir");
-                        let reamdb = ReamDB::new(ream_dir).expect("count not find reabdb");
+                        let reamdb = ReamDB::init_beacon_db(ream_dir).expect("count not find reabdb");
                         let mut store = get_forkchoice_store(anchor_state, anchor_block, reamdb)
                             .expect("get_forkchoice_store failed");
 

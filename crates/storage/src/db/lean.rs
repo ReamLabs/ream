@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use redb::Database;
 
@@ -10,7 +10,6 @@ use crate::tables::lean::{
 #[derive(Clone, Debug)]
 pub struct LeanDB {
     pub db: Arc<Database>,
-    pub data_dir: PathBuf,
 }
 
 impl LeanDB {
