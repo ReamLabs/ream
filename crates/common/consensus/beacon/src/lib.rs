@@ -23,6 +23,7 @@ pub mod predicates;
 pub mod proposer_slashing;
 pub mod single_attestation;
 pub mod sync_aggregate;
+pub mod sync_committe_selection;
 pub mod sync_committee;
 pub mod voluntary_exit;
 pub mod withdrawal;
