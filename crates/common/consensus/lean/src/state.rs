@@ -259,7 +259,8 @@ impl LeanState {
 
         // Verify that the parent matches
         assert_eq!(
-            block.parent_root, self.latest_block_header.tree_hash_root(),
+            block.parent_root,
+            self.latest_block_header.tree_hash_root(),
             "Block parent root does not match latest block header root"
         );
 
