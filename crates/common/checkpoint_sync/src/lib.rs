@@ -12,7 +12,7 @@ use ream_consensus_beacon::{
 use ream_consensus_misc::checkpoint::Checkpoint;
 use ream_fork_choice::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::beacon_network_spec;
-use ream_storage::{beacon::db::ReamBeaconDB as ReamDB, tables::table::Table};
+use ream_storage::{db::beacon::BeaconDB, tables::table::Table};
 use reqwest::{
     Url,
     header::{ACCEPT, HeaderValue},
@@ -24,7 +24,7 @@ use weak_subjectivity::{WeakSubjectivityState, verify_state_from_weak_subjectivi
 
 /// Entry point for checkpoint sync.
 pub async fn initialize_db_from_checkpoint(
-    db: ReamDB,
+    db: BeaconDB,
     checkpoint_sync_url: Option<Url>,
     weak_subjectivity_checkpoint: Option<Checkpoint>,
 ) -> anyhow::Result<WeakSubjectivityState> {
@@ -139,7 +139,7 @@ struct BlobSidercars {
 // Fetch and initialize blobs in the DB from trusted RPC
 async fn initialize_blobs_in_db(
     rpc: &Url,
-    store: ReamDB,
+    store: BeaconDB,
     beacon_block_root: B256,
 ) -> anyhow::Result<()> {
     let blob_sidecar = reqwest::get(&format!(

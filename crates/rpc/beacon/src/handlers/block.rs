@@ -19,7 +19,7 @@ use ream_consensus_misc::constants::beacon::{
 };
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
-    beacon::db::ReamBeaconDB as ReamDB,
+    db::beacon::BeaconDB,
     tables::{field::Field, table::Table},
 };
 use serde::{Deserialize, Serialize};
@@ -52,7 +52,7 @@ pub struct ValidatorSyncCommitteeReward {
     pub reward: u64,
 }
 
-pub async fn get_block_root_from_id(block_id: ID, db: &ReamDB) -> Result<B256, ApiError> {
+pub async fn get_block_root_from_id(block_id: ID, db: &BeaconDB) -> Result<B256, ApiError> {
     let block_root = match block_id {
         ID::Finalized => {
             let finalized_checkpoint = db.finalized_checkpoint_provider().get().map_err(|err| {
@@ -143,7 +143,7 @@ fn get_attester_slashing_rewards(
 
 pub async fn get_beacon_block_from_id(
     block_id: ID,
-    db: &ReamDB,
+    db: &BeaconDB,
 ) -> Result<SignedBeaconBlock, ApiError> {
     let block_root = get_block_root_from_id(block_id, db).await?;
 
@@ -170,7 +170,7 @@ pub async fn get_genesis() -> Result<impl Responder, ApiError> {
 /// Called by `/eth/v2/beacon/blocks/{block_id}/attestations` to get block attestations
 #[get("/beacon/blocks/{block_id}/attestations")]
 pub async fn get_block_attestations(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
@@ -183,7 +183,7 @@ pub async fn get_block_attestations(
 /// Called by `/blocks/<block_id>/root` to get the Tree hash of the Block.
 #[get("/beacon/blocks/{block_id}/root")]
 pub async fn get_block_root(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let block_root = get_block_root_from_id(block_id.into_inner(), &db).await?;
@@ -194,7 +194,7 @@ pub async fn get_block_root(
 /// Called by `/beacon/blocks/{block_id}/rewards` to get the block rewards response
 #[get("/beacon/blocks/{block_id}/rewards")]
 pub async fn get_block_rewards(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let block_id_value = block_id.into_inner();
@@ -234,7 +234,7 @@ pub async fn get_block_rewards(
 /// Called by `/blocks/<block_id>` to get the Beacon Block.
 #[get("/beacon/blocks/{block_id}")]
 pub async fn get_block_from_id(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
@@ -244,7 +244,7 @@ pub async fn get_block_from_id(
 
 #[post("/beacon/rewards/sync_committee/{block_id}")]
 pub async fn post_sync_committee_rewards(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     block_id: Path<ID>,
     validators: Json<Vec<ValidatorID>>,
 ) -> Result<impl Responder, ApiError> {
@@ -299,7 +299,7 @@ pub async fn post_sync_committee_rewards(
 #[get("/beacon/blind_block/{block_id}")]
 pub async fn get_blind_block(
     http_request: HttpRequest,
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     block_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     let beacon_block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;

@@ -9,7 +9,7 @@ use ream_api_types_beacon::{
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_consensus_misc::beacon_block_header::SignedBeaconBlockHeader;
-use ream_storage::{beacon::db::ReamBeaconDB as ReamDB, tables::table::Table};
+use ream_storage::{db::beacon::BeaconDB, tables::table::Table};
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
 
@@ -36,7 +36,7 @@ impl HeaderData {
 /// Optional paramaters `slot` and/or `parent_root`
 #[get("/beacon/headers")]
 pub async fn get_headers(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     slot: Query<SlotQuery>,
     parent_root: Query<ParentRootQuery>,
 ) -> Result<impl Responder, ApiError> {
@@ -84,7 +84,7 @@ pub async fn get_headers(
 #[get("/beacon/headers/{block_id}")]
 pub async fn get_headers_from_block(
     block_id: Path<ID>,
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
 ) -> Result<impl Responder, ApiError> {
     let block = get_beacon_block_from_id(block_id.into_inner(), &db).await?;
     let header = block.signed_header();
@@ -98,7 +98,7 @@ pub async fn get_headers_from_block(
 
 pub async fn get_header_from_slot(
     slot: Option<u64>,
-    db: &ReamDB,
+    db: &BeaconDB,
 ) -> Result<(SignedBeaconBlockHeader, B256), ApiError> {
     let slot = match slot {
         Some(slot) => slot,

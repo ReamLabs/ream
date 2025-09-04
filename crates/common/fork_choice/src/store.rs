@@ -25,7 +25,7 @@ use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use ream_storage::{
-    beacon::db::ReamBeaconDB as ReamDB,
+    db::beacon::BeaconDB,
     tables::{field::Field, multimap_table::MultimapTable, table::Table},
 };
 use tree_hash::TreeHash;
@@ -44,12 +44,12 @@ pub struct BlockWithEpochInfo {
 
 #[derive(Debug)]
 pub struct Store {
-    pub db: ReamDB,
+    pub db: BeaconDB,
     pub operation_pool: Arc<OperationPool>,
 }
 
 impl Store {
-    pub fn new(db: ReamDB, operation_pool: Arc<OperationPool>) -> Self {
+    pub fn new(db: BeaconDB, operation_pool: Arc<OperationPool>) -> Self {
         Self { db, operation_pool }
     }
 
@@ -828,7 +828,7 @@ impl Store {
 pub fn get_forkchoice_store(
     anchor_state: BeaconState,
     anchor_block: BeaconBlock,
-    db: ReamDB,
+    db: BeaconDB,
 ) -> anyhow::Result<Store> {
     ensure!(anchor_block.state_root == anchor_state.tree_hash_root());
     let anchor_root = anchor_block.tree_hash_root();

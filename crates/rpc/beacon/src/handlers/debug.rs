@@ -12,14 +12,14 @@ use ream_api_types_beacon::responses::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_fork_choice::store::{BlockWithEpochInfo, Store};
 use ream_operation_pool::OperationPool;
-use ream_storage::{beacon::db::ReamBeaconDB as ReamDB, tables::field::Field};
+use ream_storage::{db::beacon::BeaconDB, tables::field::Field};
 use serde_json::json;
 
 use crate::handlers::state::get_state_from_id;
 
 #[get("/debug/beacon/states/{state_id}")]
 pub async fn get_debug_beacon_state(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     state_id: Path<ID>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::Ok().json(BeaconResponse::new(
@@ -28,7 +28,7 @@ pub async fn get_debug_beacon_state(
 }
 
 #[get("/debug/beacon/heads")]
-pub async fn get_debug_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
+pub async fn get_debug_beacon_heads(db: Data<BeaconDB>) -> Result<impl Responder, ApiError> {
     let justified_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
         ApiError::InternalError(format!(
             "Failed to get justified_checkpoint, error: {err:?}"
@@ -68,7 +68,7 @@ pub async fn get_debug_beacon_heads(db: Data<ReamDB>) -> Result<impl Responder, 
 }
 
 #[get("/debug/fork_choice")]
-pub async fn get_debug_fork_choice(db: Data<ReamDB>) -> Result<impl Responder, ApiError> {
+pub async fn get_debug_fork_choice(db: Data<BeaconDB>) -> Result<impl Responder, ApiError> {
     let justified_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
         ApiError::InternalError(format!(
             "Failed to get justified_checkpoint, error: {err:?}"

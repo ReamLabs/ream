@@ -8,13 +8,13 @@ use ream_api_types_beacon::{
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_consensus_misc::{constants::beacon::SLOTS_PER_EPOCH, misc::compute_start_slot_at_epoch};
-use ream_storage::beacon::db::ReamBeaconDB as ReamDB;
+use ream_storage::db::beacon::BeaconDB;
 
 use crate::handlers::state::get_state_from_id;
 
 #[get("/validator/duties/proposer/{epoch}")]
 pub async fn get_proposer_duties(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     epoch: Path<u64>,
 ) -> Result<impl Responder, ApiError> {
     let epoch = epoch.into_inner();
@@ -44,7 +44,7 @@ pub async fn get_proposer_duties(
 
 #[post("/validator/duties/attester/{epoch}")]
 pub async fn get_attester_duties(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     epoch: Path<u64>,
     validator_indices: Json<Vec<u64>>,
 ) -> Result<impl Responder, ApiError> {

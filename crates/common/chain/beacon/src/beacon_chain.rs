@@ -15,7 +15,7 @@ use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_p2p::req_resp::beacon::messages::status::Status;
 use ream_storage::{
-    beacon::db::ReamBeaconDB as ReamDB,
+    db::beacon::BeaconDB,
     tables::{field::Field, table::Table},
 };
 use tokio::sync::Mutex;
@@ -30,7 +30,7 @@ pub struct BeaconChain {
 impl BeaconChain {
     /// Creates a new instance of `BeaconChain`.
     pub fn new(
-        db: ReamDB,
+        db: BeaconDB,
         operation_pool: Arc<OperationPool>,
         execution_engine: Option<ExecutionEngine>,
     ) -> Self {

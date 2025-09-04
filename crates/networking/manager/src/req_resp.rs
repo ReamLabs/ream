@@ -10,7 +10,7 @@ use ream_p2p::{
         blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
     },
 };
-use ream_storage::{beacon::db::ReamBeaconDB as ReamDB, tables::table::Table};
+use ream_storage::{db::beacon::BeaconDB, tables::table::Table};
 use tracing::{info, trace, warn};
 
 use crate::p2p_sender::P2PSender;
@@ -21,7 +21,7 @@ pub async fn handle_req_resp_message(
     connection_id: ConnectionId,
     message: BeaconRequestMessage,
     p2p_sender: &P2PSender,
-    ream_db: &ReamDB,
+    ream_db: &BeaconDB,
     network_state: Arc<NetworkState>,
 ) {
     match message {

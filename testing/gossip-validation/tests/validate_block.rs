@@ -16,8 +16,8 @@ mod tests {
     use ream_network_spec::networks::initialize_test_network_spec;
     use ream_operation_pool::OperationPool;
     use ream_storage::{
-        beacon::db::ReamBeaconDB as ReamDB,
         cache::{AddressSlotIdentifier, CachedDB},
+        db::{ReamDB, beacon::BeaconDB},
         tables::{field::Field, table::Table},
     };
     use snap::raw::Decoder;
@@ -30,7 +30,7 @@ mod tests {
     pub async fn db_setup() -> (BeaconChain, CachedDB, B256) {
         let temp_dir = TempDir::new("ream_gossip_test").unwrap();
         let temp_path = temp_dir.path().to_path_buf();
-        let mut db = ReamDB::new(temp_path).unwrap();
+        let mut db = ReamDB::init_beacon_db(temp_path).unwrap();
 
         let ancestor_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
             "./assets/sepolia/blocks/slot_8084160.ssz_snappy",
@@ -78,7 +78,7 @@ mod tests {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn insert_mock_data(
-        db: &mut ReamDB,
+        db: &mut BeaconDB,
         ancestor_beacon_block: SignedBeaconBlock,
         grandparent_block_root: B256,
         block_root: B256,

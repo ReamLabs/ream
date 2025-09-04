@@ -16,7 +16,7 @@ use ream_p2p::{
     gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
     network::beacon::channel::GossipMessage,
 };
-use ream_storage::beacon::db::ReamBeaconDB as ReamDB;
+use ream_storage::db::beacon::BeaconDB;
 use ssz::Encode;
 
 use crate::handlers::state::get_state_from_id;
@@ -34,7 +34,7 @@ pub async fn get_bls_to_execution_changes(
 /// POST /eth/v1/beacon/pool/bls_to_execution_changes
 #[post("/beacon/pool/bls_to_execution_changes")]
 pub async fn post_bls_to_execution_changes(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     operation_pool: Data<Arc<OperationPool>>,
     network_manager: Data<NetworkManagerService>,
     signed_bls_to_execution_change: Json<SignedBLSToExecutionChange>,
@@ -87,7 +87,7 @@ pub async fn get_voluntary_exits(
 /// POST /eth/v1/beacon/pool/voluntary_exits
 #[post("/beacon/pool/voluntary_exits")]
 pub async fn post_voluntary_exits(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     operation_pool: Data<Arc<OperationPool>>,
     network_manager: Data<NetworkManagerService>,
     signed_voluntary_exit: Json<SignedVoluntaryExit>,
@@ -141,7 +141,7 @@ pub async fn get_attester_slashings(
 /// POST /eth/v2/beacon/pool/attester_slashings
 #[post("/beacon/pool/attester_slashings")]
 pub async fn post_attester_slashings(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     operation_pool: Data<Arc<OperationPool>>,
     network_manager: Data<Arc<NetworkManagerService>>,
     attester_slashing: Json<AttesterSlashing>,
@@ -192,7 +192,7 @@ pub async fn get_proposer_slashings(
 /// POST /eth/v2/beacon/pool/proposer_slashing
 #[post("/beacon/pool/proposer_slashings")]
 pub async fn post_proposer_slashings(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     operation_pool: Data<Arc<OperationPool>>,
     network_manager: Data<Arc<NetworkManagerService>>,
     proposer_slashing: Json<ProposerSlashing>,

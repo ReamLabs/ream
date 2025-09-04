@@ -15,7 +15,7 @@ use ream_light_client::{
     update::LightClientUpdate,
 };
 use ream_storage::{
-    beacon::db::ReamBeaconDB as ReamDB,
+    db::beacon::BeaconDB,
     tables::{field::Field, table::Table},
 };
 use ssz::Encode;
@@ -25,7 +25,7 @@ pub const MAX_REQUEST_LIGHT_CLIENT_UPDATES: u64 = 128;
 
 #[get("/beacon/light_client/bootstrap/{block_root}")]
 pub async fn get_light_client_bootstrap(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     block_root: Path<B256>,
 ) -> Result<impl Responder, ApiError> {
     let block_root = block_root.into_inner();
@@ -63,7 +63,7 @@ pub async fn get_light_client_bootstrap(
 
 #[get("/beacon/light_client/updates")]
 pub async fn get_light_client_updates(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     start_period: Query<u64>,
     count: Query<u64>,
 ) -> Result<impl Responder, ApiError> {
@@ -175,7 +175,7 @@ pub async fn get_light_client_updates(
 
 #[get("/beacon/light_client/finality_update")]
 pub async fn get_light_client_finality_update(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     http_request: HttpRequest,
 ) -> Result<impl Responder, ApiError> {
     // Get the latest finalized checkpoint
@@ -287,7 +287,7 @@ pub async fn get_light_client_finality_update(
 
 #[get("/beacon/light_client/optimistic_update")]
 pub async fn get_light_client_optimistic_update(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     http_request: HttpRequest,
 ) -> Result<impl Responder, ApiError> {
     // Get the latest head block root from the latest slot

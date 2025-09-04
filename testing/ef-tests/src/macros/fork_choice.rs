@@ -18,7 +18,7 @@ macro_rules! test_fork_choice {
                 };
                 use ream_network_spec::networks::initialize_test_network_spec;
                 use ream_storage::{
-                    beacon::db::ReamBeaconDB as ReamDB,
+                    db::beacon::BeaconDB,
                     tables::{table::Table, field::Field},
                     dir::setup_data_dir
                 };

@@ -6,14 +6,14 @@ use actix_web_lab::extract::Query;
 use ream_api_types_beacon::{query::BlobSidecarQuery, responses::BeaconVersionedResponse};
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
-use ream_storage::{beacon::db::ReamBeaconDB as ReamDB, tables::table::Table};
+use ream_storage::{db::beacon::BeaconDB, tables::table::Table};
 use tree_hash::TreeHash;
 
 use crate::handlers::block::get_beacon_block_from_id;
 
 #[get("/beacon/blob_sidecars/{block_id}")]
 pub async fn get_blob_sidecars(
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
     block_id: Path<ID>,
     query: Query<BlobSidecarQuery>,
 ) -> Result<impl Responder, ApiError> {

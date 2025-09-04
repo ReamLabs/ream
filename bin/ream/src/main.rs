@@ -42,9 +42,8 @@ use ream_p2p::{
 use ream_rpc_beacon::{config::RpcServerConfig, start_server};
 use ream_rpc_lean::{config::LeanRpcServerConfig, start_lean_server};
 use ream_storage::{
-    beacon::db::{ReamBeaconDB, reset_db},
+    db::{ReamDB, reset_db},
     dir::setup_data_dir,
-    lean::db::ReamLeanDB,
     tables::table::Table,
 };
 use ream_sync::rwlock::Writer;
@@ -141,7 +140,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
         reset_db(ream_dir.clone()).expect("Unable to delete database");
     }
 
-    let ream_db = ReamLeanDB::new(ream_dir.clone()).expect("unable to init Ream Lean Database");
+    let ream_db =
+        ReamDB::init_lean_db(ream_dir.clone()).expect("unable to init Ream Lean Database");
 
     info!("ream lean database initialized ");
 
@@ -263,7 +263,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
         reset_db(ream_dir.clone()).expect("Unable to delete database");
     }
 
-    let ream_db = ReamBeaconDB::new(ream_dir.clone()).expect("unable to init Ream Database");
+    let ream_db = ReamDB::init_beacon_db(ream_dir.clone()).expect("unable to init Ream Database");
 
     info!("ream database initialized ");
 

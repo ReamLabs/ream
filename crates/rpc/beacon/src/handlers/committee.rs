@@ -10,7 +10,7 @@ use ream_api_types_beacon::{
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_consensus_misc::{constants::beacon::SLOTS_PER_EPOCH, misc::compute_start_slot_at_epoch};
-use ream_storage::beacon::db::ReamBeaconDB as ReamDB;
+use ream_storage::db::beacon::BeaconDB;
 use serde::Serialize;
 
 use super::state::get_state_from_id;
@@ -43,7 +43,7 @@ pub async fn get_committees(
     epoch: Query<EpochQuery>,
     index: Query<IndexQuery>,
     slot: Query<SlotQuery>,
-    db: Data<ReamDB>,
+    db: Data<BeaconDB>,
 ) -> Result<impl Responder, ApiError> {
     let state = get_state_from_id(state_id.into_inner(), &db).await?;
     let epoch = epoch.epoch.unwrap_or(state.get_current_epoch());

@@ -17,7 +17,7 @@ use ream_p2p::{
     config::NetworkConfig,
     network::beacon::{Network, ReamNetworkEvent, network_state::NetworkState},
 };
-use ream_storage::{beacon::db::ReamBeaconDB as ReamDB, cache::CachedDB};
+use ream_storage::{cache::CachedDB, db::beacon::BeaconDB};
 use ream_syncer::block_range::BlockRangeSyncer;
 use tokio::{sync::mpsc, time::interval};
 use tracing::{error, info};
@@ -35,7 +35,7 @@ pub struct NetworkManagerService {
     pub p2p_sender: P2PSender,
     pub network_state: Arc<NetworkState>,
     pub block_range_syncer: BlockRangeSyncer,
-    pub ream_db: ReamDB,
+    pub ream_db: BeaconDB,
     pub cached_db: CachedDB,
 }
 
@@ -56,7 +56,7 @@ impl NetworkManagerService {
     pub async fn new(
         executor: ReamExecutor,
         config: ManagerConfig,
-        ream_db: ReamDB,
+        ream_db: BeaconDB,
         ream_dir: PathBuf,
         operation_pool: Arc<OperationPool>,
     ) -> anyhow::Result<Self> {

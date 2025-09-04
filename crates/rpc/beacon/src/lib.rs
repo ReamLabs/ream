@@ -9,7 +9,7 @@ use config::RpcServerConfig;
 use ream_execution_engine::ExecutionEngine;
 use ream_operation_pool::OperationPool;
 use ream_p2p::network::beacon::network_state::NetworkState;
-use ream_storage::beacon::db::ReamBeaconDB as ReamDB;
+use ream_storage::db::beacon::BeaconDB;
 use tracing::info;
 
 use crate::routes::register_routers;
@@ -17,7 +17,7 @@ use crate::routes::register_routers;
 /// Start the Beacon API server.
 pub async fn start_server(
     server_config: RpcServerConfig,
-    db: ReamDB,
+    db: BeaconDB,
     network_state: Arc<NetworkState>,
     operation_pool: Arc<OperationPool>,
     execution_engine: Option<ExecutionEngine>,
