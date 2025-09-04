@@ -380,11 +380,6 @@ impl LeanState {
                 continue;
             }
 
-            info!(
-                "Processing vote: validator_id={}, source={:?}, target={:?}",
-                vote.validator_id, vote.source, vote.target
-            );
-
             // Track attempts to justify new hashes
             self.initialize_justifications_for_root(&vote.target.root)?;
             self.set_justification(&vote.target.root, &vote.validator_id, true)?;

@@ -104,8 +104,9 @@ impl LeanChainService {
                         }
                         LeanChainServiceMessage::ProcessBlock { signed_block, is_trusted, need_gossip } => {
                             info!(
-                                "Processing block: slot={}, root={}, parent={}, votes={}",
+                                "Processing block: slot={}, validator_id={}, root={}, parent={}, votes={}",
                                 signed_block.message.slot,
+                                signed_block.message.proposer_index,
                                 signed_block.message.tree_hash_root(),
                                 signed_block.message.parent_root,
                                 signed_block.message.body.votes.len(),
@@ -120,6 +121,14 @@ impl LeanChainService {
                             }
                         }
                         LeanChainServiceMessage::ProcessVote { signed_vote, is_trusted, need_gossip } => {
+                            info!(
+                                "Processing vote: slot={}, validator_id={}, source={:?}, target={:?}",
+                                signed_vote.data.slot,
+                                signed_vote.data.validator_id,
+                                signed_vote.data.source,
+                                signed_vote.data.target
+                            );
+
                             if let Err(err) = self.handle_process_vote(signed_vote.clone(), is_trusted).await {
                                 warn!("Failed to handle process block message: {err}");
                             }
