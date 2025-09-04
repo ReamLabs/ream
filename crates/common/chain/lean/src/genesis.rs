@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use ream_consensus_lean::{
-    block::{Block, BlockBody},
+    block::{Block, BlockBody, BlockHeader},
     state::LeanState,
 };
 use ream_network_spec::networks::lean_network_spec;
@@ -29,8 +29,13 @@ pub fn setup_genesis() -> (Block, LeanState) {
         (network_spec.num_validators, network_spec.genesis_time)
     };
 
-    let genesis_state = genesis_state(num_validators, genesis_time);
+    let mut genesis_state = genesis_state(num_validators, genesis_time);
     let genesis_block = genesis_block(genesis_state.tree_hash_root());
+
+    // Because of circular dependency, the `genesis_state` which is created first
+    // is not aware of the genesis block. So once the genesis_block is created,
+    // we need to set the `genesis_state.latest_block_header` to the genesis block.
+    genesis_state.latest_block_header = BlockHeader::from(genesis_block.clone());
 
     (genesis_block, genesis_state)
 }

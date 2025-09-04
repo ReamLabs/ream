@@ -257,9 +257,11 @@ impl LeanState {
             "Block proposer index does not match the expected proposer index"
         );
 
-        // Not yet implemented from leanSpec: Verify that the parent matches
-        // assert_eq!(block.parent_root, self.latest_block_header.tree_hash_root(), "Block parent
-        // root does not match latest block header root");
+        // Verify that the parent matches
+        assert_eq!(
+            block.parent_root, self.latest_block_header.tree_hash_root(),
+            "Block parent root does not match latest block header root"
+        );
 
         // If this was first block post genesis, 3sf mini special treatment is required
         // to correctly set genesis block root as already justified and finalized.
@@ -298,7 +300,7 @@ impl LeanState {
                 .map_err(|err| anyhow!("Failed to prefill justified_slots: {err:?}"))?;
         }
 
-        // Not yet implemented from leanSpec:
+        // Cache current block as the new latest block
         self.latest_block_header = BlockHeader {
             slot: block.slot,
             proposer_index: block.proposer_index,

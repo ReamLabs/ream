@@ -161,6 +161,10 @@ impl LeanChain {
         }
         stop_timer(add_votes_timer);
 
+        // Update `state.latest_block_header.body_root` so that it accounts for
+        // the votes that we've added above
+        state.latest_block_header.body_root = new_block.message.body.tree_hash_root();
+
         // Compute the state root
         let compute_state_root_timer =
             start_timer_vec(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
