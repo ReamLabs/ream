@@ -81,10 +81,10 @@ fn main() {
         .expect("Unable to initialize database directory");
 
     if cli.purge_db {
-        reset_db(ream_dir.clone()).expect("Unable to delete database");
+        reset_db(&ream_dir).expect("Unable to delete database");
     }
 
-    let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
+    let ream_db = ReamDB::new(ream_dir).expect("unable to init Ream Database");
 
     match cli.command {
         Commands::LeanNode(config) => {
@@ -146,7 +146,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         .init_lean_db()
         .expect("unable to init Ream Lean Database");
 
-    info!("ream lean database initialized ");
+    info!("ream lean database has been initialized");
 
     // Initialize the lean chain with genesis block and state.
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
@@ -264,7 +264,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         .init_beacon_db()
         .expect("unable to init Ream Beacon Database");
 
-    info!("ream beacon database initialized ");
+    info!("ream beacon database has been initialized");
 
     let _is_ws_verified = initialize_db_from_checkpoint(
         beacon_db.clone(),

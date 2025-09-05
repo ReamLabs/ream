@@ -104,8 +104,8 @@ impl ReamDB {
     }
 }
 
-pub fn reset_db(db_path: PathBuf) -> anyhow::Result<()> {
-    if fs::read_dir(&db_path)?.next().is_none() {
+pub fn reset_db(db_path: &PathBuf) -> anyhow::Result<()> {
+    if fs::read_dir(db_path)?.next().is_none() {
         info!("Data directory at {db_path:?} is already empty.");
         return Ok(());
     }
@@ -116,7 +116,7 @@ pub fn reset_db(db_path: PathBuf) -> anyhow::Result<()> {
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     if input.trim().eq_ignore_ascii_case("y") {
-        for entry in fs::read_dir(&db_path)? {
+        for entry in fs::read_dir(db_path)? {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {

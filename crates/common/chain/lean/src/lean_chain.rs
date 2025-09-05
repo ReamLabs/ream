@@ -27,14 +27,24 @@ pub type LeanChainReader = Reader<LeanChain>;
 /// but doesn't include `validator_id` as a node should manage multiple validators.
 #[derive(Debug, Clone)]
 pub struct LeanChain {
+    /// Database.
     pub store: Arc<Mutex<LeanDB>>,
+    /// {block_hash: block} for all blocks that we know about.
     pub chain: HashMap<B256, Block>,
+    /// {block_hash: post_state} for all blocks that we know about.
     pub post_states: HashMap<B256, LeanState>,
+    /// Votes that we have received and taken into account.
     pub known_votes: Vec<Vote>,
+    /// Votes that we have received but not yet taken into account.
     pub new_votes: Vec<Vote>,
+    /// Initialize the chain with the genesis block.
     pub genesis_hash: B256,
+    /// Number of validators.
     pub num_validators: u64,
+    /// Block that it is safe to use to vote as the target.
+    /// Diverge from Python implementation: Use genesis hash instead of `None`.
     pub safe_target: B256,
+    /// Head of the chain.
     pub head: B256,
 }
 
@@ -43,23 +53,14 @@ impl LeanChain {
         let genesis_hash = genesis_block.tree_hash_root();
 
         LeanChain {
-            // Database
             store: Arc::new(Mutex::new(db)),
-            // Votes that we have received and taken into account
             known_votes: Vec::new(),
-            // Votes that we have received but not yet taken into account
             new_votes: Vec::new(),
-            // Initialize the chain with the genesis block
             genesis_hash,
             num_validators: genesis_state.config.num_validators,
-            // Block that it is safe to use to vote as the target
-            // Diverge from Python implementation: Use genesis hash instead of `None`
             safe_target: genesis_hash,
-            // Head of the chain
             head: genesis_hash,
-            // {block_hash: block} for all blocks that we know about
             chain: HashMap::from([(genesis_hash, genesis_block)]),
-            // {block_hash: post_state} for all blocks that we know about
             post_states: HashMap::from([(genesis_hash, genesis_state)]),
         }
     }
