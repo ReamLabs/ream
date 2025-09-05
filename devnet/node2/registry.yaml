@@ -1,3 +1,0 @@
-validators:
-  - validator_id: 2
-    keystore_path: "devnet/node2/keystore2.json"
