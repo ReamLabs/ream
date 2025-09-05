@@ -1,5 +1,5 @@
-use anyhow::anyhow;
 use alloy_primitives::FixedBytes;
+use anyhow::anyhow;
 use ream_chain_lean::{
     clock::create_lean_clock_interval, lean_chain::LeanChainReader,
     messages::LeanChainServiceMessage,

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use alloy_primitives::B256;
-use anyhow::{ anyhow, ensure };
+use anyhow::{anyhow, ensure};
 use ream_consensus_misc::constants::lean::{MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT};
 use ream_metrics::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
 use serde::{Deserialize, Serialize};
@@ -120,7 +120,10 @@ impl LeanState {
                 .get(root)
                 .ok_or_else(|| anyhow!("Root {root:?} not found in justifications_map"))?;
 
-            ensure!(justifications.len() == VALIDATOR_REGISTRY_LIMIT as usize, "Justifications length does not match validator registry limit");
+            ensure!(
+                justifications.len() == VALIDATOR_REGISTRY_LIMIT as usize,
+                "Justifications length does not match validator registry limit"
+            );
 
             justifications
                 .iter()
@@ -511,17 +514,20 @@ mod test {
 
         // root0 voted by validator0
         let root0 = B256::repeat_byte(0);
-        let mut bitlist0 = BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
+        let mut bitlist0 =
+            BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
         bitlist0.set(0, true).unwrap();
 
         // root1 voted by validator1
         let root1 = B256::repeat_byte(1);
-        let mut bitlist1 = BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
+        let mut bitlist1 =
+            BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
         bitlist1.set(1, true).unwrap();
 
         // root2 voted by validator2
         let root2 = B256::repeat_byte(2);
-        let mut bitlist2 = BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
+        let mut bitlist2 =
+            BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
         bitlist2.set(2, true).unwrap();
 
         // Insert unordered: root0, root2, root1
@@ -534,9 +540,21 @@ mod test {
         assert_eq!(state.justifications_roots[0], B256::repeat_byte(0));
         assert_eq!(state.justifications_validators.get(0).unwrap(), true);
         assert_eq!(state.justifications_roots[1], B256::repeat_byte(1));
-        assert_eq!(state.justifications_validators.get(VALIDATOR_REGISTRY_LIMIT as usize + 1).unwrap(), true);
+        assert_eq!(
+            state
+                .justifications_validators
+                .get(VALIDATOR_REGISTRY_LIMIT as usize + 1)
+                .unwrap(),
+            true
+        );
         assert_eq!(state.justifications_roots[2], B256::repeat_byte(2));
-        assert_eq!(state.justifications_validators.get(2 * VALIDATOR_REGISTRY_LIMIT as usize + 2).unwrap(), true);
+        assert_eq!(
+            state
+                .justifications_validators
+                .get(2 * VALIDATOR_REGISTRY_LIMIT as usize + 2)
+                .unwrap(),
+            true
+        );
     }
 
     #[test]
