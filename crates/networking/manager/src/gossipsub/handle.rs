@@ -26,7 +26,9 @@ use crate::{
         beacon_block::validate_gossip_beacon_block, blob_sidecar::validate_blob_sidecar,
         bls_to_execution_change::validate_bls_to_execution_change,
         proposer_slashing::validate_proposer_slashing, result::ValidationResult,
-        sync_committee::validate_sync_committee, voluntary_exit::validate_voluntary_exit,
+        sync_committee::validate_sync_committee,
+        sync_committee_contribution_and_proof::validate_sync_committee_contribution_and_proof,
+        voluntary_exit::validate_voluntary_exit,
     },
     p2p_sender::P2PSender,
 };
@@ -244,9 +246,40 @@ pub async fn handle_gossipsub_message(
                     }
                 }
             }
-            GossipsubMessage::SyncCommitteeContributionAndProof(
-                _sync_committee_contribution_and_proof,
-            ) => {}
+            GossipsubMessage::SyncCommitteeContributionAndProof(signed_contribution_and_proof) => {
+                info!(
+                    "Sync Committee Contribution And Proof received over gossipsub: root: {}",
+                    signed_contribution_and_proof.tree_hash_root()
+                );
+
+                match validate_sync_committee_contribution_and_proof(
+                    beacon_chain,
+                    cached_db,
+                    &signed_contribution_and_proof,
+                )
+                .await
+                {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: signed_contribution_and_proof.as_ssz_bytes(),
+                            });
+                        }
+
+                        ValidationResult::Reject(reason) => {
+                            info!("Sync committee contribution and proof rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Sync committee contribution and proof ignored: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate sync committee contribution and proof: {err}");
+                    }
+                }
+            }
             GossipsubMessage::AttesterSlashing(attester_slashing) => {
                 info!(
                     "Attester Slashing received over gossipsub: root: {}",
