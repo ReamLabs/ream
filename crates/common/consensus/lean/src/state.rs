@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+
 use alloy_primitives::B256;
 use anyhow::{ anyhow, ensure };
 use ream_consensus_misc::constants::lean::{MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT};
@@ -148,7 +149,7 @@ impl LeanState {
         validate_result: bool,
     ) -> anyhow::Result<()> {
         // Verify signatures
-        assert!(valid_signatures, "Signatures are not valid");
+        ensure!(valid_signatures, "Signatures are not valid");
 
         let block = &signed_block.message;
 
@@ -161,7 +162,7 @@ impl LeanState {
 
         // Verify state root
         if validate_result {
-            assert!(
+            ensure!(
                 block.state_root == self.tree_hash_root(),
                 "Block's state root does not match transitioned state root"
             );
@@ -171,7 +172,7 @@ impl LeanState {
     }
 
     fn process_slots(&mut self, slot: u64) -> anyhow::Result<()> {
-        assert!(self.slot < slot);
+        ensure!(self.slot < slot, "State slot must be less than block slot");
 
         while self.slot < slot {
             self.process_slot()?;
@@ -202,26 +203,24 @@ impl LeanState {
 
     fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
         // Verify that the slots match
-        assert_eq!(
-            block.slot, self.slot,
+        ensure!(
+            block.slot == self.slot,
             "Block slot number does not match state slot number"
         );
         // Verify that the block is newer than latest block header
-        assert!(
+        ensure!(
             block.slot > self.latest_block_header.slot,
             "Block slot number is not greater than latest block header slot number"
         );
         // Verify that the proposer index is the correct index
-        assert_eq!(
-            block.proposer_index,
-            block.slot % self.config.num_validators,
+        ensure!(
+            block.proposer_index == block.slot % self.config.num_validators,
             "Block proposer index does not match the expected proposer index"
         );
 
         // Verify that the parent matches
-        assert_eq!(
-            block.parent_root,
-            self.latest_block_header.tree_hash_root(),
+        ensure!(
+            block.parent_root == self.latest_block_header.tree_hash_root(),
             "Block parent root does not match latest block header root"
         );
 
