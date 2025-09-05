@@ -18,9 +18,7 @@ use ream_validator_beacon::{
         DOMAIN_CONTRIBUTION_AND_PROOF, DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF,
         SYNC_COMMITTEE_SUBNET_COUNT,
     },
-    contribution_and_proof::{
-        ContributionAndProof, SignedContributionAndProof, SyncCommitteeContribution,
-    },
+    contribution_and_proof::{ContributionAndProof, SignedContributionAndProof},
     sync_committee::{SyncAggregatorSelectionData, is_sync_committee_aggregator},
 };
 
@@ -179,7 +177,7 @@ pub async fn validate_sync_committee_contribution_and_proof(
     // pubkey
     if !check_sync_committee(
         state.fork.current_version,
-        &contribution,
+        &contribution.beacon_block_root,
         &sync_committee_validators,
         &contribution.signature,
     )? {
@@ -237,20 +235,20 @@ fn check_sync_committee_selection_data(
         None,
     );
 
-    let signing_root = compute_signing_root(&selection_data, domain);
+    let signing_root = compute_signing_root(selection_data, domain);
 
     Ok(signature.verify(validator_pubkey, signing_root.as_slice())?)
 }
 
 fn check_sync_committee(
     fork_version: FixedBytes<4>,
-    contribution: &SyncCommitteeContribution,
+    beacon_block_root: &FixedBytes<32>,
     validators: &[PublicKey],
     signature: &BLSSignature,
 ) -> anyhow::Result<bool> {
     let domain = compute_domain(DOMAIN_SYNC_COMMITTEE, Some(fork_version), None);
 
-    let signing_root = compute_signing_root(contribution.beacon_block_root, domain);
+    let signing_root = compute_signing_root(beacon_block_root, domain);
     Ok(signature.fast_aggregate_verify(
         validators.iter().collect::<Vec<&PublicKey>>(),
         signing_root.as_slice(),
