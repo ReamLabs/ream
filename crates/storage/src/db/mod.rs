@@ -91,7 +91,7 @@ impl ReamDB {
 
     pub fn init_lean_db(&self) -> Result<LeanDB, StoreError> {
         let write_txn = self.db.begin_write()?;
-        
+
         write_txn.open_table(LEAN_BLOCK_TABLE)?;
         write_txn.open_table(LEAN_STATE_TABLE)?;
         write_txn.open_table(LEAN_SLOT_INDEX_TABLE)?;
