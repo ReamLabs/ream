@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use alloy_primitives::B256;
+use alloy_primitives::{B256, FixedBytes};
 use anyhow::anyhow;
 use ream_consensus_lean::{
     block::{Block, BlockBody, SignedBlock},
@@ -11,7 +11,6 @@ use ream_consensus_lean::{
 };
 use ream_metrics::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
-use ream_post_quantum_crypto::PQSignature;
 use ream_storage::db::lean::LeanDB;
 use ream_sync::rwlock::{Reader, Writer};
 use tokio::sync::Mutex;
@@ -123,7 +122,7 @@ impl LeanChain {
                 state_root: B256::ZERO,
                 body: BlockBody::default(),
             },
-            signature: PQSignature::default(),
+            signature: FixedBytes::default(),
         };
         stop_timer(initialize_block_timer);
 

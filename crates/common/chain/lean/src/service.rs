@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
-use alloy_primitives::B256;
+use alloy_primitives::{B256, FixedBytes};
 use anyhow::anyhow;
 use ream_consensus_lean::{
     block::{Block, SignedBlock},
     vote::SignedVote,
 };
 use ream_network_spec::networks::lean_network_spec;
-use ream_post_quantum_crypto::PQSignature;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info, warn};
 use tree_hash::TreeHash;
@@ -217,7 +216,7 @@ impl LeanChainService {
                             QueueItem::Block(block) => LeanChainServiceMessage::ProcessBlock {
                                 signed_block: SignedBlock {
                                     message: block,
-                                    signature: PQSignature::default(),
+                                    signature: FixedBytes::default(),
                                 },
                                 is_trusted: true,
                                 need_gossip: false,
@@ -225,7 +224,7 @@ impl LeanChainService {
                             QueueItem::Vote(vote) => LeanChainServiceMessage::ProcessVote {
                                 signed_vote: SignedVote {
                                     data: vote,
-                                    signature: PQSignature::default(),
+                                    signature: FixedBytes::default(),
                                 },
                                 is_trusted: true,
                                 need_gossip: false,

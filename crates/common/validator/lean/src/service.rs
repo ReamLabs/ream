@@ -1,11 +1,11 @@
 use anyhow::anyhow;
+use alloy_primitives::FixedBytes;
 use ream_chain_lean::{
     clock::create_lean_clock_interval, lean_chain::LeanChainReader,
     messages::LeanChainServiceMessage,
 };
 use ream_consensus_lean::{block::SignedBlock, vote::SignedVote};
 use ream_network_spec::networks::lean_network_spec;
-use ream_post_quantum_crypto::PQSignature;
 use tokio::sync::{mpsc, oneshot};
 use tracing::info;
 use tree_hash::TreeHash;
@@ -86,7 +86,7 @@ impl ValidatorService {
                                 // TODO: Sign the block with the keystore.
                                 let signed_block = SignedBlock {
                                     message: new_block,
-                                    signature: PQSignature::default(),
+                                    signature: FixedBytes::default(),
                                 };
 
                                 // Send block to the LeanChainService.
@@ -119,7 +119,7 @@ impl ValidatorService {
                                 vote.validator_id = keystore.validator_id;
                                 SignedVote {
                                     data: vote,
-                                    signature: PQSignature::default(),
+                                    signature: FixedBytes::default(),
                                 }
                             }).collect::<Vec<_>>();
 
