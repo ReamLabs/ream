@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use ream_consensus_lean::{
-    block::{Block, BlockBody},
+    block::{Block, BlockBody, BlockHeader},
     state::LeanState,
 };
 use ream_network_spec::networks::lean_network_spec;
@@ -8,9 +8,8 @@ use tree_hash::TreeHash;
 
 fn genesis_block(state_root: B256) -> Block {
     Block {
-        slot: 1,
-        // Round-robin proposer selection for genesis
-        proposer_index: 1,
+        slot: 0,
+        proposer_index: 0,
         parent_root: B256::ZERO,
         state_root,
         body: BlockBody::default(),
@@ -29,17 +28,14 @@ pub fn setup_genesis() -> (Block, LeanState) {
         let network_spec = lean_network_spec();
         (network_spec.num_validators, network_spec.genesis_time)
     };
-    let mut genesis_state = genesis_state(num_validators, genesis_time);
-    genesis_state
-        .historical_block_hashes
-        .push(B256::ZERO)
-        .expect("Failed to add genesis block hash");
-    genesis_state
-        .justified_slots
-        .push(true)
-        .expect("Failed to add genesis justified slot");
 
+    let mut genesis_state = genesis_state(num_validators, genesis_time);
     let genesis_block = genesis_block(genesis_state.tree_hash_root());
+
+    // Because of circular dependency, the `genesis_state` which is created first
+    // is not aware of the genesis block. So once the genesis_block is created,
+    // we need to set the `genesis_state.latest_block_header` to the genesis block.
+    genesis_state.latest_block_header = BlockHeader::from(genesis_block.clone());
 
     (genesis_block, genesis_state)
 }

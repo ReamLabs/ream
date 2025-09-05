@@ -1,14 +1,12 @@
 use std::collections::HashMap;
 
-use alloy_primitives::B256;
+use alloy_primitives::{B256, FixedBytes};
 use anyhow::anyhow;
 use ream_consensus_lean::{
     block::{Block, SignedBlock},
-    process_block,
     vote::SignedVote,
 };
 use ream_network_spec::networks::lean_network_spec;
-use ream_post_quantum_crypto::PQSignature;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info, warn};
 use tree_hash::TreeHash;
@@ -104,6 +102,15 @@ impl LeanChainService {
                             }
                         }
                         LeanChainServiceMessage::ProcessBlock { signed_block, is_trusted, need_gossip } => {
+                            info!(
+                                "Processing block: slot={}, validator_id={}, root={}, parent={}, votes={}",
+                                signed_block.message.slot,
+                                signed_block.message.proposer_index,
+                                signed_block.message.tree_hash_root(),
+                                signed_block.message.parent_root,
+                                signed_block.message.body.votes.len(),
+                            );
+
                             if let Err(err) = self.handle_process_block(signed_block.clone(), is_trusted).await {
                                 warn!("Failed to handle process block message: {err}");
                             }
@@ -113,6 +120,14 @@ impl LeanChainService {
                             }
                         }
                         LeanChainServiceMessage::ProcessVote { signed_vote, is_trusted, need_gossip } => {
+                            info!(
+                                "Processing vote: slot={}, validator_id={}, source={:?}, target={:?}",
+                                signed_vote.data.slot,
+                                signed_vote.data.validator_id,
+                                signed_vote.data.source,
+                                signed_vote.data.target
+                            );
+
                             if let Err(err) = self.handle_process_vote(signed_vote.clone(), is_trusted).await {
                                 warn!("Failed to handle process block message: {err}");
                             }
@@ -159,8 +174,7 @@ impl LeanChainService {
             // TODO: Validate the signature.
         }
 
-        let block = signed_block.message;
-        let block_hash = block.tree_hash_root();
+        let block_hash = signed_block.message.tree_hash_root();
 
         let mut lean_chain = self.lean_chain.write().await;
 
@@ -169,17 +183,21 @@ impl LeanChainService {
             return Ok(());
         }
 
-        match lean_chain.post_states.get(&block.parent_root) {
+        match lean_chain
+            .post_states
+            .get(&signed_block.message.parent_root)
+        {
             Some(parent_state) => {
-                let state = process_block(parent_state, &block)?;
+                let mut state = parent_state.clone();
+                state.state_transition(&signed_block, true, false)?;
 
-                for vote in &block.body.votes {
+                for vote in &signed_block.message.body.votes {
                     if !lean_chain.known_votes.contains(vote) {
                         lean_chain.known_votes.push(vote.clone());
                     }
                 }
 
-                lean_chain.chain.insert(block_hash, block);
+                lean_chain.chain.insert(block_hash, signed_block.message);
                 lean_chain.post_states.insert(block_hash, state);
 
                 lean_chain.recompute_head()?;
@@ -198,7 +216,7 @@ impl LeanChainService {
                             QueueItem::Block(block) => LeanChainServiceMessage::ProcessBlock {
                                 signed_block: SignedBlock {
                                     message: block,
-                                    signature: PQSignature::default(),
+                                    signature: FixedBytes::default(),
                                 },
                                 is_trusted: true,
                                 need_gossip: false,
@@ -206,7 +224,7 @@ impl LeanChainService {
                             QueueItem::Vote(vote) => LeanChainServiceMessage::ProcessVote {
                                 signed_vote: SignedVote {
                                     data: vote,
-                                    signature: PQSignature::default(),
+                                    signature: FixedBytes::default(),
                                 },
                                 is_trusted: true,
                                 need_gossip: false,
@@ -221,9 +239,9 @@ impl LeanChainService {
                 // If we have not yet seen the block's parent, ignore for now,
                 // process later once we actually see the parent
                 self.dependencies
-                    .entry(block.parent_root)
+                    .entry(signed_block.message.parent_root)
                     .or_default()
-                    .push(QueueItem::Block(block));
+                    .push(QueueItem::Block(signed_block.message));
             }
         }
 

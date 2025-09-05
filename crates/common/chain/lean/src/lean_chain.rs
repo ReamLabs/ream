@@ -1,11 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
-use alloy_primitives::B256;
+use alloy_primitives::{B256, FixedBytes};
 use anyhow::anyhow;
 use ream_consensus_lean::{
-    block::{Block, BlockBody},
+    block::{Block, BlockBody, SignedBlock},
     checkpoint::Checkpoint,
-    get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot, process_block,
+    get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot,
     state::LeanState,
     vote::Vote,
 };
@@ -15,8 +15,6 @@ use ream_storage::db::lean::LeanDB;
 use ream_sync::rwlock::{Reader, Writer};
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
-
-use crate::slot::get_current_slot;
 
 pub type LeanChainWriter = Writer<LeanChain>;
 pub type LeanChainReader = Reader<LeanChain>;
@@ -115,29 +113,36 @@ impl LeanChain {
             .post_states
             .get(&self.head)
             .ok_or_else(|| anyhow!("Post state not found for head: {}", self.head))?;
-        let mut new_block = Block {
-            slot,
-            proposer_index: slot % lean_network_spec().num_validators,
-            parent_root: self.head,
-            // Diverged from Python implementation: Using `B256::ZERO` instead of `None`)
-            state_root: B256::ZERO,
-            body: BlockBody::default(),
+        let mut new_block = SignedBlock {
+            message: Block {
+                slot,
+                proposer_index: slot % lean_network_spec().num_validators,
+                parent_root: self.head,
+                // Diverged from Python implementation: Using `B256::ZERO` instead of `None`)
+                state_root: B256::ZERO,
+                body: BlockBody::default(),
+            },
+            signature: FixedBytes::default(),
         };
         stop_timer(initialize_block_timer);
 
-        let mut state: LeanState;
+        // Clone state so we can apply the new block to get a new state
+        let mut state = head_state.clone();
+
+        // Apply state transition so the state is brought up to the expected slot
+        state.state_transition(&new_block, true, false)?;
 
         // Keep attempt to add valid votes from the list of available votes
         let add_votes_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_votes_to_block"]);
         loop {
-            state = process_block(head_state, &new_block)?;
+            state.process_attestations(&new_block.message.body.votes)?;
 
             let new_votes_to_add = self
                 .known_votes
                 .clone()
                 .into_iter()
                 .filter(|vote| vote.source.root == state.latest_justified.root)
-                .filter(|vote| !new_block.body.votes.contains(vote))
+                .filter(|vote| !new_block.message.body.votes.contains(vote))
                 .collect::<Vec<_>>();
 
             if new_votes_to_add.is_empty() {
@@ -146,6 +151,7 @@ impl LeanChain {
 
             for vote in new_votes_to_add {
                 new_block
+                    .message
                     .body
                     .votes
                     .push(vote)
@@ -154,16 +160,20 @@ impl LeanChain {
         }
         stop_timer(add_votes_timer);
 
+        // Update `state.latest_block_header.body_root` so that it accounts for
+        // the votes that we've added above
+        state.latest_block_header.body_root = new_block.message.body.tree_hash_root();
+
         // Compute the state root
         let compute_state_root_timer =
             start_timer_vec(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
-        new_block.state_root = state.tree_hash_root();
+        new_block.message.state_root = state.tree_hash_root();
         stop_timer(compute_state_root_timer);
 
-        Ok(new_block)
+        Ok(new_block.message)
     }
 
-    pub fn build_vote(&self) -> anyhow::Result<Vote> {
+    pub fn build_vote(&self, slot: u64) -> anyhow::Result<Vote> {
         let state = self
             .post_states
             .get(&self.head)
@@ -210,7 +220,7 @@ impl LeanChain {
             // This field will eventually be set by the `ValidatorService` with the actual validator
             // IDs.
             validator_id: 0,
-            slot: get_current_slot(),
+            slot,
             head: Checkpoint {
                 root: self.head,
                 slot: head_block.slot,
@@ -219,10 +229,7 @@ impl LeanChain {
                 root: target_block.tree_hash_root(),
                 slot: target_block.slot,
             },
-            source: Checkpoint {
-                root: state.latest_justified.root,
-                slot: state.latest_justified.slot,
-            },
+            source: state.latest_justified.clone(),
         })
     }
 

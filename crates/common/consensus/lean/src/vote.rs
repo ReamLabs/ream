@@ -1,4 +1,4 @@
-use ream_post_quantum_crypto::PQSignature;
+use alloy_primitives::FixedBytes;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
@@ -12,7 +12,7 @@ use crate::checkpoint::Checkpoint;
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedVote {
     pub data: Vote,
-    pub signature: PQSignature,
+    pub signature: FixedBytes<4000>,
 }
 
 /// Represents a vote in the Lean chain.

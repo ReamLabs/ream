@@ -1,5 +1,4 @@
-use alloy_primitives::B256;
-use ream_post_quantum_crypto::PQSignature;
+use alloy_primitives::{B256, FixedBytes};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{VariableList, typenum::U4096};
@@ -15,7 +14,7 @@ use crate::vote::Vote;
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedBlock {
     pub message: Block,
-    pub signature: PQSignature,
+    pub signature: FixedBytes<4000>,
 }
 
 /// Represents a block in the Lean chain.
