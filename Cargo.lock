@@ -5860,6 +5860,7 @@ dependencies = [
 name = "ream-validator-lean"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
  "ream-chain-lean",
  "ream-consensus-lean",
