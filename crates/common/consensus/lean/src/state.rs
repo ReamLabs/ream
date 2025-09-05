@@ -90,7 +90,7 @@ impl LeanState {
                 })?;
 
             // Insert the root and its justifications into the map
-            justifications_map.insert(root.clone(), justifications);
+            justifications_map.insert(*root, justifications);
         }
 
         Ok(justifications_map)
@@ -113,11 +113,9 @@ impl LeanState {
         let mut sorted_roots = justifications_map.keys().collect::<Vec<_>>();
         sorted_roots.sort();
 
-        for root_index in 0..sorted_roots.len() {
-            let root = sorted_roots[root_index];
-
+        for (root_index, root) in sorted_roots.iter().enumerate() {
             let justifications = justifications_map
-                .get(root)
+                .get(*root)
                 .ok_or_else(|| anyhow!("Root {root:?} not found in justifications_map"))?;
 
             ensure!(
@@ -135,7 +133,7 @@ impl LeanState {
                 })?;
 
             justifications_roots
-                .push(*root)
+                .push(**root)
                 .map_err(|err| anyhow!("Failed to add root to justifications_roots: {err:?}"))?;
         }
 
@@ -538,22 +536,20 @@ mod test {
         state.set_justifications(justifications).unwrap();
 
         assert_eq!(state.justifications_roots[0], B256::repeat_byte(0));
-        assert_eq!(state.justifications_validators.get(0).unwrap(), true);
+        assert!(state.justifications_validators.get(0).unwrap());
         assert_eq!(state.justifications_roots[1], B256::repeat_byte(1));
-        assert_eq!(
+        assert!(
             state
                 .justifications_validators
                 .get(VALIDATOR_REGISTRY_LIMIT as usize + 1)
-                .unwrap(),
-            true
+                .unwrap()
         );
         assert_eq!(state.justifications_roots[2], B256::repeat_byte(2));
-        assert_eq!(
+        assert!(
             state
                 .justifications_validators
                 .get(2 * VALIDATOR_REGISTRY_LIMIT as usize + 2)
-                .unwrap(),
-            true
+                .unwrap()
         );
     }
 
