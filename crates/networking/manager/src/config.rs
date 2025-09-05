@@ -11,11 +11,8 @@ pub struct ManagerConfig {
     pub socket_port: u16,
     pub discovery_port: u16,
     pub disable_discovery: bool,
-    pub data_dir: Option<PathBuf>,
-    pub ephemeral: bool,
     pub bootnodes: Bootnodes,
     pub checkpoint_sync_url: Option<Url>,
-    pub purge_db: bool,
     pub execution_endpoint: Option<Url>,
     pub execution_jwt_secret: Option<PathBuf>,
 }

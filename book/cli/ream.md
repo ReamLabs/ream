@@ -6,7 +6,7 @@ A Rust implementation of the Ethereum Beam Chain specification.
 $ ream --help
 ```
 ```txt
-Usage: ream <COMMAND>
+Usage: ream [OPTIONS] <COMMAND>
 
 Commands:
   lean_node        Start the lean node
@@ -17,6 +17,9 @@ Commands:
   help             Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help     Print help
-  -V, --version  Print version
+      --data-dir <DATA_DIR>  The directory for storing application data. If used together with --ephemeral, new child directory will be created.
+  -e, --ephemeral            Use new data directory, located in OS temporary directory. If used together with --data-dir, new directory will be created there instead.
+      --purge-db             Purges the database.
+  -h, --help                 Print help
+  -V, --version              Print version
 ```

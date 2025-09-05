@@ -44,21 +44,24 @@ pub const REDB_CACHE_SIZE: usize = 1_024 * 1_024 * 1_024;
 #[derive(Clone, Debug)]
 pub struct ReamDB {
     db: Arc<Database>,
+    data_dir: PathBuf,
 }
 
 impl ReamDB {
-    fn new(data_dir: PathBuf) -> Result<Self, StoreError> {
+    pub fn new(data_dir: PathBuf) -> Result<Self, StoreError> {
         let db = Builder::new()
             .set_cache_size(REDB_CACHE_SIZE)
             .create(data_dir.join(REDB_FILE))?;
 
-        Ok(ReamDB { db: Arc::new(db) })
+        Ok(ReamDB {
+            db: Arc::new(db),
+            data_dir,
+        })
     }
 
-    pub fn init_beacon_db(data_dir: PathBuf) -> Result<BeaconDB, StoreError> {
-        let ream_db = ReamDB::new(data_dir.clone())?;
+    pub fn init_beacon_db(&self) -> Result<BeaconDB, StoreError> {
+        let write_txn = self.db.begin_write()?;
 
-        let write_txn = ream_db.db.begin_write()?;
         write_txn.open_table(BEACON_BLOCK_TABLE)?;
         write_txn.open_table(BEACON_STATE_TABLE)?;
         write_txn.open_table(BLOCK_TIMELINESS_TABLE)?;
@@ -78,18 +81,17 @@ impl ReamDB {
         write_txn.open_table(UNREALIZED_JUSTIFED_CHECKPOINT_FIELD)?;
         write_txn.commit()?;
 
-        fs::create_dir_all(data_dir.join(BLOB_FOLDER_NAME))?;
+        fs::create_dir_all(self.data_dir.join(BLOB_FOLDER_NAME))?;
 
         Ok(BeaconDB {
-            db: ream_db.db.clone(),
-            data_dir,
+            db: self.db.clone(),
+            data_dir: self.data_dir.clone(),
         })
     }
 
-    pub fn init_lean_db(data_dir: PathBuf) -> Result<LeanDB, StoreError> {
-        let ream_db = ReamDB::new(data_dir)?;
-
-        let write_txn = ream_db.db.begin_write()?;
+    pub fn init_lean_db(&self) -> Result<LeanDB, StoreError> {
+        let write_txn = self.db.begin_write()?;
+        
         write_txn.open_table(LEAN_BLOCK_TABLE)?;
         write_txn.open_table(LEAN_STATE_TABLE)?;
         write_txn.open_table(LEAN_SLOT_INDEX_TABLE)?;
@@ -97,7 +99,7 @@ impl ReamDB {
         write_txn.commit()?;
 
         Ok(LeanDB {
-            db: ream_db.db.clone(),
+            db: self.db.clone(),
         })
     }
 }

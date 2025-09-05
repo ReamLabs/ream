@@ -11,10 +11,7 @@ use ream_consensus_lean::{
 };
 use ream_metrics::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
-use ream_storage::{
-    db::{ReamDB, lean::LeanDB},
-    dir::setup_data_dir,
-};
+use ream_storage::db::lean::LeanDB;
 use ream_sync::rwlock::{Reader, Writer};
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
@@ -237,25 +234,5 @@ impl LeanChain {
             .values()
             .find(|block| block.slot == slot)
             .cloned()
-    }
-}
-
-impl Default for LeanChain {
-    fn default() -> Self {
-        let ream_dir = setup_data_dir("lean_node", None, true)
-            .expect("Unable to initialize database directory");
-        let ream_db =
-            ReamDB::init_lean_db(ream_dir.clone()).expect("unable to init Ream Lean Database");
-        Self {
-            store: Arc::new(Mutex::new(ream_db)),
-            chain: HashMap::new(),
-            post_states: HashMap::new(),
-            known_votes: Vec::new(),
-            head: B256::default(),
-            safe_target: B256::default(),
-            new_votes: Vec::new(),
-            genesis_hash: B256::default(),
-            num_validators: 0,
-        }
     }
 }

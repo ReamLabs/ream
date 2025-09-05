@@ -386,11 +386,14 @@ impl LeanNetworkService {
 mod tests {
     use std::{net::Ipv4Addr, sync::Once, time::Duration};
 
+    use alloy_primitives::B256;
     use libp2p::{Multiaddr, multiaddr::Protocol};
     use ream_chain_lean::lean_chain::LeanChain;
     use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
+    use ream_storage::db::ReamDB;
     use ream_sync::rwlock::Writer;
-    use tokio::sync::mpsc;
+    use tempdir::TempDir;
+    use tokio::sync::{Mutex, mpsc};
     use tracing_test::traced_test;
 
     use super::*;
@@ -404,12 +407,33 @@ mod tests {
         });
     }
 
+    fn create_lean_chain() -> LeanChain {
+        let temp_dir = TempDir::new("lean_node_test").unwrap();
+        let temp_path = temp_dir.path().to_path_buf();
+
+        let ream_db = ReamDB::new(temp_path).expect("unable to init Ream Database");
+        let lean_db = ream_db
+            .init_lean_db()
+            .expect("unable to init Ream Lean Database");
+        LeanChain {
+            store: Arc::new(Mutex::new(lean_db)),
+            chain: HashMap::new(),
+            post_states: HashMap::new(),
+            known_votes: Vec::new(),
+            head: B256::default(),
+            safe_target: B256::default(),
+            new_votes: Vec::new(),
+            genesis_hash: B256::default(),
+            num_validators: 0,
+        }
+    }
+
     pub async fn setup_lean_node(
         socket_port: u16,
     ) -> anyhow::Result<(LeanNetworkService, Multiaddr)> {
         ensure_network_spec_init();
 
-        let (_, lean_chain_reader) = Writer::new(LeanChain::default());
+        let (_, lean_chain_reader) = Writer::new(create_lean_chain());
         let executor = ReamExecutor::new().expect("Failed to create executor");
         let config = Arc::new(LeanNetworkConfig {
             gossipsub_config: LeanGossipsubConfig::default(),

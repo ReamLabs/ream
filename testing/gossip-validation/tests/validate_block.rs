@@ -30,7 +30,8 @@ mod tests {
     pub async fn db_setup() -> (BeaconChain, CachedDB, B256) {
         let temp_dir = TempDir::new("ream_gossip_test").unwrap();
         let temp_path = temp_dir.path().to_path_buf();
-        let mut db = ReamDB::init_beacon_db(temp_path).unwrap();
+        let ream_db = ReamDB::new(temp_path).expect("unable to init Ream Database");
+        let mut db = ream_db.init_beacon_db().unwrap();
 
         let ancestor_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
             "./assets/sepolia/blocks/slot_8084160.ssz_snappy",

@@ -77,13 +77,21 @@ fn main() {
 
     let executor = ReamExecutor::new().expect("unable to create executor");
     let executor_clone = executor.clone();
+    let ream_dir = setup_data_dir(APP_NAME, cli.data_dir.clone(), cli.ephemeral)
+        .expect("Unable to initialize database directory");
+
+    if cli.purge_db {
+        reset_db(ream_dir.clone()).expect("Unable to delete database");
+    }
+
+    let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
 
     match cli.command {
         Commands::LeanNode(config) => {
-            executor_clone.spawn(async move { run_lean_node(*config, executor).await });
+            executor_clone.spawn(async move { run_lean_node(*config, executor, ream_db).await });
         }
         Commands::BeaconNode(config) => {
-            executor_clone.spawn(async move { run_beacon_node(*config, executor).await });
+            executor_clone.spawn(async move { run_beacon_node(*config, executor, ream_db).await });
         }
         Commands::ValidatorNode(config) => {
             executor_clone.spawn(async move { run_validator_node(*config, executor).await });
@@ -118,7 +126,7 @@ fn main() {
 /// is used by all services.
 ///
 /// Besides the shared state, each service holds the channels to communicate with each other.
-pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
+pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_db: ReamDB) {
     info!("starting up lean node...");
 
     // Initialize prometheus metrics
@@ -133,22 +141,17 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
 
     set_lean_network_spec(config.network);
 
-    let ream_dir = setup_data_dir(APP_NAME, config.data_dir.clone(), config.ephemeral)
-        .expect("Unable to initialize database directory");
-
-    if config.purge_db {
-        reset_db(ream_dir.clone()).expect("Unable to delete database");
-    }
-
-    let ream_db =
-        ReamDB::init_lean_db(ream_dir.clone()).expect("unable to init Ream Lean Database");
+    // Initialize the lean database
+    let lean_db = ream_db
+        .init_lean_db()
+        .expect("unable to init Ream Lean Database");
 
     info!("ream lean database initialized ");
 
     // Initialize the lean chain with genesis block and state.
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
     let (lean_chain_writer, lean_chain_reader) =
-        Writer::new(LeanChain::new(genesis_block, genesis_state, ream_db));
+        Writer::new(LeanChain::new(genesis_block, genesis_state, lean_db));
 
     // Initialize the services that will run in the lean node.
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
@@ -251,24 +254,20 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor) {
 /// At the end of setup, it starts 2 services:
 /// 1. The HTTP server that serves Beacon API, Engine API.
 /// 2. The P2P network that handles peer discovery (discv5), gossiping (gossipsub) and Req/Resp API.
-pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
+pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, ream_db: ReamDB) {
     info!("starting up beacon node...");
 
     set_beacon_network_spec(config.network.clone());
 
-    let ream_dir = setup_data_dir(APP_NAME, config.data_dir.clone(), config.ephemeral)
-        .expect("Unable to initialize database directory");
+    // Initialize the beacon database
+    let beacon_db = ream_db
+        .init_beacon_db()
+        .expect("unable to init Ream Beacon Database");
 
-    if config.purge_db {
-        reset_db(ream_dir.clone()).expect("Unable to delete database");
-    }
-
-    let ream_db = ReamDB::init_beacon_db(ream_dir.clone()).expect("unable to init Ream Database");
-
-    info!("ream database initialized ");
+    info!("ream beacon database initialized ");
 
     let _is_ws_verified = initialize_db_from_checkpoint(
-        ream_db.clone(),
+        beacon_db.clone(),
         config.checkpoint_sync_url.clone(),
         config.weak_subjectivity_checkpoint,
     )
@@ -277,13 +276,13 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
 
     info!("Database Initialization completed");
 
-    let oldest_root = ream_db
+    let oldest_root = beacon_db
         .slot_index_provider()
         .get_oldest_root()
         .expect("Failed to access slot index provider")
         .expect("No oldest root found");
     set_genesis_validator_root(
-        ream_db
+        beacon_db
             .beacon_state_provider()
             .get(oldest_root)
             .expect("Failed to access beacon state provider")
@@ -302,8 +301,8 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
     let network_manager = NetworkManagerService::new(
         executor.clone(),
         config.into(),
-        ream_db.clone(),
-        ream_dir,
+        beacon_db.clone(),
+        beacon_db.data_dir.clone(),
         operation_pool.clone(),
     )
     .await
@@ -320,7 +319,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor) {
     let http_future = executor.spawn(async move {
         start_server(
             server_config,
-            ream_db,
+            beacon_db,
             network_state,
             operation_pool,
             execution_engine,

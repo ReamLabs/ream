@@ -13,12 +13,6 @@ Options:
           Verbosity level [default: 3]
       --network <NETWORK>
           Provide a path to a YAML config file, or use 'ephemery' for the Ephemery network
-      --data-dir <DATA_DIR>
-          The directory for storing application data. If used together with --ephemeral, new child directory will be created.
-  -e, --ephemeral
-          Use new data directory, located in OS temporary directory. If used together with --data-dir, new directory will be created there instead.
-      --purge-db
-          Purges the database.
       --bootnodes <BOOTNODES>
           One or more comma-delimited base64-encoded ENR's of peers to initially connect to. Use 'default' to use the default bootnodes for the network. Use 'none' to disable bootnodes. [default: default]
       --validator-registry-path <VALIDATOR_REGISTRY_PATH>
