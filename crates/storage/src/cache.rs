@@ -35,7 +35,7 @@ pub struct SyncCommitteeKey {
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Default, Clone)]
-pub struct SyncCommitteeContribution {
+pub struct CacheSyncCommitteeContribution {
     pub slot: u64,
     pub beacon_block_root: FixedBytes<32>,
     pub subcommittee_index: u64,
@@ -51,7 +51,7 @@ pub struct CachedDB {
     pub seen_attestations: RwLock<LruCache<AtestationKey, ()>>,
     pub seen_bls_to_execution_change: RwLock<LruCache<AddressValidaterIndexIdentifier, ()>>,
     pub seen_sync_messages: RwLock<LruCache<SyncCommitteeKey, ()>>,
-    pub seen_sync_committee_contributions: RwLock<LruCache<SyncCommitteeContribution, ()>>,
+    pub seen_sync_committee_contributions: RwLock<LruCache<CacheSyncCommitteeContribution, ()>>,
     pub seen_voluntary_exit: RwLock<LruCache<u64, ()>>,
     pub seen_proposer_slashings: RwLock<LruCache<u64, ()>>,
     pub prior_seen_attester_slashing_indices: RwLock<LruCache<u64, ()>>,

@@ -1,5 +1,6 @@
+use alloy_primitives::FixedBytes;
 use anyhow::anyhow;
-use ream_bls::{PublicKey, traits::Verifiable};
+use ream_bls::{BLSSignature, PublicKey, traits::Verifiable};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::electra::beacon_state::BeaconState;
 use ream_consensus_misc::{
@@ -9,7 +10,7 @@ use ream_consensus_misc::{
     },
 };
 use ream_storage::{
-    cache::{CachedDB, SyncCommitteeContribution, SyncCommitteeKey},
+    cache::{CacheSyncCommitteeContribution, CachedDB, SyncCommitteeKey},
     tables::table::Table,
 };
 use ream_validator_beacon::{
@@ -17,7 +18,9 @@ use ream_validator_beacon::{
         DOMAIN_CONTRIBUTION_AND_PROOF, DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF,
         SYNC_COMMITTEE_SUBNET_COUNT,
     },
-    contribution_and_proof::SignedContributionAndProof,
+    contribution_and_proof::{
+        ContributionAndProof, SignedContributionAndProof, SyncCommitteeContribution,
+    },
     sync_committee::{SyncAggregatorSelectionData, is_sync_committee_aggregator},
 };
 
@@ -107,7 +110,7 @@ pub async fn validate_sync_committee_contribution_and_proof(
 
     // [IGNORE] if a valid sync committee contribution with equal slot, beacon_block_root and
     // subcommittee_index has already been seen.
-    let sync_contribution = SyncCommitteeContribution {
+    let sync_contribution = CacheSyncCommitteeContribution {
         slot: contribution.slot,
         beacon_block_root: contribution.beacon_block_root,
         subcommittee_index: contribution.subcommittee_index,
@@ -133,7 +136,6 @@ pub async fn validate_sync_committee_contribution_and_proof(
     // [IGNORE] if a valid sync committee contribution has already been seen from the
     // aggregator with index contribution_and_proof.aggregator_index for the slot contribution.slot
     // and subcommittee index contribution.subcommittee_index.
-
     let sync_committee_key = SyncCommitteeKey {
         subnet_id: contribution.subcommittee_index,
         slot: contribution.slot,
@@ -159,75 +161,43 @@ pub async fn validate_sync_committee_contribution_and_proof(
 
     // [REJECT] if contribution_and_proof.selection_proof is not a valid signature of the
     // SyncAggregatorSelectionData derived from the contribution of the validator
-    let sync_aggregator_selection_data = SyncAggregatorSelectionData {
-        slot: contribution.slot,
-        subcommittee_index: contribution.subcommittee_index,
-    };
-
-    // need to confirm this
-    let domain = compute_domain(
-        DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF,
-        Some(state.fork.current_version),
-        None,
-    );
-
-    let signing_root = compute_signing_root(&sync_aggregator_selection_data, domain);
-
-    let is_valid_selection_proof = contribution_and_proof
-        .selection_proof
-        .verify(validator_pubkey, signing_root.as_slice())?;
-
-    if !is_valid_selection_proof {
+    if !check_sync_committee_selection_data(
+        state.fork.current_version,
+        &SyncAggregatorSelectionData {
+            slot: contribution.slot,
+            subcommittee_index: contribution.subcommittee_index,
+        },
+        &contribution_and_proof.selection_proof,
+        validator_pubkey,
+    )? {
         return Ok(ValidationResult::Reject(
             "The selection proof is not a valid signature".to_string(),
         ));
     }
 
-    let domain = compute_domain(
-        DOMAIN_SYNC_COMMITTEE,
-        Some(state.fork.current_version),
-        None,
-    );
-
-    let signing_root = compute_signing_root(contribution.beacon_block_root, domain);
-
     // [REJECT] if aggregate signature is not valid for the message beacon_block_root and aggregate
     // pubkey
-    match contribution.signature.fast_aggregate_verify(
-        sync_committee_validators
-            .iter()
-            .collect::<Vec<&PublicKey>>(),
-        signing_root.as_slice(),
-    ) {
-        Ok(false) => {
-            return Ok(ValidationResult::Reject(
-                "The aggregate signature is not valid".to_string(),
-            ));
-        }
-        Ok(true) => {}
-        Err(e) => return Err(anyhow!("Error verifying aggregate signature: {e}")),
+    if !check_sync_committee(
+        state.fork.current_version,
+        &contribution,
+        &sync_committee_validators,
+        &contribution.signature,
+    )? {
+        return Ok(ValidationResult::Reject(
+            "The aggregate signature is not valid".to_string(),
+        ));
     }
 
     // [REJECT] if aggregator signature of signed_contribution_and_proof.signature is not valid.
-
-    let domain = compute_domain(
-        DOMAIN_CONTRIBUTION_AND_PROOF,
-        Some(state.fork.current_version),
-        None,
-    );
-
-    let signing_root = compute_signing_root(contribution_and_proof, domain);
-    match signed_contribution_and_proof
-        .signature
-        .verify(validator_pubkey, signing_root.as_slice())
-    {
-        Ok(false) => {
-            return Ok(ValidationResult::Reject(
-                "The aggregator signature is not valid".to_string(),
-            ));
-        }
-        Ok(true) => {}
-        Err(e) => return Err(anyhow!("Error verifying signature: {e}")),
+    if !check_contribution_and_proof(
+        state.fork.current_version,
+        contribution_and_proof,
+        &signed_contribution_and_proof.signature,
+        validator_pubkey,
+    )? {
+        return Ok(ValidationResult::Reject(
+            "The aggregator signature is not valid".to_string(),
+        ));
     }
 
     Ok(ValidationResult::Accept)
@@ -253,4 +223,47 @@ pub fn get_sync_subcommittee_pubkeys(
 
     let end = start + sync_subcommittee_size as usize;
     sync_committee.public_keys[start..end].to_vec()
+}
+
+fn check_sync_committee_selection_data(
+    fork_version: FixedBytes<4>,
+    selection_data: &SyncAggregatorSelectionData,
+    signature: &BLSSignature,
+    validator_pubkey: &PublicKey,
+) -> anyhow::Result<bool> {
+    let domain = compute_domain(
+        DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF,
+        Some(fork_version),
+        None,
+    );
+
+    let signing_root = compute_signing_root(&selection_data, domain);
+
+    Ok(signature.verify(validator_pubkey, signing_root.as_slice())?)
+}
+
+fn check_sync_committee(
+    fork_version: FixedBytes<4>,
+    contribution: &SyncCommitteeContribution,
+    validators: &[PublicKey],
+    signature: &BLSSignature,
+) -> anyhow::Result<bool> {
+    let domain = compute_domain(DOMAIN_SYNC_COMMITTEE, Some(fork_version), None);
+
+    let signing_root = compute_signing_root(contribution.beacon_block_root, domain);
+    Ok(signature.fast_aggregate_verify(
+        validators.iter().collect::<Vec<&PublicKey>>(),
+        signing_root.as_slice(),
+    )?)
+}
+
+fn check_contribution_and_proof(
+    fork_version: FixedBytes<4>,
+    contribution_and_proof: &ContributionAndProof,
+    signature: &BLSSignature,
+    validator_pubkey: &PublicKey,
+) -> anyhow::Result<bool> {
+    let domain = compute_domain(DOMAIN_CONTRIBUTION_AND_PROOF, Some(fork_version), None);
+    let signing_root = compute_signing_root(contribution_and_proof, domain);
+    Ok(signature.verify(validator_pubkey, signing_root.as_slice())?)
 }
