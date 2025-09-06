@@ -182,6 +182,7 @@ impl LeanNetworkService {
         ));
         multi_addr.push(Protocol::QuicV1);
         info!("Listening on {multi_addr:?}");
+        println!("local_peer_id={:?}", lean_network_service.local_peer_id());
 
         lean_network_service
             .swarm
