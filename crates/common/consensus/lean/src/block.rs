@@ -69,5 +69,5 @@ impl From<Block> for BlockHeader {
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]
 pub struct BlockBody {
-    pub votes: VariableList<Vote, U4096>,
+    pub attestations: VariableList<Vote, U4096>,
 }

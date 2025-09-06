@@ -79,7 +79,7 @@ impl ValidatorService {
                                     new_block.slot,
                                     new_block.tree_hash_root(),
                                     new_block.parent_root,
-                                    new_block.body.votes.len(),
+                                    new_block.body.attestations.len(),
                                     new_block.state_root
                                 );
 

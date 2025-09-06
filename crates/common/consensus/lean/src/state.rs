@@ -277,17 +277,17 @@ impl LeanState {
 
     fn process_operations(&mut self, body: &BlockBody) -> anyhow::Result<()> {
         // Process attestations
-        self.process_attestations(&body.votes)?;
+        self.process_attestations(&body.attestations)?;
         Ok(())
     }
 
     pub fn process_attestations(
         &mut self,
-        votes: &VariableList<Vote, U4096>,
+        attestations: &VariableList<Vote, U4096>,
     ) -> anyhow::Result<()> {
         let mut justifications_map = self.get_justifications()?;
 
-        for vote in votes {
+        for vote in attestations {
             // Ignore votes whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot

@@ -108,7 +108,7 @@ impl LeanChainService {
                                 signed_block.message.proposer_index,
                                 signed_block.message.tree_hash_root(),
                                 signed_block.message.parent_root,
-                                signed_block.message.body.votes.len(),
+                                signed_block.message.body.attestations.len(),
                             );
 
                             if let Err(err) = self.handle_process_block(signed_block.clone(), is_trusted).await {
@@ -191,7 +191,7 @@ impl LeanChainService {
                 let mut state = parent_state.clone();
                 state.state_transition(&signed_block, true, false)?;
 
-                for vote in &signed_block.message.body.votes {
+                for vote in &signed_block.message.body.attestations {
                     if !lean_chain.known_votes.contains(vote) {
                         lean_chain.known_votes.push(vote.clone());
                     }

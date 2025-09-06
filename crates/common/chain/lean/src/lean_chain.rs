@@ -135,14 +135,14 @@ impl LeanChain {
         // Keep attempt to add valid votes from the list of available votes
         let add_votes_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_votes_to_block"]);
         loop {
-            state.process_attestations(&new_block.message.body.votes)?;
+            state.process_attestations(&new_block.message.body.attestations)?;
 
             let new_votes_to_add = self
                 .known_votes
                 .clone()
                 .into_iter()
                 .filter(|vote| vote.source.root == state.latest_justified.root)
-                .filter(|vote| !new_block.message.body.votes.contains(vote))
+                .filter(|vote| !new_block.message.body.attestations.contains(vote))
                 .collect::<Vec<_>>();
 
             if new_votes_to_add.is_empty() {
@@ -153,7 +153,7 @@ impl LeanChain {
                 new_block
                     .message
                     .body
-                    .votes
+                    .attestations
                     .push(vote)
                     .map_err(|err| anyhow!("Failed to add vote to new_block: {err:?}"))?;
             }
