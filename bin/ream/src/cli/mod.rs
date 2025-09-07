@@ -1,7 +1,7 @@
 pub mod account_manager;
 pub mod beacon_node;
 pub mod constants;
-pub mod generate_network_key;
+pub mod generate_private_key;
 pub mod import_keystores;
 pub mod lean_node;
 pub mod validator_node;
@@ -14,7 +14,7 @@ use ream_node::version::FULL_VERSION;
 
 use crate::cli::{
     account_manager::AccountManagerConfig, beacon_node::BeaconNodeConfig,
-    generate_network_key::GenerateNetworkKeyConfig, lean_node::LeanNodeConfig,
+    generate_private_key::GeneratePrivateKeyConfig, lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig, voluntary_exit::VoluntaryExitConfig,
 };
 
@@ -64,8 +64,8 @@ pub enum Commands {
     VoluntaryExit(Box<VoluntaryExitConfig>),
 
     /// Generate a network key for lean node
-    #[command(name = "generate_network_key")]
-    GenerateNetworkKey(Box<GenerateNetworkKeyConfig>),
+    #[command(name = "generate_private_key")]
+    GeneratePrivateKey(Box<GeneratePrivateKeyConfig>),
 }
 
 #[cfg(test)]

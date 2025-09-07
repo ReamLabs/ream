@@ -69,7 +69,7 @@ pub struct LeanNetworkConfig {
     pub gossipsub_config: LeanGossipsubConfig,
     pub socket_address: IpAddr,
     pub socket_port: u16,
-    pub secret_key_path: Option<std::path::PathBuf>,
+    pub private_key_path: Option<std::path::PathBuf>,
 }
 
 /// NetworkService is responsible for the following:
@@ -103,7 +103,7 @@ impl LeanNetworkService {
             connection_limits::Behaviour::new(limits)
         };
 
-        let local_key = if let Some(ref path) = network_config.secret_key_path {
+        let local_key = if let Some(ref path) = network_config.private_key_path {
             let bytes = fs::read(path).map_err(|err| {
                 anyhow!("failed to read secret key file {}: {err}", path.display())
             })?;
@@ -439,7 +439,7 @@ mod tests {
             gossipsub_config: LeanGossipsubConfig::default(),
             socket_address: Ipv4Addr::new(127, 0, 0, 1).into(),
             socket_port,
-            secret_key_path: None,
+            private_key_path: None,
         });
         let (sender, _receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
         let (_outbound_request_sender_unused, outbound_request_receiver) =

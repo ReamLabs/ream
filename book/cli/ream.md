@@ -14,7 +14,7 @@ Commands:
   validator_node        Start the validator node
   account_manager       Manage validator accounts
   voluntary_exit        Perform voluntary exit for a validator
-  generate_network_key  Generate a network key for lean node
+  generate_private_key  Generate a network key for lean node
   help                  Print this message or the help of the given subcommand(s)
 
 Options:

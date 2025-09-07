@@ -4,5 +4,5 @@
   - [`ream validator_node`](./ream/validator_node.md)
   - [`ream account_manager`](./ream/account_manager.md)
   - [`ream voluntary_exit`](./ream/voluntary_exit.md)
-  - [`ream generate_network_key`](./ream/generate_network_key.md)
+  - [`ream generate_private_key`](./ream/generate_private_key.md)
 

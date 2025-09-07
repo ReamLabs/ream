@@ -12,7 +12,7 @@ use ream::cli::{
     Cli, Commands,
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
-    generate_network_key::GenerateNetworkKeyConfig,
+    generate_private_key::GeneratePrivateKeyConfig,
     import_keystores::{load_keystore_directory, load_password_from_config, process_password},
     lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig,
@@ -104,8 +104,8 @@ fn main() {
         Commands::VoluntaryExit(config) => {
             executor_clone.spawn(async move { run_voluntary_exit(*config).await });
         }
-        Commands::GenerateNetworkKey(config) => {
-            executor_clone.spawn(async move { run_generate_network_key(*config).await });
+        Commands::GeneratePrivateKey(config) => {
+            executor_clone.spawn(async move { run_generate_private_key(*config).await });
         }
     }
 
@@ -192,7 +192,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             gossipsub_config,
             socket_address: config.socket_address,
             socket_port: config.socket_port,
-            secret_key_path: config.secret_key_path,
+            private_key_path: config.private_key_path,
         }),
         lean_chain_reader.clone(),
         executor.clone(),
@@ -482,9 +482,9 @@ fn get_current_epoch(genesis_time: u64) -> u64 {
 /// Generates a new secp256k1 keypair and saves it to the specified path in protobuf encoding.
 ///
 /// This allows the lean node to reuse the same network identity across restarts by loading
-/// the saved key with the --secret-key-path flag.
-pub async fn run_generate_network_key(config: GenerateNetworkKeyConfig) {
-    info!("Generating new secp256k1 network key...");
+/// the saved key with the --private-key-path flag.
+pub async fn run_generate_private_key(config: GeneratePrivateKeyConfig) {
+    info!("Generating new secp256k1 private key...");
 
     if let Some(parent) = config.output_path.parent() {
         fs::create_dir_all(parent).expect("Failed to create parent directories");
@@ -499,7 +499,7 @@ pub async fn run_generate_network_key(config: GenerateNetworkKeyConfig) {
     .expect("Failed to write keypair to file");
 
     info!(
-        "Network key generated successfully and saved to: {}",
+        "secp256k1 private key generated successfully and saved to: {}",
         config.output_path.display()
     );
 

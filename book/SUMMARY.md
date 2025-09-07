@@ -11,6 +11,6 @@
     - [`ream validator_node`](./cli/ream/validator_node.md)
     - [`ream account_manager`](./cli/ream/account_manager.md)
     - [`ream voluntary_exit`](./cli/ream/voluntary_exit.md)
-    - [`ream generate_network_key`](./cli/ream/generate_network_key.md)
+    - [`ream generate_private_key`](./cli/ream/generate_private_key.md)
 - [Changelog](./Changelog.md) <!-- CLI_REFERENCE END -->
 

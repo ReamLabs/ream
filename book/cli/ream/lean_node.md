@@ -17,7 +17,7 @@ Options:
           One or more comma-delimited base64-encoded ENR's of peers to initially connect to. Use 'default' to use the default bootnodes for the network. Use 'none' to disable bootnodes. [default: default]
       --validator-registry-path <VALIDATOR_REGISTRY_PATH>
           The path to the validator registry
-      --secret-key-path <SECRET_KEY_PATH>
+      --private-key-path <PRIVATE_KEY_PATH>
           The path to the protobuf encoded secp256k1 libp2p key
       --socket-address <SOCKET_ADDRESS>
           Set P2P socket address [default: 0.0.0.0]
