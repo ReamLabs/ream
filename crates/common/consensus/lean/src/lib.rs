@@ -9,7 +9,11 @@ use std::collections::HashMap;
 use alloy_primitives::B256;
 use anyhow::anyhow;
 
-use crate::{block::Block, state::LeanState, vote::Vote};
+use crate::{
+    block::Block,
+    state::LeanState,
+    vote::{SignedVote, Vote},
+};
 
 /// We allow justification of slots either <= 5 or a perfect square or oblong after
 /// the latest finalized slot. This gives us a backoff technique and ensures
@@ -40,7 +44,7 @@ pub fn get_latest_justified_hash(post_states: &HashMap<B256, LeanState>) -> Opti
 pub fn get_fork_choice_head(
     blocks: &HashMap<B256, Block>,
     provided_root: &B256,
-    votes: &[Vote],
+    votes: &[SignedVote],
     min_score: u64,
 ) -> anyhow::Result<B256> {
     let mut root = *provided_root;
@@ -58,14 +62,14 @@ pub fn get_fork_choice_head(
 
     // Sort votes by ascending slots to ensure that new votes are inserted last
     let mut sorted_votes = votes.to_owned();
-    sorted_votes.sort_by_key(|vote| vote.slot);
+    sorted_votes.sort_by_key(|vote| vote.data.slot);
 
     // Prepare a map of validator_id -> their vote
     let mut latest_votes = HashMap::<u64, Vote>::new();
 
     for vote in sorted_votes {
-        let validator_id = vote.validator_id;
-        latest_votes.insert(validator_id, vote.clone());
+        let validator_id = vote.data.validator_id;
+        latest_votes.insert(validator_id, vote.data.clone());
     }
 
     // For each block, count the number of votes for that block. A vote

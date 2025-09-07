@@ -7,7 +7,7 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot,
     state::LeanState,
-    vote::Vote,
+    vote::{SignedVote, Vote},
 };
 use ream_metrics::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
@@ -32,9 +32,9 @@ pub struct LeanChain {
     /// {block_hash: post_state} for all blocks that we know about.
     pub post_states: HashMap<B256, LeanState>,
     /// Votes that we have received and taken into account.
-    pub known_votes: Vec<Vote>,
+    pub known_votes: Vec<SignedVote>,
     /// Votes that we have received but not yet taken into account.
-    pub new_votes: Vec<Vote>,
+    pub new_votes: Vec<SignedVote>,
     /// Initialize the chain with the genesis block.
     pub genesis_hash: B256,
     /// Number of validators.
@@ -141,7 +141,7 @@ impl LeanChain {
                 .known_votes
                 .clone()
                 .into_iter()
-                .filter(|vote| vote.source.root == state.latest_justified.root)
+                .filter(|vote| vote.data.source.root == state.latest_justified.root)
                 .filter(|vote| !new_block.message.body.attestations.contains(vote))
                 .collect::<Vec<_>>();
 

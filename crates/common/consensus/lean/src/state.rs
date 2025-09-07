@@ -19,7 +19,7 @@ use crate::{
     checkpoint::Checkpoint,
     config::Config,
     is_justifiable_slot,
-    vote::Vote,
+    vote::SignedVote,
 };
 
 /// Represents the state of the Lean chain.
@@ -283,11 +283,12 @@ impl LeanState {
 
     pub fn process_attestations(
         &mut self,
-        attestations: &VariableList<Vote, U4096>,
+        attestations: &VariableList<SignedVote, U4096>,
     ) -> anyhow::Result<()> {
         let mut justifications_map = self.get_justifications()?;
 
-        for vote in attestations {
+        for signed_vote in attestations {
+            let vote = &signed_vote.data;
             // Ignore votes whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot

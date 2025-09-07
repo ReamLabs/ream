@@ -221,14 +221,13 @@ impl LeanChainService {
                                 is_trusted: true,
                                 need_gossip: false,
                             },
-                            QueueItem::Vote(vote) => LeanChainServiceMessage::ProcessVote {
-                                signed_vote: SignedVote {
-                                    data: vote,
-                                    signature: FixedBytes::default(),
-                                },
-                                is_trusted: true,
-                                need_gossip: false,
-                            },
+                            QueueItem::SignedVote(signed_vote) => {
+                                LeanChainServiceMessage::ProcessVote {
+                                    signed_vote,
+                                    is_trusted: true,
+                                    need_gossip: false,
+                                }
+                            }
                         };
 
                         self.sender.send(message)?;
@@ -257,25 +256,23 @@ impl LeanChainService {
             // TODO: Validate the signature.
         }
 
-        let vote = signed_vote.data;
-
         let lean_chain = self.lean_chain.read().await;
-        let is_known_vote = lean_chain.known_votes.contains(&vote);
-        let is_new_vote = lean_chain.new_votes.contains(&vote);
+        let is_known_vote = lean_chain.known_votes.contains(&signed_vote);
+        let is_new_vote = lean_chain.new_votes.contains(&signed_vote);
 
         if is_known_vote || is_new_vote {
             // Do nothing
-        } else if lean_chain.chain.contains_key(&vote.head.root) {
+        } else if lean_chain.chain.contains_key(&signed_vote.data.head.root) {
             drop(lean_chain);
 
             // We should acquire another write lock
             let mut lean_chain = self.lean_chain.write().await;
-            lean_chain.new_votes.push(vote);
+            lean_chain.new_votes.push(signed_vote);
         } else {
             self.dependencies
-                .entry(vote.head.root)
+                .entry(signed_vote.data.head.root)
                 .or_default()
-                .push(QueueItem::Vote(vote));
+                .push(QueueItem::SignedVote(signed_vote));
         }
 
         Ok(())
