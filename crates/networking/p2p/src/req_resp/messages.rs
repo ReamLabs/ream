@@ -28,5 +28,5 @@ impl RequestMessage {
 #[ssz(enum_behaviour = "transparent")]
 pub enum ResponseMessage {
     Beacon(Arc<BeaconResponseMessage>),
-    Lean(LeanResponseMessage),
+    Lean(Arc<LeanResponseMessage>),
 }

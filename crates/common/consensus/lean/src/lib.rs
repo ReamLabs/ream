@@ -4,7 +4,7 @@ pub mod config;
 pub mod state;
 pub mod vote;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::anyhow;
@@ -44,7 +44,7 @@ pub fn get_latest_justified_hash(post_states: &HashMap<B256, LeanState>) -> Opti
 pub fn get_fork_choice_head(
     blocks: &HashMap<B256, Block>,
     provided_root: &B256,
-    votes: &[SignedVote],
+    votes: &Vec<Arc<SignedVote>>,
     min_score: u64,
 ) -> anyhow::Result<B256> {
     let mut root = *provided_root;

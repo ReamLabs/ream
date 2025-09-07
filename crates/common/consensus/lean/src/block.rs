@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use alloy_primitives::{B256, FixedBytes};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -69,5 +71,5 @@ impl From<Block> for BlockHeader {
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]
 pub struct BlockBody {
-    pub attestations: VariableList<SignedVote, U4096>,
+    pub attestations: VariableList<Arc<SignedVote>, U4096>,
 }

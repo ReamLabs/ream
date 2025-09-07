@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
@@ -283,7 +283,7 @@ impl LeanState {
 
     pub fn process_attestations(
         &mut self,
-        attestations: &VariableList<SignedVote, U4096>,
+        attestations: &VariableList<Arc<SignedVote>, U4096>,
     ) -> anyhow::Result<()> {
         let mut justifications_map = self.get_justifications()?;
 

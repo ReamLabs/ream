@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
-use alloy_primitives::{B256, FixedBytes};
+use alloy_primitives::B256;
 use anyhow::anyhow;
 use ream_consensus_lean::{
     block::{Block, SignedBlock},
@@ -111,7 +111,7 @@ impl LeanChainService {
                                 signed_block.message.body.attestations.len(),
                             );
 
-                            if let Err(err) = self.handle_process_block(signed_block.clone(), is_trusted).await {
+                            if let Err(err) = self.handle_process_block(Arc::clone(&signed_block), is_trusted).await {
                                 warn!("Failed to handle process block message: {err}");
                             }
 
@@ -128,7 +128,7 @@ impl LeanChainService {
                                 signed_vote.data.target
                             );
 
-                            if let Err(err) = self.handle_process_vote(signed_vote.clone(), is_trusted).await {
+                            if let Err(err) = self.handle_process_vote(Arc::clone(&signed_vote), is_trusted).await {
                                 warn!("Failed to handle process block message: {err}");
                             }
 
@@ -167,7 +167,7 @@ impl LeanChainService {
 
     async fn handle_process_block(
         &mut self,
-        signed_block: SignedBlock,
+        signed_block: Arc<SignedBlock>,
         is_trusted: bool,
     ) -> anyhow::Result<()> {
         if !is_trusted {
@@ -197,7 +197,9 @@ impl LeanChainService {
                     }
                 }
 
-                lean_chain.chain.insert(block_hash, signed_block.message);
+                lean_chain
+                    .chain
+                    .insert(block_hash, signed_block.message.clone());
                 lean_chain.post_states.insert(block_hash, state);
 
                 lean_chain.recompute_head()?;
@@ -213,14 +215,13 @@ impl LeanChainService {
                 if let Some(queue_items) = self.dependencies.remove(&block_hash) {
                     for item in queue_items {
                         let message = match item {
-                            QueueItem::Block(block) => LeanChainServiceMessage::ProcessBlock {
-                                signed_block: SignedBlock {
-                                    message: block,
-                                    signature: FixedBytes::default(),
-                                },
-                                is_trusted: true,
-                                need_gossip: false,
-                            },
+                            QueueItem::Block(dependency_signed_block) => {
+                                LeanChainServiceMessage::ProcessBlock {
+                                    signed_block: dependency_signed_block,
+                                    is_trusted: true,
+                                    need_gossip: false,
+                                }
+                            }
                             QueueItem::SignedVote(signed_vote) => {
                                 LeanChainServiceMessage::ProcessVote {
                                     signed_vote,
@@ -240,7 +241,7 @@ impl LeanChainService {
                 self.dependencies
                     .entry(signed_block.message.parent_root)
                     .or_default()
-                    .push(QueueItem::Block(signed_block.message));
+                    .push(QueueItem::Block(signed_block));
             }
         }
 
@@ -249,7 +250,7 @@ impl LeanChainService {
 
     async fn handle_process_vote(
         &mut self,
-        signed_vote: SignedVote,
+        signed_vote: Arc<SignedVote>,
         is_trusted: bool,
     ) -> anyhow::Result<()> {
         if !is_trusted {

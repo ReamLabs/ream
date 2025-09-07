@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use alloy_primitives::FixedBytes;
 use anyhow::anyhow;
 use ream_chain_lean::{
@@ -84,10 +86,10 @@ impl ValidatorService {
                                 );
 
                                 // TODO: Sign the block with the keystore.
-                                let signed_block = SignedBlock {
+                                let signed_block = Arc::new(SignedBlock {
                                     message: new_block,
                                     signature: FixedBytes::default(),
-                                };
+                                });
 
                                 // Send block to the LeanChainService.
                                 self.chain_sender
@@ -117,10 +119,11 @@ impl ValidatorService {
                             let signed_votes = self.keystores.iter().map(|keystore| {
                                 let mut vote = vote_template.clone();
                                 vote.validator_id = keystore.validator_id;
-                                SignedVote {
+
+                                Arc::new(SignedVote {
                                     data: vote,
                                     signature: FixedBytes::default(),
-                                }
+                                })
                             }).collect::<Vec<_>>();
 
                             for signed_vote in signed_votes {

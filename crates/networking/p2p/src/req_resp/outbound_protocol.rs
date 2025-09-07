@@ -2,6 +2,7 @@ use std::{
     future::Future,
     io::{Cursor, ErrorKind, Read, Write},
     pin::Pin,
+    sync::Arc,
 };
 
 use alloy_primitives::aliases::B32;
@@ -251,14 +252,14 @@ impl Decoder for OutboundSSZSnappyCodec {
                                     LeanStatus::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
                                 ),
                                 LeanSupportedProtocol::BlocksByRootV1 => {
-                                    LeanResponseMessage::BlocksByRoot(
+                                    LeanResponseMessage::BlocksByRoot(Arc::new(
                                         SignedBlock::from_ssz_bytes(&buf)
                                             .map_err(ReqRespError::from)?,
-                                    )
+                                    ))
                                 }
                             };
                             Ok(Some(RespMessage::Response(Box::new(
-                                ResponseMessage::Lean(response_message),
+                                ResponseMessage::Lean(Arc::new(response_message)),
                             ))))
                         }
                     }
