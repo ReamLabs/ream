@@ -5737,6 +5737,7 @@ dependencies = [
  "ream-node",
  "ream-operation-pool",
  "ream-p2p",
+ "ream-rpc-common",
  "ream-storage",
  "serde",
  "serde_json",
@@ -5744,6 +5745,17 @@ dependencies = [
  "thiserror 2.0.12",
  "tracing",
  "tree_hash",
+]
+
+[[package]]
+name = "ream-rpc-common"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "ream-api-types-beacon",
+ "ream-api-types-common",
+ "ream-node",
+ "serde",
 ]
 
 [[package]]
@@ -5758,6 +5770,7 @@ dependencies = [
  "ream-chain-lean",
  "ream-consensus-lean",
  "ream-p2p",
+ "ream-rpc-common",
  "tokio",
  "tracing",
 ]

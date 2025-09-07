@@ -33,6 +33,7 @@ members = [
     "crates/networking/p2p",
     "crates/networking/syncer",
     "crates/rpc/beacon",
+    "crates/rpc/common",
     "crates/rpc/lean",
     "crates/runtime",
     "crates/storage",
@@ -148,6 +149,7 @@ ream-p2p = { path = "crates/networking/p2p" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-post-quantum-crypto = { path = "crates/crypto/post_quantum" }
 ream-rpc-beacon = { path = "crates/rpc/beacon" }
+ream-rpc-common = { path = "crates/rpc/common" }
 ream-rpc-lean = { path = "crates/rpc/lean" }
 ream-storage = { path = "crates/storage" }
 ream-sync = { path = "crates/common/sync" }

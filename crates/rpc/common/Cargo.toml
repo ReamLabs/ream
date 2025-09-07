@@ -1,5 +1,5 @@
 [package]
-name = "ream-rpc-lean"
+name = "ream-rpc-common"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -11,15 +11,9 @@ version.workspace = true
 
 [dependencies]
 actix-web.workspace = true
-libp2p.workspace = true
-parking_lot.workspace = true
-tokio.workspace = true
-tracing.workspace = true
+serde.workspace = true
 
 #ream-dependencies
+ream-api-types-beacon.workspace = true
 ream-api-types-common.workspace = true
-ream-api-types-lean.workspace = true
-ream-chain-lean.workspace = true
-ream-consensus-lean.workspace = true
-ream-p2p.workspace = true
-ream-rpc-common.workspace = true
+ream-node.workspace = true

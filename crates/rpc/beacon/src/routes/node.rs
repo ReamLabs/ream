@@ -1,10 +1,10 @@
 use actix_web::web::ServiceConfig;
+use ream_rpc_common::handlers::version::get_version;
 
 use crate::handlers::{
     identity::get_identity,
     peers::{get_peer, get_peer_count},
     syncing::get_syncing_status,
-    version::get_version,
 };
 
 pub fn register_node_routes(cfg: &mut ServiceConfig) {
