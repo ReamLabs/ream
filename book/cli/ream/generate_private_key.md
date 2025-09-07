@@ -1,6 +1,6 @@
 # ream generate_private_key
 
-Generate a network key for lean node
+Generate a secp256k1 keypair for lean node
 
 ```bash
 $ ream generate_private_key --help

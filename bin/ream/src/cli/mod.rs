@@ -63,7 +63,7 @@ pub enum Commands {
     #[command(name = "voluntary_exit")]
     VoluntaryExit(Box<VoluntaryExitConfig>),
 
-    /// Generate a network key for lean node
+    /// Generate a secp256k1 keypair for lean node
     #[command(name = "generate_private_key")]
     GeneratePrivateKey(Box<GeneratePrivateKeyConfig>),
 }
