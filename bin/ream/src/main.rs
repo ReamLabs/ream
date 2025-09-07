@@ -486,7 +486,15 @@ fn get_current_epoch(genesis_time: u64) -> u64 {
 pub async fn run_generate_private_key(config: GeneratePrivateKeyConfig) {
     info!("Generating new secp256k1 private key...");
 
-    fs::create_dir_all(&config.output_path).expect("Failed to create directories");
+    assert!(
+        !config.output_path.is_dir(),
+        "Output path must point to a file, not a directory: {}",
+        config.output_path.display()
+    );
+
+    if let Some(parent) = config.output_path.parent() {
+        fs::create_dir_all(parent).expect("Failed to create parent directories");
+    }
 
     fs::write(
         &config.output_path,
