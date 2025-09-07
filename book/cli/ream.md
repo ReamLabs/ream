@@ -9,12 +9,13 @@ $ ream --help
 Usage: ream [OPTIONS] <COMMAND>
 
 Commands:
-  lean_node        Start the lean node
-  beacon_node      Start the beacon node
-  validator_node   Start the validator node
-  account_manager  Manage validator accounts
-  voluntary_exit   Perform voluntary exit for a validator
-  help             Print this message or the help of the given subcommand(s)
+  lean_node             Start the lean node
+  beacon_node           Start the beacon node
+  validator_node        Start the validator node
+  account_manager       Manage validator accounts
+  voluntary_exit        Perform voluntary exit for a validator
+  generate_network_key  Generate a network key for lean node
+  help                  Print this message or the help of the given subcommand(s)
 
 Options:
       --data-dir <DATA_DIR>  The directory for storing application data. If used together with --ephemeral, new child directory will be created.

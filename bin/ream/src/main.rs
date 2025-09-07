@@ -1,5 +1,5 @@
 use std::{
-    env,
+    env, fs,
     net::SocketAddr,
     process,
     sync::Arc,
@@ -7,10 +7,12 @@ use std::{
 };
 
 use clap::Parser;
+use libp2p_identity::Keypair;
 use ream::cli::{
     Cli, Commands,
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
+    generate_network_key::GenerateNetworkKeyConfig,
     import_keystores::{load_keystore_directory, load_password_from_config, process_password},
     lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig,
@@ -101,6 +103,9 @@ fn main() {
         }
         Commands::VoluntaryExit(config) => {
             executor_clone.spawn(async move { run_voluntary_exit(*config).await });
+        }
+        Commands::GenerateNetworkKey(config) => {
+            executor_clone.spawn(async move { run_generate_network_key(*config).await });
         }
     }
 
@@ -472,4 +477,31 @@ fn get_current_epoch(genesis_time: u64) -> u64 {
             .as_secs()
             / beacon_network_spec().seconds_per_slot,
     )
+}
+
+/// Generates a new secp256k1 keypair and saves it to the specified path in protobuf encoding.
+///
+/// This allows the lean node to reuse the same network identity across restarts by loading
+/// the saved key with the --secret-key-path flag.
+pub async fn run_generate_network_key(config: GenerateNetworkKeyConfig) {
+    info!("Generating new secp256k1 network key...");
+
+    if let Some(parent) = config.output_path.parent() {
+        fs::create_dir_all(parent).expect("Failed to create parent directories");
+    }
+
+    fs::write(
+        &config.output_path,
+        Keypair::generate_secp256k1()
+            .to_protobuf_encoding()
+            .expect("Failed to encode keypair"),
+    )
+    .expect("Failed to write keypair to file");
+
+    info!(
+        "Network key generated successfully and saved to: {}",
+        config.output_path.display()
+    );
+
+    process::exit(0);
 }
