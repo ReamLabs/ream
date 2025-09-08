@@ -15,6 +15,7 @@ anyhow.workspace = true
 ethereum_hashing.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
+itertools.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ssz_types.workspace = true

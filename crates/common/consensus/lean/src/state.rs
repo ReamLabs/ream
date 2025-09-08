@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
+use itertools::Itertools;
 use ream_consensus_misc::constants::lean::{MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT};
 use ream_metrics::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
 use serde::{Deserialize, Serialize};
@@ -100,9 +101,33 @@ impl LeanState {
     /// data structure.
     pub fn set_justifications(
         &mut self,
-        justifications_map: HashMap<B256, BitList<U4096>>,
+        justifications: HashMap<B256, BitList<U4096>>,
     ) -> anyhow::Result<()> {
         let mut justifications_roots = VariableList::<B256, U262144>::empty();
+        let mut flattened_justifications = Vec::new();
+
+        for root in justifications.keys().sorted() {
+            let justifications_for_root = justifications
+                .get(root)
+                .ok_or_else(|| anyhow!("Root {root} not found in justifications"))?;
+
+            // Assert that votes list has exactly VALIDATOR_REGISTRY_LIMIT items.
+            // If the length is incorrect, the constructed bitlist will be corrupt.
+            ensure!(
+                justifications_for_root.len() == VALIDATOR_REGISTRY_LIMIT as usize,
+                "Justifications length does not match validator registry limit"
+            );
+
+            justifications_roots
+                .push(*root)
+                .map_err(|err| anyhow!("Failed to add root to justifications_roots: {err:?}"))?;
+
+            justifications_for_root
+                .iter()
+                .for_each(|justification| flattened_justifications.push(justification));
+        }
+
+        // Create a new Bitlist with all the flattened votes
         let mut justifications_validators = BitList::with_capacity(
             (MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT) as usize,
         )
@@ -110,32 +135,13 @@ impl LeanState {
             anyhow!("Failed to create BitList for justifications_validators: {err:?}")
         })?;
 
-        let mut sorted_roots = justifications_map.keys().collect::<Vec<_>>();
-        sorted_roots.sort();
-
-        for (root_index, root) in sorted_roots.iter().enumerate() {
-            let justifications = justifications_map
-                .get(*root)
-                .ok_or_else(|| anyhow!("Root {root} not found in justifications_map"))?;
-
-            ensure!(
-                justifications.len() == VALIDATOR_REGISTRY_LIMIT as usize,
-                "Justifications length does not match validator registry limit"
-            );
-
-            justifications
-                .iter()
-                .enumerate()
-                .try_for_each(|(validator_index, justification)| -> anyhow::Result<()> {
-                    justifications_validators.set(root_index * VALIDATOR_REGISTRY_LIMIT as usize + validator_index, justification)
-                        .map_err(|err| anyhow!("Failed to set validator {validator_index}'s justification for root {root}: {err:?}"))?;
-                    Ok(())
-                })?;
-
-            justifications_roots
-                .push(**root)
-                .map_err(|err| anyhow!("Failed to add root to justifications_roots: {err:?}"))?;
-        }
+        flattened_justifications.iter().enumerate().try_for_each(
+            |(index, justification)| -> anyhow::Result<()> {
+                justifications_validators
+                    .set(index, *justification)
+                    .map_err(|err| anyhow!("Failed to set justification bit: {err:?}"))
+            },
+        )?;
 
         self.justifications_roots = justifications_roots;
         self.justifications_validators = justifications_validators;

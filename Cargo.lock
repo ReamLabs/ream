@@ -5388,6 +5388,7 @@ dependencies = [
  "ethereum_hashing 0.7.0 (git+https://github.com/ReamLabs/ethereum_hashing.git?rev=c14a9ad96436e6b8b631faf49a3666e4558b71ae)",
  "ethereum_ssz",
  "ethereum_ssz_derive",
+ "itertools 0.14.0",
  "ream-consensus-misc",
  "ream-metrics",
  "serde",
