@@ -215,7 +215,7 @@ impl LeanChainService {
                 if let Some(queue_items) = self.dependencies.remove(&block_hash) {
                     for item in queue_items {
                         let message = match item {
-                            QueueItem::Block(dependency_signed_block) => {
+                            QueueItem::SignedBlock(dependency_signed_block) => {
                                 LeanChainServiceMessage::ProcessBlock {
                                     signed_block: dependency_signed_block,
                                     is_trusted: true,
@@ -241,7 +241,7 @@ impl LeanChainService {
                 self.dependencies
                     .entry(signed_block.message.parent_root)
                     .or_default()
-                    .push(QueueItem::Block(signed_block));
+                    .push(QueueItem::SignedBlock(signed_block));
             }
         }
 
