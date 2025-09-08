@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
-use anyhow::{anyhow, ensure, Context};
+use anyhow::{Context, anyhow, ensure};
 use ream_consensus_misc::constants::lean::{MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT};
 use ream_metrics::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
 use serde::{Deserialize, Serialize};
