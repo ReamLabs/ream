@@ -115,11 +115,9 @@ impl ValidatorService {
 
                             // TODO: Sign the vote with the keystore.
                             let signed_votes = self.keystores.iter().map(|keystore| {
-                                let mut vote = vote_template.clone();
-                                vote.validator_id = keystore.validator_id;
-
                                 SignedVote {
-                                    data: vote,
+                                    validator_id: keystore.validator_id,
+                                    message: vote_template.clone(),
                                     signature: FixedBytes::default(),
                                 }
                             }).collect::<Vec<_>>();

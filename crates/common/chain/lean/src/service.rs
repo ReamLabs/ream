@@ -122,10 +122,10 @@ impl LeanChainService {
                         LeanChainServiceMessage::ProcessVote { signed_vote, is_trusted, need_gossip } => {
                             info!(
                                 "Processing vote: slot={}, validator_id={}, source={:?}, target={:?}",
-                                signed_vote.data.slot,
-                                signed_vote.data.validator_id,
-                                signed_vote.data.source,
-                                signed_vote.data.target
+                                signed_vote.message.slot,
+                                signed_vote.validator_id,
+                                signed_vote.message.source,
+                                signed_vote.message.target
                             );
 
                             if let Err(err) = self.handle_process_vote(signed_vote.clone(), is_trusted).await {
@@ -263,7 +263,10 @@ impl LeanChainService {
 
         if is_known_vote || is_new_vote {
             // Do nothing
-        } else if lean_chain.chain.contains_key(&signed_vote.data.head.root) {
+        } else if lean_chain
+            .chain
+            .contains_key(&signed_vote.message.head.root)
+        {
             drop(lean_chain);
 
             // We should acquire another write lock
@@ -271,7 +274,7 @@ impl LeanChainService {
             lean_chain.new_votes.push(signed_vote);
         } else {
             self.dependencies
-                .entry(signed_vote.data.head.root)
+                .entry(signed_vote.message.head.root)
                 .or_default()
                 .push(QueueItem::SignedVote(signed_vote));
         }

@@ -289,7 +289,7 @@ impl LeanState {
         let mut justifications_map = self.get_justifications()?;
 
         for signed_vote in attestations {
-            let vote = &signed_vote.data;
+            let vote = &signed_vote.message;
             // Ignore votes whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
@@ -300,7 +300,7 @@ impl LeanState {
             {
                 info!(
                     "Skipping vote. Source slot not justified: validator_id={}, source={:?}, target={:?}",
-                    vote.validator_id, vote.source, vote.target
+                    signed_vote.validator_id, vote.source, vote.target
                 );
                 continue;
             }
@@ -316,7 +316,7 @@ impl LeanState {
             {
                 info!(
                     "Skipping vote. Target slot already justified: validator_id={}, source={:?}, target={:?}",
-                    vote.validator_id, vote.source, vote.target
+                    signed_vote.validator_id, vote.source, vote.target
                 );
                 continue;
             }
@@ -329,7 +329,7 @@ impl LeanState {
             {
                 info!(
                     "Skipping vote. Source block not in historical block hashes: validator_id={}, source={:?}, target={:?}",
-                    vote.validator_id, vote.source, vote.target
+                    signed_vote.validator_id, vote.source, vote.target
                 );
                 continue;
             }
@@ -342,7 +342,7 @@ impl LeanState {
             {
                 info!(
                     "Skipping vote. Target block not in historical block hashes: validator_id={}, source={:?}, target={:?}",
-                    vote.validator_id, vote.source, vote.target
+                    signed_vote.validator_id, vote.source, vote.target
                 );
                 continue;
             }
@@ -350,7 +350,7 @@ impl LeanState {
             if vote.target.slot <= vote.source.slot {
                 info!(
                     "Skipping vote. Target slot not greater than source slot: validator_id={}, source={:?}, target={:?}",
-                    vote.validator_id, vote.source, vote.target
+                    signed_vote.validator_id, vote.source, vote.target
                 );
                 continue;
             }
@@ -358,7 +358,7 @@ impl LeanState {
             if !is_justifiable_slot(&self.latest_finalized.slot, &vote.target.slot) {
                 info!(
                     "Skipping vote. Target slot not justifiable: validator_id={}, source={:?}, target={:?}",
-                    vote.validator_id, vote.source, vote.target
+                    signed_vote.validator_id, vote.source, vote.target
                 );
                 continue;
             }
@@ -374,11 +374,11 @@ impl LeanState {
             );
 
             justifications
-                .set(vote.validator_id as usize, true)
+                .set(signed_vote.validator_id as usize, true)
                 .map_err(|err| {
                     anyhow!(
                         "Failed to set validator {:?}'s justification for root {:?}: {err:?}",
-                        vote.validator_id,
+                        signed_vote.validator_id,
                         &vote.target.root
                     )
                 })?;

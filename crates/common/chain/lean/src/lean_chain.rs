@@ -141,7 +141,7 @@ impl LeanChain {
                 .known_votes
                 .clone()
                 .into_iter()
-                .filter(|vote| vote.data.source.root == state.latest_justified.root)
+                .filter(|vote| vote.message.source.root == state.latest_justified.root)
                 .filter(|vote| !new_block.message.body.attestations.contains(vote))
                 .collect::<Vec<_>>();
 
@@ -216,10 +216,6 @@ impl LeanChain {
             .ok_or_else(|| anyhow!("Block not found for head: {}", self.head))?;
 
         Ok(Vote {
-            // NOTE: This is a placeholder for `validator_id`.
-            // This field will eventually be set by the `ValidatorService` with the actual validator
-            // IDs.
-            validator_id: 0,
             slot,
             head: Checkpoint {
                 root: self.head,

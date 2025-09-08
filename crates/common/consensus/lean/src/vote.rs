@@ -11,7 +11,9 @@ use crate::checkpoint::Checkpoint;
 /// for detailed protocol information.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedVote {
-    pub data: Vote,
+    pub validator_id: u64,
+    pub message: Vote,
+    // signature over vote message only as it would be aggregated later in attestation
     pub signature: FixedBytes<4000>,
 }
 
@@ -21,7 +23,6 @@ pub struct SignedVote {
 /// for detailed protocol information.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Vote {
-    pub validator_id: u64,
     pub slot: u64,
     pub head: Checkpoint,
     pub target: Checkpoint,

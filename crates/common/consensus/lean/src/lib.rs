@@ -62,14 +62,14 @@ pub fn get_fork_choice_head(
 
     // Sort votes by ascending slots to ensure that new votes are inserted last
     let mut sorted_votes = votes.to_owned();
-    sorted_votes.sort_by_key(|vote| vote.data.slot);
+    sorted_votes.sort_by_key(|signed_vote| signed_vote.message.slot);
 
     // Prepare a map of validator_id -> their vote
     let mut latest_votes = HashMap::<u64, Vote>::new();
 
-    for vote in sorted_votes {
-        let validator_id = vote.data.validator_id;
-        latest_votes.insert(validator_id, vote.data.clone());
+    for signed_vote in sorted_votes {
+        let validator_id = signed_vote.validator_id;
+        latest_votes.insert(validator_id, signed_vote.message.clone());
     }
 
     // For each block, count the number of votes for that block. A vote
