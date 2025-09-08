@@ -32,9 +32,9 @@ pub struct LeanChain {
     /// {block_hash: post_state} for all blocks that we know about.
     pub post_states: HashMap<B256, LeanState>,
     /// Votes that we have received and taken into account.
-    pub known_votes: Vec<Arc<SignedVote>>,
+    pub known_votes: Vec<SignedVote>,
     /// Votes that we have received but not yet taken into account.
-    pub new_votes: Vec<Arc<SignedVote>>,
+    pub new_votes: Vec<SignedVote>,
     /// Initialize the chain with the genesis block.
     pub genesis_hash: B256,
     /// Number of validators.

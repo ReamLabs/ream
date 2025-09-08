@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use alloy_primitives::B256;
 use anyhow::anyhow;
@@ -111,7 +111,7 @@ impl LeanChainService {
                                 signed_block.message.body.attestations.len(),
                             );
 
-                            if let Err(err) = self.handle_process_block(Arc::clone(&signed_block), is_trusted).await {
+                            if let Err(err) = self.handle_process_block(signed_block.clone(), is_trusted).await {
                                 warn!("Failed to handle process block message: {err}");
                             }
 
@@ -128,7 +128,7 @@ impl LeanChainService {
                                 signed_vote.data.target
                             );
 
-                            if let Err(err) = self.handle_process_vote(Arc::clone(&signed_vote), is_trusted).await {
+                            if let Err(err) = self.handle_process_vote(signed_vote.clone(), is_trusted).await {
                                 warn!("Failed to handle process block message: {err}");
                             }
 
@@ -167,7 +167,7 @@ impl LeanChainService {
 
     async fn handle_process_block(
         &mut self,
-        signed_block: Arc<SignedBlock>,
+        signed_block: SignedBlock,
         is_trusted: bool,
     ) -> anyhow::Result<()> {
         if !is_trusted {
@@ -250,7 +250,7 @@ impl LeanChainService {
 
     async fn handle_process_vote(
         &mut self,
-        signed_vote: Arc<SignedVote>,
+        signed_vote: SignedVote,
         is_trusted: bool,
     ) -> anyhow::Result<()> {
         if !is_trusted {

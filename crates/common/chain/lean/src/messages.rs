@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use ream_consensus_lean::{
     block::{Block, SignedBlock},
     vote::SignedVote,
@@ -30,12 +28,12 @@ pub enum LeanChainServiceMessage {
         sender: oneshot::Sender<Block>,
     },
     ProcessBlock {
-        signed_block: Arc<SignedBlock>,
+        signed_block: SignedBlock,
         is_trusted: bool,
         need_gossip: bool,
     },
     ProcessVote {
-        signed_vote: Arc<SignedVote>,
+        signed_vote: SignedVote,
         is_trusted: bool,
         need_gossip: bool,
     },
