@@ -283,6 +283,7 @@ impl LeanState {
     fn process_operations(&mut self, body: &BlockBody) -> anyhow::Result<()> {
         // Process attestations
         self.process_attestations(&body.attestations)?;
+        // other operations will get added as the functionality evolves
         Ok(())
     }
 
@@ -290,6 +291,8 @@ impl LeanState {
         &mut self,
         attestations: &VariableList<SignedVote, U4096>,
     ) -> anyhow::Result<()> {
+        // get justifications, justified slots and historical block hashes are
+        // already up to date as per the processing in process_block_header
         let mut justifications_map = self.get_justifications()?;
 
         for signed_vote in attestations {
@@ -390,6 +393,10 @@ impl LeanState {
             let count = justifications.num_set_bits();
 
             // If 2/3 voted for the same new valid hash to justify
+            // in 3sf mini this is strict equality, but we have updated it to >=
+            // also have modified it from count >= (2 * state.config.num_validators) // 3
+            // to prevent integer division which could lead to less than 2/3 of validators
+            // justifying specially if the num_validators is low in testing scenarios
             if 3 * count >= (2 * self.config.num_validators) as usize {
                 self.latest_justified = vote.target.clone();
                 self.justified_slots[vote.target.slot as usize] = true;
@@ -417,6 +424,7 @@ impl LeanState {
             }
         }
 
+        // flatten and set updated justifications back to the state
         self.set_justifications(justifications_map)?;
 
         Ok(())
