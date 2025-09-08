@@ -4,5 +4,5 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum QueueItem {
     Block(Block),
-    SignedVote(SignedVote),
+    SignedVote(Box<SignedVote>),
 }

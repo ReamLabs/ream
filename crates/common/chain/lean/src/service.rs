@@ -227,7 +227,7 @@ impl LeanChainService {
                             }
                             QueueItem::SignedVote(signed_vote) => {
                                 LeanChainServiceMessage::ProcessVote {
-                                    signed_vote,
+                                    signed_vote: *signed_vote,
                                     is_trusted: true,
                                     need_gossip: false,
                                 }
@@ -279,7 +279,7 @@ impl LeanChainService {
             self.dependencies
                 .entry(signed_vote.message.head.root)
                 .or_default()
-                .push(QueueItem::SignedVote(signed_vote));
+                .push(QueueItem::SignedVote(Box::new(signed_vote)));
         }
 
         Ok(())
