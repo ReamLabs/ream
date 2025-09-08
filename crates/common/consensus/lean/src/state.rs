@@ -116,7 +116,7 @@ impl LeanState {
         for (root_index, root) in sorted_roots.iter().enumerate() {
             let justifications = justifications_map
                 .get(*root)
-                .ok_or_else(|| anyhow!("Root {root:?} not found in justifications_map"))?;
+                .ok_or_else(|| anyhow!("Root {root} not found in justifications_map"))?;
 
             ensure!(
                 justifications.len() == VALIDATOR_REGISTRY_LIMIT as usize,
