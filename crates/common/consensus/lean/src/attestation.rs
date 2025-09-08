@@ -12,7 +12,7 @@ use crate::vote::Vote;
 /// for detailed protocol information.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Attestation {
-    // U4096 = VALIDATOR_REGISTRY_LIMIT
+    /// U4096 = VALIDATOR_REGISTRY_LIMIT
     pub aggregation_bits: BitList<U4096>,
     pub message: Vote,
     pub signature: VariableList<B8, 4000>,
