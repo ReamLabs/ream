@@ -292,7 +292,11 @@ impl LeanState {
             // Ignore votes whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
-            if !self.justified_slots[vote.source.slot as usize] {
+            if !*self
+                .justified_slots
+                .get(vote.source.slot as usize)
+                .ok_or(anyhow!("Source slot not found in justified_slots"))?
+            {
                 info!(
                     "Skipping vote. Source slot not justified: validator_id={}, source={:?}, target={:?}",
                     vote.validator_id, vote.source, vote.target
@@ -304,7 +308,11 @@ impl LeanState {
             // we don't want to re-introduce the target again for remaining votes if
             // the slot is already justified and its tracking already cleared out
             // from justifications map
-            if self.justified_slots[vote.target.slot as usize] {
+            if *self
+                .justified_slots
+                .get(vote.target.slot as usize)
+                .ok_or(anyhow!("Target slot not found in justified_slots"))?
+            {
                 info!(
                     "Skipping vote. Target slot already justified: validator_id={}, source={:?}, target={:?}",
                     vote.validator_id, vote.source, vote.target
@@ -312,7 +320,12 @@ impl LeanState {
                 continue;
             }
 
-            if vote.source.root != self.historical_block_hashes[vote.source.slot as usize] {
+            if vote.source.root
+                != *self
+                    .historical_block_hashes
+                    .get(vote.source.slot as usize)
+                    .ok_or(anyhow!("Source slot not found in historical_block_hashes"))?
+            {
                 info!(
                     "Skipping vote. Source block not in historical block hashes: validator_id={}, source={:?}, target={:?}",
                     vote.validator_id, vote.source, vote.target
@@ -320,7 +333,12 @@ impl LeanState {
                 continue;
             }
 
-            if vote.target.root != self.historical_block_hashes[vote.target.slot as usize] {
+            if vote.target.root
+                != *self
+                    .historical_block_hashes
+                    .get(vote.target.slot as usize)
+                    .ok_or(anyhow!("Target slot not found in historical_block_hashes"))?
+            {
                 info!(
                     "Skipping vote. Target block not in historical block hashes: validator_id={}, source={:?}, target={:?}",
                     vote.validator_id, vote.source, vote.target
