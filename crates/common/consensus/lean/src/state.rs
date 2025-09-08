@@ -245,10 +245,8 @@ impl LeanState {
             })?;
 
         // genesis block is always justified
-        let is_justified = self.latest_block_header.slot == 0;
-
         self.justified_slots
-            .push(is_justified)
+            .push(self.latest_block_header.slot == 0)
             .map_err(|err| anyhow!("Failed to add to justified_slots: {err:?}"))?;
 
         // if there were empty slots, push zero hash for those ancestors
