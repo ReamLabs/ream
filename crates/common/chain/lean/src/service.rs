@@ -215,16 +215,14 @@ impl LeanChainService {
                 if let Some(queue_items) = self.dependencies.remove(&block_hash) {
                     for item in queue_items {
                         let message = match item {
-                            QueueItem::Block(block) => {
-                                LeanChainServiceMessage::ProcessBlock {
-                                    signed_block: SignedBlock {
-                                        message: block,
-                                        signature: FixedBytes::default(),
-                                    },
-                                    is_trusted: true,
-                                    need_gossip: false,
-                                }
-                            }
+                            QueueItem::Block(block) => LeanChainServiceMessage::ProcessBlock {
+                                signed_block: SignedBlock {
+                                    message: block,
+                                    signature: FixedBytes::default(),
+                                },
+                                is_trusted: true,
+                                need_gossip: false,
+                            },
                             QueueItem::SignedVote(signed_vote) => {
                                 LeanChainServiceMessage::ProcessVote {
                                     signed_vote: *signed_vote,
