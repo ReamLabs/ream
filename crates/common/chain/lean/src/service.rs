@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use alloy_primitives::B256;
+use alloy_primitives::{B256, FixedBytes};
 use anyhow::anyhow;
 use ream_consensus_lean::{
     block::{Block, SignedBlock},
@@ -215,9 +215,12 @@ impl LeanChainService {
                 if let Some(queue_items) = self.dependencies.remove(&block_hash) {
                     for item in queue_items {
                         let message = match item {
-                            QueueItem::SignedBlock(dependency_signed_block) => {
+                            QueueItem::Block(block) => {
                                 LeanChainServiceMessage::ProcessBlock {
-                                    signed_block: dependency_signed_block,
+                                    signed_block: SignedBlock {
+                                        message: block,
+                                        signature: FixedBytes::default(),
+                                    },
                                     is_trusted: true,
                                     need_gossip: false,
                                 }
@@ -241,7 +244,7 @@ impl LeanChainService {
                 self.dependencies
                     .entry(signed_block.message.parent_root)
                     .or_default()
-                    .push(QueueItem::SignedBlock(signed_block));
+                    .push(QueueItem::Block(signed_block.message));
             }
         }
 
