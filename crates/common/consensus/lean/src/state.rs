@@ -69,11 +69,11 @@ impl LeanState {
     /// Returns a map of `root -> justifications` constructed from the
     /// flattened data in the state.
     pub fn get_justifications(&self) -> anyhow::Result<HashMap<B256, BitList<U4096>>> {
-        let mut justifications_map = HashMap::new();
+        let mut justifications = HashMap::new();
 
         // Loop each root and reconstruct the justifications from the flattened BitList
         for (i, root) in self.justifications_roots.iter().enumerate() {
-            let mut justifications = BitList::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize)
+            let mut votes_list = BitList::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize)
                 .map_err(|err| anyhow!("Failed to create BitList for justifications: {err:?}"))?;
 
             // Loop each validator and set their justification
@@ -83,17 +83,17 @@ impl LeanState {
                 .take(VALIDATOR_REGISTRY_LIMIT as usize)
                 .enumerate()
                 .try_for_each(|(validator_index, justification)| -> anyhow::Result<()> {
-                    justifications
+                    votes_list
                         .set(validator_index, justification)
                         .map_err(|err| anyhow!("Failed to set justification: {err:?}"))?;
                     Ok(())
                 })?;
 
             // Insert the root and its justifications into the map
-            justifications_map.insert(*root, justifications);
+            justifications.insert(*root, votes_list);
         }
 
-        Ok(justifications_map)
+        Ok(justifications)
     }
 
     /// Saves a map of `root -> justifications` back into the state's flattened
