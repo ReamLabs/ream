@@ -189,7 +189,7 @@ impl LeanChainService {
         {
             Some(parent_state) => {
                 let mut state = parent_state.clone();
-                state.state_transition(&signed_block, true, false)?;
+                state.state_transition(&signed_block, true, true)?;
 
                 for vote in &signed_block.message.body.attestations {
                     if !lean_chain.known_votes.contains(vote) {
