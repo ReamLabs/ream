@@ -69,7 +69,7 @@ impl LeanState {
     /// Returns a map of `root -> justifications` constructed from the
     /// flattened data in the state.
     pub fn get_justifications(&self) -> anyhow::Result<HashMap<B256, BitList<U4096>>> {
-        let mut justifications_map = HashMap::<B256, BitList<U4096>>::new();
+        let mut justifications_map = HashMap::new();
 
         // Loop each root and reconstruct the justifications from the flattened BitList
         for (i, root) in self.justifications_roots.iter().enumerate() {
