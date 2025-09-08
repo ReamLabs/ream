@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
-use anyhow::{anyhow, ensure};
+use anyhow::{anyhow, ensure, Context};
 use ream_consensus_misc::constants::lean::{MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT};
 use ream_metrics::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
 use serde::{Deserialize, Serialize};
@@ -156,10 +156,11 @@ impl LeanState {
 
         // Process slots (including those with no blocks) since block
         self.process_slots(block.slot)
-            .expect("Failed to process slots");
+            .context("Failed to process slots")?;
 
         // Process block
-        self.process_block(block).expect("Failed to process block");
+        self.process_block(block)
+            .context("Failed to process block")?;
 
         // Verify state root
         if validate_result {
