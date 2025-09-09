@@ -44,46 +44,32 @@ pub async fn validate_sync_committee_contribution_and_proof(
         .get(head_root)?
         .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
 
-    let current_slot = block.message.slot;
+    let current_slot: u64 = block.message.slot;
 
-    // [IGNORE] contribution.slot is equal to or earlier than the current_slot (with a
+    // [IGNORE] if contribution.slot is equal to or earlier than the current_slot (with a
     // MAXIMUM_GOSSIP_CLOCK_DISPARITY allowance)
-    if contribution.slot > current_slot {
+    if contribution.slot != current_slot {
         return Ok(ValidationResult::Ignore(
             "Contribution is from a future slot".to_string(),
         ));
     }
 
-    // [IGNORE] the epoch of contribution.slot is either the current or previous epoch (with a
-    // MAXIMUM_GOSSIP_CLOCK_DISPARITY allowance)
-    let attestation_epoch = compute_epoch_at_slot(contribution.slot);
-    let current_epoch = state.get_current_epoch();
-    let previous_epoch = state.get_previous_epoch();
-
-    // [IGNORE] the epoch of contribution.slot is either the current or previous epoch (with a
-    // MAXIMUM_GOSSIP_CLOCK_DISPARITY allowance)
-    if attestation_epoch != current_epoch && attestation_epoch != previous_epoch {
-        return Ok(ValidationResult::Ignore(
-            "Contribution is from a epoch too far in the past".to_string(),
-        ));
-    }
-
-    // [REJECT] contribution.subcommittee_index is less than SYNC_COMMITTEE_SUBNET_COUNT.
-    if contribution.subcommittee_index < SYNC_COMMITTEE_SUBNET_COUNT {
+    // [REJECT] if contribution.subcommittee_index is out of SYNC_COMMITTEE_SUBNET_COUNT range.
+    if contribution.subcommittee_index >= SYNC_COMMITTEE_SUBNET_COUNT {
         return Ok(ValidationResult::Reject(
             "The subcommittee index is out of range".to_string(),
         ));
     }
 
-    // [REJECT] if contribution has participants
-    if contribution.aggregation_bits.num_set_bits() != 0 {
+    // [REJECT] if contribution doesn't have any participants
+    if contribution.aggregation_bits.num_set_bits() == 0 {
         return Ok(ValidationResult::Reject(
             "The contribution has too many participants".to_string(),
         ));
     }
 
     // [REJECT] if is_sync_committee_aggregator(contribution_and_proof.selection_proof) is false
-    if is_sync_committee_aggregator(&contribution_and_proof.selection_proof) {
+    if !is_sync_committee_aggregator(&contribution_and_proof.selection_proof) {
         return Ok(ValidationResult::Reject(
             "The selection proof is not a valid aggregator".to_string(),
         ));
@@ -94,10 +80,11 @@ pub async fn validate_sync_committee_contribution_and_proof(
     let validator_pubkey =
         &state.validators[contribution_and_proof.aggregator_index as usize].public_key;
 
-    let sync_committee_validators =
-        get_sync_subcommittee_pubkeys(&state, contribution.subcommittee_index);
+    let is_valid_committee_member =
+        get_sync_subcommittee_pubkeys(&state, contribution.subcommittee_index)
+            .contains(validator_pubkey);
 
-    if sync_committee_validators.contains(validator_pubkey) {
+    if !is_valid_committee_member {
         return Ok(ValidationResult::Reject(
             "The aggregator is in the subcommittee".to_string(),
         ));
@@ -161,6 +148,7 @@ pub async fn validate_sync_committee_contribution_and_proof(
         slot: contribution.slot,
         subcommittee_index: contribution.subcommittee_index,
     };
+    let current_epoch = state.get_current_epoch();
 
     let is_selection_proof_valid = contribution_and_proof.selection_proof.verify(
         validator_pubkey,
@@ -179,6 +167,10 @@ pub async fn validate_sync_committee_contribution_and_proof(
 
     // [REJECT] if aggregate signature is not valid for the message beacon_block_root and aggregate
     // pubkey
+
+    let sync_committee_validators =
+        get_sync_subcommittee_pubkeys(&state, contribution.subcommittee_index);
+
     let is_sync_committee_valid = contribution.signature.fast_aggregate_verify(
         sync_committee_validators
             .iter()
