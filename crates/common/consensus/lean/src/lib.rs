@@ -44,7 +44,7 @@ pub fn get_latest_justified_hash(post_states: &HashMap<B256, LeanState>) -> Opti
 pub fn get_fork_choice_head(
     blocks: &HashMap<B256, Block>,
     provided_root: &B256,
-    votes: &Vec<SignedVote>,
+    votes: &[SignedVote],
     min_score: u64,
 ) -> anyhow::Result<B256> {
     let mut root = *provided_root;
