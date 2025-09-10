@@ -5814,6 +5814,7 @@ dependencies = [
  "ream-storage",
  "tokio",
  "tracing",
+ "tree_hash",
 ]
 
 [[package]]
