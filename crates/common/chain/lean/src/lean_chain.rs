@@ -240,7 +240,7 @@ impl LeanChain {
             .cloned()
     }
 
-    pub fn get_state_by_block(&self, block_hash: B256) -> Option<LeanState> {
+    pub fn get_state_by_block_hash(&self, block_hash: B256) -> Option<LeanState> {
         self.post_states.get(&block_hash).cloned()
     }
 }
