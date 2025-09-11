@@ -29,21 +29,25 @@ pub async fn get_state_by_block_id(
     let lean_chain = lean_chain.read().await;
 
     Ok(match block_id {
-        ID::Finalized => lean_chain.get_state_by_block(lean_chain.latest_finalized_hash().ok_or(
-            ApiError::InternalError("Failed to get latest finalized hash".to_string()),
-        )?),
-        ID::Genesis => lean_chain.get_state_by_block(lean_chain.genesis_hash),
-        ID::Head => lean_chain.get_state_by_block(lean_chain.head),
-        ID::Justified => lean_chain.get_state_by_block(lean_chain.latest_justified_hash().ok_or(
-            ApiError::InternalError("Failed to get latest justified hash".to_string()),
-        )?),
+        ID::Finalized => {
+            lean_chain.get_state_by_block_hash(lean_chain.latest_finalized_hash().ok_or(
+                ApiError::InternalError("Failed to get latest finalized hash".to_string()),
+            )?)
+        }
+        ID::Genesis => lean_chain.get_state_by_block_hash(lean_chain.genesis_hash),
+        ID::Head => lean_chain.get_state_by_block_hash(lean_chain.head),
+        ID::Justified => {
+            lean_chain.get_state_by_block_hash(lean_chain.latest_justified_hash().ok_or(
+                ApiError::InternalError("Failed to get latest justified hash".to_string()),
+            )?)
+        }
         ID::Slot(slot) => {
             let block = lean_chain
                 .get_block_by_slot(slot)
                 .ok_or(ApiError::NotFound("Block not found".to_string()))?;
 
-            lean_chain.get_state_by_block(block.tree_hash_root())
+            lean_chain.get_state_by_block_hash(block.tree_hash_root())
         }
-        ID::Root(root) => lean_chain.get_state_by_block(root),
+        ID::Root(root) => lean_chain.get_state_by_block_hash(root),
     })
 }
