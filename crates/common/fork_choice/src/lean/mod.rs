@@ -2,10 +2,9 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 use alloy_primitives::B256;
-use anyhow::anyhow;
+use anyhow::{anyhow, Ok};
 use ream_consensus_lean::vote::{SignedVote, Vote};
 use ream_storage::{db::lean::LeanDB, tables::table::Table};
-use tracing::info;
 
 /// Use LMD GHOST to get the head, given a particular root (usually the
 /// latest known justified block)

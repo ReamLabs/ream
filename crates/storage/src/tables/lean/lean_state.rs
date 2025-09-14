@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus_lean::state::LeanState;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, TableDefinition, ReadableTable};
 
 use crate::{
     errors::StoreError,
@@ -41,5 +41,29 @@ impl Table for LeanStateTable {
         drop(table);
         write_txn.commit()?;
         Ok(())
+    }
+}
+
+impl LeanStateTable {
+    pub fn get_latest_justified_hash(&self) -> Result<Option<B256>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(LEAN_STATE_TABLE)?;
+
+        let mut best: Option<(u64, B256)> = None;
+
+        for entry in table.iter()? {
+            let (_key_enc, state_enc) = entry?;
+            let state: LeanState = state_enc.value();
+
+            let slot = state.latest_justified.slot;
+            let root = state.latest_justified.root;
+
+            match best {
+                Some((best_slot, _)) if slot <= best_slot => {}
+                _ => best = Some((slot, root)),
+            }
+        }
+
+        Ok(best.map(|(_, root)| root))
     }
 }
