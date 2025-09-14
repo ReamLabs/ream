@@ -165,7 +165,7 @@ impl LeanState {
 
         // Process block
         self.process_block(block)
-            .context("Failed to process block")?;
+            .map_err(|error| anyhow!("Failed to process block: {error:?}"))?;
 
         // Verify state root
         if validate_result {
@@ -226,6 +226,9 @@ impl LeanState {
         );
 
         // Verify that the parent matches
+        info!("Block parent root: {}", block.parent_root);
+        info!("state parent: {}", self.latest_block_header.parent_root);
+        info!("state parent tree hash root: {}", self.latest_block_header.tree_hash_root());
         ensure!(
             block.parent_root == self.latest_block_header.tree_hash_root(),
             "Block parent root does not match latest block header root"

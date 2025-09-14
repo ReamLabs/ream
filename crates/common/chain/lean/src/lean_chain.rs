@@ -5,15 +5,18 @@ use anyhow::anyhow;
 use ream_consensus_lean::{
     block::{Block, BlockBody, SignedBlock},
     checkpoint::Checkpoint,
-    get_fork_choice_head, get_latest_justified_hash, is_justifiable_slot,
+    get_latest_justified_hash, is_justifiable_slot,
     state::LeanState,
     vote::{SignedVote, Vote},
 };
+use ream_fork_choice::lean::get_fork_choice_head;
 use ream_metrics::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::db::lean::LeanDB;
+use ream_storage::tables::table::Table;
 use ream_sync::rwlock::{Reader, Writer};
 use tokio::sync::Mutex;
+use tracing::info;
 use tree_hash::TreeHash;
 
 pub type LeanChainWriter = Writer<LeanChain>;
@@ -28,7 +31,7 @@ pub struct LeanChain {
     /// Database.
     pub store: Arc<Mutex<LeanDB>>,
     /// {block_hash: block} for all blocks that we know about.
-    pub chain: HashMap<B256, Block>,
+    // pub chain: HashMap<B256, Block>,
     /// {block_hash: post_state} for all blocks that we know about.
     pub post_states: HashMap<B256, LeanState>,
     /// Votes that we have received and taken into account.
@@ -47,18 +50,23 @@ pub struct LeanChain {
 }
 
 impl LeanChain {
-    pub fn new(genesis_block: Block, genesis_state: LeanState, db: LeanDB) -> LeanChain {
+    pub fn new(genesis_block: SignedBlock, genesis_state: LeanState, db: LeanDB) -> LeanChain {
         let genesis_hash = genesis_block.tree_hash_root();
+        // todo: remove this unwrap
+        db.lean_block_provider()
+            .insert(genesis_hash, genesis_block)
+            .unwrap();
+        db.slot_index_provider().insert(0, genesis_hash).unwrap();
 
         LeanChain {
             store: Arc::new(Mutex::new(db)),
+            // chain: HashMap::from([(genesis_hash, genesis_block)]),
             known_votes: Vec::new(),
             new_votes: Vec::new(),
             genesis_hash,
             num_validators: genesis_state.config.num_validators,
             safe_target: genesis_hash,
             head: genesis_hash,
-            chain: HashMap::from([(genesis_hash, genesis_block)]),
             post_states: HashMap::from([(genesis_hash, genesis_state)]),
         }
     }
@@ -74,36 +82,39 @@ impl LeanChain {
     }
 
     /// Compute the latest block that the staker is allowed to choose as the target
-    pub fn compute_safe_target(&self) -> anyhow::Result<B256> {
+    pub async fn compute_safe_target(&self) -> anyhow::Result<B256> {
         let justified_hash = get_latest_justified_hash(&self.post_states)
             .ok_or_else(|| anyhow!("No justified hash found in post states"))?;
 
         get_fork_choice_head(
-            &self.chain,
+            self.store.clone(),
             &justified_hash,
             &self.new_votes,
             self.num_validators * 2 / 3,
         )
+        .await
     }
 
     /// Process new votes that the staker has received. Vote processing is done
     /// at a particular time, because of safe target and view merge rule
-    pub fn accept_new_votes(&mut self) -> anyhow::Result<()> {
+    pub async fn accept_new_votes(&mut self) -> anyhow::Result<()> {
         for new_vote in self.new_votes.drain(..) {
             if !self.known_votes.contains(&new_vote) {
                 self.known_votes.push(new_vote);
             }
         }
 
-        self.recompute_head()?;
+        self.recompute_head().await?;
         Ok(())
     }
 
     /// Done upon processing new votes or a new block
-    pub fn recompute_head(&mut self) -> anyhow::Result<()> {
+    pub async fn recompute_head(&mut self) -> anyhow::Result<()> {
         let justified_hash = get_latest_justified_hash(&self.post_states)
             .ok_or_else(|| anyhow!("Failed to get latest_justified_hash from post_states"))?;
-        self.head = get_fork_choice_head(&self.chain, &justified_hash, &self.known_votes, 0)?;
+        self.head =
+            get_fork_choice_head(self.store.clone(), &justified_hash, &self.known_votes, 0).await?;
+        info!("new head: {:?}", self.head);
         Ok(())
     }
 
@@ -113,6 +124,8 @@ impl LeanChain {
             .post_states
             .get(&self.head)
             .ok_or_else(|| anyhow!("Post state not found for head: {}", self.head))?;
+        info!("head state while inserting: {}",head_state.latest_block_header.tree_hash_root());
+        
         let mut new_block = SignedBlock {
             message: Block {
                 slot,
@@ -173,70 +186,79 @@ impl LeanChain {
         Ok(new_block.message)
     }
 
-    pub fn build_vote(&self, slot: u64) -> anyhow::Result<Vote> {
+    pub async fn build_vote(&self, slot: u64) -> anyhow::Result<Vote> {
+        let lean_block_provider = {
+            let db = self.store.lock().await;
+            db.lean_block_provider()
+        };
+
         let state = self
             .post_states
             .get(&self.head)
             .ok_or_else(|| anyhow!("Post state not found for head: {}", self.head))?;
-        let mut target_block = self
-            .chain
-            .get(&self.head)
+
+        let mut target_block = lean_block_provider
+            .get(self.head)?
             .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?;
 
         // If there is no very recent safe target, then vote for the k'th ancestor
         // of the head
         for _ in 0..3 {
-            let safe_target_block = self.chain.get(&self.safe_target).ok_or_else(|| {
-                anyhow!("Block not found for safe target hash: {}", self.safe_target)
-            })?;
-            if target_block.slot > safe_target_block.slot {
-                target_block = self.chain.get(&target_block.parent_root).ok_or_else(|| {
-                    anyhow!(
-                        "Block not found for target block's parent hash: {}",
-                        target_block.parent_root
-                    )
+            let safe_target_block =
+                lean_block_provider.get(self.safe_target)?.ok_or_else(|| {
+                    anyhow!("Block not found for safe target hash: {}", self.safe_target)
                 })?;
+            if target_block.message.slot > safe_target_block.message.slot {
+                target_block = lean_block_provider
+                    .get(target_block.message.parent_root)?
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Block not found for target block's parent hash: {}",
+                            target_block.message.parent_root
+                        )
+                    })?;
             }
         }
 
         // If the latest finalized slot is very far back, then only some slots are
         // valid to justify, make sure the target is one of those
-        while !is_justifiable_slot(&state.latest_finalized.slot, &target_block.slot) {
-            target_block = self.chain.get(&target_block.parent_root).ok_or_else(|| {
-                anyhow!(
-                    "Block not found for target block's parent hash: {}",
-                    target_block.parent_root
-                )
-            })?;
+        while !is_justifiable_slot(&state.latest_finalized.slot, &target_block.message.slot) {
+            target_block = lean_block_provider
+                .get(target_block.message.parent_root)?
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Block not found for target block's parent hash: {}",
+                        target_block.message.parent_root
+                    )
+                })?;
         }
 
-        let head_block = self
-            .chain
-            .get(&self.head)
+        let head_block = lean_block_provider
+            .get(self.head)?
             .ok_or_else(|| anyhow!("Block not found for head: {}", self.head))?;
 
         Ok(Vote {
             slot,
             head: Checkpoint {
                 root: self.head,
-                slot: head_block.slot,
+                slot: head_block.message.slot,
             },
             target: Checkpoint {
                 root: target_block.tree_hash_root(),
-                slot: target_block.slot,
+                slot: target_block.message.slot,
             },
             source: state.latest_justified.clone(),
         })
     }
 
-    pub fn get_block_by_root(&self, root: B256) -> Option<Block> {
-        self.chain.get(&root).cloned()
-    }
+    // pub fn get_block_by_root(&self, root: B256) -> Option<Block> {
+    //     self.chain.get(&root).cloned()
+    // }
 
-    pub fn get_block_by_slot(&self, slot: u64) -> Option<Block> {
-        self.chain
-            .values()
-            .find(|block| block.slot == slot)
-            .cloned()
-    }
+    // pub fn get_block_by_slot(&self, slot: u64) -> Option<Block> {
+    //     self.chain
+    //         .values()
+    //         .find(|block| block.slot == slot)
+    //         .cloned()
+    // }
 }
