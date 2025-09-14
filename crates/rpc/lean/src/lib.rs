@@ -2,7 +2,8 @@ pub mod config;
 pub mod handlers;
 pub mod routes;
 
-use crate::routes::register_routers;
+use std::{collections::HashMap, sync::Arc};
+
 use actix_web::web::Data;
 use config::LeanRpcServerConfig;
 use libp2p::PeerId;
@@ -10,7 +11,8 @@ use parking_lot::Mutex;
 use ream_chain_lean::lean_chain::LeanChainReader;
 use ream_p2p::network::peer::ConnectionState;
 use ream_rpc_common::server::start_rpc_server;
-use std::{collections::HashMap, sync::Arc};
+
+use crate::routes::register_routers;
 
 /// Start the Lean API server.
 pub async fn start_lean_server(

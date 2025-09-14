@@ -2,7 +2,8 @@ pub mod config;
 pub mod handlers;
 pub mod routes;
 
-use crate::routes::register_routers;
+use std::sync::Arc;
+
 use actix_web::web::Data;
 use config::RpcServerConfig;
 use ream_execution_engine::ExecutionEngine;
@@ -10,7 +11,8 @@ use ream_operation_pool::OperationPool;
 use ream_p2p::network::beacon::network_state::NetworkState;
 use ream_rpc_common::server::start_rpc_server;
 use ream_storage::db::beacon::BeaconDB;
-use std::sync::Arc;
+
+use crate::routes::register_routers;
 
 /// Start the Beacon API server.
 pub async fn start_server(
