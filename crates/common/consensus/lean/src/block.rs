@@ -17,6 +17,15 @@ pub struct SignedBlock {
     pub signature: FixedBytes<4000>,
 }
 
+impl From<Block> for SignedBlock {
+    fn from(block: Block) -> Self {
+        Self {
+            message: block,
+            signature: FixedBytes::default(),
+        }
+    }
+}
+
 /// Represents a block in the Lean chain.
 ///
 /// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#block)
