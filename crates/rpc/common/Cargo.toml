@@ -12,6 +12,7 @@ version.workspace = true
 [dependencies]
 actix-web.workspace = true
 serde.workspace = true
+tracing.workspace = true
 
 #ream-dependencies
 ream-api-types-beacon.workspace = true
