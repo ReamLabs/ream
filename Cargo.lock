@@ -5806,6 +5806,7 @@ name = "ream-rpc-lean"
 version = "0.1.0"
 dependencies = [
  "actix-web",
+ "alloy-primitives",
  "libp2p",
  "parking_lot",
  "ream-api-types-common",

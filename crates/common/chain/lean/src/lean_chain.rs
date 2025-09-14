@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use alloy_primitives::{B256, FixedBytes};
+use alloy_primitives::{B256, FixedBytes, Sign};
 use anyhow::anyhow;
 use ream_consensus_lean::{
     block::{Block, BlockBody, SignedBlock},
@@ -33,7 +33,7 @@ pub struct LeanChain {
     /// {block_hash: block} for all blocks that we know about.
     // pub chain: HashMap<B256, Block>,
     /// {block_hash: post_state} for all blocks that we know about.
-    pub post_states: HashMap<B256, LeanState>,
+    // pub post_states: HashMap<B256, LeanState>,
     /// Votes that we have received and taken into account.
     pub known_votes: Vec<SignedVote>,
     /// Votes that we have received but not yet taken into account.
@@ -51,40 +51,85 @@ pub struct LeanChain {
 
 impl LeanChain {
     pub fn new(genesis_block: SignedBlock, genesis_state: LeanState, db: LeanDB) -> LeanChain {
-        let genesis_hash = genesis_block.tree_hash_root();
+        let genesis_block_hash = genesis_block.message.tree_hash_root();
+        let no_of_validators = genesis_state.config.num_validators;
         // todo: remove this unwrap
         db.lean_block_provider()
-            .insert(genesis_hash, genesis_block)
+            .insert(genesis_block_hash, genesis_block)
             .unwrap();
-        db.slot_index_provider().insert(0, genesis_hash).unwrap();
+        db.lean_state_provider()
+            .insert(genesis_block_hash, genesis_state)
+            .unwrap();
+        db.slot_index_provider()
+            .insert(0, genesis_block_hash)
+            .unwrap();
 
         LeanChain {
             store: Arc::new(Mutex::new(db)),
             // chain: HashMap::from([(genesis_hash, genesis_block)]),
+            // post_states: HashMap::from([(genesis_hash, genesis_state)]),
             known_votes: Vec::new(),
             new_votes: Vec::new(),
-            genesis_hash,
-            num_validators: genesis_state.config.num_validators,
-            safe_target: genesis_hash,
-            head: genesis_hash,
-            post_states: HashMap::from([(genesis_hash, genesis_state)]),
+            genesis_hash: genesis_block_hash,
+            num_validators: no_of_validators,
+            safe_target: genesis_block_hash,
+            head: genesis_block_hash,
         }
     }
 
-    pub fn latest_justified_hash(&self) -> Option<B256> {
-        get_latest_justified_hash(&self.post_states)
+    pub async fn latest_justified_hash(&self) -> anyhow::Result<B256> {
+        let lean_state_provider = {
+            let db = self.store.lock().await;
+            db.lean_state_provider()
+        };
+
+        Ok(lean_state_provider
+            .get_latest_justified_hash()?
+            .ok_or_else(|| anyhow!("No justified hash found in post states"))?)
     }
 
-    pub fn latest_finalized_hash(&self) -> Option<B256> {
-        self.post_states
-            .get(&self.head)
-            .map(|state| state.latest_finalized.root)
+    pub async fn get_block_id_by_slot(&self, slot: u64) -> anyhow::Result<B256> {
+        let lean_slot_provider = {
+            let db = self.store.lock().await;
+            db.slot_index_provider()
+        };
+
+        Ok(lean_slot_provider
+            .get(slot)?
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?)
+    }
+
+    pub async fn get_block_by_slot(&self, slot: u64) -> anyhow::Result<SignedBlock> {
+        let (lean_block_provider, lean_slot_provider) = {
+            let db = self.store.lock().await;
+            (db.lean_block_provider(), db.slot_index_provider())
+        };
+
+        let block_hash = lean_slot_provider
+            .get(slot)?
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?;
+
+        Ok(lean_block_provider
+            .get(block_hash)?
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?)
+    }
+
+    pub async fn latest_finalized_hash(&self) -> anyhow::Result<B256> {
+        let lean_state_provider = {
+            let db = self.store.lock().await;
+            db.lean_state_provider()
+        };
+
+        let state = lean_state_provider
+            .get(self.head)?
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?;
+
+        Ok(state.latest_finalized.root)
     }
 
     /// Compute the latest block that the staker is allowed to choose as the target
     pub async fn compute_safe_target(&self) -> anyhow::Result<B256> {
-        let justified_hash = get_latest_justified_hash(&self.post_states)
-            .ok_or_else(|| anyhow!("No justified hash found in post states"))?;
+        let justified_hash = self.latest_justified_hash().await?;
 
         get_fork_choice_head(
             self.store.clone(),
@@ -110,22 +155,27 @@ impl LeanChain {
 
     /// Done upon processing new votes or a new block
     pub async fn recompute_head(&mut self) -> anyhow::Result<()> {
-        let justified_hash = get_latest_justified_hash(&self.post_states)
-            .ok_or_else(|| anyhow!("Failed to get latest_justified_hash from post_states"))?;
+        let justified_hash = self.latest_justified_hash().await?;
         self.head =
             get_fork_choice_head(self.store.clone(), &justified_hash, &self.known_votes, 0).await?;
         info!("new head: {:?}", self.head);
         Ok(())
     }
 
-    pub fn propose_block(&self, slot: u64) -> anyhow::Result<Block> {
+    pub async fn propose_block(&self, slot: u64) -> anyhow::Result<Block> {
+        info!("for slot: {}", slot);
+
         let initialize_block_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
-        let head_state = self
-            .post_states
-            .get(&self.head)
+
+        let lean_state_provider = {
+            let db = self.store.lock().await;
+            db.lean_state_provider()
+        };
+
+        let head_state = lean_state_provider
+            .get(self.head)?
             .ok_or_else(|| anyhow!("Post state not found for head: {}", self.head))?;
-        info!("head state while inserting: {}",head_state.latest_block_header.tree_hash_root());
-        
+
         let mut new_block = SignedBlock {
             message: Block {
                 slot,
@@ -192,9 +242,13 @@ impl LeanChain {
             db.lean_block_provider()
         };
 
-        let state = self
-            .post_states
-            .get(&self.head)
+        let lean_state_provider = {
+            let db = self.store.lock().await;
+            db.lean_state_provider()
+        };
+
+        let state = lean_state_provider
+            .get(self.head)?
             .ok_or_else(|| anyhow!("Post state not found for head: {}", self.head))?;
 
         let mut target_block = lean_block_provider

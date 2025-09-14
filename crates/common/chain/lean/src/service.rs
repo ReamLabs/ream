@@ -6,6 +6,7 @@ use ream_consensus_lean::{
     block::{Block, SignedBlock},
     vote::SignedVote,
 };
+use ream_consensus_misc::constants::lean;
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::tables::table::Table;
 use tokio::sync::{mpsc, oneshot};
@@ -67,7 +68,7 @@ impl LeanChainService {
                             // First tick (t=0/4): Log current head state, including its justification/finalization status.
                             let current_slot = get_current_slot();
                             let lean_chain = self.lean_chain.read().await;
-                            let head_state = lean_chain.post_states.get(&lean_chain.head)
+                            let head_state = lean_chain.store.lock().await.lean_state_provider().get(lean_chain.head)?
                                 .ok_or_else(|| anyhow!("Post state not found for head: {}", lean_chain.head))?;
 
                             info!(
@@ -155,7 +156,7 @@ impl LeanChainService {
             lean_chain.accept_new_votes().await?;
 
             // Build a block and propose the block.
-            lean_chain.propose_block(slot)?
+            lean_chain.propose_block(slot).await?
         };
 
         // Send the produced block back to the requester
@@ -190,9 +191,11 @@ impl LeanChainService {
         let state = {
             let lean_chain = self.lean_chain.read().await;
             lean_chain
-                .post_states
-                .get(&signed_block.message.parent_root)
-                .cloned()
+                .store
+                .lock()
+                .await
+                .lean_state_provider()
+                .get(signed_block.message.parent_root)?
         };
         match state {
             Some(parent_state) => {
@@ -205,14 +208,13 @@ impl LeanChainService {
                         lean_chain.known_votes.push(vote.clone());
                     }
                 }
-                lean_chain
-                    .store
-                    .lock()
-                    .await
-                    .lean_block_provider()
-                    .insert(block_hash, signed_block.clone());
+                {
+                    let db = lean_chain.store.lock().await;
+                    db.lean_block_provider()
+                        .insert(block_hash, signed_block.clone())?;
 
-                lean_chain.post_states.insert(block_hash, state);
+                    db.lean_state_provider().insert(block_hash, state)?;
+                }
 
                 lean_chain.recompute_head().await?;
 
