@@ -1,11 +1,11 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use alloy_primitives::{B256, FixedBytes, Sign};
+use alloy_primitives::{B256, FixedBytes};
 use anyhow::anyhow;
 use ream_consensus_lean::{
     block::{Block, BlockBody, SignedBlock},
     checkpoint::Checkpoint,
-    get_latest_justified_hash, is_justifiable_slot,
+    is_justifiable_slot,
     state::LeanState,
     vote::{SignedVote, Vote},
 };
@@ -30,12 +30,6 @@ pub type LeanChainReader = Reader<LeanChain>;
 pub struct LeanChain {
     /// Database.
     pub store: Arc<Mutex<LeanDB>>,
-    /// {block_hash: block} for all blocks that we know about.
-    // pub chain: HashMap<B256, Block>,
-    /// {block_hash: post_state} for all blocks that we know about.
-    // pub post_states: HashMap<B256, LeanState>,
-    /// Votes that we have received and taken into account.
-    pub known_votes: Vec<SignedVote>,
     /// Votes that we have received but not yet taken into account.
     pub new_votes: Vec<SignedVote>,
     /// Initialize the chain with the genesis block.
@@ -60,15 +54,9 @@ impl LeanChain {
         db.lean_state_provider()
             .insert(genesis_block_hash, genesis_state)
             .unwrap();
-        db.slot_index_provider()
-            .insert(0, genesis_block_hash)
-            .unwrap();
 
         LeanChain {
             store: Arc::new(Mutex::new(db)),
-            // chain: HashMap::from([(genesis_hash, genesis_block)]),
-            // post_states: HashMap::from([(genesis_hash, genesis_state)]),
-            known_votes: Vec::new(),
             new_votes: Vec::new(),
             genesis_hash: genesis_block_hash,
             num_validators: no_of_validators,
@@ -134,7 +122,7 @@ impl LeanChain {
         get_fork_choice_head(
             self.store.clone(),
             &justified_hash,
-            &self.new_votes,
+            // &self.new_votes,
             self.num_validators * 2 / 3,
         )
         .await
@@ -143,11 +131,19 @@ impl LeanChain {
     /// Process new votes that the staker has received. Vote processing is done
     /// at a particular time, because of safe target and view merge rule
     pub async fn accept_new_votes(&mut self) -> anyhow::Result<()> {
+        let mut votes_to_be_inserted = Vec::new();
+        let known_votes_provider = {
+            let db = self.store.lock().await;
+            db.known_votes_provider()
+        };
+
         for new_vote in self.new_votes.drain(..) {
-            if !self.known_votes.contains(&new_vote) {
-                self.known_votes.push(new_vote);
+            if !known_votes_provider.contains(&new_vote)? {
+                votes_to_be_inserted.push(new_vote);
             }
         }
+
+        known_votes_provider.batch_append(votes_to_be_inserted)?;
 
         self.recompute_head().await?;
         Ok(())
@@ -156,20 +152,17 @@ impl LeanChain {
     /// Done upon processing new votes or a new block
     pub async fn recompute_head(&mut self) -> anyhow::Result<()> {
         let justified_hash = self.latest_justified_hash().await?;
-        self.head =
-            get_fork_choice_head(self.store.clone(), &justified_hash, &self.known_votes, 0).await?;
+        self.head = get_fork_choice_head(self.store.clone(), &justified_hash, 0).await?;
         info!("new head: {:?}", self.head);
         Ok(())
     }
 
     pub async fn propose_block(&self, slot: u64) -> anyhow::Result<Block> {
-        info!("for slot: {}", slot);
-
         let initialize_block_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
 
-        let lean_state_provider = {
+        let (lean_state_provider, known_votes_provider) = {
             let db = self.store.lock().await;
-            db.lean_state_provider()
+            (db.lean_state_provider(), db.known_votes_provider())
         };
 
         let head_state = lean_state_provider
@@ -199,14 +192,16 @@ impl LeanChain {
         let add_votes_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_votes_to_block"]);
         loop {
             state.process_attestations(&new_block.message.body.attestations)?;
+            let new_votes_to_add = known_votes_provider
+                .filter_new_votes_to_add(state.latest_justified.root, &new_block)?;
 
-            let new_votes_to_add = self
-                .known_votes
-                .clone()
-                .into_iter()
-                .filter(|vote| vote.message.source.root == state.latest_justified.root)
-                .filter(|vote| !new_block.message.body.attestations.contains(vote))
-                .collect::<Vec<_>>();
+            // let new_votes_to_add = self
+            //     .known_votes
+            //     .clone()
+            //     .into_iter()
+            //     .filter(|vote| vote.message.source.root == state.latest_justified.root)
+            //     .filter(|vote| !new_block.message.body.attestations.contains(vote))
+            //     .collect::<Vec<_>>();
 
             if new_votes_to_add.is_empty() {
                 break;
@@ -298,7 +293,7 @@ impl LeanChain {
                 slot: head_block.message.slot,
             },
             target: Checkpoint {
-                root: target_block.tree_hash_root(),
+                root: target_block.message.tree_hash_root(),
                 slot: target_block.message.slot,
             },
             source: state.latest_justified.clone(),

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use alloy_primitives::B256;
-use anyhow::{Context, anyhow, ensure};
+use anyhow::{anyhow, ensure};
 use itertools::Itertools;
 use ream_consensus_misc::constants::lean::{MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT};
 use ream_metrics::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
@@ -161,7 +161,7 @@ impl LeanState {
 
         // Process slots (including those with no blocks) since block
         self.process_slots(block.slot)
-            .context("Failed to process slots")?;
+            .map_err(|error| anyhow!("Failed to process slots: {error:?}"))?;
 
         // Process block
         self.process_block(block)
@@ -226,9 +226,6 @@ impl LeanState {
         );
 
         // Verify that the parent matches
-        info!("Block parent root: {}", block.parent_root);
-        info!("state parent: {}", self.latest_block_header.parent_root);
-        info!("state parent tree hash root: {}", self.latest_block_header.tree_hash_root());
         ensure!(
             block.parent_root == self.latest_block_header.tree_hash_root(),
             "Block parent root does not match latest block header root"
