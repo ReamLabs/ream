@@ -6,7 +6,6 @@ use ream_consensus_lean::{
     block::{Block, SignedBlock},
     vote::SignedVote,
 };
-use ream_consensus_misc::constants::lean;
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::tables::table::Table;
 use tokio::sync::{mpsc, oneshot};
@@ -178,9 +177,10 @@ impl LeanChainService {
 
         let block_hash = signed_block.message.tree_hash_root();
 
-        let lean_block_provider = {
-            let db = self.lean_chain.read().await;
-            db.store.lock().await.lean_block_provider()
+        let (lean_block_provider, known_votes_provider) = {
+            let lean_chain = self.lean_chain.read().await;
+            let db = lean_chain.store.lock().await;
+            (db.lean_block_provider(), db.known_votes_provider())
         };
 
         // If the block is already known, ignore it
@@ -202,10 +202,11 @@ impl LeanChainService {
                 let mut state = parent_state.clone();
                 state.state_transition(&signed_block, true, true)?;
 
+                let mut votes_to_add = Vec::new();
                 let mut lean_chain = self.lean_chain.write().await;
                 for vote in &signed_block.message.body.attestations {
-                    if !lean_chain.known_votes.contains(vote) {
-                        lean_chain.known_votes.push(vote.clone());
+                    if !known_votes_provider.contains(vote)? {
+                        votes_to_add.push(vote.clone());
                     }
                 }
                 {
@@ -214,6 +215,8 @@ impl LeanChainService {
                         .insert(block_hash, signed_block.clone())?;
 
                     db.lean_state_provider().insert(block_hash, state)?;
+
+                    db.known_votes_provider().batch_append(votes_to_add)?;
                 }
 
                 lean_chain.recompute_head().await?;
@@ -272,13 +275,14 @@ impl LeanChainService {
             // TODO: Validate the signature.
         }
 
-        let lean_block_provider = {
-            let db = self.lean_chain.read().await;
-            db.store.lock().await.lean_block_provider()
+        let (lean_block_provider, known_votes_provider) = {
+            let lean_chain = self.lean_chain.read().await;
+            let db = lean_chain.store.lock().await;
+            (db.lean_block_provider(), db.known_votes_provider())
         };
 
         let lean_chain = self.lean_chain.read().await;
-        let is_known_vote = lean_chain.known_votes.contains(&signed_vote);
+        let is_known_vote = known_votes_provider.contains(&signed_vote)?;
         let is_new_vote = lean_chain.new_votes.contains(&signed_vote);
 
         if is_known_vote || is_new_vote {
