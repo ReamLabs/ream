@@ -12,8 +12,7 @@ use ream_consensus_lean::{
 use ream_fork_choice::lean::get_fork_choice_head;
 use ream_metrics::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
-use ream_storage::db::lean::LeanDB;
-use ream_storage::tables::table::Table;
+use ream_storage::{db::lean::LeanDB, tables::table::Table};
 use ream_sync::rwlock::{Reader, Writer};
 use tokio::sync::Mutex;
 use tracing::info;
@@ -71,9 +70,9 @@ impl LeanChain {
             db.lean_state_provider()
         };
 
-        Ok(lean_state_provider
+        lean_state_provider
             .get_latest_justified_hash()?
-            .ok_or_else(|| anyhow!("No justified hash found in post states"))?)
+            .ok_or_else(|| anyhow!("No justified hash found in post states"))
     }
 
     pub async fn get_block_id_by_slot(&self, slot: u64) -> anyhow::Result<B256> {
@@ -82,9 +81,9 @@ impl LeanChain {
             db.slot_index_provider()
         };
 
-        Ok(lean_slot_provider
+        lean_slot_provider
             .get(slot)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?)
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))
     }
 
     pub async fn get_block_by_slot(&self, slot: u64) -> anyhow::Result<SignedBlock> {
@@ -97,9 +96,9 @@ impl LeanChain {
             .get(slot)?
             .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?;
 
-        Ok(lean_block_provider
+        lean_block_provider
             .get(block_hash)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?)
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))
     }
 
     pub async fn latest_finalized_hash(&self) -> anyhow::Result<B256> {
@@ -122,7 +121,6 @@ impl LeanChain {
         get_fork_choice_head(
             self.store.clone(),
             &justified_hash,
-            // &self.new_votes,
             self.num_validators * 2 / 3,
         )
         .await
@@ -194,14 +192,6 @@ impl LeanChain {
             state.process_attestations(&new_block.message.body.attestations)?;
             let new_votes_to_add = known_votes_provider
                 .filter_new_votes_to_add(state.latest_justified.root, &new_block)?;
-
-            // let new_votes_to_add = self
-            //     .known_votes
-            //     .clone()
-            //     .into_iter()
-            //     .filter(|vote| vote.message.source.root == state.latest_justified.root)
-            //     .filter(|vote| !new_block.message.body.attestations.contains(vote))
-            //     .collect::<Vec<_>>();
 
             if new_votes_to_add.is_empty() {
                 break;
@@ -299,15 +289,4 @@ impl LeanChain {
             source: state.latest_justified.clone(),
         })
     }
-
-    // pub fn get_block_by_root(&self, root: B256) -> Option<Block> {
-    //     self.chain.get(&root).cloned()
-    // }
-
-    // pub fn get_block_by_slot(&self, slot: u64) -> Option<Block> {
-    //     self.chain
-    //         .values()
-    //         .find(|block| block.slot == slot)
-    //         .cloned()
-    // }
 }

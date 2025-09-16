@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use ream_consensus_lean::block::SignedBlock;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableTable, TableDefinition};
 use tree_hash::TreeHash;
 
 use super::{slot_index::SlotIndexTable, state_root_index::StateRootIndexTable};
@@ -10,7 +10,6 @@ use crate::{
     errors::StoreError,
     tables::{ssz_encoder::SSZEncoding, table::Table},
 };
-use redb::ReadableTable;
 
 /// Table definition for the Lean Block table
 ///
@@ -62,10 +61,7 @@ impl Table for LeanBlockTable {
 
 impl LeanBlockTable {
     pub fn contains_key(&self, key: B256) -> bool {
-        match self.get(key) {
-            Ok(Some(_)) => true,
-            _ => false,
-        }
+        matches!(self.get(key), Ok(Some(_)))
     }
 
     pub fn get_children_map(

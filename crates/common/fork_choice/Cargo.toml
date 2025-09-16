@@ -36,8 +36,8 @@ tree_hash_derive.workspace = true
 # ream dependencies
 ream-bls.workspace = true
 ream-consensus-beacon.workspace = true
-ream-consensus-misc.workspace = true
 ream-consensus-lean.workspace = true
+ream-consensus-misc.workspace = true
 ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
 ream-polynomial-commitments.workspace = true

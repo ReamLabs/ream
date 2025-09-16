@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-use ream_consensus_lean::block::SignedBlock;
-use ream_consensus_lean::vote::SignedVote;
-use redb::{Database, Durability, TableDefinition};
+use ream_consensus_lean::{block::SignedBlock, vote::SignedVote};
+use redb::{Database, Durability, ReadableTable, ReadableTableMetadata, TableDefinition};
 
 use crate::{errors::StoreError, tables::ssz_encoder::SSZEncoding};
-use redb::ReadableTable;
-use redb::ReadableTableMetadata;
 
 /// Table definition for the Known Votes table
 ///
@@ -92,6 +89,13 @@ impl KnownVotesTable {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(KNOWN_VOTES_TABLE)?;
         Ok(table.len()?)
+    }
+
+    /// Returns if there are no known votes
+    pub fn is_empty(&self) -> Result<bool, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(KNOWN_VOTES_TABLE)?;
+        Ok(table.len()? == 0)
     }
 
     /// Load all votes sorted by slot

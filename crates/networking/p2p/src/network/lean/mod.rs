@@ -420,7 +420,6 @@ mod tests {
             .expect("unable to init Ream Lean Database");
         LeanChain {
             store: Arc::new(Mutex::new(lean_db)),
-            // known_votes: Vec::new(),
             head: B256::default(),
             safe_target: B256::default(),
             new_votes: Vec::new(),

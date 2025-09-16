@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::Mutex;
 
 use alloy_primitives::B256;
 use anyhow::{Ok, anyhow};
 use ream_consensus_lean::vote::Vote;
 use ream_storage::{db::lean::LeanDB, tables::table::Table};
+use tokio::sync::Mutex;
 
 /// Use LMD GHOST to get the head, given a particular root (usually the
 /// latest known justified block)
@@ -16,7 +16,7 @@ pub async fn get_fork_choice_head(
 ) -> anyhow::Result<B256> {
     let mut root = *provided_root;
 
-    let (slot_index_table, lean_block_provider, knoww_votes_provider) = {
+    let (slot_index_table, lean_block_provider, known_votes_provider) = {
         let db = store.lock().await;
         (
             db.slot_index_provider(),
@@ -32,18 +32,8 @@ pub async fn get_fork_choice_head(
             .ok_or(anyhow!("No blocks found to calculate fork choice"))?;
     }
 
-    // if root == B256::ZERO {
-    //     root = blocks
-    //         .iter()
-    //         .min_by_key(|(_, block)| block.slot)
-    //         .map(|(hash, _)| *hash)
-    //         .ok_or_else(|| anyhow!("No blocks found to calculate fork choice"))?;
-    // }
-
-    // Identify latest votes
-
     // Sort votes by ascending slots to ensure that new votes are inserted last
-    let sorted_votes = knoww_votes_provider.all_sorted_by_slot()?;
+    let sorted_votes = known_votes_provider.all_sorted_by_slot()?;
 
     // Prepare a map of validator_id -> their vote
     let mut latest_votes = HashMap::<u64, Vote>::new();
@@ -81,17 +71,6 @@ pub async fn get_fork_choice_head(
 
     // Identify the children of each block
     let children_map = lean_block_provider.get_children_map(min_score, &vote_weights)?;
-
-    // for (hash, block) in blocks {
-    //     // Original Python impl uses `block.parent` to imply that the block has a parent,
-    //     // So for Rust, we use `block.parent != B256::ZERO` instead.
-    //     if block.parent_root != B256::ZERO && *vote_weights.get(hash).unwrap_or(&0) >= min_score {
-    //         children_map
-    //             .entry(block.parent_root)
-    //             .or_default()
-    //             .push(*hash);
-    //     }
-    // }
 
     // Start at the root (latest justified hash or genesis) and repeatedly
     // choose the child with the most latest votes, tiebreaking by slot then hash
