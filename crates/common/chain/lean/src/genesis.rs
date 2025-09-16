@@ -27,7 +27,7 @@ pub fn setup_genesis() -> (SignedBlock, LeanState) {
     };
 
     let mut genesis_state = genesis_state(num_validators, genesis_time);
-    let genesis_block = SignedBlock::from( genesis_block(genesis_state.tree_hash_root()));
+    let genesis_block = SignedBlock::from(genesis_block(genesis_state.tree_hash_root()));
 
     // Because of circular dependency, the `genesis_state` which is created first
     // is not aware of the genesis block. So once the genesis_block is created,

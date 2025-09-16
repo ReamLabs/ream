@@ -66,9 +66,13 @@ impl LeanChainService {
                         0 => {
                             // First tick (t=0/4): Log current head state, including its justification/finalization status.
                             let current_slot = get_current_slot();
-                            let lean_chain = self.lean_chain.read().await;
-                            let head_state = lean_chain.store.lock().await.lean_state_provider().get(lean_chain.head)?
-                                .ok_or_else(|| anyhow!("Post state not found for head: {}", lean_chain.head))?;
+                            let (head, store) = {
+                                let lean_chain = self.lean_chain.read().await;
+                                (lean_chain.head, lean_chain.store.clone())
+                            };
+                            let head_state = store.lock().await
+                                .lean_state_provider()
+                                .get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {}", head))?;
 
                             info!(
                                 "Current head state of slot {current_slot}: latest_justified.slot: {}, latest_finalized.slot: {}",
@@ -281,15 +285,15 @@ impl LeanChainService {
             (db.lean_block_provider(), db.known_votes_provider())
         };
 
-        let lean_chain = self.lean_chain.read().await;
         let is_known_vote = known_votes_provider.contains(&signed_vote)?;
-        let is_new_vote = lean_chain.new_votes.contains(&signed_vote);
+        let is_new_vote = {
+            let lean_chain = self.lean_chain.read().await;
+            lean_chain.new_votes.contains(&signed_vote)
+        };
 
         if is_known_vote || is_new_vote {
             // Do nothing
         } else if lean_block_provider.contains_key(signed_vote.message.head.root) {
-            drop(lean_chain);
-
             // We should acquire another write lock
             let mut lean_chain = self.lean_chain.write().await;
             lean_chain.new_votes.push(signed_vote);

@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use ream_consensus_lean::vote::SignedVote;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableTable, TableDefinition};
 
 use crate::{errors::StoreError, tables::ssz_encoder::SSZEncoding};
-use redb::ReadableTable;
 
 /// Table definition for the New Votes table
 ///

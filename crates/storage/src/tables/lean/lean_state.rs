@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus_lean::state::LeanState;
-use redb::{Database, Durability, TableDefinition, ReadableTable};
+use redb::{Database, Durability, ReadableTable, TableDefinition};
 
 use crate::{
     errors::StoreError,
