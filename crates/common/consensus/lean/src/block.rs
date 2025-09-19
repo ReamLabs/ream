@@ -17,8 +17,8 @@ pub struct SignedBlock {
     pub signature: FixedBytes<4000>,
 }
 
-impl From<Block> for SignedBlock {
-    fn from(block: Block) -> Self {
+impl SignedBlock {
+    pub fn default_from_block(block: Block) -> Self {
         Self {
             message: block,
             signature: FixedBytes::default(),

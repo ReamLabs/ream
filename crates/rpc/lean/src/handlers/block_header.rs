@@ -17,7 +17,6 @@ pub async fn get_block_header(
     Ok(HttpResponse::Ok().json(BlockHeader::from(
         get_block_by_id(block_id.into_inner(), lean_chain)
             .await?
-            .ok_or_else(|| ApiError::NotFound("Block not found".to_string()))?
-            .message,
+            .ok_or_else(|| ApiError::NotFound("Block not found".to_string()))?,
     )))
 }
