@@ -39,12 +39,17 @@ type MH = TopLevelPoseidonMessageHash<
     PARAMETER_LEN,
     RAND_LEN_FE,
 >;
-type TH = PoseidonTweakHash<PARAMETER_LEN, HASH_LEN_FE, TWEAK_LEN_FE, CAPACITY, DIMENSION>;
+type TweakableHash =
+    PoseidonTweakHash<PARAMETER_LEN, HASH_LEN_FE, TWEAK_LEN_FE, CAPACITY, DIMENSION>;
 
 #[allow(clippy::upper_case_acronyms)]
-type PRF = ShakePRFtoF<HASH_LEN_FE>;
+type PseudoRandomFunction = ShakePRFtoF<HASH_LEN_FE>;
 
-type IE = TargetSumEncoding<MH, TARGET_SUM>;
+type IncomparableEncoding = TargetSumEncoding<MH, TARGET_SUM>;
 
-pub type SIGTopLevelTargetSumLifetime8Dim16Base4 =
-    GeneralizedXMSSSignatureScheme<PRF, IE, TH, LOG_LIFETIME>;
+pub type SIGTopLevelTargetSumLifetime8Dim16Base4 = GeneralizedXMSSSignatureScheme<
+    PseudoRandomFunction,
+    IncomparableEncoding,
+    TweakableHash,
+    LOG_LIFETIME,
+>;
