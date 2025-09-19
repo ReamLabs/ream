@@ -27,7 +27,7 @@ const POS_OUTPUT_LEN_PER_INV_FE: usize = 15;
 const POS_INVOCATIONS: usize = 1;
 const POS_OUTPUT_LEN_FE: usize = POS_OUTPUT_LEN_PER_INV_FE * POS_INVOCATIONS;
 
-type MH = TopLevelPoseidonMessageHash<
+type MessageHash = TopLevelPoseidonMessageHash<
     POS_OUTPUT_LEN_PER_INV_FE,
     POS_INVOCATIONS,
     POS_OUTPUT_LEN_FE,
@@ -45,7 +45,7 @@ type TweakableHash =
 #[allow(clippy::upper_case_acronyms)]
 type PseudoRandomFunction = ShakePRFtoF<HASH_LEN_FE>;
 
-type IncomparableEncoding = TargetSumEncoding<MH, TARGET_SUM>;
+type IncomparableEncoding = TargetSumEncoding<MessageHash, TARGET_SUM>;
 
 pub type SIGTopLevelTargetSumLifetime8Dim16Base4 = GeneralizedXMSSSignatureScheme<
     PseudoRandomFunction,
