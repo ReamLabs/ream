@@ -7,8 +7,9 @@ use hashsig::{
     },
 };
 
-/// TEST_CONFIG signature scheme parameters based on leanSpec configuration
-/// Source: https://github.com/leanEthereum/leanSpec/blob/a2bc45b66b1fa8506dfae54f9966563d1e54101c/src/lean_spec/subspecs/xmss/constants.py#L121-L137
+// TEST_CONFIG signature scheme parameters based on leanSpec configuration
+// Source: https://github.com/leanEthereum/leanSpec/blob/a2bc45b66b1fa8506dfae54f9966563d1e54101c/src/lean_spec/subspecs/xmss/constants.py#L121-L137
+
 const LOG_LIFETIME: usize = 8;
 const DIMENSION: usize = 16;
 const BASE: usize = 4;
@@ -25,13 +26,13 @@ const CAPACITY: usize = 9;
 
 const POSEIDON_OUTPUT_LENGTH_PER_INVOCATION_FIELD_ELEMENTS: usize = 15;
 const POSEIDON_INVOCATIONS: usize = 1;
-const POSEIDON_OUTPUT_LENGTH_FE: usize =
+const POSEIDON_OUTPUT_LENGTH_FIELD_ELEMENTS: usize =
     POSEIDON_OUTPUT_LENGTH_PER_INVOCATION_FIELD_ELEMENTS * POSEIDON_INVOCATIONS;
 
 type MessageHash = TopLevelPoseidonMessageHash<
     POSEIDON_OUTPUT_LENGTH_PER_INVOCATION_FIELD_ELEMENTS,
     POSEIDON_INVOCATIONS,
-    POSEIDON_OUTPUT_LENGTH_FE,
+    POSEIDON_OUTPUT_LENGTH_FIELD_ELEMENTS,
     DIMENSION,
     BASE,
     FINAL_LAYER,
