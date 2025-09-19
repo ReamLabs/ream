@@ -358,15 +358,16 @@ impl LeanNetworkService {
     async fn connect_to_peers(&mut self, peers: Vec<Multiaddr>) {
         trace!("Discovered peers: {peers:?}");
         for peer in peers {
-            if let Err(err) = self.swarm.dial(peer.clone()) {
-                warn!("Failed to dial peer: {err:?}");
-                continue;
-            }
-
             if let Some(Protocol::P2p(peer_id)) = peer
                 .iter()
                 .find(|protocol| matches!(protocol, Protocol::P2p(_)))
+                && peer_id != self.local_peer_id()
             {
+                if let Err(err) = self.swarm.dial(peer.clone()) {
+                    warn!("Failed to dial peer: {err:?}");
+                    continue;
+                }
+
                 info!("Dialing peer: {peer_id:?}",);
                 self.peer_table
                     .lock()
