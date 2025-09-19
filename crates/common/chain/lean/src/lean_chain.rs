@@ -120,6 +120,7 @@ impl LeanChain {
 
         get_fork_choice_head(
             self.store.clone(),
+            &self.new_votes,
             &justified_hash,
             self.num_validators * 2 / 3,
         )
@@ -150,7 +151,8 @@ impl LeanChain {
     /// Done upon processing new votes or a new block
     pub async fn recompute_head(&mut self) -> anyhow::Result<()> {
         let justified_hash = self.latest_justified_hash().await?;
-        self.head = get_fork_choice_head(self.store.clone(), &justified_hash, 0).await?;
+        self.head =
+            get_fork_choice_head(self.store.clone(), &self.new_votes, &justified_hash, 0).await?;
         info!("new head: {:?}", self.head);
         Ok(())
     }
@@ -222,14 +224,9 @@ impl LeanChain {
     }
 
     pub async fn build_vote(&self, slot: u64) -> anyhow::Result<Vote> {
-        let lean_block_provider = {
+        let (lean_block_provider, lean_state_provider) = {
             let db = self.store.lock().await;
-            db.lean_block_provider()
-        };
-
-        let lean_state_provider = {
-            let db = self.store.lock().await;
-            db.lean_state_provider()
+            (db.lean_block_provider(), db.lean_state_provider())
         };
 
         let state = lean_state_provider

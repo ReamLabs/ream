@@ -31,6 +31,7 @@ use ream_chain_lean::{
     p2p_request::LeanP2PRequest, service::LeanChainService,
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
+use ream_consensus_lean::block::SignedBlock;
 use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
 };
@@ -163,8 +164,11 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     // Initialize the lean chain with genesis block and state.
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
-    let (lean_chain_writer, lean_chain_reader) =
-        Writer::new(LeanChain::new(genesis_block, genesis_state, lean_db));
+    let (lean_chain_writer, lean_chain_reader) = Writer::new(LeanChain::new(
+        SignedBlock::default_from_block(genesis_block),
+        genesis_state,
+        lean_db,
+    ));
 
     // Initialize the services that will run in the lean node.
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();

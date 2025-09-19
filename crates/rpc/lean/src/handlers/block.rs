@@ -4,7 +4,7 @@ use actix_web::{
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_chain_lean::lean_chain::LeanChainReader;
-use ream_consensus_lean::block::SignedBlock;
+use ream_consensus_lean::block::Block;
 use ream_storage::tables::table::Table;
 
 // GET /lean/v0/blocks/{block_id}
@@ -24,7 +24,7 @@ pub async fn get_block(
 pub async fn get_block_by_id(
     block_id: ID,
     lean_chain: Data<LeanChainReader>,
-) -> Result<Option<SignedBlock>, ApiError> {
+) -> Result<Option<Block>, ApiError> {
     let root = {
         let lean_chain = lean_chain.read().await;
         match block_id {
@@ -54,5 +54,8 @@ pub async fn get_block_by_id(
     let provider = db.lock().await.lean_block_provider();
     provider
         .get(root?)
+        .map(|maybe_signed_block| {
+            maybe_signed_block.map(|signed_block| signed_block.message.clone())
+        })
         .map_err(|e| ApiError::InternalError(format!("DB error: {e}")))
 }

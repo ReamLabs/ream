@@ -161,11 +161,11 @@ impl LeanState {
 
         // Process slots (including those with no blocks) since block
         self.process_slots(block.slot)
-            .map_err(|error| anyhow!("Failed to process slots: {error:?}"))?;
+            .map_err(|err| anyhow!("Failed to process slots: {err:?}"))?;
 
         // Process block
         self.process_block(block)
-            .map_err(|error| anyhow!("Failed to process block: {error:?}"))?;
+            .map_err(|err| anyhow!("Failed to process block: {err:?}"))?;
 
         // Verify state root
         if validate_result {

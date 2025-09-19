@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::{Ok, anyhow};
-use ream_consensus_lean::vote::Vote;
+use ream_consensus_lean::vote::{SignedVote, Vote};
 use ream_storage::{db::lean::LeanDB, tables::table::Table};
 use tokio::sync::Mutex;
 
@@ -10,19 +10,15 @@ use tokio::sync::Mutex;
 /// latest known justified block)
 pub async fn get_fork_choice_head(
     store: Arc<Mutex<LeanDB>>,
+    votes: &[SignedVote],
     provided_root: &B256,
-    // votes: &[SignedVote],
     min_score: u64,
 ) -> anyhow::Result<B256> {
     let mut root = *provided_root;
 
-    let (slot_index_table, lean_block_provider, known_votes_provider) = {
+    let (slot_index_table, lean_block_provider) = {
         let db = store.lock().await;
-        (
-            db.slot_index_provider(),
-            db.lean_block_provider(),
-            db.known_votes_provider(),
-        )
+        (db.slot_index_provider(), db.lean_block_provider())
     };
 
     // Start at genesis by default
@@ -33,7 +29,8 @@ pub async fn get_fork_choice_head(
     }
 
     // Sort votes by ascending slots to ensure that new votes are inserted last
-    let sorted_votes = known_votes_provider.all_sorted_by_slot()?;
+    let mut sorted_votes = votes.to_owned();
+    sorted_votes.sort_by_key(|signed_vote| signed_vote.message.slot);
 
     // Prepare a map of validator_id -> their vote
     let mut latest_votes = HashMap::<u64, Vote>::new();
