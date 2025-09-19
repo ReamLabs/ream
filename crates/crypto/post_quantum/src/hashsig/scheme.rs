@@ -7,43 +7,50 @@ use hashsig::{
     },
 };
 
-// TEST_CONFIG signature scheme parameters based on leanSpec configuration
-// Source: https://github.com/leanEthereum/leanSpec/blob/a2bc45b66b1fa8506dfae54f9966563d1e54101c/src/lean_spec/subspecs/xmss/constants.py#L121-L137
+/// TEST_CONFIG signature scheme parameters based on leanSpec configuration
+/// Source: https://github.com/leanEthereum/leanSpec/blob/a2bc45b66b1fa8506dfae54f9966563d1e54101c/src/lean_spec/subspecs/xmss/constants.py#L121-L137
+
 const LOG_LIFETIME: usize = 8;
 const DIMENSION: usize = 16;
 const BASE: usize = 4;
 const FINAL_LAYER: usize = 24;
 const TARGET_SUM: usize = 24;
 
-const PARAMETER_LEN: usize = 5;
-const TWEAK_LEN_FE: usize = 2;
-const MSG_LEN_FE: usize = 9;
-const RAND_LEN_FE: usize = 7;
-const HASH_LEN_FE: usize = 8;
+const PARAMETER_LENGTH: usize = 5;
+const TWEAK_LENGTH_FIELD_ELEMENTS: usize = 2;
+const MESSAGE_LENGTH_FIELD_ELEMENTS: usize = 9;
+const RAND_LENGTH_FIELD_ELEMENTS: usize = 7;
+const HASH_LENGTH_FIELD_ELEMENTS: usize = 8;
 
 const CAPACITY: usize = 9;
 
-const POS_OUTPUT_LEN_PER_INV_FE: usize = 15;
-const POS_INVOCATIONS: usize = 1;
-const POS_OUTPUT_LEN_FE: usize = POS_OUTPUT_LEN_PER_INV_FE * POS_INVOCATIONS;
+const POSEIDON_OUTPUT_LENGTH_PER_INVOCATION_FIELD_ELEMENTS: usize = 15;
+const POSEIDON_INVOCATIONS: usize = 1;
+const POSEIDON_OUTPUT_LENGTH_FE: usize =
+    POSEIDON_OUTPUT_LENGTH_PER_INVOCATION_FIELD_ELEMENTS * POSEIDON_INVOCATIONS;
 
 type MessageHash = TopLevelPoseidonMessageHash<
-    POS_OUTPUT_LEN_PER_INV_FE,
-    POS_INVOCATIONS,
-    POS_OUTPUT_LEN_FE,
+    POSEIDON_OUTPUT_LENGTH_PER_INVOCATION_FIELD_ELEMENTS,
+    POSEIDON_INVOCATIONS,
+    POSEIDON_OUTPUT_LENGTH_FE,
     DIMENSION,
     BASE,
     FINAL_LAYER,
-    TWEAK_LEN_FE,
-    MSG_LEN_FE,
-    PARAMETER_LEN,
-    RAND_LEN_FE,
+    TWEAK_LENGTH_FIELD_ELEMENTS,
+    MESSAGE_LENGTH_FIELD_ELEMENTS,
+    PARAMETER_LENGTH,
+    RAND_LENGTH_FIELD_ELEMENTS,
 >;
-type TweakableHash =
-    PoseidonTweakHash<PARAMETER_LEN, HASH_LEN_FE, TWEAK_LEN_FE, CAPACITY, DIMENSION>;
+type TweakableHash = PoseidonTweakHash<
+    PARAMETER_LENGTH,
+    HASH_LENGTH_FIELD_ELEMENTS,
+    TWEAK_LENGTH_FIELD_ELEMENTS,
+    CAPACITY,
+    DIMENSION,
+>;
 
 #[allow(clippy::upper_case_acronyms)]
-type PseudoRandomFunction = ShakePRFtoF<HASH_LEN_FE>;
+type PseudoRandomFunction = ShakePRFtoF<HASH_LENGTH_FIELD_ELEMENTS>;
 
 type IncomparableEncoding = TargetSumEncoding<MessageHash, TARGET_SUM>;
 
