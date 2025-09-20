@@ -5819,6 +5819,7 @@ dependencies = [
  "ream-rpc-common",
  "tokio",
  "tracing",
+ "tree_hash",
 ]
 
 [[package]]
