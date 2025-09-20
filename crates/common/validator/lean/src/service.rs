@@ -103,7 +103,7 @@ impl ValidatorService {
                             info!("Starting vote phase at slot {slot} (tick {tick_count}): {} validator(s) voting", self.keystores.len());
 
                             // Build the vote from LeanChain, and modify its validator ID
-                            let vote_template = self.lean_chain.read().await.build_vote(slot).expect("Failed to build vote");
+                            let vote_template = self.lean_chain.read().await.build_vote(slot).await.expect("Failed to build vote");
 
                             info!(
                                 "Built vote template for head={:?}, slot={}, source={:?}, target={:?}",

@@ -5,6 +5,7 @@ use actix_web::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_chain_lean::lean_chain::LeanChainReader;
 use ream_consensus_lean::block::Block;
+use ream_storage::tables::table::Table;
 
 // GET /lean/v0/blocks/{block_id}
 #[get("/blocks/{block_id}")]
@@ -24,19 +25,37 @@ pub async fn get_block_by_id(
     block_id: ID,
     lean_chain: Data<LeanChainReader>,
 ) -> Result<Option<Block>, ApiError> {
-    // Obtain read guard first from the reader.
-    let lean_chain = lean_chain.read().await;
+    let root = {
+        let lean_chain = lean_chain.read().await;
+        match block_id {
+            ID::Finalized => lean_chain.latest_finalized_hash().await.map_err(|error| {
+                ApiError::InternalError(format!("No latest finalized hash: {error:?}"))
+            }),
+            ID::Genesis => Ok(lean_chain.genesis_hash),
+            ID::Head => Ok(lean_chain.head),
+            ID::Justified => lean_chain.latest_justified_hash().await.map_err(|error| {
+                ApiError::InternalError(format!("No latest justified hash: {error:?}"))
+            }),
+            ID::Slot(slot) => lean_chain
+                .get_block_id_by_slot(slot)
+                .await
+                .map_err(|error| {
+                    ApiError::InternalError(format!("No block for slot {slot}: {error:?}"))
+                }),
+            ID::Root(root) => Ok(root),
+        }
+    };
 
-    Ok(match block_id {
-        ID::Finalized => lean_chain.get_block_by_root(lean_chain.latest_finalized_hash().ok_or(
-            ApiError::InternalError("Failed to get latest finalized hash".to_string()),
-        )?),
-        ID::Genesis => lean_chain.get_block_by_root(lean_chain.genesis_hash),
-        ID::Head => lean_chain.get_block_by_root(lean_chain.head),
-        ID::Justified => lean_chain.get_block_by_root(lean_chain.latest_justified_hash().ok_or(
-            ApiError::InternalError("Failed to get latest justified hash".to_string()),
-        )?),
-        ID::Slot(slot) => lean_chain.get_block_by_slot(slot),
-        ID::Root(root) => lean_chain.get_block_by_root(root),
-    })
+    let db = {
+        let lean_chain = lean_chain.read().await;
+        lean_chain.store.clone()
+    };
+
+    let provider = db.lock().await.lean_block_provider();
+    provider
+        .get(root?)
+        .map(|maybe_signed_block| {
+            maybe_signed_block.map(|signed_block| signed_block.message.clone())
+        })
+        .map_err(|e| ApiError::InternalError(format!("DB error: {e}")))
 }

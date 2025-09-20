@@ -7,6 +7,7 @@ use ream_consensus_lean::{
     vote::SignedVote,
 };
 use ream_network_spec::networks::lean_network_spec;
+use ream_storage::tables::table::Table;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info, warn};
 use tree_hash::TreeHash;
@@ -65,9 +66,13 @@ impl LeanChainService {
                         0 => {
                             // First tick (t=0/4): Log current head state, including its justification/finalization status.
                             let current_slot = get_current_slot();
-                            let lean_chain = self.lean_chain.read().await;
-                            let head_state = lean_chain.post_states.get(&lean_chain.head)
-                                .ok_or_else(|| anyhow!("Post state not found for head: {}", lean_chain.head))?;
+                            let (head, store) = {
+                                let lean_chain = self.lean_chain.read().await;
+                                (lean_chain.head, lean_chain.store.clone())
+                            };
+                            let head_state = store.lock().await
+                                .lean_state_provider()
+                                .get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {}", head))?;
 
                             info!(
                                 "Current head state of slot {current_slot}: latest_justified.slot: {}, latest_finalized.slot: {}",
@@ -80,13 +85,13 @@ impl LeanChainService {
                             let current_slot = get_current_slot();
                             info!("Computing safe target at slot {current_slot} (tick {tick_count})");
                             let mut lean_chain = self.lean_chain.write().await;
-                            lean_chain.safe_target = lean_chain.compute_safe_target().expect("Failed to compute safe target");
+                            lean_chain.safe_target = lean_chain.compute_safe_target().await.expect("Failed to compute safe target");
                         }
                         3 => {
                             // Fourth tick (t=3/4): Accept new votes.
                             let current_slot = get_current_slot();
                             info!("Accepting new votes at slot {current_slot} (tick {tick_count})");
-                            self.lean_chain.write().await.accept_new_votes().expect("Failed to accept new votes");
+                            self.lean_chain.write().await.accept_new_votes().await.expect("Failed to accept new votes");
                         }
                         _ => {
                             // Other ticks (t=0, t=1/4): Do nothing.
@@ -151,10 +156,10 @@ impl LeanChainService {
             let mut lean_chain = self.lean_chain.write().await;
 
             // Accept new votes and modify the lean chain.
-            lean_chain.accept_new_votes()?;
+            lean_chain.accept_new_votes().await?;
 
             // Build a block and propose the block.
-            lean_chain.propose_block(slot)?
+            lean_chain.propose_block(slot).await?
         };
 
         // Send the produced block back to the requester
@@ -176,33 +181,49 @@ impl LeanChainService {
 
         let block_hash = signed_block.message.tree_hash_root();
 
-        let mut lean_chain = self.lean_chain.write().await;
+        let (lean_block_provider, known_votes_provider) = {
+            let lean_chain = self.lean_chain.read().await;
+            let db = lean_chain.store.lock().await;
+            (db.lean_block_provider(), db.known_votes_provider())
+        };
 
         // If the block is already known, ignore it
-        if lean_chain.chain.contains_key(&block_hash) {
+        if lean_block_provider.contains_key(block_hash) {
             return Ok(());
         }
 
-        match lean_chain
-            .post_states
-            .get(&signed_block.message.parent_root)
-        {
+        let state = {
+            let lean_chain = self.lean_chain.read().await;
+            lean_chain
+                .store
+                .lock()
+                .await
+                .lean_state_provider()
+                .get(signed_block.message.parent_root)?
+        };
+        match state {
             Some(parent_state) => {
                 let mut state = parent_state.clone();
                 state.state_transition(&signed_block, true, true)?;
 
+                let mut votes_to_add = Vec::new();
+                let mut lean_chain = self.lean_chain.write().await;
                 for vote in &signed_block.message.body.attestations {
-                    if !lean_chain.known_votes.contains(vote) {
-                        lean_chain.known_votes.push(vote.clone());
+                    if !known_votes_provider.contains(vote)? {
+                        votes_to_add.push(vote.clone());
                     }
                 }
+                {
+                    let db = lean_chain.store.lock().await;
+                    db.lean_block_provider()
+                        .insert(block_hash, signed_block.clone())?;
 
-                lean_chain
-                    .chain
-                    .insert(block_hash, signed_block.message.clone());
-                lean_chain.post_states.insert(block_hash, state);
+                    db.lean_state_provider().insert(block_hash, state)?;
 
-                lean_chain.recompute_head()?;
+                    db.known_votes_provider().batch_append(votes_to_add)?;
+                }
+
+                lean_chain.recompute_head().await?;
 
                 drop(lean_chain);
 
@@ -258,18 +279,21 @@ impl LeanChainService {
             // TODO: Validate the signature.
         }
 
-        let lean_chain = self.lean_chain.read().await;
-        let is_known_vote = lean_chain.known_votes.contains(&signed_vote);
-        let is_new_vote = lean_chain.new_votes.contains(&signed_vote);
+        let (lean_block_provider, known_votes_provider) = {
+            let lean_chain = self.lean_chain.read().await;
+            let db = lean_chain.store.lock().await;
+            (db.lean_block_provider(), db.known_votes_provider())
+        };
+
+        let is_known_vote = known_votes_provider.contains(&signed_vote)?;
+        let is_new_vote = {
+            let lean_chain = self.lean_chain.read().await;
+            lean_chain.new_votes.contains(&signed_vote)
+        };
 
         if is_known_vote || is_new_vote {
             // Do nothing
-        } else if lean_chain
-            .chain
-            .contains_key(&signed_vote.message.head.root)
-        {
-            drop(lean_chain);
-
+        } else if lean_block_provider.contains_key(signed_vote.message.head.root) {
             // We should acquire another write lock
             let mut lean_chain = self.lean_chain.write().await;
             lean_chain.new_votes.push(signed_vote);

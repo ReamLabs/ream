@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use ream_consensus_lean::block::SignedBlock;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableTable, TableDefinition};
 use tree_hash::TreeHash;
 
 use super::{slot_index::SlotIndexTable, state_root_index::StateRootIndexTable};
@@ -56,5 +56,37 @@ impl Table for LeanBlockTable {
         drop(table);
         write_txn.commit()?;
         Ok(())
+    }
+}
+
+impl LeanBlockTable {
+    pub fn contains_key(&self, key: B256) -> bool {
+        matches!(self.get(key), Ok(Some(_)))
+    }
+
+    pub fn get_children_map(
+        &self,
+        min_score: u64,
+        vote_weights: &HashMap<B256, u64>,
+    ) -> Result<HashMap<B256, Vec<B256>>, StoreError> {
+        let mut children_map = HashMap::<B256, Vec<B256>>::new();
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(LEAN_BLOCK_TABLE)?;
+
+        for entry in table.iter()? {
+            let (hash_enc, block_enc) = entry?;
+            let hash: B256 = hash_enc.value();
+            let block: SignedBlock = block_enc.value();
+
+            if block.message.parent_root != B256::ZERO
+                && *vote_weights.get(&hash).unwrap_or(&0) >= min_score
+            {
+                children_map
+                    .entry(block.message.parent_root)
+                    .or_default()
+                    .push(hash);
+            }
+        }
+        Ok(children_map)
     }
 }
