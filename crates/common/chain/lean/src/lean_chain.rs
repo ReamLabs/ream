@@ -70,9 +70,11 @@ impl LeanChain {
             db.lean_state_provider()
         };
 
-        lean_state_provider
-            .get_latest_justified_hash()?
-            .ok_or_else(|| anyhow!("No justified hash found in post states"))
+        let state = lean_state_provider
+            .get(self.head)?
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?;
+
+        Ok(state.latest_justified.root)
     }
 
     pub async fn get_block_id_by_slot(&self, slot: u64) -> anyhow::Result<B256> {
@@ -151,8 +153,13 @@ impl LeanChain {
     /// Done upon processing new votes or a new block
     pub async fn recompute_head(&mut self) -> anyhow::Result<()> {
         let justified_hash = self.latest_justified_hash().await?;
-        self.head =
-            get_fork_choice_head(self.store.clone(), &self.new_votes, &justified_hash, 0).await?;
+        let known_votes_provider = {
+            let db = self.store.lock().await;
+            db.known_votes_provider()
+        };
+
+        let votes = known_votes_provider.all_sorted_by_slot()?;
+        self.head = get_fork_choice_head(self.store.clone(), &votes, &justified_hash, 0).await?;
         info!("new head: {:?}", self.head);
         Ok(())
     }
