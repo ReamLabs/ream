@@ -77,8 +77,11 @@ pub async fn validate_sync_committee_contribution_and_proof(
 
     // [REJECT] if the validator with index contribution_and_proof.aggregator_index is not in the
     // sync committee for the epoch of contribution.slot
-    let validator_pubkey =
-        &state.validators[contribution_and_proof.aggregator_index as usize].public_key;
+    let validator_pubkey = &state
+        .validators
+        .get(usize::try_from(contribution_and_proof.aggregator_index)?)
+        .ok_or_else(|| anyhow!("invalid aggregator_index"))?
+        .public_key;
 
     let is_valid_committee_member =
         get_sync_subcommittee_pubkeys(&state, contribution.subcommittee_index)
