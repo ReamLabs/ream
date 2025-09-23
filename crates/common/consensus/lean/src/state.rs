@@ -129,7 +129,7 @@ impl LeanState {
 
         // Create a new Bitlist with all the flattened votes
         let mut justifications_validators = BitList::with_capacity(
-            (MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT) as usize,
+            justifications.len() * VALIDATOR_REGISTRY_LIMIT as usize,
         )
         .map_err(|err| {
             anyhow!("Failed to create BitList for justifications_validators: {err:?}")
@@ -583,6 +583,33 @@ mod test {
                 .get(2 * VALIDATOR_REGISTRY_LIMIT as usize + 2)
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn set_justifications_correct_flattened_size() {
+        let mut state = LeanState::new(10, 0);
+        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
+
+        // Test with a single root
+        let root0 = B256::repeat_byte(0);
+        let bitlist0 =
+            BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
+
+        justifications.insert(root0, bitlist0);
+
+        state.set_justifications(justifications.clone()).unwrap();
+        assert_eq!(state.justifications_roots.len(), 1);
+        assert_eq!(state.justifications_validators.len(), VALIDATOR_REGISTRY_LIMIT as usize);
+
+        // Test with 2 roots
+        let root1 = B256::repeat_byte(1);
+        let bitlist1 =
+            BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
+
+        justifications.insert(root1, bitlist1);
+        state.set_justifications(justifications).unwrap();
+        assert_eq!(state.justifications_roots.len(), 2);
+        assert_eq!(state.justifications_validators.len(), 2 * VALIDATOR_REGISTRY_LIMIT as usize);
     }
 
     #[test]
