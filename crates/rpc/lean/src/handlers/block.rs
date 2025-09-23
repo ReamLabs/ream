@@ -28,20 +28,17 @@ pub async fn get_block_by_id(
     let root = {
         let lean_chain = lean_chain.read().await;
         match block_id {
-            ID::Finalized => lean_chain.latest_finalized_hash().await.map_err(|error| {
-                ApiError::InternalError(format!("No latest finalized hash: {error:?}"))
+            ID::Finalized => lean_chain.latest_finalized_hash().await.map_err(|err| {
+                ApiError::InternalError(format!("No latest finalized hash: {err:?}"))
             }),
             ID::Genesis => Ok(lean_chain.genesis_hash),
             ID::Head => Ok(lean_chain.head),
-            ID::Justified => lean_chain.latest_justified_hash().await.map_err(|error| {
-                ApiError::InternalError(format!("No latest justified hash: {error:?}"))
+            ID::Justified => lean_chain.latest_justified_hash().await.map_err(|err| {
+                ApiError::InternalError(format!("No latest justified hash: {err:?}"))
             }),
-            ID::Slot(slot) => lean_chain
-                .get_block_id_by_slot(slot)
-                .await
-                .map_err(|error| {
-                    ApiError::InternalError(format!("No block for slot {slot}: {error:?}"))
-                }),
+            ID::Slot(slot) => lean_chain.get_block_id_by_slot(slot).await.map_err(|err| {
+                ApiError::InternalError(format!("No block for slot {slot}: {err:?}"))
+            }),
             ID::Root(root) => Ok(root),
         }
     };
@@ -57,5 +54,5 @@ pub async fn get_block_by_id(
         .map(|maybe_signed_block| {
             maybe_signed_block.map(|signed_block| signed_block.message.clone())
         })
-        .map_err(|e| ApiError::InternalError(format!("DB error: {e}")))
+        .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))
 }

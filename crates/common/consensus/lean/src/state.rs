@@ -423,10 +423,6 @@ impl LeanState {
             }
         }
 
-        info!(
-            "justified: {}, finalized: {}",
-            self.latest_justified.slot, self.latest_finalized.slot
-        );
         // flatten and set updated justifications back to the state
         self.set_justifications(justifications_map)?;
 

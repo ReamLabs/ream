@@ -15,7 +15,6 @@ use ream_network_spec::networks::lean_network_spec;
 use ream_storage::{db::lean::LeanDB, tables::table::Table};
 use ream_sync::rwlock::{Reader, Writer};
 use tokio::sync::Mutex;
-use tracing::info;
 use tree_hash::TreeHash;
 
 pub type LeanChainWriter = Writer<LeanChain>;
@@ -49,10 +48,10 @@ impl LeanChain {
         // todo: remove this unwrap
         db.lean_block_provider()
             .insert(genesis_block_hash, genesis_block)
-            .unwrap();
+            .expect("Failed to insert genesis block");
         db.lean_state_provider()
             .insert(genesis_block_hash, genesis_state)
-            .unwrap();
+            .expect("Failed to insert genesis state");
 
         LeanChain {
             store: Arc::new(Mutex::new(db)),
@@ -72,7 +71,7 @@ impl LeanChain {
 
         let state = lean_state_provider
             .get(self.head)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?;
+            .ok_or_else(|| anyhow!("State not found in chain for head: {}", self.head))?;
 
         Ok(state.latest_justified.root)
     }
@@ -96,7 +95,7 @@ impl LeanChain {
 
         let block_hash = lean_slot_provider
             .get(slot)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?;
+            .ok_or_else(|| anyhow!("Block hash not found in chain for head: {}", self.head))?;
 
         lean_block_provider
             .get(block_hash)?
@@ -111,7 +110,7 @@ impl LeanChain {
 
         let state = lean_state_provider
             .get(self.head)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?;
+            .ok_or_else(|| anyhow!("State not found in chain for head: {}", self.head))?;
 
         Ok(state.latest_finalized.root)
     }
@@ -132,12 +131,12 @@ impl LeanChain {
     /// Process new votes that the staker has received. Vote processing is done
     /// at a particular time, because of safe target and view merge rule
     pub async fn accept_new_votes(&mut self) -> anyhow::Result<()> {
-        let mut votes_to_be_inserted = Vec::new();
         let known_votes_provider = {
             let db = self.store.lock().await;
             db.known_votes_provider()
         };
 
+        let mut votes_to_be_inserted = Vec::new();
         for new_vote in self.new_votes.drain(..) {
             if !known_votes_provider.contains(&new_vote)? {
                 votes_to_be_inserted.push(new_vote);
@@ -160,7 +159,7 @@ impl LeanChain {
 
         let votes = known_votes_provider.all_sorted_by_slot()?;
         self.head = get_fork_choice_head(self.store.clone(), &votes, &justified_hash, 0).await?;
-        info!("new head: {:?}", self.head);
+
         Ok(())
     }
 
