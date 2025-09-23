@@ -128,12 +128,11 @@ impl LeanState {
         }
 
         // Create a new Bitlist with all the flattened votes
-        let mut justifications_validators = BitList::with_capacity(
-            justifications.len() * VALIDATOR_REGISTRY_LIMIT as usize,
-        )
-        .map_err(|err| {
-            anyhow!("Failed to create BitList for justifications_validators: {err:?}")
-        })?;
+        let mut justifications_validators =
+            BitList::with_capacity(justifications.len() * VALIDATOR_REGISTRY_LIMIT as usize)
+                .map_err(|err| {
+                    anyhow!("Failed to create BitList for justifications_validators: {err:?}")
+                })?;
 
         flattened_justifications.iter().enumerate().try_for_each(
             |(index, justification)| -> anyhow::Result<()> {
@@ -592,24 +591,28 @@ mod test {
 
         // Test with a single root
         let root0 = B256::repeat_byte(0);
-        let bitlist0 =
-            BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
+        let bitlist0 = BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
 
         justifications.insert(root0, bitlist0);
 
         state.set_justifications(justifications.clone()).unwrap();
         assert_eq!(state.justifications_roots.len(), 1);
-        assert_eq!(state.justifications_validators.len(), VALIDATOR_REGISTRY_LIMIT as usize);
+        assert_eq!(
+            state.justifications_validators.len(),
+            VALIDATOR_REGISTRY_LIMIT as usize
+        );
 
         // Test with 2 roots
         let root1 = B256::repeat_byte(1);
-        let bitlist1 =
-            BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
+        let bitlist1 = BitList::<U4096>::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).unwrap();
 
         justifications.insert(root1, bitlist1);
         state.set_justifications(justifications).unwrap();
         assert_eq!(state.justifications_roots.len(), 2);
-        assert_eq!(state.justifications_validators.len(), 2 * VALIDATOR_REGISTRY_LIMIT as usize);
+        assert_eq!(
+            state.justifications_validators.len(),
+            2 * VALIDATOR_REGISTRY_LIMIT as usize
+        );
     }
 
     #[test]
