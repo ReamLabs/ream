@@ -72,7 +72,7 @@ impl LeanChainService {
                             };
                             let head_state = store.lock().await
                                 .lean_state_provider()
-                                .get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {}", head))?;
+                                .get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {head}"))?;
 
                             info!(
                                 "Current head state of slot {current_slot}: latest_justified.slot: {}, latest_finalized.slot: {}",
@@ -287,8 +287,11 @@ impl LeanChainService {
 
         let is_known_vote = known_votes_provider.contains(&signed_vote)?;
         let is_new_vote = {
-            let lean_chain = self.lean_chain.read().await;
-            lean_chain.new_votes.contains(&signed_vote)
+            self.lean_chain
+                .read()
+                .await
+                .new_votes
+                .contains(&signed_vote)
         };
 
         if is_known_vote || is_new_vote {

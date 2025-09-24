@@ -98,8 +98,8 @@ impl KnownVotesTable {
         Ok(table.len()? == 0)
     }
 
-    /// Load all votes sorted by slot
-    pub fn all_sorted_by_slot(&self) -> Result<Vec<SignedVote>, StoreError> {
+    /// Get all votes.
+    pub fn get_all_votes(&self) -> Result<Vec<SignedVote>, StoreError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(KNOWN_VOTES_TABLE)?;
 
@@ -109,9 +109,6 @@ impl KnownVotesTable {
             let (_, v) = entry?;
             votes.push(v.value());
         }
-
-        // Sort by the slot inside the message
-        votes.sort_by_key(|vote| vote.message.slot);
 
         Ok(votes)
     }

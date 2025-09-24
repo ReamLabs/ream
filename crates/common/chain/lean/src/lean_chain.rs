@@ -45,7 +45,6 @@ impl LeanChain {
     pub fn new(genesis_block: SignedBlock, genesis_state: LeanState, db: LeanDB) -> LeanChain {
         let genesis_block_hash = genesis_block.message.tree_hash_root();
         let no_of_validators = genesis_state.config.num_validators;
-        // todo: remove this unwrap
         db.lean_block_provider()
             .insert(genesis_block_hash, genesis_block)
             .expect("Failed to insert genesis block");
@@ -64,25 +63,20 @@ impl LeanChain {
     }
 
     pub async fn latest_justified_hash(&self) -> anyhow::Result<B256> {
-        let lean_state_provider = {
-            let db = self.store.lock().await;
-            db.lean_state_provider()
-        };
-
-        let state = lean_state_provider
+        self.store
+            .lock()
+            .await
+            .lean_state_provider()
             .get(self.head)?
-            .ok_or_else(|| anyhow!("State not found in chain for head: {}", self.head))?;
-
-        Ok(state.latest_justified.root)
+            .ok_or_else(|| anyhow!("State not found in chain for head: {}", self.head))
+            .map(|state| state.latest_justified.root)
     }
 
     pub async fn get_block_id_by_slot(&self, slot: u64) -> anyhow::Result<B256> {
-        let lean_slot_provider = {
-            let db = self.store.lock().await;
-            db.slot_index_provider()
-        };
-
-        lean_slot_provider
+        self.store
+            .lock()
+            .await
+            .slot_index_provider()
             .get(slot)?
             .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))
     }
@@ -103,16 +97,13 @@ impl LeanChain {
     }
 
     pub async fn latest_finalized_hash(&self) -> anyhow::Result<B256> {
-        let lean_state_provider = {
-            let db = self.store.lock().await;
-            db.lean_state_provider()
-        };
-
-        let state = lean_state_provider
+        self.store
+            .lock()
+            .await
+            .lean_state_provider()
             .get(self.head)?
-            .ok_or_else(|| anyhow!("State not found in chain for head: {}", self.head))?;
-
-        Ok(state.latest_finalized.root)
+            .ok_or_else(|| anyhow!("State not found in chain for head: {}", self.head))
+            .map(|state| state.latest_finalized.root)
     }
 
     /// Compute the latest block that the staker is allowed to choose as the target
@@ -157,7 +148,7 @@ impl LeanChain {
             db.known_votes_provider()
         };
 
-        let votes = known_votes_provider.all_sorted_by_slot()?;
+        let votes = known_votes_provider.get_all_votes()?;
         self.head = get_fork_choice_head(self.store.clone(), &votes, &justified_hash, 0).await?;
 
         Ok(())

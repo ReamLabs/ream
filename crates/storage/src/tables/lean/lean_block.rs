@@ -74,9 +74,9 @@ impl LeanBlockTable {
         let table = read_txn.open_table(LEAN_BLOCK_TABLE)?;
 
         for entry in table.iter()? {
-            let (hash_enc, block_enc) = entry?;
-            let hash: B256 = hash_enc.value();
-            let block: SignedBlock = block_enc.value();
+            let (hash_entry, block_entry) = entry?;
+            let hash: B256 = hash_entry.value();
+            let block: SignedBlock = block_entry.value();
 
             if block.message.parent_root != B256::ZERO
                 && *vote_weights.get(&hash).unwrap_or(&0) >= min_score

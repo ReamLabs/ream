@@ -25,8 +25,8 @@ pub async fn get_block_by_id(
     block_id: ID,
     lean_chain: Data<LeanChainReader>,
 ) -> Result<Option<Block>, ApiError> {
-    let root = {
-        let lean_chain = lean_chain.read().await;
+    let lean_chain = lean_chain.read().await;
+    let block_root =
         match block_id {
             ID::Finalized => lean_chain.latest_finalized_hash().await.map_err(|err| {
                 ApiError::InternalError(format!("No latest finalized hash: {err:?}"))
@@ -40,17 +40,11 @@ pub async fn get_block_by_id(
                 ApiError::InternalError(format!("No block for slot {slot}: {err:?}"))
             }),
             ID::Root(root) => Ok(root),
-        }
-    };
+        };
 
-    let db = {
-        let lean_chain = lean_chain.read().await;
-        lean_chain.store.clone()
-    };
-
-    let provider = db.lock().await.lean_block_provider();
+    let provider = lean_chain.store.clone().lock().await.lean_block_provider();
     provider
-        .get(root?)
+        .get(block_root?)
         .map(|maybe_signed_block| {
             maybe_signed_block.map(|signed_block| signed_block.message.clone())
         })

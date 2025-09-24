@@ -49,18 +49,17 @@ impl LeanStateTable {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(LEAN_STATE_TABLE)?;
 
-        let mut best: Option<(u64, B256)> = None;
+        let mut best = None;
 
         for entry in table.iter()? {
-            let (_key_enc, state_enc) = entry?;
-            let state: LeanState = state_enc.value();
+            let (_, state_entry) = entry?;
+            let state: LeanState = state_entry.value();
 
             let slot = state.latest_justified.slot;
             let root = state.latest_justified.root;
 
-            match best {
-                Some((best_slot, _)) if slot <= best_slot => {}
-                _ => best = Some((slot, root)),
+            if best.is_none_or(|(best_slot, _)| slot > best_slot) {
+                best = Some((slot, root));
             }
         }
 

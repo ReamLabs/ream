@@ -7,7 +7,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use alloy_primitives::hex;
+use alloy_primitives::{FixedBytes, hex};
 use bip39::Mnemonic;
 use clap::Parser;
 use libp2p_identity::secp256k1;
@@ -165,7 +165,10 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // Initialize the lean chain with genesis block and state.
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
     let (lean_chain_writer, lean_chain_reader) = Writer::new(LeanChain::new(
-        SignedBlock::default_from_block(genesis_block),
+        SignedBlock {
+            message: genesis_block,
+            signature: FixedBytes::default(),
+        },
         genesis_state,
         lean_db,
     ));
