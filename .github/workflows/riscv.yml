@@ -23,8 +23,6 @@ jobs:
       with:
         toolchain: 1.88.0
         profile: default
-        override: true
-        default: true
         components: llvm-tools, rustc-dev
 
     - name: Install SP1 toolchain
@@ -56,14 +54,6 @@ jobs:
         /home/runner/.risc0/bin/rzup install
         /home/runner/.risc0/bin/rzup install rust 1.88.0
         rustup default risc0
-
-    - name: Debug toolchain & cargo
-      run: |
-        rustup show
-        rustup override list
-        rustc --version
-        rustc --print target-list | grep riscv32
-        cargo --version
 
     - name: Build Risc0
       run: cargo build --target=riscv32im-risc0-zkvm-elf -p ream-consensus-beacon -p ream-consensus-misc -p ream-bls
