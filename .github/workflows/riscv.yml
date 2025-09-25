@@ -36,6 +36,7 @@ jobs:
     - name: Debug toolchain & cargo
       run: |
         rustup show
+        rustup override list
         rustc --version
         rustc --print target-list | grep riscv32
         cargo --version
@@ -59,6 +60,7 @@ jobs:
     - name: Debug toolchain & cargo
       run: |
         rustup show
+        rustup override list
         rustc --version
         rustc --print target-list | grep riscv32
         cargo --version
