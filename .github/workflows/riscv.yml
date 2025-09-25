@@ -2,7 +2,7 @@ name: RISC-V
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "debug-sp1" ]
   pull_request:
     branches: [ "master" ]
   merge_group:
