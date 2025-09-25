@@ -56,8 +56,8 @@ impl LeanChainService {
 
         let mut tick_count = 0u64;
 
-        let mut interval = create_lean_clock_interval()
-            .context("Failed to create clock interval")?;
+        let mut interval =
+            create_lean_clock_interval().context("Failed to create clock interval")?;
 
         loop {
             tokio::select! {

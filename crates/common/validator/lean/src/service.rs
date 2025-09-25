@@ -51,8 +51,8 @@ impl ValidatorService {
         // Start from slot 0, will be incremented for every slot boundary.
         let mut slot = 0;
 
-        let mut interval = create_lean_clock_interval()
-            .context("Failed to create clock interval")?;
+        let mut interval =
+            create_lean_clock_interval().context("Failed to create clock interval")?;
 
         loop {
             tokio::select! {
