@@ -27,6 +27,7 @@ jobs:
     - name: Debug toolchain & cargo
       run: |
         rustup show
+        rustc --version
         cargo --version
 
     - name: Build SP1
@@ -48,6 +49,7 @@ jobs:
     - name: Debug toolchain & cargo
       run: |
         rustup show
+        rustc --version
         cargo --version
 
     - name: Build Risc0
