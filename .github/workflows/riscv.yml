@@ -18,11 +18,14 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Install rust toolchain
+    - name: Install Rust Toolchain
       uses: actions-rs/toolchain@v1
       with:
-        profile: minimal
-        toolchain: 1.89.0
+        toolchain: 1.81.0
+        profile: default
+        override: true
+        default: true
+        components: llvm-tools, rustc-dev
 
     - name: Install SP1 toolchain
       run: |
