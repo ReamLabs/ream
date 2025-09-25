@@ -37,6 +37,7 @@ jobs:
       run: |
         rustup show
         rustc --version
+        rustc --print target-list | grep riscv32
         cargo --version
 
     - name: Build SP1
@@ -59,6 +60,7 @@ jobs:
       run: |
         rustup show
         rustc --version
+        rustc --print target-list | grep riscv32
         cargo --version
 
     - name: Build Risc0
