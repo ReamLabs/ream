@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use alloy_primitives::{B256, FixedBytes};
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use ream_consensus_lean::{
     block::{Block, SignedBlock},
     vote::SignedVote,
@@ -57,7 +57,7 @@ impl LeanChainService {
         let mut tick_count = 0u64;
 
         let mut interval = create_lean_clock_interval()
-            .map_err(|err| anyhow!("Failed to create clock interval: {err}"))?;
+            .context("Failed to create clock interval")?;
 
         loop {
             tokio::select! {
@@ -103,7 +103,7 @@ impl LeanChainService {
                     match message {
                         LeanChainServiceMessage::ProduceBlock { slot, sender } => {
                             if let Err(err) = self.handle_produce_block(slot, sender).await {
-                                error!("Failed to handle produce block message: {err}");
+                                error!("Failed to handle produce block message: {err:?}");
                             }
                         }
                         LeanChainServiceMessage::ProcessBlock { signed_block, is_trusted, need_gossip } => {
@@ -117,11 +117,11 @@ impl LeanChainService {
                             );
 
                             if let Err(err) = self.handle_process_block(signed_block.clone(), is_trusted).await {
-                                warn!("Failed to handle process block message: {err}");
+                                warn!("Failed to handle process block message: {err:?}");
                             }
 
                             if need_gossip && let Err(err) = self.outbound_gossip.send(LeanP2PRequest::GossipBlock(signed_block)) {
-                                warn!("Failed to send item to outbound gossip channel: {err}");
+                                warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
                         LeanChainServiceMessage::ProcessVote { signed_vote, is_trusted, need_gossip } => {
@@ -134,11 +134,11 @@ impl LeanChainService {
                             );
 
                             if let Err(err) = self.handle_process_vote(signed_vote.clone(), is_trusted).await {
-                                warn!("Failed to handle process block message: {err}");
+                                warn!("Failed to handle process block message: {err:?}");
                             }
 
                             if need_gossip && let Err(err) = self.outbound_gossip.send(LeanP2PRequest::GossipVote(signed_vote)) {
-                                warn!("Failed to send item to outbound gossip channel: {err}");
+                                warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
                     }

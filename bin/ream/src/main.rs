@@ -233,17 +233,17 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // Start the services concurrently.
     let chain_future = executor.spawn(async move {
         if let Err(err) = chain_service.start().await {
-            panic!("Chain service exited with error: {err}");
+            panic!("Chain service exited with error: {err:?}");
         }
     });
     let network_future = executor.spawn(async move {
         if let Err(err) = network_service.start(config.bootnodes).await {
-            panic!("Network service exited with error: {err}");
+            panic!("Network service exited with error: {err:?}");
         }
     });
     let validator_future = executor.spawn(async move {
         if let Err(err) = validator_service.start().await {
-            panic!("Validator service exited with error: {err}");
+            panic!("Validator service exited with error: {err:?}");
         }
     });
     let http_future = executor.spawn(async move {
