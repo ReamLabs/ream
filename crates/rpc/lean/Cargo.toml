@@ -15,7 +15,6 @@ libp2p.workspace = true
 parking_lot.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-tree_hash.workspace = true
 
 #ream-dependencies
 ream-api-types-common.workspace = true
