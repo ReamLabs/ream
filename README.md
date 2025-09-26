@@ -3,6 +3,9 @@
 [![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)][tg-url]
 
 
+**[Install](https://ream.rs/installation.html)**
+| [User Docs](https://ream.rs)
+
 ## What is Ream
 
 Ream aims to be modular, contributor-friendly, and blazingly fast implementation of the Lean Consensus specification.
@@ -22,6 +25,10 @@ Building the first Lean consenus client which is
 - Contributor Friendly
 - Blazingly Fast
 - Extendible
+
+## For Users
+
+See the [Ream documentation](https://ream.rs) for instructions on how to install and run Ream.
 
 ## Getting Help
 
