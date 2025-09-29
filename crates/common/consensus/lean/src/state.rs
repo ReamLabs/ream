@@ -510,7 +510,8 @@ mod test {
         assert_eq!(justifications[&root1], expected_bitlist1);
 
         // Prepare expected root2 voted by none
-        let expected_bitlist2 = BitList::with_capacity(state.config.num_validators as usize).unwrap();
+        let expected_bitlist2 =
+            BitList::with_capacity(state.config.num_validators as usize).unwrap();
         assert_eq!(justifications[&root2], expected_bitlist2);
 
         // Also verify that the number of roots matches
@@ -591,7 +592,8 @@ mod test {
 
         // Test with a single root
         let root0 = B256::repeat_byte(0);
-        let bitlist0 = BitList::<U4096>::with_capacity(state.config.num_validators as usize).unwrap();
+        let bitlist0 =
+            BitList::<U4096>::with_capacity(state.config.num_validators as usize).unwrap();
 
         justifications.insert(root0, bitlist0);
 
@@ -604,7 +606,8 @@ mod test {
 
         // Test with 2 roots
         let root1 = B256::repeat_byte(1);
-        let bitlist1 = BitList::<U4096>::with_capacity(state.config.num_validators as usize).unwrap();
+        let bitlist1 =
+            BitList::<U4096>::with_capacity(state.config.num_validators as usize).unwrap();
 
         justifications.insert(root1, bitlist1);
         state.set_justifications(justifications).unwrap();
