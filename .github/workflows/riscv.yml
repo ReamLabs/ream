@@ -20,9 +20,16 @@ jobs:
 
     - name: Install toolchain
       run: |
-        curl -L https://sp1up.succinct.xyz | bash
-        /home/runner/.sp1/bin/sp1up
+        git clone https://github.com/succinctlabs/sp1
+        cd sp1
+        cd crates
+        cd cli
+        cargo install --locked --force --path .
+        cd ~
+        cargo prove install-toolchain
         rustup default succinct
+        RUSTUP_TOOLCHAIN=succinct cargo --version
+
 
     - name: Build SP1
       run: cargo build --target=riscv32im-succinct-zkvm-elf -p ream-consensus-beacon -p ream-consensus-misc -p ream-bls
