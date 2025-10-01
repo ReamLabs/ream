@@ -26,7 +26,7 @@ tree_hash.workspace = true
 
 # ream dependencies
 ream-bls.workspace = true
-ream-consensus-beacon = { workspace = true, features = ["test_consensus"] }
+ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
 ream-fork-choice.workspace = true
 ream-merkle.workspace = true

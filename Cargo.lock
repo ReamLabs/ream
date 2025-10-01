@@ -3467,7 +3467,7 @@ dependencies = [
  "ethereum_ssz_derive",
  "paste",
  "ream-bls",
- "ream-consensus-beacon",
+ "ream-consensus-lean",
  "ream-consensus-misc",
  "ream-fork-choice",
  "ream-merkle",
