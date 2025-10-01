@@ -4,7 +4,7 @@ use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
 use itertools::Itertools;
 use ream_consensus_misc::constants::lean::{MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT};
-use ream_metrics::{FINALIZED_SLOT, HEAD_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
+use ream_metrics::{FINALIZED_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -199,9 +199,6 @@ impl LeanState {
     }
 
     fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
-        // Send latest head slot to metrics
-        set_int_gauge_vec(&HEAD_SLOT, block.slot as i64, &[]);
-
         self.process_block_header(block)?;
         self.process_operations(&block.body)?;
 

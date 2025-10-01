@@ -10,7 +10,7 @@ use ream_consensus_lean::{
     vote::{SignedVote, Vote},
 };
 use ream_fork_choice::lean::get_fork_choice_head;
-use ream_metrics::{PROPOSE_BLOCK_TIME, start_timer_vec, stop_timer};
+use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::{
     db::lean::LeanDB,
@@ -161,6 +161,19 @@ impl LeanChain {
             0,
         )
         .await?;
+
+        // Send latest head slot to metrics
+        let head_slot = self
+            .store
+            .lock()
+            .await
+            .lean_block_provider()
+            .get(self.head)?
+            .ok_or_else(|| anyhow!("Block not found for head: {}", self.head))?
+            .message
+            .slot;
+
+        set_int_gauge_vec(&HEAD_SLOT, head_slot as i64, &[]);
 
         // Update latest finalized checkpoint in DB.
         self.store
