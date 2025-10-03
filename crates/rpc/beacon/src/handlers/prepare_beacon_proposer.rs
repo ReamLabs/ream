@@ -23,7 +23,7 @@ pub async fn prepare_beacon_proposer(
     }
 
     // Create a store instance to get the current epoch
-    let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone());
+    let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
     let current_epoch = store
         .get_current_store_epoch()
         .map_err(|err| ApiError::InternalError(format!("Failed to get current epoch: {err}")))?;

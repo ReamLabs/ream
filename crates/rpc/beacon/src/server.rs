@@ -5,6 +5,7 @@ use ream_operation_pool::OperationPool;
 use ream_p2p::network::beacon::network_state::NetworkState;
 use ream_rpc_common::{config::RpcServerConfig, server::RpcServerBuilder};
 use ream_storage::db::beacon::BeaconDB;
+use ream_sync_committee_pool::SyncCommitteePool;
 
 use crate::routes::register_routers;
 
@@ -14,6 +15,7 @@ pub async fn start(
     db: BeaconDB,
     network_state: Arc<NetworkState>,
     operation_pool: Arc<OperationPool>,
+    sync_committee_pool: Arc<SyncCommitteePool>,
     execution_engine: Option<ExecutionEngine>,
 ) -> Result<()> {
     RpcServerBuilder::new(server_config.http_socket_address)
@@ -21,6 +23,7 @@ pub async fn start(
         .with_data(db)
         .with_data(network_state)
         .with_data(operation_pool)
+        .with_data(sync_committee_pool)
         .with_data(execution_engine)
         .configure(register_routers)
         .start()
