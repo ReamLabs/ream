@@ -14,7 +14,8 @@ use ream_api_types_beacon::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_bls::PublicKey;
 use ream_consensus_beacon::{
-    electra::beacon_state::BeaconState, sync_committe_selection::SyncCommitteeSelection,
+    beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState,
+    sync_committe_selection::SyncCommitteeSelection,
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData, constants::beacon::SLOTS_PER_EPOCH, validator::Validator,
@@ -492,6 +493,14 @@ pub async fn get_attestation_data(
 #[post("/validator/sync_committee_selections")]
 pub async fn post_sync_committee_selections(
     _selections: Json<SyncCommitteeSelection>,
+) -> Result<impl Responder, ApiError> {
+    Ok(HttpResponse::NotImplemented())
+}
+
+/// For the initial stage, this endpoint returns a 501 as DVT support is not planned.
+#[post("/validator/beacon_committee_selections")]
+pub async fn post_beacon_committee_selections(
+    _selections: Json<Vec<BeaconCommitteeSelection>>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::NotImplemented())
 }
