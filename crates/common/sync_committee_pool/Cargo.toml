@@ -22,3 +22,6 @@ tree_hash_derive.workspace = true
 # ream-dependencies
 ream-bls.workspace = true
 ream-validator-beacon.workspace = true
+
+[lints]
+workspace = true
