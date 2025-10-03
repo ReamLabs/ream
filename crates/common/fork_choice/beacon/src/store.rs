@@ -34,6 +34,7 @@ use ream_storage::{
         table::{CustomTable, REDBTable},
     },
 };
+use ream_sync_committee_pool::SyncCommitteePool;
 use tree_hash::TreeHash;
 
 use crate::constants::{
@@ -52,11 +53,22 @@ pub struct BlockWithEpochInfo {
 pub struct Store {
     pub db: BeaconDB,
     pub operation_pool: Arc<OperationPool>,
+    pub sync_committee_pool: Arc<SyncCommitteePool>,
 }
 
 impl Store {
-    pub fn new(db: BeaconDB, operation_pool: Arc<OperationPool>) -> Self {
-        Self { db, operation_pool }
+    pub fn new(
+        db: BeaconDB,
+        operation_pool: Arc<OperationPool>,
+        sync_committee_pool: Option<Arc<SyncCommitteePool>>,
+    ) -> Self {
+        let sync_committee_pool =
+            sync_committee_pool.unwrap_or_else(|| Arc::new(SyncCommitteePool::default()));
+        Self {
+            db,
+            operation_pool,
+            sync_committee_pool,
+        }
     }
 
     pub fn is_previous_epoch_justified(&self) -> anyhow::Result<bool> {
@@ -605,6 +617,12 @@ impl Store {
         // If this is a new slot, reset store.proposer_boost_root
         if current_slot > previous_slot {
             self.db.proposer_boost_root_provider().insert(B256::ZERO)?;
+
+            // Clean old sync committee messages and contributions per slot
+            self.sync_committee_pool
+                .clean_sync_committee_messages(current_slot);
+            self.sync_committee_pool
+                .clean_sync_committee_contributions(current_slot);
         }
 
         // If a new epoch, pull-up justification and finalization from previous epoch
@@ -910,7 +928,7 @@ pub fn get_forkchoice_store(
 
     let operation_pool = Arc::new(OperationPool::default());
 
-    Ok(Store { db, operation_pool })
+    Ok(Store::new(db, operation_pool, None))
 }
 
 pub fn compute_slots_since_epoch_start(slot: u64) -> u64 {

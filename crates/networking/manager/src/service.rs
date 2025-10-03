@@ -16,6 +16,7 @@ use ream_p2p::{
     network::beacon::{Network, ReamNetworkEvent, network_state::NetworkState},
 };
 use ream_storage::{cache::BeaconCacheDB, db::beacon::BeaconDB};
+use ream_sync_committee_pool::SyncCommitteePool;
 use ream_syncer::block_range::BlockRangeSyncer;
 use tokio::{sync::mpsc, time::interval};
 use tracing::{error, info};
@@ -35,6 +36,7 @@ pub struct NetworkManagerService {
     pub block_range_syncer: BlockRangeSyncer,
     pub ream_db: BeaconDB,
     pub cached_db: Arc<BeaconCacheDB>,
+    pub sync_committee_pool: Arc<SyncCommitteePool>,
 }
 
 /// The `NetworkManagerService` acts as the manager for all networking activities in Ream.
@@ -57,6 +59,7 @@ impl NetworkManagerService {
         ream_db: BeaconDB,
         ream_dir: PathBuf,
         beacon_chain: Arc<BeaconChain>,
+        sync_committee_pool: Arc<SyncCommitteePool>,
         cached_db: Arc<BeaconCacheDB>,
     ) -> anyhow::Result<Self> {
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
@@ -116,6 +119,7 @@ impl NetworkManagerService {
             block_range_syncer,
             ream_db,
             cached_db,
+            sync_committee_pool,
         })
     }
 

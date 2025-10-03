@@ -80,6 +80,7 @@ use ream_storage::{
     tables::table::REDBTable,
 };
 use ream_sync::rwlock::Writer;
+use ream_sync_committee_pool::SyncCommitteePool;
 use ream_validator_beacon::{
     beacon_api_client::{BeaconApiClient, http_client::ContentType},
     builder::builder_client::{BuilderClient, BuilderConfig},
@@ -384,6 +385,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
     );
 
     let operation_pool = Arc::new(OperationPool::default());
+    let sync_committee_pool = Arc::new(SyncCommitteePool::default());
 
     let (event_sender, _) = broadcast::channel::<BeaconEvent>(1024);
 
@@ -426,6 +428,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
     let beacon_chain = Arc::new(BeaconChain::new(
         beacon_db.clone(),
         operation_pool.clone(),
+        sync_committee_pool.clone(),
         execution_engine.clone(),
         Some(event_sender.clone()),
     ));
@@ -437,6 +440,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         beacon_db.clone(),
         beacon_db.data_dir.clone(),
         beacon_chain.clone(),
+        sync_committee_pool.clone(),
         cache.clone(),
     )
     .await
@@ -455,6 +459,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
             beacon_db,
             network_state,
             operation_pool,
+            sync_committee_pool,
             execution_engine,
             builder_client,
             event_sender,
