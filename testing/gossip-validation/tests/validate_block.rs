@@ -21,6 +21,7 @@ mod tests {
         db::{ReamDB, beacon::BeaconDB},
         tables::{field::REDBField, table::REDBTable},
     };
+    use ream_sync_committee_pool::SyncCommitteePool;
     use snap::raw::Decoder;
     use ssz::Decode;
     use tempdir::TempDir;
@@ -72,8 +73,15 @@ mod tests {
         .await;
 
         let operation_pool = OperationPool::default();
+        let sync_committee_pool = SyncCommitteePool::default();
         let cached_db = CachedDB::default();
-        let beacon_chain = BeaconChain::new(db, operation_pool.into(), None, None);
+        let beacon_chain = BeaconChain::new(
+            db,
+            operation_pool.into(),
+            sync_committee_pool.into(),
+            None,
+            None,
+        );
 
         (beacon_chain, cached_db, block_root)
     }

@@ -19,6 +19,7 @@ use ream_storage::{
     db::beacon::BeaconDB,
     tables::{field::REDBField, table::REDBTable},
 };
+use ream_sync_committee_pool::SyncCommitteePool;
 use tokio::sync::{Mutex, broadcast};
 use tracing::warn;
 
@@ -34,11 +35,12 @@ impl BeaconChain {
     pub fn new(
         db: BeaconDB,
         operation_pool: Arc<OperationPool>,
+        sync_committee_pool: Arc<SyncCommitteePool>,
         execution_engine: Option<ExecutionEngine>,
         event_sender: Option<broadcast::Sender<BeaconEvent>>,
     ) -> Self {
         Self {
-            store: Mutex::new(Store::new(db, operation_pool)),
+            store: Mutex::new(Store::new(db, operation_pool, Some(sync_committee_pool))),
             execution_engine,
             event_sender,
         }
