@@ -2580,6 +2580,7 @@ dependencies = [
  "ream-network-spec",
  "ream-operation-pool",
  "ream-storage",
+ "ream-sync-committee-pool",
  "serde",
  "serde_json",
  "snap",
@@ -5246,6 +5247,7 @@ dependencies = [
  "ream-rpc-lean",
  "ream-storage",
  "ream-sync",
+ "ream-sync-committee-pool",
  "ream-validator-beacon",
  "ream-validator-lean",
  "serde_json",
@@ -5342,6 +5344,7 @@ dependencies = [
  "ream-operation-pool",
  "ream-p2p",
  "ream-storage",
+ "ream-sync-committee-pool",
  "tokio",
  "tracing",
 ]
@@ -5536,6 +5539,7 @@ dependencies = [
  "ream-operation-pool",
  "ream-polynomial-commitments",
  "ream-storage",
+ "ream-sync-committee-pool",
  "rust-kzg-blst",
  "serde",
  "serde_json",
@@ -5622,6 +5626,7 @@ dependencies = [
  "ream-p2p",
  "ream-polynomial-commitments",
  "ream-storage",
+ "ream-sync-committee-pool",
  "ream-syncer",
  "ream-validator-beacon",
  "tokio",
@@ -5780,6 +5785,8 @@ dependencies = [
  "ream-p2p",
  "ream-rpc-common",
  "ream-storage",
+ "ream-sync-committee-pool",
+ "ream-validator-beacon",
  "serde",
  "serde_json",
  "ssz_types",
@@ -5851,6 +5858,22 @@ name = "ream-sync"
 version = "0.1.0"
 dependencies = [
  "tokio",
+]
+
+[[package]]
+name = "ream-sync-committee-pool"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "parking_lot",
+ "ream-bls",
+ "ream-validator-beacon",
+ "serde",
+ "ssz_types",
+ "thiserror 2.0.12",
+ "tracing",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
