@@ -845,15 +845,21 @@ mod test {
 
         // History should include the parent's root at index 0
         assert_eq!(genesis_state.historical_block_hashes.len(), 1);
-        assert_eq!(genesis_state.historical_block_hashes[0], genesis_header_root);
+        assert_eq!(
+            genesis_state.historical_block_hashes[0],
+            genesis_header_root
+        );
 
         // Slot 0 should be marked justified
         assert_eq!(genesis_state.justified_slots.len(), 1);
-        assert_eq!(genesis_state.justified_slots[0], true);
+        assert!(genesis_state.justified_slots[0]);
 
         // Latest header now reflects the processed block's header content
         assert_eq!(genesis_state.latest_block_header.slot, block.slot);
-        assert_eq!(genesis_state.latest_block_header.parent_root, block.parent_root);
+        assert_eq!(
+            genesis_state.latest_block_header.parent_root,
+            block.parent_root
+        );
 
         // state_root remains zero until the next process_slot call
         assert_eq!(genesis_state.latest_block_header.state_root, B256::ZERO);
@@ -881,7 +887,12 @@ mod test {
 
         let result = genesis_state.process_block_header(&block);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Block slot number does not match state slot number"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Block slot number does not match state slot number")
+        );
     }
 
     #[test]
@@ -906,7 +917,12 @@ mod test {
 
         let result = genesis_state.process_block_header(&block);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Block proposer index does not match the expected proposer index"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Block proposer index does not match the expected proposer index")
+        );
     }
 
     #[test]
@@ -929,7 +945,12 @@ mod test {
 
         let result = genesis_state.process_block_header(&block);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Block parent root does not match latest block header root"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Block parent root does not match latest block header root")
+        );
     }
 
     #[test]
@@ -1007,7 +1028,7 @@ mod test {
 
         // The target (slot 4) should now be justified
         assert_eq!(state.latest_justified, checkpoint4);
-        assert_eq!(state.justified_slots[4], true);
+        assert!(state.justified_slots[4]);
 
         // Since no other justifiable slot exists between 0 and 4, genesis is finalized
         assert_eq!(state.latest_finalized, genesis_checkpoint);
@@ -1070,7 +1091,12 @@ mod test {
         let mut state2 = genesis_state.clone();
         let result = state2.state_transition(&signed_block, false, true);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Signatures are not valid"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Signatures are not valid")
+        );
 
         // Wrong state_root must cause error
         let block_with_bad_root = Block {
