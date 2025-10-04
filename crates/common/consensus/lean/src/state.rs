@@ -682,4 +682,414 @@ mod test {
         let result = state.set_justifications(justifications);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn set_justifications_roundtrip_empty() {
+        let mut state = LeanState::new(10, 0);
+        let justifications = HashMap::<B256, BitList<U4096>>::new();
+
+        // Set empty justifications to state
+        state.set_justifications(justifications.clone()).unwrap();
+
+        // Get justifications back from state
+        let reconstructed = state.get_justifications().unwrap();
+
+        // Verify roundtrip equality
+        assert_eq!(reconstructed, justifications);
+    }
+
+    #[test]
+    fn set_justifications_roundtrip_single_root() {
+        let mut state = LeanState::new(10, 0);
+        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
+
+        // root0 voted by validator 0
+        let root0 = B256::repeat_byte(1);
+        let mut bitlist0 =
+            BitList::<U4096>::with_capacity(state.config.num_validators as usize).unwrap();
+        bitlist0.set(0, true).unwrap();
+
+        justifications.insert(root0, bitlist0);
+
+        // Set justifications to state
+        state.set_justifications(justifications.clone()).unwrap();
+
+        // Get justifications back from state
+        let reconstructed = state.get_justifications().unwrap();
+
+        // Verify roundtrip equality
+        assert_eq!(reconstructed, justifications);
+    }
+
+    #[test]
+    fn set_justifications_roundtrip_multiple_roots() {
+        let mut state = LeanState::new(10, 0);
+        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
+
+        // root0 voted by validator 0
+        let root0 = B256::repeat_byte(1);
+        let mut bitlist0 =
+            BitList::<U4096>::with_capacity(state.config.num_validators as usize).unwrap();
+        bitlist0.set(0, true).unwrap();
+
+        // root1 voted by validator 1 and 2
+        let root1 = B256::repeat_byte(2);
+        let mut bitlist1 =
+            BitList::<U4096>::with_capacity(state.config.num_validators as usize).unwrap();
+        bitlist1.set(1, true).unwrap();
+        bitlist1.set(2, true).unwrap();
+
+        justifications.insert(root0, bitlist0);
+        justifications.insert(root1, bitlist1);
+
+        // Set justifications to state
+        state.set_justifications(justifications.clone()).unwrap();
+
+        // Get justifications back from state
+        let reconstructed = state.get_justifications().unwrap();
+
+        // Verify roundtrip equality
+        assert_eq!(reconstructed, justifications);
+    }
+
+    #[test]
+    fn generate_genesis() {
+        let config = Config {
+            num_validators: 10,
+            genesis_time: 0,
+        };
+
+        let state = LeanState::new(config.num_validators, config.genesis_time);
+
+        // Config in state should match the input.
+        assert_eq!(state.config, config);
+
+        // Slot should start at 0.
+        assert_eq!(state.slot, 0);
+
+        // Body root must be ZERO at genesis (not yet filled)
+        assert_eq!(state.latest_block_header.body_root, B256::ZERO);
+
+        // History and justifications must be empty initially.
+        assert_eq!(state.historical_block_hashes.len(), 0);
+        assert_eq!(state.justified_slots.len(), 0);
+        assert_eq!(state.justifications_roots.len(), 0);
+        assert_eq!(state.justifications_validators.num_set_bits(), 0);
+    }
+
+    #[test]
+    fn process_slot() {
+        let mut genesis_state = LeanState::new(10, 0);
+
+        assert_eq!(genesis_state.latest_block_header.state_root, B256::ZERO);
+
+        // Capture the hash of the pre-slot state
+        let expected_root = genesis_state.tree_hash_root();
+
+        // Process one slot; this should backfill the header's state_root
+        genesis_state.process_slot().unwrap();
+        assert_eq!(genesis_state.latest_block_header.state_root, expected_root);
+
+        // Re-processing the slot should be a no-op for the state_root
+        genesis_state.process_slot().unwrap();
+        assert_eq!(genesis_state.latest_block_header.state_root, expected_root);
+    }
+
+    #[test]
+    fn process_slots() {
+        let mut genesis_state = LeanState::new(10, 0);
+
+        // Choose a future slot target
+        let target_slot = 5;
+
+        // Capture the genesis state root before processing
+        let expected_root = genesis_state.tree_hash_root();
+
+        // Advance across empty slots to the target
+        genesis_state.process_slots(target_slot).unwrap();
+
+        // The state's slot should equal the target
+        assert_eq!(genesis_state.slot, target_slot);
+
+        // The header state_root should reflect the genesis state's root
+        assert_eq!(genesis_state.latest_block_header.state_root, expected_root);
+
+        // Rewinding is invalid; expect an error
+        let result = genesis_state.process_slots(4);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_block_header_valid() {
+        let mut genesis_state = LeanState::new(10, 0);
+
+        genesis_state.process_slots(1).unwrap();
+
+        let genesis_header_root = genesis_state.latest_block_header.tree_hash_root();
+
+        let block = Block {
+            slot: genesis_state.slot,
+            proposer_index: genesis_state.slot % genesis_state.config.num_validators,
+            parent_root: genesis_header_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+
+        genesis_state.process_block_header(&block).unwrap();
+
+        // The parent (genesis) becomes both finalized and justified
+        assert_eq!(genesis_state.latest_finalized.root, genesis_header_root);
+        assert_eq!(genesis_state.latest_justified.root, genesis_header_root);
+
+        // History should include the parent's root at index 0
+        assert_eq!(genesis_state.historical_block_hashes.len(), 1);
+        assert_eq!(genesis_state.historical_block_hashes[0], genesis_header_root);
+
+        // Slot 0 should be marked justified
+        assert_eq!(genesis_state.justified_slots.len(), 1);
+        assert_eq!(genesis_state.justified_slots[0], true);
+
+        // Latest header now reflects the processed block's header content
+        assert_eq!(genesis_state.latest_block_header.slot, block.slot);
+        assert_eq!(genesis_state.latest_block_header.parent_root, block.parent_root);
+
+        // state_root remains zero until the next process_slot call
+        assert_eq!(genesis_state.latest_block_header.state_root, B256::ZERO);
+    }
+
+    #[test]
+    fn process_block_header_invalid_slot() {
+        let mut genesis_state = LeanState::new(10, 0);
+
+        // Move to slot 1
+        genesis_state.process_slots(1).unwrap();
+
+        let parent_root = genesis_state.latest_block_header.tree_hash_root();
+
+        // Block with wrong slot (2 instead of 1)
+        let block = Block {
+            slot: 2,
+            proposer_index: 1,
+            parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+
+        let result = genesis_state.process_block_header(&block);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Block slot number does not match state slot number"));
+    }
+
+    #[test]
+    fn process_block_header_invalid_proposer() {
+        let mut genesis_state = LeanState::new(10, 0);
+
+        // Move to slot 1
+        genesis_state.process_slots(1).unwrap();
+
+        let parent_root = genesis_state.latest_block_header.tree_hash_root();
+
+        // Block with wrong proposer (2 instead of 1)
+        let block = Block {
+            slot: 1,
+            proposer_index: 2,
+            parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+
+        let result = genesis_state.process_block_header(&block);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Block proposer index does not match the expected proposer index"));
+    }
+
+    #[test]
+    fn process_block_header_invalid_parent_root() {
+        let mut genesis_state = LeanState::new(10, 0);
+
+        // Move to slot 1
+        genesis_state.process_slots(1).unwrap();
+
+        // Block with wrong parent root
+        let block = Block {
+            slot: 1,
+            proposer_index: 1,
+            parent_root: B256::repeat_byte(0xde),
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+
+        let result = genesis_state.process_block_header(&block);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Block parent root does not match latest block header root"));
+    }
+
+    #[test]
+    fn process_attestations_justification_and_finalization() {
+        let mut state = LeanState::new(10, 0);
+
+        // Move to slot 1 and process a block
+        state.process_slots(1).unwrap();
+        let block1 = Block {
+            slot: 1,
+            proposer_index: 1,
+            parent_root: state.latest_block_header.tree_hash_root(),
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+        state.process_block(&block1).unwrap();
+
+        // Move to slot 4 and process a block
+        state.process_slots(4).unwrap();
+        let block4_header_root = state.latest_block_header.tree_hash_root();
+        let block4 = Block {
+            slot: 4,
+            proposer_index: 4,
+            parent_root: block4_header_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+        state.process_block(&block4).unwrap();
+
+        // Advance to slot 5 and process a block so slot 4 gets added to history
+        state.process_slots(5).unwrap();
+        let block5 = Block {
+            slot: 5,
+            proposer_index: 5,
+            parent_root: state.latest_block_header.tree_hash_root(),
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+        state.process_block(&block5).unwrap();
+
+        // Define source (genesis) and target (slot 4) checkpoints
+        let genesis_checkpoint = Checkpoint {
+            root: state.historical_block_hashes[0],
+            slot: 0,
+        };
+        let checkpoint4 = Checkpoint {
+            root: state.historical_block_hashes[4],
+            slot: 4,
+        };
+
+        // Create 7 votes from validators 0..6 to reach ≥2/3
+        let mut votes = VariableList::empty();
+        for i in 0..7 {
+            let vote = SignedVote {
+                validator_id: i,
+                message: crate::vote::Vote {
+                    slot: 4,
+                    head: checkpoint4.clone(),
+                    target: checkpoint4.clone(),
+                    source: genesis_checkpoint.clone(),
+                },
+                signature: Default::default(),
+            };
+            votes.push(vote).unwrap();
+        }
+
+        // Process attestations
+        state.process_attestations(&votes).unwrap();
+
+        // The target (slot 4) should now be justified
+        assert_eq!(state.latest_justified, checkpoint4);
+        assert_eq!(state.justified_slots[4], true);
+
+        // Since no other justifiable slot exists between 0 and 4, genesis is finalized
+        assert_eq!(state.latest_finalized, genesis_checkpoint);
+
+        // The per-root vote tracker for the justified target has been cleared
+        let justifications = state.get_justifications().unwrap();
+        assert!(!justifications.contains_key(&checkpoint4.root));
+    }
+
+    #[test]
+    fn state_transition_full() {
+        let genesis_state = LeanState::new(10, 0);
+
+        // Manually compute the post-state result by processing slots first
+        let mut state_at_slot_1 = genesis_state.clone();
+        state_at_slot_1.process_slots(1).unwrap();
+
+        // Now get the parent root after slot processing
+        let parent_root = state_at_slot_1.latest_block_header.tree_hash_root();
+
+        // Build a valid signed block for slot 1
+        let block = Block {
+            slot: 1,
+            proposer_index: 1,
+            parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+
+        // Process the block to get expected state
+        let mut expected_state = state_at_slot_1.clone();
+        expected_state.process_block(&block).unwrap();
+
+        // Create a block with the correct state root
+        let block_with_correct_root = Block {
+            slot: 1,
+            proposer_index: 1,
+            parent_root,
+            state_root: expected_state.tree_hash_root(),
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+
+        let signed_block = SignedBlock {
+            message: block_with_correct_root.clone(),
+            signature: Default::default(),
+        };
+
+        // Run state transition from genesis
+        let mut state = genesis_state.clone();
+        state.state_transition(&signed_block, true, true).unwrap();
+
+        // The result must match the expected state
+        assert_eq!(state, expected_state);
+
+        // Invalid signatures must cause error
+        let mut state2 = genesis_state.clone();
+        let result = state2.state_transition(&signed_block, false, true);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Signatures are not valid"));
+
+        // Wrong state_root must cause error
+        let block_with_bad_root = Block {
+            slot: 1,
+            proposer_index: 1,
+            parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+        let signed_block_bad = SignedBlock {
+            message: block_with_bad_root,
+            signature: Default::default(),
+        };
+
+        let mut state3 = genesis_state.clone();
+        let result = state3.state_transition(&signed_block_bad, true, true);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("state root"));
+    }
 }

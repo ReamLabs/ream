@@ -3457,32 +3457,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
-name = "lean-tests"
-version = "0.1.0"
-dependencies = [
- "alloy-consensus",
- "alloy-primitives",
- "anyhow",
- "ethereum_ssz",
- "ethereum_ssz_derive",
- "paste",
- "ream-bls",
- "ream-consensus-lean",
- "ream-consensus-misc",
- "ream-fork-choice",
- "ream-merkle",
- "ream-network-spec",
- "ream-storage",
- "rstest",
- "serde",
- "serde_yaml",
- "snap",
- "ssz_types",
- "tokio",
- "tree_hash",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.172"
 source = "registry+https://github.com/rust-lang/crates.io-index"
