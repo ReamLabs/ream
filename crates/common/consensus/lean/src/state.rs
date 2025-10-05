@@ -1108,13 +1108,13 @@ mod test {
                 attestations: VariableList::empty(),
             },
         };
-        let signed_block_bad = SignedBlock {
+        let signed_block_with_bad_root = SignedBlock {
             message: block_with_bad_root,
             signature: Default::default(),
         };
 
         let mut state3 = genesis_state.clone();
-        let result = state3.state_transition(&signed_block_bad, true, true);
+        let result = state3.state_transition(&signed_block_with_bad_root, true, true);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("state root"));
     }
