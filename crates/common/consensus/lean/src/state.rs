@@ -386,7 +386,7 @@ impl LeanState {
 
             // Track attempts to justify new hashes
             let justifications = justifications_map.entry(vote.target.root).or_insert(
-                BitList::with_capacity(VALIDATOR_REGISTRY_LIMIT as usize).map_err(|err| {
+                BitList::with_capacity(self.config.num_validators as usize).map_err(|err| {
                     anyhow!(
                         "Failed to initialize justification for root {:?}: {err:?}",
                         &vote.target.root
