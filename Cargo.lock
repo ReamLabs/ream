@@ -5243,6 +5243,7 @@ dependencies = [
  "ream-p2p",
  "ream-post-quantum-crypto",
  "ream-rpc-beacon",
+ "ream-rpc-common",
  "ream-rpc-lean",
  "ream-storage",
  "ream-sync",

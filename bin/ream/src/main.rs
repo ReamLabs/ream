@@ -50,8 +50,7 @@ use ream_p2p::{
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
 use ream_post_quantum_crypto::hashsig::private_key::PrivateKey as HashSigPrivateKey;
-use ream_rpc_beacon::{config::RpcServerConfig, start_server};
-use ream_rpc_lean::{config::LeanRpcServerConfig, start_lean_server};
+use ream_rpc_common::config::RpcServerConfig;
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
@@ -218,7 +217,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let validator_service =
         LeanValidatorService::new(lean_chain_reader.clone(), keystores, chain_sender).await;
 
-    let server_config = LeanRpcServerConfig::new(
+    let server_config = RpcServerConfig::new(
         config.http_address,
         config.http_port,
         config.http_allow_origin,
@@ -241,7 +240,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         }
     });
     let http_future = executor.spawn(async move {
-        start_lean_server(server_config, lean_chain_reader, peer_table).await
+        ream_rpc_lean::server::start(server_config, lean_chain_reader, peer_table).await
     });
 
     tokio::select! {
@@ -331,7 +330,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
     });
 
     let http_future = executor.spawn(async move {
-        start_server(
+        ream_rpc_beacon::server::start(
             server_config,
             beacon_db,
             network_state,
