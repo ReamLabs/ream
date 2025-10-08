@@ -4,7 +4,6 @@ use actix_web::{
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_chain_lean::lean_chain::LeanChainReader;
-use ream_consensus_lean::state::LeanState;
 use ream_storage::tables::{field::Field, table::Table};
 
 // GET /lean/v0/states/{state_id}
@@ -13,17 +12,9 @@ pub async fn get_state(
     state_id: Path<ID>,
     lean_chain: Data<LeanChainReader>,
 ) -> Result<impl Responder, ApiError> {
-    Ok(HttpResponse::Ok().json(get_state_from_id(state_id.into_inner(), lean_chain).await?))
-}
-
-// Retrieve a state from the lean chain by its state ID.
-pub async fn get_state_from_id(
-    state_id: ID,
-    lean_chain: Data<LeanChainReader>,
-) -> Result<LeanState, ApiError> {
     let lean_chain = lean_chain.read().await;
 
-    let block_root = match state_id {
+    let block_root = match state_id.into_inner() {
         ID::Finalized => {
             let db = lean_chain.store.lock().await;
             Ok(db
@@ -63,8 +54,11 @@ pub async fn get_state_from_id(
     };
 
     let provider = lean_chain.store.clone().lock().await.lean_state_provider();
-    provider
-        .get(block_root?)
-        .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))?
-        .ok_or_else(|| ApiError::NotFound("Lean state not found".to_string()))
+
+    Ok(HttpResponse::Ok().json(
+        provider
+            .get(block_root?)
+            .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))?
+            .ok_or_else(|| ApiError::NotFound("Lean state not found".to_string()))?,
+    ))
 }
