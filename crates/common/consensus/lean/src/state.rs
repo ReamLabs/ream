@@ -852,7 +852,7 @@ mod test {
 
         // Slot 0 should be marked justified
         assert_eq!(genesis_state.justified_slots.len(), 1);
-        assert!(genesis_state.justified_slots.get(0).unwrap_or(&false));
+        assert!(genesis_state.justified_slots.first().unwrap_or(&false));
 
         // Latest header now reflects the processed block's header content
         assert_eq!(genesis_state.latest_block_header.slot, block.slot);
