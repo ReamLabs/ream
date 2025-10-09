@@ -852,7 +852,7 @@ mod test {
 
         // Slot 0 should be marked justified
         assert_eq!(genesis_state.justified_slots.len(), 1);
-        assert!(genesis_state.justified_slots[0]);
+        assert!(genesis_state.justified_slots.get(0).unwrap_or(&false));
 
         // Latest header now reflects the processed block's header content
         assert_eq!(genesis_state.latest_block_header.slot, block.slot);
@@ -1028,7 +1028,7 @@ mod test {
 
         // The target (slot 4) should now be justified
         assert_eq!(state.latest_justified, checkpoint4);
-        assert!(state.justified_slots[4]);
+        assert!(state.justified_slots.get(4).unwrap_or(&false));
 
         // Since no other justifiable slot exists between 0 and 4, genesis is finalized
         assert_eq!(state.latest_finalized, genesis_checkpoint);
