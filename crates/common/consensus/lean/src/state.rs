@@ -767,8 +767,8 @@ mod test {
         // Slot should start at 0.
         assert_eq!(state.slot, 0);
 
-        // Body root must be ZERO at genesis (not yet filled)
-        assert_eq!(state.latest_block_header.body_root, B256::ZERO);
+        // Body root must commit to an empty body at genesis.
+        assert_eq!(state.latest_block_header.body_root, BlockBody::default().tree_hash_root());
 
         // History and justifications must be empty initially.
         assert_eq!(state.historical_block_hashes.len(), 0);
