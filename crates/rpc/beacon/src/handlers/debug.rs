@@ -36,10 +36,11 @@ pub async fn get_debug_beacon_heads(db: Data<BeaconDB>) -> Result<impl Responder
     })?;
 
     let mut blocks = HashMap::new();
-    let store = Store {
-        db: db.get_ref().clone(),
-        operation_pool: Arc::new(OperationPool::default()),
-    };
+    let store = Store::new(
+        db.get_ref().clone(),
+        Arc::new(OperationPool::default()),
+        None,
+    );
 
     store
         .filter_block_tree(justified_checkpoint.root, &mut blocks)
@@ -80,10 +81,11 @@ pub async fn get_debug_fork_choice(db: Data<BeaconDB>) -> Result<impl Responder,
         ))
     })?;
 
-    let store = Store {
-        db: db.get_ref().clone(),
-        operation_pool: Arc::new(OperationPool::default()),
-    };
+    let store = Store::new(
+        db.get_ref().clone(),
+        Arc::new(OperationPool::default()),
+        None,
+    );
     let blocks = store.get_filtered_block_tree().map_err(|err| {
         ApiError::InternalError(format!("Failed to get filtered block tree, error: {err:?}"))
     })?;

@@ -58,6 +58,7 @@ use ream_storage::{
     tables::table::Table,
 };
 use ream_sync::rwlock::Writer;
+use ream_sync_committee_pool::SyncCommitteePool;
 use ream_validator_beacon::{
     beacon_api_client::BeaconApiClient, validator::ValidatorService,
     voluntary_exit::process_voluntary_exit,
@@ -305,6 +306,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
     );
 
     let operation_pool = Arc::new(OperationPool::default());
+    let sync_committee_pool = Arc::new(SyncCommitteePool::default());
 
     let server_config = RpcServerConfig::new(
         config.http_address,
@@ -318,6 +320,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         beacon_db.clone(),
         beacon_db.data_dir.clone(),
         operation_pool.clone(),
+        sync_committee_pool.clone(),
     )
     .await
     .expect("Failed to create manager service");
@@ -336,6 +339,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
             beacon_db,
             network_state,
             operation_pool,
+            sync_committee_pool,
             execution_engine,
         )
         .await

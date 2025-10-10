@@ -6,7 +6,7 @@ use actix_web::{
 };
 use ream_api_types_beacon::{
     id::ValidatorID,
-    query::{AttestationQuery, IdQuery, StatusQuery},
+    query::{AttestationQuery, IdQuery, StatusQuery, SyncCommitteeContributionQuery},
     request::ValidatorsPostRequest,
     responses::{BeaconResponse, DataResponse},
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
@@ -22,7 +22,11 @@ use ream_consensus_misc::{
 };
 use ream_fork_choice::store::Store;
 use ream_operation_pool::OperationPool;
-use ream_storage::{db::beacon::BeaconDB, tables::field::Field};
+use ream_storage::{
+    db::beacon::BeaconDB,
+    tables::{field::Field, table::Table},
+};
+use ream_sync_committee_pool::SyncCommitteePool;
 use serde::Serialize;
 
 use super::state::get_state_from_id;
@@ -30,6 +34,7 @@ use super::state::get_state_from_id;
 ///  For slots in Electra and later, this AttestationData must have a committee_index of 0.
 const ELECTRA_COMMITTEE_INDEX: u64 = 0;
 const MAX_VALIDATOR_COUNT: usize = 100;
+const SYNC_COMMITTEE_SUBNET_COUNT: u64 = 4;
 
 fn build_validator_balances(
     validators: &[(Validator, u64)],
@@ -438,10 +443,11 @@ pub async fn get_attestation_data(
     opertation_pool: Data<Arc<OperationPool>>,
     query: Query<AttestationQuery>,
 ) -> Result<impl Responder, ApiError> {
-    let store = Store {
-        db: db.get_ref().clone(),
-        operation_pool: opertation_pool.get_ref().clone(),
-    };
+    let store = Store::new(
+        db.get_ref().clone(),
+        opertation_pool.get_ref().clone(),
+        None,
+    );
 
     if store.is_syncing().map_err(|err| {
         ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
@@ -503,4 +509,66 @@ pub async fn post_beacon_committee_selections(
     _selections: Json<Vec<BeaconCommitteeSelection>>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::NotImplemented())
+}
+
+#[get("/validator/sync_committee_contribution")]
+pub async fn get_sync_committee_contribution(
+    db: Data<BeaconDB>,
+    operation_pool: Data<Arc<OperationPool>>,
+    sync_committee_pool: Data<Arc<SyncCommitteePool>>,
+    query: Query<SyncCommitteeContributionQuery>,
+) -> Result<impl Responder, ApiError> {
+    let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
+
+    if store.is_syncing().map_err(|err| {
+        ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
+    })? {
+        return Err(ApiError::UnderSyncing);
+    }
+
+    let slot = query.slot;
+    let subcommittee_index = query.subcommittee_index;
+    let beacon_block_root = query.beacon_block_root;
+
+    // Validate subcommittee index
+    if subcommittee_index >= SYNC_COMMITTEE_SUBNET_COUNT {
+        return Err(ApiError::InvalidParameter(format!(
+            "Invalid subcommittee_index: {subcommittee_index}, must be less than {SYNC_COMMITTEE_SUBNET_COUNT}"
+        )));
+    }
+
+    let current_slot = store.get_current_slot().map_err(|err| {
+        ApiError::InternalError(format!("Failed to get current slot, err: {err:?}"))
+    })?;
+
+    // Validate slot is not too far in the future
+    if slot > current_slot + 1 {
+        return Err(ApiError::InvalidParameter(format!(
+            "Slot {slot:?} is too far ahead of the current slot {current_slot:?}"
+        )));
+    }
+
+    // Validate beacon block exists
+    db.beacon_block_provider()
+        .get(beacon_block_root)
+        .map_err(|err| ApiError::InternalError(format!("Failed to get beacon block: {err:?}")))?
+        .ok_or_else(|| {
+            ApiError::NotFound(format!("Beacon block root {beacon_block_root:?} not found"))
+        })?;
+
+    // Check if block is fully verified (not optimistic)
+    // TODO: Add optimistic sync check when execution layer integration is complete
+    // For now, we assume all blocks in fork choice are fully verified
+
+    // Try to get the best (highest-participation) sync committee contribution from the pool
+    // Per spec: return 404 if no contribution is available
+    let sync_committee_contribution = sync_committee_pool
+        .get_best_sync_committee_contribution(slot, beacon_block_root, subcommittee_index)
+        .ok_or_else(|| {
+            ApiError::NotFound(format!(
+                "No sync committee contribution available for beacon block root {beacon_block_root:?}"
+            ))
+        })?;
+
+    Ok(HttpResponse::Ok().json(DataResponse::new(sync_committee_contribution)))
 }

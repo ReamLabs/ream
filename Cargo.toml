@@ -22,6 +22,7 @@ members = [
     "crates/common/operation_pool",
     "crates/common/polynomial_commitments",
     "crates/common/sync",
+    "crates/common/sync_committee_pool",
     "crates/common/validator/beacon",
     "crates/common/validator/lean",
     "crates/crypto/bls",
@@ -161,6 +162,7 @@ ream-rpc-common = { path = "crates/rpc/common" }
 ream-rpc-lean = { path = "crates/rpc/lean" }
 ream-storage = { path = "crates/storage" }
 ream-sync = { path = "crates/common/sync" }
+ream-sync-committee-pool = { path = "crates/common/sync_committee_pool" }
 ream-syncer = { path = "crates/networking/syncer" }
 ream-validator-beacon = { path = "crates/common/validator/beacon" }
 ream-validator-lean = { path = "crates/common/validator/lean" }
