@@ -1,13 +1,14 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{io::Result, net::SocketAddr, sync::Arc};
 
 use actix_web::{
-    App, HttpServer, middleware,
+    App, HttpServer,
+    middleware::Logger,
     web::{Data, ServiceConfig},
 };
 use tracing::info;
 
 /// A type alias for a function that configures the actix-web ServiceConfig.
-type Configurator = dyn Fn(&mut actix_web::web::ServiceConfig) + Send + Sync;
+type Configurator = dyn Fn(&mut ServiceConfig) + Send + Sync;
 
 /// A builder for configuring and starting an RPC server.
 pub struct RpcServerBuilder {
@@ -47,18 +48,18 @@ impl RpcServerBuilder {
         T: Clone + Send + Sync + 'static,
     {
         self.configurators
-            .push(Arc::new(move |cfg: &mut ServiceConfig| {
-                cfg.app_data(Data::new(value.clone()));
+            .push(Arc::new(move |config: &mut ServiceConfig| {
+                config.app_data(Data::new(value.clone()));
             }));
         self
     }
 
     /// Start the RPC server by applying all configurations.
-    pub async fn start(self) -> std::io::Result<()> {
+    pub async fn start(self) -> Result<()> {
         let configurators = self.configurators.clone();
-        let configure_all = move |cfg: &mut ServiceConfig| {
-            for c in &configurators {
-                c(cfg);
+        let configure_all = move |config: &mut ServiceConfig| {
+            for configurator in &configurators {
+                configurator(config);
             }
         };
 
@@ -66,7 +67,7 @@ impl RpcServerBuilder {
 
         let server = HttpServer::new(move || {
             App::new()
-                .wrap(middleware::Logger::default())
+                .wrap(Logger::default())
                 .configure(configure_all.clone())
         })
         .bind(self.http_socket_address)?

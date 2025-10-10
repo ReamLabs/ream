@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{io::Result, sync::Arc};
 
 use ream_execution_engine::ExecutionEngine;
 use ream_operation_pool::OperationPool;
@@ -15,7 +15,7 @@ pub async fn start(
     network_state: Arc<NetworkState>,
     operation_pool: Arc<OperationPool>,
     execution_engine: Option<ExecutionEngine>,
-) -> std::io::Result<()> {
+) -> Result<()> {
     RpcServerBuilder::new(server_config.http_socket_address)
         .allow_origin(server_config.http_allow_origin)
         .with_data(db)

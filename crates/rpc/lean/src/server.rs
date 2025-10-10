@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, io::Result, sync::Arc};
 
 use libp2p::PeerId;
 use parking_lot::Mutex;
@@ -13,7 +13,7 @@ pub async fn start(
     server_config: RpcServerConfig,
     lean_chain: LeanChainReader,
     peer_table: Arc<Mutex<HashMap<PeerId, ConnectionState>>>,
-) -> std::io::Result<()> {
+) -> Result<()> {
     RpcServerBuilder::new(server_config.http_socket_address)
         .allow_origin(server_config.http_allow_origin)
         .with_data(lean_chain)

@@ -106,28 +106,6 @@ parking_lot = "0.12.3"
 prometheus_exporter = "0.8.5"
 rand = "0.9"
 rand_chacha = "0.9"
-redb = { version = "2.4.0" }
-reqwest = { version = "0.12", features = ["json"] }
-rstest = "0.25"
-rust-kzg-blst = { git = 'https://github.com/grandinetech/rust-kzg.git' }
-serde = { version = '1.0', features = ['derive', "rc"] }
-serde_json = "1.0.139"
-serde_yaml = "0.9"
-sha2 = "0.10"
-snap = "1.1"
-ssz_types = { git = "https://github.com/ReamLabs/ssz_types", branch = "removable-variable-list" }
-tempdir = "0.3.7"
-tempfile = "3.19"
-thiserror = "2.0.11"
-tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
-tokio-util = { version = "0.7", features = ["compat"] }
-tracing = "0.1"
-tracing-subscriber = "0.3"
-tracing-test = "0.2.5"
-tree_hash = "0.10"
-tree_hash_derive = "0.10"
-unicode-normalization = "0.1.24"
-url = "2.5"
 
 # ream dependencies
 ream-account-manager = { path = "crates/common/account_manager" }
@@ -164,6 +142,28 @@ ream-sync = { path = "crates/common/sync" }
 ream-syncer = { path = "crates/networking/syncer" }
 ream-validator-beacon = { path = "crates/common/validator/beacon" }
 ream-validator-lean = { path = "crates/common/validator/lean" }
+redb = { version = "2.4.0" }
+reqwest = { version = "0.12", features = ["json"] }
+rstest = "0.25"
+rust-kzg-blst = { git = 'https://github.com/grandinetech/rust-kzg.git' }
+serde = { version = '1.0', features = ['derive', "rc"] }
+serde_json = "1.0.139"
+serde_yaml = "0.9"
+sha2 = "0.10"
+snap = "1.1"
+ssz_types = { git = "https://github.com/ReamLabs/ssz_types", branch = "removable-variable-list" }
+tempdir = "0.3.7"
+tempfile = "3.19"
+thiserror = "2.0.11"
+tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tracing-test = "0.2.5"
+tree_hash = "0.10"
+tree_hash_derive = "0.10"
+unicode-normalization = "0.1.24"
+url = "2.5"
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }
