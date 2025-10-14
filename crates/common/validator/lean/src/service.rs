@@ -24,6 +24,7 @@ pub struct ValidatorService {
     lean_chain: LeanChainReader,
     keystores: Vec<LeanKeystore>,
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
+    proof: bool,
 }
 
 impl ValidatorService {
@@ -31,11 +32,13 @@ impl ValidatorService {
         lean_chain: LeanChainReader,
         keystores: Vec<LeanKeystore>,
         chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
+        proof: bool,
     ) -> Self {
         ValidatorService {
             lean_chain,
             keystores,
             chain_sender,
+            proof,
         }
     }
 
@@ -77,6 +80,12 @@ impl ValidatorService {
                                     keystore.validator_id,
                                 );
 
+                                if self.proof {
+                                    let (tx, rx) = oneshot::channel();
+                                    self.chain_sender
+                                        .send(LeanChainServiceMessage::ProduceProofBlock { slot, sender: tx })
+                                        .expect("Failed to send vote to LeanChainService");
+                                }
                                 // TODO: Sign the block with the keystore.
                                 let signed_block = SignedBlock {
                                     message: new_block,

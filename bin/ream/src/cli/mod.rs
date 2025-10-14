@@ -48,6 +48,9 @@ pub struct Cli {
 
     #[arg(long, help = "Purges the database.")]
     pub purge_db: bool,
+
+    #[arg(long, short, help = "Proposer proves and gossips state transition, validators verify")]
+    pub proof_gen: bool,
 }
 
 #[derive(Debug, Subcommand)]
