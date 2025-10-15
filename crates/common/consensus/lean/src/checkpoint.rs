@@ -8,7 +8,7 @@ use tree_hash_derive::TreeHash;
 /// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#checkpoint)
 /// for detailed protocol information.
 #[derive(
-    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
+    Debug, Default, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]
 pub struct Checkpoint {
     pub root: B256,
