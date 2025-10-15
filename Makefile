@@ -59,6 +59,10 @@ lint: fmt clippy sort # Run all linters.
 
 ##@ Others
 
+.PHONY: check
+check: # Run `cargo check`.
+	cargo check --workspace --features "$(FEATURES)"
+
 .PHONY: clean
 clean: # Run `cargo clean`.
 	cargo clean
