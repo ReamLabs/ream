@@ -29,14 +29,13 @@ impl PrivateKey {
         (PublicKey::new(public_key), Self::new(private_key))
     }
 
-    pub fn sign<R: Rng>(
+    pub fn sign(
         &self,
-        rng: &mut R,
         message: &[u8; MESSAGE_LENGTH],
         epoch: u32,
     ) -> anyhow::Result<Signature, SigningError> {
         Ok(Signature::new(
-            <HashSigScheme as SignatureScheme>::sign(rng, &self.inner, epoch, message)
+            <HashSigScheme as SignatureScheme>::sign(&self.inner, epoch, message)
                 .map_err(SigningError::SigningFailed)?,
         ))
     }
@@ -63,7 +62,7 @@ mod tests {
         let message = [0u8; 32];
 
         // Sign the message
-        let result = private_key.sign(&mut rng, &message, epoch);
+        let result = private_key.sign(&message, epoch);
 
         assert!(result.is_ok(), "Signing should succeed");
         let signature = result.unwrap();
