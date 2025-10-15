@@ -1,11 +1,12 @@
+use alloy_primitives::FixedBytes;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{BitList, VariableList, typenum::U4096};
 use tree_hash_derive::TreeHash;
 
-use crate::vote::Vote;
+use crate::vote::AttestationData;
 
-/// Represents an attestation in the Lean chain.
+/// Aggregated attestation consisting of participation bits and message.
 ///
 /// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#attestation)
 /// for detailed protocol information.
@@ -13,6 +14,13 @@ use crate::vote::Vote;
 pub struct Attestation {
     /// U4096 = VALIDATOR_REGISTRY_LIMIT
     pub aggregation_bits: BitList<U4096>,
-    pub message: Vote,
-    pub signature: VariableList<u8, 4000>,
+    pub message: AttestationData,
+}
+
+/// Aggregated attestation bundled with aggregated signatures.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+pub struct SignedAttestation {
+    pub message: Attestation,
+    /// U4096 = VALIDATOR_REGISTRY_LIMIT
+    pub signature: VariableList<FixedBytes<4000>, U4096>,
 }
