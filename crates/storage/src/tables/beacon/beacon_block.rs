@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus_beacon::electra::beacon_block::SignedBeaconBlock;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, TableDefinition};
 use tree_hash::TreeHash;
 
 use super::{
@@ -59,7 +59,7 @@ impl Table for BeaconBlockTable {
         };
         parent_root_index_table.insert(value.message.parent_root, block_root)?;
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(BEACON_BLOCK_TABLE)?;
         table.insert(key, value)?;
         drop(table);

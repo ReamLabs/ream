@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy_primitives::{B256, FixedBytes};
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, TableDefinition};
 
 use crate::{
     errors::StoreError,
@@ -35,7 +35,7 @@ impl Field for ProposerBoostRootField {
 
     fn insert(&self, value: Self::Value) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(PROPOSER_BOOST_ROOT_FIELD)?;
         table.insert(PROPOSER_BOOST_ROOT_KEY, value)?;
         drop(table);

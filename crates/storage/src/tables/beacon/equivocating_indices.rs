@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy_primitives::map::HashSet;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, TableDefinition};
 
 use crate::{errors::StoreError, tables::field::Field};
 
@@ -32,7 +32,7 @@ impl Field for EquivocatingIndicesField {
 
     fn insert(&self, value: Self::Value) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(EQUIVOCATING_INDICES_FIELD)?;
         table.insert(
             EQUIVOCATING_INDICES_KEY,

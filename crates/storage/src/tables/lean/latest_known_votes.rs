@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use ream_consensus_lean::vote::SignedVote;
-use redb::{Database, Durability, ReadableTable, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 
 use crate::{
     errors::StoreError,
@@ -34,7 +34,7 @@ impl Table for LatestKnownVotesTable {
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(LATEST_KNOWN_VOTES_TABLE)?;
         table.insert(key, value)?;
         drop(table);
@@ -50,7 +50,7 @@ impl LatestKnownVotesTable {
         values: impl IntoIterator<Item = (u64, SignedVote)>,
     ) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
 
         let mut table = write_txn.open_table(LATEST_KNOWN_VOTES_TABLE)?;
 

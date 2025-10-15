@@ -32,19 +32,16 @@ pub struct LeanKeystore {
 /// # Arguments
 /// * `path` - Path to the validator registry YAML file
 /// * `node_id` - Node identifier (e.g., "ream_0", "zeam_0")
-pub fn load_validator_registry<P: AsRef<Path>>(
+pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
     path: P,
     node_id: &str,
 ) -> anyhow::Result<Vec<LeanKeystore>> {
     let content = fs::read_to_string(&path).map_err(|err| {
-        anyhow::anyhow!(
-            "Failed to read validator registry file {:?}: {err}",
-            path.as_ref(),
-        )
+        anyhow::anyhow!("Failed to read validator registry file {path:?}: {err}",)
     })?;
 
     let node_mapping = serde_yaml::from_str::<NodeValidatorMapping>(&content)
-        .map_err(|err| anyhow::anyhow!("Failed to parse validator registry YAML: {}", err))?;
+        .map_err(|err| anyhow::anyhow!("Failed to parse validator registry YAML: {err}"))?;
 
     Ok(node_mapping
         .nodes

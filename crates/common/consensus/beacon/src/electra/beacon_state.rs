@@ -1034,19 +1034,19 @@ impl BeaconState {
                 withdrawal_credentials,
                 amount,
             ))
-            .map_err(|err| anyhow!("Couldn't push to validators {:?}", err))?;
+            .map_err(|err| anyhow!("Couldn't push to validators {err:?}"))?;
         self.balances
             .push(amount)
-            .map_err(|err| anyhow!("Couldn't push to balances {:?}", err))?;
+            .map_err(|err| anyhow!("Couldn't push to balances {err:?}"))?;
         self.previous_epoch_participation
             .push(0)
-            .map_err(|err| anyhow!("Couldn't push to previous_epoch_participation {:?}", err))?;
+            .map_err(|err| anyhow!("Couldn't push to previous_epoch_participation {err:?}"))?;
         self.current_epoch_participation
             .push(0)
-            .map_err(|err| anyhow!("Couldn't push to current_epoch_participation {:?}", err))?;
+            .map_err(|err| anyhow!("Couldn't push to current_epoch_participation {err:?}"))?;
         self.inactivity_scores
             .push(0)
-            .map_err(|err| anyhow!("Couldn't push to inactivity_scores {:?}", err))?;
+            .map_err(|err| anyhow!("Couldn't push to inactivity_scores {err:?}"))?;
 
         Ok(())
     }
@@ -2095,9 +2095,8 @@ impl BeaconState {
         // Bitfield length matches total number of participants
         ensure!(
             attestation.aggregation_bits.len() == committee_offset,
-            "Aggregation bits length must match committee size {} != {}",
+            "Aggregation bits length must match committee size {} != {committee_offset}",
             attestation.aggregation_bits.len(),
-            committee_offset
         );
 
         // Participation flag indices

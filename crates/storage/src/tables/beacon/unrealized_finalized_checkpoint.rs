@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ream_consensus_misc::checkpoint::Checkpoint;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, TableDefinition};
 
 use crate::{
     errors::StoreError,
@@ -37,7 +37,7 @@ impl Field for UnrealizedFinalizedCheckpointField {
 
     fn insert(&self, value: Self::Value) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(UNREALIZED_FINALIZED_CHECKPOINT_FIELD)?;
         table.insert(UNREALIZED_FINALIZED_CHECKPOINT_FIELD_KEY, value)?;
         drop(table);
