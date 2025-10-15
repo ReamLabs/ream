@@ -8,6 +8,7 @@ use std::{
 
 use alloy_primitives::hex;
 use anyhow::anyhow;
+use delay_map::HashMapDelay;
 use discv5::multiaddr::Protocol;
 use futures::StreamExt;
 use libp2p::{
@@ -22,7 +23,10 @@ use parking_lot::Mutex;
 use ream_chain_lean::{messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest};
 use ream_executor::ReamExecutor;
 use ssz::Encode;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::{
+    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+    time::Duration,
+};
 use tracing::{info, trace, warn};
 
 use super::peer::ConnectionState;
@@ -39,6 +43,8 @@ use crate::{
     network::misc::Executor,
     req_resp::{Chain, ReqResp, ReqRespMessage},
 };
+
+const BOOTNODE_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(NetworkBehaviour)]
 pub(crate) struct ReamBehaviour {
@@ -82,6 +88,7 @@ pub struct LeanNetworkService {
     peer_table: Arc<Mutex<HashMap<PeerId, ConnectionState>>>,
     chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
     outbound_p2p_request: UnboundedReceiver<LeanP2PRequest>,
+    bootnode_retry_state: HashMapDelay<PeerId, (u32, Vec<Multiaddr>)>,
 }
 
 impl LeanNetworkService {
@@ -171,6 +178,7 @@ impl LeanNetworkService {
             peer_table: Arc::new(Mutex::new(HashMap::new())),
             chain_message_sender,
             outbound_p2p_request,
+            bootnode_retry_state: HashMapDelay::new(BOOTNODE_RETRY_TIMEOUT),
         };
 
         let mut multi_addr: Multiaddr = lean_network_service.network_config.socket_address.into();
@@ -202,9 +210,29 @@ impl LeanNetworkService {
     pub async fn start(&mut self, bootnodes: Bootnodes) -> anyhow::Result<()> {
         info!("LeanNetworkService started");
 
-        self.connect_to_peers(bootnodes.to_multiaddrs_lean()).await;
+        self.connect_to_bootnodes(bootnodes.to_multiaddrs_lean())
+            .await;
+
         loop {
             tokio::select! {
+                Some(Ok((peer_id, (attempts, addresses)))) = self.bootnode_retry_state.next() => {
+                    if matches!(self.peer_table.lock().get(&peer_id), Some(ConnectionState::Connected)) {
+                        continue;
+                    }
+                    if attempts >= 8 {
+                        warn!("giving up on {peer_id:?} after 8 attempts");
+                        continue;
+                    };
+
+                    for address in &addresses {
+                        if let Err(err) = self.swarm.dial(address.clone()) {
+                            warn!("retry to peer_id: {peer_id:?}, address: {address} error: {err}");
+                        }
+                    }
+
+                    self.bootnode_retry_state.insert(peer_id, (attempts + 1, addresses))
+                }
+
                 Some(item) = self.outbound_p2p_request.recv() => {
                     match item {
                         LeanP2PRequest::GossipBlock(signed_block) => {
@@ -289,6 +317,8 @@ impl LeanNetworkService {
                     .lock()
                     .insert(peer_id, ConnectionState::Connected);
 
+                self.bootnode_retry_state.remove(&peer_id);
+
                 info!("Connected to peer: {peer_id:?}");
                 None
             }
@@ -360,7 +390,7 @@ impl LeanNetworkService {
         None
     }
 
-    async fn connect_to_peers(&mut self, peers: Vec<Multiaddr>) {
+    async fn connect_to_bootnodes(&mut self, peers: Vec<Multiaddr>) {
         trace!("Discovered peers: {peers:?}");
         for peer in peers {
             if let Some(Protocol::P2p(peer_id)) = peer
@@ -368,12 +398,23 @@ impl LeanNetworkService {
                 .find(|protocol| matches!(protocol, Protocol::P2p(_)))
                 && peer_id != self.local_peer_id()
             {
+                match self.bootnode_retry_state.remove(&peer_id) {
+                    Some((attempts, mut addresses)) => {
+                        addresses.push(peer.clone());
+                        self.bootnode_retry_state
+                            .insert(peer_id, (attempts, addresses));
+                    }
+                    None => self
+                        .bootnode_retry_state
+                        .insert(peer_id, (0, vec![peer.clone()])),
+                };
+
                 if let Err(err) = self.swarm.dial(peer.clone()) {
                     warn!("Failed to dial peer: {err:?}");
                     continue;
                 }
 
-                info!("Dialing peer: {peer_id:?}",);
+                info!("Dialing peer: {peer_id:?}");
                 self.peer_table
                     .lock()
                     .insert(peer_id, ConnectionState::Connecting);
