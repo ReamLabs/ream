@@ -19,6 +19,7 @@ use crate::{
     checkpoint::Checkpoint,
     config::Config,
     is_justifiable_slot,
+    validator::Validator,
     vote::SignedVote,
 };
 
@@ -37,6 +38,8 @@ pub struct LeanState {
 
     pub historical_block_hashes: VariableList<B256, U262144>,
     pub justified_slots: BitList<U262144>,
+
+    pub validators: VariableList<Validator, U262144>,
 
     pub justifications_roots: VariableList<B256, U262144>,
     pub justifications_validators: BitList<U1073741824>,
@@ -61,6 +64,8 @@ impl LeanState {
             historical_block_hashes: VariableList::empty(),
             justified_slots: BitList::with_capacity(0)
                 .expect("Failed to initialize an empty BitList"),
+
+            validators: VariableList::empty(),
 
             justifications_roots: VariableList::empty(),
             justifications_validators: BitList::with_capacity(0)

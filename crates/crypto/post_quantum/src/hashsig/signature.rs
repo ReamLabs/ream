@@ -20,7 +20,7 @@ impl Signature {
         epoch: u32,
     ) -> anyhow::Result<bool> {
         Ok(<HashSigScheme as SignatureScheme>::verify(
-            &public_key.inner,
+            &public_key.to_hash_sig_public_key()?,
             epoch,
             message,
             &self.inner,

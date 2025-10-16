@@ -26,7 +26,10 @@ impl PrivateKey {
         let (public_key, private_key) =
             <HashSigScheme as SignatureScheme>::key_gen(rng, activation_epoch, num_active_epochs);
 
-        (PublicKey::new(public_key), Self::new(private_key))
+        (
+            PublicKey::from_hash_sig_public_key(public_key),
+            Self::new(private_key),
+        )
     }
 
     pub fn sign(

@@ -80,6 +80,7 @@ alloy-rpc-types-beacon = "1.0.8"
 alloy-rpc-types-eth = "1.0.7"
 anyhow = "1.0"
 async-trait = "0.1.86"
+bincode = { version = "2.0.1", features = ["serde"] }
 bip39 = { version = "2.2.0", features = ["rand"] }
 clap = "4"
 delay_map = "0.4.1"
