@@ -20,7 +20,7 @@ use crate::{
     config::Config,
     is_justifiable_slot,
     validator::Validator,
-    vote::SignedVote,
+    vote::SignedValidatorAttestation,
 };
 
 /// Represents the state of the Lean chain.
@@ -302,7 +302,7 @@ impl LeanState {
 
     pub fn process_attestations(
         &mut self,
-        attestations: &VariableList<SignedVote, U4096>,
+        attestations: &VariableList<SignedValidatorAttestation, U4096>,
     ) -> anyhow::Result<()> {
         // get justifications, justified slots and historical block hashes are
         // already up to date as per the processing in process_block_header
@@ -315,15 +315,15 @@ impl LeanState {
             // valid justifiable slot
             if !self
                 .justified_slots
-                .get(vote.source.slot as usize)
+                .get(vote.source().slot as usize)
                 .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
             {
                 info!(
                     reason = "Source slot not justified",
-                    source_slot = vote.source.slot,
-                    target_slot = vote.target.slot,
+                    source_slot = vote.source().slot,
+                    target_slot = vote.target().slot,
                     "Skipping vote by Validator {}",
-                    signed_vote.validator_id,
+                    signed_vote.message.validator_id,
                 );
                 continue;
             }
@@ -334,90 +334,90 @@ impl LeanState {
             // from justifications map
             if self
                 .justified_slots
-                .get(vote.target.slot as usize)
+                .get(vote.target().slot as usize)
                 .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
             {
                 info!(
                     reason = "Target slot already justified",
-                    source_slot = vote.source.slot,
-                    target_slot = vote.target.slot,
+                    source_slot = vote.source().slot,
+                    target_slot = vote.target().slot,
                     "Skipping vote by Validator {}",
-                    signed_vote.validator_id,
+                    signed_vote.message.validator_id,
                 );
                 continue;
             }
 
-            if vote.source.root
+            if vote.source().root
                 != *self
                     .historical_block_hashes
-                    .get(vote.source.slot as usize)
+                    .get(vote.source().slot as usize)
                     .ok_or(anyhow!("Source slot not found in historical_block_hashes"))?
             {
                 info!(
                     reason = "Source block not in historical block hashes",
-                    source_slot = vote.source.slot,
-                    target_slot = vote.target.slot,
+                    source_slot = vote.source().slot,
+                    target_slot = vote.target().slot,
                     "Skipping vote by Validator {}",
-                    signed_vote.validator_id,
+                    signed_vote.message.validator_id,
                 );
                 continue;
             }
 
-            if vote.target.root
+            if vote.target().root
                 != *self
                     .historical_block_hashes
-                    .get(vote.target.slot as usize)
+                    .get(vote.target().slot as usize)
                     .ok_or(anyhow!("Target slot not found in historical_block_hashes"))?
             {
                 info!(
                     reason = "Target block not in historical block hashes",
-                    source_slot = vote.source.slot,
-                    target_slot = vote.target.slot,
+                    source_slot = vote.source().slot,
+                    target_slot = vote.target().slot,
                     "Skipping vote by Validator {}",
-                    signed_vote.validator_id,
+                    signed_vote.message.validator_id,
                 );
                 continue;
             }
 
-            if vote.target.slot <= vote.source.slot {
+            if vote.target().slot <= vote.source().slot {
                 info!(
                     reason = "Target slot not greater than source slot",
-                    source_slot = vote.source.slot,
-                    target_slot = vote.target.slot,
+                    source_slot = vote.source().slot,
+                    target_slot = vote.target().slot,
                     "Skipping vote by Validator {}",
-                    signed_vote.validator_id,
+                    signed_vote.message.validator_id,
                 );
                 continue;
             }
 
-            if !is_justifiable_slot(self.latest_finalized.slot, vote.target.slot) {
+            if !is_justifiable_slot(self.latest_finalized.slot, vote.target().slot) {
                 info!(
                     reason = "Target slot not justifiable",
-                    source_slot = vote.source.slot,
-                    target_slot = vote.target.slot,
+                    source_slot = vote.source().slot,
+                    target_slot = vote.target().slot,
                     "Skipping vote by Validator {}",
-                    signed_vote.validator_id,
+                    signed_vote.message.validator_id,
                 );
                 continue;
             }
 
             // Track attempts to justify new hashes
-            let justifications = justifications_map.entry(vote.target.root).or_insert(
+            let justifications = justifications_map.entry(vote.target().root).or_insert(
                 BitList::with_capacity(self.validators.len()).map_err(|err| {
                     anyhow!(
                         "Failed to initialize justification for root {:?}: {err:?}",
-                        &vote.target.root
+                        &vote.target().root
                     )
                 })?,
             );
 
             justifications
-                .set(signed_vote.validator_id as usize, true)
+                .set(signed_vote.message.validator_id as usize, true)
                 .map_err(|err| {
                     anyhow!(
                         "Failed to set validator {:?}'s justification for root {:?}: {err:?}",
-                        signed_vote.validator_id,
-                        &vote.target.root
+                        signed_vote.message.validator_id,
+                        &vote.target().root
                     )
                 })?;
 
@@ -429,17 +429,17 @@ impl LeanState {
             // to prevent integer division which could lead to less than 2/3 of validators
             // justifying specially if the num_validators is low in testing scenarios
             if 3 * count >= (2 * self.validators.len()) {
-                self.latest_justified = vote.target.clone();
+                self.latest_justified = vote.target();
                 self.justified_slots
-                    .set(vote.target.slot as usize, true)
+                    .set(vote.target().slot as usize, true)
                     .map_err(|err| {
                         anyhow!(
                             "Failed to set justified slot for slot {}: {err:?}",
-                            vote.target.slot
+                            vote.target().slot
                         )
                     })?;
 
-                justifications_map.remove(&vote.target.root);
+                justifications_map.remove(&vote.target().root);
 
                 info!(
                     slot = self.latest_justified.slot,
@@ -450,12 +450,12 @@ impl LeanState {
 
                 // Finalization: if the target is the next valid justifiable
                 // hash after the source
-                let is_target_next_valid_justifiable_slot = !((vote.source.slot + 1)
-                    ..vote.target.slot)
+                let is_target_next_valid_justifiable_slot = !((vote.source().slot + 1)
+                    ..vote.target().slot)
                     .any(|slot| is_justifiable_slot(self.latest_finalized.slot, slot));
 
                 if is_target_next_valid_justifiable_slot {
-                    self.latest_finalized = vote.source.clone();
+                    self.latest_finalized = vote.source();
 
                     info!(
                         slot = self.latest_finalized.slot,
@@ -477,7 +477,7 @@ impl LeanState {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::vote::Vote;
+    use crate::vote::{AttestationData, ValidatorAttestation};
 
     #[test]
     fn get_justifications_empty() {
@@ -1012,15 +1012,17 @@ mod test {
         };
 
         // Create 7 votes from distinct validators (indices 0..6) to reach ≥2/3.
-        let mut votes_for_4 = VariableList::<SignedVote, U4096>::empty();
+        let mut votes_for_4 = VariableList::<SignedValidatorAttestation, U4096>::empty();
         for i in 0..7 {
-            let vote = SignedVote {
-                validator_id: i,
-                message: Vote {
-                    slot: 4,
-                    head: checkpoint4.clone(),
-                    target: checkpoint4.clone(),
-                    source: genesis_checkpoint.clone(),
+            let vote = SignedValidatorAttestation {
+                message: ValidatorAttestation {
+                    validator_id: i,
+                    data: AttestationData {
+                        slot: 4,
+                        head: checkpoint4.clone(),
+                        target: checkpoint4.clone(),
+                        source: genesis_checkpoint.clone(),
+                    },
                 },
                 signature: Default::default(),
             };

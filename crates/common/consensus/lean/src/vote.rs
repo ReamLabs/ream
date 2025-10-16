@@ -1,4 +1,3 @@
-
 use alloy_primitives::FixedBytes;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};

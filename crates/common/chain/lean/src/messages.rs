@@ -1,6 +1,6 @@
 use ream_consensus_lean::{
     block::{Block, SignedBlock},
-    vote::SignedVote,
+    vote::SignedValidatorAttestation,
 };
 use tokio::sync::oneshot;
 
@@ -33,7 +33,7 @@ pub enum LeanChainServiceMessage {
         need_gossip: bool,
     },
     ProcessVote {
-        signed_vote: SignedVote,
+        signed_vote: SignedValidatorAttestation,
         is_trusted: bool,
         need_gossip: bool,
     },
