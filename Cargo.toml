@@ -74,13 +74,13 @@ actix-web = "4.11.0"
 actix-web-lab = "0.24.3"
 aes = "0.8.4"
 alloy-consensus = { version = "1.0.38", default-features = false }
-alloy-primitives = { version = "1.1", features = ['serde'] }
-bincode = { version = "2.0.1", features = ["serde"] }
+alloy-primitives = { version = "1.4.1", features = ['serde'] }
 alloy-rlp = { version = "0.3.12", default-features = false, features = ["derive"] }
 alloy-rpc-types-beacon = "1.0.38"
 alloy-rpc-types-eth = "1.0.38"
 anyhow = "1.0.100"
 async-trait = "0.1.89"
+bincode = { version = "2.0.1", features = ["serde"] }
 bip39 = { version = "2.2.0", features = ["rand"] }
 clap = "4.5.49"
 delay_map = "0.4.1"
