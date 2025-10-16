@@ -278,13 +278,13 @@ impl LeanNetworkService {
                                 )
                             {
                                 warn!(
-                                    slot = signed_vote.message.slot,
+                                    slot = signed_vote.message.slot(),
                                     error = ?err,
                                     "Publish vote failed"
                                 );
                             } else {
                                 info!(
-                                    slot = signed_vote.message.slot,
+                                    slot = signed_vote.message.slot(),
                                     "Broadcasted vote"
                                 );
                             }
@@ -364,7 +364,7 @@ impl LeanNetworkService {
                     }
                 }
                 Ok(LeanGossipsubMessage::Vote(signed_vote)) => {
-                    let slot = signed_vote.message.slot;
+                    let slot = signed_vote.message.slot();
 
                     if let Err(err) =
                         self.chain_message_sender

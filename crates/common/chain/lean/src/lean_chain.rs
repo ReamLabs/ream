@@ -7,7 +7,7 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     is_justifiable_slot,
     state::LeanState,
-    vote::{SignedVote, Vote},
+    vote::{AttestationData, SignedValidatorAttestation},
 };
 use ream_fork_choice::lean::get_fork_choice_head;
 use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer_vec, stop_timer};
@@ -33,7 +33,7 @@ pub struct LeanChain {
     pub store: Arc<Mutex<LeanDB>>,
     /// Votes that we have received but not yet taken into account.
     /// Maps validator id to signed vote.
-    pub latest_new_votes: HashMap<u64, SignedVote>,
+    pub latest_new_votes: HashMap<u64, SignedValidatorAttestation>,
     /// Initialize the chain with the genesis block.
     pub genesis_hash: B256,
     /// Number of validators.
@@ -53,10 +53,10 @@ impl LeanChain {
             .insert(genesis_block_hash, genesis_block)
             .expect("Failed to insert genesis block");
         db.latest_finalized_provider()
-            .insert(genesis_state.latest_finalized.clone())
+            .insert(genesis_state.latest_finalized)
             .expect("Failed to insert latest finalized checkpoint");
         db.latest_justified_provider()
-            .insert(genesis_state.latest_justified.clone())
+            .insert(genesis_state.latest_justified)
             .expect("Failed to insert latest justified checkpoint");
         db.lean_state_provider()
             .insert(genesis_block_hash, genesis_state)
@@ -148,8 +148,7 @@ impl LeanChain {
                 db.lean_state_provider()
                     .get(self.head)?
                     .ok_or_else(|| anyhow!("State not found in chain for head: {}", self.head))?
-                    .latest_finalized
-                    .clone(),
+                    .latest_finalized,
             )
         };
 
@@ -180,7 +179,7 @@ impl LeanChain {
             .lock()
             .await
             .latest_finalized_provider()
-            .insert(latest_finalized_checkpoint.clone())?;
+            .insert(latest_finalized_checkpoint)?;
 
         Ok(())
     }
@@ -288,7 +287,7 @@ impl LeanChain {
                 .get_all_votes()?
                 .into_iter()
                 .filter_map(|(_, vote)| {
-                    (vote.message.source == state.latest_justified
+                    (vote.message.source() == state.latest_justified
                         && !new_block.message.body.attestations.contains(&vote))
                     .then_some(vote)
                 })
@@ -322,7 +321,7 @@ impl LeanChain {
         Ok(new_block.message)
     }
 
-    pub async fn build_vote(&self, slot: u64) -> anyhow::Result<Vote> {
+    pub async fn build_vote(&self, slot: u64) -> anyhow::Result<AttestationData> {
         let (head, target, source) = {
             let db = self.store.lock().await;
             (
@@ -344,7 +343,7 @@ impl LeanChain {
             )
         };
 
-        Ok(Vote {
+        Ok(AttestationData {
             slot,
             head,
             target,
@@ -385,7 +384,7 @@ impl LeanChain {
 
         let attestations = signed_block.message.body.attestations.clone();
         lean_block_provider.insert(block_hash, signed_block)?;
-        latest_justified_provider.insert(state.latest_justified.clone())?;
+        latest_justified_provider.insert(state.latest_justified)?;
         lean_state_provider.insert(block_hash, state)?;
         self.on_attestation_from_block(attestations).await?;
         self.update_head().await?;
@@ -401,7 +400,7 @@ impl LeanChain {
     /// <https://github.com/leanEthereum/leanSpec/blob/ee16b19825a1f358b00a6fc2d7847be549daa03b/docs/client/forkchoice.md?plain=1#L279-L312>
     pub async fn on_attestation_from_block(
         &mut self,
-        signed_votes: impl IntoIterator<Item = SignedVote>,
+        signed_votes: impl IntoIterator<Item = SignedValidatorAttestation>,
     ) -> anyhow::Result<()> {
         let latest_known_votes_provider = {
             let db = self.store.lock().await;
@@ -410,11 +409,11 @@ impl LeanChain {
 
         latest_known_votes_provider.batch_insert(signed_votes.into_iter().filter_map(
             |signed_vote| {
-                let validator_id = signed_vote.validator_id;
+                let validator_id = signed_vote.message.validator_id;
 
                 // Clear from new votes if this is latest.
                 if let Some(latest_vote) = self.latest_new_votes.get(&validator_id)
-                    && latest_vote.message.slot < signed_vote.message.slot
+                    && latest_vote.message.slot() < signed_vote.message.slot()
                 {
                     self.latest_new_votes.remove(&validator_id);
                 }
@@ -424,7 +423,9 @@ impl LeanChain {
                     .get(validator_id)
                     .ok()
                     .flatten()
-                    .is_none_or(|latest_vote| latest_vote.message.slot < signed_vote.message.slot)
+                    .is_none_or(|latest_vote| {
+                        latest_vote.message.slot() < signed_vote.message.slot()
+                    })
                     .then_some((validator_id, signed_vote))
             },
         ))?;
@@ -436,14 +437,14 @@ impl LeanChain {
     ///
     /// See lean specification:
     /// <https://github.com/leanEthereum/leanSpec/blob/ee16b19825a1f358b00a6fc2d7847be549daa03b/docs/client/forkchoice.md?plain=1#L279-L312>
-    pub fn on_attestation_from_gossip(&mut self, signed_vote: SignedVote) {
-        let validator_id = signed_vote.validator_id;
+    pub fn on_attestation_from_gossip(&mut self, signed_vote: SignedValidatorAttestation) {
+        let validator_id = signed_vote.message.validator_id;
 
         // Update latest new votes if this is the latest
         if self
             .latest_new_votes
             .get(&validator_id)
-            .is_none_or(|latest_vote| latest_vote.message.slot < signed_vote.message.slot)
+            .is_none_or(|latest_vote| latest_vote.message.slot() < signed_vote.message.slot())
         {
             self.latest_new_votes
                 .insert(validator_id, signed_vote.clone());
