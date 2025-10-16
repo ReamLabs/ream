@@ -17,7 +17,7 @@ pub fn setup_data_dir(
     ephemeral: bool,
 ) -> io::Result<PathBuf> {
     if ephemeral {
-        return create_temp_dir(app_name, data_dir).map(TempDir::into_path);
+        return create_temp_dir(app_name, data_dir).map(TempDir::keep);
     }
     let data_dir = match data_dir {
         Some(data_dir) => data_dir,

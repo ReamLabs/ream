@@ -63,7 +63,7 @@ impl PublicKey {
     pub fn to_hash_sig_public_key(&self) -> anyhow::Result<HashSigPublicKey> {
         bincode::serde::decode_from_slice(&self.inner, BINCODE_CONFIG)
             .map(|(value, _)| value)
-            .map_err(|err| anyhow::anyhow!("Failed to decode public key: {}", err))
+            .map_err(|err| anyhow::anyhow!("Failed to decode public key: {err}"))
     }
 }
 

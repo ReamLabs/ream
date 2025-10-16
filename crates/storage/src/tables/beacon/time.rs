@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, TableDefinition};
 
 use crate::{errors::StoreError, tables::field::Field};
 
@@ -28,7 +28,7 @@ impl Field for TimeField {
 
     fn insert(&self, value: Self::Value) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(TIME_FIELD)?;
         table.insert(TIME_KEY, value)?;
         drop(table);

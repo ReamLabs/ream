@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ream_consensus_lean::checkpoint::Checkpoint;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, TableDefinition};
 
 use crate::{
     errors::StoreError,
@@ -35,7 +35,7 @@ impl Field for LatestFinalizedField {
 
     fn insert(&self, value: Self::Value) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(LATEST_FINALIZED_FIELD)?;
         table.insert(LATEST_FINALIZED_FIELD_KEY, value)?;
         drop(table);

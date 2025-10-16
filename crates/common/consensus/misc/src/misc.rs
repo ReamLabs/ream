@@ -93,7 +93,7 @@ pub fn compute_committee(
             indices
                 .get(shuffled_index)
                 .copied()
-                .ok_or_else(|| anyhow::anyhow!("Index out of bounds: {}", shuffled_index))
+                .ok_or_else(|| anyhow::anyhow!("Index out of bounds: {shuffled_index}"))
         })
         .collect::<anyhow::Result<Vec<u64>>>()
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ream_consensus_beacon::fork_choice::latest_message::LatestMessage;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, TableDefinition};
 
 use crate::{
     errors::StoreError,
@@ -34,7 +34,7 @@ impl Table for LatestMessagesTable {
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(LATEST_MESSAGES_TABLE)?;
         table.insert(key, value)?;
         drop(table);

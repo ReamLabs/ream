@@ -279,10 +279,7 @@ impl LeanState {
             let mut new_bitlist = BitList::with_capacity(length + 1)
                 .map_err(|err| anyhow!("Failed to resize justified_slots BitList: {err:?}"))?;
             new_bitlist.set(length, false).map_err(|err| {
-                anyhow!(
-                    "Failed to set justified slot for empty slot {}: {err:?}",
-                    length
-                )
+                anyhow!("Failed to set justified slot for empty slot {length}: {err:?}",)
             })?;
             self.justified_slots = new_bitlist.union(&self.justified_slots);
         }

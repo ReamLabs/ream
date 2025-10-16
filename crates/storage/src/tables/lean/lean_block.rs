@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use ream_consensus_lean::block::SignedBlock;
-use redb::{Database, Durability, ReadableTable, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 use tree_hash::TreeHash;
 
 use super::{slot_index::SlotIndexTable, state_root_index::StateRootIndexTable};
@@ -50,7 +50,7 @@ impl Table for LeanBlockTable {
         state_root_index_table.insert(value.message.state_root, block_root)?;
 
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(LEAN_BLOCK_TABLE)?;
         table.insert(key, value)?;
         drop(table);

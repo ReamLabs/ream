@@ -180,8 +180,7 @@ impl Decoder for OutboundSSZSnappyCodec {
         // type or MAX_PAYLOAD_SIZE, whichever is smaller.
         if length > max_message_size() as usize {
             return Err(ReqRespError::Anyhow(anyhow::anyhow!(
-                "Message size exceeds maximum: {} > {}",
-                length,
+                "Message size exceeds maximum: {length} > {}",
                 max_message_size()
             )));
         }

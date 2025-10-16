@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus_misc::checkpoint::Checkpoint;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, TableDefinition};
 
 use crate::{
     errors::StoreError,
@@ -37,7 +37,7 @@ impl Table for UnrealizedJustificationsTable {
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate);
+        write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(UNREALIZED_JUSTIFICATIONS_TABLE)?;
         table.insert(key, value)?;
         drop(table);

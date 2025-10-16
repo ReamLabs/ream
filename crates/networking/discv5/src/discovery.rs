@@ -410,6 +410,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_attestation_subnet_predicate() -> anyhow::Result<()> {
+        initialize_test_network_spec();
         let key = Keypair::generate_secp256k1();
         let mut config = DiscoveryConfig::default();
         config.attestation_subnets.enable_attestation_subnet(0)?; // Local node on subnet 0

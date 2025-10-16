@@ -24,6 +24,12 @@ impl From<redb::Error> for StoreError {
     }
 }
 
+impl From<redb::SetDurabilityError> for StoreError {
+    fn from(err: redb::SetDurabilityError) -> Self {
+        StoreError::Redb(Box::new(err.into()))
+    }
+}
+
 impl From<redb::TransactionError> for StoreError {
     fn from(err: redb::TransactionError) -> Self {
         StoreError::Redb(Box::new(err.into()))
