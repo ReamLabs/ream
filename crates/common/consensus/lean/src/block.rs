@@ -69,6 +69,8 @@ impl From<Block> for BlockHeader {
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]
 pub struct BlockBody {
-    // Diverged from current ongoing spec change. This should be `VariableList<ValidatorAttestation, U4096>` but since we are yet to implement `SignedBlockAndVote`(these are still being reviewed).
+    // Diverged from current ongoing spec change. This should be
+    // `VariableList<ValidatorAttestation, U4096>` but since we are yet to implement
+    // `SignedBlockAndVote`(these are still being reviewed).
     pub attestations: VariableList<SignedValidatorAttestation, U4096>,
 }
