@@ -7,8 +7,7 @@ use crate::checkpoint::Checkpoint;
 
 /// Attestation content describing the validator's observed chain view.
 ///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#vote)
-/// for detailed protocol information.
+/// TODO: Add link from spec once finalized.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct AttestationData {
     pub slot: u64,
@@ -17,6 +16,9 @@ pub struct AttestationData {
     pub source: Checkpoint,
 }
 
+/// Validator specific attestation wrapping shared attestation data.
+///
+/// TODO: Add link from spec once finalized.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct ValidatorAttestation {
     pub validator_id: u64,
@@ -47,8 +49,7 @@ impl ValidatorAttestation {
 
 /// Validator attestation bundled with its signature.
 ///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#signedvote)
-/// for detailed protocol information.
+/// TODO: Add link from spec once finalized.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedValidatorAttestation {
     pub message: ValidatorAttestation,
