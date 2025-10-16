@@ -1,7 +1,7 @@
 use anyhow::{Context, anyhow};
 use ream_consensus_lean::{
     block::{Block, SignedBlock},
-    vote::SignedVote,
+    vote::SignedValidatorAttestation,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::tables::table::Table;
@@ -132,20 +132,20 @@ impl LeanChainService {
                         LeanChainServiceMessage::ProcessVote { signed_vote, is_trusted, need_gossip } => {
                             if enabled!(Level::DEBUG) {
                                 debug!(
-                                    slot = signed_vote.message.slot,
-                                    head = ?signed_vote.message.head,
-                                    source = ?signed_vote.message.source,
-                                    target = ?signed_vote.message.target,
+                                    slot = signed_vote.message.slot(),
+                                    head = ?signed_vote.message.head(),
+                                    source = ?signed_vote.message.source(),
+                                    target = ?signed_vote.message.target(),
                                     "Processing vote by Validator {}",
-                                    signed_vote.validator_id,
+                                    signed_vote.message.validator_id,
                                 );
                             } else {
                                 info!(
-                                    slot = signed_vote.message.slot,
-                                    source_slot = signed_vote.message.source.slot,
-                                    target_slot = signed_vote.message.target.slot,
+                                    slot = signed_vote.message.slot(),
+                                    source_slot = signed_vote.message.source().slot,
+                                    target_slot = signed_vote.message.target().slot,
                                     "Processing vote by Validator {}",
-                                    signed_vote.validator_id,
+                                    signed_vote.message.validator_id,
                                 );
                             }
 
@@ -198,7 +198,7 @@ impl LeanChainService {
 
     async fn handle_process_vote(
         &mut self,
-        signed_vote: SignedVote,
+        signed_vote: SignedValidatorAttestation,
         is_trusted: bool,
     ) -> anyhow::Result<()> {
         if !is_trusted {
