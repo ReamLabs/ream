@@ -4,7 +4,10 @@ use ream_chain_lean::{
     clock::create_lean_clock_interval, lean_chain::LeanChainReader,
     messages::LeanChainServiceMessage,
 };
-use ream_consensus_lean::{block::SignedBlock, vote::SignedVote};
+use ream_consensus_lean::{
+    block::SignedBlock,
+    vote::{SignedValidatorAttestation, ValidatorAttestation},
+};
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, info};
@@ -119,9 +122,11 @@ impl ValidatorService {
 
                             // TODO: Sign the vote with the keystore.
                             let signed_votes = self.keystores.iter().map(|keystore| {
-                                SignedVote {
-                                    validator_id: keystore.validator_id,
-                                    message: vote_template.clone(),
+                                SignedValidatorAttestation {
+                                    message: ValidatorAttestation{
+                                        validator_id: keystore.validator_id,
+                                        data:vote_template.clone()
+                                    },
                                     signature: FixedBytes::default(),
                                 }
                             }).collect::<Vec<_>>();
