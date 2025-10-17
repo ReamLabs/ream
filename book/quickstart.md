@@ -67,7 +67,7 @@ To enable your node to expose metrics through Prometheus, add the `--metrics` fl
 cargo run --release -- --ephemeral lean_node \
     --network ephemery \
     --validator-registry-path ./bin/ream/assets/lean/validator_registry.yml \
-    --metrics --metrics-address 0.0.0.0 --metrics-port 8080
+    --metrics --metrics-address 0.0.0.0
 ```
 
 By default, metrics are exposed on `127.0.0.1:8080`. 
