@@ -1,7 +1,2 @@
-# Custom getrandom backend for RISC Zero zkVM target
-[target.riscv32im-risc0-zkvm-elf]
-rustflags = ['--cfg', 'getrandom_backend="custom"']
-
-# Custom getrandom backend for SP1 zkVM target
-[target.riscv32im-succinct-zkvm-elf]
+[target.'cfg(target_os = "zkvm")']
 rustflags = ['--cfg', 'getrandom_backend="custom"']
