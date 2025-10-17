@@ -21,7 +21,7 @@ docker compose up
 Don't forget to run the lean node with metrics exporting on. Example:
 
 ```bash
-cargo run --release lean_node --network ephemery --metrics
+cargo run --release lean_node --network ephemery --validator-registry-path ./bin/ream/assets/lean/validator_registry.yml --metrics --metrics-address 0.0.0.0
 ```
 
 ## View the Dashboard

@@ -10,6 +10,8 @@ services:
       - prometheus_data:/prometheus
     ports:
       - 9090:9090
+    extra_hosts:
+      - "host.docker.internal:host-gateway"      
   grafana:
     image: grafana/grafana
     container_name: grafana
@@ -20,6 +22,8 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards
     ports:
       - 3000:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"      
 
 volumes:
   prometheus_data:
