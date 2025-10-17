@@ -1,7 +1,6 @@
 # Summary
 
 - [Introduction](./intro.md)
-- [Installation](./installation.md)
 - [Quick Start](./quickstart.md)
 - [Developer's Guide](./developer/README.md)
   - [P2P Networking](./developer/p2p/README.md)
