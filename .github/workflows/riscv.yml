@@ -49,3 +49,4 @@ jobs:
         
     - name: Build Risc0
       run: cargo build --target=riscv32im-risc0-zkvm-elf -p ream-consensus-beacon -p ream-consensus-misc -p ream-bls -p ream-consensus-lean
+
