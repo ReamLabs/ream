@@ -33,6 +33,8 @@ jobs:
 
     - name: Build SP1
       run: cargo build --target=riscv32im-succinct-zkvm-elf -p ream-consensus-beacon -p ream-consensus-misc -p ream-bls -p ream-consensus-lean
+      env:
+        RUSTFLAGS: '--cfg getrandom_backend="custom"'
 
   build-risc0:
     runs-on: ubuntu-latest
@@ -49,4 +51,6 @@ jobs:
         
     - name: Build Risc0
       run: cargo build --target=riscv32im-risc0-zkvm-elf -p ream-consensus-beacon -p ream-consensus-misc -p ream-bls -p ream-consensus-lean
+      env:
+        RUSTFLAGS: '--cfg getrandom_backend="custom"'
 
