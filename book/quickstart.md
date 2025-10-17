@@ -72,7 +72,7 @@ cargo run --release -- --ephemeral lean_node \
 
 By default, metrics are exposed on `127.0.0.1:8080`. 
 
-You can customize the metrics endpoint. The below configuration will allow you to use our pre-configured Prometheus and Grafana setup:
+You can customize the metrics endpoint. The below configuration must be used to work with our pre-configured Prometheus and Grafana setup:
 
 `--metrics --metrics-address 0.0.0.0 --metrics-port 8080`
 
