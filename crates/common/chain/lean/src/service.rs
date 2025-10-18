@@ -157,6 +157,8 @@ impl LeanChainService {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
+
+                        LeanChainServiceMessage::ProduceProofBlock { slot, sender } => todo!(),
                     }
                 }
             }
