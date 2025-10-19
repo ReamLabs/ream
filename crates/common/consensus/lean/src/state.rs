@@ -480,6 +480,8 @@ impl LeanState {
 
 #[cfg(test)]
 mod test {
+    use crate::vote::Vote;
+
     use super::*;
 
     #[test]
@@ -956,6 +958,97 @@ mod test {
                 .to_string()
                 .contains("Block parent root does not match latest block header root")
         );
+    }
+
+    #[test]
+    fn process_attestations_justification_and_finalization() {
+        let genesis_state = LeanState::new(10, 0);
+        let mut state = genesis_state.clone();
+
+        // Move to slot 1 to allow producing a block there.
+        state.process_slots(1).unwrap();
+
+        // Create and process the block at slot 1.
+        let block1 = Block {
+            slot: 1,
+            proposer_index: 1,
+            parent_root: state.latest_block_header.tree_hash_root(),
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+        state.process_block(&block1).unwrap();
+
+        // Move to slot 4 and produce/process a block.
+        state.process_slots(4).unwrap();
+        let block4 = Block {
+            slot: 4,
+            proposer_index: 4,
+            parent_root: state.latest_block_header.tree_hash_root(),
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+        state.process_block(&block4).unwrap();
+
+        // Advance to slot 5 so the header at slot 4 caches its state root.
+        state.process_slots(5).unwrap();
+
+        // Process a block at slot 5 to push block4's root into historical_block_hashes.
+        // This is required by the our implementation based off 3SF-mini which validates that target roots
+        // exist in historical_block_hashes before accepting votes
+        // This validation does not exist in leanSpec so the test passes without processing block 5
+        let block5 = Block {
+            slot: 5,
+            proposer_index: 5,
+            parent_root: state.latest_block_header.tree_hash_root(),
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+        state.process_block(&block5).unwrap();
+
+        // Define source (genesis) and target (slot 4) checkpoints for voting.
+        let genesis_checkpoint = Checkpoint {
+            root: state.historical_block_hashes[0], // Canonical root for slot 0
+            slot: 0,
+        };
+        let checkpoint4 = Checkpoint {
+            root: state.historical_block_hashes[4], // Root of the block at slot 4
+            slot: 4,
+        };
+
+        // Create 7 votes from distinct validators (indices 0..6) to reach ≥2/3.
+        let mut votes_for_4 = VariableList::<SignedVote, U4096>::empty();
+        for i in 0..7 {
+            let vote = SignedVote {
+                validator_id: i,
+                message: Vote {
+                    slot: 4,
+                    head: checkpoint4.clone(),
+                    target: checkpoint4.clone(),
+                    source: genesis_checkpoint.clone(),
+                },
+                signature: Default::default(),
+            };
+            votes_for_4.push(vote).unwrap();
+        }
+
+        // Process attestations directly; mutates state in place.
+        state.process_attestations(&votes_for_4).unwrap();
+
+        // The target (slot 4) should now be justified.
+        assert_eq!(state.latest_justified, checkpoint4);
+        // The justified bit for slot 4 must be set.
+        assert_eq!(state.justified_slots.get(4).unwrap(), true);
+        // Since no other justifiable slot exists between 0 and 4, genesis is finalized.
+        assert_eq!(state.latest_finalized, genesis_checkpoint);
+        // The per-root vote tracker for the justified target has been cleared.
+        let justifications = state.get_justifications().unwrap();
+        assert!(!justifications.contains_key(&checkpoint4.root));
     }
 
     #[test]
