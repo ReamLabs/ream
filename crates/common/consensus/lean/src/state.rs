@@ -480,9 +480,8 @@ impl LeanState {
 
 #[cfg(test)]
 mod test {
-    use crate::vote::Vote;
-
     use super::*;
+    use crate::vote::Vote;
 
     #[test]
     fn get_justifications_empty() {
@@ -997,9 +996,11 @@ mod test {
         state.process_slots(5).unwrap();
 
         // Process a block at slot 5 to push block4's root into historical_block_hashes.
-        // This is required by the our implementation based off 3SF-mini which validates that target roots
-        // exist in historical_block_hashes before accepting votes
+        // This is required by the our implementation based off 3SF-mini which validates that target
+        // roots exist in historical_block_hashes before accepting votes
         // This validation does not exist in leanSpec so the test passes without processing block 5
+        // We deviate from the leanSpec in this test and process block 5 before testing
+        // process_attestations for slot 4
         let block5 = Block {
             slot: 5,
             proposer_index: 5,
@@ -1043,7 +1044,7 @@ mod test {
         // The target (slot 4) should now be justified.
         assert_eq!(state.latest_justified, checkpoint4);
         // The justified bit for slot 4 must be set.
-        assert_eq!(state.justified_slots.get(4).unwrap(), true);
+        assert!(state.justified_slots.get(4).unwrap_or(false));
         // Since no other justifiable slot exists between 0 and 4, genesis is finalized.
         assert_eq!(state.latest_finalized, genesis_checkpoint);
         // The per-root vote tracker for the justified target has been cleared.
