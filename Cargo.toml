@@ -94,7 +94,7 @@ ethereum_ssz_derive = "0.9.1"
 eventsource-client = "0.15.1"
 futures = "0.3"
 hashbrown = "0.16.0"
-hashsig = { git = "https://github.com/b-wagn/hash-sig", rev = "1ed8d820636a2f34c1340e5748b90d3e03df556a" }
+hashsig = { git = "https://github.com/b-wagn/hash-sig", rev = "9f2b0bbaa9deee3d072122b32c39b8027c3fccd8" }
 itertools = "0.14"
 jsonwebtoken = "9.3.1"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }

@@ -2815,7 +2815,7 @@ dependencies = [
 [[package]]
 name = "hashsig"
 version = "0.1.0"
-source = "git+https://github.com/b-wagn/hash-sig?rev=1ed8d820636a2f34c1340e5748b90d3e03df556a#1ed8d820636a2f34c1340e5748b90d3e03df556a"
+source = "git+https://github.com/b-wagn/hash-sig?rev=9f2b0bbaa9deee3d072122b32c39b8027c3fccd8#9f2b0bbaa9deee3d072122b32c39b8027c3fccd8"
 dependencies = [
  "dashmap",
  "num-bigint",
