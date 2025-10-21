@@ -133,7 +133,6 @@ impl LeanNetworkService {
             GossipsubBehaviour::new_with_transform(
                 MessageAuthenticity::Anonymous,
                 network_config.gossipsub_config.config.clone(),
-                None,
                 snappy_transform,
             )
             .map_err(|err| anyhow!("Failed to create gossipsub behaviour: {err:?}"))?
