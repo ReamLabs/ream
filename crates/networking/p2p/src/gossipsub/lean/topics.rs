@@ -6,7 +6,7 @@ use crate::gossipsub::error::GossipsubError;
 pub const TOPIC_PREFIX: &str = "leanconsensus";
 pub const ENCODING_POSTFIX: &str = "ssz_snappy";
 pub const LEAN_BLOCK_TOPIC: &str = "block";
-pub const LEAN_VOTE_TOPIC: &str = "vote";
+pub const LEAN_ATTESTATION_TOPIC: &str = "attestation";
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct LeanGossipTopic {
@@ -30,7 +30,7 @@ impl LeanGossipTopic {
         let fork = topic_parts[1].to_string();
         let kind = match topic_parts[2] {
             LEAN_BLOCK_TOPIC => LeanGossipTopicKind::Block,
-            LEAN_VOTE_TOPIC => LeanGossipTopicKind::Vote,
+            LEAN_ATTESTATION_TOPIC => LeanGossipTopicKind::Attestation,
             other => {
                 return Err(GossipsubError::InvalidTopic(format!(
                     "Invalid topic: {other:?}"
@@ -68,7 +68,7 @@ impl From<LeanGossipTopic> for TopicHash {
     fn from(val: LeanGossipTopic) -> Self {
         let kind_str = match &val.kind {
             Block => LEAN_BLOCK_TOPIC,
-            Vote => LEAN_VOTE_TOPIC,
+            Attestation => LEAN_ATTESTATION_TOPIC,
         };
         TopicHash::from_raw(format!(
             "/{TOPIC_PREFIX}/{}/{kind_str}/{ENCODING_POSTFIX}",
@@ -80,14 +80,14 @@ impl From<LeanGossipTopic> for TopicHash {
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 pub enum LeanGossipTopicKind {
     Block,
-    Vote,
+    Attestation,
 }
 
 impl std::fmt::Display for LeanGossipTopicKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LeanGossipTopicKind::Block => write!(f, "{LEAN_BLOCK_TOPIC}"),
-            LeanGossipTopicKind::Vote => write!(f, "{LEAN_VOTE_TOPIC}"),
+            LeanGossipTopicKind::Attestation => write!(f, "{LEAN_ATTESTATION_TOPIC}"),
         }
     }
 }
