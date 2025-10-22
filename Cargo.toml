@@ -73,16 +73,16 @@ wildcard_imports = "warn"
 actix-web = "4.11.0"
 actix-web-lab = "0.24.3"
 aes = "0.8.4"
-alloy-consensus = { version = "1.0.38", default-features = false }
+alloy-consensus = { version = "1.0.41", default-features = false }
 alloy-primitives = { version = "1.4.1", features = ['serde'] }
 alloy-rlp = { version = "0.3.12", default-features = false, features = ["derive"] }
-alloy-rpc-types-beacon = "1.0.38"
-alloy-rpc-types-eth = "1.0.38"
+alloy-rpc-types-beacon = "1.0.41"
+alloy-rpc-types-eth = "1.0.41"
 anyhow = "1.0.100"
 async-trait = "0.1.89"
 bincode = { version = "2.0.1", features = ["serde"] }
 bip39 = { version = "2.2.0", features = ["rand"] }
-clap = "4.5.49"
+clap = "4.5.50"
 delay_map = "0.4.1"
 directories = { version = "6.0.0" }
 discv5 = { version = "0.10.2", features = ["libp2p"] }
@@ -99,7 +99,7 @@ itertools = "0.14"
 jsonwebtoken = "9.3.1"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 lazy_static = "1.5.0"
-libp2p = { version = "0.55", default-features = false, features = ["identify", "yamux", "noise", "dns", "serde", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
+libp2p = { version = "0.56", default-features = false, features = ["identify", "yamux", "noise", "dns", "serde", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
 libp2p-identity = "0.2.12"
 libp2p-mplex = "0.43.1"
 lru = "0.16.2"
