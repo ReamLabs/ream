@@ -15,12 +15,12 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::{
+    attestation::SignedAttestation,
     block::{Block, BlockBody, BlockHeader, SignedBlock},
     checkpoint::Checkpoint,
     config::Config,
     is_justifiable_slot,
     validator::Validator,
-    vote::SignedAttestation,
 };
 
 /// Represents the state of the Lean chain.
@@ -477,7 +477,7 @@ impl LeanState {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::vote::{Attestation, AttestationData};
+    use crate::attestation::{Attestation, AttestationData};
 
     #[test]
     fn get_justifications_empty() {

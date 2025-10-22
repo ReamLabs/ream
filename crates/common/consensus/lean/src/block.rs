@@ -5,7 +5,7 @@ use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::vote::SignedAttestation;
+use crate::attestation::SignedAttestation;
 
 /// Represents a signed block in the Lean chain.
 ///

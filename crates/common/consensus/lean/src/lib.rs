@@ -4,7 +4,6 @@ pub mod checkpoint;
 pub mod config;
 pub mod state;
 pub mod validator;
-pub mod vote;
 
 /// We allow justification of slots either <= 5 or a perfect square or oblong after
 /// the latest finalized slot. This gives us a backoff technique and ensures
