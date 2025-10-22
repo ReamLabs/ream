@@ -7,7 +7,7 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     is_justifiable_slot,
     state::LeanState,
-    vote::{AttestationData, SignedValidatorAttestation},
+    vote::{AttestationData, SignedAttestation},
 };
 use ream_fork_choice::lean::get_fork_choice_head;
 use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer_vec, stop_timer};
@@ -33,7 +33,7 @@ pub struct LeanChain {
     pub store: Arc<Mutex<LeanDB>>,
     /// Votes that we have received but not yet taken into account.
     /// Maps validator id to signed vote.
-    pub latest_new_votes: HashMap<u64, SignedValidatorAttestation>,
+    pub latest_new_votes: HashMap<u64, SignedAttestation>,
     /// Initialize the chain with the genesis block.
     pub genesis_hash: B256,
     /// Number of validators.
@@ -400,7 +400,7 @@ impl LeanChain {
     /// <https://github.com/leanEthereum/leanSpec/blob/ee16b19825a1f358b00a6fc2d7847be549daa03b/docs/client/forkchoice.md?plain=1#L279-L312>
     pub async fn on_attestation_from_block(
         &mut self,
-        signed_votes: impl IntoIterator<Item = SignedValidatorAttestation>,
+        signed_votes: impl IntoIterator<Item = SignedAttestation>,
     ) -> anyhow::Result<()> {
         let latest_known_votes_provider = {
             let db = self.store.lock().await;
@@ -437,7 +437,7 @@ impl LeanChain {
     ///
     /// See lean specification:
     /// <https://github.com/leanEthereum/leanSpec/blob/ee16b19825a1f358b00a6fc2d7847be549daa03b/docs/client/forkchoice.md?plain=1#L279-L312>
-    pub fn on_attestation_from_gossip(&mut self, signed_vote: SignedValidatorAttestation) {
+    pub fn on_attestation_from_gossip(&mut self, signed_vote: SignedAttestation) {
         let validator_id = signed_vote.message.validator_id;
 
         // Update latest new votes if this is the latest

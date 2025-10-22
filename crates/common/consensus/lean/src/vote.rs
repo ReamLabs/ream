@@ -20,12 +20,12 @@ pub struct AttestationData {
 ///
 /// TODO: Add link from spec once finalized.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct ValidatorAttestation {
+pub struct Attestation {
     pub validator_id: u64,
     pub data: AttestationData,
 }
 
-impl ValidatorAttestation {
+impl Attestation {
     // Return the attested slot.
     pub fn slot(&self) -> u64 {
         self.data.slot
@@ -51,8 +51,8 @@ impl ValidatorAttestation {
 ///
 /// TODO: Add link from spec once finalized.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct SignedValidatorAttestation {
-    pub message: ValidatorAttestation,
+pub struct SignedAttestation {
+    pub message: Attestation,
     // signature over vote message only as it would be aggregated later in attestation
     pub signature: FixedBytes<4000>,
 }

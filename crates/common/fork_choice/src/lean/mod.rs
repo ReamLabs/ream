@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::{Ok, anyhow};
-use ream_consensus_lean::vote::SignedValidatorAttestation;
+use ream_consensus_lean::vote::SignedAttestation;
 use ream_storage::{db::lean::LeanDB, tables::table::Table};
 use tokio::sync::Mutex;
 
@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 /// latest known justified block)
 pub async fn get_fork_choice_head(
     store: Arc<Mutex<LeanDB>>,
-    latest_votes: &HashMap<u64, SignedValidatorAttestation>,
+    latest_votes: &HashMap<u64, SignedAttestation>,
     provided_root: &B256,
     min_score: u64,
 ) -> anyhow::Result<B256> {

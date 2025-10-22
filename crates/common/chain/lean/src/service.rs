@@ -1,7 +1,7 @@
 use anyhow::{Context, anyhow};
 use ream_consensus_lean::{
     block::{Block, SignedBlock},
-    vote::SignedValidatorAttestation,
+    vote::SignedAttestation,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::tables::table::Table;
@@ -198,7 +198,7 @@ impl LeanChainService {
 
     async fn handle_process_vote(
         &mut self,
-        signed_vote: SignedValidatorAttestation,
+        signed_vote: SignedAttestation,
         is_trusted: bool,
     ) -> anyhow::Result<()> {
         if !is_trusted {

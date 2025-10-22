@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use ream_consensus_lean::vote::SignedValidatorAttestation;
+use ream_consensus_lean::vote::SignedAttestation;
 use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 
 use crate::{
@@ -12,10 +12,8 @@ use crate::{
 ///
 /// Key: u64 (validator index)
 /// Value: [SignedVote]
-pub(crate) const LATEST_KNOWN_VOTES_TABLE: TableDefinition<
-    u64,
-    SSZEncoding<SignedValidatorAttestation>,
-> = TableDefinition::new("latest_known_votes");
+pub(crate) const LATEST_KNOWN_VOTES_TABLE: TableDefinition<u64, SSZEncoding<SignedAttestation>> =
+    TableDefinition::new("latest_known_votes");
 
 pub struct LatestKnownVotesTable {
     pub db: Arc<Database>,
@@ -24,7 +22,7 @@ pub struct LatestKnownVotesTable {
 impl Table for LatestKnownVotesTable {
     type Key = u64;
 
-    type Value = SignedValidatorAttestation;
+    type Value = SignedAttestation;
 
     fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
         let read_txn = self.db.begin_read()?;
@@ -49,7 +47,7 @@ impl LatestKnownVotesTable {
     /// Insert multiple votes with validator id in a single transaction.
     pub fn batch_insert(
         &self,
-        values: impl IntoIterator<Item = (u64, SignedValidatorAttestation)>,
+        values: impl IntoIterator<Item = (u64, SignedAttestation)>,
     ) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
@@ -67,7 +65,7 @@ impl LatestKnownVotesTable {
     }
 
     /// Get all votes.
-    pub fn get_all_votes(&self) -> Result<HashMap<u64, SignedValidatorAttestation>, StoreError> {
+    pub fn get_all_votes(&self) -> Result<HashMap<u64, SignedAttestation>, StoreError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(LATEST_KNOWN_VOTES_TABLE)?;
 
