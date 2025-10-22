@@ -20,7 +20,7 @@ use crate::{
     config::Config,
     is_justifiable_slot,
     validator::Validator,
-    vote::SignedValidatorAttestation,
+    vote::SignedAttestation,
 };
 
 /// Represents the state of the Lean chain.
@@ -302,7 +302,7 @@ impl LeanState {
 
     pub fn process_attestations(
         &mut self,
-        attestations: &VariableList<SignedValidatorAttestation, U4096>,
+        attestations: &VariableList<SignedAttestation, U4096>,
     ) -> anyhow::Result<()> {
         // get justifications, justified slots and historical block hashes are
         // already up to date as per the processing in process_block_header
@@ -477,7 +477,7 @@ impl LeanState {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::vote::{AttestationData, ValidatorAttestation};
+    use crate::vote::{Attestation, AttestationData};
 
     #[test]
     fn get_justifications_empty() {
@@ -1012,10 +1012,10 @@ mod test {
         };
 
         // Create 7 votes from distinct validators (indices 0..6) to reach ≥2/3.
-        let mut votes_for_4 = VariableList::<SignedValidatorAttestation, U4096>::empty();
+        let mut votes_for_4 = VariableList::<SignedAttestation, U4096>::empty();
         for i in 0..7 {
-            let vote = SignedValidatorAttestation {
-                message: ValidatorAttestation {
+            let vote = SignedAttestation {
+                message: Attestation {
                     validator_id: i,
                     data: AttestationData {
                         slot: 4,

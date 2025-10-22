@@ -6,7 +6,7 @@ use ream_chain_lean::{
 };
 use ream_consensus_lean::{
     block::SignedBlock,
-    vote::{SignedValidatorAttestation, ValidatorAttestation},
+    vote::{Attestation, SignedAttestation},
 };
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{mpsc, oneshot};
@@ -122,8 +122,8 @@ impl ValidatorService {
 
                             // TODO: Sign the vote with the keystore.
                             let signed_votes = self.keystores.iter().map(|keystore| {
-                                SignedValidatorAttestation {
-                                    message: ValidatorAttestation{
+                                SignedAttestation {
+                                    message: Attestation{
                                         validator_id: keystore.validator_id,
                                         data:vote_template.clone()
                                     },

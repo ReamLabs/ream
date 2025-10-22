@@ -5,7 +5,7 @@ use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::vote::SignedValidatorAttestation;
+use crate::vote::SignedAttestation;
 
 /// Represents a signed block in the Lean chain.
 ///
@@ -72,5 +72,5 @@ pub struct BlockBody {
     // Diverged from current ongoing spec change. This should be
     // `VariableList<ValidatorAttestation, U4096>` but since we are yet to implement
     // `SignedBlockAndVote`(these are still being reviewed).
-    pub attestations: VariableList<SignedValidatorAttestation, U4096>,
+    pub attestations: VariableList<SignedAttestation, U4096>,
 }
