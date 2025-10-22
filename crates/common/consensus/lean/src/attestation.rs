@@ -11,7 +11,7 @@ use crate::vote::AttestationData;
 /// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#attestation)
 /// for detailed protocol information.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct AggreagtedAttestation {
+pub struct AggregatedAttestation {
     /// U4096 = VALIDATOR_REGISTRY_LIMIT
     pub aggregation_bits: BitList<U4096>,
     pub message: AttestationData,
@@ -19,8 +19,8 @@ pub struct AggreagtedAttestation {
 
 /// Aggregated attestation bundled with aggregated signatures.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct SignedAggreagtedAttestation {
-    pub message: AggreagtedAttestation,
+pub struct SignedAggregatedAttestation {
+    pub message: AggregatedAttestation,
     /// U4096 = VALIDATOR_REGISTRY_LIMIT
     pub signature: VariableList<FixedBytes<4000>, U4096>,
 }
