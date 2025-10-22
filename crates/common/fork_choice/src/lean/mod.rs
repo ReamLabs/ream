@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::{Ok, anyhow};
-use ream_consensus_lean::vote::SignedAttestation;
+use ream_consensus_lean::attestation::SignedAttestation;
 use ream_storage::{db::lean::LeanDB, tables::table::Table};
 use tokio::sync::Mutex;
 

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use ream_consensus_lean::vote::SignedAttestation;
+use ream_consensus_lean::attestation::SignedAttestation;
 use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 
 use crate::{
@@ -8,18 +8,20 @@ use crate::{
     tables::{ssz_encoder::SSZEncoding, table::Table},
 };
 
-/// Table definition for the Latest Known Votes table
+/// Table definition for the Latest Known Attestation table
 ///
 /// Key: u64 (validator index)
-/// Value: [SignedVote]
-pub(crate) const LATEST_KNOWN_VOTES_TABLE: TableDefinition<u64, SSZEncoding<SignedAttestation>> =
-    TableDefinition::new("latest_known_votes");
+/// Value: [SignedAttestation]
+pub(crate) const LATEST_KNOWN_ATTESTATIONS_TABLE: TableDefinition<
+    u64,
+    SSZEncoding<SignedAttestation>,
+> = TableDefinition::new("latest_known_attestation");
 
-pub struct LatestKnownVotesTable {
+pub struct LatestKnownAttestationTable {
     pub db: Arc<Database>,
 }
 
-impl Table for LatestKnownVotesTable {
+impl Table for LatestKnownAttestationTable {
     type Key = u64;
 
     type Value = SignedAttestation;
@@ -27,7 +29,7 @@ impl Table for LatestKnownVotesTable {
     fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
         let read_txn = self.db.begin_read()?;
 
-        let table = read_txn.open_table(LATEST_KNOWN_VOTES_TABLE)?;
+        let table = read_txn.open_table(LATEST_KNOWN_ATTESTATIONS_TABLE)?;
         let result = table.get(key)?;
         Ok(result.map(|res| res.value()))
     }
@@ -35,7 +37,7 @@ impl Table for LatestKnownVotesTable {
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
-        let mut table = write_txn.open_table(LATEST_KNOWN_VOTES_TABLE)?;
+        let mut table = write_txn.open_table(LATEST_KNOWN_ATTESTATIONS_TABLE)?;
         table.insert(key, value)?;
         drop(table);
         write_txn.commit()?;
@@ -43,8 +45,8 @@ impl Table for LatestKnownVotesTable {
     }
 }
 
-impl LatestKnownVotesTable {
-    /// Insert multiple votes with validator id in a single transaction.
+impl LatestKnownAttestationTable {
+    /// Insert multiple attestations with validator id in a single transaction.
     pub fn batch_insert(
         &self,
         values: impl IntoIterator<Item = (u64, SignedAttestation)>,
@@ -52,7 +54,7 @@ impl LatestKnownVotesTable {
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
 
-        let mut table = write_txn.open_table(LATEST_KNOWN_VOTES_TABLE)?;
+        let mut table = write_txn.open_table(LATEST_KNOWN_ATTESTATIONS_TABLE)?;
 
         for (key, value) in values {
             table.insert(key, value)?;
@@ -64,10 +66,10 @@ impl LatestKnownVotesTable {
         Ok(())
     }
 
-    /// Get all votes.
-    pub fn get_all_votes(&self) -> Result<HashMap<u64, SignedAttestation>, StoreError> {
+    /// Get all attestations.
+    pub fn get_all_attestations(&self) -> Result<HashMap<u64, SignedAttestation>, StoreError> {
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(LATEST_KNOWN_VOTES_TABLE)?;
+        let table = read_txn.open_table(LATEST_KNOWN_ATTESTATIONS_TABLE)?;
 
         table
             .iter()?

@@ -79,7 +79,7 @@ pub struct LeanNetworkConfig {
 
 /// NetworkService is responsible for the following:
 /// 1. Peer management. (We will connect with static peers for PQ devnet.)
-/// 2. Gossiping blocks and votes.
+/// 2. Gossiping blocks and attestations.
 ///
 /// TBD: It will be best if we reuse the existing NetworkManagerService for the beacon node.
 pub struct LeanNetworkService {
@@ -261,7 +261,7 @@ impl LeanNetworkService {
                                 );
                             }
                         }
-                        LeanP2PRequest::GossipVote(signed_vote) => {
+                        LeanP2PRequest::GossipAttestation(signed_attestation) => {
                             if let Err(err) = self.swarm
                                 .behaviour_mut()
                                 .gossipsub
@@ -270,21 +270,21 @@ impl LeanNetworkService {
                                         .gossipsub_config
                                         .topics
                                         .iter()
-                                        .find(|vote_topic| matches!(vote_topic.kind, LeanGossipTopicKind::Vote))
-                                        .map(|vote_topic| IdentTopic::from(vote_topic.clone()))
+                                        .find(|attestation_topic| matches!(attestation_topic.kind, LeanGossipTopicKind::Vote))
+                                        .map(|attestation_topic| IdentTopic::from(attestation_topic.clone()))
                                         .expect("LeanVote topic configured"),
-                                    signed_vote.as_ssz_bytes(),
+                                    signed_attestation.as_ssz_bytes(),
                                 )
                             {
                                 warn!(
-                                    slot = signed_vote.message.slot(),
+                                    slot = signed_attestation.message.slot(),
                                     error = ?err,
-                                    "Publish vote failed"
+                                    "Publish attestation failed"
                                 );
                             } else {
                                 info!(
-                                    slot = signed_vote.message.slot(),
-                                    "Broadcasted vote"
+                                    slot = signed_attestation.message.slot(),
+                                    "Broadcasted attestation"
                                 );
                             }
                         }
@@ -362,18 +362,17 @@ impl LeanNetworkService {
                         warn!("failed to send block for slot {slot} item to chain: {err:?}");
                     }
                 }
-                Ok(LeanGossipsubMessage::Vote(signed_vote)) => {
-                    let slot = signed_vote.message.slot();
+                Ok(LeanGossipsubMessage::Attestation(signed_attestation)) => {
+                    let slot = signed_attestation.message.slot();
 
-                    if let Err(err) =
-                        self.chain_message_sender
-                            .send(LeanChainServiceMessage::ProcessVote {
-                                signed_vote,
-                                is_trusted: false,
-                                need_gossip: true,
-                            })
-                    {
-                        warn!("failed to send vote for slot {slot} to chain: {err:?}");
+                    if let Err(err) = self.chain_message_sender.send(
+                        LeanChainServiceMessage::ProcessAttestation {
+                            signed_attestation,
+                            is_trusted: false,
+                            need_gossip: true,
+                        },
+                    ) {
+                        warn!("failed to send attestation for slot {slot} to chain: {err:?}");
                     }
                 }
                 Err(err) => warn!("gossip decode failed: {err:?}"),
