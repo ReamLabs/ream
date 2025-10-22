@@ -270,9 +270,9 @@ impl LeanNetworkService {
                                         .gossipsub_config
                                         .topics
                                         .iter()
-                                        .find(|attestation_topic| matches!(attestation_topic.kind, LeanGossipTopicKind::Vote))
+                                        .find(|attestation_topic| matches!(attestation_topic.kind, LeanGossipTopicKind::Attestation))
                                         .map(|attestation_topic| IdentTopic::from(attestation_topic.clone()))
-                                        .expect("LeanVote topic configured"),
+                                        .expect("LeanAttestation topic configured"),
                                     signed_attestation.as_ssz_bytes(),
                                 )
                             {

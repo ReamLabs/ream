@@ -77,7 +77,7 @@ impl LeanState {
 
         // Loop each root and reconstruct the justifications from the flattened BitList
         for (i, root) in self.justifications_roots.iter().enumerate() {
-            let mut votes_list = BitList::with_capacity(self.validators.len())
+            let mut attestations_list = BitList::with_capacity(self.validators.len())
                 .map_err(|err| anyhow!("Failed to create BitList for justifications: {err:?}"))?;
 
             // Loop each validator and set their justification
@@ -87,14 +87,14 @@ impl LeanState {
                 .take(self.validators.len())
                 .enumerate()
                 .try_for_each(|(validator_index, justification)| -> anyhow::Result<()> {
-                    votes_list
+                    attestations_list
                         .set(validator_index, justification)
                         .map_err(|err| anyhow!("Failed to set justification: {err:?}"))?;
                     Ok(())
                 })?;
 
             // Insert the root and its justifications into the map
-            justifications.insert(*root, votes_list);
+            justifications.insert(*root, attestations_list);
         }
 
         Ok(justifications)
@@ -114,7 +114,7 @@ impl LeanState {
                 .get(root)
                 .ok_or_else(|| anyhow!("Root {root} not found in justifications"))?;
 
-            // Assert that votes list has exactly num_validators items.
+            // Assert that attestations list has exactly num_validators items.
             // If the length is incorrect, the constructed bitlist will be corrupt.
             ensure!(
                 justifications_for_root.len() == self.validators.len(),
@@ -132,7 +132,7 @@ impl LeanState {
                 .for_each(|justification| flattened_justifications.push(justification));
         }
 
-        // Create a new Bitlist with all the flattened votes
+        // Create a new Bitlist with all the flattened attestations
         let mut justifications_validators =
             BitList::with_capacity(justifications.len() * self.validators.len()).map_err(
                 |err| anyhow!("Failed to create BitList for justifications_validators: {err:?}"),
@@ -243,7 +243,8 @@ impl LeanState {
             self.latest_finalized.root = block.parent_root;
         }
 
-        // now that we can vote on parent, push it at its correct slot index in the structures
+        // now that we can attestations on parent, push it at its correct slot index in the
+        // structures
         self.historical_block_hashes
             .push(block.parent_root)
             .map_err(|err| {
@@ -308,138 +309,140 @@ impl LeanState {
         // already up to date as per the processing in process_block_header
         let mut justifications_map = self.get_justifications()?;
 
-        for signed_vote in attestations {
-            let vote = &signed_vote.message;
-            // Ignore votes whose source is not already justified,
+        for signed_attestations in attestations {
+            let attestations = &signed_attestations.message;
+            // Ignore attestations whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
             if !self
                 .justified_slots
-                .get(vote.source().slot as usize)
+                .get(attestations.source().slot as usize)
                 .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
             {
                 info!(
                     reason = "Source slot not justified",
-                    source_slot = vote.source().slot,
-                    target_slot = vote.target().slot,
-                    "Skipping vote by Validator {}",
-                    signed_vote.message.validator_id,
+                    source_slot = attestations.source().slot,
+                    target_slot = attestations.target().slot,
+                    "Skipping attestations by Validator {}",
+                    signed_attestations.message.validator_id,
                 );
                 continue;
             }
 
             // This condition is missing in 3sf mini but has been added here because
-            // we don't want to re-introduce the target again for remaining votes if
+            // we don't want to re-introduce the target again for remaining attestations if
             // the slot is already justified and its tracking already cleared out
             // from justifications map
             if self
                 .justified_slots
-                .get(vote.target().slot as usize)
+                .get(attestations.target().slot as usize)
                 .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
             {
                 info!(
                     reason = "Target slot already justified",
-                    source_slot = vote.source().slot,
-                    target_slot = vote.target().slot,
-                    "Skipping vote by Validator {}",
-                    signed_vote.message.validator_id,
+                    source_slot = attestations.source().slot,
+                    target_slot = attestations.target().slot,
+                    "Skipping attestations by Validator {}",
+                    signed_attestations.message.validator_id,
                 );
                 continue;
             }
 
-            if vote.source().root
+            if attestations.source().root
                 != *self
                     .historical_block_hashes
-                    .get(vote.source().slot as usize)
+                    .get(attestations.source().slot as usize)
                     .ok_or(anyhow!("Source slot not found in historical_block_hashes"))?
             {
                 info!(
                     reason = "Source block not in historical block hashes",
-                    source_slot = vote.source().slot,
-                    target_slot = vote.target().slot,
-                    "Skipping vote by Validator {}",
-                    signed_vote.message.validator_id,
+                    source_slot = attestations.source().slot,
+                    target_slot = attestations.target().slot,
+                    "Skipping attestations by Validator {}",
+                    signed_attestations.message.validator_id,
                 );
                 continue;
             }
 
-            if vote.target().root
+            if attestations.target().root
                 != *self
                     .historical_block_hashes
-                    .get(vote.target().slot as usize)
+                    .get(attestations.target().slot as usize)
                     .ok_or(anyhow!("Target slot not found in historical_block_hashes"))?
             {
                 info!(
                     reason = "Target block not in historical block hashes",
-                    source_slot = vote.source().slot,
-                    target_slot = vote.target().slot,
-                    "Skipping vote by Validator {}",
-                    signed_vote.message.validator_id,
+                    source_slot = attestations.source().slot,
+                    target_slot = attestations.target().slot,
+                    "Skipping attestations by Validator {}",
+                    signed_attestations.message.validator_id,
                 );
                 continue;
             }
 
-            if vote.target().slot <= vote.source().slot {
+            if attestations.target().slot <= attestations.source().slot {
                 info!(
                     reason = "Target slot not greater than source slot",
-                    source_slot = vote.source().slot,
-                    target_slot = vote.target().slot,
-                    "Skipping vote by Validator {}",
-                    signed_vote.message.validator_id,
+                    source_slot = attestations.source().slot,
+                    target_slot = attestations.target().slot,
+                    "Skipping attestations by Validator {}",
+                    signed_attestations.message.validator_id,
                 );
                 continue;
             }
 
-            if !is_justifiable_slot(self.latest_finalized.slot, vote.target().slot) {
+            if !is_justifiable_slot(self.latest_finalized.slot, attestations.target().slot) {
                 info!(
                     reason = "Target slot not justifiable",
-                    source_slot = vote.source().slot,
-                    target_slot = vote.target().slot,
-                    "Skipping vote by Validator {}",
-                    signed_vote.message.validator_id,
+                    source_slot = attestations.source().slot,
+                    target_slot = attestations.target().slot,
+                    "Skipping attestations by Validator {}",
+                    signed_attestations.message.validator_id,
                 );
                 continue;
             }
 
             // Track attempts to justify new hashes
-            let justifications = justifications_map.entry(vote.target().root).or_insert(
-                BitList::with_capacity(self.validators.len()).map_err(|err| {
-                    anyhow!(
-                        "Failed to initialize justification for root {:?}: {err:?}",
-                        &vote.target().root
-                    )
-                })?,
-            );
+            let justifications = justifications_map
+                .entry(attestations.target().root)
+                .or_insert(
+                    BitList::with_capacity(self.validators.len()).map_err(|err| {
+                        anyhow!(
+                            "Failed to initialize justification for root {:?}: {err:?}",
+                            &attestations.target().root
+                        )
+                    })?,
+                );
 
             justifications
-                .set(signed_vote.message.validator_id as usize, true)
+                .set(signed_attestations.message.validator_id as usize, true)
                 .map_err(|err| {
                     anyhow!(
                         "Failed to set validator {:?}'s justification for root {:?}: {err:?}",
-                        signed_vote.message.validator_id,
-                        &vote.target().root
+                        signed_attestations.message.validator_id,
+                        &attestations.target().root
                     )
                 })?;
 
             let count = justifications.num_set_bits();
 
-            // If 2/3 voted for the same new valid hash to justify
+            // If 2/3 attestationsd for the same new valid hash to justify
             // in 3sf mini this is strict equality, but we have updated it to >=
             // also have modified it from count >= (2 * state.config.num_validators) // 3
             // to prevent integer division which could lead to less than 2/3 of validators
             // justifying specially if the num_validators is low in testing scenarios
             if 3 * count >= (2 * self.validators.len()) {
-                self.latest_justified = vote.target();
+                self.latest_justified = attestations.target();
                 self.justified_slots
-                    .set(vote.target().slot as usize, true)
+                    .set(attestations.target().slot as usize, true)
                     .map_err(|err| {
                         anyhow!(
                             "Failed to set justified slot for slot {}: {err:?}",
-                            vote.target().slot
+                            attestations.target().slot
                         )
                     })?;
 
-                justifications_map.remove(&vote.target().root);
+                justifications_map.remove(&attestations.target().root);
 
                 info!(
                     slot = self.latest_justified.slot,
@@ -450,12 +453,12 @@ impl LeanState {
 
                 // Finalization: if the target is the next valid justifiable
                 // hash after the source
-                let is_target_next_valid_justifiable_slot = !((vote.source().slot + 1)
-                    ..vote.target().slot)
+                let is_target_next_valid_justifiable_slot = !((attestations.source().slot + 1)
+                    ..attestations.target().slot)
                     .any(|slot| is_justifiable_slot(self.latest_finalized.slot, slot));
 
                 if is_target_next_valid_justifiable_slot {
-                    self.latest_finalized = vote.source();
+                    self.latest_finalized = attestations.source();
 
                     info!(
                         slot = self.latest_finalized.slot,
@@ -526,11 +529,11 @@ mod test {
         let root1 = B256::repeat_byte(1);
         let root2 = B256::repeat_byte(2);
 
-        // root0 is voted by validator 0
+        // root0 is attestationsd by validator 0
         state.justifications_roots.push(root0).unwrap();
         state.justifications_validators.set(0, true).unwrap();
 
-        // root1 is voted by validator 1 and 2
+        // root1 is attestationsd by validator 1 and 2
         state.justifications_roots.push(root1).unwrap();
         state
             .justifications_validators
@@ -541,25 +544,25 @@ mod test {
             .set(state.validators.len() + 2, true)
             .unwrap();
 
-        // root2 is voted by none
+        // root2 is attestationsd by none
         state.justifications_roots.push(root2).unwrap();
 
         // Verify that the reconstructed map is identical to the expected map
         // Because HashMap is not ordered, we need to check root by root
         let justifications = state.get_justifications().unwrap();
 
-        // check root0 voted by validator 0
+        // check root0 attestationsd by validator 0
         let mut expected_bitlist0 = BitList::with_capacity(state.validators.len()).unwrap();
         expected_bitlist0.set(0, true).unwrap();
         assert_eq!(justifications[&root0], expected_bitlist0);
 
-        // Prepare expected root1 voted by validator 1 and 2
+        // Prepare expected root1 attestationsd by validator 1 and 2
         let mut expected_bitlist1 = BitList::with_capacity(state.validators.len()).unwrap();
         expected_bitlist1.set(1, true).unwrap();
         expected_bitlist1.set(2, true).unwrap();
         assert_eq!(justifications[&root1], expected_bitlist1);
 
-        // Prepare expected root2 voted by none
+        // Prepare expected root2 attestationsd by none
         let expected_bitlist2 = BitList::with_capacity(state.validators.len()).unwrap();
         assert_eq!(justifications[&root2], expected_bitlist2);
 
@@ -592,17 +595,17 @@ mod test {
         let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
 
-        // root0 voted by validator0
+        // root0 attestationsd by validator0
         let root0 = B256::repeat_byte(0);
         let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist0.set(0, true).unwrap();
 
-        // root1 voted by validator1
+        // root1 attestationsd by validator1
         let root1 = B256::repeat_byte(1);
         let mut bitlist1 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist1.set(1, true).unwrap();
 
-        // root2 voted by validator2
+        // root2 attestationsd by validator2
         let root2 = B256::repeat_byte(2);
         let mut bitlist2 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist2.set(2, true).unwrap();
@@ -669,7 +672,7 @@ mod test {
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
         let invalid_length = state.validators.len() - 1;
 
-        // root0 voted by validator0
+        // root0 attestationsd by validator0
         let root0 = B256::repeat_byte(0);
         let bitlist0 = BitList::<U4096>::with_capacity(invalid_length).unwrap();
         justifications.insert(root0, bitlist0);
@@ -698,7 +701,7 @@ mod test {
         let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
 
-        // root0 voted by validator 0
+        // root0 attestationsd by validator 0
         let root0 = B256::repeat_byte(1);
         let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist0.set(0, true).unwrap();
@@ -720,12 +723,12 @@ mod test {
         let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
 
-        // root0 voted by validator 0
+        // root0 attestationsd by validator 0
         let root0 = B256::repeat_byte(1);
         let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist0.set(0, true).unwrap();
 
-        // root1 voted by validator 1 and 2
+        // root1 attestationsd by validator 1 and 2
         let root1 = B256::repeat_byte(2);
         let mut bitlist1 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist1.set(1, true).unwrap();
@@ -986,7 +989,7 @@ mod test {
 
         // Process a block at slot 5 to push block4's root into historical_block_hashes.
         // This is required by the our implementation based off 3SF-mini which validates that target
-        // roots exist in historical_block_hashes before accepting votes
+        // roots exist in historical_block_hashes before accepting attestations
         // This validation does not exist in leanSpec so the test passes without processing block 5
         // We deviate from the leanSpec in this test and process block 5 before testing
         // process_attestations for slot 4
@@ -1011,10 +1014,10 @@ mod test {
             slot: 4,
         };
 
-        // Create 7 votes from distinct validators (indices 0..6) to reach ≥2/3.
-        let mut votes_for_4 = VariableList::<SignedAttestation, U4096>::empty();
+        // Create 7 attestations from distinct validators (indices 0..6) to reach ≥2/3.
+        let mut attestations_for_4 = VariableList::<SignedAttestation, U4096>::empty();
         for i in 0..7 {
-            let vote = SignedAttestation {
+            let attestations = SignedAttestation {
                 message: Attestation {
                     validator_id: i,
                     data: AttestationData {
@@ -1026,11 +1029,11 @@ mod test {
                 },
                 signature: Default::default(),
             };
-            votes_for_4.push(vote).unwrap();
+            attestations_for_4.push(attestations).unwrap();
         }
 
         // Process attestations directly; mutates state in place.
-        state.process_attestations(&votes_for_4).unwrap();
+        state.process_attestations(&attestations_for_4).unwrap();
 
         // The target (slot 4) should now be justified.
         assert_eq!(state.latest_justified, checkpoint4);
@@ -1038,7 +1041,7 @@ mod test {
         assert!(state.justified_slots.get(4).unwrap_or(false));
         // Since no other justifiable slot exists between 0 and 4, genesis is finalized.
         assert_eq!(state.latest_finalized, genesis_checkpoint);
-        // The per-root vote tracker for the justified target has been cleared.
+        // The per-root attestations tracker for the justified target has been cleared.
         let justifications = state.get_justifications().unwrap();
         assert!(!justifications.contains_key(&checkpoint4.root));
     }

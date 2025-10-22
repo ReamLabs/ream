@@ -15,7 +15,7 @@ impl LeanGossipsubMessage {
     pub fn decode(topic: &TopicHash, data: &[u8]) -> Result<Self, GossipsubError> {
         match LeanGossipTopic::from_topic_hash(topic)?.kind {
             LeanGossipTopicKind::Block => Ok(Self::Block(SignedBlock::from_ssz_bytes(data)?)),
-            LeanGossipTopicKind::Vote => {
+            LeanGossipTopicKind::Attestation => {
                 Ok(Self::Attestation(SignedAttestation::from_ssz_bytes(data)?))
             }
         }
