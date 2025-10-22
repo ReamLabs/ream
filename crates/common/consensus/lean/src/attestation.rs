@@ -63,7 +63,7 @@ pub struct SignedAttestation {
 /// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#attestation)
 /// for detailed protocol information.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct AggregatedAttestation {
+pub struct AggregatedAttestations {
     /// U4096 = VALIDATOR_REGISTRY_LIMIT
     pub aggregation_bits: BitList<U4096>,
     pub message: AttestationData,
@@ -72,7 +72,7 @@ pub struct AggregatedAttestation {
 /// Aggregated attestation bundled with aggregated signatures.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedAggregatedAttestation {
-    pub message: AggregatedAttestation,
+    pub message: AggregatedAttestations,
     /// U4096 = VALIDATOR_REGISTRY_LIMIT
     pub signature: VariableList<FixedBytes<4000>, U4096>,
 }
