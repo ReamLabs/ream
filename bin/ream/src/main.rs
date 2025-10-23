@@ -187,7 +187,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         },
         LeanGossipTopic {
             fork,
-            kind: LeanGossipTopicKind::Vote,
+            kind: LeanGossipTopicKind::Attestation,
         },
     ];
 

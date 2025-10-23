@@ -67,7 +67,7 @@ impl LeanBlockTable {
     pub fn get_children_map(
         &self,
         min_score: u64,
-        vote_weights: &HashMap<B256, u64>,
+        attestation_weights: &HashMap<B256, u64>,
     ) -> Result<HashMap<B256, Vec<B256>>, StoreError> {
         let mut children_map = HashMap::<B256, Vec<B256>>::new();
         let read_txn = self.db.begin_read()?;
@@ -79,7 +79,7 @@ impl LeanBlockTable {
             let block: SignedBlock = block_entry.value();
 
             if block.message.parent_root != B256::ZERO
-                && *vote_weights.get(&hash).unwrap_or(&0) >= min_score
+                && *attestation_weights.get(&hash).unwrap_or(&0) >= min_score
             {
                 children_map
                     .entry(block.message.parent_root)

@@ -4,7 +4,7 @@ use redb::Database;
 
 use crate::tables::lean::{
     latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
-    latest_known_votes::LatestKnownVotesTable, lean_block::LeanBlockTable,
+    latest_known_attestation::LatestKnownAttestationTable, lean_block::LeanBlockTable,
     lean_state::LeanStateTable, slot_index::SlotIndexTable, state_root_index::StateRootIndexTable,
 };
 
@@ -37,8 +37,8 @@ impl LeanDB {
         }
     }
 
-    pub fn latest_known_votes_provider(&self) -> LatestKnownVotesTable {
-        LatestKnownVotesTable {
+    pub fn latest_known_attestations_provider(&self) -> LatestKnownAttestationTable {
+        LatestKnownAttestationTable {
             db: self.db.clone(),
         }
     }
