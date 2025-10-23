@@ -309,8 +309,8 @@ impl LeanState {
         // already up to date as per the processing in process_block_header
         let mut justifications_map = self.get_justifications()?;
 
-        for signed_attestations in attestations {
-            let attestations = &signed_attestations.message;
+        for signed_attestation in attestations {
+            let attestations = &signed_attestation.message;
             // Ignore attestations whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
@@ -324,7 +324,7 @@ impl LeanState {
                     source_slot = attestations.source().slot,
                     target_slot = attestations.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestations.message.validator_id,
+                    signed_attestation.message.validator_id,
                 );
                 continue;
             }
@@ -343,7 +343,7 @@ impl LeanState {
                     source_slot = attestations.source().slot,
                     target_slot = attestations.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestations.message.validator_id,
+                    signed_attestation.message.validator_id,
                 );
                 continue;
             }
@@ -359,7 +359,7 @@ impl LeanState {
                     source_slot = attestations.source().slot,
                     target_slot = attestations.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestations.message.validator_id,
+                    signed_attestation.message.validator_id,
                 );
                 continue;
             }
@@ -375,7 +375,7 @@ impl LeanState {
                     source_slot = attestations.source().slot,
                     target_slot = attestations.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestations.message.validator_id,
+                    signed_attestation.message.validator_id,
                 );
                 continue;
             }
@@ -386,7 +386,7 @@ impl LeanState {
                     source_slot = attestations.source().slot,
                     target_slot = attestations.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestations.message.validator_id,
+                    signed_attestation.message.validator_id,
                 );
                 continue;
             }
@@ -397,7 +397,7 @@ impl LeanState {
                     source_slot = attestations.source().slot,
                     target_slot = attestations.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestations.message.validator_id,
+                    signed_attestation.message.validator_id,
                 );
                 continue;
             }
@@ -415,18 +415,18 @@ impl LeanState {
                 );
 
             justifications
-                .set(signed_attestations.message.validator_id as usize, true)
+                .set(signed_attestation.message.validator_id as usize, true)
                 .map_err(|err| {
                     anyhow!(
                         "Failed to set validator {:?}'s justification for root {:?}: {err:?}",
-                        signed_attestations.message.validator_id,
+                        signed_attestation.message.validator_id,
                         &attestations.target().root
                     )
                 })?;
 
             let count = justifications.num_set_bits();
 
-            // If 2/3 attestationsd for the same new valid hash to justify
+            // If 2/3 attestations for the same new valid hash to justify
             // in 3sf mini this is strict equality, but we have updated it to >=
             // also have modified it from count >= (2 * state.config.num_validators) // 3
             // to prevent integer division which could lead to less than 2/3 of validators
@@ -529,11 +529,11 @@ mod test {
         let root1 = B256::repeat_byte(1);
         let root2 = B256::repeat_byte(2);
 
-        // root0 is attestationsd by validator 0
+        // root0 is attestation by validator 0
         state.justifications_roots.push(root0).unwrap();
         state.justifications_validators.set(0, true).unwrap();
 
-        // root1 is attestationsd by validator 1 and 2
+        // root1 is attestation by validator 1 and 2
         state.justifications_roots.push(root1).unwrap();
         state
             .justifications_validators
@@ -544,25 +544,25 @@ mod test {
             .set(state.validators.len() + 2, true)
             .unwrap();
 
-        // root2 is attestationsd by none
+        // root2 is attestation by none
         state.justifications_roots.push(root2).unwrap();
 
         // Verify that the reconstructed map is identical to the expected map
         // Because HashMap is not ordered, we need to check root by root
         let justifications = state.get_justifications().unwrap();
 
-        // check root0 attestationsd by validator 0
+        // check root0 attestation by validator 0
         let mut expected_bitlist0 = BitList::with_capacity(state.validators.len()).unwrap();
         expected_bitlist0.set(0, true).unwrap();
         assert_eq!(justifications[&root0], expected_bitlist0);
 
-        // Prepare expected root1 attestationsd by validator 1 and 2
+        // Prepare expected root1 attested by validator 1 and 2
         let mut expected_bitlist1 = BitList::with_capacity(state.validators.len()).unwrap();
         expected_bitlist1.set(1, true).unwrap();
         expected_bitlist1.set(2, true).unwrap();
         assert_eq!(justifications[&root1], expected_bitlist1);
 
-        // Prepare expected root2 attestationsd by none
+        // Prepare expected root2 attested by none
         let expected_bitlist2 = BitList::with_capacity(state.validators.len()).unwrap();
         assert_eq!(justifications[&root2], expected_bitlist2);
 
@@ -595,17 +595,17 @@ mod test {
         let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
 
-        // root0 attestationsd by validator0
+        // root0 attested by validator0
         let root0 = B256::repeat_byte(0);
         let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist0.set(0, true).unwrap();
 
-        // root1 attestationsd by validator1
+        // root1 attested by validator1
         let root1 = B256::repeat_byte(1);
         let mut bitlist1 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist1.set(1, true).unwrap();
 
-        // root2 attestationsd by validator2
+        // root2 attested by validator2
         let root2 = B256::repeat_byte(2);
         let mut bitlist2 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist2.set(2, true).unwrap();
@@ -672,7 +672,7 @@ mod test {
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
         let invalid_length = state.validators.len() - 1;
 
-        // root0 attestationsd by validator0
+        // root0 attested by validator0
         let root0 = B256::repeat_byte(0);
         let bitlist0 = BitList::<U4096>::with_capacity(invalid_length).unwrap();
         justifications.insert(root0, bitlist0);
@@ -701,7 +701,7 @@ mod test {
         let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
 
-        // root0 attestationsd by validator 0
+        // root0 attested by validator 0
         let root0 = B256::repeat_byte(1);
         let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist0.set(0, true).unwrap();
@@ -723,12 +723,12 @@ mod test {
         let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
 
-        // root0 attestationsd by validator 0
+        // root0 attested by validator 0
         let root0 = B256::repeat_byte(1);
         let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist0.set(0, true).unwrap();
 
-        // root1 attestationsd by validator 1 and 2
+        // root1 attested by validator 1 and 2
         let root1 = B256::repeat_byte(2);
         let mut bitlist1 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
         bitlist1.set(1, true).unwrap();
