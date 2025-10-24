@@ -37,4 +37,9 @@ pub enum LeanChainServiceMessage {
         is_trusted: bool,
         need_gossip: bool,
     },
+
+    ProduceProofBlock {
+        slot: u64,
+        sender: oneshot::Sender<Block>,
+    },
 }
