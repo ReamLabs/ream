@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use ream_consensus_lean::{block::Block, state::LeanState};
+use ream_consensus_lean::{block::Block, state::LeanState, validator::Validator};
 use ream_network_spec::networks::lean_network_spec;
 use tree_hash::TreeHash;
 
@@ -10,8 +10,8 @@ fn genesis_block(state_root: B256) -> Block {
     }
 }
 
-fn genesis_state(num_validators: u64, genesis_time: u64) -> LeanState {
-    LeanState::new(num_validators, genesis_time)
+fn genesis_state(num_validators: u64, validators: Option<Vec<Validator>>) -> LeanState {
+    LeanState::new(num_validators, validators)
 }
 
 /// Setup the genesis block and state for the Lean chain.
@@ -24,7 +24,10 @@ pub fn setup_genesis() -> (Block, LeanState) {
         (network_spec.num_validators, network_spec.genesis_time)
     };
 
-    let genesis_state = genesis_state(num_validators, genesis_time);
+    let genesis_state = genesis_state(
+        genesis_time,
+        Some(Validator::new_from_keys(num_validators as usize)),
+    );
     let genesis_block = genesis_block(genesis_state.tree_hash_root());
 
     (genesis_block, genesis_state)

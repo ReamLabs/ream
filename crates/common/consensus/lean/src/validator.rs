@@ -9,3 +9,13 @@ pub struct Validator {
     #[serde(rename = "pubkey")]
     public_key: PublicKey,
 }
+
+impl Validator {
+    pub fn new_from_keys(number_of_validators: usize) -> Vec<Validator> {
+        (0..number_of_validators)
+            .map(|_| Validator {
+                public_key: PublicKey::from_bytes(&[0_u8; 52]),
+            })
+            .collect()
+    }
+}
