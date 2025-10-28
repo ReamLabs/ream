@@ -1,7 +1,7 @@
 use anyhow::{Context, anyhow};
 use ream_consensus_lean::{
+    attestation::SignedAttestation,
     block::{Block, SignedBlock},
-    vote::SignedVote,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::tables::table::Table;
@@ -16,7 +16,7 @@ use crate::{
 
 /// LeanChainService is responsible for updating the [LeanChain] state. `LeanChain` is updated when:
 /// 1. Every third (t=2/4) and fourth (t=3/4) ticks.
-/// 2. Receiving new blocks or votes from the network.
+/// 2. Receiving new blocks or attestations from the network.
 ///
 /// NOTE: This service will be the core service to implement `receive()` function.
 pub struct LeanChainService {
@@ -80,13 +80,13 @@ impl LeanChainService {
                             self.lean_chain.write().await.update_safe_target().await.expect("Failed to update safe target");
                         }
                         3 => {
-                            // Fourth tick (t=3/4): Accept new votes.
+                            // Fourth tick (t=3/4): Accept new attestations.
                             info!(
                                 slot = get_current_slot(),
                                 tick = tick_count,
-                                "Accepting new votes"
+                                "Accepting new attestations"
                             );
-                            self.lean_chain.write().await.accept_new_votes().await.expect("Failed to accept new votes");
+                            self.lean_chain.write().await.accept_new_attestations().await.expect("Failed to accept new attestations");
                         }
                         _ => {
                             // Other ticks (t=0, t=1/4): Do nothing.
@@ -129,31 +129,31 @@ impl LeanChainService {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
-                        LeanChainServiceMessage::ProcessVote { signed_vote, is_trusted, need_gossip } => {
+                        LeanChainServiceMessage::ProcessAttestation { signed_attestation, is_trusted, need_gossip } => {
                             if enabled!(Level::DEBUG) {
                                 debug!(
-                                    slot = signed_vote.message.slot,
-                                    head = ?signed_vote.message.head,
-                                    source = ?signed_vote.message.source,
-                                    target = ?signed_vote.message.target,
-                                    "Processing vote by Validator {}",
-                                    signed_vote.validator_id,
+                                    slot = signed_attestation.message.slot(),
+                                    head = ?signed_attestation.message.head(),
+                                    source = ?signed_attestation.message.source(),
+                                    target = ?signed_attestation.message.target(),
+                                    "Processing attestation by Validator {}",
+                                    signed_attestation.message.validator_id,
                                 );
                             } else {
                                 info!(
-                                    slot = signed_vote.message.slot,
-                                    source_slot = signed_vote.message.source.slot,
-                                    target_slot = signed_vote.message.target.slot,
-                                    "Processing vote by Validator {}",
-                                    signed_vote.validator_id,
+                                    slot = signed_attestation.message.slot(),
+                                    source_slot = signed_attestation.message.source().slot,
+                                    target_slot = signed_attestation.message.target().slot,
+                                    "Processing attestation by Validator {}",
+                                    signed_attestation.message.validator_id,
                                 );
                             }
 
-                            if let Err(err) = self.handle_process_vote(signed_vote.clone(), is_trusted).await {
+                            if let Err(err) = self.handle_process_attestation(signed_attestation.clone(), is_trusted).await {
                                 warn!("Failed to handle process block message: {err:?}");
                             }
 
-                            if need_gossip && let Err(err) = self.outbound_gossip.send(LeanP2PRequest::GossipVote(signed_vote)) {
+                            if need_gossip && let Err(err) = self.outbound_gossip.send(LeanP2PRequest::GossipAttestation(signed_attestation)) {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
@@ -196,9 +196,9 @@ impl LeanChainService {
         Ok(())
     }
 
-    async fn handle_process_vote(
+    async fn handle_process_attestation(
         &mut self,
-        signed_vote: SignedVote,
+        signed_attestation: SignedAttestation,
         is_trusted: bool,
     ) -> anyhow::Result<()> {
         if !is_trusted {
@@ -208,7 +208,7 @@ impl LeanChainService {
         self.lean_chain
             .write()
             .await
-            .on_attestation_from_gossip(signed_vote);
+            .on_attestation_from_gossip(signed_attestation);
 
         Ok(())
     }
