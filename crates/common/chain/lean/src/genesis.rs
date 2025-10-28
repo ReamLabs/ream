@@ -26,7 +26,9 @@ pub fn setup_genesis() -> (Block, LeanState) {
 
     let genesis_state = genesis_state(
         genesis_time,
-        Some(Validator::new_from_keys(num_validators as usize)),
+        Some(Validator::generate_default_validators(
+            num_validators as usize,
+        )),
     );
     let genesis_block = genesis_block(genesis_state.tree_hash_root());
 

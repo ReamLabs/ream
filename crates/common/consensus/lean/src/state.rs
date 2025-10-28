@@ -494,7 +494,10 @@ mod test {
     #[test]
     fn get_justifications_single_root() {
         let num_validators: usize = 3;
-        let mut state = LeanState::new(0, Some(Validator::new_from_keys(num_validators)));
+        let mut state = LeanState::new(
+            0,
+            Some(Validator::generate_default_validators(num_validators)),
+        );
         state.justifications_validators = BitList::with_capacity(num_validators).unwrap();
         let root = B256::repeat_byte(1);
 
@@ -514,7 +517,10 @@ mod test {
     #[test]
     fn get_justifications_multiple_roots() {
         let num_validators = 3;
-        let mut state = LeanState::new(0, Some(Validator::new_from_keys(num_validators)));
+        let mut state = LeanState::new(
+            0,
+            Some(Validator::generate_default_validators(num_validators)),
+        );
         state.justifications_validators = BitList::with_capacity(num_validators * 3).unwrap();
         let root0 = B256::repeat_byte(0);
         let root1 = B256::repeat_byte(1);
@@ -563,7 +569,7 @@ mod test {
 
     #[test]
     fn set_justifications_empty() {
-        let mut state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         state.justifications_validators = BitList::with_capacity(state.validators.len()).unwrap();
         state
             .justifications_roots
@@ -583,7 +589,7 @@ mod test {
 
     #[test]
     fn set_justifications_deterministic_order() {
-        let mut state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
 
         // root0 voted by validator0
@@ -628,7 +634,7 @@ mod test {
 
     #[test]
     fn set_justifications_correct_flattened_size() {
-        let mut state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
 
         // Test with a single root
@@ -659,7 +665,7 @@ mod test {
 
     #[test]
     fn set_justifications_invalid_length() {
-        let mut state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
         let invalid_length = state.validators.len() - 1;
 
@@ -689,7 +695,7 @@ mod test {
 
     #[test]
     fn set_justifications_roundtrip_single_root() {
-        let mut state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
 
         // root0 voted by validator 0
@@ -711,7 +717,7 @@ mod test {
 
     #[test]
     fn set_justifications_roundtrip_multiple_roots() {
-        let mut state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut justifications = HashMap::<B256, BitList<U4096>>::new();
 
         // root0 voted by validator 0
@@ -742,7 +748,10 @@ mod test {
     fn generate_genesis() {
         let config = Config { genesis_time: 0 };
 
-        let state = LeanState::new(config.genesis_time, Some(Validator::new_from_keys(10)));
+        let state = LeanState::new(
+            config.genesis_time,
+            Some(Validator::generate_default_validators(10)),
+        );
 
         // Config in state should match the input.
         assert_eq!(state.config, config);
@@ -783,7 +792,7 @@ mod test {
 
     #[test]
     fn process_slots() {
-        let mut genesis_state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
 
         // Choose a future slot target
         let target_slot = 5;
@@ -807,7 +816,7 @@ mod test {
 
     #[test]
     fn process_block_header_valid() {
-        let mut genesis_state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
 
         genesis_state.process_slots(1).unwrap();
 
@@ -853,7 +862,7 @@ mod test {
 
     #[test]
     fn process_block_header_invalid_slot() {
-        let mut genesis_state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
 
         // Move to slot 1
         genesis_state.process_slots(1).unwrap();
@@ -883,7 +892,7 @@ mod test {
 
     #[test]
     fn process_block_header_invalid_proposer() {
-        let mut genesis_state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
 
         // Move to slot 1
         genesis_state.process_slots(1).unwrap();
@@ -913,7 +922,7 @@ mod test {
 
     #[test]
     fn process_block_header_invalid_parent_root() {
-        let mut genesis_state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let mut genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
 
         // Move to slot 1
         genesis_state.process_slots(1).unwrap();
@@ -941,7 +950,7 @@ mod test {
 
     #[test]
     fn process_attestations_justification_and_finalization() {
-        let genesis_state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
         let mut state = genesis_state.clone();
 
         // Move to slot 1 to allow producing a block there.
@@ -1034,7 +1043,7 @@ mod test {
 
     #[test]
     fn state_transition_full() {
-        let genesis_state = LeanState::new(0, Some(Validator::new_from_keys(10)));
+        let genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
 
         // Manually compute the post-state result by processing slots first
         let mut state_at_slot_1 = genesis_state.clone();
