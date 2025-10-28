@@ -1022,9 +1022,9 @@ mod test {
                     validator_id: i,
                     data: AttestationData {
                         slot: 4,
-                        head: checkpoint4.clone(),
-                        target: checkpoint4.clone(),
-                        source: genesis_checkpoint.clone(),
+                        head: checkpoint4,
+                        target: checkpoint4,
+                        source: genesis_checkpoint,
                     },
                 },
                 signature: Default::default(),
