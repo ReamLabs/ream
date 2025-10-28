@@ -48,7 +48,7 @@ pub struct LeanChain {
 impl LeanChain {
     pub fn new(genesis_block: SignedBlock, genesis_state: LeanState, db: LeanDB) -> LeanChain {
         let genesis_block_hash = genesis_block.message.tree_hash_root();
-        let no_of_validators = genesis_state.config.num_validators;
+        let number_of_validators = genesis_state.validators.len();
         db.lean_block_provider()
             .insert(genesis_block_hash, genesis_block)
             .expect("Failed to insert genesis block");
@@ -66,7 +66,7 @@ impl LeanChain {
             store: Arc::new(Mutex::new(db)),
             latest_new_votes: HashMap::new(),
             genesis_hash: genesis_block_hash,
-            num_validators: no_of_validators,
+            num_validators: number_of_validators as u64,
             safe_target: genesis_block_hash,
             head: genesis_block_hash,
         }

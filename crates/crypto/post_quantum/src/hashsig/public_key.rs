@@ -43,6 +43,14 @@ pub struct PublicKey {
     inner: FixedVector<u8, U52>,
 }
 
+impl From<&[u8]> for PublicKey {
+    fn from(value: &[u8]) -> Self {
+        Self {
+            inner: FixedVector::from(value.to_vec()),
+        }
+    }
+}
+
 impl PublicKey {
     pub fn to_bytes(&self) -> &[u8] {
         self.inner.iter().as_slice()

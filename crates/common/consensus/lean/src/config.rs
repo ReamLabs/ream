@@ -8,6 +8,5 @@ use tree_hash_derive::TreeHash;
 /// for detailed protocol information.
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Config {
-    pub num_validators: u64,
     pub genesis_time: u64,
 }
