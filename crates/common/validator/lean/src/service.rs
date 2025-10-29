@@ -1,9 +1,6 @@
 use alloy_primitives::FixedBytes;
 use anyhow::Context;
-use ream_chain_lean::{
-    clock::create_lean_clock_interval, lean_chain::LeanChainReader,
-    messages::LeanChainServiceMessage,
-};
+use ream_chain_lean::{clock::create_lean_clock_interval, messages::LeanChainServiceMessage};
 use ream_consensus_lean::{
     attestation::{Attestation, SignedAttestation},
     block::SignedBlock,
@@ -16,27 +13,24 @@ use tree_hash::TreeHash;
 use crate::registry::LeanKeystore;
 
 /// ValidatorService is responsible for managing validator operations
-/// such as proposing blocks and voting on them. This service also holds the keystores
-/// for its validators, which are used to sign.
+/// such as proposing blocks and submitting attestations on them. This service also holds the
+/// keystores for its validators, which are used to sign.
 ///
 /// Every first tick (t=0) it proposes a block if it's the validator's turn.
 /// Every second tick (t=1/4) it attestations on the proposed block.
 ///
 /// NOTE: Other ticks should be handled by the other services, such as [LeanChainService].
 pub struct ValidatorService {
-    lean_chain: LeanChainReader,
     keystores: Vec<LeanKeystore>,
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
 }
 
 impl ValidatorService {
     pub async fn new(
-        lean_chain: LeanChainReader,
         keystores: Vec<LeanKeystore>,
         chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     ) -> Self {
         ValidatorService {
-            lean_chain,
             keystores,
             chain_sender,
         }
@@ -68,7 +62,7 @@ impl ValidatorService {
                                 let (tx, rx) = oneshot::channel();
                                 self.chain_sender
                                     .send(LeanChainServiceMessage::ProduceBlock { slot, sender: tx })
-                                    .expect("Failed to send attestation to LeanChainService");
+                                    .expect("Failed to send produce block to LeanChainService");
 
                                 // Wait for the block to be produced.
                                 let new_block = rx.await.expect("Failed to receive block from LeanChainService");
@@ -99,24 +93,28 @@ impl ValidatorService {
                             // Second tick (t=1/4): Attestation.
                             info!(slot, tick = tick_count, "Starting attestation phase: {} validator(s) voting", self.keystores.len());
 
-                            // Build the attestation from LeanChain, and modify its validator ID
-                            let attestation_template = self.lean_chain.read().await.build_attestation(slot).await.expect("Failed to build attestation");
+                            let (tx, rx) = oneshot::channel();
+                            self.chain_sender
+                                .send(LeanChainServiceMessage::BuildAttestationData { slot, sender: tx })
+                                .expect("Failed to send attestation to LeanChainService");
+
+                            let attestation_data = rx.await.expect("Failed to receive attestation data from LeanChainService");
 
                             if enabled!(Level::DEBUG) {
                                 debug!(
-                                    slot = attestation_template.slot,
-                                    head = ?attestation_template.head,
-                                    source = ?attestation_template.source,
-                                    target = ?attestation_template.target,
-                                    "Building attestation template finished",
+                                    slot = attestation_data.slot,
+                                    head = ?attestation_data.head,
+                                    source = ?attestation_data.source,
+                                    target = ?attestation_data.target,
+                                    "Building attestation data finished",
                                 );
                             } else {
                                 info!(
-                                    slot = attestation_template.slot,
-                                    head_slot = attestation_template.head.slot,
-                                    source_slot = attestation_template.source.slot,
-                                    target_slot = attestation_template.target.slot,
-                                    "Building attestation template finished",
+                                    slot = attestation_data.slot,
+                                    head_slot = attestation_data.head.slot,
+                                    source_slot = attestation_data.source.slot,
+                                    target_slot = attestation_data.target.slot,
+                                    "Building attestation data finished",
                                 );
                             }
 
@@ -125,7 +123,7 @@ impl ValidatorService {
                                 SignedAttestation {
                                     message: Attestation{
                                         validator_id: keystore.validator_id,
-                                        data:attestation_template.clone()
+                                        data: attestation_data.clone()
                                     },
                                     signature: FixedBytes::default(),
                                 }

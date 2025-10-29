@@ -326,7 +326,7 @@ impl LeanChain {
         Ok(new_block.message)
     }
 
-    pub async fn build_attestation(&self, slot: u64) -> anyhow::Result<AttestationData> {
+    pub async fn build_attestation_data(&self, slot: u64) -> anyhow::Result<AttestationData> {
         let (head, target, source) = {
             let db = self.store.lock().await;
             (

@@ -214,8 +214,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
         .expect("Failed to load validator registry");
-    let validator_service =
-        LeanValidatorService::new(lean_chain_reader.clone(), keystores, chain_sender).await;
+    let validator_service = LeanValidatorService::new(keystores, chain_sender).await;
 
     let server_config = RpcServerConfig::new(
         config.http_address,

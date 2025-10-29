@@ -1,6 +1,6 @@
 use anyhow::{Context, anyhow};
 use ream_consensus_lean::{
-    attestation::SignedAttestation,
+    attestation::{AttestationData, SignedAttestation},
     block::{Block, SignedBlock},
 };
 use ream_network_spec::networks::lean_network_spec;
@@ -101,6 +101,11 @@ impl LeanChainService {
                                 error!("Failed to handle produce block message: {err:?}");
                             }
                         }
+                        LeanChainServiceMessage::BuildAttestationData { slot, sender } => {
+                            if let Err(err) = self.handle_build_attestation_data(slot, sender).await {
+                                error!("Failed to handle build attestation data message: {err:?}");
+                            }
+                        }
                         LeanChainServiceMessage::ProcessBlock { signed_block, is_trusted, need_gossip } => {
                             if enabled!(Level::DEBUG) {
                                 debug!(
@@ -174,6 +179,26 @@ impl LeanChainService {
         response
             .send(new_block)
             .map_err(|err| anyhow!("Failed to send produced block: {err:?}"))?;
+
+        Ok(())
+    }
+
+    async fn handle_build_attestation_data(
+        &mut self,
+        slot: u64,
+        response: oneshot::Sender<AttestationData>,
+    ) -> anyhow::Result<()> {
+        let attestation_data = self
+            .lean_chain
+            .read()
+            .await
+            .build_attestation_data(slot)
+            .await?;
+
+        // Send the built attestation data back to the requester
+        response
+            .send(attestation_data)
+            .map_err(|err| anyhow!("Failed to send built attestation data: {err:?}"))?;
 
         Ok(())
     }
