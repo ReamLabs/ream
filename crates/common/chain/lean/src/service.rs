@@ -1,7 +1,7 @@
 use anyhow::{Context, anyhow};
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
-    block::{Block, SignedBlock},
+    block::{Block, SignedBlockWithAttestation},
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::tables::table::Table;
@@ -109,24 +109,24 @@ impl LeanChainService {
                         LeanChainServiceMessage::ProcessBlock { signed_block, is_trusted, need_gossip } => {
                             if enabled!(Level::DEBUG) {
                                 debug!(
-                                    slot = signed_block.message.slot,
-                                    block_root = ?signed_block.message.tree_hash_root(),
-                                    parent_root = ?signed_block.message.parent_root,
-                                    state_root = ?signed_block.message.state_root,
-                                    attestations_length = signed_block.message.body.attestations.len(),
+                                    slot = signed_block.message.block.slot,
+                                    block_root = ?signed_block.message.block.tree_hash_root(),
+                                    parent_root = ?signed_block.message.block.parent_root,
+                                    state_root = ?signed_block.message.block.state_root,
+                                    attestations_length = signed_block.message.block.body.attestations.len(),
                                     "Processing block built by Validator {}",
-                                    signed_block.message.proposer_index,
+                                    signed_block.message.block.proposer_index,
                                 );
                             } else {
                                 info!(
-                                    slot = signed_block.message.slot,
-                                    block_root = ?signed_block.message.tree_hash_root(),
+                                    slot = signed_block.message.block.slot,
+                                    block_root = ?signed_block.message.block.tree_hash_root(),
                                     "Processing block built by Validator {}",
-                                    signed_block.message.proposer_index,
+                                    signed_block.message.block.proposer_index,
                                 );
                             }
 
-                            if let Err(err) = self.handle_process_block(signed_block.clone(), is_trusted).await {
+                            if let Err(err) = self.handle_process_block(*signed_block.clone(), is_trusted).await {
                                 warn!("Failed to handle process block message: {err:?}");
                             }
 
@@ -154,7 +154,7 @@ impl LeanChainService {
                                 );
                             }
 
-                            if let Err(err) = self.handle_process_attestation(signed_attestation.clone(), is_trusted).await {
+                            if let Err(err) = self.handle_process_attestation(*signed_attestation.clone(), is_trusted).await {
                                 warn!("Failed to handle process block message: {err:?}");
                             }
 
@@ -173,7 +173,7 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<Block>,
     ) -> anyhow::Result<()> {
-        let new_block = self.lean_chain.write().await.propose_block(slot).await?;
+        let (new_block, _) = self.lean_chain.write().await.propose_block(slot).await?;
 
         // Send the produced block back to the requester
         response
@@ -205,7 +205,7 @@ impl LeanChainService {
 
     async fn handle_process_block(
         &mut self,
-        signed_block: SignedBlock,
+        signed_block: SignedBlockWithAttestation,
         is_trusted: bool,
     ) -> anyhow::Result<()> {
         if !is_trusted {

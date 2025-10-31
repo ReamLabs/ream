@@ -6000,6 +6000,7 @@ dependencies = [
  "ream-sync",
  "serde",
  "serde_yaml",
+ "ssz_types",
  "tokio",
  "tracing",
  "tree_hash",

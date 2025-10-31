@@ -7,7 +7,9 @@ use tree_hash_derive::TreeHash;
 use crate::checkpoint::Checkpoint;
 
 /// Attestation content describing the validator's observed chain view.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(
+    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
+)]
 pub struct AttestationData {
     pub slot: u64,
     pub head: Checkpoint,
@@ -16,7 +18,9 @@ pub struct AttestationData {
 }
 
 /// Validator specific attestation wrapping shared attestation data.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(
+    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
+)]
 pub struct Attestation {
     pub validator_id: u64,
     pub data: AttestationData,
@@ -45,7 +49,9 @@ impl Attestation {
 }
 
 /// Validator attestation bundled with its signature.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(
+    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
+)]
 pub struct SignedAttestation {
     pub message: Attestation,
     /// signature over attestaion message only as it would be aggregated later in attestation

@@ -15,8 +15,8 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    attestation::SignedAttestation,
-    block::{Block, BlockBody, BlockHeader, SignedBlock},
+    attestation::Attestation,
+    block::{Block, BlockBody, BlockHeader},
     checkpoint::Checkpoint,
     config::Config,
     is_justifiable_slot,
@@ -154,14 +154,12 @@ impl LeanState {
 
     pub fn state_transition(
         &mut self,
-        signed_block: &SignedBlock,
+        block: &Block,
         valid_signatures: bool,
         validate_result: bool,
     ) -> anyhow::Result<()> {
         // Verify signatures
         ensure!(valid_signatures, "Signatures are not valid");
-
-        let block = &signed_block.message;
 
         // Process slots (including those with no blocks) since block
         self.process_slots(block.slot)
@@ -303,28 +301,27 @@ impl LeanState {
 
     pub fn process_attestations(
         &mut self,
-        attestations: &VariableList<SignedAttestation, U4096>,
+        attestations: &VariableList<Attestation, U4096>,
     ) -> anyhow::Result<()> {
         // get justifications, justified slots and historical block hashes are
         // already up to date as per the processing in process_block_header
         let mut justifications_map = self.get_justifications()?;
 
-        for signed_attestation in attestations {
-            let attestations = &signed_attestation.message;
+        for attestation in attestations {
             // Ignore attestations whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
             if !self
                 .justified_slots
-                .get(attestations.source().slot as usize)
+                .get(attestation.source().slot as usize)
                 .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
             {
                 info!(
                     reason = "Source slot not justified",
-                    source_slot = attestations.source().slot,
-                    target_slot = attestations.target().slot,
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestation.message.validator_id,
+                    attestation.validator_id,
                 );
                 continue;
             }
@@ -335,92 +332,92 @@ impl LeanState {
             // from justifications map
             if self
                 .justified_slots
-                .get(attestations.target().slot as usize)
+                .get(attestation.target().slot as usize)
                 .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
             {
                 info!(
                     reason = "Target slot already justified",
-                    source_slot = attestations.source().slot,
-                    target_slot = attestations.target().slot,
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestation.message.validator_id,
+                    attestation.validator_id,
                 );
                 continue;
             }
 
-            if attestations.source().root
+            if attestation.source().root
                 != *self
                     .historical_block_hashes
-                    .get(attestations.source().slot as usize)
+                    .get(attestation.source().slot as usize)
                     .ok_or(anyhow!("Source slot not found in historical_block_hashes"))?
             {
                 info!(
                     reason = "Source block not in historical block hashes",
-                    source_slot = attestations.source().slot,
-                    target_slot = attestations.target().slot,
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestation.message.validator_id,
+                    attestation.validator_id,
                 );
                 continue;
             }
 
-            if attestations.target().root
+            if attestation.target().root
                 != *self
                     .historical_block_hashes
-                    .get(attestations.target().slot as usize)
+                    .get(attestation.target().slot as usize)
                     .ok_or(anyhow!("Target slot not found in historical_block_hashes"))?
             {
                 info!(
                     reason = "Target block not in historical block hashes",
-                    source_slot = attestations.source().slot,
-                    target_slot = attestations.target().slot,
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestation.message.validator_id,
+                    attestation.validator_id,
                 );
                 continue;
             }
 
-            if attestations.target().slot <= attestations.source().slot {
+            if attestation.target().slot <= attestation.source().slot {
                 info!(
                     reason = "Target slot not greater than source slot",
-                    source_slot = attestations.source().slot,
-                    target_slot = attestations.target().slot,
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestation.message.validator_id,
+                    attestation.validator_id,
                 );
                 continue;
             }
 
-            if !is_justifiable_slot(self.latest_finalized.slot, attestations.target().slot) {
+            if !is_justifiable_slot(self.latest_finalized.slot, attestation.target().slot) {
                 info!(
                     reason = "Target slot not justifiable",
-                    source_slot = attestations.source().slot,
-                    target_slot = attestations.target().slot,
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
-                    signed_attestation.message.validator_id,
+                    attestation.validator_id,
                 );
                 continue;
             }
 
             // Track attempts to justify new hashes
             let justifications = justifications_map
-                .entry(attestations.target().root)
+                .entry(attestation.target().root)
                 .or_insert(
                     BitList::with_capacity(self.validators.len()).map_err(|err| {
                         anyhow!(
                             "Failed to initialize justification for root {:?}: {err:?}",
-                            &attestations.target().root
+                            &attestation.target().root
                         )
                     })?,
                 );
 
             justifications
-                .set(signed_attestation.message.validator_id as usize, true)
+                .set(attestation.validator_id as usize, true)
                 .map_err(|err| {
                     anyhow!(
                         "Failed to set validator {:?}'s justification for root {:?}: {err:?}",
-                        signed_attestation.message.validator_id,
-                        &attestations.target().root
+                        attestation.validator_id,
+                        &attestation.target().root
                     )
                 })?;
 
@@ -432,17 +429,17 @@ impl LeanState {
             // to prevent integer division which could lead to less than 2/3 of validators
             // justifying specially if the num_validators is low in testing scenarios
             if 3 * count >= (2 * self.validators.len()) {
-                self.latest_justified = attestations.target();
+                self.latest_justified = attestation.target();
                 self.justified_slots
-                    .set(attestations.target().slot as usize, true)
+                    .set(attestation.target().slot as usize, true)
                     .map_err(|err| {
                         anyhow!(
                             "Failed to set justified slot for slot {}: {err:?}",
-                            attestations.target().slot
+                            attestation.target().slot
                         )
                     })?;
 
-                justifications_map.remove(&attestations.target().root);
+                justifications_map.remove(&attestation.target().root);
 
                 info!(
                     slot = self.latest_justified.slot,
@@ -453,12 +450,12 @@ impl LeanState {
 
                 // Finalization: if the target is the next valid justifiable
                 // hash after the source
-                let is_target_next_valid_justifiable_slot = !((attestations.source().slot + 1)
-                    ..attestations.target().slot)
+                let is_target_next_valid_justifiable_slot = !((attestation.source().slot + 1)
+                    ..attestation.target().slot)
                     .any(|slot| is_justifiable_slot(self.latest_finalized.slot, slot));
 
                 if is_target_next_valid_justifiable_slot {
-                    self.latest_finalized = attestations.source();
+                    self.latest_finalized = attestation.source();
 
                     info!(
                         slot = self.latest_finalized.slot,
@@ -1015,19 +1012,16 @@ mod test {
         };
 
         // Create 7 attestations from distinct validators (indices 0..6) to reach ≥2/3.
-        let mut attestations_for_4 = VariableList::<SignedAttestation, U4096>::empty();
+        let mut attestations_for_4 = VariableList::<Attestation, U4096>::empty();
         for i in 0..7 {
-            let attestations = SignedAttestation {
-                message: Attestation {
-                    validator_id: i,
-                    data: AttestationData {
-                        slot: 4,
-                        head: checkpoint4,
-                        target: checkpoint4,
-                        source: genesis_checkpoint,
-                    },
+            let attestations = Attestation {
+                validator_id: i,
+                data: AttestationData {
+                    slot: 4,
+                    head: checkpoint4,
+                    target: checkpoint4,
+                    source: genesis_checkpoint,
                 },
-                signature: Default::default(),
             };
             attestations_for_4.push(attestations).unwrap();
         }
@@ -1083,21 +1077,18 @@ mod test {
             },
         };
 
-        let signed_block = SignedBlock {
-            message: block_with_correct_root.clone(),
-            signature: Default::default(),
-        };
-
         // Run state transition from genesis
         let mut state = genesis_state.clone();
-        state.state_transition(&signed_block, true, true).unwrap();
+        state
+            .state_transition(&block_with_correct_root, true, true)
+            .unwrap();
 
         // The result must match the expected state
         assert_eq!(state, expected_state);
 
         // Invalid signatures must cause error
         let mut state2 = genesis_state.clone();
-        let result = state2.state_transition(&signed_block, false, true);
+        let result = state2.state_transition(&block_with_correct_root, false, true);
         assert!(result.is_err());
         assert!(
             result
@@ -1116,13 +1107,9 @@ mod test {
                 attestations: VariableList::empty(),
             },
         };
-        let signed_block_with_bad_root = SignedBlock {
-            message: block_with_bad_root,
-            signature: Default::default(),
-        };
 
         let mut state3 = genesis_state.clone();
-        let result = state3.state_transition(&signed_block_with_bad_root, true, true);
+        let result = state3.state_transition(&block_with_bad_root, true, true);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("state root"));
     }

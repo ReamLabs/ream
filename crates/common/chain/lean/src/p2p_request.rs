@@ -1,7 +1,7 @@
-use ream_consensus_lean::{attestation::SignedAttestation, block::SignedBlock};
+use ream_consensus_lean::{attestation::SignedAttestation, block::SignedBlockWithAttestation};
 
 #[derive(Debug, Clone)]
 pub enum LeanP2PRequest {
-    GossipBlock(SignedBlock),
-    GossipAttestation(SignedAttestation),
+    GossipBlock(Box<SignedBlockWithAttestation>),
+    GossipAttestation(Box<SignedAttestation>),
 }

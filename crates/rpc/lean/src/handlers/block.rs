@@ -56,7 +56,7 @@ pub async fn get_block_by_id(
     provider
         .get(block_root?)
         .map(|maybe_signed_block| {
-            maybe_signed_block.map(|signed_block| signed_block.message.clone())
+            maybe_signed_block.map(|signed_block| signed_block.message.block.clone())
         })
         .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))
 }

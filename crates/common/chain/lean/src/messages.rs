@@ -1,6 +1,6 @@
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
-    block::{Block, SignedBlock},
+    block::{Block, SignedBlockWithAttestation},
 };
 use tokio::sync::oneshot;
 
@@ -34,12 +34,12 @@ pub enum LeanChainServiceMessage {
         sender: oneshot::Sender<AttestationData>,
     },
     ProcessBlock {
-        signed_block: SignedBlock,
+        signed_block: Box<SignedBlockWithAttestation>,
         is_trusted: bool,
         need_gossip: bool,
     },
     ProcessAttestation {
-        signed_attestation: SignedAttestation,
+        signed_attestation: Box<SignedAttestation>,
         is_trusted: bool,
         need_gossip: bool,
     },

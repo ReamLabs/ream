@@ -250,13 +250,13 @@ impl LeanNetworkService {
                                 )
                             {
                                 warn!(
-                                    slot = signed_block.message.slot,
+                                    slot = signed_block.message.block.slot,
                                     error = ?err,
                                     "Publish block failed"
                                 );
                             } else {
                                 info!(
-                                    slot = signed_block.message.slot,
+                                    slot = signed_block.message.block.slot,
                                     "Broadcasted block"
                                 );
                             }
@@ -349,7 +349,7 @@ impl LeanNetworkService {
         if let GossipsubEvent::Message { message, .. } = event {
             match LeanGossipsubMessage::decode(&message.topic, &message.data) {
                 Ok(LeanGossipsubMessage::Block(signed_block)) => {
-                    let slot = signed_block.message.slot;
+                    let slot = signed_block.message.block.slot;
 
                     if let Err(err) =
                         self.chain_message_sender

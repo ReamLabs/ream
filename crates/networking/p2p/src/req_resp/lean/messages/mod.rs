@@ -4,7 +4,7 @@ pub mod status;
 use std::sync::Arc;
 
 use blocks::LeanBlocksByRootV1Request;
-use ream_consensus_lean::block::SignedBlock;
+use ream_consensus_lean::block::SignedBlockWithAttestation;
 use ssz_derive::{Decode, Encode};
 use status::LeanStatus;
 
@@ -37,5 +37,5 @@ impl LeanRequestMessage {
 #[ssz(enum_behaviour = "transparent")]
 pub enum LeanResponseMessage {
     Status(LeanStatus),
-    BlocksByRoot(Arc<SignedBlock>),
+    BlocksByRoot(Arc<SignedBlockWithAttestation>),
 }

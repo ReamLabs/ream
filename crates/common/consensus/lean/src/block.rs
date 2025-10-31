@@ -5,21 +5,30 @@ use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::attestation::SignedAttestation;
+use crate::attestation::Attestation;
 
-/// Represents a signed block in the Lean chain.
+/// Envelope carrying a block, an attestation from proposer, and aggregated signatures.
 ///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#signedblock)
+/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/5da200c13f5eeda0b4139b1d55970d75c011d4b2/src/lean_spec/subspecs/containers/block/block.py#L93)
 /// for detailed protocol information.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct SignedBlock {
-    pub message: Block,
-    pub signature: FixedBytes<4000>,
+#[derive(Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+pub struct SignedBlockWithAttestation {
+    pub message: BlockWithAttestation,
+    pub signature: VariableList<FixedBytes<4000>, U4096>,
+}
+
+/// Bundle containing a block and the proposer's attestation.
+///
+/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/5da200c13f5eeda0b4139b1d55970d75c011d4b2/src/lean_spec/subspecs/containers/block/block.py#L83)
+#[derive(Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+pub struct BlockWithAttestation {
+    pub block: Block,
+    pub proposer_attestation: Attestation,
 }
 
 /// Represents a block in the Lean chain.
 ///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#block)
+/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/5da200c13f5eeda0b4139b1d55970d75c011d4b2/src/lean_spec/subspecs/containers/block/block.py#L64)
 /// for detailed protocol information.
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
@@ -36,7 +45,7 @@ pub struct Block {
 
 /// Represents a block header in the Lean chain.
 ///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#blockheader)
+/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/5da200c13f5eeda0b4139b1d55970d75c011d4b2/src/lean_spec/subspecs/containers/block/block.py#L36)
 /// for detailed protocol information.
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
@@ -63,7 +72,7 @@ impl From<Block> for BlockHeader {
 
 /// Represents the body of a block in the Lean chain.
 ///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#blockbody)
+/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/5da200c13f5eeda0b4139b1d55970d75c011d4b2/src/lean_spec/subspecs/containers/block/block.py#L20)
 /// for detailed protocol information.
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
@@ -72,5 +81,5 @@ pub struct BlockBody {
     /// TODO: Diverged from current ongoing spec change. This should be
     /// `VariableList<Attestation, U4096>`.
     /// Tracking issue: https://github.com/ReamLabs/ream/issues/856
-    pub attestations: VariableList<SignedAttestation, U4096>,
+    pub attestations: VariableList<Attestation, U4096>,
 }
