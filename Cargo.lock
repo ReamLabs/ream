@@ -5632,7 +5632,6 @@ dependencies = [
  "ream-post-quantum-crypto",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
  "ssz_types",
  "uuid",
