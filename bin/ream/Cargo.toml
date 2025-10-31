@@ -21,11 +21,14 @@ bip39.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 discv5.workspace = true
 hashbrown.workspace = true
+hashsig.workspace = true
 libp2p-identity.workspace = true
 prometheus_exporter.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 tokio.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
