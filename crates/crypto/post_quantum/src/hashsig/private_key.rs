@@ -1,3 +1,8 @@
+use alloy_primitives::Bytes;
+use bincode::{
+    self,
+    config::{Fixint, LittleEndian, NoLimit},
+};
 use hashsig::{MESSAGE_LENGTH, signature::SignatureScheme};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -5,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use crate::hashsig::{
     HashSigScheme, errors::SigningError, public_key::PublicKey, signature::Signature,
 };
+
+const BINCODE_CONFIG: bincode::config::Configuration<LittleEndian, Fixint, NoLimit> =
+    bincode::config::standard().with_fixed_int_encoding();
 
 pub type HashSigPrivateKey = <HashSigScheme as SignatureScheme>::SecretKey;
 
@@ -16,6 +24,12 @@ pub struct PrivateKey {
 impl PrivateKey {
     pub fn new(inner: HashSigPrivateKey) -> Self {
         Self { inner }
+    }
+
+    pub fn to_bytes(&self) -> Bytes {
+        bincode::serde::encode_to_vec(&self.inner, BINCODE_CONFIG)
+            .expect("Failed to serialize hash sig public key")
+            .into()
     }
 
     pub fn generate_key_pair<R: Rng>(
