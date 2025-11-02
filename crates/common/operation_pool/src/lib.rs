@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use alloy_primitives::{Address, B256, map::HashSet};
 use parking_lot::RwLock;
 use ream_consensus_beacon::{
-    attester_slashing::AttesterSlashing, bls_to_execution_change::SignedBLSToExecutionChange,
-    electra::beacon_state::BeaconState, proposer_slashing::ProposerSlashing,
-    voluntary_exit::SignedVoluntaryExit,
+    attestation::Attestation, attester_slashing::AttesterSlashing,
+    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
+    proposer_slashing::ProposerSlashing, voluntary_exit::SignedVoluntaryExit,
 };
 use tree_hash::TreeHash;
 
@@ -22,6 +22,7 @@ pub struct OperationPool {
     proposer_preparations: RwLock<HashMap<u64, ProposerPreparation>>,
     attester_slashings: RwLock<HashSet<AttesterSlashing>>,
     proposer_slashings: RwLock<HashSet<ProposerSlashing>>,
+    attestations: RwLock<HashMap<(u64, B256), Vec<Attestation>>>,
 }
 
 impl OperationPool {
@@ -123,6 +124,31 @@ impl OperationPool {
 
     pub fn insert_proposer_slashing(&self, slashing: ProposerSlashing) {
         self.proposer_slashings.write().insert(slashing);
+    }
+
+    pub fn get_attestations(&self, slot: u64) -> Vec<Attestation> {
+        self.attestations
+            .read()
+            .iter()
+            .filter_map(|((att_slot, _), attestations)| {
+                if *att_slot == slot {
+                    Some(attestations.clone())
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect()
+    }
+
+    pub fn insert_attestation(&self, attestation: Attestation) {
+        let key = (attestation.data.slot, attestation.data.tree_hash_root());
+        let mut map = self.attestations.write();
+        if let Some(attestations) = map.get_mut(&key) {
+            attestations.push(attestation);
+        } else {
+            map.insert(key, vec![attestation]);
+        }
     }
 }
 
