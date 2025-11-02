@@ -141,6 +141,14 @@ impl OperationPool {
             .collect()
     }
 
+    pub fn get_all_attestations(&self) -> Vec<Attestation> {
+        self.attestations
+            .read()
+            .iter()
+            .flat_map(|(_, attestations)| attestations.clone())
+            .collect()
+    }
+
     pub fn insert_attestation(&self, attestation: Attestation) {
         let key = (attestation.data.slot, attestation.data.tree_hash_root());
         let mut map = self.attestations.write();
