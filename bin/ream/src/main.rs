@@ -17,6 +17,7 @@ use ream::cli::{
     Cli, Commands,
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
+    generate_keystores::run_generate_keystore,
     generate_private_key::GeneratePrivateKeyConfig,
     import_keystores::{load_keystore_directory, load_password_from_config, process_password},
     lean_node::LeanNodeConfig,
@@ -94,13 +95,13 @@ fn main() {
         reset_db(&ream_dir).expect("Unable to delete database");
     }
 
-    let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
-
     match cli.command {
         Commands::LeanNode(config) => {
+            let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
             executor_clone.spawn(async move { run_lean_node(*config, executor, ream_db).await });
         }
         Commands::BeaconNode(config) => {
+            let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
             executor_clone.spawn(async move { run_beacon_node(*config, executor, ream_db).await });
         }
         Commands::ValidatorNode(config) => {
@@ -114,6 +115,10 @@ fn main() {
         }
         Commands::GeneratePrivateKey(config) => {
             executor_clone.spawn(async move { run_generate_private_key(*config).await });
+        }
+        Commands::GenerateKeystore(config) => {
+            run_generate_keystore(*config).expect("failed to generate hash-sig keystore");
+            process::exit(0);
         }
     }
 
@@ -187,7 +192,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         },
         LeanGossipTopic {
             fork,
-            kind: LeanGossipTopicKind::Vote,
+            kind: LeanGossipTopicKind::Attestation,
         },
     ];
 
@@ -214,8 +219,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
         .expect("Failed to load validator registry");
-    let validator_service =
-        LeanValidatorService::new(lean_chain_reader.clone(), keystores, chain_sender).await;
+    let validator_service = LeanValidatorService::new(keystores, chain_sender).await;
 
     let server_config = RpcServerConfig::new(
         config.http_address,

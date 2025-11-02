@@ -3,11 +3,11 @@ use std::{collections::HashMap, sync::Arc};
 use alloy_primitives::{B256, FixedBytes};
 use anyhow::anyhow;
 use ream_consensus_lean::{
+    attestation::{AttestationData, SignedAttestation},
     block::{Block, BlockBody, SignedBlock},
     checkpoint::Checkpoint,
     is_justifiable_slot,
     state::LeanState,
-    vote::{SignedVote, Vote},
 };
 use ream_fork_choice::lean::get_fork_choice_head;
 use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer_vec, stop_timer};
@@ -31,14 +31,14 @@ pub type LeanChainReader = Reader<LeanChain>;
 pub struct LeanChain {
     /// Database.
     pub store: Arc<Mutex<LeanDB>>,
-    /// Votes that we have received but not yet taken into account.
-    /// Maps validator id to signed vote.
-    pub latest_new_votes: HashMap<u64, SignedVote>,
+    /// Attestations that we have received but not yet taken into account.
+    /// Maps validator id to signed attestation.
+    pub latest_new_attestations: HashMap<u64, SignedAttestation>,
     /// Initialize the chain with the genesis block.
     pub genesis_hash: B256,
     /// Number of validators.
     pub num_validators: u64,
-    /// Block that it is safe to use to vote as the target.
+    /// Block that it is safe to use to attestation as the target.
     /// Diverge from Python implementation: Use genesis hash instead of `None`.
     pub safe_target: B256,
     /// Head of the chain.
@@ -48,15 +48,15 @@ pub struct LeanChain {
 impl LeanChain {
     pub fn new(genesis_block: SignedBlock, genesis_state: LeanState, db: LeanDB) -> LeanChain {
         let genesis_block_hash = genesis_block.message.tree_hash_root();
-        let no_of_validators = genesis_state.config.num_validators;
+        let number_of_validators = genesis_state.validators.len();
         db.lean_block_provider()
             .insert(genesis_block_hash, genesis_block)
             .expect("Failed to insert genesis block");
         db.latest_finalized_provider()
-            .insert(genesis_state.latest_finalized.clone())
+            .insert(genesis_state.latest_finalized)
             .expect("Failed to insert latest finalized checkpoint");
         db.latest_justified_provider()
-            .insert(genesis_state.latest_justified.clone())
+            .insert(genesis_state.latest_justified)
             .expect("Failed to insert latest justified checkpoint");
         db.lean_state_provider()
             .insert(genesis_block_hash, genesis_state)
@@ -64,9 +64,9 @@ impl LeanChain {
 
         LeanChain {
             store: Arc::new(Mutex::new(db)),
-            latest_new_votes: HashMap::new(),
+            latest_new_attestations: HashMap::new(),
             genesis_hash: genesis_block_hash,
-            num_validators: no_of_validators,
+            num_validators: number_of_validators as u64,
             safe_target: genesis_block_hash,
             head: genesis_block_hash,
         }
@@ -115,7 +115,7 @@ impl LeanChain {
 
         self.safe_target = get_fork_choice_head(
             self.store.clone(),
-            &self.latest_new_votes,
+            &self.latest_new_attestations,
             &latest_justified_root,
             min_target_score,
         )
@@ -124,39 +124,39 @@ impl LeanChain {
         Ok(())
     }
 
-    /// Process new votes that the staker has received. Vote processing is done
+    /// Process new attestations that the staker has received. Attestation processing is done
     /// at a particular time, because of safe target and view merge rule
-    pub async fn accept_new_votes(&mut self) -> anyhow::Result<()> {
-        let latest_known_votes_provider = {
+    pub async fn accept_new_attestations(&mut self) -> anyhow::Result<()> {
+        let latest_known_attestation_provider = {
             let db = self.store.lock().await;
-            db.latest_known_votes_provider()
+            db.latest_known_attestations_provider()
         };
 
-        latest_known_votes_provider.batch_insert(self.latest_new_votes.drain())?;
+        latest_known_attestation_provider.batch_insert(self.latest_new_attestations.drain())?;
 
         self.update_head().await?;
         Ok(())
     }
 
-    /// Done upon processing new votes or a new block
+    /// Done upon processing new attestations or a new block
     pub async fn update_head(&mut self) -> anyhow::Result<()> {
-        let (latest_known_votes, latest_justified_root, latest_finalized_checkpoint) = {
+        let (latest_known_attestations, latest_justified_root, latest_finalized_checkpoint) = {
             let db = self.store.lock().await;
             (
-                db.latest_known_votes_provider().get_all_votes()?,
+                db.latest_known_attestations_provider()
+                    .get_all_attestations()?,
                 db.latest_justified_provider().get()?.root,
                 db.lean_state_provider()
                     .get(self.head)?
                     .ok_or_else(|| anyhow!("State not found in chain for head: {}", self.head))?
-                    .latest_finalized
-                    .clone(),
+                    .latest_finalized,
             )
         };
 
         // Update head.
         self.head = get_fork_choice_head(
             self.store.clone(),
-            &latest_known_votes,
+            &latest_known_attestations,
             &latest_justified_root,
             0,
         )
@@ -180,18 +180,18 @@ impl LeanChain {
             .lock()
             .await
             .latest_finalized_provider()
-            .insert(latest_finalized_checkpoint.clone())?;
+            .insert(latest_finalized_checkpoint)?;
 
         Ok(())
     }
 
-    /// Calculate target checkpoint for validator votes.
+    /// Calculate target checkpoint for validator attestations.
     /// Determines appropriate attestation target based on head, safe target,
     /// and finalization constraints.
     ///
     /// See lean specification:
     /// <https://github.com/leanEthereum/leanSpec/blob/f8e8d271d8b8b6513d34c78692aff47438d6fa18/src/lean_spec/subspecs/forkchoice/store.py#L341-L366>
-    pub async fn get_vote_target(
+    pub async fn get_attestation_target(
         &self,
         lean_block_provider: &LeanBlockTable,
         finalized_slot: u64,
@@ -238,12 +238,12 @@ impl LeanChain {
     }
 
     /// Get the head for block proposal at given slot.
-    /// Ensures store is up-to-date and processes any pending votes.
+    /// Ensures store is up-to-date and processes any pending attestations.
     ///
     /// See lean specification:
     /// <https://github.com/leanEthereum/leanSpec/blob/4b750f2748a3718fe3e1e9cdb3c65e3a7ddabff5/src/lean_spec/subspecs/forkchoice/store.py#L319-L339>
     pub async fn get_proposal_head(&mut self) -> anyhow::Result<B256> {
-        self.accept_new_votes().await?;
+        self.accept_new_attestations().await?;
         Ok(self.head)
     }
 
@@ -252,9 +252,12 @@ impl LeanChain {
 
         let initialize_block_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
 
-        let (lean_state_provider, latest_known_votes_provider) = {
+        let (lean_state_provider, latest_known_attestation_provider) = {
             let db = self.store.lock().await;
-            (db.lean_state_provider(), db.latest_known_votes_provider())
+            (
+                db.lean_state_provider(),
+                db.latest_known_attestations_provider(),
+            )
         };
 
         let head_state = lean_state_provider
@@ -280,37 +283,38 @@ impl LeanChain {
         // Apply state transition so the state is brought up to the expected slot
         state.state_transition(&new_block, true, false)?;
 
-        // Keep attempt to add valid votes from the list of available votes
-        let add_votes_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_votes_to_block"]);
+        // Keep attempt to add valid attestations from the list of available attestations
+        let add_attestations_timer =
+            start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
         loop {
             state.process_attestations(&new_block.message.body.attestations)?;
-            let new_votes_to_add = latest_known_votes_provider
-                .get_all_votes()?
+            let new_attestations_to_add = latest_known_attestation_provider
+                .get_all_attestations()?
                 .into_iter()
-                .filter_map(|(_, vote)| {
-                    (vote.message.source == state.latest_justified
-                        && !new_block.message.body.attestations.contains(&vote))
-                    .then_some(vote)
+                .filter_map(|(_, attestation)| {
+                    (attestation.message.source() == state.latest_justified
+                        && !new_block.message.body.attestations.contains(&attestation))
+                    .then_some(attestation)
                 })
                 .collect::<Vec<_>>();
 
-            if new_votes_to_add.is_empty() {
+            if new_attestations_to_add.is_empty() {
                 break;
             }
 
-            for vote in new_votes_to_add {
+            for attestation in new_attestations_to_add {
                 new_block
                     .message
                     .body
                     .attestations
-                    .push(vote)
-                    .map_err(|err| anyhow!("Failed to add vote to new_block: {err:?}"))?;
+                    .push(attestation)
+                    .map_err(|err| anyhow!("Failed to add attestation to new_block: {err:?}"))?;
             }
         }
-        stop_timer(add_votes_timer);
+        stop_timer(add_attestations_timer);
 
         // Update `state.latest_block_header.body_root` so that it accounts for
-        // the votes that we've added above
+        // the attestations that we've added above
         state.latest_block_header.body_root = new_block.message.body.tree_hash_root();
 
         // Compute the state root
@@ -322,7 +326,7 @@ impl LeanChain {
         Ok(new_block.message)
     }
 
-    pub async fn build_vote(&self, slot: u64) -> anyhow::Result<Vote> {
+    pub async fn build_attestation_data(&self, slot: u64) -> anyhow::Result<AttestationData> {
         let (head, target, source) = {
             let db = self.store.lock().await;
             (
@@ -335,7 +339,7 @@ impl LeanChain {
                         .message
                         .slot,
                 },
-                self.get_vote_target(
+                self.get_attestation_target(
                     &db.lean_block_provider(),
                     db.latest_finalized_provider().get()?.slot,
                 )
@@ -344,7 +348,7 @@ impl LeanChain {
             )
         };
 
-        Ok(Vote {
+        Ok(AttestationData {
             slot,
             head,
             target,
@@ -385,7 +389,7 @@ impl LeanChain {
 
         let attestations = signed_block.message.body.attestations.clone();
         lean_block_provider.insert(block_hash, signed_block)?;
-        latest_justified_provider.insert(state.latest_justified.clone())?;
+        latest_justified_provider.insert(state.latest_justified)?;
         lean_state_provider.insert(block_hash, state)?;
         self.on_attestation_from_block(attestations).await?;
         self.update_head().await?;
@@ -393,60 +397,67 @@ impl LeanChain {
         Ok(())
     }
 
-    /// Process multiple attestations (multiple [SignedVote]s) from [SignedBlock].
+    /// Process multiple attestations (multiple [SignedAttestation]s) from [SignedBlock].
     /// Main reason to have this function is to avoid multiple DB transactions by
-    /// batch inserting votes.
+    /// batch inserting attestations.
     ///
     /// See lean specification:
     /// <https://github.com/leanEthereum/leanSpec/blob/ee16b19825a1f358b00a6fc2d7847be549daa03b/docs/client/forkchoice.md?plain=1#L279-L312>
     pub async fn on_attestation_from_block(
         &mut self,
-        signed_votes: impl IntoIterator<Item = SignedVote>,
+        signed_attestations: impl IntoIterator<Item = SignedAttestation>,
     ) -> anyhow::Result<()> {
-        let latest_known_votes_provider = {
+        let latest_known_attestation_provider = {
             let db = self.store.lock().await;
-            db.latest_known_votes_provider()
+            db.latest_known_attestations_provider()
         };
 
-        latest_known_votes_provider.batch_insert(signed_votes.into_iter().filter_map(
-            |signed_vote| {
-                let validator_id = signed_vote.validator_id;
+        latest_known_attestation_provider.batch_insert(
+            signed_attestations
+                .into_iter()
+                .filter_map(|signed_attestation| {
+                    let validator_id = signed_attestation.message.validator_id;
 
-                // Clear from new votes if this is latest.
-                if let Some(latest_vote) = self.latest_new_votes.get(&validator_id)
-                    && latest_vote.message.slot < signed_vote.message.slot
-                {
-                    self.latest_new_votes.remove(&validator_id);
-                }
+                    // Clear from new attestations if this is latest.
+                    if let Some(latest_attestation) =
+                        self.latest_new_attestations.get(&validator_id)
+                        && latest_attestation.message.slot() < signed_attestation.message.slot()
+                    {
+                        self.latest_new_attestations.remove(&validator_id);
+                    }
 
-                // Filter for batch insertion.
-                latest_known_votes_provider
-                    .get(validator_id)
-                    .ok()
-                    .flatten()
-                    .is_none_or(|latest_vote| latest_vote.message.slot < signed_vote.message.slot)
-                    .then_some((validator_id, signed_vote))
-            },
-        ))?;
+                    // Filter for batch insertion.
+                    latest_known_attestation_provider
+                        .get(validator_id)
+                        .ok()
+                        .flatten()
+                        .is_none_or(|latest_attestation| {
+                            latest_attestation.message.slot() < signed_attestation.message.slot()
+                        })
+                        .then_some((validator_id, signed_attestation))
+                }),
+        )?;
 
         Ok(())
     }
 
-    /// Processes a single attestation ([SignedVote]) from gossip.
+    /// Processes a single attestation ([SignedAttestation]) from gossip.
     ///
     /// See lean specification:
     /// <https://github.com/leanEthereum/leanSpec/blob/ee16b19825a1f358b00a6fc2d7847be549daa03b/docs/client/forkchoice.md?plain=1#L279-L312>
-    pub fn on_attestation_from_gossip(&mut self, signed_vote: SignedVote) {
-        let validator_id = signed_vote.validator_id;
+    pub fn on_attestation_from_gossip(&mut self, signed_attestation: SignedAttestation) {
+        let validator_id = signed_attestation.message.validator_id;
 
-        // Update latest new votes if this is the latest
+        // Update latest new attestations if this is the latest
         if self
-            .latest_new_votes
+            .latest_new_attestations
             .get(&validator_id)
-            .is_none_or(|latest_vote| latest_vote.message.slot < signed_vote.message.slot)
+            .is_none_or(|latest_attestation| {
+                latest_attestation.message.slot() < signed_attestation.message.slot()
+            })
         {
-            self.latest_new_votes
-                .insert(validator_id, signed_vote.clone());
+            self.latest_new_attestations
+                .insert(validator_id, signed_attestation.clone());
         }
     }
 }

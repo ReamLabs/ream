@@ -1,10 +1,10 @@
 use alloy_primitives::FixedBytes;
 use anyhow::Context;
-use ream_chain_lean::{
-    clock::create_lean_clock_interval, lean_chain::LeanChainReader,
-    messages::LeanChainServiceMessage,
+use ream_chain_lean::{clock::create_lean_clock_interval, messages::LeanChainServiceMessage};
+use ream_consensus_lean::{
+    attestation::{Attestation, SignedAttestation},
+    block::SignedBlock,
 };
-use ream_consensus_lean::{block::SignedBlock, vote::SignedVote};
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, info};
@@ -13,27 +13,24 @@ use tree_hash::TreeHash;
 use crate::registry::LeanKeystore;
 
 /// ValidatorService is responsible for managing validator operations
-/// such as proposing blocks and voting on them. This service also holds the keystores
-/// for its validators, which are used to sign.
+/// such as proposing blocks and submitting attestations on them. This service also holds the
+/// keystores for its validators, which are used to sign.
 ///
 /// Every first tick (t=0) it proposes a block if it's the validator's turn.
-/// Every second tick (t=1/4) it votes on the proposed block.
+/// Every second tick (t=1/4) it attestations on the proposed block.
 ///
 /// NOTE: Other ticks should be handled by the other services, such as [LeanChainService].
 pub struct ValidatorService {
-    lean_chain: LeanChainReader,
     keystores: Vec<LeanKeystore>,
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
 }
 
 impl ValidatorService {
     pub async fn new(
-        lean_chain: LeanChainReader,
         keystores: Vec<LeanKeystore>,
         chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     ) -> Self {
         ValidatorService {
-            lean_chain,
             keystores,
             chain_sender,
         }
@@ -65,7 +62,7 @@ impl ValidatorService {
                                 let (tx, rx) = oneshot::channel();
                                 self.chain_sender
                                     .send(LeanChainServiceMessage::ProduceBlock { slot, sender: tx })
-                                    .expect("Failed to send vote to LeanChainService");
+                                    .expect("Failed to send produce block to LeanChainService");
 
                                 // Wait for the block to be produced.
                                 let new_block = rx.await.expect("Failed to receive block from LeanChainService");
@@ -93,43 +90,49 @@ impl ValidatorService {
                             }
                         }
                         1 => {
-                            // Second tick (t=1/4): Vote.
-                            info!(slot, tick = tick_count, "Starting vote phase: {} validator(s) voting", self.keystores.len());
+                            // Second tick (t=1/4): Attestation.
+                            info!(slot, tick = tick_count, "Starting attestation phase: {} validator(s) voting", self.keystores.len());
 
-                            // Build the vote from LeanChain, and modify its validator ID
-                            let vote_template = self.lean_chain.read().await.build_vote(slot).await.expect("Failed to build vote");
+                            let (tx, rx) = oneshot::channel();
+                            self.chain_sender
+                                .send(LeanChainServiceMessage::BuildAttestationData { slot, sender: tx })
+                                .expect("Failed to send attestation to LeanChainService");
+
+                            let attestation_data = rx.await.expect("Failed to receive attestation data from LeanChainService");
 
                             if enabled!(Level::DEBUG) {
                                 debug!(
-                                    slot = vote_template.slot,
-                                    head = ?vote_template.head,
-                                    source = ?vote_template.source,
-                                    target = ?vote_template.target,
-                                    "Building vote template finished",
+                                    slot = attestation_data.slot,
+                                    head = ?attestation_data.head,
+                                    source = ?attestation_data.source,
+                                    target = ?attestation_data.target,
+                                    "Building attestation data finished",
                                 );
                             } else {
                                 info!(
-                                    slot = vote_template.slot,
-                                    head_slot = vote_template.head.slot,
-                                    source_slot = vote_template.source.slot,
-                                    target_slot = vote_template.target.slot,
-                                    "Building vote template finished",
+                                    slot = attestation_data.slot,
+                                    head_slot = attestation_data.head.slot,
+                                    source_slot = attestation_data.source.slot,
+                                    target_slot = attestation_data.target.slot,
+                                    "Building attestation data finished",
                                 );
                             }
 
-                            // TODO: Sign the vote with the keystore.
-                            let signed_votes = self.keystores.iter().map(|keystore| {
-                                SignedVote {
-                                    validator_id: keystore.validator_id,
-                                    message: vote_template.clone(),
+                            // TODO: Sign the attestation with the keystore.
+                            let signed_attestations = self.keystores.iter().map(|keystore| {
+                                SignedAttestation {
+                                    message: Attestation{
+                                        validator_id: keystore.validator_id,
+                                        data: attestation_data.clone()
+                                    },
                                     signature: FixedBytes::default(),
                                 }
                             }).collect::<Vec<_>>();
 
-                            for signed_vote in signed_votes {
+                            for signed_attestation in signed_attestations {
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessVote { signed_vote, is_trusted: true, need_gossip: true })
-                                    .expect("Failed to send vote to LeanChainService");
+                                    .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation, is_trusted: true, need_gossip: true })
+                                    .expect("Failed to send attestation to LeanChainService");
                             }
                         }
                         _ => {

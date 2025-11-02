@@ -5,7 +5,7 @@ use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::vote::SignedVote;
+use crate::attestation::SignedAttestation;
 
 /// Represents a signed block in the Lean chain.
 ///
@@ -69,5 +69,8 @@ impl From<Block> for BlockHeader {
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]
 pub struct BlockBody {
-    pub attestations: VariableList<SignedVote, U4096>,
+    /// TODO: Diverged from current ongoing spec change. This should be
+    /// `VariableList<Attestation, U4096>`.
+    /// Tracking issue: https://github.com/ReamLabs/ream/issues/856
+    pub attestations: VariableList<SignedAttestation, U4096>,
 }

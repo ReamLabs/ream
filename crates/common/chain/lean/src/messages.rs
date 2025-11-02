@@ -1,6 +1,6 @@
 use ream_consensus_lean::{
+    attestation::{AttestationData, SignedAttestation},
     block::{Block, SignedBlock},
-    vote::SignedVote,
 };
 use tokio::sync::oneshot;
 
@@ -8,11 +8,13 @@ use tokio::sync::oneshot;
 ///
 /// `ProduceBlock`: Request to produce a new [Block] based on current view of the node.
 ///
+/// `BuildAttestationData`: Request to build an [AttestationData] for a given slot.
+///
 /// `ProcessBlock`: Request to process a new [SignedBlock], with a couple of flags. For flags, see
 /// below for the explanation.
 ///
-/// `ProcessVote`: Request to process a new [SignedVote], with a couple of flags. For flags, see
-/// below for the explanation.
+/// `ProcessAttestation`: Request to process a new [SignedAttestation], with a couple of flags. For
+/// flags, see below for the explanation.
 ///
 /// Flags:
 /// `is_trusted`: If true, the block/vote is considered to 1) be from local or 2) already verified.
@@ -27,13 +29,17 @@ pub enum LeanChainServiceMessage {
         slot: u64,
         sender: oneshot::Sender<Block>,
     },
+    BuildAttestationData {
+        slot: u64,
+        sender: oneshot::Sender<AttestationData>,
+    },
     ProcessBlock {
         signed_block: SignedBlock,
         is_trusted: bool,
         need_gossip: bool,
     },
-    ProcessVote {
-        signed_vote: SignedVote,
+    ProcessAttestation {
+        signed_attestation: SignedAttestation,
         is_trusted: bool,
         need_gossip: bool,
     },

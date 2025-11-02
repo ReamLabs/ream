@@ -1,4 +1,4 @@
-use alloy_primitives::hex;
+use alloy_primitives::{Bytes, hex};
 use bincode::{
     self,
     config::{Fixint, LittleEndian, NoLimit},
@@ -43,9 +43,17 @@ pub struct PublicKey {
     inner: FixedVector<u8, U52>,
 }
 
+impl From<&[u8]> for PublicKey {
+    fn from(value: &[u8]) -> Self {
+        Self {
+            inner: FixedVector::from(value.to_vec()),
+        }
+    }
+}
+
 impl PublicKey {
-    pub fn to_bytes(&self) -> &[u8] {
-        self.inner.iter().as_slice()
+    pub fn to_bytes(&self) -> Bytes {
+        self.inner.to_vec().into()
     }
 
     /// Create a new `PublicKey` wrapper from the original `GeneralizedXMSSPublicKey` type
