@@ -15,6 +15,7 @@ Commands:
   account_manager       Manage validator accounts
   voluntary_exit        Perform voluntary exit for a validator
   generate_private_key  Generate a secp256k1 keypair for lean node
+  generate_keystore     Generate keystore file
   help                  Print this message or the help of the given subcommand(s)
 
 Options:
