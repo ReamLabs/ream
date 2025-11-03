@@ -82,7 +82,7 @@ impl ValidatorService {
                                         proposer_attestation: Attestation::default(),
 
                                     },
-                                    signature:VariableList::empty(),
+                                    signature: VariableList::empty(),
                                 };
 
                                 // Send block to the LeanChainService.

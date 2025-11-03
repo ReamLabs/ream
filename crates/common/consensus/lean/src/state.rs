@@ -299,10 +299,7 @@ impl LeanState {
         Ok(())
     }
 
-    pub fn process_attestations(
-        &mut self,
-        attestations: &VariableList<Attestation, U4096>,
-    ) -> anyhow::Result<()> {
+    pub fn process_attestations(&mut self, attestations: &[Attestation]) -> anyhow::Result<()> {
         // get justifications, justified slots and historical block hashes are
         // already up to date as per the processing in process_block_header
         let mut justifications_map = self.get_justifications()?;
@@ -957,7 +954,7 @@ mod test {
         state.process_slots(1).unwrap();
 
         // Create and process the block at slot 1.
-        let block1 = Block {
+        let block_1 = Block {
             slot: 1,
             proposer_index: 1,
             parent_root: state.latest_block_header.tree_hash_root(),
@@ -966,11 +963,11 @@ mod test {
                 attestations: VariableList::empty(),
             },
         };
-        state.process_block(&block1).unwrap();
+        state.process_block(&block_1).unwrap();
 
         // Move to slot 4 and produce/process a block.
         state.process_slots(4).unwrap();
-        let block4 = Block {
+        let block_4 = Block {
             slot: 4,
             proposer_index: 4,
             parent_root: state.latest_block_header.tree_hash_root(),
@@ -979,18 +976,18 @@ mod test {
                 attestations: VariableList::empty(),
             },
         };
-        state.process_block(&block4).unwrap();
+        state.process_block(&block_4).unwrap();
 
         // Advance to slot 5 so the header at slot 4 caches its state root.
         state.process_slots(5).unwrap();
 
-        // Process a block at slot 5 to push block4's root into historical_block_hashes.
+        // Process a block at slot 5 to push block_4's root into historical_block_hashes.
         // This is required by the our implementation based off 3SF-mini which validates that target
         // roots exist in historical_block_hashes before accepting attestations
         // This validation does not exist in leanSpec so the test passes without processing block 5
         // We deviate from the leanSpec in this test and process block 5 before testing
         // process_attestations for slot 4
-        let block5 = Block {
+        let block_5 = Block {
             slot: 5,
             proposer_index: 5,
             parent_root: state.latest_block_header.tree_hash_root(),
@@ -999,14 +996,14 @@ mod test {
                 attestations: VariableList::empty(),
             },
         };
-        state.process_block(&block5).unwrap();
+        state.process_block(&block_5).unwrap();
 
         // Define source (genesis) and target (slot 4) checkpoints for voting.
         let genesis_checkpoint = Checkpoint {
             root: state.historical_block_hashes[0], // Canonical root for slot 0
             slot: 0,
         };
-        let checkpoint4 = Checkpoint {
+        let checkpoint_4 = Checkpoint {
             root: state.historical_block_hashes[4], // Root of the block at slot 4
             slot: 4,
         };
@@ -1018,8 +1015,8 @@ mod test {
                 validator_id: i,
                 data: AttestationData {
                     slot: 4,
-                    head: checkpoint4,
-                    target: checkpoint4,
+                    head: checkpoint_4,
+                    target: checkpoint_4,
                     source: genesis_checkpoint,
                 },
             };
@@ -1030,14 +1027,14 @@ mod test {
         state.process_attestations(&attestations_for_4).unwrap();
 
         // The target (slot 4) should now be justified.
-        assert_eq!(state.latest_justified, checkpoint4);
+        assert_eq!(state.latest_justified, checkpoint_4);
         // The justified bit for slot 4 must be set.
         assert!(state.justified_slots.get(4).unwrap_or(false));
         // Since no other justifiable slot exists between 0 and 4, genesis is finalized.
         assert_eq!(state.latest_finalized, genesis_checkpoint);
         // The per-root attestations tracker for the justified target has been cleared.
         let justifications = state.get_justifications().unwrap();
-        assert!(!justifications.contains_key(&checkpoint4.root));
+        assert!(!justifications.contains_key(&checkpoint_4.root));
     }
 
     #[test]
@@ -1087,8 +1084,8 @@ mod test {
         assert_eq!(state, expected_state);
 
         // Invalid signatures must cause error
-        let mut state2 = genesis_state.clone();
-        let result = state2.state_transition(&block_with_correct_root, false, true);
+        let mut state_2 = genesis_state.clone();
+        let result = state_2.state_transition(&block_with_correct_root, false, true);
         assert!(result.is_err());
         assert!(
             result
@@ -1108,8 +1105,8 @@ mod test {
             },
         };
 
-        let mut state3 = genesis_state.clone();
-        let result = state3.state_transition(&block_with_bad_root, true, true);
+        let mut state_3 = genesis_state.clone();
+        let result = state_3.state_transition(&block_with_bad_root, true, true);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("state root"));
     }

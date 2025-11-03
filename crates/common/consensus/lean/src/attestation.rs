@@ -49,9 +49,7 @@ impl Attestation {
 }
 
 /// Validator attestation bundled with its signature.
-#[derive(
-    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
-)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedAttestation {
     pub message: Attestation,
     /// signature over attestaion message only as it would be aggregated later in attestation

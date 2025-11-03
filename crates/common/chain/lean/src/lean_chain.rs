@@ -399,15 +399,14 @@ impl LeanChain {
                 )
             })?;
 
-        // TODO: Add `is_valid_signature` once spec is complete.
+        // TODO: Add signature validation once spec is complete.
         state.state_transition(&signed_block.message.block, true, true)?;
 
         let mut signed_attestations = vec![];
         for attestation in &signed_block.message.block.body.attestations {
-            // let signature = signed_block.signature[index];
             signed_attestations.push(SignedAttestation {
                 message: attestation.clone(),
-                ..Default::default()
+                signature: FixedBytes::<4000>::default(),
             });
         }
         lean_block_provider.insert(block_hash, signed_block)?;

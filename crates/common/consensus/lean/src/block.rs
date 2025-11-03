@@ -8,28 +8,20 @@ use tree_hash_derive::TreeHash;
 use crate::attestation::Attestation;
 
 /// Envelope carrying a block, an attestation from proposer, and aggregated signatures.
-///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/5da200c13f5eeda0b4139b1d55970d75c011d4b2/src/lean_spec/subspecs/containers/block/block.py#L93)
-/// for detailed protocol information.
-#[derive(Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct SignedBlockWithAttestation {
     pub message: BlockWithAttestation,
     pub signature: VariableList<FixedBytes<4000>, U4096>,
 }
 
 /// Bundle containing a block and the proposer's attestation.
-///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/5da200c13f5eeda0b4139b1d55970d75c011d4b2/src/lean_spec/subspecs/containers/block/block.py#L83)
-#[derive(Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct BlockWithAttestation {
     pub block: Block,
     pub proposer_attestation: Attestation,
 }
 
 /// Represents a block in the Lean chain.
-///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/5da200c13f5eeda0b4139b1d55970d75c011d4b2/src/lean_spec/subspecs/containers/block/block.py#L64)
-/// for detailed protocol information.
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]

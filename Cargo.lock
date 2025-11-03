@@ -5321,6 +5321,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "ssz_types",
  "tokio",
  "tracing",
  "tracing-subscriber",
