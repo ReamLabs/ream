@@ -38,11 +38,15 @@ pub async fn get_fork_choice_head(
             while {
                 let current_block = lean_block_provider
                     .get(block_hash)?
-                    .ok_or_else(|| anyhow!("Block not found for vote head: {block_hash}"))?;
+                    .ok_or_else(|| anyhow!("Block not found for vote head: {block_hash}"))?
+                    .message
+                    .block;
                 let root_block = lean_block_provider
                     .get(root)?
-                    .ok_or_else(|| anyhow!("Block not found for root: {root}"))?;
-                current_block.message.block.slot > root_block.message.block.slot
+                    .ok_or_else(|| anyhow!("Block not found for root: {root}"))?
+                    .message
+                    .block;
+                current_block.slot > root_block.slot
             } {
                 let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
                 vote_weights.insert(block_hash, current_weights + 1);

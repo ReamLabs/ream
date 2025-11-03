@@ -204,41 +204,50 @@ impl LeanChain {
         // Start from current head
         let mut target_block = lean_block_provider
             .get(self.head)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?;
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?
+            .message
+            .block;
 
         // Walk back up to 3 steps if safe target is newer
         for _ in 0..3 {
-            let safe_target_block =
-                lean_block_provider.get(self.safe_target)?.ok_or_else(|| {
+            let safe_target_block = lean_block_provider
+                .get(self.safe_target)?
+                .ok_or_else(|| {
                     anyhow!("Block not found for safe target hash: {}", self.safe_target)
-                })?;
-            if target_block.message.block.slot > safe_target_block.message.block.slot {
+                })?
+                .message
+                .block;
+            if target_block.slot > safe_target_block.slot {
                 target_block = lean_block_provider
-                    .get(target_block.message.block.parent_root)?
+                    .get(target_block.parent_root)?
                     .ok_or_else(|| {
                         anyhow!(
                             "Block not found for target block's parent hash: {}",
-                            target_block.message.block.parent_root
+                            target_block.parent_root
                         )
-                    })?;
+                    })?
+                    .message
+                    .block;
             }
         }
 
         // Ensure target is in justifiable slot range
-        while !is_justifiable_slot(finalized_slot, target_block.message.block.slot) {
+        while !is_justifiable_slot(finalized_slot, target_block.slot) {
             target_block = lean_block_provider
-                .get(target_block.message.block.parent_root)?
+                .get(target_block.parent_root)?
                 .ok_or_else(|| {
                     anyhow!(
                         "Block not found for target block's parent hash: {}",
-                        target_block.message.block.parent_root
+                        target_block.parent_root
                     )
-                })?;
+                })?
+                .message
+                .block;
         }
 
         Ok(Checkpoint {
-            root: target_block.message.block.tree_hash_root(),
-            slot: target_block.message.block.slot,
+            root: target_block.tree_hash_root(),
+            slot: target_block.slot,
         })
     }
 
