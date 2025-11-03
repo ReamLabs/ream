@@ -33,8 +33,9 @@ use ream_chain_lean::{
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus_lean::{
-    attestation::Attestation,
+    attestation::{Attestation, AttestationData},
     block::{BlockWithAttestation, SignedBlockWithAttestation},
+    checkpoint::Checkpoint,
 };
 use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
@@ -176,7 +177,15 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         SignedBlockWithAttestation {
             message: BlockWithAttestation {
                 block: genesis_block,
-                proposer_attestation: Attestation::default(),
+                proposer_attestation: Attestation {
+                    validator_id: 0,
+                    data: AttestationData {
+                        slot: 0,
+                        head: Checkpoint::default(),
+                        target: Checkpoint::default(),
+                        source: Checkpoint::default(),
+                    },
+                },
             },
             signature: VariableList::default(),
         },

@@ -78,13 +78,13 @@ impl LeanBlockTable {
         for entry in table.iter()? {
             let (hash_entry, block_entry) = entry?;
             let hash: B256 = hash_entry.value();
-            let block: SignedBlockWithAttestation = block_entry.value();
+            let block = block_entry.value().message.block;
 
-            if block.message.block.parent_root != B256::ZERO
+            if block.parent_root != B256::ZERO
                 && *attestation_weights.get(&hash).unwrap_or(&0) >= min_score
             {
                 children_map
-                    .entry(block.message.block.parent_root)
+                    .entry(block.parent_root)
                     .or_default()
                     .push(hash);
             }

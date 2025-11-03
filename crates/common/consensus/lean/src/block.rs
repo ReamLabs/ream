@@ -36,9 +36,6 @@ pub struct Block {
 }
 
 /// Represents a block header in the Lean chain.
-///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/5da200c13f5eeda0b4139b1d55970d75c011d4b2/src/lean_spec/subspecs/containers/block/block.py#L36)
-/// for detailed protocol information.
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]
@@ -63,9 +60,6 @@ impl From<Block> for BlockHeader {
 }
 
 /// Represents the body of a block in the Lean chain.
-///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/5da200c13f5eeda0b4139b1d55970d75c011d4b2/src/lean_spec/subspecs/containers/block/block.py#L20)
-/// for detailed protocol information.
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]

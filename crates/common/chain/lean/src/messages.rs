@@ -34,7 +34,7 @@ pub enum LeanChainServiceMessage {
         sender: oneshot::Sender<AttestationData>,
     },
     ProcessBlock {
-        signed_block: Box<SignedBlockWithAttestation>,
+        signed_block_with_attestation: Box<SignedBlockWithAttestation>,
         is_trusted: bool,
         need_gossip: bool,
     },

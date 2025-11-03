@@ -285,7 +285,6 @@ impl LeanChain {
             slot,
             proposer_index: slot % lean_network_spec().num_validators,
             parent_root: head,
-            // Diverged from Python implementation: Using `B256::ZERO` instead of `None`)
             state_root: B256::ZERO,
             body: BlockBody::default(),
         };
@@ -306,12 +305,18 @@ impl LeanChain {
             let mut new_attestations_to_add = Vec::new();
             let mut new_signatures_to_add = Vec::new();
 
-            for (_, attestation) in latest_known_attestation_provider.get_all_attestations()? {
-                if attestation.message.source() == state.latest_justified
-                    && !new_block.body.attestations.contains(&attestation.message)
+            for signed_attestation in latest_known_attestation_provider
+                .get_all_attestations()?
+                .values()
+            {
+                if signed_attestation.message.source() == state.latest_justified
+                    && !new_block
+                        .body
+                        .attestations
+                        .contains(&signed_attestation.message)
                 {
-                    new_attestations_to_add.push(attestation.message);
-                    new_signatures_to_add.push(attestation.signature);
+                    new_attestations_to_add.push(signed_attestation.message.clone());
+                    new_signatures_to_add.push(signed_attestation.signature);
                 }
             }
 
@@ -381,9 +386,10 @@ impl LeanChain {
     /// <https://github.com/leanEthereum/leanSpec/blob/ee16b19825a1f358b00a6fc2d7847be549daa03b/docs/client/forkchoice.md?plain=1#L314-L342>
     pub async fn on_block(
         &mut self,
-        signed_block: SignedBlockWithAttestation,
+        signed_block_with_attestation: SignedBlockWithAttestation,
     ) -> anyhow::Result<()> {
-        let block_hash = signed_block.message.block.tree_hash_root();
+        let block = &signed_block_with_attestation.message.block;
+        let block_hash = signed_block_with_attestation.message.block.tree_hash_root();
 
         let (lean_block_provider, latest_justified_provider, lean_state_provider) = {
             let db = self.store.lock().await;
@@ -399,26 +405,25 @@ impl LeanChain {
             return Ok(());
         }
 
-        let mut state = lean_state_provider
-            .get(signed_block.message.block.parent_root)?
-            .ok_or_else(|| {
-                anyhow!(
-                    "Parent state not found for block: {block_hash}, parent: {}",
-                    signed_block.message.block.parent_root
-                )
-            })?;
+        let mut state = lean_state_provider.get(block.parent_root)?.ok_or_else(|| {
+            anyhow!(
+                "Parent state not found for block: {block_hash}, parent: {}",
+                block.parent_root
+            )
+        })?;
 
         // TODO: Add signature validation once spec is complete.
-        state.state_transition(&signed_block.message.block, true, true)?;
+        // Tracking issue: https://github.com/ReamLabs/ream/issues/881
+        state.state_transition(block, true, true)?;
 
         let mut signed_attestations = vec![];
-        for attestation in &signed_block.message.block.body.attestations {
+        for attestation in &block.body.attestations {
             signed_attestations.push(SignedAttestation {
                 message: attestation.clone(),
                 signature: FixedBytes::<4000>::default(),
             });
         }
-        lean_block_provider.insert(block_hash, signed_block)?;
+        lean_block_provider.insert(block_hash, signed_block_with_attestation)?;
         latest_justified_provider.insert(state.latest_justified)?;
         lean_state_provider.insert(block_hash, state)?;
         self.on_attestation_from_block(signed_attestations).await?;

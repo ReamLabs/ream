@@ -2,8 +2,9 @@ use alloy_primitives::FixedBytes;
 use anyhow::{Context, anyhow};
 use ream_chain_lean::{clock::create_lean_clock_interval, messages::LeanChainServiceMessage};
 use ream_consensus_lean::{
-    attestation::{Attestation, SignedAttestation},
+    attestation::{Attestation, AttestationData, SignedAttestation},
     block::{BlockWithAttestation, SignedBlockWithAttestation},
+    checkpoint::Checkpoint,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ssz_types::VariableList;
@@ -76,18 +77,23 @@ impl ValidatorService {
                                 );
 
                                 // TODO: Sign the block with the keystore once spec is finalized.
-                                let signed_block = SignedBlockWithAttestation {
+                                let signed_block_with_attestation = SignedBlockWithAttestation {
                                     message: BlockWithAttestation {
-                                        block: new_block,
-                                        proposer_attestation: Attestation::default(),
-
+                                        block: new_block.clone(),
+                                        proposer_attestation: Attestation { validator_id: keystore.validator_id, data: AttestationData {
+                                            slot: new_block.slot,
+                                            head: Checkpoint::default(),
+                                            target: Checkpoint::default(),
+                                            source: Checkpoint::default(),
+                                            }
+                                        },
                                     },
                                     signature: VariableList::empty(),
                                 };
 
                                 // Send block to the LeanChainService.
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block: Box::new(signed_block), is_trusted: true, need_gossip: true })
+                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation: Box::new(signed_block_with_attestation), is_trusted: true, need_gossip: true })
                                     .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
                             } else {
                                 let proposer_index = slot % lean_network_spec().num_validators;
