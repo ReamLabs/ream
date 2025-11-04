@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
-use ream_consensus_lean::block::SignedBlock;
+use ream_consensus_lean::block::SignedBlockWithAttestation;
 use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 use tree_hash::TreeHash;
 
@@ -14,9 +14,11 @@ use crate::{
 /// Table definition for the Lean Block table
 ///
 /// Key: block_id
-/// Value: [SignedBlock]
-pub(crate) const LEAN_BLOCK_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<SignedBlock>> =
-    TableDefinition::new("lean_block");
+/// Value: [SignedBlockWithAttestation]
+pub(crate) const LEAN_BLOCK_TABLE: TableDefinition<
+    SSZEncoding<B256>,
+    SSZEncoding<SignedBlockWithAttestation>,
+> = TableDefinition::new("lean_block");
 
 pub struct LeanBlockTable {
     pub db: Arc<Database>,
@@ -25,7 +27,7 @@ pub struct LeanBlockTable {
 impl Table for LeanBlockTable {
     type Key = B256;
 
-    type Value = SignedBlock;
+    type Value = SignedBlockWithAttestation;
 
     fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
         let read_txn = self.db.begin_read()?;
@@ -37,17 +39,17 @@ impl Table for LeanBlockTable {
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
         // insert entry to slot_index table
-        let block_root = value.message.tree_hash_root();
+        let block_root = value.message.block.tree_hash_root();
         let slot_index_table = SlotIndexTable {
             db: self.db.clone(),
         };
-        slot_index_table.insert(value.message.slot, block_root)?;
+        slot_index_table.insert(value.message.block.slot, block_root)?;
 
         // insert entry to state root index table
         let state_root_index_table = StateRootIndexTable {
             db: self.db.clone(),
         };
-        state_root_index_table.insert(value.message.state_root, block_root)?;
+        state_root_index_table.insert(value.message.block.state_root, block_root)?;
 
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
@@ -76,13 +78,13 @@ impl LeanBlockTable {
         for entry in table.iter()? {
             let (hash_entry, block_entry) = entry?;
             let hash: B256 = hash_entry.value();
-            let block: SignedBlock = block_entry.value();
+            let block = block_entry.value().message.block;
 
-            if block.message.parent_root != B256::ZERO
+            if block.parent_root != B256::ZERO
                 && *attestation_weights.get(&hash).unwrap_or(&0) >= min_score
             {
                 children_map
-                    .entry(block.message.parent_root)
+                    .entry(block.parent_root)
                     .or_default()
                     .push(hash);
             }

@@ -1,11 +1,13 @@
 use alloy_primitives::FixedBytes;
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use ream_chain_lean::{clock::create_lean_clock_interval, messages::LeanChainServiceMessage};
 use ream_consensus_lean::{
-    attestation::{Attestation, SignedAttestation},
-    block::SignedBlock,
+    attestation::{Attestation, AttestationData, SignedAttestation},
+    block::{BlockWithAttestation, SignedBlockWithAttestation},
+    checkpoint::Checkpoint,
 };
 use ream_network_spec::networks::lean_network_spec;
+use ssz_types::VariableList;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, info};
 use tree_hash::TreeHash;
@@ -74,16 +76,25 @@ impl ValidatorService {
                                     keystore.validator_id,
                                 );
 
-                                // TODO: Sign the block with the keystore.
-                                let signed_block = SignedBlock {
-                                    message: new_block,
-                                    signature: FixedBytes::default(),
+                                // TODO: Sign the block with the keystore once spec is finalized.
+                                let signed_block_with_attestation = SignedBlockWithAttestation {
+                                    message: BlockWithAttestation {
+                                        block: new_block.clone(),
+                                        proposer_attestation: Attestation { validator_id: keystore.validator_id, data: AttestationData {
+                                            slot: new_block.slot,
+                                            head: Checkpoint::default(),
+                                            target: Checkpoint::default(),
+                                            source: Checkpoint::default(),
+                                            }
+                                        },
+                                    },
+                                    signature: VariableList::empty(),
                                 };
 
                                 // Send block to the LeanChainService.
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block, is_trusted: true, need_gossip: true })
-                                    .expect("Failed to send block to LeanChainService");
+                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation: Box::new(signed_block_with_attestation), is_trusted: true, need_gossip: true })
+                                    .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
                             } else {
                                 let proposer_index = slot % lean_network_spec().num_validators;
                                 info!("Not proposer for slot {slot} (proposer is validator {proposer_index}), skipping");
@@ -131,8 +142,8 @@ impl ValidatorService {
 
                             for signed_attestation in signed_attestations {
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation, is_trusted: true, need_gossip: true })
-                                    .expect("Failed to send attestation to LeanChainService");
+                                    .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation: Box::new(signed_attestation), is_trusted: true, need_gossip: true })
+                                    .map_err(|err| anyhow!("Failed to send attestation to LeanChainService: {err:?}"))?;
                             }
                         }
                         _ => {

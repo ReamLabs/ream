@@ -38,17 +38,21 @@ pub async fn get_fork_choice_head(
             while {
                 let current_block = lean_block_provider
                     .get(block_hash)?
-                    .ok_or_else(|| anyhow!("Block not found for vote head: {block_hash}"))?;
+                    .ok_or_else(|| anyhow!("Block not found for vote head: {block_hash}"))?
+                    .message
+                    .block;
                 let root_block = lean_block_provider
                     .get(root)?
-                    .ok_or_else(|| anyhow!("Block not found for root: {root}"))?;
-                current_block.message.slot > root_block.message.slot
+                    .ok_or_else(|| anyhow!("Block not found for root: {root}"))?
+                    .message
+                    .block;
+                current_block.slot > root_block.slot
             } {
                 let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
                 vote_weights.insert(block_hash, current_weights + 1);
                 block_hash = lean_block_provider
                     .get(block_hash)?
-                    .map(|block| block.message.parent_root)
+                    .map(|block| block.message.block.parent_root)
                     .ok_or_else(|| anyhow!("Block not found for block parent: {block_hash}"))?;
             }
         }
@@ -69,7 +73,7 @@ pub async fn get_fork_choice_head(
                 let slot = lean_block_provider
                     .get(**child_hash)
                     .map(|maybe_block| match maybe_block {
-                        Some(block) => block.message.slot,
+                        Some(block) => block.message.block.slot,
                         None => 0,
                     })
                     .unwrap_or(0);

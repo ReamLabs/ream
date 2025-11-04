@@ -250,13 +250,13 @@ impl LeanNetworkService {
                                 )
                             {
                                 warn!(
-                                    slot = signed_block.message.slot,
+                                    slot = signed_block.message.block.slot,
                                     error = ?err,
                                     "Publish block failed"
                                 );
                             } else {
                                 info!(
-                                    slot = signed_block.message.slot,
+                                    slot = signed_block.message.block.slot,
                                     "Broadcasted block"
                                 );
                             }
@@ -348,13 +348,13 @@ impl LeanNetworkService {
     fn handle_gossipsub_event(&mut self, event: GossipsubEvent) -> Option<ReamNetworkEvent> {
         if let GossipsubEvent::Message { message, .. } = event {
             match LeanGossipsubMessage::decode(&message.topic, &message.data) {
-                Ok(LeanGossipsubMessage::Block(signed_block)) => {
-                    let slot = signed_block.message.slot;
+                Ok(LeanGossipsubMessage::Block(signed_block_with_attestation)) => {
+                    let slot = signed_block_with_attestation.message.block.slot;
 
                     if let Err(err) =
                         self.chain_message_sender
                             .send(LeanChainServiceMessage::ProcessBlock {
-                                signed_block,
+                                signed_block_with_attestation,
                                 is_trusted: false,
                                 need_gossip: true,
                             })

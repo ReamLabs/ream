@@ -5,22 +5,23 @@ use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::attestation::SignedAttestation;
+use crate::attestation::Attestation;
 
-/// Represents a signed block in the Lean chain.
-///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#signedblock)
-/// for detailed protocol information.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct SignedBlock {
-    pub message: Block,
-    pub signature: FixedBytes<4000>,
+/// Envelope carrying a block, an attestation from proposer, and aggregated signatures.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+pub struct SignedBlockWithAttestation {
+    pub message: BlockWithAttestation,
+    pub signature: VariableList<FixedBytes<4000>, U4096>,
+}
+
+/// Bundle containing a block and the proposer's attestation.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+pub struct BlockWithAttestation {
+    pub block: Block,
+    pub proposer_attestation: Attestation,
 }
 
 /// Represents a block in the Lean chain.
-///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#block)
-/// for detailed protocol information.
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]
@@ -35,9 +36,6 @@ pub struct Block {
 }
 
 /// Represents a block header in the Lean chain.
-///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#blockheader)
-/// for detailed protocol information.
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]
@@ -62,9 +60,6 @@ impl From<Block> for BlockHeader {
 }
 
 /// Represents the body of a block in the Lean chain.
-///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#blockbody)
-/// for detailed protocol information.
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
 )]
@@ -72,5 +67,5 @@ pub struct BlockBody {
     /// TODO: Diverged from current ongoing spec change. This should be
     /// `VariableList<Attestation, U4096>`.
     /// Tracking issue: https://github.com/ReamLabs/ream/issues/856
-    pub attestations: VariableList<SignedAttestation, U4096>,
+    pub attestations: VariableList<Attestation, U4096>,
 }

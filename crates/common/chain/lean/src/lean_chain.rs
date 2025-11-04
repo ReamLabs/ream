@@ -4,7 +4,7 @@ use alloy_primitives::{B256, FixedBytes};
 use anyhow::anyhow;
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
-    block::{Block, BlockBody, SignedBlock},
+    block::{Block, BlockBody, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
     is_justifiable_slot,
     state::LeanState,
@@ -46,8 +46,12 @@ pub struct LeanChain {
 }
 
 impl LeanChain {
-    pub fn new(genesis_block: SignedBlock, genesis_state: LeanState, db: LeanDB) -> LeanChain {
-        let genesis_block_hash = genesis_block.message.tree_hash_root();
+    pub fn new(
+        genesis_block: SignedBlockWithAttestation,
+        genesis_state: LeanState,
+        db: LeanDB,
+    ) -> LeanChain {
+        let genesis_block_hash = genesis_block.message.block.tree_hash_root();
         let number_of_validators = genesis_state.validators.len();
         db.lean_block_provider()
             .insert(genesis_block_hash, genesis_block)
@@ -81,7 +85,7 @@ impl LeanChain {
             .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))
     }
 
-    pub async fn get_block_by_slot(&self, slot: u64) -> anyhow::Result<SignedBlock> {
+    pub async fn get_block_by_slot(&self, slot: u64) -> anyhow::Result<SignedBlockWithAttestation> {
         let (lean_block_provider, lean_slot_provider) = {
             let db = self.store.lock().await;
             (db.lean_block_provider(), db.slot_index_provider())
@@ -171,6 +175,7 @@ impl LeanChain {
             .get(self.head)?
             .ok_or_else(|| anyhow!("Block not found for head: {}", self.head))?
             .message
+            .block
             .slot;
 
         set_int_gauge_vec(&HEAD_SLOT, head_slot as i64, &[]);
@@ -199,41 +204,50 @@ impl LeanChain {
         // Start from current head
         let mut target_block = lean_block_provider
             .get(self.head)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?;
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?
+            .message
+            .block;
 
         // Walk back up to 3 steps if safe target is newer
         for _ in 0..3 {
-            let safe_target_block =
-                lean_block_provider.get(self.safe_target)?.ok_or_else(|| {
+            let safe_target_block = lean_block_provider
+                .get(self.safe_target)?
+                .ok_or_else(|| {
                     anyhow!("Block not found for safe target hash: {}", self.safe_target)
-                })?;
-            if target_block.message.slot > safe_target_block.message.slot {
+                })?
+                .message
+                .block;
+            if target_block.slot > safe_target_block.slot {
                 target_block = lean_block_provider
-                    .get(target_block.message.parent_root)?
+                    .get(target_block.parent_root)?
                     .ok_or_else(|| {
                         anyhow!(
                             "Block not found for target block's parent hash: {}",
-                            target_block.message.parent_root
+                            target_block.parent_root
                         )
-                    })?;
+                    })?
+                    .message
+                    .block;
             }
         }
 
         // Ensure target is in justifiable slot range
-        while !is_justifiable_slot(finalized_slot, target_block.message.slot) {
+        while !is_justifiable_slot(finalized_slot, target_block.slot) {
             target_block = lean_block_provider
-                .get(target_block.message.parent_root)?
+                .get(target_block.parent_root)?
                 .ok_or_else(|| {
                     anyhow!(
                         "Block not found for target block's parent hash: {}",
-                        target_block.message.parent_root
+                        target_block.parent_root
                     )
-                })?;
+                })?
+                .message
+                .block;
         }
 
         Ok(Checkpoint {
-            root: target_block.message.tree_hash_root(),
-            slot: target_block.message.slot,
+            root: target_block.tree_hash_root(),
+            slot: target_block.slot,
         })
     }
 
@@ -247,7 +261,10 @@ impl LeanChain {
         Ok(self.head)
     }
 
-    pub async fn propose_block(&mut self, slot: u64) -> anyhow::Result<Block> {
+    pub async fn propose_block(
+        &mut self,
+        slot: u64,
+    ) -> anyhow::Result<(Block, Vec<FixedBytes<4000>>)> {
         let head = self.get_proposal_head().await?;
 
         let initialize_block_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
@@ -264,21 +281,18 @@ impl LeanChain {
             .get(head)?
             .ok_or_else(|| anyhow!("Post state not found for head: {head}"))?;
 
-        let mut new_block = SignedBlock {
-            message: Block {
-                slot,
-                proposer_index: slot % lean_network_spec().num_validators,
-                parent_root: head,
-                // Diverged from Python implementation: Using `B256::ZERO` instead of `None`)
-                state_root: B256::ZERO,
-                body: BlockBody::default(),
-            },
-            signature: FixedBytes::default(),
+        let mut new_block = Block {
+            slot,
+            proposer_index: slot % lean_network_spec().num_validators,
+            parent_root: head,
+            state_root: B256::ZERO,
+            body: BlockBody::default(),
         };
         stop_timer(initialize_block_timer);
 
         // Clone state so we can apply the new block to get a new state
         let mut state = head_state.clone();
+        let mut signatures = vec![];
 
         // Apply state transition so the state is brought up to the expected slot
         state.state_transition(&new_block, true, false)?;
@@ -287,16 +301,24 @@ impl LeanChain {
         let add_attestations_timer =
             start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
         loop {
-            state.process_attestations(&new_block.message.body.attestations)?;
-            let new_attestations_to_add = latest_known_attestation_provider
+            state.process_attestations(&new_block.body.attestations)?;
+            let mut new_attestations_to_add = Vec::new();
+            let mut new_signatures_to_add = Vec::new();
+
+            for signed_attestation in latest_known_attestation_provider
                 .get_all_attestations()?
-                .into_iter()
-                .filter_map(|(_, attestation)| {
-                    (attestation.message.source() == state.latest_justified
-                        && !new_block.message.body.attestations.contains(&attestation))
-                    .then_some(attestation)
-                })
-                .collect::<Vec<_>>();
+                .values()
+            {
+                if signed_attestation.message.source() == state.latest_justified
+                    && !new_block
+                        .body
+                        .attestations
+                        .contains(&signed_attestation.message)
+                {
+                    new_attestations_to_add.push(signed_attestation.message.clone());
+                    new_signatures_to_add.push(signed_attestation.signature);
+                }
+            }
 
             if new_attestations_to_add.is_empty() {
                 break;
@@ -304,26 +326,28 @@ impl LeanChain {
 
             for attestation in new_attestations_to_add {
                 new_block
-                    .message
                     .body
                     .attestations
                     .push(attestation)
                     .map_err(|err| anyhow!("Failed to add attestation to new_block: {err:?}"))?;
+            }
+            for signature in new_signatures_to_add {
+                signatures.push(signature);
             }
         }
         stop_timer(add_attestations_timer);
 
         // Update `state.latest_block_header.body_root` so that it accounts for
         // the attestations that we've added above
-        state.latest_block_header.body_root = new_block.message.body.tree_hash_root();
+        state.latest_block_header.body_root = new_block.body.tree_hash_root();
 
         // Compute the state root
         let compute_state_root_timer =
             start_timer_vec(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
-        new_block.message.state_root = state.tree_hash_root();
+        new_block.state_root = state.tree_hash_root();
         stop_timer(compute_state_root_timer);
 
-        Ok(new_block.message)
+        Ok((new_block, signatures))
     }
 
     pub async fn build_attestation_data(&self, slot: u64) -> anyhow::Result<AttestationData> {
@@ -337,6 +361,7 @@ impl LeanChain {
                         .get(self.head)?
                         .ok_or_else(|| anyhow!("Block not found for head: {}", self.head))?
                         .message
+                        .block
                         .slot,
                 },
                 self.get_attestation_target(
@@ -347,7 +372,6 @@ impl LeanChain {
                 db.latest_justified_provider().get()?,
             )
         };
-
         Ok(AttestationData {
             slot,
             head,
@@ -360,8 +384,12 @@ impl LeanChain {
     ///
     /// See lean specification:
     /// <https://github.com/leanEthereum/leanSpec/blob/ee16b19825a1f358b00a6fc2d7847be549daa03b/docs/client/forkchoice.md?plain=1#L314-L342>
-    pub async fn on_block(&mut self, signed_block: SignedBlock) -> anyhow::Result<()> {
-        let block_hash = signed_block.message.tree_hash_root();
+    pub async fn on_block(
+        &mut self,
+        signed_block_with_attestation: SignedBlockWithAttestation,
+    ) -> anyhow::Result<()> {
+        let block = &signed_block_with_attestation.message.block;
+        let block_hash = signed_block_with_attestation.message.block.tree_hash_root();
 
         let (lean_block_provider, latest_justified_provider, lean_state_provider) = {
             let db = self.store.lock().await;
@@ -377,21 +405,28 @@ impl LeanChain {
             return Ok(());
         }
 
-        let mut state = lean_state_provider
-            .get(signed_block.message.parent_root)?
-            .ok_or_else(|| {
-                anyhow!(
-                    "Parent state not found for block: {block_hash}, parent: {}",
-                    signed_block.message.parent_root
-                )
-            })?;
-        state.state_transition(&signed_block, true, true)?;
+        let mut state = lean_state_provider.get(block.parent_root)?.ok_or_else(|| {
+            anyhow!(
+                "Parent state not found for block: {block_hash}, parent: {}",
+                block.parent_root
+            )
+        })?;
 
-        let attestations = signed_block.message.body.attestations.clone();
-        lean_block_provider.insert(block_hash, signed_block)?;
+        // TODO: Add signature validation once spec is complete.
+        // Tracking issue: https://github.com/ReamLabs/ream/issues/881
+        state.state_transition(block, true, true)?;
+
+        let mut signed_attestations = vec![];
+        for attestation in &block.body.attestations {
+            signed_attestations.push(SignedAttestation {
+                message: attestation.clone(),
+                signature: FixedBytes::<4000>::default(),
+            });
+        }
+        lean_block_provider.insert(block_hash, signed_block_with_attestation)?;
         latest_justified_provider.insert(state.latest_justified)?;
         lean_state_provider.insert(block_hash, state)?;
-        self.on_attestation_from_block(attestations).await?;
+        self.on_attestation_from_block(signed_attestations).await?;
         self.update_head().await?;
 
         Ok(())

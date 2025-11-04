@@ -14,7 +14,7 @@ use futures::{
 };
 use libp2p::{OutboundUpgrade, bytes::Buf, core::UpgradeInfo};
 use ream_consensus_beacon::{blob_sidecar::BlobSidecar, electra::beacon_block::SignedBeaconBlock};
-use ream_consensus_lean::block::SignedBlock;
+use ream_consensus_lean::block::SignedBlockWithAttestation;
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_network_spec::networks::beacon_network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};
@@ -252,7 +252,7 @@ impl Decoder for OutboundSSZSnappyCodec {
                                 ),
                                 LeanSupportedProtocol::BlocksByRootV1 => {
                                     LeanResponseMessage::BlocksByRoot(Arc::new(
-                                        SignedBlock::from_ssz_bytes(&buf)
+                                        SignedBlockWithAttestation::from_ssz_bytes(&buf)
                                             .map_err(ReqRespError::from)?,
                                     ))
                                 }

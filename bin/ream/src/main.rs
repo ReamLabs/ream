@@ -7,7 +7,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use alloy_primitives::{FixedBytes, hex};
+use alloy_primitives::hex;
 use bip39::Mnemonic;
 use clap::Parser;
 use libp2p_identity::secp256k1;
@@ -32,7 +32,11 @@ use ream_chain_lean::{
     p2p_request::LeanP2PRequest, service::LeanChainService,
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
-use ream_consensus_lean::block::SignedBlock;
+use ream_consensus_lean::{
+    attestation::{Attestation, AttestationData},
+    block::{BlockWithAttestation, SignedBlockWithAttestation},
+    checkpoint::Checkpoint,
+};
 use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
 };
@@ -65,6 +69,7 @@ use ream_validator_beacon::{
 use ream_validator_lean::{
     registry::load_validator_registry, service::ValidatorService as LeanValidatorService,
 };
+use ssz_types::VariableList;
 use tokio::{sync::mpsc, time::Instant};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -169,9 +174,20 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // Initialize the lean chain with genesis block and state.
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
     let (lean_chain_writer, lean_chain_reader) = Writer::new(LeanChain::new(
-        SignedBlock {
-            message: genesis_block,
-            signature: FixedBytes::default(),
+        SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: genesis_block,
+                proposer_attestation: Attestation {
+                    validator_id: 0,
+                    data: AttestationData {
+                        slot: 0,
+                        head: Checkpoint::default(),
+                        target: Checkpoint::default(),
+                        source: Checkpoint::default(),
+                    },
+                },
+            },
+            signature: VariableList::default(),
         },
         genesis_state,
         lean_db,
