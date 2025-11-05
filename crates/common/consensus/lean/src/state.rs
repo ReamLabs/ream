@@ -3,14 +3,12 @@ use std::collections::HashMap;
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
 use itertools::Itertools;
-use ream_metrics::{FINALIZED_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitList, VariableList,
     typenum::{U4096, U262144, U1073741824},
 };
-use tracing::info;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
@@ -19,7 +17,6 @@ use crate::{
     block::{Block, BlockBody, BlockHeader},
     checkpoint::Checkpoint,
     config::Config,
-    is_justifiable_slot,
     validator::Validator,
 };
 
@@ -299,173 +296,57 @@ impl LeanState {
         Ok(())
     }
 
+    /// Apply attestations and update justification/finalization, according to the Lean Consensus
+    /// 3SF-mini rules.
     pub fn process_attestations(&mut self, attestations: &[Attestation]) -> anyhow::Result<()> {
-        // get justifications, justified slots and historical block hashes are
-        // already up to date as per the processing in process_block_header
-        let mut justifications_map = self.get_justifications()?;
-
         for attestation in attestations {
-            // Ignore attestations whose source is not already justified,
-            // or whose target is not in the history, or whose target is not a
-            // valid justifiable slot
-            if !self
-                .justified_slots
-                .get(attestation.source().slot as usize)
-                .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
-            {
-                info!(
-                    reason = "Source slot not justified",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
+            let attestation_data = &attestation.data;
+            let source = attestation_data.source;
+            let target = attestation_data.target;
+
+            // Validate that this is a reasonable attestation (source comes before target).
+            if source.slot >= target.slot {
                 continue;
             }
 
-            // This condition is missing in 3sf mini but has been added here because
-            // we don't want to re-introduce the target again for remaining attestations if
-            // the slot is already justified and its tracking already cleared out
-            // from justifications map
-            if self
-                .justified_slots
-                .get(attestation.target().slot as usize)
-                .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
-            {
-                info!(
-                    reason = "Target slot already justified",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
-                continue;
-            }
+            let source_slot = source.slot;
+            let target_slot = target.slot;
 
-            if attestation.source().root
-                != *self
-                    .historical_block_hashes
-                    .get(attestation.source().slot as usize)
-                    .ok_or(anyhow!("Source slot not found in historical_block_hashes"))?
-            {
-                info!(
-                    reason = "Source block not in historical block hashes",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
-                continue;
-            }
-
-            if attestation.target().root
-                != *self
-                    .historical_block_hashes
-                    .get(attestation.target().slot as usize)
-                    .ok_or(anyhow!("Target slot not found in historical_block_hashes"))?
-            {
-                info!(
-                    reason = "Target block not in historical block hashes",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
-                continue;
-            }
-
-            if attestation.target().slot <= attestation.source().slot {
-                info!(
-                    reason = "Target slot not greater than source slot",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
-                continue;
-            }
-
-            if !is_justifiable_slot(self.latest_finalized.slot, attestation.target().slot) {
-                info!(
-                    reason = "Target slot not justifiable",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
-                continue;
-            }
-
-            // Track attempts to justify new hashes
-            let justifications = justifications_map
-                .entry(attestation.target().root)
-                .or_insert(
-                    BitList::with_capacity(self.validators.len()).map_err(|err| {
-                        anyhow!(
-                            "Failed to initialize justification for root {:?}: {err:?}",
-                            &attestation.target().root
-                        )
-                    })?,
-                );
-
-            justifications
-                .set(attestation.validator_id as usize, true)
-                .map_err(|err| {
-                    anyhow!(
-                        "Failed to set validator {:?}'s justification for root {:?}: {err:?}",
-                        attestation.validator_id,
-                        &attestation.target().root
-                    )
-                })?;
-
-            let count = justifications.num_set_bits();
-
-            // If 2/3 attestations for the same new valid hash to justify
-            // in 3sf mini this is strict equality, but we have updated it to >=
-            // also have modified it from count >= (2 * state.config.num_validators) // 3
-            // to prevent integer division which could lead to less than 2/3 of validators
-            // justifying specially if the num_validators is low in testing scenarios
-            if 3 * count >= (2 * self.validators.len()) {
-                self.latest_justified = attestation.target();
+            let source_is_justified = if (source_slot as usize) < self.justified_slots.len() {
                 self.justified_slots
-                    .set(attestation.target().slot as usize, true)
-                    .map_err(|err| {
-                        anyhow!(
-                            "Failed to set justified slot for slot {}: {err:?}",
-                            attestation.target().slot
-                        )
-                    })?;
+                    .get(source_slot as usize)
+                    .map_err(|err| anyhow!("Could not justify source: {err:?}"))?
+            } else {
+                continue;
+            };
 
-                justifications_map.remove(&attestation.target().root);
+            if source_is_justified
+                && (target_slot as usize) < self.justified_slots.len()
+                && self
+                    .justified_slots
+                    .get(target_slot as usize)
+                    .map_err(|err| anyhow!("Could not get target slot: {err:?}"))?
+            {
+                // Target is already justified, check for finalization.
+                if source.slot + 1 == target.slot && self.latest_justified.slot < target.slot {
+                    self.latest_finalized = source;
+                    self.latest_justified = target;
+                }
+            } else if source_is_justified {
+                if self.justified_slots.len() as u64 <= target_slot {
+                    let new_bitlist = BitList::with_capacity(target_slot as usize + 1)
+                        .map_err(|err| anyhow!("Could not get BitList: {err:?}"))?;
+                    self.justified_slots = new_bitlist.union(&self.justified_slots)
+                }
+                self.justified_slots
+                    .set(target_slot as usize, true)
+                    .map_err(|err| anyhow!("Could not set target slot: {err:?}"))?;
 
-                info!(
-                    slot = self.latest_justified.slot,
-                    root = ?self.latest_justified.root,
-                    "Justification event",
-                );
-                set_int_gauge_vec(&JUSTIFIED_SLOT, self.latest_justified.slot as i64, &[]);
-
-                // Finalization: if the target is the next valid justifiable
-                // hash after the source
-                let is_target_next_valid_justifiable_slot = !((attestation.source().slot + 1)
-                    ..attestation.target().slot)
-                    .any(|slot| is_justifiable_slot(self.latest_finalized.slot, slot));
-
-                if is_target_next_valid_justifiable_slot {
-                    self.latest_finalized = attestation.source();
-
-                    info!(
-                        slot = self.latest_finalized.slot,
-                        root = ?self.latest_finalized.root,
-                        "Finalization event",
-                    );
-                    set_int_gauge_vec(&FINALIZED_SLOT, self.latest_finalized.slot as i64, &[]);
+                if target.slot > self.latest_justified.slot {
+                    self.latest_justified = target;
                 }
             }
         }
-
-        // flatten and set updated justifications back to the state
-        self.set_justifications(justifications_map)?;
 
         Ok(())
     }
