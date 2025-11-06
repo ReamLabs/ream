@@ -5857,6 +5857,7 @@ dependencies = [
  "ream-p2p",
  "ream-rpc-common",
  "ream-storage",
+ "ream-validator-beacon",
  "serde",
  "serde_json",
  "ssz_types",

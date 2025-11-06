@@ -23,6 +23,7 @@ use ream_consensus_misc::{
 use ream_fork_choice::store::Store;
 use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::Field};
+use ream_validator_beacon::aggregate_and_proof::SignedAggregateAndProof;
 use serde::Serialize;
 
 use super::state::get_state_from_id;
@@ -503,4 +504,35 @@ pub async fn post_beacon_committee_selections(
     _selections: Json<Vec<BeaconCommitteeSelection>>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::NotImplemented())
+}
+
+#[post("validator/aggregate_and_proofs")]
+pub async fn post_aggregate_and_proofs(
+    db: Data<BeaconDB>,
+    operation_pool: Data<Arc<OperationPool>>,
+    _aggregates: Json<Vec<SignedAggregateAndProof>>,
+) -> Result<impl Responder, ApiError> {
+    let store = Store {
+        db: db.get_ref().clone(),
+        operation_pool: operation_pool.get_ref().clone(),
+    };
+
+    if store.is_syncing().map_err(|err| {
+        ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
+    })? {
+        return Err(ApiError::UnderSyncing);
+    }
+
+    let aggregates = _aggregates.into_inner().into_iter().collect();
+
+    let highest_slot = db
+        .slot_index_provider()
+        .get_highest_slot()
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get_highest_slot, error: {err:?}"))
+        })?
+        .ok_or(ApiError::NotFound(
+            "Failed to find highest slot".to_string(),
+        ))?;
+    let state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
 }
