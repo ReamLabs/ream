@@ -10,10 +10,6 @@ fn genesis_block(state_root: B256) -> Block {
     }
 }
 
-fn genesis_state(num_validators: u64, validators: Option<Vec<Validator>>) -> LeanState {
-    LeanState::new(num_validators, validators)
-}
-
 /// Setup the genesis block and state for the Lean chain.
 ///
 /// See lean specification:
@@ -24,7 +20,7 @@ pub fn setup_genesis() -> (Block, LeanState) {
         (network_spec.num_validators, network_spec.genesis_time)
     };
 
-    let genesis_state = genesis_state(
+    let genesis_state = LeanState::generate_genesis(
         genesis_time,
         Some(Validator::generate_default_validators(
             num_validators as usize,

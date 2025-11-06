@@ -19,3 +19,7 @@ impl Validator {
             .collect()
     }
 }
+
+pub fn is_proposer(validator_index: u64, slot: u64, validator_count: u64) -> bool {
+    slot % validator_count == validator_index
+}

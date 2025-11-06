@@ -295,7 +295,7 @@ impl LeanChain {
         let mut signatures = vec![];
 
         // Apply state transition so the state is brought up to the expected slot
-        state.state_transition(&new_block, true, false)?;
+        state.state_transition(&new_block, true)?;
 
         // Keep attempt to add valid attestations from the list of available attestations
         let add_attestations_timer =
@@ -414,7 +414,7 @@ impl LeanChain {
 
         // TODO: Add signature validation once spec is complete.
         // Tracking issue: https://github.com/ReamLabs/ream/issues/881
-        state.state_transition(block, true, true)?;
+        state.state_transition(block, true)?;
 
         let mut signed_attestations = vec![];
         for attestation in &block.body.attestations {
