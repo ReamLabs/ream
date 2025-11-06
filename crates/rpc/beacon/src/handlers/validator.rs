@@ -25,7 +25,7 @@ use ream_consensus_misc::{
 };
 use ream_fork_choice_beacon::store::Store;
 use ream_operation_pool::OperationPool;
-use ream_storage::{db::beacon::BeaconDB, tables::field::Field};
+use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof, constants::DOMAIN_SELECTION_PROOF,
 };
