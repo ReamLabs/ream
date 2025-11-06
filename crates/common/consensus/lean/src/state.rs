@@ -201,7 +201,10 @@ impl LeanState {
     /// Validate the block header and update header-linked state.
     fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
         // The block must be for the current slot.
-        ensure!(block.slot == self.slot, "Block slot mismatch");
+        ensure!(
+            block.slot == self.slot,
+            "Block slot number does not match state slot number"
+        );
         // Block is older than latest header
         ensure!(
             block.slot > self.latest_block_header.slot,
@@ -210,7 +213,7 @@ impl LeanState {
         // The proposer must be the expected validator for this slot.
         ensure!(
             self.is_proposer(block.proposer_index),
-            "Incorrect block proposer"
+            "Block proposer index does not match the expected proposer index"
         );
 
         // The declared parent must match the hash of the latest block header.
@@ -786,11 +789,11 @@ mod test {
 
         let result = genesis_state.process_block_header(&block);
         assert!(result.is_err());
+        let result_error_string = result.unwrap_err().to_string();
         assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Block proposer index does not match the expected proposer index")
+            result_error_string
+                .contains("Block proposer index does not match the expected proposer index"),
+            "unexpeceted result: {result_error_string}"
         );
     }
 
