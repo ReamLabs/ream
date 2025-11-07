@@ -26,7 +26,13 @@ pub async fn get_state(
                 .root)
         }
         ID::Genesis => Ok(lean_chain.genesis_hash),
-        ID::Head => Ok(lean_chain.head),
+        ID::Head => lean_chain
+            .store
+            .lock()
+            .await
+            .lean_head_provider()
+            .get()
+            .map_err(|err| ApiError::InternalError(format!("Could not get head: {err:?}"))),
         ID::Justified => {
             let db = lean_chain.store.lock().await;
             Ok(db

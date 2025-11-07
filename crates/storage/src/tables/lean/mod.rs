@@ -2,6 +2,7 @@ pub mod latest_finalized;
 pub mod latest_justified;
 pub mod latest_known_attestation;
 pub mod lean_block;
+pub mod lean_head;
 pub mod lean_state;
 pub mod lean_time;
 pub mod slot_index;

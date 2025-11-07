@@ -4,7 +4,7 @@ use ream_consensus_lean::{
     block::{Block, SignedBlockWithAttestation},
 };
 use ream_network_spec::networks::lean_network_spec;
-use ream_storage::tables::table::Table;
+use ream_storage::tables::{field::Field, table::Table};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, error, info, warn};
 use tree_hash::TreeHash;
@@ -57,7 +57,7 @@ impl LeanChainService {
                             // First tick (t=0/4): Log current head state, including its justification/finalization status.
                             let (head, store) = {
                                 let lean_chain = self.lean_chain.read().await;
-                                (lean_chain.head, lean_chain.store.clone())
+                                (lean_chain.store.lock().await.lean_head_provider().get()?, lean_chain.store.clone())
                             };
                             let head_state = store.lock().await
                                 .lean_state_provider()

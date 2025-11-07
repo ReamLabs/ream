@@ -5,8 +5,8 @@ use redb::Database;
 use crate::tables::lean::{
     latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
     latest_known_attestation::LatestKnownAttestationTable, lean_block::LeanBlockTable,
-    lean_state::LeanStateTable, lean_time::LeanTimeField, slot_index::SlotIndexTable,
-    state_root_index::StateRootIndexTable,
+    lean_head::LeanHeadField, lean_state::LeanStateTable, lean_time::LeanTimeField,
+    slot_index::SlotIndexTable, state_root_index::StateRootIndexTable,
 };
 
 #[derive(Clone, Debug)]
@@ -58,6 +58,12 @@ impl LeanDB {
 
     pub fn lean_time_provider(&self) -> LeanTimeField {
         LeanTimeField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn lean_head_provider(&self) -> LeanHeadField {
+        LeanHeadField {
             db: self.db.clone(),
         }
     }
