@@ -14,8 +14,8 @@ use ream_api_types_beacon::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_bls::{PublicKey, traits::Verifiable};
 use ream_consensus_beacon::{
-    beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState,
-    sync_committe_selection::SyncCommitteeSelection,
+    attestation, beacon_committee_selection::BeaconCommitteeSelection,
+    electra::beacon_state::BeaconState, sync_committe_selection::SyncCommitteeSelection,
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
@@ -530,7 +530,7 @@ pub async fn post_aggregate_and_proofs(
 
     for signed_aggregate in aggregates.into_inner() {
         let aggregate_and_proof = signed_aggregate.message;
-        let attestation = aggregate_and_proof.aggregate;
+        let attestation = aggregate_and_proof.aggregate.clone();
 
         let aggregator = state
             .validators
@@ -562,7 +562,9 @@ pub async fn post_aggregate_and_proofs(
             .map_err(|_| ApiError::InternalError("Failed due to internal error".to_string()))?;
         let committee_pub_keys: Vec<&PublicKey> = committee
             .iter()
-            .map(|&validator_index| &state.validators[validator_index as usize].public_key)
+            .enumerate()
+            .filter(|(i, _)| attestation.aggregation_bits.get(*i).unwrap_or(false))
+            .map(|(i, _)| &state.validators[committee[i] as usize].public_key)
             .collect();
 
         let aggregate_signature_domain =
@@ -588,7 +590,7 @@ pub async fn post_aggregate_and_proofs(
             Some(compute_epoch_at_slot(attestation.data.slot)),
         );
         let aggregate_proof_signing_root =
-            compute_signing_root(attestation.data, aggregate_proof_domain);
+            compute_signing_root(aggregate_and_proof, aggregate_proof_domain);
 
         if !signed_aggregate
             .signature
@@ -604,5 +606,7 @@ pub async fn post_aggregate_and_proofs(
         }
     }
 
-    Ok(HttpResponse::Ok().finish())
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "data": "success"
+    })))
 }
