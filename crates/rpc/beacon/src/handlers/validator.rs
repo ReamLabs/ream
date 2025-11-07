@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, fmt::format, sync::Arc};
 
 use actix_web::{
     HttpResponse, Responder, get, post,
@@ -12,18 +12,24 @@ use ream_api_types_beacon::{
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_bls::PublicKey;
+use ream_bls::{PublicKey, traits::Verifiable};
 use ream_consensus_beacon::{
     beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState,
     sync_committe_selection::SyncCommitteeSelection,
 };
 use ream_consensus_misc::{
-    attestation_data::AttestationData, constants::beacon::SLOTS_PER_EPOCH, validator::Validator,
+    attestation_data::AttestationData,
+    constants::beacon::{DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, SLOTS_PER_EPOCH},
+    misc::{compute_epoch_at_slot, compute_signing_root},
+    validator::Validator,
 };
 use ream_fork_choice::store::Store;
 use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::Field};
-use ream_validator_beacon::aggregate_and_proof::SignedAggregateAndProof;
+use ream_validator_beacon::{
+    aggregate_and_proof::{self, SignedAggregateAndProof},
+    constants::DOMAIN_SELECTION_PROOF,
+};
 use serde::Serialize;
 
 use super::state::get_state_from_id;
@@ -506,25 +512,11 @@ pub async fn post_beacon_committee_selections(
     Ok(HttpResponse::NotImplemented())
 }
 
-#[post("validator/aggregate_and_proofs")]
+#[post("/validator/aggregate_and_proofs")]
 pub async fn post_aggregate_and_proofs(
     db: Data<BeaconDB>,
-    operation_pool: Data<Arc<OperationPool>>,
-    _aggregates: Json<Vec<SignedAggregateAndProof>>,
+    aggregates: Json<Vec<SignedAggregateAndProof>>,
 ) -> Result<impl Responder, ApiError> {
-    let store = Store {
-        db: db.get_ref().clone(),
-        operation_pool: operation_pool.get_ref().clone(),
-    };
-
-    if store.is_syncing().map_err(|err| {
-        ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
-    })? {
-        return Err(ApiError::UnderSyncing);
-    }
-
-    let aggregates = _aggregates.into_inner().into_iter().collect();
-
     let highest_slot = db
         .slot_index_provider()
         .get_highest_slot()
@@ -535,4 +527,82 @@ pub async fn post_aggregate_and_proofs(
             "Failed to find highest slot".to_string(),
         ))?;
     let state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
+
+    for signed_aggregate in aggregates.into_inner() {
+        let aggregate_and_proof = signed_aggregate.message;
+        let attestation = aggregate_and_proof.aggregate;
+
+        let aggregator = state
+            .validators
+            .get(aggregate_and_proof.aggregator_index as usize)
+            .ok_or_else(|| ApiError::NotFound("Aggregator not found".to_string()))?;
+
+        let aggregator_selection_domain = state.get_domain(
+            DOMAIN_SELECTION_PROOF,
+            Some(compute_epoch_at_slot(attestation.data.slot)),
+        );
+        let aggregator_selection_signing_root =
+            compute_signing_root(attestation.data.slot, aggregator_selection_domain);
+
+        if !aggregate_and_proof
+            .selection_proof
+            .verify(
+                &aggregator.public_key,
+                aggregator_selection_signing_root.as_ref(),
+            )
+            .map_err(|_| ApiError::InternalError("Failed due to internal error".to_string()))?
+        {
+            return Err(ApiError::BadRequest(
+                "Aggregator selection proof is not valid".to_string(),
+            ));
+        }
+
+        let committee = state
+            .get_beacon_committee(attestation.data.slot, attestation.data.index)
+            .map_err(|_| ApiError::InternalError("Failed due to internal error".to_string()))?;
+        let committee_pub_keys: Vec<&PublicKey> = committee
+            .iter()
+            .map(|&validator_index| &state.validators[validator_index as usize].public_key)
+            .collect();
+
+        let aggregate_signature_domain =
+            state.get_domain(DOMAIN_BEACON_ATTESTER, Some(attestation.data.target.epoch));
+        let aggregate_signature_signing_root =
+            compute_signing_root(&attestation.data, aggregate_signature_domain);
+
+        if !attestation
+            .signature
+            .fast_aggregate_verify(
+                committee_pub_keys,
+                aggregate_signature_signing_root.as_ref(),
+            )
+            .map_err(|_| ApiError::InternalError("Failed due to internal error".to_string()))?
+        {
+            return Err(ApiError::BadRequest(
+                "Aggregated signature verification failed".to_string(),
+            ));
+        }
+
+        let aggregate_proof_domain = state.get_domain(
+            DOMAIN_AGGREGATE_AND_PROOF,
+            Some(compute_epoch_at_slot(attestation.data.slot)),
+        );
+        let aggregate_proof_signing_root =
+            compute_signing_root(attestation.data, aggregate_proof_domain);
+
+        if !signed_aggregate
+            .signature
+            .verify(
+                &aggregator.public_key,
+                aggregate_proof_signing_root.as_ref(),
+            )
+            .map_err(|_| ApiError::InternalError("Failed due to internal error".to_string()))?
+        {
+            return Err(ApiError::BadRequest(
+                "Aggregate proof verification failed".to_string(),
+            ));
+        }
+    }
+
+    Ok(HttpResponse::Ok().finish())
 }
