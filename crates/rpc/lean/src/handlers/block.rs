@@ -35,7 +35,11 @@ pub async fn get_block_by_id(
             .get()
             .map(|checkpoint| checkpoint.root)
             .map_err(|err| ApiError::InternalError(format!("No latest finalized hash: {err:?}"))),
-        ID::Genesis => Ok(lean_chain.genesis_hash),
+        ID::Genesis => {
+            return Err(ApiError::NotFound(
+                "This ID type is currently not supported".to_string(),
+            ));
+        }
         ID::Head => lean_chain
             .store
             .lock()
