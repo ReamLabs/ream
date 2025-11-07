@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::format, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use actix_web::{
     HttpResponse, Responder, get, post,
@@ -14,8 +14,8 @@ use ream_api_types_beacon::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_bls::{PublicKey, traits::Verifiable};
 use ream_consensus_beacon::{
-    attestation, beacon_committee_selection::BeaconCommitteeSelection,
-    electra::beacon_state::BeaconState, sync_committe_selection::SyncCommitteeSelection,
+    beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState,
+    sync_committe_selection::SyncCommitteeSelection,
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
@@ -27,8 +27,7 @@ use ream_fork_choice::store::Store;
 use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::Field};
 use ream_validator_beacon::{
-    aggregate_and_proof::{self, SignedAggregateAndProof},
-    constants::DOMAIN_SELECTION_PROOF,
+    aggregate_and_proof::SignedAggregateAndProof, constants::DOMAIN_SELECTION_PROOF,
 };
 use serde::Serialize;
 
