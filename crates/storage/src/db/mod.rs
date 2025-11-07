@@ -29,8 +29,9 @@ use crate::{
         },
         lean::{
             latest_finalized::LATEST_FINALIZED_FIELD, latest_justified::LATEST_JUSTIFIED_FIELD,
-            lean_block::LEAN_BLOCK_TABLE, lean_state::LEAN_STATE_TABLE, lean_time::LEAN_TIME_FIELD,
-            slot_index::LEAN_SLOT_INDEX_TABLE, state_root_index::LEAN_STATE_ROOT_INDEX_TABLE,
+            lean_block::LEAN_BLOCK_TABLE, lean_head::LEAN_HEAD_FIELD, lean_state::LEAN_STATE_TABLE,
+            lean_time::LEAN_TIME_FIELD, slot_index::LEAN_SLOT_INDEX_TABLE,
+            state_root_index::LEAN_STATE_ROOT_INDEX_TABLE,
         },
     },
 };
@@ -100,6 +101,7 @@ impl ReamDB {
         write_txn.open_table(LEAN_SLOT_INDEX_TABLE)?;
         write_txn.open_table(LEAN_STATE_ROOT_INDEX_TABLE)?;
         write_txn.open_table(LEAN_TIME_FIELD)?;
+        write_txn.open_table(LEAN_HEAD_FIELD)?;
         write_txn.commit()?;
 
         Ok(LeanDB {

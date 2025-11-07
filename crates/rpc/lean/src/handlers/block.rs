@@ -36,7 +36,13 @@ pub async fn get_block_by_id(
             .map(|checkpoint| checkpoint.root)
             .map_err(|err| ApiError::InternalError(format!("No latest finalized hash: {err:?}"))),
         ID::Genesis => Ok(lean_chain.genesis_hash),
-        ID::Head => Ok(lean_chain.head),
+        ID::Head => lean_chain
+            .store
+            .lock()
+            .await
+            .lean_head_provider()
+            .get()
+            .map_err(|err| ApiError::InternalError(format!("Could not get head: {err:?}"))),
         ID::Justified => lean_chain
             .store
             .lock()

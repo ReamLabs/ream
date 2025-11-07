@@ -41,8 +41,6 @@ pub struct LeanChain {
     /// Block that it is safe to use to attestation as the target.
     /// Diverge from Python implementation: Use genesis hash instead of `None`.
     pub safe_target: B256,
-    /// Head of the chain.
-    pub head: B256,
 }
 
 impl LeanChain {
@@ -72,7 +70,6 @@ impl LeanChain {
             genesis_hash: genesis_block_hash,
             num_validators: number_of_validators as u64,
             safe_target: genesis_block_hash,
-            head: genesis_block_hash,
         }
     }
 
@@ -82,7 +79,7 @@ impl LeanChain {
             .await
             .slot_index_provider()
             .get(slot)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))
+            .ok_or_else(|| anyhow!("Block not found in chain for slot: {slot}"))
     }
 
     pub async fn get_block_by_slot(&self, slot: u64) -> anyhow::Result<SignedBlockWithAttestation> {
@@ -93,11 +90,11 @@ impl LeanChain {
 
         let block_hash = lean_slot_provider
             .get(slot)?
-            .ok_or_else(|| anyhow!("Block hash not found in chain for head: {}", self.head))?;
+            .ok_or_else(|| anyhow!("Block hash not found in chain for slot: {slot}"))?;
 
         lean_block_provider
             .get(block_hash)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))
+            .ok_or_else(|| anyhow!("Block not found in chain for slot: {slot}"))
     }
 
     /// Compute the latest block that the validator is allowed to choose as the target
@@ -146,25 +143,27 @@ impl LeanChain {
     pub async fn update_head(&mut self) -> anyhow::Result<()> {
         let (latest_known_attestations, latest_justified_root, latest_finalized_checkpoint) = {
             let db = self.store.lock().await;
+            let head = db.lean_head_provider().get()?;
             (
                 db.latest_known_attestations_provider()
                     .get_all_attestations()?,
                 db.latest_justified_provider().get()?.root,
                 db.lean_state_provider()
-                    .get(self.head)?
-                    .ok_or_else(|| anyhow!("State not found in chain for head: {}", self.head))?
+                    .get(head)?
+                    .ok_or_else(|| anyhow!("State not found in chain for head: {head}"))?
                     .latest_finalized,
             )
         };
 
         // Update head.
-        self.head = get_fork_choice_head(
+        let head = get_fork_choice_head(
             self.store.clone(),
             &latest_known_attestations,
             &latest_justified_root,
             0,
         )
         .await?;
+        self.store.lock().await.lean_head_provider().insert(head)?;
 
         // Send latest head slot to metrics
         let head_slot = self
@@ -172,8 +171,8 @@ impl LeanChain {
             .lock()
             .await
             .lean_block_provider()
-            .get(self.head)?
-            .ok_or_else(|| anyhow!("Block not found for head: {}", self.head))?
+            .get(head)?
+            .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
             .message
             .block
             .slot;
@@ -202,9 +201,10 @@ impl LeanChain {
         finalized_slot: u64,
     ) -> anyhow::Result<Checkpoint> {
         // Start from current head
+        let head = self.store.lock().await.lean_head_provider().get()?;
         let mut target_block = lean_block_provider
-            .get(self.head)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {}", self.head))?
+            .get(head)?
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {head}"))?
             .message
             .block;
 
@@ -258,7 +258,7 @@ impl LeanChain {
     /// <https://github.com/leanEthereum/leanSpec/blob/4b750f2748a3718fe3e1e9cdb3c65e3a7ddabff5/src/lean_spec/subspecs/forkchoice/store.py#L319-L339>
     pub async fn get_proposal_head(&mut self) -> anyhow::Result<B256> {
         self.accept_new_attestations().await?;
-        Ok(self.head)
+        Ok(self.store.lock().await.lean_head_provider().get()?)
     }
 
     pub async fn propose_block(
@@ -353,13 +353,14 @@ impl LeanChain {
     pub async fn build_attestation_data(&self, slot: u64) -> anyhow::Result<AttestationData> {
         let (head, target, source) = {
             let db = self.store.lock().await;
+            let head = db.lean_head_provider().get()?;
             (
                 Checkpoint {
-                    root: self.head,
+                    root: head,
                     slot: db
                         .lean_block_provider()
-                        .get(self.head)?
-                        .ok_or_else(|| anyhow!("Block not found for head: {}", self.head))?
+                        .get(head)?
+                        .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
                         .message
                         .block
                         .slot,
