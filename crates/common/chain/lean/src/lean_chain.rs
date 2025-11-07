@@ -34,13 +34,6 @@ pub struct LeanChain {
     /// Attestations that we have received but not yet taken into account.
     /// Maps validator id to signed attestation.
     pub latest_new_attestations: HashMap<u64, SignedAttestation>,
-    /// Initialize the chain with the genesis block.
-    pub genesis_hash: B256,
-    /// Number of validators.
-    pub num_validators: u64,
-    /// Block that it is safe to use to attestation as the target.
-    /// Diverge from Python implementation: Use genesis hash instead of `None`.
-    pub safe_target: B256,
 }
 
 impl LeanChain {
@@ -50,7 +43,6 @@ impl LeanChain {
         db: LeanDB,
     ) -> LeanChain {
         let genesis_block_hash = genesis_block.message.block.tree_hash_root();
-        let number_of_validators = genesis_state.validators.len();
         db.lean_block_provider()
             .insert(genesis_block_hash, genesis_block)
             .expect("Failed to insert genesis block");
@@ -67,9 +59,6 @@ impl LeanChain {
         LeanChain {
             store: Arc::new(Mutex::new(db)),
             latest_new_attestations: HashMap::new(),
-            genesis_hash: genesis_block_hash,
-            num_validators: number_of_validators as u64,
-            safe_target: genesis_block_hash,
         }
     }
 
@@ -105,7 +94,7 @@ impl LeanChain {
     pub async fn update_safe_target(&mut self) -> anyhow::Result<()> {
         // 2/3rd majority min voting weight for target selection
         // Note that we use ceiling division here.
-        let min_target_score = (self.num_validators * 2).div_ceil(3);
+        let min_target_score = (lean_network_spec().num_validators * 2).div_ceil(3);
         let latest_justified_root = self
             .store
             .lock()
@@ -114,13 +103,15 @@ impl LeanChain {
             .get()?
             .root;
 
-        self.safe_target = get_fork_choice_head(
-            self.store.clone(),
-            &self.latest_new_attestations,
-            &latest_justified_root,
-            min_target_score,
-        )
-        .await?;
+        self.store.lock().await.lean_safe_target_provider().insert(
+            get_fork_choice_head(
+                self.store.clone(),
+                &self.latest_new_attestations,
+                &latest_justified_root,
+                min_target_score,
+            )
+            .await?,
+        )?;
 
         Ok(())
     }
@@ -210,11 +201,10 @@ impl LeanChain {
 
         // Walk back up to 3 steps if safe target is newer
         for _ in 0..3 {
+            let safe_target = self.store.lock().await.lean_safe_target_provider().get()?;
             let safe_target_block = lean_block_provider
-                .get(self.safe_target)?
-                .ok_or_else(|| {
-                    anyhow!("Block not found for safe target hash: {}", self.safe_target)
-                })?
+                .get(safe_target)?
+                .ok_or_else(|| anyhow!("Block not found for safe target hash: {safe_target}"))?
                 .message
                 .block;
             if target_block.slot > safe_target_block.slot {

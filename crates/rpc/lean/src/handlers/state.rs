@@ -25,7 +25,11 @@ pub async fn get_state(
                 })?
                 .root)
         }
-        ID::Genesis => Ok(lean_chain.genesis_hash),
+        ID::Genesis => {
+            return Err(ApiError::NotFound(
+                "This ID type is currently not supported".to_string(),
+            ));
+        }
         ID::Head => lean_chain
             .store
             .lock()
