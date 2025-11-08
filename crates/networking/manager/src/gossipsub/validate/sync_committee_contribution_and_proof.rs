@@ -8,7 +8,7 @@ use ream_consensus_misc::{
 };
 use ream_storage::{
     cache::{CacheSyncCommitteeContribution, CachedDB, SyncCommitteeKey},
-    tables::table::Table,
+    tables::table::REDBTable,
 };
 use ream_validator_beacon::{
     constants::{

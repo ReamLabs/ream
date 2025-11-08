@@ -11,7 +11,7 @@ use ream_consensus_misc::{
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
     errors::StoreError,
-    tables::{field::Field, table::Table},
+    tables::{field::Field, table::REDBTable},
 };
 use tree_hash::TreeHash;
 

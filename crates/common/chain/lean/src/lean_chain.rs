@@ -14,7 +14,7 @@ use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::{
     db::lean::LeanDB,
-    tables::{field::Field, lean::lean_block::LeanBlockTable, table::Table},
+    tables::{field::Field, lean::lean_block::LeanBlockTable, table::REDBTable},
 };
 use ream_sync::rwlock::{Reader, Writer};
 use tokio::sync::Mutex;

@@ -6,7 +6,7 @@ use actix_web_lab::extract::Query;
 use ream_api_types_beacon::{query::BlobSidecarQuery, responses::BeaconVersionedResponse};
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
-use ream_storage::{db::beacon::BeaconDB, tables::table::Table};
+use ream_storage::{db::beacon::BeaconDB, tables::table::CustomTable};
 use tree_hash::TreeHash;
 
 use crate::handlers::block::get_beacon_block_from_id;

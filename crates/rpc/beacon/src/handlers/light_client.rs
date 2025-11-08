@@ -16,7 +16,7 @@ use ream_light_client::{
 };
 use ream_storage::{
     db::beacon::BeaconDB,
-    tables::{field::Field, table::Table},
+    tables::{field::Field, table::REDBTable},
 };
 use ssz::Encode;
 use tree_hash::TreeHash;

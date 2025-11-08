@@ -5,52 +5,31 @@ use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinitio
 
 use crate::{
     errors::StoreError,
-    tables::{ssz_encoder::SSZEncoding, table::Table},
+    tables::{ssz_encoder::SSZEncoding, table::REDBTable},
 };
-
-/// Table definition for the Latest Known Attestation table
-///
-/// Key: u64 (validator index)
-/// Value: [SignedAttestation]
-pub(crate) const LATEST_KNOWN_ATTESTATIONS_TABLE: TableDefinition<
-    u64,
-    SSZEncoding<SignedAttestation>,
-> = TableDefinition::new("latest_known_attestation");
 
 pub struct LatestKnownAttestationTable {
     pub db: Arc<Database>,
 }
 
-impl Table for LatestKnownAttestationTable {
+/// Table definition for the Latest Known Attestation table
+///
+/// Key: u64 (validator index)
+/// Value: [SignedAttestation]
+impl REDBTable for LatestKnownAttestationTable {
+    const TABLE_DEFINITION: TableDefinition<'_, u64, SSZEncoding<SignedAttestation>> =
+        TableDefinition::new("latest_known_attestation");
+
     type Key = u64;
+
+    type KeyTableDefinition = u64;
 
     type Value = SignedAttestation;
 
-    fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
-        let read_txn = self.db.begin_read()?;
+    type ValueTableDefinition = SSZEncoding<SignedAttestation>;
 
-        let table = read_txn.open_table(LATEST_KNOWN_ATTESTATIONS_TABLE)?;
-        let result = table.get(key)?;
-        Ok(result.map(|res| res.value()))
-    }
-
-    fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
-        let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate)?;
-        let mut table = write_txn.open_table(LATEST_KNOWN_ATTESTATIONS_TABLE)?;
-        table.insert(key, value)?;
-        drop(table);
-        write_txn.commit()?;
-        Ok(())
-    }
-
-    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
-        let write_txn = self.db.begin_write()?;
-        let mut table = write_txn.open_table(LATEST_KNOWN_ATTESTATIONS_TABLE)?;
-        let value = table.remove(key)?.map(|v| v.value());
-        drop(table);
-        write_txn.commit()?;
-        Ok(value)
+    fn database(&self) -> Arc<Database> {
+        self.db.clone()
     }
 }
 
@@ -63,7 +42,7 @@ impl LatestKnownAttestationTable {
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
 
-        let mut table = write_txn.open_table(LATEST_KNOWN_ATTESTATIONS_TABLE)?;
+        let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
 
         for (key, value) in values {
             table.insert(key, value)?;
@@ -78,7 +57,7 @@ impl LatestKnownAttestationTable {
     /// Get all attestations.
     pub fn get_all_attestations(&self) -> Result<HashMap<u64, SignedAttestation>, StoreError> {
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(LATEST_KNOWN_ATTESTATIONS_TABLE)?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
 
         table
             .iter()?

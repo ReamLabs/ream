@@ -2,55 +2,31 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus_misc::checkpoint::Checkpoint;
-use redb::{Database, Durability, ReadableDatabase, TableDefinition};
+use redb::{Database, TableDefinition};
 
-use crate::{
-    errors::StoreError,
-    tables::{ssz_encoder::SSZEncoding, table::Table},
-};
-
-/// Table definition for the Unrealized Justifications table
-///
-/// Key: unrealized_justifications
-/// Value: Checkpoint
-pub(crate) const UNREALIZED_JUSTIFICATIONS_TABLE: TableDefinition<
-    SSZEncoding<B256>,
-    SSZEncoding<Checkpoint>,
-> = TableDefinition::new("beacon_unrealized_justifications");
+use crate::tables::{ssz_encoder::SSZEncoding, table::REDBTable};
 
 pub struct UnrealizedJustificationsTable {
     pub db: Arc<Database>,
 }
 
-impl Table for UnrealizedJustificationsTable {
+/// Table definition for the Unrealized Justifications table
+///
+/// Key: unrealized_justifications
+/// Value: Checkpoint
+impl REDBTable for UnrealizedJustificationsTable {
+    const TABLE_DEFINITION: TableDefinition<'_, SSZEncoding<B256>, SSZEncoding<Checkpoint>> =
+        TableDefinition::new("beacon_unrealized_justifications");
+
     type Key = B256;
+
+    type KeyTableDefinition = SSZEncoding<B256>;
 
     type Value = Checkpoint;
 
-    fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
-        let read_txn = self.db.begin_read()?;
+    type ValueTableDefinition = SSZEncoding<Checkpoint>;
 
-        let table = read_txn.open_table(UNREALIZED_JUSTIFICATIONS_TABLE)?;
-        let result = table.get(key)?;
-        Ok(result.map(|res| res.value()))
-    }
-
-    fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
-        let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate)?;
-        let mut table = write_txn.open_table(UNREALIZED_JUSTIFICATIONS_TABLE)?;
-        table.insert(key, value)?;
-        drop(table);
-        write_txn.commit()?;
-        Ok(())
-    }
-
-    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
-        let write_txn = self.db.begin_write()?;
-        let mut table = write_txn.open_table(UNREALIZED_JUSTIFICATIONS_TABLE)?;
-        let value = table.remove(key)?.map(|v| v.value());
-        drop(table);
-        write_txn.commit()?;
-        Ok(value)
+    fn database(&self) -> Arc<Database> {
+        self.db.clone()
     }
 }

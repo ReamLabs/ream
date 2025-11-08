@@ -2,55 +2,31 @@ use std::sync::Arc;
 
 use ream_consensus_beacon::electra::beacon_state::BeaconState;
 use ream_consensus_misc::checkpoint::Checkpoint;
-use redb::{Database, Durability, ReadableDatabase, TableDefinition};
+use redb::{Database, TableDefinition};
 
-use crate::{
-    errors::StoreError,
-    tables::{ssz_encoder::SSZEncoding, table::Table},
-};
-
-/// Table definition for the Checkpoint States table
-///
-/// Key: checkpoint_states
-/// Value: BeaconState
-pub(crate) const CHECKPOINT_STATES_TABLE: TableDefinition<
-    SSZEncoding<Checkpoint>,
-    SSZEncoding<BeaconState>,
-> = TableDefinition::new("beacon_checkpoint_states");
+use crate::tables::{ssz_encoder::SSZEncoding, table::REDBTable};
 
 pub struct CheckpointStatesTable {
     pub db: Arc<Database>,
 }
 
-impl Table for CheckpointStatesTable {
+/// Table definition for the Checkpoint States table
+///
+/// Key: checkpoint_states
+/// Value: BeaconState
+impl REDBTable for CheckpointStatesTable {
+    const TABLE_DEFINITION: TableDefinition<'_, SSZEncoding<Checkpoint>, SSZEncoding<BeaconState>> =
+        TableDefinition::new("beacon_checkpoint_states");
+
     type Key = Checkpoint;
+
+    type KeyTableDefinition = SSZEncoding<Checkpoint>;
 
     type Value = BeaconState;
 
-    fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
-        let read_txn = self.db.begin_read()?;
+    type ValueTableDefinition = SSZEncoding<BeaconState>;
 
-        let table = read_txn.open_table(CHECKPOINT_STATES_TABLE)?;
-        let result = table.get(key)?;
-        Ok(result.map(|res| res.value()))
-    }
-
-    fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
-        let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate)?;
-        let mut table = write_txn.open_table(CHECKPOINT_STATES_TABLE)?;
-        table.insert(key, value)?;
-        drop(table);
-        write_txn.commit()?;
-        Ok(())
-    }
-
-    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
-        let write_txn = self.db.begin_write()?;
-        let mut table = write_txn.open_table(CHECKPOINT_STATES_TABLE)?;
-        let value = table.remove(key)?.map(|v| v.value());
-        drop(table);
-        write_txn.commit()?;
-        Ok(value)
+    fn database(&self) -> Arc<Database> {
+        self.db.clone()
     }
 }

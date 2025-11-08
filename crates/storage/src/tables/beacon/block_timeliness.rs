@@ -1,53 +1,31 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-use redb::{Database, Durability, ReadableDatabase, TableDefinition};
+use redb::{Database, TableDefinition};
 
-use crate::{
-    errors::StoreError,
-    tables::{ssz_encoder::SSZEncoding, table::Table},
-};
-
-/// Table definition for the Block Timeliness table
-///
-/// Key: block_timeliness
-/// Value: bool
-pub(crate) const BLOCK_TIMELINESS_TABLE: TableDefinition<SSZEncoding<B256>, SSZEncoding<bool>> =
-    TableDefinition::new("beacon_block_timeliness");
+use crate::tables::{ssz_encoder::SSZEncoding, table::REDBTable};
 
 pub struct BlockTimelinessTable {
     pub db: Arc<Database>,
 }
 
-impl Table for BlockTimelinessTable {
+/// Table definition for the Block Timeliness table
+///
+/// Key: block_timeliness
+/// Value: bool
+impl REDBTable for BlockTimelinessTable {
+    const TABLE_DEFINITION: TableDefinition<'_, SSZEncoding<B256>, SSZEncoding<bool>> =
+        TableDefinition::new("beacon_block_timeliness");
+
     type Key = B256;
+
+    type KeyTableDefinition = SSZEncoding<B256>;
 
     type Value = bool;
 
-    fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
-        let read_txn = self.db.begin_read()?;
+    type ValueTableDefinition = SSZEncoding<bool>;
 
-        let table = read_txn.open_table(BLOCK_TIMELINESS_TABLE)?;
-        let result = table.get(key)?;
-        Ok(result.map(|res| res.value()))
-    }
-
-    fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
-        let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate)?;
-        let mut table = write_txn.open_table(BLOCK_TIMELINESS_TABLE)?;
-        table.insert(key, value)?;
-        drop(table);
-        write_txn.commit()?;
-        Ok(())
-    }
-
-    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
-        let write_txn = self.db.begin_write()?;
-        let mut table = write_txn.open_table(BLOCK_TIMELINESS_TABLE)?;
-        let value = table.remove(key)?.map(|v| v.value());
-        drop(table);
-        write_txn.commit()?;
-        Ok(value)
+    fn database(&self) -> Arc<Database> {
+        self.db.clone()
     }
 }

@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use alloy_primitives::B256;
 use anyhow::{Ok, anyhow};
 use ream_consensus_lean::attestation::SignedAttestation;
-use ream_storage::{db::lean::LeanDB, tables::table::Table};
+use ream_storage::{db::lean::LeanDB, tables::table::REDBTable};
 use tokio::sync::Mutex;
 
 /// Use LMD GHOST to get the head, given a particular root (usually the
