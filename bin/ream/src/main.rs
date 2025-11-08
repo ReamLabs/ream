@@ -59,7 +59,7 @@ use ream_rpc_common::config::RpcServerConfig;
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
-    tables::table::Table,
+    tables::table::REDBTable,
 };
 use ream_sync::rwlock::Writer;
 use ream_validator_beacon::{

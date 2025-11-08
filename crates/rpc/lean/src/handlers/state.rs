@@ -4,7 +4,7 @@ use actix_web::{
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_chain_lean::lean_chain::LeanChainReader;
-use ream_storage::tables::{field::Field, table::Table};
+use ream_storage::tables::{field::Field, table::REDBTable};
 
 // GET /lean/v0/states/{state_id}
 #[get("/states/{state_id}")]

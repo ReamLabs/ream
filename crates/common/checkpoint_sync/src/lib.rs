@@ -12,7 +12,10 @@ use ream_consensus_beacon::{
 use ream_consensus_misc::checkpoint::Checkpoint;
 use ream_fork_choice::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::beacon_network_spec;
-use ream_storage::{db::beacon::BeaconDB, tables::table::Table};
+use ream_storage::{
+    db::beacon::BeaconDB,
+    tables::table::{CustomTable, REDBTable},
+};
 use reqwest::{
     Url,
     header::{ACCEPT, HeaderValue},

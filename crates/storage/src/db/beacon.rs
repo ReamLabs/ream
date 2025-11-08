@@ -12,13 +12,13 @@ use crate::tables::{
         finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
         justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
         parent_root_index::ParentRootIndexMultimapTable,
-        proposer_boost_root::ProposerBoostRootField, slot_index::SlotIndexTable,
-        state_root_index::StateRootIndexTable, time::TimeField,
+        proposer_boost_root::ProposerBoostRootField, slot_index::BeaconSlotIndexTable,
+        state_root_index::BeaconStateRootIndexTable, time::TimeField,
         unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
         unrealized_justifications::UnrealizedJustificationsTable,
         unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
     },
-    table::Table,
+    table::REDBTable,
 };
 
 #[derive(Clone, Debug)]
@@ -123,14 +123,14 @@ impl BeaconDB {
         }
     }
 
-    pub fn slot_index_provider(&self) -> SlotIndexTable {
-        SlotIndexTable {
+    pub fn slot_index_provider(&self) -> BeaconSlotIndexTable {
+        BeaconSlotIndexTable {
             db: self.db.clone(),
         }
     }
 
-    pub fn state_root_index_provider(&self) -> StateRootIndexTable {
-        StateRootIndexTable {
+    pub fn state_root_index_provider(&self) -> BeaconStateRootIndexTable {
+        BeaconStateRootIndexTable {
             db: self.db.clone(),
         }
     }

@@ -6,7 +6,8 @@ use crate::tables::lean::{
     latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
     latest_known_attestation::LatestKnownAttestationTable, lean_block::LeanBlockTable,
     lean_head::LeanHeadField, lean_safe_target::LeanSafeTargetField, lean_state::LeanStateTable,
-    lean_time::LeanTimeField, slot_index::SlotIndexTable, state_root_index::StateRootIndexTable,
+    lean_time::LeanTimeField, slot_index::LeanSlotIndexTable,
+    state_root_index::LeanStateRootIndexTable,
 };
 
 #[derive(Clone, Debug)]
@@ -26,14 +27,14 @@ impl LeanDB {
         }
     }
 
-    pub fn slot_index_provider(&self) -> SlotIndexTable {
-        SlotIndexTable {
+    pub fn slot_index_provider(&self) -> LeanSlotIndexTable {
+        LeanSlotIndexTable {
             db: self.db.clone(),
         }
     }
 
-    pub fn state_root_index_provider(&self) -> StateRootIndexTable {
-        StateRootIndexTable {
+    pub fn state_root_index_provider(&self) -> LeanStateRootIndexTable {
+        LeanStateRootIndexTable {
             db: self.db.clone(),
         }
     }
