@@ -10,7 +10,7 @@ use ream_consensus_misc::{
 };
 use ream_storage::{
     cache::{AtestationKey, CachedDB},
-    tables::{field::Field, table::REDBTable},
+    tables::{field::REDBField, table::REDBTable},
 };
 use ream_validator_beacon::attestation::compute_subnet_for_attestation;
 

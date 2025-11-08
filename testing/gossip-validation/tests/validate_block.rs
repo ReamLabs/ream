@@ -19,7 +19,7 @@ mod tests {
     use ream_storage::{
         cache::{AddressSlotIdentifier, CachedDB},
         db::{ReamDB, beacon::BeaconDB},
-        tables::{field::Field, table::REDBTable},
+        tables::{field::REDBField, table::REDBTable},
     };
     use snap::raw::Decoder;
     use ssz::Decode;

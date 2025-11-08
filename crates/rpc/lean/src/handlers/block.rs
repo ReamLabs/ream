@@ -5,7 +5,7 @@ use actix_web::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_chain_lean::lean_chain::LeanChainReader;
 use ream_consensus_lean::block::Block;
-use ream_storage::tables::{field::Field, table::REDBTable};
+use ream_storage::tables::{field::REDBField, table::REDBTable};
 
 // GET /lean/v0/blocks/{block_id}
 #[get("/blocks/{block_id}")]
