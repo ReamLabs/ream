@@ -41,6 +41,15 @@ impl Table for SlotIndexTable {
         write_txn.commit()?;
         Ok(())
     }
+
+    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
+        let write_txn = self.db.begin_write()?;
+        let mut table = write_txn.open_table(LEAN_SLOT_INDEX_TABLE)?;
+        let value = table.remove(key)?.map(|value| value.value());
+        drop(table);
+        write_txn.commit()?;
+        Ok(value)
+    }
 }
 
 impl SlotIndexTable {

@@ -44,4 +44,15 @@ impl Field for UnrealizedFinalizedCheckpointField {
         write_txn.commit()?;
         Ok(())
     }
+
+    fn remove(&self) -> Result<Option<Self::Value>, StoreError> {
+        let write_txn = self.db.begin_write()?;
+        let mut table = write_txn.open_table(UNREALIZED_FINALIZED_CHECKPOINT_FIELD)?;
+        let value = table
+            .remove(UNREALIZED_FINALIZED_CHECKPOINT_FIELD_KEY)?
+            .map(|v| v.value());
+        drop(table);
+        write_txn.commit()?;
+        Ok(value)
+    }
 }

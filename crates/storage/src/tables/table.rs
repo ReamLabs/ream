@@ -8,4 +8,6 @@ pub trait Table {
     fn get(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError>;
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError>;
+
+    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError>;
 }

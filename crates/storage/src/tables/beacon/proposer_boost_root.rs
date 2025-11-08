@@ -42,4 +42,13 @@ impl Field for ProposerBoostRootField {
         write_txn.commit()?;
         Ok(())
     }
+
+    fn remove(&self) -> Result<Option<Self::Value>, StoreError> {
+        let write_txn = self.db.begin_write()?;
+        let mut table = write_txn.open_table(PROPOSER_BOOST_ROOT_FIELD)?;
+        let value = table.remove(PROPOSER_BOOST_ROOT_KEY)?.map(|v| v.value());
+        drop(table);
+        write_txn.commit()?;
+        Ok(value)
+    }
 }

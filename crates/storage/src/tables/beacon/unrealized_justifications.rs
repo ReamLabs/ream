@@ -44,4 +44,13 @@ impl Table for UnrealizedJustificationsTable {
         write_txn.commit()?;
         Ok(())
     }
+
+    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
+        let write_txn = self.db.begin_write()?;
+        let mut table = write_txn.open_table(UNREALIZED_JUSTIFICATIONS_TABLE)?;
+        let value = table.remove(key)?.map(|v| v.value());
+        drop(table);
+        write_txn.commit()?;
+        Ok(value)
+    }
 }
