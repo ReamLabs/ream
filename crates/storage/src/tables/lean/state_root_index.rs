@@ -43,4 +43,13 @@ impl Table for StateRootIndexTable {
         write_txn.commit()?;
         Ok(())
     }
+
+    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
+        let write_txn = self.db.begin_write()?;
+        let mut table = write_txn.open_table(LEAN_STATE_ROOT_INDEX_TABLE)?;
+        let value = table.remove(key)?.map(|value| value.value());
+        drop(table);
+        write_txn.commit()?;
+        Ok(value)
+    }
 }

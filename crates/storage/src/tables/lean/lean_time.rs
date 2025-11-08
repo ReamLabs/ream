@@ -37,4 +37,13 @@ impl Field for LeanTimeField {
         write_txn.commit()?;
         Ok(())
     }
+
+    fn remove(&self) -> Result<Option<Self::Value>, StoreError> {
+        let write_txn = self.db.begin_write()?;
+        let mut table = write_txn.open_table(LEAN_TIME_FIELD)?;
+        let value = table.remove(LEAN_TIME_KEY)?.map(|v| v.value());
+        drop(table);
+        write_txn.commit()?;
+        Ok(value)
+    }
 }

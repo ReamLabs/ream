@@ -1,5 +1,5 @@
 use std::{
-    fs::File,
+    fs::{File, remove_file},
     io::{Read, Write},
     path::PathBuf,
 };
@@ -56,6 +56,12 @@ impl Table for BlobsAndProofsTable {
         file.write_all(&snappy_encoding)?;
 
         Ok(())
+    }
+
+    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
+        let blob = self.get(key)?;
+        remove_file(self.blob_file_path(&key))?;
+        Ok(blob)
     }
 }
 

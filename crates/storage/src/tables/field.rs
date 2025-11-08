@@ -7,4 +7,6 @@ pub trait Field {
     fn get(&self) -> Result<Self::Value, StoreError>;
 
     fn insert(&self, value: Self::Value) -> Result<(), StoreError>;
+
+    fn remove(&self) -> Result<Option<Self::Value>, StoreError>;
 }
