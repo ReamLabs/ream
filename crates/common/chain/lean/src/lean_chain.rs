@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use alloy_primitives::{B256, FixedBytes};
 use anyhow::anyhow;
@@ -31,9 +31,6 @@ pub type LeanChainReader = Reader<LeanChain>;
 pub struct LeanChain {
     /// Database.
     pub store: Arc<Mutex<LeanDB>>,
-    /// Attestations that we have received but not yet taken into account.
-    /// Maps validator id to signed attestation.
-    pub latest_new_attestations: HashMap<u64, SignedAttestation>,
 }
 
 impl LeanChain {
@@ -43,6 +40,9 @@ impl LeanChain {
         db: LeanDB,
     ) -> LeanChain {
         let genesis_block_hash = genesis_block.message.block.tree_hash_root();
+        db.lean_time_provider()
+            .insert(genesis_block.message.block.slot * lean_network_spec().seconds_per_slot)
+            .expect("Failed to insert anchor slot");
         db.lean_block_provider()
             .insert(genesis_block_hash, genesis_block)
             .expect("Failed to insert genesis block");
@@ -55,10 +55,15 @@ impl LeanChain {
         db.lean_state_provider()
             .insert(genesis_block_hash, genesis_state)
             .expect("Failed to insert genesis state");
+        db.lean_head_provider()
+            .insert(genesis_block_hash)
+            .expect("Failed to insert genesis block hash");
+        db.lean_safe_target_provider()
+            .insert(genesis_block_hash)
+            .expect("Failed to insert genesis block hash");
 
         LeanChain {
             store: Arc::new(Mutex::new(db)),
-            latest_new_attestations: HashMap::new(),
         }
     }
 
@@ -106,7 +111,11 @@ impl LeanChain {
         self.store.lock().await.lean_safe_target_provider().insert(
             get_fork_choice_head(
                 self.store.clone(),
-                &self.latest_new_attestations,
+                self.store
+                    .lock()
+                    .await
+                    .lean_latest_new_attestations_provider()
+                    .iter_values()?,
                 &latest_justified_root,
                 min_target_score,
             )
@@ -124,7 +133,14 @@ impl LeanChain {
             db.latest_known_attestations_provider()
         };
 
-        latest_known_attestation_provider.batch_insert(self.latest_new_attestations.drain())?;
+        latest_known_attestation_provider.batch_insert(
+            self.store
+                .lock()
+                .await
+                .lean_latest_new_attestations_provider()
+                .drain()?
+                .into_iter(),
+        )?;
 
         self.update_head().await?;
         Ok(())
@@ -149,7 +165,7 @@ impl LeanChain {
         // Update head.
         let head = get_fork_choice_head(
             self.store.clone(),
-            &latest_known_attestations,
+            latest_known_attestations.into_values().map(Ok),
             &latest_justified_root,
             0,
         )
@@ -433,9 +449,12 @@ impl LeanChain {
         &mut self,
         signed_attestations: impl IntoIterator<Item = SignedAttestation>,
     ) -> anyhow::Result<()> {
-        let latest_known_attestation_provider = {
+        let (latest_known_attestation_provider, lean_latest_new_attestations_provider) = {
             let db = self.store.lock().await;
-            db.latest_known_attestations_provider()
+            (
+                db.latest_known_attestations_provider(),
+                db.lean_latest_new_attestations_provider(),
+            )
         };
 
         latest_known_attestation_provider.batch_insert(
@@ -445,11 +464,13 @@ impl LeanChain {
                     let validator_id = signed_attestation.message.validator_id;
 
                     // Clear from new attestations if this is latest.
-                    if let Some(latest_attestation) =
-                        self.latest_new_attestations.get(&validator_id)
+                    if let Ok(Some(latest_attestation)) =
+                        lean_latest_new_attestations_provider.get(validator_id)
                         && latest_attestation.message.slot() < signed_attestation.message.slot()
                     {
-                        self.latest_new_attestations.remove(&validator_id);
+                        lean_latest_new_attestations_provider
+                            .remove(validator_id)
+                            .expect("Database failed to write: ")?;
                     }
 
                     // Filter for batch insertion.
@@ -471,19 +492,29 @@ impl LeanChain {
     ///
     /// See lean specification:
     /// <https://github.com/leanEthereum/leanSpec/blob/ee16b19825a1f358b00a6fc2d7847be549daa03b/docs/client/forkchoice.md?plain=1#L279-L312>
-    pub fn on_attestation_from_gossip(&mut self, signed_attestation: SignedAttestation) {
+    pub async fn on_attestation_from_gossip(
+        &mut self,
+        signed_attestation: SignedAttestation,
+    ) -> anyhow::Result<()> {
         let validator_id = signed_attestation.message.validator_id;
 
         // Update latest new attestations if this is the latest
         if self
-            .latest_new_attestations
-            .get(&validator_id)
+            .store
+            .lock()
+            .await
+            .lean_latest_new_attestations_provider()
+            .get(validator_id)?
             .is_none_or(|latest_attestation| {
                 latest_attestation.message.slot() < signed_attestation.message.slot()
             })
         {
-            self.latest_new_attestations
-                .insert(validator_id, signed_attestation.clone());
+            self.store
+                .lock()
+                .await
+                .lean_latest_new_attestations_provider()
+                .insert(validator_id, signed_attestation)?;
         }
+        Ok(())
     }
 }
