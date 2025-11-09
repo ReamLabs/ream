@@ -28,8 +28,8 @@ use ream_account_manager::{message_types::MessageType, seed::derive_seed_with_us
 use ream_api_types_beacon::id::ValidatorID;
 use ream_api_types_common::id::ID;
 use ream_chain_lean::{
-    genesis as lean_genesis, lean_chain::LeanChain, messages::LeanChainServiceMessage,
-    p2p_request::LeanP2PRequest, service::LeanChainService,
+    genesis as lean_genesis, messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest,
+    service::LeanChainService,
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus_lean::{
@@ -41,6 +41,7 @@ use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
 };
 use ream_executor::ReamExecutor;
+use ream_fork_choice_lean::store::Store;
 use ream_keystore::keystore::EncryptedKeystore;
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::{
@@ -173,7 +174,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     // Initialize the lean chain with genesis block and state.
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
-    let (lean_chain_writer, lean_chain_reader) = Writer::new(LeanChain::new(
+    let (lean_chain_writer, lean_chain_reader) = Writer::new(Store::get_forkchoice_store(
         SignedBlockWithAttestation {
             message: BlockWithAttestation {
                 block: genesis_block,

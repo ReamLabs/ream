@@ -1,5 +1,5 @@
 [package]
-name = "ream-fork-choice"
+name = "ream-fork-choice-beacon"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true

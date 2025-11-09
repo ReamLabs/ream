@@ -3,6 +3,7 @@ use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{Block, SignedBlockWithAttestation},
 };
+use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::tables::{field::REDBField, table::REDBTable};
 use tokio::sync::{mpsc, oneshot};
@@ -10,8 +11,8 @@ use tracing::{Level, debug, enabled, error, info, warn};
 use tree_hash::TreeHash;
 
 use crate::{
-    clock::create_lean_clock_interval, lean_chain::LeanChainWriter,
-    messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest, slot::get_current_slot,
+    clock::create_lean_clock_interval, messages::LeanChainServiceMessage,
+    p2p_request::LeanP2PRequest, slot::get_current_slot,
 };
 
 /// LeanChainService is responsible for updating the [LeanChain] state. `LeanChain` is updated when:
@@ -20,19 +21,19 @@ use crate::{
 ///
 /// NOTE: This service will be the core service to implement `receive()` function.
 pub struct LeanChainService {
-    lean_chain: LeanChainWriter,
+    store: LeanStoreWriter,
     receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
     outbound_gossip: mpsc::UnboundedSender<LeanP2PRequest>,
 }
 
 impl LeanChainService {
     pub async fn new(
-        lean_chain: LeanChainWriter,
+        store: LeanStoreWriter,
         receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
         outbound_gossip: mpsc::UnboundedSender<LeanP2PRequest>,
     ) -> Self {
         LeanChainService {
-            lean_chain,
+            store,
             receiver,
             outbound_gossip,
         }
@@ -56,8 +57,8 @@ impl LeanChainService {
                         0 => {
                             // First tick (t=0/4): Log current head state, including its justification/finalization status.
                             let (head, store) = {
-                                let lean_chain = self.lean_chain.read().await;
-                                (lean_chain.store.lock().await.lean_head_provider().get()?, lean_chain.store.clone())
+                                let store = self.store.read().await;
+                                (store.store.lock().await.lean_head_provider().get()?, store.store.clone())
                             };
                             let head_state = store.lock().await
                                 .lean_state_provider()
@@ -77,7 +78,7 @@ impl LeanChainService {
                                 tick = tick_count,
                                 "Computing safe target"
                             );
-                            self.lean_chain.write().await.update_safe_target().await.expect("Failed to update safe target");
+                            self.store.write().await.update_safe_target().await.expect("Failed to update safe target");
                         }
                         3 => {
                             // Fourth tick (t=3/4): Accept new attestations.
@@ -86,7 +87,7 @@ impl LeanChainService {
                                 tick = tick_count,
                                 "Accepting new attestations"
                             );
-                            self.lean_chain.write().await.accept_new_attestations().await.expect("Failed to accept new attestations");
+                            self.store.write().await.accept_new_attestations().await.expect("Failed to accept new attestations");
                         }
                         _ => {
                             // Other ticks (t=0, t=1/4): Do nothing.
@@ -173,7 +174,7 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<Block>,
     ) -> anyhow::Result<()> {
-        let (new_block, _) = self.lean_chain.write().await.propose_block(slot).await?;
+        let (new_block, _) = self.store.write().await.propose_block(slot).await?;
 
         // Send the produced block back to the requester
         response
@@ -188,12 +189,7 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<AttestationData>,
     ) -> anyhow::Result<()> {
-        let attestation_data = self
-            .lean_chain
-            .read()
-            .await
-            .build_attestation_data(slot)
-            .await?;
+        let attestation_data = self.store.read().await.build_attestation_data(slot).await?;
 
         // Send the built attestation data back to the requester
         response
@@ -212,7 +208,7 @@ impl LeanChainService {
             // TODO: Validate the signature.
         }
 
-        self.lean_chain
+        self.store
             .write()
             .await
             .on_block(signed_block_with_attestation.clone())
@@ -230,7 +226,7 @@ impl LeanChainService {
             // TODO: Validate the signature.
         }
 
-        self.lean_chain
+        self.store
             .write()
             .await
             .on_attestation_from_gossip(signed_attestation)

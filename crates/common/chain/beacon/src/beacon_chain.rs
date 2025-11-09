@@ -7,7 +7,7 @@ use ream_consensus_beacon::{
 };
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_execution_engine::ExecutionEngine;
-use ream_fork_choice::{
+use ream_fork_choice_beacon::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
     store::Store,
 };

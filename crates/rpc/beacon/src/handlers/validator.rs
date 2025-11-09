@@ -20,7 +20,7 @@ use ream_consensus_beacon::{
 use ream_consensus_misc::{
     attestation_data::AttestationData, constants::beacon::SLOTS_PER_EPOCH, validator::Validator,
 };
-use ream_fork_choice::store::Store;
+use ream_fork_choice_beacon::store::Store;
 use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use serde::Serialize;

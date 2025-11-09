@@ -3,15 +3,15 @@ use actix_web::{
     web::{Data, Path},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_chain_lean::lean_chain::LeanChainReader;
 use ream_consensus_lean::block::Block;
+use ream_fork_choice_lean::store::LeanStoreReader;
 use ream_storage::tables::{field::REDBField, table::REDBTable};
 
 // GET /lean/v0/blocks/{block_id}
 #[get("/blocks/{block_id}")]
 pub async fn get_block(
     block_id: Path<ID>,
-    lean_chain: Data<LeanChainReader>,
+    lean_chain: Data<LeanStoreReader>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::Ok().json(
         get_block_by_id(block_id.into_inner(), lean_chain)
@@ -23,7 +23,7 @@ pub async fn get_block(
 // Retrieve a block from the lean chain by its block ID.
 pub async fn get_block_by_id(
     block_id: ID,
-    lean_chain: Data<LeanChainReader>,
+    lean_chain: Data<LeanStoreReader>,
 ) -> Result<Option<Block>, ApiError> {
     let lean_chain = lean_chain.read().await;
     let block_root = match block_id {

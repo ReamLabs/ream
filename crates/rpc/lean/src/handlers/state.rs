@@ -3,14 +3,14 @@ use actix_web::{
     web::{Data, Path},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_chain_lean::lean_chain::LeanChainReader;
+use ream_fork_choice_lean::store::LeanStoreReader;
 use ream_storage::tables::{field::REDBField, table::REDBTable};
 
 // GET /lean/v0/states/{state_id}
 #[get("/states/{state_id}")]
 pub async fn get_state(
     state_id: Path<ID>,
-    lean_chain: Data<LeanChainReader>,
+    lean_chain: Data<LeanStoreReader>,
 ) -> Result<impl Responder, ApiError> {
     let lean_chain = lean_chain.read().await;
 

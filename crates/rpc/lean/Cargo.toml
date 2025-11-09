@@ -21,6 +21,7 @@ ream-api-types-common.workspace = true
 ream-api-types-lean.workspace = true
 ream-chain-lean.workspace = true
 ream-consensus-lean.workspace = true
+ream-fork-choice-lean.workspace = true
 ream-p2p.workspace = true
 ream-rpc-common.workspace = true
 ream-storage.workspace = true
