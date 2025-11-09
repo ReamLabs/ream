@@ -74,10 +74,6 @@ impl PrivateKey {
     /// # Panics
     ///
     /// Panics if the epoch is not within the activation interval
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the signing operation fails.
     pub fn sign(
         &mut self,
         message: &[u8; MESSAGE_LENGTH],
