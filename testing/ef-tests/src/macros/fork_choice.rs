@@ -19,7 +19,7 @@ macro_rules! test_fork_choice {
                 use ream_network_spec::networks::initialize_test_network_spec;
                 use ream_storage::{
                     db::{ReamDB, beacon::BeaconDB},
-                    tables::{table::Table, field::Field},
+                    tables::{table::CustomTable, field::REDBField},
                     dir::setup_data_dir
                 };
                 use rstest::rstest;

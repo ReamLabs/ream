@@ -27,7 +27,7 @@ use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use ream_storage::{
     db::beacon::BeaconDB,
     tables::{
-        field::Field,
+        field::{CustomField, REDBField},
         multimap_table::MultimapTable,
         table::{CustomTable, REDBTable},
     },

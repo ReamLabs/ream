@@ -4,7 +4,7 @@ use ream_consensus_lean::{
     block::{Block, SignedBlockWithAttestation},
 };
 use ream_network_spec::networks::lean_network_spec;
-use ream_storage::tables::{field::Field, table::REDBTable};
+use ream_storage::tables::{field::REDBField, table::REDBTable};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, error, info, warn};
 use tree_hash::TreeHash;

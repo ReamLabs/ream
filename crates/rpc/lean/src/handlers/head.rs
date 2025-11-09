@@ -2,7 +2,7 @@ use actix_web::{HttpResponse, Responder, get, web::Data};
 use ream_api_types_common::error::ApiError;
 use ream_api_types_lean::head::Head;
 use ream_chain_lean::lean_chain::LeanChainReader;
-use ream_storage::tables::field::Field;
+use ream_storage::tables::field::REDBField;
 
 // GET /lean/v0/head
 #[get("/head")]
