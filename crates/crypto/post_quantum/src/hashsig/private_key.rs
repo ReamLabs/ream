@@ -75,7 +75,7 @@ impl PrivateKey {
     ///
     /// Panics if the epoch is not within the activation interval
     pub fn sign(
-        &mut self,
+        &self,
         message: &[u8; MESSAGE_LENGTH],
         epoch: u32,
     ) -> anyhow::Result<Signature, SigningError> {
@@ -105,7 +105,7 @@ mod tests {
         let activation_epoch = 0;
         let num_active_epochs = 10; // Test for 10 epochs for quick key generation
 
-        let (public_key, mut private_key) =
+        let (public_key, private_key) =
             PrivateKey::generate_key_pair(&mut rng, activation_epoch, num_active_epochs);
 
         let epoch = 5;
@@ -133,7 +133,7 @@ mod tests {
         let activation_epoch = 5;
         let num_active_epochs = 10;
 
-        let (_public_key, mut private_key) =
+        let (_public_key, private_key) =
             PrivateKey::generate_key_pair(&mut rng, activation_epoch, num_active_epochs);
 
         let message = [0u8; 32];
