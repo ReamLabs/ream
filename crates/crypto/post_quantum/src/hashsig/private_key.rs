@@ -84,11 +84,10 @@ impl PrivateKey {
         epoch: u32,
     ) -> anyhow::Result<Signature, SigningError> {
         let activation_interval = self.get_activation_interval();
+
         assert!(
             activation_interval.contains(&(epoch as u64)),
-            "Epoch {} is outside the activation interval {:?}",
-            epoch,
-            activation_interval
+            "Epoch {epoch} is outside the activation interval {activation_interval:?}",
         );
 
         Ok(Signature::new(
@@ -129,5 +128,22 @@ mod tests {
 
         assert!(verify_result.is_ok(), "Verification should succeed");
         assert!(verify_result.unwrap(), "Signature should be valid");
+    }
+
+    #[test]
+    #[should_panic(expected = "Epoch 100 is outside the activation interval")]
+    fn test_signing_outside_activation_interval_panics() {
+        let mut rng = rng();
+        let activation_epoch = 5;
+        let num_active_epochs = 10;
+
+        let (_public_key, mut private_key) =
+            PrivateKey::generate_key_pair(&mut rng, activation_epoch, num_active_epochs);
+
+        let message = [0u8; 32];
+
+        // Hash sig expands the interval (5, 10) to (0, 32)
+        // Try to sign with an epoch outside the (expanded) activation interval (should panic)
+        let _ = private_key.sign(&message, 100);
     }
 }
