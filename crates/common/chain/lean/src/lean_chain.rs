@@ -99,23 +99,25 @@ impl LeanChain {
     pub async fn update_safe_target(&mut self) -> anyhow::Result<()> {
         // 2/3rd majority min voting weight for target selection
         // Note that we use ceiling division here.
+        let (
+            latest_justified_provider,
+            lean_safe_target_provider,
+            lean_latest_new_attestations_provider,
+        ) = {
+            let db = self.store.lock().await;
+            (
+                db.latest_justified_provider(),
+                db.lean_safe_target_provider(),
+                db.lean_latest_new_attestations_provider(),
+            )
+        };
         let min_target_score = (lean_network_spec().num_validators * 2).div_ceil(3);
-        let latest_justified_root = self
-            .store
-            .lock()
-            .await
-            .latest_justified_provider()
-            .get()?
-            .root;
+        let latest_justified_root = latest_justified_provider.get()?.root;
 
-        self.store.lock().await.lean_safe_target_provider().insert(
+        lean_safe_target_provider.insert(
             get_fork_choice_head(
                 self.store.clone(),
-                self.store
-                    .lock()
-                    .await
-                    .lean_latest_new_attestations_provider()
-                    .iter_values()?,
+                lean_latest_new_attestations_provider.iter_values()?,
                 &latest_justified_root,
                 min_target_score,
             )
@@ -202,25 +204,27 @@ impl LeanChain {
     ///
     /// See lean specification:
     /// <https://github.com/leanEthereum/leanSpec/blob/f8e8d271d8b8b6513d34c78692aff47438d6fa18/src/lean_spec/subspecs/forkchoice/store.py#L341-L366>
-    pub async fn get_attestation_target(
+    async fn get_attestation_target(
         &self,
         lean_block_provider: &LeanBlockTable,
         finalized_slot: u64,
+        head_block_hash: B256,
+        safe_target_block_hash: B256,
     ) -> anyhow::Result<Checkpoint> {
         // Start from current head
-        let head = self.store.lock().await.lean_head_provider().get()?;
         let mut target_block = lean_block_provider
-            .get(head)?
-            .ok_or_else(|| anyhow!("Block not found in chain for head: {head}"))?
+            .get(head_block_hash)?
+            .ok_or_else(|| anyhow!("Block not found in chain for head: {head_block_hash}"))?
             .message
             .block;
 
         // Walk back up to 3 steps if safe target is newer
         for _ in 0..3 {
-            let safe_target = self.store.lock().await.lean_safe_target_provider().get()?;
             let safe_target_block = lean_block_provider
-                .get(safe_target)?
-                .ok_or_else(|| anyhow!("Block not found for safe target hash: {safe_target}"))?
+                .get(safe_target_block_hash)?
+                .ok_or_else(|| {
+                    anyhow!("Block not found for safe target hash: {safe_target_block_hash}")
+                })?
                 .message
                 .block;
             if target_block.slot > safe_target_block.slot {
@@ -357,33 +361,44 @@ impl LeanChain {
     }
 
     pub async fn build_attestation_data(&self, slot: u64) -> anyhow::Result<AttestationData> {
-        let (head, target, source) = {
+        let (
+            lean_head_provider,
+            lean_safe_target_provider,
+            latest_justified_provider,
+            latest_finalized_provider,
+            lean_block_provider,
+        ) = {
             let db = self.store.lock().await;
-            let head = db.lean_head_provider().get()?;
             (
-                Checkpoint {
-                    root: head,
-                    slot: db
-                        .lean_block_provider()
-                        .get(head)?
-                        .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
-                        .message
-                        .block
-                        .slot,
-                },
-                self.get_attestation_target(
-                    &db.lean_block_provider(),
-                    db.latest_finalized_provider().get()?.slot,
-                )
-                .await?,
-                db.latest_justified_provider().get()?,
+                db.lean_head_provider(),
+                db.lean_safe_target_provider(),
+                db.latest_justified_provider(),
+                db.latest_finalized_provider(),
+                db.lean_block_provider(),
             )
         };
+
+        let head = lean_head_provider.get()?;
         Ok(AttestationData {
             slot,
-            head,
-            target,
-            source,
+            head: Checkpoint {
+                root: head,
+                slot: lean_block_provider
+                    .get(head)?
+                    .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
+                    .message
+                    .block
+                    .slot,
+            },
+            target: self
+                .get_attestation_target(
+                    &lean_block_provider,
+                    latest_finalized_provider.get()?.slot,
+                    head,
+                    lean_safe_target_provider.get()?,
+                )
+                .await?,
+            source: latest_justified_provider.get()?,
         })
     }
 
