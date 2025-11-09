@@ -30,6 +30,7 @@ use crate::{
         lean::{
             latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
             lean_block::LeanBlockTable, lean_head::LeanHeadField,
+            lean_latest_new_attestations::LeanLatestNewAttestationsTable,
             lean_safe_target::LeanSafeTargetField, lean_state::LeanStateTable,
             lean_time::LeanTimeField, slot_index::LeanSlotIndexTable,
             state_root_index::LeanStateRootIndexTable,
@@ -105,6 +106,7 @@ impl ReamDB {
         write_txn.open_table(LeanTimeField::FIELD_DEFINITION)?;
         write_txn.open_table(LeanHeadField::FIELD_DEFINITION)?;
         write_txn.open_table(LeanSafeTargetField::FIELD_DEFINITION)?;
+        write_txn.open_table(LeanLatestNewAttestationsTable::TABLE_DEFINITION)?;
         write_txn.commit()?;
 
         Ok(LeanDB {

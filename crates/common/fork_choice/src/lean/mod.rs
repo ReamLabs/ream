@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 /// latest known justified block)
 pub async fn get_fork_choice_head(
     store: Arc<Mutex<LeanDB>>,
-    latest_votes: &HashMap<u64, SignedAttestation>,
+    latest_votes: impl Iterator<Item = anyhow::Result<SignedAttestation>>,
     provided_root: &B256,
     min_score: u64,
 ) -> anyhow::Result<B256> {
@@ -32,7 +32,8 @@ pub async fn get_fork_choice_head(
     // for any descendant of a block also counts as a vote for that block
     let mut vote_weights = HashMap::<B256, u64>::new();
 
-    for signed_vote in latest_votes.values() {
+    for signed_vote in latest_votes {
+        let signed_vote = signed_vote?;
         if lean_block_provider.contains_key(signed_vote.message.head().root) {
             let mut block_hash = signed_vote.message.head().root;
             while {
