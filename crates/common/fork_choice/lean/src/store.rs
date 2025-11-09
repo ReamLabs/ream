@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::{B256, FixedBytes};
 use anyhow::anyhow;
@@ -9,7 +9,6 @@ use ream_consensus_lean::{
     is_justifiable_slot,
     state::LeanState,
 };
-use ream_fork_choice::lean::get_fork_choice_head;
 use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
 use ream_storage::{
@@ -20,40 +19,41 @@ use ream_sync::rwlock::{Reader, Writer};
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
 
-pub type LeanChainWriter = Writer<LeanChain>;
-pub type LeanChainReader = Reader<LeanChain>;
+pub type LeanStoreWriter = Writer<Store>;
+pub type LeanStoreReader = Reader<Store>;
 
-/// [LeanChain] represents the state that the Lean node should maintain.
+/// [Store] represents the state that the Lean node should maintain.
 ///
 /// Most of the fields are based on the Python implementation of [`Staker`](https://github.com/ethereum/research/blob/d225a6775a9b184b5c1fd6c830cc58a375d9535f/3sf-mini/p2p.py#L15-L42),
 /// but doesn't include `validator_id` as a node should manage multiple validators.
 #[derive(Debug, Clone)]
-pub struct LeanChain {
+pub struct Store {
     /// Database.
     pub store: Arc<Mutex<LeanDB>>,
 }
 
-impl LeanChain {
-    pub fn new(
-        genesis_block: SignedBlockWithAttestation,
-        genesis_state: LeanState,
+impl Store {
+    /// Initialize forkchoice store from an anchor state and anchor block.
+    pub fn get_forkchoice_store(
+        anchor_block: SignedBlockWithAttestation,
+        anchor_state: LeanState,
         db: LeanDB,
-    ) -> LeanChain {
-        let genesis_block_hash = genesis_block.message.block.tree_hash_root();
+    ) -> Store {
+        let genesis_block_hash = anchor_block.message.block.tree_hash_root();
         db.lean_time_provider()
-            .insert(genesis_block.message.block.slot * lean_network_spec().seconds_per_slot)
+            .insert(anchor_block.message.block.slot * lean_network_spec().seconds_per_slot)
             .expect("Failed to insert anchor slot");
         db.lean_block_provider()
-            .insert(genesis_block_hash, genesis_block)
+            .insert(genesis_block_hash, anchor_block)
             .expect("Failed to insert genesis block");
         db.latest_finalized_provider()
-            .insert(genesis_state.latest_finalized)
+            .insert(anchor_state.latest_finalized)
             .expect("Failed to insert latest finalized checkpoint");
         db.latest_justified_provider()
-            .insert(genesis_state.latest_justified)
+            .insert(anchor_state.latest_justified)
             .expect("Failed to insert latest justified checkpoint");
         db.lean_state_provider()
-            .insert(genesis_block_hash, genesis_state)
+            .insert(genesis_block_hash, anchor_state)
             .expect("Failed to insert genesis state");
         db.lean_head_provider()
             .insert(genesis_block_hash)
@@ -62,9 +62,89 @@ impl LeanChain {
             .insert(genesis_block_hash)
             .expect("Failed to insert genesis block hash");
 
-        LeanChain {
+        Store {
             store: Arc::new(Mutex::new(db)),
         }
+    }
+
+    /// Use LMD GHOST to get the head, given a particular root (usually the
+    /// latest known justified block)
+    pub async fn get_fork_choice_head(
+        &self,
+        latest_votes: impl Iterator<Item = anyhow::Result<SignedAttestation>>,
+        provided_root: &B256,
+        min_score: u64,
+    ) -> anyhow::Result<B256> {
+        let mut root = *provided_root;
+
+        let (slot_index_table, lean_block_provider) = {
+            let db = self.store.lock().await;
+            (db.slot_index_provider(), db.lean_block_provider())
+        };
+
+        // Start at genesis by default
+        if root == B256::ZERO {
+            root = slot_index_table
+                .get_oldest_root()?
+                .ok_or(anyhow!("No blocks found to calculate fork choice"))?;
+        }
+
+        // For each block, count the number of votes for that block. A vote
+        // for any descendant of a block also counts as a vote for that block
+        let mut vote_weights = HashMap::<B256, u64>::new();
+
+        for signed_vote in latest_votes {
+            let signed_vote = signed_vote?;
+            if lean_block_provider.contains_key(signed_vote.message.head().root) {
+                let mut block_hash = signed_vote.message.head().root;
+                while {
+                    let current_block = lean_block_provider
+                        .get(block_hash)?
+                        .ok_or_else(|| anyhow!("Block not found for vote head: {block_hash}"))?
+                        .message
+                        .block;
+                    let root_block = lean_block_provider
+                        .get(root)?
+                        .ok_or_else(|| anyhow!("Block not found for root: {root}"))?
+                        .message
+                        .block;
+                    current_block.slot > root_block.slot
+                } {
+                    let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
+                    vote_weights.insert(block_hash, current_weights + 1);
+                    block_hash = lean_block_provider
+                        .get(block_hash)?
+                        .map(|block| block.message.block.parent_root)
+                        .ok_or_else(|| anyhow!("Block not found for block parent: {block_hash}"))?;
+                }
+            }
+        }
+
+        // Identify the children of each block
+        let children_map = lean_block_provider.get_children_map(min_score, &vote_weights)?;
+
+        // Start at the root (latest justified hash or genesis) and repeatedly
+        // choose the child with the most latest votes, tiebreaking by slot then hash
+        let mut current_root = root;
+
+        while let Some(children) = children_map.get(&current_root) {
+            current_root = *children
+                .iter()
+                .max_by_key(|child_hash| {
+                    let vote_weight = vote_weights.get(*child_hash).unwrap_or(&0);
+                    let slot = lean_block_provider
+                        .get(**child_hash)
+                        .map(|maybe_block| match maybe_block {
+                            Some(block) => block.message.block.slot,
+                            None => 0,
+                        })
+                        .unwrap_or(0);
+                    (*vote_weight, slot, *(*child_hash))
+                })
+                .ok_or_else(|| anyhow!("No children found for current root: {current_root}"))?;
+        }
+
+        Ok(current_root)
     }
 
     pub async fn get_block_id_by_slot(&self, slot: u64) -> anyhow::Result<B256> {
@@ -115,8 +195,7 @@ impl LeanChain {
         let latest_justified_root = latest_justified_provider.get()?.root;
 
         lean_safe_target_provider.insert(
-            get_fork_choice_head(
-                self.store.clone(),
+            self.get_fork_choice_head(
                 lean_latest_new_attestations_provider.iter_values()?,
                 &latest_justified_root,
                 min_target_score,
@@ -165,13 +244,13 @@ impl LeanChain {
         };
 
         // Update head.
-        let head = get_fork_choice_head(
-            self.store.clone(),
-            latest_known_attestations.into_values().map(Ok),
-            &latest_justified_root,
-            0,
-        )
-        .await?;
+        let head = self
+            .get_fork_choice_head(
+                latest_known_attestations.into_values().map(Ok),
+                &latest_justified_root,
+                0,
+            )
+            .await?;
         self.store.lock().await.lean_head_provider().insert(head)?;
 
         // Send latest head slot to metrics

@@ -10,7 +10,7 @@ use ream_consensus_beacon::{
     execution_engine::rpc_types::get_blobs::BlobAndProofV1,
 };
 use ream_consensus_misc::checkpoint::Checkpoint;
-use ream_fork_choice::{handlers::on_tick, store::get_forkchoice_store};
+use ream_fork_choice_beacon::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
     db::beacon::BeaconDB,

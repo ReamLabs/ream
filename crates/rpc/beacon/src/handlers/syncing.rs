@@ -7,7 +7,7 @@ use ream_api_types_beacon::{
 };
 use ream_api_types_common::error::ApiError;
 use ream_execution_engine::ExecutionEngine;
-use ream_fork_choice::store::Store;
+use ream_fork_choice_beacon::store::Store;
 use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
 use serde::{Deserialize, Serialize};
