@@ -54,6 +54,7 @@ pub async fn process_voluntary_exit(
         .get_node_syncing_status()
         .await?
         .data
+        .sync_status
         .is_syncing
     {
         bail!("Cannot process voluntary exit while node is syncing");

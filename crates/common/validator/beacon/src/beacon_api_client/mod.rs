@@ -20,7 +20,7 @@ use ream_api_types_beacon::{
         BeaconResponse, DataResponse, DataVersionedResponse, DutiesResponse,
         ETH_CONSENSUS_VERSION_HEADER, RootResponse, SyncCommitteeDutiesResponse, VERSION,
     },
-    sync::SyncStatus,
+    sync::SyncStatusWrapper,
     validator::{ValidatorData, ValidatorStatus},
 };
 use ream_api_types_common::id::ID;
@@ -275,7 +275,7 @@ impl BeaconApiClient {
 
     pub async fn get_node_syncing_status(
         &self,
-    ) -> anyhow::Result<DataResponse<SyncStatus>, ValidatorError> {
+    ) -> anyhow::Result<DataResponse<SyncStatusWrapper>, ValidatorError> {
         let response = self
             .http_client
             .execute(
