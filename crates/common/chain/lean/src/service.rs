@@ -174,7 +174,12 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<Block>,
     ) -> anyhow::Result<()> {
-        let (new_block, _) = self.store.write().await.propose_block(slot).await?;
+        let (new_block, _) = self
+            .store
+            .write()
+            .await
+            .produce_block_with_signatures(slot, slot % lean_network_spec().num_validators)
+            .await?;
 
         // Send the produced block back to the requester
         response
@@ -189,7 +194,7 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<AttestationData>,
     ) -> anyhow::Result<()> {
-        let attestation_data = self.store.read().await.build_attestation_data(slot).await?;
+        let attestation_data = self.store.read().await.produce_attestation(slot).await?;
 
         // Send the built attestation data back to the requester
         response
@@ -211,7 +216,7 @@ impl LeanChainService {
         self.store
             .write()
             .await
-            .on_block(signed_block_with_attestation.clone())
+            .on_block(&signed_block_with_attestation.clone())
             .await?;
 
         Ok(())
@@ -229,7 +234,7 @@ impl LeanChainService {
         self.store
             .write()
             .await
-            .on_attestation_from_gossip(signed_attestation)
+            .on_attestation(signed_attestation, true)
             .await?;
 
         Ok(())
