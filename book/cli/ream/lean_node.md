@@ -35,6 +35,8 @@ Options:
           Set metrics address [default: 127.0.0.1]
       --metrics-port <METRICS_PORT>
           Set metrics port [default: 8080]
+      --devnet <DEVNET>
+          Set which devnet version to run, options are 1 and 2 [default: 1]
   -h, --help
           Print help
 ```
