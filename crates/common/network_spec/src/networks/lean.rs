@@ -1,4 +1,5 @@
 use std::{
+    fmt::{self, Display},
     sync::{Arc, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -7,6 +8,22 @@ use serde::Deserialize;
 
 /// Static specification of the Lean Chain network.
 pub static LEAN_NETWORK_SPEC: OnceLock<Arc<LeanNetworkSpec>> = OnceLock::new();
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub enum Devnet {
+    #[default]
+    One,
+    Two,
+}
+
+impl Display for Devnet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Devnet::One => write!(f, "One"),
+            Devnet::Two => write!(f, "Two"),
+        }
+    }
+}
 
 /// Use 3 as the default justification lookback slots if not specified.
 fn default_justification_lookback_slots() -> u64 {
@@ -28,23 +45,35 @@ pub struct LeanNetworkSpec {
     pub seconds_per_slot: u64,
     #[serde(alias = "VALIDATOR_COUNT")]
     pub num_validators: u64,
+
+    /// Skipped in YAML, defaults to Devnet::One
+    #[serde(skip)]
+    pub devnet: Devnet,
 }
 
 impl LeanNetworkSpec {
     /// Creates a new instance of `LeanNetworkSpec` for the Ephemery network
     /// that starts 3 seconds after the current system time,
-    pub fn ephemery() -> Arc<Self> {
+    pub fn ephemery() -> Self {
         let current_timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("System time is before UNIX epoch")
             .as_secs();
 
-        Arc::new(Self {
+        Self {
             genesis_time: current_timestamp + 3,
             justification_lookback_slots: 3,
             seconds_per_slot: 4,
             num_validators: 4,
-        })
+            devnet: Devnet::One,
+        }
+    }
+
+    pub fn is_devnet_enabled(&self, target: Devnet) -> bool {
+        match self.devnet {
+            Devnet::Two => true,
+            Devnet::One => matches!(target, Devnet::One),
+        }
     }
 }
 

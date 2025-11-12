@@ -1,12 +1,16 @@
-use std::{net::IpAddr, path::PathBuf, sync::Arc};
+use std::{net::IpAddr, path::PathBuf};
 
 use clap::Parser;
-use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
+use ream_network_spec::{
+    cli::{lean_devnet_parser, lean_network_parser},
+    networks::{Devnet, LeanNetworkSpec},
+};
 use ream_p2p::bootnodes::Bootnodes;
 
 use crate::cli::constants::{
-    DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_METRICS_ADDRESS,
-    DEFAULT_METRICS_ENABLED, DEFAULT_METRICS_PORT, DEFAULT_SOCKET_ADDRESS, DEFAULT_SOCKET_PORT,
+    DEFAULT_DEVNET, DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT,
+    DEFAULT_METRICS_ADDRESS, DEFAULT_METRICS_ENABLED, DEFAULT_METRICS_PORT, DEFAULT_SOCKET_ADDRESS,
+    DEFAULT_SOCKET_PORT,
 };
 
 #[derive(Debug, Parser)]
@@ -16,7 +20,7 @@ pub struct LeanNodeConfig {
       help = "Provide a path to a YAML config file, or use 'ephemery' for the Ephemery network",
       value_parser = lean_network_parser
   )]
-    pub network: Arc<LeanNetworkSpec>,
+    pub network: LeanNetworkSpec,
 
     #[arg(
         default_value = "default",
@@ -65,4 +69,7 @@ pub struct LeanNodeConfig {
 
     #[arg(long, help = "Set metrics port", default_value_t = DEFAULT_METRICS_PORT)]
     pub metrics_port: u16,
+
+    #[arg(long, help = "Set which devnet version to run, options are 1 and 2", default_value = DEFAULT_DEVNET, value_parser = lean_devnet_parser)]
+    pub devnet: Devnet,
 }

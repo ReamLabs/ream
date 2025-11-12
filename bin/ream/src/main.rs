@@ -163,7 +163,10 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         );
     }
 
-    set_lean_network_spec(config.network);
+    // Fill in which devnet we are running
+    let mut network = config.network;
+    network.devnet = config.devnet;
+    set_lean_network_spec(Arc::new(network));
 
     // Initialize the lean database
     let lean_db = ream_db
