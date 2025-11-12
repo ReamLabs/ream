@@ -48,8 +48,14 @@ impl LeanState {
             config: Config { genesis_time },
             slot: 0,
             latest_block_header: BlockHeader {
-                body_root: BlockBody::default().tree_hash_root(),
-                ..BlockHeader::default()
+                slot: 0,
+                proposer_index: 0,
+                parent_root: B256::ZERO,
+                state_root: B256::ZERO,
+                body_root: BlockBody {
+                    attestations: Default::default(),
+                }
+                .tree_hash_root(),
             },
 
             latest_justified: Checkpoint::default(),
@@ -166,7 +172,7 @@ impl LeanState {
         Ok(())
     }
 
-    fn process_slots(&mut self, target_slot: u64) -> anyhow::Result<()> {
+    pub fn process_slots(&mut self, target_slot: u64) -> anyhow::Result<()> {
         ensure!(self.slot < target_slot, "Target slot must be in the future");
 
         while self.slot < target_slot {
@@ -635,7 +641,10 @@ mod test {
         // Body root must commit to an empty body at genesis.
         assert_eq!(
             state.latest_block_header.body_root,
-            BlockBody::default().tree_hash_root()
+            BlockBody {
+                attestations: Default::default()
+            }
+            .tree_hash_root()
         );
 
         // History and justifications must be empty initially.

@@ -22,9 +22,7 @@ pub struct BlockWithAttestation {
 }
 
 /// Represents a block in the Lean chain.
-#[derive(
-    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
-)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Block {
     pub slot: u64,
     pub proposer_index: u64,
@@ -36,9 +34,7 @@ pub struct Block {
 }
 
 /// Represents a block header in the Lean chain.
-#[derive(
-    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
-)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BlockHeader {
     pub slot: u64,
     pub proposer_index: u64,
@@ -60,9 +56,7 @@ impl From<Block> for BlockHeader {
 }
 
 /// Represents the body of a block in the Lean chain.
-#[derive(
-    Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash,
-)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BlockBody {
     /// TODO: Diverged from current ongoing spec change. This should be
     /// `VariableList<Attestation, U4096>`.

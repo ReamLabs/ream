@@ -2,9 +2,12 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus_lean::state::LeanState;
-use redb::{Database, TableDefinition};
+use redb::{Database, ReadableDatabase, TableDefinition};
 
-use crate::tables::{ssz_encoder::SSZEncoding, table::REDBTable};
+use crate::{
+    errors::StoreError,
+    tables::{ssz_encoder::SSZEncoding, table::REDBTable},
+};
 
 pub struct LeanStateTable {
     pub db: Arc<Database>,
@@ -28,5 +31,21 @@ impl REDBTable for LeanStateTable {
 
     fn database(&self) -> Arc<Database> {
         self.db.clone()
+    }
+}
+
+impl LeanStateTable {
+    pub fn iter_values(
+        &self,
+    ) -> Result<impl Iterator<Item = anyhow::Result<LeanState>>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+        Ok(table
+            .range::<<SSZEncoding<B256> as redb::Value>::SelfType<'_>>(..)?
+            .map(|result| {
+                result
+                    .map(|(_, value)| value.value())
+                    .map_err(|err| StoreError::from(err).into())
+            }))
     }
 }
