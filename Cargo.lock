@@ -3530,6 +3530,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
+name = "lean-spec-tests"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ream-consensus-lean",
+ "ream-consensus-misc",
+ "ream-fork-choice-lean",
+ "ream-network-spec",
+ "ream-post-quantum-crypto",
+ "ream-storage",
+ "serde",
+ "serde_json",
+ "ssz_types",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "tree_hash",
+]
+
+[[package]]
 name = "leansig"
 version = "0.1.0"
 source = "git+https://github.com/leanEthereum/leanSig.git?rev=f10dcbefac2502d356d93f686e8b4ecd8dc8840a#f10dcbefac2502d356d93f686e8b4ecd8dc8840a"

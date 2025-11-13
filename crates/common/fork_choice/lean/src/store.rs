@@ -593,6 +593,7 @@ impl Store {
         let data = &signed_attestation.message.data;
         let block_provider = self.store.lock().await.block_provider();
 
+        // Validate attestation targets exist in store
         ensure!(
             block_provider.contains_key(data.source.root),
             "Unknown source block: {}",
@@ -613,9 +614,11 @@ impl Store {
             "Source checkpoint slot must not exceed target"
         );
 
+        // Validate slot relationships
         let source_block = block_provider
             .get(data.source.root)?
             .ok_or(anyhow!("Failed to get source block"))?;
+
         let target_block = block_provider
             .get(data.target.root)?
             .ok_or(anyhow!("Failed to get target block"))?;
@@ -623,6 +626,7 @@ impl Store {
             source_block.message.block.slot == data.source.slot,
             "Source checkpoint slot mismatch"
         );
+
         ensure!(
             target_block.message.block.slot == data.target.slot,
             "Target checkpoint slot mismatch"

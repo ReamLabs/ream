@@ -8,6 +8,8 @@ target/
 
 # Testdata
 testing/ef-tests/mainnet/*
+testing/lean-spec-tests/fixtures/
+testing/lean-spec-tests/fixtures/*
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
