@@ -177,25 +177,28 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     // Initialize the lean chain with genesis block and state.
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
-    let (lean_chain_writer, lean_chain_reader) = Writer::new(Store::get_forkchoice_store(
-        SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: genesis_block,
-                proposer_attestation: Attestation {
-                    validator_id: 0,
-                    data: AttestationData {
-                        slot: 0,
-                        head: Checkpoint::default(),
-                        target: Checkpoint::default(),
-                        source: Checkpoint::default(),
+    let (lean_chain_writer, lean_chain_reader) = Writer::new(
+        Store::get_forkchoice_store(
+            SignedBlockWithAttestation {
+                message: BlockWithAttestation {
+                    block: genesis_block,
+                    proposer_attestation: Attestation {
+                        validator_id: 0,
+                        data: AttestationData {
+                            slot: 0,
+                            head: Checkpoint::default(),
+                            target: Checkpoint::default(),
+                            source: Checkpoint::default(),
+                        },
                     },
                 },
+                signature: VariableList::default(),
             },
-            signature: VariableList::default(),
-        },
-        genesis_state,
-        lean_db,
-    ));
+            genesis_state,
+            lean_db,
+        )
+        .expect("Could not get forkchoice store"),
+    );
 
     // Initialize the services that will run in the lean node.
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();

@@ -53,6 +53,7 @@ impl LeanChainService {
         loop {
             tokio::select! {
                 _ = interval.tick() => {
+                    self.store.write().await.tick_interval(tick_count % 4 == 1).await.expect("Failed to tick interval");
                     match tick_count % 4 {
                         0 => {
                             // First tick (t=0/4): Log current head state, including its justification/finalization status.
@@ -234,7 +235,7 @@ impl LeanChainService {
         self.store
             .write()
             .await
-            .on_attestation(signed_attestation, true)
+            .on_attestation(signed_attestation, false)
             .await?;
 
         Ok(())
