@@ -39,7 +39,7 @@ pub struct LeanState {
     pub historical_block_hashes: VariableList<B256, U262144>,
     pub justified_slots: BitList<U262144>,
 
-    pub validators: VariableList<Validator, U262144>,
+    pub validators: VariableList<Validator, U4096>,
 
     pub justifications_roots: VariableList<B256, U262144>,
     pub justifications_validators: BitList<U1073741824>,

@@ -12,6 +12,6 @@
     - [`ream account_manager`](./cli/ream/account_manager.md)
     - [`ream voluntary_exit`](./cli/ream/voluntary_exit.md)
     - [`ream generate_private_key`](./cli/ream/generate_private_key.md)
-    - [`ream generate_keystore`](./cli/ream/generate_keystore.md)
+    - [`ream generate_validator_registry`](./cli/ream/generate_validator_registry.md)
 - [Changelog](./Changelog.md) <!-- CLI_REFERENCE END -->
 

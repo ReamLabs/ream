@@ -9,14 +9,14 @@ $ ream --help
 Usage: ream [OPTIONS] <COMMAND>
 
 Commands:
-  lean_node             Start the lean node
-  beacon_node           Start the beacon node
-  validator_node        Start the validator node
-  account_manager       Manage validator accounts
-  voluntary_exit        Perform voluntary exit for a validator
-  generate_private_key  Generate a secp256k1 keypair for lean node
-  generate_keystore     Generate keystore file
-  help                  Print this message or the help of the given subcommand(s)
+  lean_node                    Start the lean node
+  beacon_node                  Start the beacon node
+  validator_node               Start the validator node
+  account_manager              Manage validator accounts
+  voluntary_exit               Perform voluntary exit for a validator
+  generate_private_key         Generate a secp256k1 keypair for lean node
+  generate_validator_registry  Generate keystore file
+  help                         Print this message or the help of the given subcommand(s)
 
 Options:
   -v, --verbosity <VERBOSITY>  Verbosity level (1=error, 2=warn, 3=info, 4=debug, 5=trace) [default: 3]
