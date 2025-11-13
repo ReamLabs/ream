@@ -43,6 +43,7 @@ members = [
     "testing/beacon-api",
     "testing/ef-tests",
     "testing/gossip-validation",
+    "testing/lean-spec-tests",
 ]
 resolver = "2"
 exclude = ["book/cli"]
