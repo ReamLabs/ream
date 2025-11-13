@@ -12,9 +12,8 @@ use hashsig::{
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::hashsig::{HashSigScheme, public_key::PublicKey, signature::Signature};
-
 use super::errors::SignatureError;
+use crate::hashsig::{HashSigScheme, public_key::PublicKey, signature::Signature};
 
 const BINCODE_CONFIG: bincode::config::Configuration<LittleEndian, Fixint, NoLimit> =
     bincode::config::standard().with_fixed_int_encoding();

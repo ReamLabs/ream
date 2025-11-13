@@ -3,8 +3,8 @@ pub enum SignatureError {
     #[error("Signing failed: {0:?}")]
     SigningFailed(hashsig::signature::SigningError),
 
-    #[error("Signature serialization failed")]
-    SerializationFailed,
+    #[error("Signature encode failed: {0:?}")]
+    SignatureEncodeFailed(bincode::error::EncodeError),
 
     #[error("Invalid signature length")]
     InvalidSignatureLength,

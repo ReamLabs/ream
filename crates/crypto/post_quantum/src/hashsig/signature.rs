@@ -1,4 +1,3 @@
-use crate::hashsig::{HashSigScheme, public_key::PublicKey};
 use alloy_primitives::FixedBytes;
 use bincode::config::{Fixint, LittleEndian, NoLimit};
 use hashsig::{MESSAGE_LENGTH, signature::SignatureScheme};
@@ -7,6 +6,7 @@ use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
 use super::errors::SignatureError;
+use crate::hashsig::{HashSigScheme, public_key::PublicKey};
 
 type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
 
@@ -45,7 +45,7 @@ impl Signature {
         hash_sig_signature: HashSigSignature,
     ) -> Result<Self, SignatureError> {
         let serialized = bincode::serde::encode_to_vec(&hash_sig_signature, BINCODE_CONFIG)
-            .map_err(|_| SignatureError::SerializationFailed)?;
+            .map_err(SignatureError::SignatureEncodeFailed)?;
 
         if serialized.len() > SIGNATURE_SIZE {
             return Err(SignatureError::InvalidSignatureLength);
@@ -66,7 +66,7 @@ impl Signature {
 
         bincode::serde::decode_from_slice(&self.inner[..], BINCODE_CONFIG)
             .map(|(signature, _)| signature)
-            .map_err(|err| SignatureError::SignatureDecodeFailed(err))
+            .map_err(SignatureError::SignatureDecodeFailed)
     }
 
     pub fn verify(
