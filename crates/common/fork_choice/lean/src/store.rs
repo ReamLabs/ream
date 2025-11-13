@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use alloy_primitives::{B256, FixedBytes, hex};
+use alloy_primitives::{B256, FixedBytes};
 use anyhow::{anyhow, ensure};
 use ream_consensus_lean::{
     attestation::{Attestation, AttestationData, SignedAttestation},
@@ -43,33 +43,42 @@ impl Store {
         anchor_block: SignedBlockWithAttestation,
         anchor_state: LeanState,
         db: LeanDB,
-    ) -> Store {
-        let genesis_block_hash = anchor_block.message.block.tree_hash_root();
+    ) -> anyhow::Result<Store> {
+        ensure!(
+            anchor_block.message.block.state_root == anchor_state.tree_hash_root(),
+            "Anchor block state root must match anchor state hash"
+        );
+        let anchor_root = anchor_block.message.block.tree_hash_root();
+        let anchor_slot = anchor_block.message.block.slot;
+        let anchor_checkpoint = Checkpoint {
+            root: anchor_root,
+            slot: anchor_slot,
+        };
         db.lean_time_provider()
-            .insert(anchor_block.message.block.slot * lean_network_spec().seconds_per_slot)
+            .insert(anchor_slot * lean_network_spec().seconds_per_slot)
             .expect("Failed to insert anchor slot");
         db.lean_block_provider()
-            .insert(genesis_block_hash, anchor_block)
+            .insert(anchor_root, anchor_block)
             .expect("Failed to insert genesis block");
         db.latest_finalized_provider()
-            .insert(anchor_state.latest_finalized)
+            .insert(anchor_checkpoint)
             .expect("Failed to insert latest finalized checkpoint");
         db.latest_justified_provider()
-            .insert(anchor_state.latest_justified)
+            .insert(anchor_checkpoint)
             .expect("Failed to insert latest justified checkpoint");
         db.lean_state_provider()
-            .insert(genesis_block_hash, anchor_state)
+            .insert(anchor_root, anchor_state)
             .expect("Failed to insert genesis state");
         db.lean_head_provider()
-            .insert(genesis_block_hash)
+            .insert(anchor_root)
             .expect("Failed to insert genesis block hash");
         db.lean_safe_target_provider()
-            .insert(genesis_block_hash)
+            .insert(anchor_root)
             .expect("Failed to insert genesis block hash");
 
-        Store {
+        Ok(Store {
             store: Arc::new(Mutex::new(db)),
-        }
+        })
     }
 
     /// Use LMD GHOST to get the head, given a particular root (usually the
@@ -165,23 +174,32 @@ impl Store {
     /// and update as a safe target.
     ///
     /// See lean specification:
-    /// <https://github.com/leanEthereum/leanSpec/blob/f8e8d271d8b8b6513d34c78692aff47438d6fa18/src/lean_spec/subspecs/forkchoice/store.py#L301-L317>
+    /// https://github.com/leanEthereum/leanSpec/blob/f8e8d271d8b8b6513d34c78692aff47438d6fa18/src/lean_spec/subspecs/forkchoice/store.py#L301-L317
     pub async fn update_safe_target(&self) -> anyhow::Result<()> {
         // 2/3rd majority min voting weight for target selection
         // Note that we use ceiling division here.
         let (
+            head_provider,
+            state_provider,
             latest_justified_provider,
             lean_safe_target_provider,
             lean_latest_new_attestations_provider,
         ) = {
             let db = self.store.lock().await;
             (
+                db.lean_head_provider(),
+                db.lean_state_provider(),
                 db.latest_justified_provider(),
                 db.lean_safe_target_provider(),
                 db.lean_latest_new_attestations_provider(),
             )
         };
-        let min_target_score = (lean_network_spec().num_validators * 2).div_ceil(3);
+
+        let head_state = state_provider
+            .get(head_provider.get()?)?
+            .ok_or(anyhow!("Failed to get head state for safe target update"))?;
+
+        let min_target_score = (head_state.validators.len() as u64 * 2).div_ceil(3);
         let latest_justified_root = latest_justified_provider.get()?.root;
 
         lean_safe_target_provider.insert(
@@ -258,10 +276,13 @@ impl Store {
         let state_iter = state_provider.iter_values()?;
         for state in state_iter {
             let state = state?;
-            if let Some(latest_known_justified) = &latest_justified
-                && state.latest_justified.slot > latest_known_justified.slot
-            {
-                latest_justified = Some(state.latest_justified);
+            match &latest_justified {
+                Some(current)
+                    if current.slot > state.latest_justified.slot
+                        || state.latest_justified.root == B256::ZERO => {}
+                _ => {
+                    latest_justified = Some(state.latest_justified);
+                }
             }
         }
         Ok(latest_justified)
@@ -288,7 +309,6 @@ impl Store {
                 db.lean_block_provider(),
             )
         };
-
         let latest_justified = match self.get_latest_justified().await? {
             Some(latest_justified) => latest_justified,
             None => latest_justified_provider.get()?,
@@ -325,12 +345,6 @@ impl Store {
         Ok(())
     }
 
-    /// Calculate target checkpoint for validator attestations.
-    /// Determines appropriate attestation target based on head, safe target,
-    /// and finalization constraints.
-    ///
-    /// See lean specification:
-    /// <https://github.com/leanEthereum/leanSpec/blob/f8e8d271d8b8b6513d34c78692aff47438d6fa18/src/lean_spec/subspecs/forkchoice/store.py#L341-L366>
     async fn get_attestation_target(&self) -> anyhow::Result<Checkpoint> {
         let (head_provider, block_provider, safe_target_provider, latest_finalized_provider) = {
             let db = self.store.lock().await;
@@ -451,9 +465,9 @@ impl Store {
                     attestations: attestations.clone(),
                 },
             };
-
-            head_state.process_slots(slot)?;
-            head_state.process_block(&candidate_block)?;
+            let mut advanced_state = head_state.clone();
+            advanced_state.process_slots(slot)?;
+            advanced_state.process_block(&candidate_block)?;
 
             let mut new_attestations: VariableList<Attestation, U4096> = VariableList::empty();
             let mut new_signatures: Vec<FixedBytes<4000>> = Vec::new();
@@ -463,15 +477,12 @@ impl Store {
                 .values()
             {
                 let data = &signed_attestation.message.data;
-
                 if !block_provider.contains_key(data.head.root) {
                     continue;
                 }
-
-                if data.source != head_state.latest_justified {
+                if data.source != advanced_state.latest_justified {
                     continue;
                 }
-
                 if !attestations.contains(&signed_attestation.message) {
                     new_attestations
                         .push(signed_attestation.message.clone())
@@ -494,7 +505,6 @@ impl Store {
             }
         }
         stop_timer(add_attestations_timer);
-
         head_state.process_slots(slot)?;
 
         let mut final_block = Block {
@@ -522,7 +532,6 @@ impl Store {
         };
         let block = &signed_block_with_attestation.message.block;
         let proposer_attestation = &signed_block_with_attestation.message.proposer_attestation;
-        let signatures = &signed_block_with_attestation.signature;
         let block_root = block.tree_hash_root();
 
         if block_provider.get(block_root)?.is_some() {
@@ -534,7 +543,6 @@ impl Store {
             .ok_or(anyhow!("State not found for parent root"))?;
 
         // TODO: Add signature validation, https://github.com/ReamLabs/ream/issues/848.
-
         parent_state.state_transition(block, true)?;
 
         block_provider.insert(block_root, signed_block_with_attestation.clone())?;
@@ -563,9 +571,8 @@ impl Store {
         self.on_attestation(
             SignedAttestation {
                 message: proposer_attestation.clone(),
-                signature: *signatures
-                    .get(block.body.attestations.len())
-                    .ok_or(anyhow!("Failed to get attestation"))?,
+                // TODO: Add signature, https://github.com/ReamLabs/ream/issues/848.
+                signature: FixedBytes::<4000>::default(),
             },
             false,
         )
@@ -585,17 +592,17 @@ impl Store {
         ensure!(
             block_provider.contains_key(data.source.root),
             "Unknown source block: {}",
-            hex::encode(data.source.root)
+            data.source.root
         );
         ensure!(
             block_provider.contains_key(data.target.root),
             "Unknown target block: {}",
-            hex::encode(data.target.root)
+            data.target.root
         );
         ensure!(
             block_provider.contains_key(data.head.root),
             "Unknown head block: {}",
-            hex::encode(data.head.root)
+            data.head.root
         );
 
         let source_block = block_provider
@@ -627,7 +634,9 @@ impl Store {
             / lean_network_spec().seconds_per_slot;
         ensure!(
             data.slot <= current_slot + 1,
-            "Attestation too far in future"
+            "Attestation too far in future expected slot: {} <= {}",
+            data.slot,
+            current_slot + 1,
         );
 
         Ok(())
@@ -649,22 +658,18 @@ impl Store {
         self.validate_attestation(&signed_attestation).await?;
         let validator_id = signed_attestation.message.validator_id;
         let attestation_slot = signed_attestation.message.data.slot;
-
         if is_from_block {
             let latest_known = match latest_known_attestations_provider.get(validator_id)? {
                 Some(latest_known) => latest_known.message.data.slot < attestation_slot,
                 None => true,
             };
-
             if latest_known {
                 latest_known_attestations_provider.insert(validator_id, signed_attestation)?;
             }
-
             let remove = match latest_new_attestations_provider.get(validator_id)? {
                 Some(new_new) => new_new.message.data.slot <= attestation_slot,
                 None => false,
             };
-
             if remove {
                 latest_new_attestations_provider.remove(validator_id)?;
             }
@@ -672,13 +677,12 @@ impl Store {
             let time_slots = time_provider.get()? / lean_network_spec().seconds_per_slot;
             ensure!(
                 attestation_slot <= time_slots,
-                "Attestation from future slot"
+                "Attestation from future slot {attestation_slot} <= {time_slots}",
             );
             let latest_new = match latest_new_attestations_provider.get(validator_id)? {
                 Some(latest_new) => latest_new.message.data.slot < attestation_slot,
                 None => true,
             };
-
             if latest_new {
                 latest_new_attestations_provider.insert(validator_id, signed_attestation)?;
             }

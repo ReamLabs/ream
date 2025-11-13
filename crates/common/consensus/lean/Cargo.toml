@@ -23,6 +23,7 @@ tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
 # Local dependencies
+ream-metrics.workspace = true
 ream-post-quantum-crypto.workspace = true
 
 [lints]
