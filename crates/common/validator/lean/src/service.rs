@@ -4,13 +4,11 @@ use ream_consensus_lean::{
     attestation::{Attestation, SignedAttestation},
     block::{BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
 };
+use ream_keystore::lean_keystore::ValidatorKeystore;
 use ream_network_spec::networks::lean_network_spec;
-use ream_post_quantum_crypto::hashsig::signature::Signature;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, info};
 use tree_hash::TreeHash;
-
-use crate::registry::LeanKeystore;
 
 /// ValidatorService is responsible for managing validator operations
 /// such as proposing blocks and submitting attestations on them. This service also holds the
@@ -21,13 +19,13 @@ use crate::registry::LeanKeystore;
 ///
 /// NOTE: Other ticks should be handled by the other services, such as [LeanChainService].
 pub struct ValidatorService {
-    keystores: Vec<LeanKeystore>,
+    keystores: Vec<ValidatorKeystore>,
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
 }
 
 impl ValidatorService {
     pub async fn new(
-        keystores: Vec<LeanKeystore>,
+        keystores: Vec<ValidatorKeystore>,
         chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     ) -> Self {
         ValidatorService {
@@ -56,7 +54,7 @@ impl ValidatorService {
                         0 => {
                             // First tick (t=0): Propose a block.
                             if slot > 0 && let Some(keystore) = self.is_proposer(slot) {
-                                info!(slot, tick = tick_count, "Proposing block by Validator {}", keystore.validator_id);
+                                info!(slot, tick = tick_count, "Proposing block by Validator {}", keystore.id);
                                 let (tx, rx) = oneshot::channel();
 
                                 self.chain_sender
@@ -64,13 +62,13 @@ impl ValidatorService {
                                     .expect("Failed to send produce block to LeanChainService");
 
                                 // Wait for the block to be produced.
-                                let BlockWithSignatures { block, signatures } = rx.await.expect("Failed to receive block from LeanChainService");
+                                let BlockWithSignatures { block, mut signatures } = rx.await.expect("Failed to receive block from LeanChainService");
 
                                 info!(
                                     slot = block.slot,
                                     block_root = ?block.tree_hash_root(),
                                     "Building block finished by Validator {}",
-                                    keystore.validator_id,
+                                    keystore.id,
                                 );
 
                             let (tx, rx) = oneshot::channel();
@@ -79,12 +77,12 @@ impl ValidatorService {
                                 .expect("Failed to send attestation to LeanChainService");
 
                             let attestation_data = rx.await.expect("Failed to receive attestation data from LeanChainService");
-                                // TODO: Sign the block with the keystore once spec is finalized.
+                                let message = Attestation { validator_id: keystore.id, data: attestation_data };
+                                signatures.push(keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?).map_err(|err| anyhow!("Failed to push signature {err:?}"))?;
                                 let signed_block_with_attestation = SignedBlockWithAttestation {
                                     message: BlockWithAttestation {
                                         block: block.clone(),
-                                        proposer_attestation: Attestation { validator_id: keystore.validator_id, data: attestation_data
-                                        },
+                                        proposer_attestation: message,
                                     },
                                     signature: signatures,
                                 };
@@ -130,15 +128,17 @@ impl ValidatorService {
                             }
 
                             // TODO: Sign the attestation with the keystore.
-                            let signed_attestations = self.keystores.iter().map(|keystore| {
-                                SignedAttestation {
-                                    message: Attestation{
-                                        validator_id: keystore.validator_id,
+                            let mut signed_attestations = vec![];
+                            for (_, keystore) in self.keystores.iter().enumerate().filter(|(index, _)| *index as u64 != slot % lean_network_spec().num_validators) {
+                                let message = Attestation {
+                                        validator_id: keystore.id,
                                         data: attestation_data.clone()
-                                    },
-                                    signature: Signature::blank(),
-                                }
-                            }).collect::<Vec<_>>();
+                                    };
+                                    signed_attestations.push(SignedAttestation {
+                                    signature: keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?,
+                                    message,
+                                });
+                            }
 
                             for signed_attestation in signed_attestations {
                                 self.chain_sender
@@ -157,11 +157,11 @@ impl ValidatorService {
     }
 
     /// Determine if one of the keystores is the proposer for the current slot.
-    fn is_proposer(&self, slot: u64) -> Option<&LeanKeystore> {
+    fn is_proposer(&self, slot: u64) -> Option<&ValidatorKeystore> {
         let proposer_index = slot % lean_network_spec().num_validators;
 
         self.keystores
             .iter()
-            .find(|keystore| keystore.validator_id == proposer_index as u64)
+            .find(|keystore| keystore.id == proposer_index as u64)
     }
 }

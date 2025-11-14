@@ -33,7 +33,7 @@ pub struct LeanNodeConfig {
     pub validator_registry_path: PathBuf,
 
     #[arg(
-        default_value = "ream",
+        default_value = "ream_0",
         long,
         help = "Node identifier for validator registry (e.g., 'ream_0', 'zeam_0')"
     )]

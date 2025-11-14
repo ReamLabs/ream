@@ -6,8 +6,8 @@ pub enum SignatureError {
     #[error("Signature encode failed: {0:?}")]
     SignatureEncodeFailed(bincode::error::EncodeError),
 
-    #[error("Invalid signature length")]
-    InvalidSignatureLength,
+    #[error("Invalid signature length: {0}")]
+    InvalidSignatureLength(usize),
 
     #[error("Signature decode failed: {0:?}")]
     SignatureDecodeFailed(bincode::error::DecodeError),

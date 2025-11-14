@@ -5670,6 +5670,7 @@ dependencies = [
  "ream-post-quantum-crypto",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sha2",
  "ssz_types",
  "uuid",
@@ -5861,6 +5862,7 @@ dependencies = [
  "serde_json",
  "ssz_types",
  "thiserror 2.0.17",
+ "tracing",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -6032,9 +6034,11 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "ethereum_ssz",
  "ream-chain-lean",
  "ream-consensus-lean",
  "ream-consensus-misc",
+ "ream-keystore",
  "ream-network-spec",
  "ream-post-quantum-crypto",
  "ream-sync",

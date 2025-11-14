@@ -27,6 +27,7 @@ serde.workspace = true
 serde_json.workspace = true
 ssz_types.workspace = true
 thiserror.workspace = true
+tracing = { workspace = true, features = ["log"] }
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 

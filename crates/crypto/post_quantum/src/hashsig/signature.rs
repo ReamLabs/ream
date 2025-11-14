@@ -9,7 +9,7 @@ use crate::hashsig::{HashSigScheme, public_key::PublicKey};
 
 type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
 
-const SIGNATURE_SIZE: usize = 3100;
+const SIGNATURE_SIZE: usize = 3116;
 
 /// Wrapper around a fixed-size serialized hash-based signature.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Copy)]
@@ -43,7 +43,7 @@ impl Signature {
             .map_err(SignatureError::SignatureEncodeFailed)?;
 
         if serialized.len() > SIGNATURE_SIZE {
-            return Err(SignatureError::InvalidSignatureLength);
+            return Err(SignatureError::InvalidSignatureLength(serialized.len()));
         }
         let mut buffer = [0u8; SIGNATURE_SIZE];
         buffer[..serialized.len()].copy_from_slice(&serialized);
@@ -56,7 +56,7 @@ impl Signature {
     /// Convert back to the original `GeneralizedXMSSSignature` type from the hashsig crate.
     pub fn to_hash_sig_signature(&self) -> Result<HashSigSignature, SignatureError> {
         if self.inner.len() != SIGNATURE_SIZE {
-            return Err(SignatureError::InvalidSignatureLength);
+            return Err(SignatureError::InvalidSignatureLength(self.inner.len()));
         }
 
         bincode::serde::decode_from_slice(&self.inner[..], BINCODE_CONFIG)

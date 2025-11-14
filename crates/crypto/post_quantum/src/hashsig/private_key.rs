@@ -1,20 +1,19 @@
-use std::ops::Range;
+use std::{fmt, fmt::Debug, ops::Range};
 
-use alloy_primitives::Bytes;
+use alloy_primitives::{Bytes, hex};
 use bincode::{self};
 use hashsig::{
     MESSAGE_LENGTH,
     signature::{SignatureScheme, SignatureSchemeSecretKey},
 };
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::{BINCODE_CONFIG, errors::SignatureError};
 use crate::hashsig::{HashSigScheme, public_key::PublicKey, signature::Signature};
 
 pub type HashSigPrivateKey = <HashSigScheme as SignatureScheme>::SecretKey;
 
-#[derive(Serialize, Deserialize)]
 pub struct PrivateKey {
     inner: HashSigPrivateKey,
 }
@@ -83,6 +82,43 @@ impl PrivateKey {
             .map_err(SignatureError::SigningFailed)?;
 
         Signature::from_hash_sig_public_key(signature)
+    }
+}
+
+impl Debug for PrivateKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.to_bytes())
+    }
+}
+
+impl PartialEq for PrivateKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_bytes() == other.to_bytes()
+    }
+}
+
+impl Serialize for PrivateKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let serialized = bincode::serde::encode_to_vec(&self.inner, BINCODE_CONFIG)
+            .map_err(serde::ser::Error::custom)?;
+        serializer.serialize_str(&format!("0x{}", &hex::encode(serialized)))
+    }
+}
+
+impl<'de> Deserialize<'de> for PrivateKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let result: String = Deserialize::deserialize(deserializer)?;
+        let bytes = hex::decode(&result).map_err(serde::de::Error::custom)?;
+        let bincode = bincode::serde::decode_from_slice(&bytes, BINCODE_CONFIG)
+            .map(|(value, _)| value)
+            .expect("Should be able to decode bytes");
+        Ok(Self { inner: bincode })
     }
 }
 
