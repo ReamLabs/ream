@@ -1,4 +1,5 @@
-use alloy_primitives::{B256, FixedBytes};
+use alloy_primitives::B256;
+use ream_post_quantum_crypto::hashsig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{VariableList, typenum::U4096};
@@ -11,7 +12,7 @@ use crate::attestation::Attestation;
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct SignedBlockWithAttestation {
     pub message: BlockWithAttestation,
-    pub signature: VariableList<FixedBytes<4000>, U4096>,
+    pub signature: VariableList<Signature, U4096>,
 }
 
 /// Bundle containing a block and the proposer's attestation.
@@ -62,4 +63,10 @@ pub struct BlockBody {
     /// `VariableList<Attestation, U4096>`.
     /// Tracking issue: https://github.com/ReamLabs/ream/issues/856
     pub attestations: VariableList<Attestation, U4096>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+pub struct BlockWithSignatures {
+    pub block: Block,
+    pub signatures: VariableList<Signature, U4096>,
 }

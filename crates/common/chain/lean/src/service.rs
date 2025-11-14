@@ -1,7 +1,7 @@
 use anyhow::{Context, anyhow};
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
-    block::{Block, SignedBlockWithAttestation},
+    block::{BlockWithSignatures, SignedBlockWithAttestation},
 };
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_network_spec::networks::lean_network_spec;
@@ -173,9 +173,9 @@ impl LeanChainService {
     async fn handle_produce_block(
         &mut self,
         slot: u64,
-        response: oneshot::Sender<Block>,
+        response: oneshot::Sender<BlockWithSignatures>,
     ) -> anyhow::Result<()> {
-        let (new_block, _) = self
+        let block_with_signatures = self
             .store
             .write()
             .await
@@ -184,7 +184,7 @@ impl LeanChainService {
 
         // Send the produced block back to the requester
         response
-            .send(new_block)
+            .send(block_with_signatures)
             .map_err(|err| anyhow!("Failed to send produced block: {err:?}"))?;
 
         Ok(())

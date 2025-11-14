@@ -7,7 +7,7 @@ use tree_hash_derive::TreeHash;
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Validator {
     #[serde(rename = "pubkey")]
-    public_key: PublicKey,
+    pub public_key: PublicKey,
 }
 
 impl Validator {

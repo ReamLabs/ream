@@ -1,4 +1,5 @@
 use alloy_primitives::FixedBytes;
+use ream_post_quantum_crypto::hashsig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{BitList, VariableList, typenum::U4096};
@@ -49,7 +50,7 @@ impl Attestation {
 pub struct SignedAttestation {
     pub message: Attestation,
     /// signature over attestaion message only as it would be aggregated later in attestation
-    pub signature: FixedBytes<4000>,
+    pub signature: Signature,
 }
 
 /// Aggregated attestation consisting of participation bits and message.
