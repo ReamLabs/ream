@@ -12,9 +12,8 @@ use hashsig::{
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::hashsig::{
-    HashSigScheme, errors::SigningError, public_key::PublicKey, signature::Signature,
-};
+use super::errors::SignatureError;
+use crate::hashsig::{HashSigScheme, public_key::PublicKey, signature::Signature};
 
 const BINCODE_CONFIG: bincode::config::Configuration<LittleEndian, Fixint, NoLimit> =
     bincode::config::standard().with_fixed_int_encoding();
@@ -78,7 +77,7 @@ impl PrivateKey {
         &self,
         message: &[u8; MESSAGE_LENGTH],
         epoch: u32,
-    ) -> anyhow::Result<Signature, SigningError> {
+    ) -> anyhow::Result<Signature, SignatureError> {
         let activation_interval = self.get_activation_interval();
 
         assert!(
@@ -86,10 +85,10 @@ impl PrivateKey {
             "Epoch {epoch} is outside the activation interval {activation_interval:?}",
         );
 
-        Ok(Signature::new(
-            <HashSigScheme as SignatureScheme>::sign(&self.inner, epoch, message)
-                .map_err(SigningError::SigningFailed)?,
-        ))
+        let signature = <HashSigScheme as SignatureScheme>::sign(&self.inner, epoch, message)
+            .map_err(SignatureError::SigningFailed)?;
+
+        Signature::from_hash_sig_public_key(signature)
     }
 }
 
