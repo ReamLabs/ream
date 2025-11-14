@@ -1,22 +1,13 @@
 use alloy_primitives::FixedBytes;
-use bincode::config::{Fixint, LittleEndian, NoLimit};
 use hashsig::{MESSAGE_LENGTH, signature::SignatureScheme};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
-use super::errors::SignatureError;
+use super::{BINCODE_CONFIG, errors::SignatureError};
 use crate::hashsig::{HashSigScheme, public_key::PublicKey};
 
 type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
-
-// NOTE: `GeneralizedXMSSSignature` doesn't implement methods like `to_bytes`,
-// which means we need to use bincode to serialize/deserialize it.
-// However, using bincode's default config (little-endian + variable int encoding)
-// add extra bytes to the serialized output, which is not what we want.
-// Thus, define a custom configuration for bincode here.
-const BINCODE_CONFIG: bincode::config::Configuration<LittleEndian, Fixint, NoLimit> =
-    bincode::config::standard().with_fixed_int_encoding();
 
 const SIGNATURE_SIZE: usize = 3100;
 
