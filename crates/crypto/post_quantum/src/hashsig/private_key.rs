@@ -1,10 +1,7 @@
 use std::ops::Range;
 
 use alloy_primitives::Bytes;
-use bincode::{
-    self,
-    config::{Fixint, LittleEndian, NoLimit},
-};
+use bincode::{self};
 use hashsig::{
     MESSAGE_LENGTH,
     signature::{SignatureScheme, SignatureSchemeSecretKey},
@@ -12,11 +9,8 @@ use hashsig::{
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use super::errors::SignatureError;
+use super::{BINCODE_CONFIG, errors::SignatureError};
 use crate::hashsig::{HashSigScheme, public_key::PublicKey, signature::Signature};
-
-const BINCODE_CONFIG: bincode::config::Configuration<LittleEndian, Fixint, NoLimit> =
-    bincode::config::standard().with_fixed_int_encoding();
 
 pub type HashSigPrivateKey = <HashSigScheme as SignatureScheme>::SecretKey;
 
