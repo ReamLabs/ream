@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
-use alloy_primitives::{B256, FixedBytes};
+use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 use ream_consensus_lean::{
     attestation::{Attestation, AttestationData, SignedAttestation},
-    block::{Block, BlockBody, SignedBlockWithAttestation},
+    block::{Block, BlockBody, BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
     state::LeanState,
     validator::is_proposer,
@@ -12,6 +12,7 @@ use ream_consensus_lean::{
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
+use ream_post_quantum_crypto::hashsig::signature::Signature;
 use ream_storage::{
     db::lean::LeanDB,
     tables::{field::REDBField, table::REDBTable},
@@ -426,7 +427,7 @@ impl Store {
         &self,
         slot: u64,
         validator_index: u64,
-    ) -> anyhow::Result<(Block, Vec<FixedBytes<4000>>)> {
+    ) -> anyhow::Result<BlockWithSignatures> {
         let head_root = self.get_proposal_head(slot).await?;
         let initialize_block_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
         let (state_provider, latest_known_attestation_provider, block_provider) = {
@@ -453,7 +454,7 @@ impl Store {
             start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
 
         let mut attestations = VariableList::empty();
-        let mut signatures: Vec<FixedBytes<4000>> = Vec::new();
+        let mut signatures: Vec<Signature> = Vec::new();
 
         loop {
             let candidate_block = Block {
@@ -470,7 +471,7 @@ impl Store {
             advanced_state.process_block(&candidate_block)?;
 
             let mut new_attestations: VariableList<Attestation, U4096> = VariableList::empty();
-            let mut new_signatures: Vec<FixedBytes<4000>> = Vec::new();
+            let mut new_signatures: Vec<Signature> = Vec::new();
 
             for signed_attestation in latest_known_attestation_provider
                 .get_all_attestations()?
@@ -519,7 +520,11 @@ impl Store {
             start_timer_vec(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
         final_block.state_root = head_state.tree_hash_root();
         stop_timer(compute_state_root_timer);
-        Ok((final_block, signatures))
+        Ok(BlockWithSignatures {
+            block: final_block,
+            signatures: VariableList::new(signatures)
+                .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?,
+        })
     }
 
     pub async fn on_block(
@@ -572,7 +577,7 @@ impl Store {
             SignedAttestation {
                 message: proposer_attestation.clone(),
                 // TODO: Add signature, https://github.com/ReamLabs/ream/issues/848.
-                signature: FixedBytes::<4000>::default(),
+                signature: Signature::blank(),
             },
             false,
         )

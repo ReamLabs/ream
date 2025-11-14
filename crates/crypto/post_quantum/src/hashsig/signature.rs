@@ -12,7 +12,7 @@ type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
 const SIGNATURE_SIZE: usize = 3100;
 
 /// Wrapper around a fixed-size serialized hash-based signature.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Copy)]
 pub struct Signature {
     pub inner: FixedBytes<SIGNATURE_SIZE>,
 }
@@ -28,6 +28,10 @@ impl From<&[u8]> for Signature {
 impl Signature {
     pub fn new(inner: FixedBytes<SIGNATURE_SIZE>) -> Self {
         Self { inner }
+    }
+
+    pub fn blank() -> Self {
+        Self::new(Default::default())
     }
 
     /// Create a new `Signature` wrapper from the original `GeneralizedXMSSSignature` type
@@ -62,9 +66,9 @@ impl Signature {
 
     pub fn verify(
         &self,
-        message: &[u8; MESSAGE_LENGTH],
         public_key: &PublicKey,
         epoch: u32,
+        message: &[u8; MESSAGE_LENGTH],
     ) -> anyhow::Result<bool> {
         Ok(<HashSigScheme as SignatureScheme>::verify(
             &public_key.to_hash_sig_public_key()?,

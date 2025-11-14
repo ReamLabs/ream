@@ -1,12 +1,11 @@
-use alloy_primitives::FixedBytes;
 use anyhow::{Context, anyhow};
 use ream_chain_lean::{clock::create_lean_clock_interval, messages::LeanChainServiceMessage};
 use ream_consensus_lean::{
     attestation::{Attestation, SignedAttestation},
-    block::{BlockWithAttestation, SignedBlockWithAttestation},
+    block::{BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
 };
 use ream_network_spec::networks::lean_network_spec;
-use ssz_types::VariableList;
+use ream_post_quantum_crypto::hashsig::signature::Signature;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, info};
 use tree_hash::TreeHash;
@@ -65,11 +64,11 @@ impl ValidatorService {
                                     .expect("Failed to send produce block to LeanChainService");
 
                                 // Wait for the block to be produced.
-                                let new_block = rx.await.expect("Failed to receive block from LeanChainService");
+                                let BlockWithSignatures { block, signatures } = rx.await.expect("Failed to receive block from LeanChainService");
 
                                 info!(
-                                    slot = new_block.slot,
-                                    block_root = ?new_block.tree_hash_root(),
+                                    slot = block.slot,
+                                    block_root = ?block.tree_hash_root(),
                                     "Building block finished by Validator {}",
                                     keystore.validator_id,
                                 );
@@ -83,11 +82,11 @@ impl ValidatorService {
                                 // TODO: Sign the block with the keystore once spec is finalized.
                                 let signed_block_with_attestation = SignedBlockWithAttestation {
                                     message: BlockWithAttestation {
-                                        block: new_block.clone(),
+                                        block: block.clone(),
                                         proposer_attestation: Attestation { validator_id: keystore.validator_id, data: attestation_data
                                         },
                                     },
-                                    signature: VariableList::empty(),
+                                    signature: signatures,
                                 };
 
                                 // Send block to the LeanChainService.
@@ -137,7 +136,7 @@ impl ValidatorService {
                                         validator_id: keystore.validator_id,
                                         data: attestation_data.clone()
                                     },
-                                    signature: FixedBytes::default(),
+                                    signature: Signature::blank(),
                                 }
                             }).collect::<Vec<_>>();
 

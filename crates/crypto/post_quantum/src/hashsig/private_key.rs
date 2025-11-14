@@ -113,7 +113,7 @@ mod tests {
         let signature = result.unwrap();
 
         // Verify the signature
-        let verify_result = signature.verify(&message, &public_key, epoch);
+        let verify_result = signature.verify(&public_key, epoch, &message);
 
         assert!(verify_result.is_ok(), "Verification should succeed");
         assert!(verify_result.unwrap(), "Signature should be valid");
