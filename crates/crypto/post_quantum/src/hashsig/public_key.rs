@@ -3,7 +3,6 @@ use anyhow::anyhow;
 use bincode::{self};
 use hashsig::signature::SignatureScheme;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use ssz::Encode;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U52};
 use tree_hash_derive::TreeHash;
@@ -71,7 +70,7 @@ impl Serialize for PublicKey {
     where
         S: Serializer,
     {
-        let val = format!("0x{}", hex::encode(self.inner.as_ssz_bytes()));
+        let val = format!("0x{}", hex::encode(self.inner.iter().as_slice()));
         serializer.serialize_str(&val)
     }
 }

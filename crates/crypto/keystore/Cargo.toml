@@ -17,6 +17,7 @@ hashsig.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 sha2.workspace = true
 ssz_types.workspace = true
 uuid = { version = "1.0", features = ["v4", "serde"] }

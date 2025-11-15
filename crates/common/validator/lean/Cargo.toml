@@ -12,6 +12,7 @@ version.workspace = true
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
+ethereum_ssz.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 ssz_types.workspace = true
@@ -23,6 +24,7 @@ tree_hash.workspace = true
 ream-chain-lean.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
+ream-keystore.workspace = true
 ream-network-spec.workspace = true
 ream-post-quantum-crypto.workspace = true
 ream-sync.workspace = true

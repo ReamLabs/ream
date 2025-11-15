@@ -1,8 +1,0 @@
-# Node-based validator registry
-# Each node identifier maps to a list of validator IDs it controls
-
-ream:
-  - 0
-  - 1
-  - 2
-  - 3

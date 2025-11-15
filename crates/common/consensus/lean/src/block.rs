@@ -1,4 +1,5 @@
 use alloy_primitives::B256;
+use anyhow::{anyhow, ensure};
 use ream_post_quantum_crypto::hashsig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -6,13 +7,53 @@ use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::attestation::Attestation;
+use crate::{attestation::Attestation, state::LeanState};
 
 /// Envelope carrying a block, an attestation from proposer, and aggregated signatures.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct SignedBlockWithAttestation {
     pub message: BlockWithAttestation,
     pub signature: VariableList<Signature, U4096>,
+}
+
+impl SignedBlockWithAttestation {
+    pub fn verify_signatures(&self, parent_state: &LeanState) -> anyhow::Result<bool> {
+        let block = &self.message.block;
+        let signatures = &self.signature;
+        let mut all_attestations = block.body.attestations.to_vec();
+
+        all_attestations.push(self.message.proposer_attestation.clone());
+
+        ensure!(
+            signatures.len() == all_attestations.len(),
+            "Number of signatures {} does not match number of attestations {}",
+            signatures.len(),
+            all_attestations.len(),
+        );
+        let validators = &parent_state.validators;
+
+        for (attestation, signature) in all_attestations.iter().zip(signatures.iter()) {
+            let validator_id = attestation.validator_id as usize;
+            ensure!(
+                validator_id < validators.len(),
+                "Validator index out of range"
+            );
+            let validator = validators
+                .get(validator_id)
+                .ok_or(anyhow!("Failed to get validator"))?;
+
+            ensure!(
+                signature.verify(
+                    &validator.public_key,
+                    attestation.data.slot as u32,
+                    &attestation.tree_hash_root(),
+                )?,
+                "Failed to verify"
+            );
+        }
+
+        Ok(true)
+    }
 }
 
 /// Bundle containing a block and the proposer's attestation.

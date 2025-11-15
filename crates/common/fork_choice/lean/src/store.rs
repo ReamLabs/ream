@@ -257,9 +257,7 @@ impl Store {
 
     pub async fn on_tick(&self, time: u64, has_proposal: bool) -> anyhow::Result<()> {
         let seconds_per_interval = lean_network_spec().seconds_per_slot / INTERVALS_PER_SLOT;
-        let tick_interval_time = (time - lean_network_spec().genesis_time)
-            / lean_network_spec().seconds_per_slot
-            / seconds_per_interval;
+        let tick_interval_time = (time - lean_network_spec().genesis_time) / seconds_per_interval;
 
         let time_provider = self.store.lock().await.lean_time_provider();
         while time_provider.get()? < tick_interval_time {
@@ -472,7 +470,6 @@ impl Store {
 
             let mut new_attestations: VariableList<Attestation, U4096> = VariableList::empty();
             let mut new_signatures: Vec<Signature> = Vec::new();
-
             for signed_attestation in latest_known_attestation_provider
                 .get_all_attestations()?
                 .values()
@@ -536,6 +533,7 @@ impl Store {
             (db.lean_state_provider(), db.lean_block_provider())
         };
         let block = &signed_block_with_attestation.message.block;
+        let signatures = &signed_block_with_attestation.signature;
         let proposer_attestation = &signed_block_with_attestation.message.proposer_attestation;
         let block_root = block.tree_hash_root();
 
@@ -547,7 +545,7 @@ impl Store {
             .get(block.parent_root)?
             .ok_or(anyhow!("State not found for parent root"))?;
 
-        // TODO: Add signature validation, https://github.com/ReamLabs/ream/issues/848.
+        signed_block_with_attestation.verify_signatures(&parent_state)?;
         parent_state.state_transition(block, true)?;
 
         block_provider.insert(block_root, signed_block_with_attestation.clone())?;
@@ -576,8 +574,9 @@ impl Store {
         self.on_attestation(
             SignedAttestation {
                 message: proposer_attestation.clone(),
-                // TODO: Add signature, https://github.com/ReamLabs/ream/issues/848.
-                signature: Signature::blank(),
+                signature: *signatures
+                    .get(block.body.attestations.len())
+                    .ok_or(anyhow!("Failed to get attestation"))?,
             },
             false,
         )

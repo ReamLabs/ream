@@ -1,8 +1,8 @@
 pub mod account_manager;
 pub mod beacon_node;
 pub mod constants;
-pub mod generate_keystores;
 pub mod generate_private_key;
+pub mod generate_validator_registry;
 pub mod import_keystores;
 pub mod lean_node;
 pub mod validator_node;
@@ -17,8 +17,8 @@ use ream_node::version::FULL_VERSION;
 use crate::cli::{
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
-    generate_keystores::GenerateKeystoreConfig,
     generate_private_key::GeneratePrivateKeyConfig,
+    generate_validator_registry::GenerateValidatorRegistryConfig,
     lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig,
     verbosity::{Verbosity, verbosity_parser},
@@ -79,8 +79,8 @@ pub enum Commands {
     GeneratePrivateKey(Box<GeneratePrivateKeyConfig>),
 
     /// Generate keystore file
-    #[command(name = "generate_keystore")]
-    GenerateKeystore(Box<GenerateKeystoreConfig>),
+    #[command(name = "generate_validator_registry")]
+    GenerateKeystore(Box<GenerateValidatorRegistryConfig>),
 }
 
 #[cfg(test)]

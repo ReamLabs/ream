@@ -47,7 +47,7 @@ The quickest way to get started is to run a lean node on the Ephemery testnet:
 ```bash
 cargo run --release -- --ephemeral lean_node \
     --network ephemery \
-    --validator-registry-path ./bin/ream/assets/lean/validator_registry.yml
+    --validator-registry-path ./bin/ream/assets/lean/validator_registry.yaml
 ```
 
 Understanding the Command
@@ -66,7 +66,7 @@ To enable your node to expose metrics through Prometheus, add the `--metrics` fl
 ```bash
 cargo run --release -- --ephemeral lean_node \
     --network ephemery \
-    --validator-registry-path ./bin/ream/assets/lean/validator_registry.yml \
+    --validator-registry-path ./bin/ream/assets/lean/validator_registry.yaml \
     --metrics --metrics-address 0.0.0.0
 ```
 

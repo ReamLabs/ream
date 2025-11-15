@@ -17,8 +17,8 @@ use ream::cli::{
     Cli, Commands,
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
-    generate_keystores::run_generate_keystore,
     generate_private_key::GeneratePrivateKeyConfig,
+    generate_validator_registry::run_generate_validator_registry,
     import_keystores::{load_keystore_directory, load_password_from_config, process_password},
     lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig,
@@ -36,6 +36,7 @@ use ream_consensus_lean::{
     attestation::{Attestation, AttestationData},
     block::{BlockWithAttestation, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
+    validator::Validator,
 };
 use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
@@ -123,7 +124,7 @@ fn main() {
             executor_clone.spawn(async move { run_generate_private_key(*config).await });
         }
         Commands::GenerateKeystore(config) => {
-            run_generate_keystore(*config).expect("failed to generate hash-sig keystore");
+            run_generate_validator_registry(*config).expect("failed to generate hash-sig keystore");
             process::exit(0);
         }
     }
@@ -175,8 +176,17 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     info!("ream lean database has been initialized");
 
+    let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
+        .expect("Failed to load validator registry");
+    let validators = keystores
+        .iter()
+        .map(|keystore| Validator {
+            public_key: keystore.public_key.clone(),
+        })
+        .collect::<Vec<_>>();
+
     // Initialize the lean chain with genesis block and state.
-    let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
+    let (genesis_block, genesis_state) = lean_genesis::setup_genesis(validators);
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
             SignedBlockWithAttestation {
@@ -240,8 +250,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     let peer_table = network_service.peer_table();
 
-    let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
-        .expect("Failed to load validator registry");
     let validator_service = LeanValidatorService::new(keystores, chain_sender).await;
 
     let server_config = RpcServerConfig::new(
