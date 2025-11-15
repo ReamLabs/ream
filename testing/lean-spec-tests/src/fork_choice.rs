@@ -106,7 +106,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                         source: state.latest_finalized,
                     },
                 },
-                block: block,
+                block,
             },
             signature: VariableList::empty(),
         },
