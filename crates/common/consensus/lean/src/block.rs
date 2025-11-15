@@ -17,7 +17,7 @@ pub struct SignedBlockWithAttestation {
 }
 
 impl SignedBlockWithAttestation {
-    pub fn verify_signatures(&self, parent_state: LeanState) -> anyhow::Result<bool> {
+    pub fn verify_signatures(&self, parent_state: &LeanState) -> anyhow::Result<bool> {
         let block = &self.message.block;
         let signatures = &self.signature;
         let mut all_attestations = block.body.attestations.to_vec();
@@ -30,7 +30,7 @@ impl SignedBlockWithAttestation {
             signatures.len(),
             all_attestations.len(),
         );
-        let validators = parent_state.validators;
+        let validators = &parent_state.validators;
 
         for (attestation, signature) in all_attestations.iter().zip(signatures.iter()) {
             let validator_id = attestation.validator_id as usize;

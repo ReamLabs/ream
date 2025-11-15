@@ -545,7 +545,7 @@ impl Store {
             .get(block.parent_root)?
             .ok_or(anyhow!("State not found for parent root"))?;
 
-        signed_block_with_attestation.verify_signatures(parent_state.clone())?;
+        signed_block_with_attestation.verify_signatures(&parent_state)?;
         parent_state.state_transition(block, true)?;
 
         block_provider.insert(block_root, signed_block_with_attestation.clone())?;
