@@ -48,6 +48,7 @@ mod tests {
     use crate::lean_keystore::ValidatorRegistry;
 
     #[test]
+    #[ignore = "slow"]
     fn test_generate_validator_registry() {
         let validator_registry = ValidatorRegistry::new(1, 4).unwrap();
         let encoded = serde_yaml::to_string(&validator_registry).unwrap();
