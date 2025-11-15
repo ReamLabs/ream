@@ -16,7 +16,7 @@ Options:
       --validator-registry-path <VALIDATOR_REGISTRY_PATH>
           The path to the validator registry
       --node-id <NODE_ID>
-          Node identifier for validator registry (e.g., 'ream_0', 'zeam_0') [default: ream]
+          Node identifier for validator registry (e.g., 'ream_0', 'zeam_0') [default: ream_0]
       --private-key-path <PRIVATE_KEY_PATH>
           The path to the hex encoded secp256k1 libp2p key
       --socket-address <SOCKET_ADDRESS>
