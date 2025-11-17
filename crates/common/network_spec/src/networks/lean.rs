@@ -61,7 +61,7 @@ impl LeanNetworkSpec {
             .as_secs();
 
         Self {
-            genesis_time: current_timestamp + 3,
+            genesis_time: current_timestamp + 10,
             justification_lookback_slots: 3,
             seconds_per_slot: 4,
             num_validators: 4,

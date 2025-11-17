@@ -55,14 +55,13 @@ use ream_p2p::{
         topics::{LeanGossipTopic, LeanGossipTopicKind},
     },
     network::lean::{LeanNetworkConfig, LeanNetworkService},
-    req_resp::lean::messages::status::Status,
 };
 use ream_post_quantum_crypto::hashsig::private_key::PrivateKey as HashSigPrivateKey;
 use ream_rpc_common::config::RpcServerConfig;
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
-    tables::{field::REDBField, table::REDBTable},
+    tables::table::REDBTable,
 };
 use ream_sync::rwlock::Writer;
 use ream_validator_beacon::{
@@ -190,21 +189,34 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
     let (outbound_p2p_sender, outbound_p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
-    // Initialize the lean network service
+    // Initialize the lean chain with genesis block and state.
+    let (genesis_block, genesis_state) = lean_genesis::setup_genesis(validators);
+    let (lean_chain_writer, lean_chain_reader) = Writer::new(
+        Store::get_forkchoice_store(
+            SignedBlockWithAttestation {
+                message: BlockWithAttestation {
+                    block: genesis_block,
+                    proposer_attestation: Attestation {
+                        validator_id: 0,
+                        data: AttestationData {
+                            slot: 0,
+                            head: Checkpoint::default(),
+                            target: Checkpoint::default(),
+                            source: Checkpoint::default(),
+                        },
+                    },
+                },
+                signature: VariableList::default(),
+            },
+            genesis_state,
+            lean_db,
+        )
+        .expect("Could not get forkchoice store"),
+    );
 
-    let head_block_hash = lean_db
-        .lean_head_provider()
-        .get()
-        .expect("Head blockhash should be available");
-    let head_block = lean_db
-        .lean_block_provider()
-        .get(head_block_hash)
-        .expect("Head block should be available")
-        .expect("Head block should be Some");
-    let head_cheakpoint = Checkpoint {
-        root: head_block_hash,
-        slot: head_block.message.block.slot,
-    };
+    let network_state = lean_chain_reader.read().await.network_state.clone();
+
+    // Initialize the lean network service
 
     let fork = "devnet0".to_string();
     let topics: Vec<LeanGossipTopic> = vec![
@@ -231,44 +243,10 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         executor.clone(),
         chain_sender.clone(),
         outbound_p2p_receiver,
-        Status {
-            finalized: lean_db
-                .latest_finalized_provider()
-                .get()
-                .expect("Finalized checkpoint should be avaliable"),
-            head: head_cheakpoint,
-        },
+        network_state.clone(),
     )
     .await
     .expect("Failed to create network service");
-
-    let network_state = network_service.network_state.clone();
-
-    // Initialize the lean chain with genesis block and state.
-    let (genesis_block, genesis_state) = lean_genesis::setup_genesis(validators);
-    let (lean_chain_writer, lean_chain_reader) = Writer::new(
-        Store::get_forkchoice_store(
-            SignedBlockWithAttestation {
-                message: BlockWithAttestation {
-                    block: genesis_block,
-                    proposer_attestation: Attestation {
-                        validator_id: 0,
-                        data: AttestationData {
-                            slot: 0,
-                            head: Checkpoint::default(),
-                            target: Checkpoint::default(),
-                            source: Checkpoint::default(),
-                        },
-                    },
-                },
-                signature: VariableList::default(),
-            },
-            genesis_state,
-            lean_db,
-            network_state.clone(),
-        )
-        .expect("Could not get forkchoice store"),
-    );
 
     let chain_service =
         LeanChainService::new(lean_chain_writer, chain_receiver, outbound_p2p_sender).await;
@@ -639,4 +617,56 @@ pub async fn run_generate_private_key(config: GeneratePrivateKeyConfig) {
     );
 
     process::exit(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use clap::Parser;
+    use ream::cli::{Cli, Commands};
+    use ream_executor::ReamExecutor;
+    use ream_storage::{db::ReamDB, dir::setup_data_dir};
+    use tokio::time::{sleep, timeout};
+
+    use crate::{APP_NAME, run_lean_node};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_lean_node_runs_10_seconds_without_panicking() {
+        let cli = Cli::parse_from([
+            "ream",
+            "--ephemeral",
+            "lean_node",
+            "--network",
+            "ephemery",
+            "--validator-registry-path",
+            "./assets/lean/validator_registry.yaml",
+        ]);
+
+        let Commands::LeanNode(config) = cli.command else {
+            panic!("Expected lean_node command");
+        };
+
+        let ream_dir = setup_data_dir(APP_NAME, None, true).unwrap();
+        let db = ReamDB::new(ream_dir).unwrap();
+        let executor = ReamExecutor::new().unwrap();
+
+        let handle = tokio::spawn(async move {
+            run_lean_node(*config, executor.clone(), db).await;
+        });
+
+        let result = timeout(Duration::from_secs(10), async {
+            sleep(Duration::from_secs(10)).await;
+            Ok::<_, ()>(())
+        })
+        .await;
+
+        match result {
+            Ok(Ok(())) => {}
+            Err(err) => panic!("lean_node panicked or exited early {err:?}"),
+            Ok(Err(err)) => panic!("internal error {err:?}"),
+        }
+
+        handle.abort();
+    }
 }

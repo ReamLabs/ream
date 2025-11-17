@@ -17,6 +17,14 @@ pub struct NetworkState {
 }
 
 impl NetworkState {
+    pub fn new(head_checkpoint: Checkpoint, finalized_checkpoint: Checkpoint) -> Self {
+        Self {
+            peer_table: Arc::new(Mutex::new(HashMap::new())),
+            head_checkpoint: RwLock::new(head_checkpoint),
+            finalized_checkpoint: RwLock::new(finalized_checkpoint),
+        }
+    }
+
     pub fn update_peer_state(&self, peer_id: PeerId, state: ConnectionState) {
         self.peer_table
             .lock()

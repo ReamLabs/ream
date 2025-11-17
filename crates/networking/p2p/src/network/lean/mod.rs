@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fs,
     net::IpAddr,
     num::{NonZeroU8, NonZeroUsize},
@@ -23,7 +22,6 @@ use libp2p::{
     swarm::{Config, ConnectionId, NetworkBehaviour, Swarm, SwarmEvent},
 };
 use libp2p_identity::{Keypair, PeerId, secp256k1};
-use parking_lot::{Mutex, RwLock};
 use ream_chain_lean::{messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::{Devnet, lean_network_spec};
@@ -108,7 +106,7 @@ impl LeanNetworkService {
         executor: ReamExecutor,
         chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
         outbound_p2p_request: UnboundedReceiver<LeanP2PRequest>,
-        status: Status,
+        network_state: Arc<NetworkState>,
     ) -> anyhow::Result<Self> {
         let connection_limits = {
             let limits = ConnectionLimits::default()
@@ -190,11 +188,7 @@ impl LeanNetworkService {
             outbound_p2p_request,
             bootnode_retry_state: HashMapDelay::new(BOOTNODE_RETRY_TIMEOUT),
             request_id: AtomicU64::new(1),
-            network_state: Arc::new(NetworkState {
-                peer_table: Arc::new(Mutex::new(HashMap::new())),
-                head_checkpoint: RwLock::new(status.head),
-                finalized_checkpoint: RwLock::new(status.finalized),
-            }),
+            network_state,
         };
 
         let mut multi_addr: Multiaddr = lean_network_service.network_config.socket_address.into();
@@ -644,10 +638,7 @@ mod tests {
             executor,
             sender,
             outbound_request_receiver,
-            Status {
-                finalized: Default::default(),
-                head: Default::default(),
-            },
+            Arc::new(NetworkState::new(Default::default(), Default::default())),
         )
         .await?;
         let multi_addr: Multiaddr = config.socket_address.into();
