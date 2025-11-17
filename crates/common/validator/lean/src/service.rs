@@ -1,4 +1,4 @@
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use ream_chain_lean::{clock::create_lean_clock_interval, messages::LeanChainServiceMessage};
 use ream_consensus_lean::{
     attestation::{Attestation, SignedAttestation},
@@ -43,8 +43,8 @@ impl ValidatorService {
 
         let mut tick_count = 0u64;
 
-        let mut interval =
-            create_lean_clock_interval().context("Failed to create clock interval")?;
+        let mut interval = create_lean_clock_interval()
+            .map_err(|err| anyhow!("Failed to create clock interval: {err:?}"))?;
 
         loop {
             tokio::select! {

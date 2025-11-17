@@ -45,7 +45,6 @@ impl Store {
         anchor_block: SignedBlockWithAttestation,
         anchor_state: LeanState,
         db: LeanDB,
-        network_state: Arc<NetworkState>,
     ) -> anyhow::Result<Store> {
         ensure!(
             anchor_block.message.block.state_root == anchor_state.tree_hash_root(),
@@ -81,7 +80,7 @@ impl Store {
 
         Ok(Store {
             store: Arc::new(Mutex::new(db)),
-            network_state,
+            network_state: Arc::new(NetworkState::new(anchor_checkpoint, anchor_checkpoint)),
         })
     }
 
