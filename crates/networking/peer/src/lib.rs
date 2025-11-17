@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectionState {
     Connected,
@@ -9,7 +9,7 @@ pub enum ConnectionState {
     Disconnecting,
 }
 
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
     Inbound,

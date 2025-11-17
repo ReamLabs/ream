@@ -31,7 +31,9 @@ members = [
     "crates/crypto/post_quantum",
     "crates/networking/discv5",
     "crates/networking/manager",
+    "crates/networking/network_state/lean",
     "crates/networking/p2p",
+    "crates/networking/peer",
     "crates/networking/syncer",
     "crates/rpc/beacon",
     "crates/rpc/common",
@@ -154,9 +156,11 @@ ream-merkle = { path = "crates/crypto/merkle" }
 ream-metrics = { path = "crates/common/metrics" }
 ream-network-manager = { path = "crates/networking/manager" }
 ream-network-spec = { path = "crates/common/network_spec" }
+ream-network-state-lean = { path = "crates/networking/network_state/lean" }
 ream-node = { path = "crates/common/node" }
 ream-operation-pool = { path = "crates/common/operation_pool" }
 ream-p2p = { path = "crates/networking/p2p" }
+ream-peer = { path = "crates/networking/peer" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-post-quantum-crypto = { path = "crates/crypto/post_quantum" }
 ream-rpc-beacon = { path = "crates/rpc/beacon" }

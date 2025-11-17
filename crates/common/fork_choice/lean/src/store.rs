@@ -12,6 +12,7 @@ use ream_consensus_lean::{
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer_vec, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
+use ream_network_state_lean::NetworkState;
 use ream_post_quantum_crypto::hashsig::signature::Signature;
 use ream_storage::{
     db::lean::LeanDB,
@@ -34,8 +35,8 @@ pub type LeanStoreReader = Reader<Store>;
 /// but doesn't include `validator_id` as a node should manage multiple validators.
 #[derive(Debug, Clone)]
 pub struct Store {
-    /// Database.
     pub store: Arc<Mutex<LeanDB>>,
+    pub network_state: Arc<NetworkState>,
 }
 
 impl Store {
@@ -44,6 +45,7 @@ impl Store {
         anchor_block: SignedBlockWithAttestation,
         anchor_state: LeanState,
         db: LeanDB,
+        network_state: Arc<NetworkState>,
     ) -> anyhow::Result<Store> {
         ensure!(
             anchor_block.message.block.state_root == anchor_state.tree_hash_root(),
@@ -79,6 +81,7 @@ impl Store {
 
         Ok(Store {
             store: Arc::new(Mutex::new(db)),
+            network_state,
         })
     }
 
@@ -337,9 +340,17 @@ impl Store {
             &[],
         );
 
+        let head_block = block_provider
+            .get(new_head)?
+            .ok_or(anyhow!("Failed to get head block"))?;
+        *self.network_state.head_checkpoint.write() = Checkpoint {
+            root: head_block.message.block.tree_hash_root(),
+            slot: head_block.message.block.slot,
+        };
         head_provider.insert(new_head)?;
         latest_justified_provider.insert(latest_justified)?;
         latest_finalized_provider.insert(latest_finalized)?;
+        *self.network_state.finalized_checkpoint.write() = latest_finalized;
 
         Ok(())
     }

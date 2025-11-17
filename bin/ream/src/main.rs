@@ -55,13 +55,14 @@ use ream_p2p::{
         topics::{LeanGossipTopic, LeanGossipTopicKind},
     },
     network::lean::{LeanNetworkConfig, LeanNetworkService},
+    req_resp::lean::messages::status::Status,
 };
 use ream_post_quantum_crypto::hashsig::private_key::PrivateKey as HashSigPrivateKey;
 use ream_rpc_common::config::RpcServerConfig;
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
-    tables::table::REDBTable,
+    tables::{field::REDBField, table::REDBTable},
 };
 use ream_sync::rwlock::Writer;
 use ream_validator_beacon::{
@@ -185,6 +186,64 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         })
         .collect::<Vec<_>>();
 
+    // Initialize the services that will run in the lean node.
+    let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
+    let (outbound_p2p_sender, outbound_p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+
+    // Initialize the lean network service
+
+    let head_block_hash = lean_db
+        .lean_head_provider()
+        .get()
+        .expect("Head blockhash should be available");
+    let head_block = lean_db
+        .lean_block_provider()
+        .get(head_block_hash)
+        .expect("Head block should be available")
+        .expect("Head block should be Some");
+    let head_cheakpoint = Checkpoint {
+        root: head_block_hash,
+        slot: head_block.message.block.slot,
+    };
+
+    let fork = "devnet0".to_string();
+    let topics: Vec<LeanGossipTopic> = vec![
+        LeanGossipTopic {
+            fork: fork.clone(),
+            kind: LeanGossipTopicKind::Block,
+        },
+        LeanGossipTopic {
+            fork,
+            kind: LeanGossipTopicKind::Attestation,
+        },
+    ];
+
+    let mut network_service = LeanNetworkService::new(
+        Arc::new(LeanNetworkConfig {
+            gossipsub_config: LeanGossipsubConfig {
+                topics,
+                ..Default::default()
+            },
+            socket_address: config.socket_address,
+            socket_port: config.socket_port,
+            private_key_path: config.private_key_path,
+        }),
+        executor.clone(),
+        chain_sender.clone(),
+        outbound_p2p_receiver,
+        Status {
+            finalized: lean_db
+                .latest_finalized_provider()
+                .get()
+                .expect("Finalized checkpoint should be avaliable"),
+            head: head_cheakpoint,
+        },
+    )
+    .await
+    .expect("Failed to create network service");
+
+    let network_state = network_service.network_state.clone();
+
     // Initialize the lean chain with genesis block and state.
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis(validators);
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
@@ -206,49 +265,13 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             },
             genesis_state,
             lean_db,
+            network_state.clone(),
         )
         .expect("Could not get forkchoice store"),
     );
 
-    // Initialize the services that will run in the lean node.
-    let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
-    let (outbound_p2p_sender, outbound_p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-
     let chain_service =
         LeanChainService::new(lean_chain_writer, chain_receiver, outbound_p2p_sender).await;
-
-    let fork = "devnet0".to_string();
-    let topics: Vec<LeanGossipTopic> = vec![
-        LeanGossipTopic {
-            fork: fork.clone(),
-            kind: LeanGossipTopicKind::Block,
-        },
-        LeanGossipTopic {
-            fork,
-            kind: LeanGossipTopicKind::Attestation,
-        },
-    ];
-
-    let gossipsub_config = LeanGossipsubConfig {
-        topics,
-        ..Default::default()
-    };
-
-    let mut network_service = LeanNetworkService::new(
-        Arc::new(LeanNetworkConfig {
-            gossipsub_config,
-            socket_address: config.socket_address,
-            socket_port: config.socket_port,
-            private_key_path: config.private_key_path,
-        }),
-        executor.clone(),
-        chain_sender.clone(),
-        outbound_p2p_receiver,
-    )
-    .await
-    .expect("Failed to create network service");
-
-    let peer_table = network_service.peer_table();
 
     let validator_service = LeanValidatorService::new(keystores, chain_sender).await;
 
@@ -275,7 +298,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         }
     });
     let http_future = executor.spawn(async move {
-        ream_rpc_lean::server::start(server_config, lean_chain_reader, peer_table).await
+        ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
     });
 
     tokio::select! {

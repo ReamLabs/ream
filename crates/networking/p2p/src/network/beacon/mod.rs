@@ -33,6 +33,7 @@ use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::beacon_network_spec;
+use ream_peer::{ConnectionState, Direction};
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time::interval,
@@ -40,15 +41,11 @@ use tokio::{
 use tracing::{error, info, trace, warn};
 use utils::read_meta_data_from_disk;
 
-use super::peer::Direction;
 use crate::{
     config::NetworkConfig,
     constants::{PING_INTERVAL_DURATION, TARGET_PEER_COUNT},
     gossipsub::{GossipsubBehaviour, beacon::topics::GossipTopic, snappy::SnappyTransform},
-    network::{
-        misc::{Executor, build_transport, peer_id_from_enr},
-        peer::ConnectionState,
-    },
+    network::misc::{Executor, build_transport, peer_id_from_enr},
     req_resp::{
         Chain, ReqResp, ReqRespMessage,
         beacon::messages::{

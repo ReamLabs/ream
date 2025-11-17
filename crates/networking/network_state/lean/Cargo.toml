@@ -1,5 +1,5 @@
 [package]
-name = "ream-rpc-lean"
+name = "ream-network-state-lean"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -10,21 +10,13 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-actix-web.workspace = true
 libp2p.workspace = true
 parking_lot.workspace = true
-tokio.workspace = true
-tracing.workspace = true
+serde.workspace = true
 
-#ream-dependencies
-ream-api-types-common.workspace = true
-ream-api-types-lean.workspace = true
+# ream dependencies
 ream-consensus-lean.workspace = true
-ream-fork-choice-lean.workspace = true
-ream-network-state-lean.workspace = true
 ream-peer.workspace = true
-ream-rpc-common.workspace = true
-ream-storage.workspace = true
 
 [lints]
 workspace = true

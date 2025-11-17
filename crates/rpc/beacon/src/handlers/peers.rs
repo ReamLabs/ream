@@ -8,10 +8,8 @@ use discv5::Enr;
 use libp2p::{Multiaddr, PeerId};
 use ream_api_types_beacon::responses::DataResponse;
 use ream_api_types_common::error::ApiError;
-use ream_p2p::network::{
-    beacon::network_state::NetworkState,
-    peer::{ConnectionState, Direction, PeerCount},
-};
+use ream_p2p::network::beacon::network_state::NetworkState;
+use ream_peer::{ConnectionState, Direction, PeerCount};
 use serde::Serialize;
 
 /// GET /eth/v1/node/peers/{peer_id}
