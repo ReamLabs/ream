@@ -3,19 +3,20 @@ pub mod status;
 
 use std::sync::Arc;
 
-use blocks::LeanBlocksByRootV1Request;
 use ream_consensus_lean::block::SignedBlockWithAttestation;
 use ssz_derive::{Decode, Encode};
-use status::LeanStatus;
 
 use super::protocol_id::LeanSupportedProtocol;
-use crate::req_resp::protocol_id::{ProtocolId, SupportedProtocol};
+use crate::req_resp::{
+    lean::messages::{blocks::BlocksByRootV1Request, status::Status},
+    protocol_id::{ProtocolId, SupportedProtocol},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 #[ssz(enum_behaviour = "transparent")]
 pub enum LeanRequestMessage {
-    Status(LeanStatus),
-    BlocksByRoot(LeanBlocksByRootV1Request),
+    Status(Status),
+    BlocksByRoot(BlocksByRootV1Request),
 }
 
 impl LeanRequestMessage {
@@ -36,6 +37,6 @@ impl LeanRequestMessage {
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 #[ssz(enum_behaviour = "transparent")]
 pub enum LeanResponseMessage {
-    Status(LeanStatus),
+    Status(Status),
     BlocksByRoot(Arc<SignedBlockWithAttestation>),
 }

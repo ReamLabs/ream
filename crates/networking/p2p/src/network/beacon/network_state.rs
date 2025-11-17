@@ -4,13 +4,11 @@ use anyhow::anyhow;
 use discv5::Enr;
 use libp2p::{Multiaddr, PeerId};
 use parking_lot::RwLock;
+use ream_peer::{ConnectionState, Direction};
 use ssz::Encode;
 
 use super::{peer::CachedPeer, utils::META_DATA_FILE_NAME};
-use crate::{
-    network::peer::{ConnectionState, Direction},
-    req_resp::beacon::messages::{meta_data::GetMetaDataV2, status::Status},
-};
+use crate::req_resp::beacon::messages::{meta_data::GetMetaDataV2, status::Status};
 
 pub struct NetworkState {
     pub local_enr: RwLock<Enr>,

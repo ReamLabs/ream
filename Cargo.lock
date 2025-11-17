@@ -5643,6 +5643,7 @@ dependencies = [
  "ream-consensus-misc",
  "ream-metrics",
  "ream-network-spec",
+ "ream-network-state-lean",
  "ream-post-quantum-crypto",
  "ream-storage",
  "ream-sync",
@@ -5755,6 +5756,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-network-state-lean"
+version = "0.1.0"
+dependencies = [
+ "libp2p",
+ "parking_lot",
+ "ream-consensus-lean",
+ "ream-peer",
+ "serde",
+]
+
+[[package]]
 name = "ream-node"
 version = "0.1.0"
 dependencies = [
@@ -5800,6 +5812,8 @@ dependencies = [
  "ream-executor",
  "ream-light-client",
  "ream-network-spec",
+ "ream-network-state-lean",
+ "ream-peer",
  "ream-storage",
  "ream-sync",
  "ream-validator-beacon",
@@ -5817,6 +5831,14 @@ dependencies = [
  "tracing-test",
  "tree_hash",
  "unsigned-varint 0.8.0",
+]
+
+[[package]]
+name = "ream-peer"
+version = "0.1.0"
+dependencies = [
+ "ethereum_serde_utils",
+ "serde",
 ]
 
 [[package]]
@@ -5894,6 +5916,7 @@ dependencies = [
  "ream-node",
  "ream-operation-pool",
  "ream-p2p",
+ "ream-peer",
  "ream-rpc-common",
  "ream-storage",
  "serde",
@@ -5925,10 +5948,10 @@ dependencies = [
  "parking_lot",
  "ream-api-types-common",
  "ream-api-types-lean",
- "ream-chain-lean",
  "ream-consensus-lean",
  "ream-fork-choice-lean",
- "ream-p2p",
+ "ream-network-state-lean",
+ "ream-peer",
  "ream-rpc-common",
  "ream-storage",
  "tokio",

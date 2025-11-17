@@ -48,7 +48,10 @@ use crate::{
         },
         error::ReqRespError,
         lean::{
-            messages::{LeanRequestMessage, blocks::LeanBlocksByRootV1Request, status::LeanStatus},
+            messages::{
+                LeanRequestMessage, blocks::BlocksByRootV1Request as LeanBlocksByRootV1Request,
+                status::Status as LeanStatus,
+            },
             protocol_id::LeanSupportedProtocol,
         },
         messages::RequestMessage,
