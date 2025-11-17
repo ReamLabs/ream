@@ -62,7 +62,7 @@ use ream_rpc_common::config::RpcServerConfig;
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
-    tables::{field::REDBField, table::REDBTable},
+    tables::table::REDBTable,
 };
 use ream_sync::rwlock::Writer;
 use ream_validator_beacon::{
@@ -192,20 +192,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     // Initialize the lean network service
 
-    let head_block_hash = lean_db
-        .lean_head_provider()
-        .get()
-        .expect("Head blockhash should be available");
-    let head_block = lean_db
-        .lean_block_provider()
-        .get(head_block_hash)
-        .expect("Head block should be available")
-        .expect("Head block should be Some");
-    let head_cheakpoint = Checkpoint {
-        root: head_block_hash,
-        slot: head_block.message.block.slot,
-    };
-
     let fork = "devnet0".to_string();
     let topics: Vec<LeanGossipTopic> = vec![
         LeanGossipTopic {
@@ -232,11 +218,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         chain_sender.clone(),
         outbound_p2p_receiver,
         Status {
-            finalized: lean_db
-                .latest_finalized_provider()
-                .get()
-                .expect("Finalized checkpoint should be avaliable"),
-            head: head_cheakpoint,
+            finalized: Checkpoint::default(),
+            head: Checkpoint::default(),
         },
     )
     .await
