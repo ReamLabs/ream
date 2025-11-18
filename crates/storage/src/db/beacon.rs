@@ -28,12 +28,12 @@ pub struct BeaconDB {
 }
 
 impl BeaconDB {
-    pub fn beacon_block_provider(&self) -> BeaconBlockTable {
+    pub fn block_provider(&self) -> BeaconBlockTable {
         BeaconBlockTable {
             db: self.db.clone(),
         }
     }
-    pub fn beacon_state_provider(&self) -> BeaconStateTable {
+    pub fn state_provider(&self) -> BeaconStateTable {
         BeaconStateTable {
             db: self.db.clone(),
         }
@@ -149,7 +149,7 @@ impl BeaconDB {
             .expect("No highest root found");
 
         let state = self
-            .beacon_state_provider()
+            .state_provider()
             .get(highest_root)?
             .ok_or_else(|| anyhow!("Unable to fetch latest state"))?;
 

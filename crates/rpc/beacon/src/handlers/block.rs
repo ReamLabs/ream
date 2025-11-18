@@ -147,7 +147,7 @@ pub async fn get_beacon_block_from_id(
 ) -> Result<SignedBeaconBlock, ApiError> {
     let block_root = get_block_root_from_id(block_id, db).await?;
 
-    db.beacon_block_provider()
+    db.block_provider()
         .get(block_root)
         .map_err(|err| {
             ApiError::InternalError(format!("Failed to get block by block_root, error: {err:?}"))

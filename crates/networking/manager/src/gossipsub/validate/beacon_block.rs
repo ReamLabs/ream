@@ -35,19 +35,11 @@ pub async fn validate_gossip_beacon_block(
 
     let (parent_block, parent_state) = {
         let store = beacon_chain.store.lock().await;
-        let Some(parent_block) = store
-            .db
-            .beacon_block_provider()
-            .get(block.message.parent_root)?
-        else {
+        let Some(parent_block) = store.db.block_provider().get(block.message.parent_root)? else {
             return Err(anyhow!("failed to get parent block"));
         };
 
-        let Some(parent_state) = store
-            .db
-            .beacon_state_provider()
-            .get(block.message.parent_root)?
-        else {
+        let Some(parent_state) = store.db.state_provider().get(block.message.parent_root)? else {
             return Err(anyhow!("failed to get parent state"));
         };
 
@@ -156,11 +148,7 @@ pub async fn validate_beacon_block(
         }
     }
 
-    match store
-        .db
-        .beacon_block_provider()
-        .get(block.message.parent_root)?
-    {
+    match store.db.block_provider().get(block.message.parent_root)? {
         Some(parent_block) => {
             // [REJECT] The block is from a higher slot than its parent.
             if block.message.slot <= parent_block.message.slot {

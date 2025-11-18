@@ -34,13 +34,13 @@ pub async fn validate_sync_committee_contribution_and_proof(
 
     let block = store
         .db
-        .beacon_block_provider()
+        .block_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("Could not get block for head root: {head_root}"))?;
 
     let state = store
         .db
-        .beacon_state_provider()
+        .state_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
 

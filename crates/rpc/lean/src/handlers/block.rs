@@ -44,7 +44,7 @@ pub async fn get_block_by_id(
             .store
             .lock()
             .await
-            .lean_head_provider()
+            .head_provider()
             .get()
             .map_err(|err| ApiError::InternalError(format!("Could not get head: {err:?}"))),
         ID::Justified => lean_chain
@@ -62,7 +62,7 @@ pub async fn get_block_by_id(
         ID::Root(root) => Ok(root),
     };
 
-    let provider = lean_chain.store.clone().lock().await.lean_block_provider();
+    let provider = lean_chain.store.clone().lock().await.block_provider();
     provider
         .get(block_root?)
         .map(|maybe_signed_block| {

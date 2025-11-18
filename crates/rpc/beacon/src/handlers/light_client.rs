@@ -30,7 +30,7 @@ pub async fn get_light_client_bootstrap(
 ) -> Result<impl Responder, ApiError> {
     let block_root = block_root.into_inner();
     let beacon_block = db
-        .beacon_block_provider()
+        .block_provider()
         .get(block_root)
         .map_err(|err| {
             ApiError::InternalError(format!("Failed to get block by block_root, error: {err:?}"))
@@ -40,7 +40,7 @@ pub async fn get_light_client_bootstrap(
         })?;
 
     let beacon_state = db
-        .beacon_state_provider()
+        .state_provider()
         .get(block_root)
         .map_err(|err| {
             ApiError::InternalError(format!(
@@ -89,31 +89,31 @@ pub async fn get_light_client_updates(
             })?;
 
         let block = db
-            .beacon_block_provider()
+            .block_provider()
             .get(block_root)
             .map_err(|err| {
                 ApiError::InternalError(format!(
-                    "Failed to get beacon_block from block_root, error: {err:?}"
+                    "Failed to get block from block_root, error: {err:?}"
                 ))
             })?
             .ok_or(ApiError::NotFound(format!(
-                "Failed to find beacon_block from {block_root:?}"
+                "Failed to find block from {block_root:?}"
             )))?;
 
         let state = db
-            .beacon_state_provider()
+            .state_provider()
             .get(block_root)
             .map_err(|err| {
                 ApiError::InternalError(format!(
-                    "Failed to get beacon_state from block_root, error: {err:?}"
+                    "Failed to get state from block_root, error: {err:?}"
                 ))
             })?
             .ok_or(ApiError::NotFound(format!(
-                "Failed to find beacon_state from {block_root:?}"
+                "Failed to find state from {block_root:?}"
             )))?;
 
         let attested_block = db
-            .beacon_block_provider()
+            .block_provider()
             .get(block.message.parent_root)
             .map_err(|err| {
                 ApiError::InternalError(format!(
@@ -127,7 +127,7 @@ pub async fn get_light_client_updates(
 
         let attested_block_root = attested_block.message.tree_hash_root();
         let attested_state = db
-            .beacon_state_provider()
+            .state_provider()
             .get(attested_block_root)
             .map_err(|err| {
                 ApiError::InternalError(format!(
@@ -139,7 +139,7 @@ pub async fn get_light_client_updates(
             )))?;
 
         let finalized_block = db
-            .beacon_block_provider()
+            .block_provider()
             .get(attested_state.finalized_checkpoint.root)
             .map_err(|err| {
                 ApiError::InternalError(format!(
@@ -206,7 +206,7 @@ pub async fn get_light_client_finality_update(
 
     // Get the head block and state
     let head_block = db
-        .beacon_block_provider()
+        .block_provider()
         .get(head_block_root)
         .map_err(|err| {
             ApiError::InternalError(format!("Failed to get head block, error: {err:?}"))
@@ -215,7 +215,7 @@ pub async fn get_light_client_finality_update(
 
     // Get the attested block (parent of head block) and its state
     let attested_block = db
-        .beacon_block_provider()
+        .block_provider()
         .get(head_block.message.parent_root)
         .map_err(|err| {
             ApiError::InternalError(format!("Failed to get attested block, error: {err:?}"))
@@ -224,7 +224,7 @@ pub async fn get_light_client_finality_update(
 
     let attested_block_root = attested_block.message.tree_hash_root();
     let attested_state = db
-        .beacon_state_provider()
+        .state_provider()
         .get(attested_block_root)
         .map_err(|err| {
             ApiError::InternalError(format!("Failed to get attested state, error: {err:?}"))
@@ -233,7 +233,7 @@ pub async fn get_light_client_finality_update(
 
     // Get the finalized block
     let finalized_block = db
-        .beacon_block_provider()
+        .block_provider()
         .get(finalized_checkpoint.root)
         .map_err(|err| {
             ApiError::InternalError(format!("Failed to get finalized block, error: {err:?}"))
@@ -311,7 +311,7 @@ pub async fn get_light_client_optimistic_update(
 
     // Get the head block
     let head_block = db
-        .beacon_block_provider()
+        .block_provider()
         .get(head_block_root)
         .map_err(|err| {
             ApiError::InternalError(format!("Failed to get head block, error: {err:?}"))
@@ -320,7 +320,7 @@ pub async fn get_light_client_optimistic_update(
 
     // Get the attested block (parent of head block)
     let attested_block = db
-        .beacon_block_provider()
+        .block_provider()
         .get(head_block.message.parent_root)
         .map_err(|err| {
             ApiError::InternalError(format!("Failed to get attested block, error: {err:?}"))

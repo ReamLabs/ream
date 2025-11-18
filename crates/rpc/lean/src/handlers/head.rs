@@ -14,7 +14,7 @@ pub async fn get_head(lean_chain: Data<LeanStoreReader>) -> Result<impl Responde
             .store
             .lock()
             .await
-            .lean_head_provider()
+            .head_provider()
             .get()
             .map_err(|err| ApiError::InternalError(format!("Could not get head: {err:?}")))?,
     }))

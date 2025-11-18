@@ -31,11 +31,7 @@ pub async fn on_block(
 
     // Parent block must be known
     ensure!(
-        store
-            .db
-            .beacon_state_provider()
-            .get(block.parent_root)?
-            .is_some(),
+        store.db.state_provider().get(block.parent_root)?.is_some(),
         "Missing parent block state for parent_root: {:x}",
         block.parent_root
     );
@@ -82,7 +78,7 @@ pub async fn on_block(
     // Make a copy of the state to avoid mutability issues
     let mut state = store
         .db
-        .beacon_state_provider()
+        .state_provider()
         .get(block.parent_root)?
         .ok_or_else(|| anyhow!("beacon state not found"))?
         .clone();
@@ -94,13 +90,13 @@ pub async fn on_block(
     // Add new block to the store
     store
         .db
-        .beacon_block_provider()
+        .block_provider()
         .insert(block_root, signed_block.clone())?;
 
     // Add new state for this block to the store
     store
         .db
-        .beacon_state_provider()
+        .state_provider()
         .insert(block_root, state.clone())?;
 
     // Add block timeliness to the store
@@ -150,7 +146,7 @@ pub fn on_attester_slashing(
 
     let state = &store
         .db
-        .beacon_state_provider()
+        .state_provider()
         .get(store.db.justified_checkpoint_provider().get()?.root)?
         .ok_or_else(|| anyhow!("beacon state not found"))?;
 

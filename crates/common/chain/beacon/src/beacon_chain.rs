@@ -97,14 +97,7 @@ impl BeaconChain {
             }
         };
 
-        let head_slot = match self
-            .store
-            .lock()
-            .await
-            .db
-            .beacon_block_provider()
-            .get(head_root)
-        {
+        let head_slot = match self.store.lock().await.db.block_provider().get(head_root) {
             Ok(Some(block)) => block.message.slot,
             err => {
                 bail!("Failed to get block for head root {head_root}: {err:?}");

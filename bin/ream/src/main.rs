@@ -332,7 +332,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         .expect("No oldest root found");
     set_genesis_validator_root(
         beacon_db
-            .beacon_state_provider()
+            .state_provider()
             .get(oldest_root)
             .expect("Failed to access beacon state provider")
             .expect("No beacon state found")
@@ -714,8 +714,8 @@ mod tests {
         handle.abort();
 
         let lean_db = db.init_lean_db().unwrap();
-        let head = lean_db.lean_head_provider().get().unwrap();
-        let head_state = lean_db.lean_state_provider().get(head).unwrap().unwrap();
+        let head = lean_db.head_provider().get().unwrap();
+        let head_state = lean_db.state_provider().get(head).unwrap().unwrap();
 
         let justfication_lag = 4;
         let finalization_lag = 5;
