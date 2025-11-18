@@ -10,7 +10,10 @@ use ream_consensus_lean::{
     validator::is_proposer,
 };
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
-use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer_vec, stop_timer};
+use ream_metrics::{
+    HEAD_SLOT, INVALID_ATTESTATION_COUNT, PROPOSE_BLOCK_TIME, VALID_ATTESTATION_COUNT,
+    VALIDATE_ATTESTATION_TIME, inc_counter_vec, set_int_gauge_vec, start_timer_vec, stop_timer,
+};
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 use ream_post_quantum_crypto::hashsig::signature::Signature;
@@ -658,7 +661,18 @@ impl Store {
                 db.time_provider(),
             )
         };
-        self.validate_attestation(&signed_attestation).await?;
+
+        let _validate_attestaion_timer =
+            start_timer_vec(&VALIDATE_ATTESTATION_TIME, &["validate_attestation"]);
+
+        match self.validate_attestation(&signed_attestation).await {
+            Ok(()) => inc_counter_vec(&VALID_ATTESTATION_COUNT, &[]),
+            Err(err) => {
+                inc_counter_vec(&INVALID_ATTESTATION_COUNT, &[]);
+                return Err(err);
+            }
+        }
+
         let validator_id = signed_attestation.message.validator_id;
         let attestation_slot = signed_attestation.message.data.slot;
         if is_from_block {

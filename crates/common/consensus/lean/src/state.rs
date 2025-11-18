@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
 use itertools::Itertools;
-use ream_metrics::{FINALIZED_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
+use ream_metrics::{
+    FINALIZED_SLOT, JUSTIFIED_SLOT, PROCESS_BLOCK_TIME, set_int_gauge_vec, start_timer_vec,
+};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -192,6 +194,8 @@ impl LeanState {
     }
 
     pub fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
+        let _process_block_timer = start_timer_vec(&PROCESS_BLOCK_TIME, &["process_block"]);
+
         self.process_block_header(block)?;
         self.process_attestations(&block.body.attestations)?;
 

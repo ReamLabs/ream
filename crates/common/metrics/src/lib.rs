@@ -1,6 +1,7 @@
 use prometheus_exporter::prometheus::{
-    HistogramTimer, HistogramVec, IntGaugeVec, default_registry,
-    register_histogram_vec_with_registry, register_int_gauge_vec_with_registry,
+    HistogramTimer, HistogramVec, IntCounterVec, IntGaugeVec, default_registry,
+    register_histogram_vec_with_registry, register_int_counter_vec_with_registry,
+    register_int_gauge_vec_with_registry,
 };
 
 // Provisioning each metrics
@@ -8,6 +9,18 @@ lazy_static::lazy_static! {
     pub static ref PROPOSE_BLOCK_TIME: HistogramVec = create_histogram_vec(
         "lean_propose_block_time",
         "Duration of the sections it takes to propose a new block",
+        &["section"]
+    );
+
+    pub static ref PROCESS_BLOCK_TIME: HistogramVec = create_histogram_vec(
+        "lean_process_block_time",
+        "Duration of the sections it takes to process a new block",
+        &["section"]
+    );
+
+    pub static ref VALIDATE_ATTESTATION_TIME: HistogramVec = create_histogram_vec(
+        "lean_attestation_validation_time_seconds",
+        "Duration of the sections it takes to validate an attestation",
         &["section"]
     );
 
@@ -26,6 +39,18 @@ lazy_static::lazy_static! {
     pub static ref FINALIZED_SLOT: IntGaugeVec = create_int_gauge_vec(
         "lean_finalized_slot",
         "The current finalized slot",
+        &[]
+    );
+
+    pub static ref VALID_ATTESTATION_COUNT: IntCounterVec = create_int_counter_vec(
+        "lean_attestation_valid_total",
+        "The number of valid attestations",
+        &[]
+    );
+
+    pub static ref INVALID_ATTESTATION_COUNT: IntCounterVec = create_int_counter_vec(
+        "lean_attestation_invalid_total",
+        "The number of invalid attestations",
         &[]
     );
 }
@@ -57,4 +82,16 @@ pub fn start_timer_vec(histogram_vec: &HistogramVec, label_values: &[&str]) -> H
 /// Stop a timer for a histogram metric
 pub fn stop_timer(timer: HistogramTimer) {
     timer.observe_duration()
+}
+
+/// Create a new counter metric
+pub fn create_int_counter_vec(name: &str, help: &str, label_names: &[&str]) -> IntCounterVec {
+    let registry = default_registry();
+    register_int_counter_vec_with_registry!(name, help, label_names, registry)
+        .expect("failed to create counter vec")
+}
+
+/// Increment a counter metric
+pub fn inc_counter_vec(counter_vec: &IntCounterVec, label_values: &[&str]) {
+    counter_vec.with_label_values(label_values).inc();
 }
