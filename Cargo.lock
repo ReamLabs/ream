@@ -5753,6 +5753,7 @@ dependencies = [
  "ream-consensus-misc",
  "serde",
  "serde_yaml",
+ "tracing",
 ]
 
 [[package]]
