@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
 use itertools::Itertools;
-use ream_metrics::{FINALIZED_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
+use ream_metrics::{
+    FINALIZED_SLOT, JUSTIFIED_SLOT, PROCESSED_SLOTS, STATE_TRANSITION_TIME, inc_counter_vec,
+    set_int_gauge_vec, start_timer_vec,
+};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -160,6 +163,7 @@ impl LeanState {
         block: &Block,
         valid_signatures: bool,
     ) -> anyhow::Result<()> {
+        let _state_tranistion_timer = start_timer_vec(&STATE_TRANSITION_TIME, &["lean_state_transition"]);
         // Validate signatures if required
         ensure!(valid_signatures, "Signatures are not valid");
         self.process_slots(block.slot)
@@ -188,6 +192,7 @@ impl LeanState {
             self.slot += 1;
         }
 
+        inc_counter_vec(&PROCESSED_SLOTS, &[]);
         Ok(())
     }
 
