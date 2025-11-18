@@ -182,17 +182,10 @@ impl LeanState {
             self.slot,
         );
         while self.slot < target_slot {
-            self.process_slot()?;
+            if self.latest_block_header.state_root == B256::ZERO {
+                self.latest_block_header.state_root = self.tree_hash_root();
+            }
             self.slot += 1;
-        }
-
-        Ok(())
-    }
-
-    fn process_slot(&mut self) -> anyhow::Result<()> {
-        // Cache latest block header state root
-        if self.latest_block_header.state_root == B256::ZERO {
-            self.latest_block_header.state_root = self.tree_hash_root();
         }
 
         Ok(())
@@ -767,24 +760,6 @@ mod test {
         assert_eq!(state.justified_slots.len(), 0);
         assert_eq!(state.justifications_roots.len(), 0);
         assert_eq!(state.justifications_validators.num_set_bits(), 0);
-    }
-
-    #[test]
-    fn process_slot() {
-        let mut genesis_state = LeanState::generate_genesis(10, None);
-
-        assert_eq!(genesis_state.latest_block_header.state_root, B256::ZERO);
-
-        // Capture the hash of the pre-slot state
-        let expected_root = genesis_state.tree_hash_root();
-
-        // Process one slot; this should backfill the header's state_root
-        genesis_state.process_slot().unwrap();
-        assert_eq!(genesis_state.latest_block_header.state_root, expected_root);
-
-        // Re-processing the slot should be a no-op for the state_root
-        genesis_state.process_slot().unwrap();
-        assert_eq!(genesis_state.latest_block_header.state_root, expected_root);
     }
 
     #[test]
