@@ -15,7 +15,6 @@ anyhow.workspace = true
 ethereum_serde_utils.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
-tracing.workspace = true
 
 # ream-dependencies
 ream-consensus-misc.workspace = true
