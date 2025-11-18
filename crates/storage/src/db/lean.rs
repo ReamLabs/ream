@@ -16,12 +16,12 @@ pub struct LeanDB {
 }
 
 impl LeanDB {
-    pub fn lean_block_provider(&self) -> LeanBlockTable {
+    pub fn block_provider(&self) -> LeanBlockTable {
         LeanBlockTable {
             db: self.db.clone(),
         }
     }
-    pub fn lean_state_provider(&self) -> LeanStateTable {
+    pub fn state_provider(&self) -> LeanStateTable {
         LeanStateTable {
             db: self.db.clone(),
         }
@@ -57,25 +57,25 @@ impl LeanDB {
         }
     }
 
-    pub fn lean_time_provider(&self) -> LeanTimeField {
+    pub fn time_provider(&self) -> LeanTimeField {
         LeanTimeField {
             db: self.db.clone(),
         }
     }
 
-    pub fn lean_head_provider(&self) -> LeanHeadField {
+    pub fn head_provider(&self) -> LeanHeadField {
         LeanHeadField {
             db: self.db.clone(),
         }
     }
 
-    pub fn lean_safe_target_provider(&self) -> LeanSafeTargetField {
+    pub fn safe_target_provider(&self) -> LeanSafeTargetField {
         LeanSafeTargetField {
             db: self.db.clone(),
         }
     }
 
-    pub fn lean_latest_new_attestations_provider(&self) -> LeanLatestNewAttestationsTable {
+    pub fn latest_new_attestations_provider(&self) -> LeanLatestNewAttestationsTable {
         LeanLatestNewAttestationsTable {
             db: self.db.clone(),
         }

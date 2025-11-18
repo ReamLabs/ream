@@ -81,40 +81,37 @@ mod tests {
     #[allow(clippy::too_many_arguments, clippy::unwrap_used)]
     pub async fn insert_mock_data(
         db: &mut BeaconDB,
-        ancestor_beacon_block: SignedBeaconBlock,
+        ancestor_block: SignedBeaconBlock,
         grandparent_block_root: B256,
         block_root: B256,
-        grandparent_beacon_state: BeaconState,
-        grandparent_beacon_block: SignedBeaconBlock,
-        parent_beacon_block: SignedBeaconBlock,
-        parent_beacon_state: BeaconState,
+        grandparent_state: BeaconState,
+        grandparent_block: SignedBeaconBlock,
+        parent_block: SignedBeaconBlock,
+        parent_state: BeaconState,
     ) {
         let ancestor_checkpoint = Checkpoint {
-            epoch: ancestor_beacon_block.message.slot / 32,
-            root: ancestor_beacon_block.message.block_root(),
+            epoch: ancestor_block.message.slot / 32,
+            root: ancestor_block.message.block_root(),
         };
-        db.beacon_block_provider()
-            .insert(
-                ancestor_beacon_block.message.block_root(),
-                ancestor_beacon_block,
-            )
+        db.block_provider()
+            .insert(ancestor_block.message.block_root(), ancestor_block)
             .unwrap();
 
-        let slot = parent_beacon_block.message.slot;
+        let slot = parent_block.message.slot;
         db.finalized_checkpoint_provider()
             .insert(ancestor_checkpoint)
             .unwrap();
-        db.beacon_block_provider()
-            .insert(grandparent_block_root, grandparent_beacon_block)
+        db.block_provider()
+            .insert(grandparent_block_root, grandparent_block)
             .unwrap();
-        db.beacon_state_provider()
-            .insert(grandparent_block_root, grandparent_beacon_state)
+        db.state_provider()
+            .insert(grandparent_block_root, grandparent_state)
             .unwrap();
-        db.beacon_block_provider()
-            .insert(block_root, parent_beacon_block)
+        db.block_provider()
+            .insert(block_root, parent_block)
             .unwrap();
-        db.beacon_state_provider()
-            .insert(block_root, parent_beacon_state)
+        db.state_provider()
+            .insert(block_root, parent_state)
             .unwrap();
         db.slot_index_provider().insert(slot, block_root).unwrap();
         db.genesis_time_provider()
@@ -133,12 +130,7 @@ mod tests {
 
             (
                 store.db.get_latest_state().unwrap(),
-                store
-                    .db
-                    .beacon_block_provider()
-                    .get(block_root)
-                    .unwrap()
-                    .unwrap(),
+                store.db.block_provider().get(block_root).unwrap().unwrap(),
             )
         };
         assert_eq!(latest_state_in_db.slot, latest_block.message.slot);

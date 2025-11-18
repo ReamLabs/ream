@@ -31,7 +31,7 @@ pub async fn validate_proposer_slashing(
     let head_root = store.get_head()?;
     let mut state: BeaconState = store
         .db
-        .beacon_state_provider()
+        .state_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("Could not get beacon state: {head_root}"))?;
 

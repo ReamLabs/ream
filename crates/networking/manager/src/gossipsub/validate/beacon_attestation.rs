@@ -27,7 +27,7 @@ pub async fn validate_beacon_attestation(
     let head_root = store.get_head()?;
     let state: BeaconState = store
         .db
-        .beacon_state_provider()
+        .state_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
 
@@ -52,7 +52,7 @@ pub async fn validate_beacon_attestation(
 
     let block = store
         .db
-        .beacon_block_provider()
+        .block_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("Could not get block for head root: {head_root}"))?;
 
@@ -144,7 +144,7 @@ pub async fn validate_beacon_attestation(
     // retrieved).
     if store
         .db
-        .beacon_block_provider()
+        .block_provider()
         .get(attestation.data.beacon_block_root)?
         .is_none()
     {

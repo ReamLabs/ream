@@ -27,7 +27,7 @@ pub async fn validate_sync_committee(
     let head_root = store.get_head()?;
     let state: BeaconState = store
         .db
-        .beacon_state_provider()
+        .state_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
 

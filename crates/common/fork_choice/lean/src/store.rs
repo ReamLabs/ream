@@ -56,10 +56,10 @@ impl Store {
             root: anchor_root,
             slot: anchor_slot,
         };
-        db.lean_time_provider()
+        db.time_provider()
             .insert(anchor_slot * lean_network_spec().seconds_per_slot)
             .expect("Failed to insert anchor slot");
-        db.lean_block_provider()
+        db.block_provider()
             .insert(anchor_root, anchor_block)
             .expect("Failed to insert genesis block");
         db.latest_finalized_provider()
@@ -68,13 +68,13 @@ impl Store {
         db.latest_justified_provider()
             .insert(anchor_checkpoint)
             .expect("Failed to insert latest justified checkpoint");
-        db.lean_state_provider()
+        db.state_provider()
             .insert(anchor_root, anchor_state)
             .expect("Failed to insert genesis state");
-        db.lean_head_provider()
+        db.head_provider()
             .insert(anchor_root)
             .expect("Failed to insert genesis block hash");
-        db.lean_safe_target_provider()
+        db.safe_target_provider()
             .insert(anchor_root)
             .expect("Failed to insert genesis block hash");
 
@@ -94,9 +94,9 @@ impl Store {
     ) -> anyhow::Result<B256> {
         let mut root = provided_root;
 
-        let (slot_index_table, lean_block_provider) = {
+        let (slot_index_table, block_provider) = {
             let db = self.store.lock().await;
-            (db.slot_index_provider(), db.lean_block_provider())
+            (db.slot_index_provider(), db.block_provider())
         };
 
         // Start at genesis by default
@@ -112,15 +112,15 @@ impl Store {
 
         for signed_vote in latest_votes {
             let signed_vote = signed_vote?;
-            if lean_block_provider.contains_key(signed_vote.message.head().root) {
+            if block_provider.contains_key(signed_vote.message.head().root) {
                 let mut block_hash = signed_vote.message.head().root;
                 while {
-                    let current_block = lean_block_provider
+                    let current_block = block_provider
                         .get(block_hash)?
                         .ok_or_else(|| anyhow!("Block not found for vote head: {block_hash}"))?
                         .message
                         .block;
-                    let root_block = lean_block_provider
+                    let root_block = block_provider
                         .get(root)?
                         .ok_or_else(|| anyhow!("Block not found for root: {root}"))?
                         .message
@@ -129,7 +129,7 @@ impl Store {
                 } {
                     let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
                     vote_weights.insert(block_hash, current_weights + 1);
-                    block_hash = lean_block_provider
+                    block_hash = block_provider
                         .get(block_hash)?
                         .map(|block| block.message.block.parent_root)
                         .ok_or_else(|| anyhow!("Block not found for block parent: {block_hash}"))?;
@@ -138,7 +138,7 @@ impl Store {
         }
 
         // Identify the children of each block
-        let children_map = lean_block_provider.get_children_map(min_score, &vote_weights)?;
+        let children_map = block_provider.get_children_map(min_score, &vote_weights)?;
 
         // Start at the root (latest justified hash or genesis) and repeatedly
         // choose the child with the most latest votes, tiebreaking by slot then hash
@@ -149,7 +149,7 @@ impl Store {
                 .iter()
                 .max_by_key(|child_hash| {
                     let vote_weight = vote_weights.get(*child_hash).unwrap_or(&0);
-                    let slot = lean_block_provider
+                    let slot = block_provider
                         .get(**child_hash)
                         .map(|maybe_block| match maybe_block {
                             Some(block) => block.message.block.slot,
@@ -175,9 +175,6 @@ impl Store {
 
     /// Compute the latest block that the validator is allowed to choose as the target
     /// and update as a safe target.
-    ///
-    /// See lean specification:
-    /// https://github.com/leanEthereum/leanSpec/blob/f8e8d271d8b8b6513d34c78692aff47438d6fa18/src/lean_spec/subspecs/forkchoice/store.py#L301-L317
     pub async fn update_safe_target(&self) -> anyhow::Result<()> {
         // 2/3rd majority min voting weight for target selection
         // Note that we use ceiling division here.
@@ -185,16 +182,16 @@ impl Store {
             head_provider,
             state_provider,
             latest_justified_provider,
-            lean_safe_target_provider,
-            lean_latest_new_attestations_provider,
+            safe_target_provider,
+            latest_new_attestations_provider,
         ) = {
             let db = self.store.lock().await;
             (
-                db.lean_head_provider(),
-                db.lean_state_provider(),
+                db.head_provider(),
+                db.state_provider(),
                 db.latest_justified_provider(),
-                db.lean_safe_target_provider(),
-                db.lean_latest_new_attestations_provider(),
+                db.safe_target_provider(),
+                db.latest_new_attestations_provider(),
             )
         };
 
@@ -205,9 +202,9 @@ impl Store {
         let min_target_score = (head_state.validators.len() as u64 * 2).div_ceil(3);
         let latest_justified_root = latest_justified_provider.get()?.root;
 
-        lean_safe_target_provider.insert(
+        safe_target_provider.insert(
             self.get_fork_choice_head(
-                lean_latest_new_attestations_provider.iter_values()?,
+                latest_new_attestations_provider.iter_values()?,
                 latest_justified_root,
                 min_target_score,
             )
@@ -229,7 +226,7 @@ impl Store {
             self.store
                 .lock()
                 .await
-                .lean_latest_new_attestations_provider()
+                .latest_new_attestations_provider()
                 .drain()?
                 .into_iter(),
         )?;
@@ -240,7 +237,7 @@ impl Store {
 
     pub async fn tick_interval(&self, has_proposal: bool) -> anyhow::Result<()> {
         let current_interval = {
-            let time_provider = self.store.lock().await.lean_time_provider();
+            let time_provider = self.store.lock().await.time_provider();
             let time = time_provider.get()? + 1;
             time_provider.insert(time)?;
             time % lean_network_spec().seconds_per_slot % INTERVALS_PER_SLOT
@@ -261,7 +258,7 @@ impl Store {
         let seconds_per_interval = lean_network_spec().seconds_per_slot / INTERVALS_PER_SLOT;
         let tick_interval_time = (time - lean_network_spec().genesis_time) / seconds_per_interval;
 
-        let time_provider = self.store.lock().await.lean_time_provider();
+        let time_provider = self.store.lock().await.time_provider();
         while time_provider.get()? < tick_interval_time {
             let should_signal_proposal =
                 has_proposal && (time_provider.get()? + 1) == tick_interval_time;
@@ -286,10 +283,10 @@ impl Store {
                 db.latest_known_attestations_provider()
                     .get_all_attestations()?,
                 db.latest_justified_provider(),
-                db.lean_state_provider(),
-                db.lean_head_provider(),
+                db.state_provider(),
+                db.head_provider(),
                 db.latest_finalized_provider(),
-                db.lean_block_provider(),
+                db.block_provider(),
             )
         };
         let mut latest_justified: Option<Checkpoint> = None;
@@ -353,9 +350,9 @@ impl Store {
         let (head_provider, block_provider, safe_target_provider, latest_finalized_provider) = {
             let db = self.store.lock().await;
             (
-                db.lean_head_provider(),
-                db.lean_block_provider(),
-                db.lean_safe_target_provider(),
+                db.head_provider(),
+                db.block_provider(),
+                db.safe_target_provider(),
                 db.latest_finalized_provider(),
             )
         };
@@ -415,15 +412,12 @@ impl Store {
 
     /// Get the head for block proposal at given slot.
     /// Ensures store is up-to-date and processes any pending attestations.
-    ///
-    /// See lean specification:
-    /// <https://github.com/leanEthereum/leanSpec/blob/4b750f2748a3718fe3e1e9cdb3c65e3a7ddabff5/src/lean_spec/subspecs/forkchoice/store.py#L319-L339>
     pub async fn get_proposal_head(&self, slot: u64) -> anyhow::Result<B256> {
         let slot_time =
             lean_network_spec().genesis_time + slot * lean_network_spec().seconds_per_slot;
         self.on_tick(slot_time, true).await?;
         self.accept_new_attestations().await?;
-        Ok(self.store.lock().await.lean_head_provider().get()?)
+        Ok(self.store.lock().await.head_provider().get()?)
     }
 
     pub async fn produce_block_with_signatures(
@@ -436,9 +430,9 @@ impl Store {
         let (state_provider, latest_known_attestation_provider, block_provider) = {
             let db = self.store.lock().await;
             (
-                db.lean_state_provider(),
+                db.state_provider(),
                 db.latest_known_attestations_provider(),
-                db.lean_block_provider(),
+                db.block_provider(),
             )
         };
         let mut head_state = state_provider
@@ -535,7 +529,7 @@ impl Store {
     ) -> anyhow::Result<()> {
         let (state_provider, block_provider) = {
             let db = self.store.lock().await;
-            (db.lean_state_provider(), db.lean_block_provider())
+            (db.state_provider(), db.block_provider())
         };
         let block = &signed_block_with_attestation.message.block;
         let signatures = &signed_block_with_attestation.signature;
@@ -596,7 +590,7 @@ impl Store {
     ) -> anyhow::Result<()> {
         let attestation = &signed_attestation.message;
         let data = &attestation.data;
-        let block_provider = self.store.lock().await.lean_block_provider();
+        let block_provider = self.store.lock().await.block_provider();
 
         ensure!(
             block_provider.contains_key(data.source.root),
@@ -639,8 +633,8 @@ impl Store {
             "Target checkpoint slot mismatch"
         );
 
-        let current_slot = self.store.lock().await.lean_time_provider().get()?
-            / lean_network_spec().seconds_per_slot;
+        let current_slot =
+            self.store.lock().await.time_provider().get()? / lean_network_spec().seconds_per_slot;
         ensure!(
             data.slot <= current_slot + 1,
             "Attestation too far in future expected slot: {} <= {}",
@@ -660,8 +654,8 @@ impl Store {
             let db = self.store.lock().await;
             (
                 db.latest_known_attestations_provider(),
-                db.lean_latest_new_attestations_provider(),
-                db.lean_time_provider(),
+                db.latest_new_attestations_provider(),
+                db.time_provider(),
             )
         };
         self.validate_attestation(&signed_attestation).await?;
@@ -704,8 +698,8 @@ impl Store {
         let (head_provider, block_provider, latest_justified_provider) = {
             let db = self.store.lock().await;
             (
-                db.lean_head_provider(),
-                db.lean_block_provider(),
+                db.head_provider(),
+                db.block_provider(),
                 db.latest_justified_provider(),
             )
         };

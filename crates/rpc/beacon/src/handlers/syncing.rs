@@ -49,7 +49,7 @@ pub async fn get_syncing_status(
         ApiError::InternalError(format!("Failed to get current slot, error: {err:?}"))
     })?;
 
-    let head_slot = match db.beacon_block_provider().get(head) {
+    let head_slot = match db.block_provider().get(head) {
         Ok(Some(block)) => block.message.slot,
         err => {
             return Err(ApiError::InternalError(format!(

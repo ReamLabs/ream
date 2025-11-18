@@ -45,7 +45,7 @@ pub async fn get_headers(
         (None, Some(parent_root)) => {
             // get parent block to have access to `slot`
             let parent_block = db
-                .beacon_block_provider()
+                .block_provider()
                 .get(parent_root)
                 .map_err(|err| {
                     ApiError::InternalError(format!("Failed to get headers, error: {err:?}"))

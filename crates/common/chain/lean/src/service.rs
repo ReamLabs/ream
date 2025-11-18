@@ -57,12 +57,12 @@ impl LeanChainService {
                     match tick_count % 4 {
                         0 => {
                             // First tick (t=0/4): Log current head state, including its justification/finalization status.
-                            let (head, store) = {
-                                let store = self.store.read().await;
-                                (store.store.lock().await.lean_head_provider().get()?, store.store.clone())
+                            let (head, state_provider) = {
+                                let fork_choice = self.store.read().await;
+                                let store = fork_choice.store.lock().await;
+                                (store.head_provider().get()?, store.state_provider())
                             };
-                            let head_state = store.lock().await
-                                .lean_state_provider()
+                            let head_state = state_provider
                                 .get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {head}"))?;
 
                             info!(

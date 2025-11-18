@@ -34,7 +34,7 @@ pub async fn get_state(
             .store
             .lock()
             .await
-            .lean_head_provider()
+            .head_provider()
             .get()
             .map_err(|err| ApiError::InternalError(format!("Could not get head: {err:?}"))),
         ID::Justified => {
@@ -63,7 +63,7 @@ pub async fn get_state(
         }
     };
 
-    let provider = lean_chain.store.clone().lock().await.lean_state_provider();
+    let provider = lean_chain.store.clone().lock().await.state_provider();
 
     Ok(HttpResponse::Ok().json(
         provider

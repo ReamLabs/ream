@@ -80,7 +80,7 @@ impl Store {
     pub fn get_ancestor(&self, root: B256, slot: u64) -> anyhow::Result<B256> {
         let block = self
             .db
-            .beacon_block_provider()
+            .block_provider()
             .get(root)?
             .ok_or(anyhow!("Failed to find beacon_block_provider()"))?
             .message;
@@ -102,7 +102,7 @@ impl Store {
         block_root: B256,
         blocks: &mut HashMap<B256, BlockWithEpochInfo>,
     ) -> anyhow::Result<bool> {
-        let Some(block) = self.db.beacon_block_provider().get(block_root)? else {
+        let Some(block) = self.db.block_provider().get(block_root)? else {
             bail!("failed to get block");
         };
 
@@ -248,26 +248,17 @@ impl Store {
                 .finalized_checkpoint_provider()
                 .insert(finalized_checkpoint)?;
             // Clean operation pool
-            if let Some(beacon_state) = self
-                .db
-                .beacon_state_provider()
-                .get(finalized_checkpoint.root)?
-            {
-                self.operation_pool
-                    .clean_signed_voluntary_exits(&beacon_state);
+            if let Some(state) = self.db.state_provider().get(finalized_checkpoint.root)? {
+                self.operation_pool.clean_signed_voluntary_exits(&state);
 
                 // Clean expired proposer preparations
                 let current_epoch = self.get_current_store_epoch()?;
                 self.operation_pool
                     .clean_proposer_preparations(current_epoch);
 
-                if let Some(beacon_block) = self
-                    .db
-                    .beacon_block_provider()
-                    .get(finalized_checkpoint.root)?
-                {
+                if let Some(block) = self.db.block_provider().get(finalized_checkpoint.root)? {
                     for signed_bls_to_execution_change in
-                        beacon_block.message.body.bls_to_execution_changes
+                        block.message.body.bls_to_execution_changes
                     {
                         self.operation_pool.remove_signed_bls_to_execution_change(
                             signed_bls_to_execution_change.tree_hash_root(),
@@ -390,9 +381,9 @@ impl Store {
                         .ok_or_else(|| anyhow!("latest_messages not found"))?
                         .root,
                     self.db
-                        .beacon_block_provider()
+                        .block_provider()
                         .get(root)?
-                        .ok_or_else(|| anyhow!("beacon_block not found"))?
+                        .ok_or_else(|| anyhow!(" block not found"))?
                         .message
                         .slot,
                 )? == root
@@ -411,9 +402,9 @@ impl Store {
         let proposer_score = if self.get_ancestor(
             self.db.proposer_boost_root_provider().get()?,
             self.db
-                .beacon_block_provider()
+                .block_provider()
                 .get(root)?
-                .ok_or_else(|| anyhow!("beacon_block not found"))?
+                .ok_or_else(|| anyhow!("block not found"))?
                 .message
                 .slot,
         )? == root
@@ -431,9 +422,9 @@ impl Store {
     pub fn get_voting_source(&self, block_root: B256) -> anyhow::Result<Checkpoint> {
         let block = self
             .db
-            .beacon_block_provider()
+            .block_provider()
             .get(block_root)?
-            .ok_or_else(|| anyhow!("beacon_block not found"))?;
+            .ok_or_else(|| anyhow!("block not found"))?;
 
         let current_epoch = self.get_current_store_epoch()?;
         let block_epoch = compute_epoch_at_slot(block.message.slot);
@@ -449,9 +440,9 @@ impl Store {
             // The block is not from a prior epoch, therefore the voting source is not pulled up
             let head_state = self
                 .db
-                .beacon_state_provider()
+                .state_provider()
                 .get(block_root)?
-                .ok_or_else(|| anyhow!("beacon state not found"))?;
+                .ok_or_else(|| anyhow!("state not found"))?;
             Ok(head_state.current_justified_checkpoint)
         }
     }
@@ -487,13 +478,13 @@ impl Store {
     pub fn get_proposer_head(&self, head_root: B256, slot: u64) -> anyhow::Result<B256> {
         let head_block = self
             .db
-            .beacon_block_provider()
+            .block_provider()
             .get(head_root)?
             .ok_or(anyhow!("Head block must exist"))?;
         let parent_root = head_block.message.parent_root;
         let parent_block = self
             .db
-            .beacon_block_provider()
+            .block_provider()
             .get(parent_root)?
             .ok_or(anyhow!("Parent block must exist"))?;
 
@@ -651,13 +642,13 @@ impl Store {
 
         // Attestation target must be for a known block. If target block is unknown, delay
         // consideration until block is found
-        ensure!(self.db.beacon_block_provider().get(target.root)?.is_some());
+        ensure!(self.db.block_provider().get(target.root)?.is_some());
 
         // Attestations must be for a known block. If block is unknown, delay consideration until
         // the block is found
         ensure!(
             self.db
-                .beacon_block_provider()
+                .block_provider()
                 .get(attestation.data.beacon_block_root)?
                 .is_some()
         );
@@ -665,9 +656,9 @@ impl Store {
         // considered
         ensure!(
             self.db
-                .beacon_block_provider()
+                .block_provider()
                 .get(attestation.data.beacon_block_root)?
-                .ok_or_else(|| anyhow!("beacon_block not found"))?
+                .ok_or_else(|| anyhow!("block not found"))?
                 .message
                 .slot
                 <= attestation.data.slot
@@ -691,7 +682,7 @@ impl Store {
             return Ok(());
         }
 
-        let Some(mut base_state) = self.db.beacon_state_provider().get(target.root)? else {
+        let Some(mut base_state) = self.db.state_provider().get(target.root)? else {
             return Ok(());
         };
 
@@ -779,7 +770,7 @@ impl Store {
     pub fn compute_pulled_up_tip(&mut self, block_root: B256) -> anyhow::Result<()> {
         let mut state = self
             .db
-            .beacon_state_provider()
+            .state_provider()
             .get(block_root)?
             .ok_or_else(|| anyhow!("beacon state not found"))?;
         // Pull up the post-state of the block to the next epoch boundary
@@ -796,9 +787,9 @@ impl Store {
         // If the block is from a prior epoch, apply the realized values
         let block_epoch = compute_epoch_at_slot(
             self.db
-                .beacon_block_provider()
+                .block_provider()
                 .get(block_root)?
-                .ok_or_else(|| anyhow!("beacon_block not found"))?
+                .ok_or_else(|| anyhow!("block not found"))?
                 .message
                 .slot,
         );
@@ -816,7 +807,7 @@ impl Store {
     pub fn is_syncing(&self) -> anyhow::Result<bool> {
         let head = self.get_head()?;
 
-        let head_slot = match self.db.beacon_block_provider().get(head) {
+        let head_slot = match self.db.block_provider().get(head) {
             Ok(Some(block)) => block.message.slot,
             err => {
                 return Err(anyhow!("Failed to get head slot, error: {err:?}"));
@@ -869,9 +860,9 @@ pub fn get_forkchoice_store(
         .insert(finalized_checkpoint)?;
     db.proposer_boost_root_provider()
         .insert(proposer_boost_root)?;
-    db.beacon_block_provider()
+    db.block_provider()
         .insert(anchor_root, signed_anchor_block)?;
-    db.beacon_state_provider()
+    db.state_provider()
         .insert(anchor_root, anchor_state.clone())?;
     db.state_root_index_provider()
         .insert(anchor_state.tree_hash_root(), anchor_root)?;

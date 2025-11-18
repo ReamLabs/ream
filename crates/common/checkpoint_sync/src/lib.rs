@@ -39,9 +39,9 @@ pub async fn initialize_db_from_checkpoint(
             .get_highest_root()?
             .expect("No highest root found");
         let state = db
-            .beacon_state_provider()
+            .state_provider()
             .get(highest_root)?
-            .ok_or_else(|| anyhow!("Unable to fetch beacon state"))?;
+            .ok_or_else(|| anyhow!("Unable to fetch state"))?;
 
         if let Some(weak_subjectivity_checkpoint) = &weak_subjectivity_checkpoint {
             if !verify_state_from_weak_subjectivity_checkpoint(
