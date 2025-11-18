@@ -662,7 +662,7 @@ impl Store {
             )
         };
 
-        let _validate_attestaion_timer =
+        let validate_attestaion_timer =
             start_timer_vec(&VALIDATE_ATTESTATION_TIME, &["validate_attestation"]);
 
         match self.validate_attestation(&signed_attestation).await {
@@ -672,6 +672,7 @@ impl Store {
                 return Err(err);
             }
         }
+        stop_timer(validate_attestaion_timer);
 
         let validator_id = signed_attestation.message.validator_id;
         let attestation_slot = signed_attestation.message.data.slot;
