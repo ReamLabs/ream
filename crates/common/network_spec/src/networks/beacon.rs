@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 use crate::fork_schedule::ForkSchedule;
 
-pub static HAS_NETWORK_SPEC_BEEN_INITIALIZED: Once = Once::new();
+static HAS_NETWORK_SPEC_BEEN_INITIALIZED: Once = Once::new();
 
 pub fn initialize_test_network_spec() {
     let _ = GENESIS_VALIDATORS_ROOT.set(B256::ZERO);
