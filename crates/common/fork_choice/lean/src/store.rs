@@ -271,24 +271,6 @@ impl Store {
         Ok(())
     }
 
-    pub async fn get_latest_justified(&self) -> anyhow::Result<Option<Checkpoint>> {
-        let mut latest_justified: Option<Checkpoint> = None;
-        let state_provider = self.store.lock().await.lean_state_provider();
-        let state_iter = state_provider.iter_values()?;
-        for state in state_iter {
-            let state = state?;
-            match &latest_justified {
-                Some(current)
-                    if current.slot > state.latest_justified.slot
-                        || state.latest_justified.root == B256::ZERO => {}
-                _ => {
-                    latest_justified = Some(state.latest_justified);
-                }
-            }
-        }
-        Ok(latest_justified)
-    }
-
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
         let (
@@ -310,8 +292,21 @@ impl Store {
                 db.lean_block_provider(),
             )
         };
-        let latest_justified = match self.get_latest_justified().await? {
-            Some(latest_justified) => latest_justified,
+        let mut latest_justified: Option<Checkpoint> = None;
+
+        for state in states.iter_values()? {
+            let state = state?;
+
+            match &latest_justified {
+                Some(current) if current.slot >= state.latest_justified.slot => {}
+                _ => {
+                    latest_justified = Some(state.latest_justified);
+                }
+            }
+        }
+
+        let latest_justified = match latest_justified {
+            Some(checkpoint) => checkpoint,
             None => latest_justified_provider.get()?,
         };
 
@@ -325,7 +320,7 @@ impl Store {
 
         let latest_finalized = match states.get(new_head)? {
             Some(state) => state.latest_finalized,
-            None => latest_justified_provider.get()?,
+            None => latest_finalized_provider.get()?,
         };
 
         set_int_gauge_vec(
