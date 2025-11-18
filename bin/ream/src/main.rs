@@ -626,7 +626,11 @@ mod tests {
     use clap::Parser;
     use ream::cli::{Cli, Commands};
     use ream_executor::ReamExecutor;
-    use ream_storage::{db::ReamDB, dir::setup_data_dir};
+    use ream_storage::{
+        db::ReamDB,
+        dir::setup_data_dir,
+        tables::{field::REDBField, table::REDBTable},
+    };
     use tokio::time::{sleep, timeout};
 
     use crate::{APP_NAME, run_lean_node};
@@ -668,5 +672,73 @@ mod tests {
         }
 
         handle.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_lean_node_finalizes() {
+        let cli = Cli::parse_from([
+            "ream",
+            "--ephemeral",
+            "lean_node",
+            "--network",
+            "ephemery",
+            "--validator-registry-path",
+            "./assets/lean/validator_registry.yaml",
+        ]);
+
+        let Commands::LeanNode(config) = cli.command else {
+            panic!("Expected lean_node command");
+        };
+
+        let ream_dir = setup_data_dir(APP_NAME, None, true).unwrap();
+        let db = ReamDB::new(ream_dir).unwrap();
+        let executor = ReamExecutor::new().unwrap();
+
+        let cloned_db = db.clone();
+        let handle = tokio::spawn(async move {
+            run_lean_node(*config, executor.clone(), cloned_db).await;
+        });
+
+        let result = timeout(Duration::from_secs(40), async {
+            sleep(Duration::from_secs(40)).await;
+            Ok::<_, ()>(())
+        })
+        .await;
+
+        match result {
+            Ok(Ok(())) => {}
+            Err(err) => panic!("lean_node panicked or exited early {err:?}"),
+            Ok(Err(err)) => panic!("internal error {err:?}"),
+        }
+
+        handle.abort();
+
+        let lean_db = db.init_lean_db().unwrap();
+        let head = lean_db.lean_head_provider().get().unwrap();
+        let head_state = lean_db.lean_state_provider().get(head).unwrap().unwrap();
+
+        let justfication_lag = 4;
+        let finalization_lag = 5;
+
+        assert!(
+            head_state.slot > finalization_lag,
+            "Expected the head slot to be greater than finalization lag"
+        );
+        assert!(
+            head_state.latest_finalized.slot > 0,
+            "Expected the finalized checkpoint to have advanced from genesis"
+        );
+        assert!(
+            head_state.latest_justified.slot + justfication_lag == head_state.slot,
+            "Expected the head to be at least {justfication_lag} slots ahead of the justified checkpoint {:?} + {justfication_lag} vs {:?}",
+            head_state.latest_justified.slot,
+            head_state.slot
+        );
+        assert!(
+            head_state.latest_finalized.slot + finalization_lag == head_state.slot,
+            "Expected the head to be at least {finalization_lag} slots ahead of the finalized checkpoint {:?} + {finalization_lag} vs {:?}",
+            head_state.latest_finalized.slot,
+            head_state.slot
+        );
     }
 }
