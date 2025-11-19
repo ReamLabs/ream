@@ -10,7 +10,7 @@ use ream_consensus_lean::{
     validator::is_proposer,
 };
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
-use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer_vec, stop_timer};
+use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer, stop_timer};
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 use ream_post_quantum_crypto::hashsig::signature::Signature;
@@ -426,7 +426,7 @@ impl Store {
         validator_index: u64,
     ) -> anyhow::Result<BlockWithSignatures> {
         let head_root = self.get_proposal_head(slot).await?;
-        let initialize_block_timer = start_timer_vec(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
+        let initialize_block_timer = start_timer(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
         let (state_provider, latest_known_attestation_provider, block_provider) = {
             let db = self.store.lock().await;
             (
@@ -448,7 +448,7 @@ impl Store {
         );
 
         let add_attestations_timer =
-            start_timer_vec(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
+            start_timer(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
 
         let mut attestations = VariableList::empty();
         let mut signatures: Vec<Signature> = Vec::new();
@@ -512,8 +512,7 @@ impl Store {
             body: BlockBody { attestations },
         };
         head_state.process_block(&final_block)?;
-        let compute_state_root_timer =
-            start_timer_vec(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
+        let compute_state_root_timer = start_timer(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
         final_block.state_root = head_state.tree_hash_root();
         stop_timer(compute_state_root_timer);
         Ok(BlockWithSignatures {
