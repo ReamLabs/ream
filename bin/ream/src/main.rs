@@ -684,6 +684,10 @@ mod tests {
             "ephemery",
             "--validator-registry-path",
             "./assets/lean/validator_registry.yaml",
+            "--socket-port",
+            "9001",
+            "--http-port",
+            "5053",
         ]);
 
         let Commands::LeanNode(config) = cli.command else {

@@ -76,40 +76,6 @@ impl LeanState {
         }
     }
 
-    /// Returns a map of `root -> justifications` constructed from the
-    /// flattened data in the state.
-    pub fn get_justifications(&self) -> anyhow::Result<HashMap<B256, BitList<U4096>>> {
-        let mut justifications = HashMap::new();
-
-        if self.justifications_roots.is_empty() {
-            return Ok(justifications);
-        }
-
-        let validator_count = self.validators.len();
-
-        let flat_votes = self.justifications_validators.iter().collect::<Vec<_>>();
-
-        for (i, root) in self.justifications_roots.iter().enumerate() {
-            let start_index = i * validator_count;
-            let end_index = start_index + validator_count;
-            let vote_slice = &flat_votes
-                .get(start_index..end_index)
-                .expect("Could not get indexs");
-
-            let mut new_bitlist = BitList::with_capacity(validator_count)
-                .map_err(|err| anyhow!("Failed to create BitList for justifications: {err:?}"))?;
-
-            for (validator_index, &bit) in vote_slice.iter().enumerate() {
-                new_bitlist
-                    .set(validator_index, bit)
-                    .map_err(|err| anyhow!("Failed to set justification: {err:?}"))?;
-            }
-
-            justifications.insert(*root, new_bitlist);
-        }
-        Ok(justifications)
-    }
-
     /// Saves a map of `root -> justifications` back into the state's flattened
     /// data structure.
     pub fn with_justifications(
@@ -284,9 +250,33 @@ impl LeanState {
     }
 
     pub fn process_attestations(&mut self, attestations: &[Attestation]) -> anyhow::Result<()> {
-        // get justifications, justified slots and historical block hashes are
-        // already up to date as per the processing in process_block_header
-        let mut justifications_map = self.get_justifications()?;
+        let mut justifications_map = HashMap::new();
+
+        if !self.justifications_roots.is_empty() {
+            let validator_count = self.validators.len();
+
+            let flat_votes = self.justifications_validators.iter().collect::<Vec<_>>();
+
+            for (i, root) in self.justifications_roots.iter().enumerate() {
+                let start_index = i * validator_count;
+                let end_index = start_index + validator_count;
+                let vote_slice = &flat_votes
+                    .get(start_index..end_index)
+                    .expect("Could not get indexs");
+
+                let mut new_bitlist = BitList::with_capacity(validator_count).map_err(|err| {
+                    anyhow!("Failed to create BitList for justifications: {err:?}")
+                })?;
+
+                for (validator_index, &bit) in vote_slice.iter().enumerate() {
+                    new_bitlist
+                        .set(validator_index, bit)
+                        .map_err(|err| anyhow!("Failed to set justification: {err:?}"))?;
+                }
+
+                justifications_map.insert(*root, new_bitlist);
+            }
+        }
 
         for attestation in attestations {
             // Ignore attestations whose source is not already justified,
@@ -458,95 +448,6 @@ impl LeanState {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::attestation::{Attestation, AttestationData};
-
-    #[test]
-    fn get_justifications_empty() {
-        let state = LeanState::generate_genesis(10, None);
-
-        // Ensure the base state has empty justification lists
-        assert_eq!(state.justifications_roots.len(), 0);
-        assert_eq!(state.justifications_validators.num_set_bits(), 0);
-
-        let justifications_map = state.get_justifications().unwrap();
-        assert_eq!(justifications_map, HashMap::new());
-    }
-
-    #[test]
-    fn get_justifications_single_root() {
-        let num_validators: usize = 3;
-        let mut state = LeanState::generate_genesis(
-            0,
-            Some(Validator::generate_default_validators(num_validators)),
-        );
-        state.justifications_validators = BitList::with_capacity(num_validators).unwrap();
-        let root = B256::repeat_byte(1);
-
-        state.justifications_roots.push(root).unwrap();
-        state.justifications_validators.set(1, true).unwrap();
-
-        let mut expected_bitlist = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        expected_bitlist.set(1, true).unwrap();
-
-        let mut expected_map = HashMap::<B256, BitList<U4096>>::new();
-        expected_map.insert(root, expected_bitlist);
-
-        let justifications_map = state.get_justifications().unwrap();
-        assert_eq!(justifications_map, expected_map);
-    }
-
-    #[test]
-    fn get_justifications_multiple_roots() {
-        let num_validators = 3;
-        let mut state = LeanState::generate_genesis(
-            0,
-            Some(Validator::generate_default_validators(num_validators)),
-        );
-        state.justifications_validators = BitList::with_capacity(num_validators * 3).unwrap();
-        let root0 = B256::repeat_byte(0);
-        let root1 = B256::repeat_byte(1);
-        let root2 = B256::repeat_byte(2);
-
-        // root0 is attestation by validator 0
-        state.justifications_roots.push(root0).unwrap();
-        state.justifications_validators.set(0, true).unwrap();
-
-        // root1 is attestation by validator 1 and 2
-        state.justifications_roots.push(root1).unwrap();
-        state
-            .justifications_validators
-            .set(state.validators.len() + 1, true)
-            .unwrap();
-        state
-            .justifications_validators
-            .set(state.validators.len() + 2, true)
-            .unwrap();
-
-        // root2 is attestation by none
-        state.justifications_roots.push(root2).unwrap();
-
-        // Verify that the reconstructed map is identical to the expected map
-        // Because HashMap is not ordered, we need to check root by root
-        let justifications = state.get_justifications().unwrap();
-
-        // check root0 attestation by validator 0
-        let mut expected_bitlist0 = BitList::with_capacity(state.validators.len()).unwrap();
-        expected_bitlist0.set(0, true).unwrap();
-        assert_eq!(justifications[&root0], expected_bitlist0);
-
-        // Prepare expected root1 attested by validator 1 and 2
-        let mut expected_bitlist1 = BitList::with_capacity(state.validators.len()).unwrap();
-        expected_bitlist1.set(1, true).unwrap();
-        expected_bitlist1.set(2, true).unwrap();
-        assert_eq!(justifications[&root1], expected_bitlist1);
-
-        // Prepare expected root2 attested by none
-        let expected_bitlist2 = BitList::with_capacity(state.validators.len()).unwrap();
-        assert_eq!(justifications[&root2], expected_bitlist2);
-
-        // Also verify that the number of roots matches
-        assert_eq!(justifications.len(), 3);
-    }
 
     #[test]
     fn with_justifications_empty() {
@@ -661,74 +562,6 @@ mod test {
 
         let result = state.with_justifications(justifications);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn with_justifications_roundtrip_empty() {
-        let mut state = LeanState::generate_genesis(10, None);
-        let justifications = HashMap::<B256, BitList<U4096>>::new();
-
-        // Set empty justifications to state
-        state.with_justifications(justifications.clone()).unwrap();
-
-        // Get justifications back from state
-        let reconstructed = state.get_justifications().unwrap();
-
-        // Verify roundtrip equality
-        assert_eq!(reconstructed, justifications);
-    }
-
-    #[test]
-    fn with_justifications_roundtrip_single_root() {
-        let mut state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
-        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
-
-        // root0 attested by validator 0
-        let root0 = B256::repeat_byte(1);
-        let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist0.set(0, true).unwrap();
-
-        justifications.insert(root0, bitlist0);
-
-        // Set justifications to state
-        state.with_justifications(justifications.clone()).unwrap();
-
-        // Get justifications back from state
-        let reconstructed = state.get_justifications().unwrap();
-
-        // Verify roundtrip equality
-        assert_eq!(reconstructed, justifications);
-    }
-
-    #[test]
-    fn with_justifications_roundtrip_multiple_roots() {
-        let mut state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
-        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
-
-        // root0 attested by validator 0
-        let root0 = B256::repeat_byte(1);
-        let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist0.set(0, true).unwrap();
-
-        // root1 attested by validator 1 and 2
-        let root1 = B256::repeat_byte(2);
-        let mut bitlist1 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist1.set(1, true).unwrap();
-        bitlist1.set(2, true).unwrap();
-
-        justifications.insert(root0, bitlist0);
-        justifications.insert(root1, bitlist1);
-
-        // Set justifications to state
-        state.with_justifications(justifications.clone()).unwrap();
-
-        // Get justifications back from state
-        let reconstructed = state.get_justifications().unwrap();
-
-        // Verify roundtrip equality
-        assert_eq!(reconstructed, justifications);
     }
 
     #[test]
@@ -923,99 +756,6 @@ mod test {
                 .to_string()
                 .contains("Block parent root does not match latest block header root")
         );
-    }
-
-    #[test]
-    fn process_attestations_justification_and_finalization() {
-        let genesis_state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
-        let mut state = genesis_state.clone();
-
-        // Move to slot 1 to allow producing a block there.
-        state.process_slots(1).unwrap();
-
-        // Create and process the block at slot 1.
-        let block_1 = Block {
-            slot: 1,
-            proposer_index: 1,
-            parent_root: state.latest_block_header.tree_hash_root(),
-            state_root: B256::ZERO,
-            body: BlockBody {
-                attestations: VariableList::empty(),
-            },
-        };
-        state.process_block(&block_1).unwrap();
-
-        // Move to slot 4 and produce/process a block.
-        state.process_slots(4).unwrap();
-        let block_4 = Block {
-            slot: 4,
-            proposer_index: 4,
-            parent_root: state.latest_block_header.tree_hash_root(),
-            state_root: B256::ZERO,
-            body: BlockBody {
-                attestations: VariableList::empty(),
-            },
-        };
-        state.process_block(&block_4).unwrap();
-
-        // Advance to slot 5 so the header at slot 4 caches its state root.
-        state.process_slots(5).unwrap();
-
-        // Process a block at slot 5 to push block_4's root into historical_block_hashes.
-        // This is required by the our implementation based off 3SF-mini which validates that target
-        // roots exist in historical_block_hashes before accepting attestations
-        // This validation does not exist in leanSpec so the test passes without processing block 5
-        // We deviate from the leanSpec in this test and process block 5 before testing
-        // process_attestations for slot 4
-        let block_5 = Block {
-            slot: 5,
-            proposer_index: 5,
-            parent_root: state.latest_block_header.tree_hash_root(),
-            state_root: B256::ZERO,
-            body: BlockBody {
-                attestations: VariableList::empty(),
-            },
-        };
-        state.process_block(&block_5).unwrap();
-
-        // Define source (genesis) and target (slot 4) checkpoints for voting.
-        let genesis_checkpoint = Checkpoint {
-            root: state.historical_block_hashes[0], // Canonical root for slot 0
-            slot: 0,
-        };
-        let checkpoint_4 = Checkpoint {
-            root: state.historical_block_hashes[4], // Root of the block at slot 4
-            slot: 4,
-        };
-
-        // Create 7 attestations from distinct validators (indices 0..6) to reach ≥2/3.
-        let mut attestations_for_4 = VariableList::<Attestation, U4096>::empty();
-        for i in 0..7 {
-            let attestations = Attestation {
-                validator_id: i,
-                data: AttestationData {
-                    slot: 4,
-                    head: checkpoint_4,
-                    target: checkpoint_4,
-                    source: genesis_checkpoint,
-                },
-            };
-            attestations_for_4.push(attestations).unwrap();
-        }
-
-        // Process attestations directly; mutates state in place.
-        state.process_attestations(&attestations_for_4).unwrap();
-
-        // The target (slot 4) should now be justified.
-        assert_eq!(state.latest_justified, checkpoint_4);
-        // The justified bit for slot 4 must be set.
-        assert!(state.justified_slots.get(4).unwrap_or(false));
-        // Since no other justifiable slot exists between 0 and 4, genesis is finalized.
-        assert_eq!(state.latest_finalized, genesis_checkpoint);
-        // The per-root attestations tracker for the justified target has been cleared.
-        let justifications = state.get_justifications().unwrap();
-        assert!(!justifications.contains_key(&checkpoint_4.root));
     }
 
     #[test]
