@@ -2805,7 +2805,7 @@ dependencies = [
 [[package]]
 name = "hashsig"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanSig.git#ceefed3832438160d376cdf44ac88c037c7ae6db"
+source = "git+https://github.com/leanEthereum/leanSig.git?rev=2bd2b422dd225aa211fa37a1589b1fa55acb7992#2bd2b422dd225aa211fa37a1589b1fa55acb7992"
 dependencies = [
  "dashmap",
  "num-bigint",
@@ -4555,7 +4555,7 @@ dependencies = [
 [[package]]
 name = "p3-baby-bear"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 dependencies = [
  "p3-field",
  "p3-mds",
@@ -4568,21 +4568,20 @@ dependencies = [
 [[package]]
 name = "p3-dft"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 dependencies = [
  "itertools 0.14.0",
  "p3-field",
  "p3-matrix",
  "p3-maybe-rayon",
  "p3-util",
- "spin",
  "tracing",
 ]
 
 [[package]]
 name = "p3-field"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 dependencies = [
  "itertools 0.14.0",
  "num-bigint",
@@ -4597,7 +4596,7 @@ dependencies = [
 [[package]]
 name = "p3-koala-bear"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 dependencies = [
  "p3-field",
  "p3-monty-31",
@@ -4609,7 +4608,7 @@ dependencies = [
 [[package]]
 name = "p3-matrix"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 dependencies = [
  "itertools 0.14.0",
  "p3-field",
@@ -4624,12 +4623,12 @@ dependencies = [
 [[package]]
 name = "p3-maybe-rayon"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 
 [[package]]
 name = "p3-mds"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 dependencies = [
  "p3-dft",
  "p3-field",
@@ -4641,7 +4640,7 @@ dependencies = [
 [[package]]
 name = "p3-monty-31"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 dependencies = [
  "itertools 0.14.0",
  "num-bigint",
@@ -4656,7 +4655,6 @@ dependencies = [
  "paste",
  "rand 0.9.2",
  "serde",
- "spin",
  "tracing",
  "transpose",
 ]
@@ -4664,7 +4662,7 @@ dependencies = [
 [[package]]
 name = "p3-poseidon2"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 dependencies = [
  "p3-field",
  "p3-mds",
@@ -4676,7 +4674,7 @@ dependencies = [
 [[package]]
 name = "p3-symmetric"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 dependencies = [
  "itertools 0.14.0",
  "p3-field",
@@ -4686,7 +4684,7 @@ dependencies = [
 [[package]]
 name = "p3-util"
 version = "0.3.0"
-source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78bb5fbe3f82ffd2c294e17fa830"
+source = "git+https://github.com/Plonky3/Plonky3.git?rev=2117e4b#2117e4baac83269ace80c2aa109cec053f703842"
 dependencies = [
  "serde",
 ]
@@ -6911,15 +6909,6 @@ checksum = "17129e116933cf371d018bb80ae557e889637989d8638274fb25622827b03881"
 dependencies = [
  "libc",
  "windows-sys 0.60.2",
-]
-
-[[package]]
-name = "spin"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
-dependencies = [
- "lock_api",
 ]
 
 [[package]]
