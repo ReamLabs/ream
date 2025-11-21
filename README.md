@@ -3,7 +3,7 @@
 [![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)][tg-url]
 
 
-**[Install](https://ream.rs/installation.html)**
+**[Install](https://ream.rs/quickstart.html)**
 | [User Docs](https://ream.rs)
 
 ## What is Ream
