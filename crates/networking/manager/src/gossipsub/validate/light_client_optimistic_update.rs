@@ -1,6 +1,9 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use anyhow::anyhow;
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_light_client::optimistic_update::LightClientOptimisticUpdate;
+use ream_network_spec::networks::{beacon_network_spec, lean_network_spec};
 use ream_storage::{cache::CachedDB, tables::table::REDBTable};
 
 use crate::gossipsub::validate::result::ValidationResult;
@@ -18,16 +21,33 @@ pub async fn validate_light_client_optimistic_update(
         .get(head_root)?
         .ok_or_else(|| anyhow!("Could not get beacon state: {head_root}"))?;
 
+    let signature_slot_start_time = lean_network_spec().genesis_time
+        + (light_client_optimistic_update
+            .signature_slot
+            .saturating_mul(lean_network_spec().seconds_per_slot));
+    let current_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Error getting current time")
+        .as_secs();
+
+    // [IGNORE] The optimistic_update is received after the block at signature_slot was given enough
+    // time to propagate through the network
+    if current_time
+        < signature_slot_start_time - beacon_network_spec().maximum_gossip_clock_disparity
+    {
+        return Ok(ValidationResult::Ignore("Too early".to_string()));
+    };
+
     let attested_header_slot = light_client_optimistic_update.attested_header.beacon.slot;
     let last_forwarded_slot = *cache_db.last_forwarded_optimistic_update_slot.read().await;
 
     // [IGNORE] The attested_header.beacon.slot is greater than that of all previously forwarded
     // optimistic_update(s)
     if last_forwarded_slot.is_some_and(|slot| slot >= attested_header_slot) {
-        Ok(ValidationResult::Ignore(
+        return Ok(ValidationResult::Ignore(
             "Optimistic update slot is older than previously forwarded update".to_string(),
-        ))
-    } else {
-        Ok(ValidationResult::Accept)
-    }
+        ));
+    };
+
+    Ok(ValidationResult::Accept)
 }
