@@ -97,7 +97,7 @@ impl LeanNetworkSpec {
             genesis_time: current_timestamp + 10,
             justification_lookback_slots: 3,
             seconds_per_slot: 4,
-            num_validators: 4,
+            num_validators: 3,
             devnet: Devnet::One,
         }
     }

@@ -10,7 +10,7 @@ use tree_hash_derive::TreeHash;
 use super::BINCODE_CONFIG;
 use crate::hashsig::HashSigScheme;
 
-type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
+pub type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
 
 /// Wrapper around the `GeneralizedXMSSPublicKey` from the hashsig crate.
 ///

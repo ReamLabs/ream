@@ -18,7 +18,6 @@ use ream::cli::{
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
     generate_private_key::GeneratePrivateKeyConfig,
-    generate_validator_registry::run_generate_validator_registry,
     import_keystores::{load_keystore_directory, load_password_from_config, process_password},
     lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig,
@@ -36,7 +35,6 @@ use ream_consensus_lean::{
     attestation::{Attestation, AttestationData},
     block::{BlockWithAttestation, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
-    validator::Validator,
 };
 use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
@@ -69,7 +67,8 @@ use ream_validator_beacon::{
     voluntary_exit::process_voluntary_exit,
 };
 use ream_validator_lean::{
-    registry::load_validator_registry, service::ValidatorService as LeanValidatorService,
+    registry::{load_validator_public_keys, load_validator_registry},
+    service::ValidatorService as LeanValidatorService,
 };
 use ssz_types::VariableList;
 use tokio::{sync::mpsc, time::Instant};
@@ -123,10 +122,6 @@ fn main() {
         Commands::GeneratePrivateKey(config) => {
             executor_clone.spawn(async move { run_generate_private_key(*config).await });
         }
-        Commands::GenerateKeystore(config) => {
-            run_generate_validator_registry(*config).expect("failed to generate hash-sig keystore");
-            process::exit(0);
-        }
     }
 
     executor_clone.runtime().block_on(async {
@@ -178,12 +173,11 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
         .expect("Failed to load validator registry");
-    let validators = keystores
-        .iter()
-        .map(|keystore| Validator {
-            public_key: keystore.public_key.clone(),
-        })
-        .collect::<Vec<_>>();
+    let mut validator_keys_manifest_path = config.validator_registry_path;
+    validator_keys_manifest_path.pop();
+    validator_keys_manifest_path.push("hash-sig-keys/validator-keys-manifest.yaml");
+    let validators = load_validator_public_keys(&validator_keys_manifest_path)
+        .expect("Failed to get load_validator_public_keys");
 
     // Initialize the services that will run in the lean node.
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
@@ -644,7 +638,7 @@ mod tests {
             "--network",
             "ephemery",
             "--validator-registry-path",
-            "./assets/lean/validator_registry.yaml",
+            "./assets/lean/validators.yaml",
         ]);
 
         let Commands::LeanNode(config) = cli.command else {
@@ -683,7 +677,7 @@ mod tests {
             "--network",
             "ephemery",
             "--validator-registry-path",
-            "./assets/lean/validator_registry.yaml",
+            "./assets/lean/validators.yaml",
             "--socket-port",
             "9001",
             "--http-port",

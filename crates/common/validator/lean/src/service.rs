@@ -54,7 +54,7 @@ impl ValidatorService {
                         0 => {
                             // First tick (t=0): Propose a block.
                             if slot > 0 && let Some(keystore) = self.is_proposer(slot) {
-                                info!(slot, tick = tick_count, "Proposing block by Validator {}", keystore.id);
+                                info!(slot, tick = tick_count, "Proposing block by Validator {}", keystore.index);
                                 let (tx, rx) = oneshot::channel();
 
                                 self.chain_sender
@@ -68,7 +68,7 @@ impl ValidatorService {
                                     slot = block.slot,
                                     block_root = ?block.tree_hash_root(),
                                     "Building block finished by Validator {}",
-                                    keystore.id,
+                                    keystore.index,
                                 );
 
                             let (tx, rx) = oneshot::channel();
@@ -77,7 +77,7 @@ impl ValidatorService {
                                 .expect("Failed to send attestation to LeanChainService");
 
                             let attestation_data = rx.await.expect("Failed to receive attestation data from LeanChainService");
-                                let message = Attestation { validator_id: keystore.id, data: attestation_data };
+                                let message = Attestation { validator_id: keystore.index, data: attestation_data };
                                 signatures.push(keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?).map_err(|err| anyhow!("Failed to push signature {err:?}"))?;
                                 let signed_block_with_attestation = SignedBlockWithAttestation {
                                     message: BlockWithAttestation {
@@ -131,7 +131,7 @@ impl ValidatorService {
                             let mut signed_attestations = vec![];
                             for (_, keystore) in self.keystores.iter().enumerate().filter(|(index, _)| *index as u64 != slot % lean_network_spec().num_validators) {
                                 let message = Attestation {
-                                        validator_id: keystore.id,
+                                        validator_id: keystore.index,
                                         data: attestation_data.clone()
                                     };
                                     signed_attestations.push(SignedAttestation {
@@ -162,6 +162,6 @@ impl ValidatorService {
 
         self.keystores
             .iter()
-            .find(|keystore| keystore.id == proposer_index as u64)
+            .find(|keystore| keystore.index == proposer_index as u64)
     }
 }
