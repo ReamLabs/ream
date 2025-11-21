@@ -66,7 +66,7 @@ To enable your node to expose metrics through Prometheus, add the `--metrics` fl
 ```bash
 cargo run --release -- --ephemeral lean_node \
     --network ephemery \
-    --validator-registry-path ./bin/ream/assets/lean/validator_registry.yaml \
+    --validator-registry-path ./bin/ream/assets/lean/validators.yaml \
     --metrics --metrics-address 0.0.0.0
 ```
 

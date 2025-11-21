@@ -2,7 +2,6 @@ pub mod account_manager;
 pub mod beacon_node;
 pub mod constants;
 pub mod generate_private_key;
-pub mod generate_validator_registry;
 pub mod import_keystores;
 pub mod lean_node;
 pub mod validator_node;
@@ -18,7 +17,6 @@ use crate::cli::{
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
     generate_private_key::GeneratePrivateKeyConfig,
-    generate_validator_registry::GenerateValidatorRegistryConfig,
     lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig,
     verbosity::{Verbosity, verbosity_parser},
@@ -77,10 +75,6 @@ pub enum Commands {
     /// Generate a secp256k1 keypair for lean node
     #[command(name = "generate_private_key")]
     GeneratePrivateKey(Box<GeneratePrivateKeyConfig>),
-
-    /// Generate keystore file
-    #[command(name = "generate_validator_registry")]
-    GenerateKeystore(Box<GenerateValidatorRegistryConfig>),
 }
 
 #[cfg(test)]
