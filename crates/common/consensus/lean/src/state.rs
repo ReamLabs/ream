@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitList, VariableList,
-    typenum::{U4096, U262144, U1073741824},
+    typenum::{U262144, U1073741824},
 };
 use tracing::info;
 use tree_hash::TreeHash;
@@ -74,51 +74,6 @@ impl LeanState {
             justifications_validators: BitList::with_capacity(0)
                 .expect("Failed to initialize an empty BitList"),
         }
-    }
-
-    /// Saves a map of `root -> justifications` back into the state's flattened
-    /// data structure.
-    pub fn with_justifications(
-        &mut self,
-        justifications: HashMap<B256, BitList<U4096>>,
-    ) -> anyhow::Result<()> {
-        let mut roots_list = VariableList::<B256, U262144>::empty();
-        let mut votes_list: Vec<bool> = Vec::new();
-
-        for root in justifications.keys().sorted() {
-            let votes = justifications
-                .get(root)
-                .ok_or_else(|| anyhow!("Root {root} not found in justifications"))?;
-            ensure!(
-                votes.len() == self.validators.len(),
-                "Vote list for root {root} has incorrect length expected: {}, got: {}",
-                votes.len(),
-                self.validators.len(),
-            );
-
-            roots_list
-                .push(*root)
-                .map_err(|err| anyhow!("Could not append root: {err:?}"))?;
-            votes.iter().for_each(|vote| votes_list.push(vote));
-        }
-
-        let mut justifications_validators =
-            BitList::with_capacity(justifications.len() * self.validators.len()).map_err(
-                |err| anyhow!("Failed to create BitList for justifications_validators: {err:?}"),
-            )?;
-
-        votes_list.iter().enumerate().try_for_each(
-            |(index, justification)| -> anyhow::Result<()> {
-                justifications_validators
-                    .set(index, *justification)
-                    .map_err(|err| anyhow!("Failed to set justification bit: {err:?}"))
-            },
-        )?;
-
-        self.justifications_roots = roots_list;
-        self.justifications_validators = justifications_validators;
-
-        Ok(())
     }
 
     pub fn state_transition(
@@ -264,9 +219,10 @@ impl LeanState {
                     .get(start_index..end_index)
                     .expect("Could not get indexs");
 
-                let mut new_bitlist = BitList::with_capacity(validator_count).map_err(|err| {
-                    anyhow!("Failed to create BitList for justifications: {err:?}")
-                })?;
+                let mut new_bitlist = BitList::<U1073741824>::with_capacity(validator_count)
+                    .map_err(|err| {
+                        anyhow!("Failed to create BitList for justifications: {err:?}")
+                    })?;
 
                 for (validator_index, &bit) in vote_slice.iter().enumerate() {
                     new_bitlist
@@ -439,7 +395,41 @@ impl LeanState {
         }
 
         // flatten and set updated justifications back to the state
-        self.with_justifications(justifications_map)?;
+        let mut roots_list = VariableList::<B256, U262144>::empty();
+        let mut votes_list: Vec<bool> = Vec::new();
+
+        for root in justifications_map.keys().sorted() {
+            let votes = justifications_map
+                .get(root)
+                .ok_or_else(|| anyhow!("Root {root} not found in justifications"))?;
+            ensure!(
+                votes.len() == self.validators.len(),
+                "Vote list for root {root} has incorrect length expected: {}, got: {}",
+                votes.len(),
+                self.validators.len(),
+            );
+
+            roots_list
+                .push(*root)
+                .map_err(|err| anyhow!("Could not append root: {err:?}"))?;
+            votes.iter().for_each(|vote| votes_list.push(vote));
+        }
+
+        let mut justifications_validators =
+            BitList::with_capacity(justifications_map.len() * self.validators.len()).map_err(
+                |err| anyhow!("Failed to create BitList for justifications_validators: {err:?}"),
+            )?;
+
+        votes_list.iter().enumerate().try_for_each(
+            |(index, justification)| -> anyhow::Result<()> {
+                justifications_validators
+                    .set(index, *justification)
+                    .map_err(|err| anyhow!("Failed to set justification bit: {err:?}"))
+            },
+        )?;
+
+        self.justifications_roots = roots_list;
+        self.justifications_validators = justifications_validators;
 
         Ok(())
     }
@@ -448,121 +438,6 @@ impl LeanState {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn with_justifications_empty() {
-        let mut state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
-        state.justifications_validators = BitList::with_capacity(state.validators.len()).unwrap();
-        state
-            .justifications_roots
-            .push(B256::repeat_byte(1))
-            .unwrap();
-        state.justifications_validators.set(0, true).unwrap();
-
-        assert_eq!(state.justifications_roots.len(), 1);
-        assert_eq!(state.justifications_validators.num_set_bits(), 1);
-
-        let justifications = HashMap::<B256, BitList<U4096>>::new();
-        state.with_justifications(justifications).unwrap();
-
-        assert_eq!(state.justifications_roots.len(), 0);
-        assert_eq!(state.justifications_validators.num_set_bits(), 0);
-    }
-
-    #[test]
-    fn with_justifications_deterministic_order() {
-        let mut state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
-        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
-
-        // root0 attested by validator0
-        let root0 = B256::repeat_byte(0);
-        let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist0.set(0, true).unwrap();
-
-        // root1 attested by validator1
-        let root1 = B256::repeat_byte(1);
-        let mut bitlist1 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist1.set(1, true).unwrap();
-
-        // root2 attested by validator2
-        let root2 = B256::repeat_byte(2);
-        let mut bitlist2 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist2.set(2, true).unwrap();
-
-        // Insert unordered: root0, root2, root1
-        justifications.insert(root0, bitlist0);
-        justifications.insert(root2, bitlist2);
-        justifications.insert(root1, bitlist1);
-
-        state.with_justifications(justifications).unwrap();
-
-        assert_eq!(state.justifications_roots[0], B256::repeat_byte(0));
-        assert!(state.justifications_validators.get(0).unwrap());
-        assert_eq!(state.justifications_roots[1], B256::repeat_byte(1));
-        assert!(
-            state
-                .justifications_validators
-                .get(state.validators.len() + 1)
-                .unwrap()
-        );
-        assert_eq!(state.justifications_roots[2], B256::repeat_byte(2));
-        assert!(
-            state
-                .justifications_validators
-                .get(2 * state.validators.len() + 2)
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn with_justifications_correct_flattened_size() {
-        let mut state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
-        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
-
-        // Test with a single root
-        let root0 = B256::repeat_byte(0);
-        let bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-
-        justifications.insert(root0, bitlist0);
-
-        state.with_justifications(justifications.clone()).unwrap();
-        assert_eq!(state.justifications_roots.len(), 1);
-        assert_eq!(
-            state.justifications_validators.len(),
-            state.validators.len()
-        );
-
-        // Test with 2 roots
-        let root1 = B256::repeat_byte(1);
-        let bitlist1 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-
-        justifications.insert(root1, bitlist1);
-        state.with_justifications(justifications).unwrap();
-        assert_eq!(state.justifications_roots.len(), 2);
-        assert_eq!(
-            state.justifications_validators.len(),
-            2 * state.validators.len()
-        );
-    }
-
-    #[test]
-    fn with_justifications_invalid_length() {
-        let mut state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
-        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
-        let invalid_length = state.validators.len() - 1;
-
-        // root0 attested by validator0
-        let root0 = B256::repeat_byte(0);
-        let bitlist0 = BitList::<U4096>::with_capacity(invalid_length).unwrap();
-        justifications.insert(root0, bitlist0);
-
-        let result = state.with_justifications(justifications);
-        assert!(result.is_err());
-    }
 
     #[test]
     fn generate_genesis() {
