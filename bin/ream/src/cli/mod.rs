@@ -119,7 +119,8 @@ mod tests {
                 assert_eq!(config.network.seconds_per_slot, 12);
                 assert_eq!(config.network.genesis_time, 0);
                 assert_eq!(config.network.justification_lookback_slots, 3);
-                assert_eq!(config.network.num_validators, 4);
+                // Will be set later in main.rs
+                assert_eq!(config.network.num_validators, 0);
 
                 assert_eq!(
                     config.private_key_path.as_ref().unwrap().to_str().unwrap(),

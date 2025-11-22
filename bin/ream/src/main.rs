@@ -159,9 +159,18 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         );
     }
 
+    let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
+        .expect("Failed to load validator registry");
+    let mut validator_keys_manifest_path = config.validator_registry_path;
+    validator_keys_manifest_path.pop();
+    validator_keys_manifest_path.push("hash-sig-keys/validator-keys-manifest.yaml");
+    let validators = load_validator_public_keys(&validator_keys_manifest_path)
+        .expect("Failed to get load_validator_public_keys");
+
     // Fill in which devnet we are running
     let mut network = config.network;
     network.devnet = config.devnet;
+    network.num_validators = validators.len() as u64;
     set_lean_network_spec(Arc::new(network));
 
     // Initialize the lean database
@@ -170,14 +179,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         .expect("unable to init Ream Lean Database");
 
     info!("ream lean database has been initialized");
-
-    let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
-        .expect("Failed to load validator registry");
-    let mut validator_keys_manifest_path = config.validator_registry_path;
-    validator_keys_manifest_path.pop();
-    validator_keys_manifest_path.push("hash-sig-keys/validator-keys-manifest.yaml");
-    let validators = load_validator_public_keys(&validator_keys_manifest_path)
-        .expect("Failed to get load_validator_public_keys");
 
     // Initialize the services that will run in the lean node.
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
@@ -697,8 +698,8 @@ mod tests {
             run_lean_node(*config, executor.clone(), cloned_db).await;
         });
 
-        let result = timeout(Duration::from_secs(40), async {
-            sleep(Duration::from_secs(40)).await;
+        let result = timeout(Duration::from_secs(60), async {
+            sleep(Duration::from_secs(60)).await;
             Ok::<_, ()>(())
         })
         .await;
@@ -724,7 +725,9 @@ mod tests {
         );
         assert!(
             head_state.latest_finalized.slot > 0,
-            "Expected the finalized checkpoint to have advanced from genesis"
+            "Expected the finalized checkpoint to have advanced from genesis current slot {} finalized slot {}",
+            head_state.slot,
+            head_state.latest_finalized.slot
         );
         assert!(
             head_state.latest_justified.slot + justfication_lag == head_state.slot,

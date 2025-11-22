@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use tracing::warn;
 
 static HAS_NETWORK_SPEC_BEEN_INITIALIZED: Once = Once::new();
@@ -76,12 +76,17 @@ pub struct LeanNetworkSpec {
     pub justification_lookback_slots: u64,
     #[serde(default = "default_seconds_per_slot")]
     pub seconds_per_slot: u64,
-    #[serde(alias = "VALIDATOR_COUNT")]
-    pub num_validators: u64,
 
     /// Skipped in YAML, defaults to Devnet::One
     #[serde(skip)]
     pub devnet: Devnet,
+
+    #[serde(skip, alias = "VALIDATOR_COUNT")]
+    pub num_validators: u64,
+
+    /// Capture any extra fields we aren't interested in
+    #[serde(flatten)]
+    discarded_values: DiscardUnknown,
 }
 
 impl LeanNetworkSpec {
@@ -99,6 +104,7 @@ impl LeanNetworkSpec {
             seconds_per_slot: 4,
             num_validators: 3,
             devnet: Devnet::One,
+            discarded_values: DiscardUnknown,
         }
     }
 
@@ -107,5 +113,19 @@ impl LeanNetworkSpec {
             Devnet::Two => true,
             Devnet::One => matches!(target, Devnet::One),
         }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+struct DiscardUnknown;
+
+impl<'de> Deserialize<'de> for DiscardUnknown {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // just consume it without keeping anything
+        let _ = serde_yaml::Value::deserialize(deserializer)?;
+        Ok(DiscardUnknown)
     }
 }
