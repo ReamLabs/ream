@@ -18,6 +18,7 @@ use ream_p2p::{
     network::beacon::{Network, ReamNetworkEvent, network_state::NetworkState},
 };
 use ream_storage::{cache::CachedDB, db::beacon::BeaconDB};
+use ream_sync_committee_pool::SyncCommitteePool;
 use ream_syncer::block_range::BlockRangeSyncer;
 use tokio::{sync::mpsc, time::interval};
 use tracing::{error, info};
@@ -37,6 +38,7 @@ pub struct NetworkManagerService {
     pub block_range_syncer: BlockRangeSyncer,
     pub ream_db: BeaconDB,
     pub cached_db: CachedDB,
+    pub sync_committee_pool: Arc<SyncCommitteePool>,
 }
 
 /// The `NetworkManagerService` acts as the manager for all networking activities in Ream.
@@ -59,6 +61,7 @@ impl NetworkManagerService {
         ream_db: BeaconDB,
         ream_dir: PathBuf,
         operation_pool: Arc<OperationPool>,
+        sync_committee_pool: Arc<SyncCommitteePool>,
     ) -> anyhow::Result<Self> {
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
             config.socket_address,
@@ -101,6 +104,7 @@ impl NetworkManagerService {
         let beacon_chain = Arc::new(BeaconChain::new(
             ream_db.clone(),
             operation_pool,
+            sync_committee_pool.clone(),
             execution_engine,
         ));
         let status = beacon_chain.build_status_request().await?;
@@ -130,6 +134,7 @@ impl NetworkManagerService {
             block_range_syncer,
             ream_db,
             cached_db,
+            sync_committee_pool,
         })
     }
 
