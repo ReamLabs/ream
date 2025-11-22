@@ -20,8 +20,9 @@ pub struct ValidatorKeysManifest {
 #[serde(rename_all = "snake_case")]
 pub struct ValidatorKeystoreRaw {
     pub index: u64,
-    pub public_key_file: String,
-    pub secret_key_file: String,
+    #[serde(rename = "pubkey_hex")]
+    pub public_key: PublicKey,
+    pub privkey_file: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]

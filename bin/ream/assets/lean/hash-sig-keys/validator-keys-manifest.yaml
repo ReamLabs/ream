@@ -11,13 +11,13 @@ num_validators: 3
 
 validators:
   - index: 0
-    public_key_file: validator_0_pk.json
-    secret_key_file: validator_0_sk.json
+    pubkey_hex: 0x77c50d29d6cdab52b0a6f54329d12047fa62bd7a64324966e9785c3971b24766a5183a4d4799a72e97c7b55b9a3264020d8eb51a
+    privkey_file: validator_0_sk.json
 
   - index: 1
-    public_key_file: validator_1_pk.json
-    secret_key_file: validator_1_sk.json
+    pubkey_hex: 0xb05a754cded564006863110f946ad3130310c376c365f17144240c4388d0106bef07d81d5bbc5f62cbdc3f1802ac226af74ae05e
+    privkey_file: validator_1_sk.json
 
   - index: 2
-    public_key_file: validator_2_pk.json
-    secret_key_file: validator_2_sk.json
+    pubkey_hex: 0x05fed65f19de962b7a3f4402c288b54e0018d65885263415068cd30adf05440aa978fa43ea20502937f3ce7a54e50a2f51b8fa19
+    privkey_file: validator_2_sk.json
