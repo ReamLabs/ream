@@ -10,7 +10,12 @@ use ream_consensus_lean::{
     validator::is_proposer,
 };
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
-use ream_metrics::{HEAD_SLOT, PROPOSE_BLOCK_TIME, set_int_gauge_vec, start_timer, stop_timer};
+use ream_metrics::{
+    ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL, ATTESTATIONS_VALID_TOTAL,
+    FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT,
+    LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME, VALIDATORS_COUNT,
+    inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
+};
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 use ream_post_quantum_crypto::hashsig::signature::Signature;
@@ -77,6 +82,12 @@ impl Store {
         db.safe_target_provider()
             .insert(anchor_root)
             .expect("Failed to insert genesis block hash");
+
+        set_int_gauge_vec(
+            &VALIDATORS_COUNT,
+            lean_network_spec().num_validators as i64,
+            &[],
+        );
 
         Ok(Store {
             store: Arc::new(Mutex::new(db)),
@@ -330,6 +341,10 @@ impl Store {
                 .slot as i64,
             &[],
         );
+        set_int_gauge_vec(&JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
+        set_int_gauge_vec(&FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
+        set_int_gauge_vec(&LATEST_JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
+        set_int_gauge_vec(&LATEST_FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
 
         let head_block = block_provider
             .get(new_head)?
@@ -526,6 +541,8 @@ impl Store {
         &mut self,
         signed_block_with_attestation: &SignedBlockWithAttestation,
     ) -> anyhow::Result<()> {
+        let block_processing_timer = start_timer(&FORK_CHOICE_BLOCK_PROCESSING_TIME, &[]);
+
         let (state_provider, block_provider) = {
             let db = self.store.lock().await;
             (db.state_provider(), db.block_provider())
@@ -535,7 +552,9 @@ impl Store {
         let proposer_attestation = &signed_block_with_attestation.message.proposer_attestation;
         let block_root = block.tree_hash_root();
 
+        // If the block is already known, ignore it
         if block_provider.get(block_root)?.is_some() {
+            stop_timer(block_processing_timer);
             return Ok(());
         }
 
@@ -580,6 +599,7 @@ impl Store {
         )
         .await?;
 
+        stop_timer(block_processing_timer);
         Ok(())
     }
 
@@ -650,7 +670,21 @@ impl Store {
                 db.time_provider(),
             )
         };
-        self.validate_attestation(&signed_attestation).await?;
+
+        let validate_attestation_timer = start_timer(&ATTESTATION_VALIDATION_TIME, &[]);
+
+        match self.validate_attestation(&signed_attestation).await {
+            Ok(_) => {
+                inc_int_counter_vec(&ATTESTATIONS_VALID_TOTAL, &[]);
+                stop_timer(validate_attestation_timer);
+            }
+            Err(err) => {
+                inc_int_counter_vec(&ATTESTATIONS_INVALID_TOTAL, &[]);
+                stop_timer(validate_attestation_timer);
+                return Err(err);
+            }
+        }
+
         let validator_id = signed_attestation.message.validator_id;
         let attestation_slot = signed_attestation.message.data.slot;
         if is_from_block {

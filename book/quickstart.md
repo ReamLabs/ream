@@ -47,7 +47,7 @@ The quickest way to get started is to run a lean node on the Ephemery testnet:
 ```bash
 cargo run --release -- --ephemeral lean_node \
     --network ephemery \
-    --validator-registry-path ./bin/ream/assets/lean/validator_registry.yaml
+    --validator-registry-path ./bin/ream/assets/lean/validators.yaml
 ```
 
 Understanding the Command
@@ -57,7 +57,6 @@ Understanding the Command
 - lean_node - Start a lean consensus node
 - --network ephemery - Use the Ephemery network
 - --validator-registry-path - Path to the validator registry configuration
-
 
 ## Metrics
 
@@ -70,9 +69,9 @@ cargo run --release -- --ephemeral lean_node \
     --metrics --metrics-address 0.0.0.0
 ```
 
-By default, metrics are exposed on `127.0.0.1:8080`. 
+By default, metrics are exposed on `127.0.0.1:8080`.
 
-For a complete list of all commands and flags for running a lean node, see the [`ream lean_node` CLI 
+For a complete list of all commands and flags for running a lean node, see the [`ream lean_node` CLI
 Reference](./cli/ream/lean_node.md).
 
 ## Visualizing Metrics with Grafana
@@ -86,6 +85,7 @@ docker compose up
 ```
 
 This will start:
+
 - Prometheus (scrapes metrics from your node)
 - Grafana (visualizes metrics with a pre-configured dashboard)
 

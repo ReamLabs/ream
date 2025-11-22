@@ -3,7 +3,12 @@ use std::collections::HashMap;
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
 use itertools::Itertools;
-use ream_metrics::{FINALIZED_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
+use ream_metrics::{
+    FINALIZED_SLOT, JUSTIFIED_SLOT, STATE_TRANSITION_ATTESTATIONS_PROCESSED_TOTAL,
+    STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME, STATE_TRANSITION_BLOCK_PROCESSING_TIME,
+    STATE_TRANSITION_SLOTS_PROCESSED_TOTAL, STATE_TRANSITION_SLOTS_PROCESSING_TIME,
+    STATE_TRANSITION_TIME, inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
+};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -81,6 +86,8 @@ impl LeanState {
         block: &Block,
         valid_signatures: bool,
     ) -> anyhow::Result<()> {
+        let timer = start_timer(&STATE_TRANSITION_TIME, &[]);
+
         // Validate signatures if required
         ensure!(valid_signatures, "Signatures are not valid");
         self.process_slots(block.slot)
@@ -93,29 +100,38 @@ impl LeanState {
             "Invalid block state root"
         );
 
+        stop_timer(timer);
         Ok(())
     }
 
     pub fn process_slots(&mut self, target_slot: u64) -> anyhow::Result<()> {
         ensure!(
             self.slot < target_slot,
-            "Target slot must be in the future, expectec {} < {target_slot}",
+            "Target slot must be in the future, expected {} < {target_slot}",
             self.slot,
         );
+
+        let timer = start_timer(&STATE_TRANSITION_SLOTS_PROCESSING_TIME, &[]);
+
         while self.slot < target_slot {
             if self.latest_block_header.state_root == B256::ZERO {
                 self.latest_block_header.state_root = self.tree_hash_root();
             }
             self.slot += 1;
+            inc_int_counter_vec(&STATE_TRANSITION_SLOTS_PROCESSED_TOTAL, &[]);
         }
 
+        stop_timer(timer);
         Ok(())
     }
 
     pub fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
+        let timer = start_timer(&STATE_TRANSITION_BLOCK_PROCESSING_TIME, &[]);
+
         self.process_block_header(block)?;
         self.process_attestations(&block.body.attestations)?;
 
+        stop_timer(timer);
         Ok(())
     }
 
@@ -205,6 +221,8 @@ impl LeanState {
     }
 
     pub fn process_attestations(&mut self, attestations: &[Attestation]) -> anyhow::Result<()> {
+        let timer = start_timer(&STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME, &[]);
+
         let mut justifications_map = HashMap::new();
 
         if !self.justifications_roots.is_empty() {
@@ -235,6 +253,7 @@ impl LeanState {
         }
 
         for attestation in attestations {
+            inc_int_counter_vec(&STATE_TRANSITION_ATTESTATIONS_PROCESSED_TOTAL, &[]);
             // Ignore attestations whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
@@ -431,6 +450,7 @@ impl LeanState {
         self.justifications_roots = roots_list;
         self.justifications_validators = justifications_validators;
 
+        stop_timer(timer);
         Ok(())
     }
 }
