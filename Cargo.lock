@@ -2805,7 +2805,7 @@ dependencies = [
 [[package]]
 name = "hashsig"
 version = "0.1.0"
-source = "git+https://github.com/b-wagn/hash-sig?rev=9f2b0bbaa9deee3d072122b32c39b8027c3fccd8#9f2b0bbaa9deee3d072122b32c39b8027c3fccd8"
+source = "git+https://github.com/leanEthereum/leanSig.git?rev=2bd2b422dd225aa211fa37a1589b1fa55acb7992#2bd2b422dd225aa211fa37a1589b1fa55acb7992"
 dependencies = [
  "dashmap",
  "num-bigint",
