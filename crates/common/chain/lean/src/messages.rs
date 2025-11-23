@@ -17,8 +17,6 @@ use tokio::sync::oneshot;
 /// flags, see below for the explanation.
 ///
 /// Flags:
-/// `is_trusted`: If true, the block/vote is considered to 1) be from local or 2) already verified.
-/// This flag avoids unnecessary validation of the PQ signature, which can be expensive.
 /// `need_gossip`: If true, the block/vote should be gossiped to other peers. In 3SF-mini, a node
 /// enqueues an item if it is not ready for processing. The node would later consume the queue
 /// (`self.dependencies` in the original Python implementation) for the items. In this case, the
@@ -35,12 +33,10 @@ pub enum LeanChainServiceMessage {
     },
     ProcessBlock {
         signed_block_with_attestation: Box<SignedBlockWithAttestation>,
-        is_trusted: bool,
         need_gossip: bool,
     },
     ProcessAttestation {
         signed_attestation: Box<SignedAttestation>,
-        is_trusted: bool,
         need_gossip: bool,
     },
 }
