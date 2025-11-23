@@ -111,3 +111,50 @@ pub struct BlockWithSignatures {
     pub block: Block,
     pub signatures: VariableList<Signature, U4096>,
 }
+
+#[cfg(test)]
+mod tests {
+
+    use alloy_primitives::hex;
+    use ssz::{Decode, Encode};
+
+    use super::*;
+    use crate::{attestation::AttestationData, checkpoint::Checkpoint};
+
+    #[test]
+    fn test_encode_decode_signed_block_with_attestation_roundtrip() -> anyhow::Result<()> {
+        let signed_block_with_attestation = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: Block {
+                    slot: 0,
+                    proposer_index: 0,
+                    parent_root: B256::ZERO,
+                    state_root: B256::ZERO,
+                    body: BlockBody {
+                        attestations: Default::default(),
+                    },
+                },
+                proposer_attestation: Attestation {
+                    validator_id: 0,
+                    data: AttestationData {
+                        slot: 0,
+                        head: Checkpoint::default(),
+                        target: Checkpoint::default(),
+                        source: Checkpoint::default(),
+                    },
+                },
+            },
+            signature: VariableList::default(),
+        };
+
+        let encode = signed_block_with_attestation.as_ssz_bytes();
+        let decoded = SignedBlockWithAttestation::from_ssz_bytes(&encode);
+        assert_eq!(
+            hex::encode(encode),
+            "08000000ec0000008c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005400000004000000"
+        );
+        assert_eq!(decoded, Ok(signed_block_with_attestation));
+
+        Ok(())
+    }
+}
