@@ -128,7 +128,7 @@ impl LeanChainService {
                                 );
                             }
 
-                            if let Err(err) = self.handle_process_block(*signed_block_with_attestation.clone()).await {
+                            if let Err(err) = self.handle_process_block(&signed_block_with_attestation).await {
                                 warn!("Failed to handle process block message: {err:?}");
                             }
 
@@ -207,12 +207,12 @@ impl LeanChainService {
 
     async fn handle_process_block(
         &mut self,
-        signed_block_with_attestation: SignedBlockWithAttestation,
+        signed_block_with_attestation: &SignedBlockWithAttestation,
     ) -> anyhow::Result<()> {
         self.store
             .write()
             .await
-            .on_block(&signed_block_with_attestation)
+            .on_block(signed_block_with_attestation)
             .await?;
 
         Ok(())
