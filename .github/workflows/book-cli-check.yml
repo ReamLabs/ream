@@ -1,0 +1,44 @@
+# Check that CLI documentation is up to date
+# Ensures that `make update-book-cli` has been run before submitting a PR
+
+name: book-cli-check
+
+on:
+  pull_request:
+    branches: [master]
+  merge_group:
+
+jobs:
+  check-cli-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        run: rustup install nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build debug binary
+        run: cargo build --bin ream
+
+      - name: Run update-book-cli
+        run: make update-book-cli
+
+      - name: Check for changes
+        run: |
+          if ! git diff --exit-code book/cli/ book/SUMMARY.md; then
+            echo "::error::CLI documentation is out of date. Please run 'make update-book-cli' locally and commit the changes."
+            echo ""
+            echo "The following files have changes:"
+            git diff --name-only book/cli/ book/SUMMARY.md
+            echo ""
+            echo "Diff:"
+            git diff book/cli/ book/SUMMARY.md
+            exit 1
+          fi
+          echo "CLI documentation is up to date"
