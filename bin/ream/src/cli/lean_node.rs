@@ -29,7 +29,7 @@ pub struct LeanNodeConfig {
     )]
     pub bootnodes: Bootnodes,
 
-    #[arg(long, help = "The path to the validator registry")]
+    #[arg(long, help = "The path to the validator registry file")]
     pub validator_registry_path: PathBuf,
 
     #[arg(
