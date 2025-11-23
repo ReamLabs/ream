@@ -23,9 +23,6 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Build debug binary
-        run: cargo build --bin ream
-
       - name: Run update-book-cli
         run: make update-book-cli
 
