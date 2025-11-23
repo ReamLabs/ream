@@ -89,7 +89,7 @@ impl ValidatorService {
 
                                 // Send block to the LeanChainService.
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation: Box::new(signed_block_with_attestation), is_trusted: true, need_gossip: true })
+                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation: Box::new(signed_block_with_attestation), need_gossip: true })
                                     .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
                             } else {
 
@@ -142,7 +142,7 @@ impl ValidatorService {
 
                             for signed_attestation in signed_attestations {
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation: Box::new(signed_attestation), is_trusted: true, need_gossip: true })
+                                    .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation: Box::new(signed_attestation), need_gossip: true })
                                     .map_err(|err| anyhow!("Failed to send attestation to LeanChainService: {err:?}"))?;
                             }
                         }

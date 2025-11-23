@@ -108,7 +108,7 @@ impl LeanChainService {
                                 error!("Failed to handle build attestation data message: {err:?}");
                             }
                         }
-                        LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation, need_gossip, .. } => {
+                        LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation, need_gossip } => {
                             if enabled!(Level::DEBUG) {
                                 debug!(
                                     slot = signed_block_with_attestation.message.block.slot,
@@ -128,7 +128,7 @@ impl LeanChainService {
                                 );
                             }
 
-                            if let Err(err) = self.handle_process_block(&*signed_block_with_attestation).await {
+                            if let Err(err) = self.handle_process_block(*signed_block_with_attestation.clone()).await {
                                 warn!("Failed to handle process block message: {err:?}");
                             }
 
@@ -136,7 +136,7 @@ impl LeanChainService {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
-                        LeanChainServiceMessage::ProcessAttestation { signed_attestation, need_gossip, .. } => {
+                        LeanChainServiceMessage::ProcessAttestation { signed_attestation, need_gossip } => {
                             if enabled!(Level::DEBUG) {
                                 debug!(
                                     slot = signed_attestation.message.slot(),
@@ -207,12 +207,12 @@ impl LeanChainService {
 
     async fn handle_process_block(
         &mut self,
-        signed_block_with_attestation: &SignedBlockWithAttestation,
+        signed_block_with_attestation: SignedBlockWithAttestation,
     ) -> anyhow::Result<()> {
         self.store
             .write()
             .await
-            .on_block(signed_block_with_attestation)
+            .on_block(&signed_block_with_attestation)
             .await?;
 
         Ok(())

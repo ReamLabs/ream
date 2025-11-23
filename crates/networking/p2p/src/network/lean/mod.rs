@@ -377,7 +377,6 @@ impl LeanNetworkService {
                         self.chain_message_sender
                             .send(LeanChainServiceMessage::ProcessBlock {
                                 signed_block_with_attestation,
-                                is_trusted: false,
                                 need_gossip: true,
                             })
                     {
@@ -390,7 +389,6 @@ impl LeanNetworkService {
                     if let Err(err) = self.chain_message_sender.send(
                         LeanChainServiceMessage::ProcessAttestation {
                             signed_attestation,
-                            is_trusted: false,
                             need_gossip: true,
                         },
                     ) {
