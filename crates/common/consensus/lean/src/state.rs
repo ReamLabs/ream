@@ -457,7 +457,48 @@ impl LeanState {
 
 #[cfg(test)]
 mod test {
+    use alloy_primitives::hex;
+    use ssz::{Decode, Encode};
+
     use super::*;
+
+    #[test]
+    fn test_encode_decode_signed_block_with_attestation_roundtrip() -> anyhow::Result<()> {
+        let state = LeanState {
+            config: Config { genesis_time: 1000 },
+            slot: 0,
+            latest_block_header: BlockHeader {
+                slot: 0,
+                proposer_index: 0,
+                parent_root: B256::ZERO,
+                state_root: B256::ZERO,
+                body_root: B256::ZERO,
+            },
+
+            latest_justified: Checkpoint::default(),
+            latest_finalized: Checkpoint::default(),
+
+            historical_block_hashes: VariableList::empty(),
+            justified_slots: BitList::with_capacity(0)
+                .expect("Failed to initialize an empty BitList"),
+
+            validators: VariableList::empty(),
+
+            justifications_roots: VariableList::empty(),
+            justifications_validators: BitList::with_capacity(0)
+                .expect("Failed to initialize an empty BitList"),
+        };
+
+        let encode = state.as_ssz_bytes();
+        let decoded = LeanState::from_ssz_bytes(&encode);
+        assert_eq!(
+            hex::encode(encode),
+            "e8030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e4000000e4000000e5000000e5000000e50000000101"
+        );
+        assert_eq!(decoded, Ok(state));
+
+        Ok(())
+    }
 
     #[test]
     fn generate_genesis() {
