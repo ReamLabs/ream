@@ -12,7 +12,7 @@ use alloy_primitives::hex;
 use anyhow::anyhow;
 use delay_map::HashMapDelay;
 use discv5::multiaddr::Protocol;
-use futures::StreamExt;
+use futures::{StreamExt, stream::FuturesUnordered};
 use libp2p::{
     Multiaddr, SwarmBuilder,
     connection_limits::{self, ConnectionLimits},
@@ -29,7 +29,10 @@ use ream_network_state_lean::NetworkState;
 use ream_peer::ConnectionState;
 use ssz::Encode;
 use tokio::{
-    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+    sync::{
+        mpsc::{UnboundedReceiver, UnboundedSender},
+        oneshot,
+    },
     time::Duration,
 };
 use tracing::{info, trace, warn};
@@ -98,6 +101,7 @@ pub struct LeanNetworkService {
     bootnode_retry_state: HashMapDelay<PeerId, (u32, Vec<Multiaddr>)>,
     request_id: AtomicU64,
     pub network_state: Arc<NetworkState>,
+    check_canonical_futures: FuturesUnordered<oneshot::Receiver<(PeerId, bool)>>,
 }
 
 impl LeanNetworkService {
@@ -189,6 +193,7 @@ impl LeanNetworkService {
             bootnode_retry_state: HashMapDelay::new(BOOTNODE_RETRY_TIMEOUT),
             request_id: AtomicU64::new(1),
             network_state,
+            check_canonical_futures: FuturesUnordered::new(),
         };
 
         let mut multi_addr: Multiaddr = lean_network_service.network_config.socket_address.into();
@@ -305,6 +310,29 @@ impl LeanNetworkService {
                 Some(event) = self.swarm.next() => {
                     if let Some(event) = self.parse_swarm_event(event).await {
                         info!("Swarm event: {event:?}");
+                    }
+                }
+                Some(result) = self.check_canonical_futures.next() => {
+                    match result {
+                        Ok((peer_id, is_canonical)) => {
+                            if is_canonical {
+                                info!(
+                                    ?peer_id,
+                                    "Peer has canonical checkpoint"
+                                );
+                            } else {
+                                warn!(
+                                    ?peer_id,
+                                    "Peer does not have canonical checkpoint, disconnecting"
+                                );
+                                if let Err(err) = self.swarm.disconnect_peer_id(peer_id) {
+                                    warn!("Failed to disconnect peer: {err:?}");
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            warn!("Failed to receive CheckIfCanonicalCheckpoint result: {err:?}");
+                        }
                     }
                 }
             }
@@ -445,8 +473,7 @@ impl LeanNetworkService {
                                 "Received Status request"
                             );
 
-                            // todo: handle status response
-                            // https://github.com/ReamLabs/ream/issues/925
+                            self.handle_status_response(peer_id, status);
 
                             let our_status = self.our_status();
                             self.send_response(
@@ -483,7 +510,7 @@ impl LeanNetworkService {
                 message,
             } => {
                 if let ResponseMessage::Lean(response_message) = *message {
-                    if let LeanResponseMessage::Status(status) = response_message.as_ref() {
+                    if let LeanResponseMessage::Status(status) = *response_message {
                         trace!(
                             ?peer_id,
                             ?request_id,
@@ -492,8 +519,7 @@ impl LeanNetworkService {
                             status.head.slot
                         );
 
-                        // todo: handle status response
-                        // https://github.com/ReamLabs/ream/issues/925
+                        self.handle_status_response(peer_id, status);
                     }
                 } else {
                     warn!(
@@ -536,6 +562,35 @@ impl LeanNetworkService {
                 self.network_state
                     .update_peer_state(peer_id, ConnectionState::Connecting);
             }
+        }
+    }
+
+    pub fn handle_status_response(&mut self, peer_id: PeerId, status: Status) {
+        if !lean_network_spec().is_devnet_enabled(Devnet::Two) {
+            return;
+        }
+
+        info!(
+            ?peer_id,
+            head_slot = status.head.slot,
+            finalized_slot = status.finalized.slot,
+            "Received status response from peer"
+        );
+
+        let (sender, receiver) = oneshot::channel();
+        match self
+            .chain_message_sender
+            .send(LeanChainServiceMessage::CheckIfCanonicalCheckpoint {
+                peer_id,
+                checkpoint: status.finalized,
+                sender,
+            }) {
+            Ok(_) => self.check_canonical_futures.push(receiver),
+            Err(err) => warn!(
+                ?peer_id,
+                finalized_slot = status.finalized.slot,
+                "Failed to send CheckIfCanonicalCheckpoint request: {err:?}"
+            ),
         }
     }
 
@@ -598,7 +653,7 @@ enum RequestResult<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::Ipv4Addr, sync::Once, time::Duration};
+    use std::{net::Ipv4Addr, time::Duration};
 
     use libp2p::{Multiaddr, multiaddr::Protocol};
     use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
@@ -608,18 +663,10 @@ mod tests {
     use super::*;
     use crate::bootnodes::Bootnodes;
 
-    static INIT: Once = Once::new();
-
-    fn ensure_network_spec_init() {
-        INIT.call_once(|| {
-            set_lean_network_spec(LeanNetworkSpec::default().into());
-        });
-    }
-
     pub async fn setup_lean_node(
         socket_port: u16,
     ) -> anyhow::Result<(LeanNetworkService, Multiaddr)> {
-        ensure_network_spec_init();
+        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
 
         let executor = ReamExecutor::new().expect("Failed to create executor");
         let config = Arc::new(LeanNetworkConfig {

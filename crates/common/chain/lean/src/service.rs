@@ -164,6 +164,28 @@ impl LeanChainService {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
+                        LeanChainServiceMessage::CheckIfCanonicalCheckpoint { peer_id, checkpoint, sender } => {
+                            let slot_index_provider = self.store.read().await.store.lock().await.slot_index_provider();
+                            let is_canonical = match slot_index_provider.get(checkpoint.slot)  {
+                                Ok(Some(block_root)) => block_root == checkpoint.root,
+                                Ok(None) => true,
+                                Err(err) => {
+                                    warn!("Failed to get slot index for checkpoint: {err:?}");
+                                    false
+                                }
+                            };
+
+                            // Special case: Genesis checkpoint is always canonical.
+                            let is_canonical = if checkpoint.slot < 5 {
+                                true
+                            } else {
+                                is_canonical
+                            };
+
+                            if let Err(err) = sender.send((peer_id, is_canonical)) {
+                                warn!("Failed to send canonical checkpoint response: {err:?}");
+                            }
+                        }
                     }
                 }
             }
