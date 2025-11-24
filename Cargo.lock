@@ -5427,6 +5427,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "libp2p-identity",
  "ream-consensus-lean",
  "ream-consensus-misc",
  "ream-fork-choice-lean",

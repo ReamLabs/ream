@@ -1,6 +1,8 @@
+use libp2p_identity::PeerId;
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{BlockWithSignatures, SignedBlockWithAttestation},
+    checkpoint::Checkpoint,
 };
 use tokio::sync::oneshot;
 
@@ -38,5 +40,10 @@ pub enum LeanChainServiceMessage {
     ProcessAttestation {
         signed_attestation: Box<SignedAttestation>,
         need_gossip: bool,
+    },
+    CheckIfCanonicalCheckpoint {
+        peer_id: PeerId,
+        checkpoint: Checkpoint,
+        sender: oneshot::Sender<(PeerId, bool)>,
     },
 }
