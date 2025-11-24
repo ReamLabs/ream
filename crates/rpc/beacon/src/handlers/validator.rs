@@ -516,30 +516,31 @@ pub async fn post_aggregate_and_proofs_v2(
     db: Data<BeaconDB>,
     aggregates: Json<Vec<SignedAggregateAndProof>>,
 ) -> Result<impl Responder, ApiError> {
-    let highest_slot = db
-        .slot_index_provider()
-        .get_highest_slot()
-        .map_err(|err| {
-            ApiError::InternalError(format!("Failed to get_highest_slot, error: {err:?}"))
-        })?
-        .ok_or(ApiError::NotFound(
-            "Failed to find highest slot".to_string(),
-        ))?;
-    let state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
-
     for signed_aggregate in aggregates.into_inner() {
         let aggregate_and_proof = signed_aggregate.message;
         let attestation = aggregate_and_proof.aggregate.clone();
+        let slot = attestation.data.slot;
+        let state = get_state_from_id(ID::Slot(slot), &db).await?;
+
+        let aggregator_index = aggregate_and_proof.aggregator_index as usize;
 
         let aggregator = state
             .validators
-            .get(aggregate_and_proof.aggregator_index as usize)
+            .get(aggregator_index)
             .ok_or_else(|| ApiError::NotFound("Aggregator not found".to_string()))?;
 
-        let aggregator_selection_domain = state.get_domain(
-            DOMAIN_SELECTION_PROOF,
-            Some(compute_epoch_at_slot(attestation.data.slot)),
-        );
+        let committee = state
+            .get_beacon_committee(attestation.data.slot, attestation.data.index)
+            .map_err(|_| ApiError::InternalError("Failed due to internal error".to_string()))?;
+
+        if !committee.contains(&(aggregator_index as u64)) {
+            return Err(ApiError::BadRequest(
+                "Aggregator not part of the committee".to_string(),
+            ));
+        }
+
+        let aggregator_selection_domain =
+            state.get_domain(DOMAIN_SELECTION_PROOF, Some(compute_epoch_at_slot(slot)));
         let aggregator_selection_signing_root =
             compute_signing_root(attestation.data.slot, aggregator_selection_domain);
 
@@ -556,15 +557,18 @@ pub async fn post_aggregate_and_proofs_v2(
             ));
         }
 
-        let committee = state
-            .get_beacon_committee(attestation.data.slot, attestation.data.index)
-            .map_err(|_| ApiError::InternalError("Failed due to internal error".to_string()))?;
         let committee_pub_keys: Vec<&PublicKey> = committee
             .iter()
             .enumerate()
             .filter(|(i, _)| attestation.aggregation_bits.get(*i).unwrap_or(false))
             .map(|(i, _)| &state.validators[committee[i] as usize].public_key)
             .collect();
+
+        if committee_pub_keys.is_empty() {
+            return Err(ApiError::BadRequest(
+                "No aggregation bits set in the attestation".into(),
+            ));
+        }
 
         let aggregate_signature_domain =
             state.get_domain(DOMAIN_BEACON_ATTESTER, Some(attestation.data.target.epoch));
