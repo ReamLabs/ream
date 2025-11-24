@@ -10,7 +10,10 @@ use ream_p2p::{
         blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
     },
 };
-use ream_storage::{db::beacon::BeaconDB, tables::table::Table};
+use ream_storage::{
+    db::beacon::BeaconDB,
+    tables::table::{CustomTable, REDBTable},
+};
 use tracing::{info, trace, warn};
 
 use crate::p2p_sender::P2PSender;
@@ -59,7 +62,7 @@ pub async fn handle_req_resp_message(
                     );
                     return;
                 };
-                let Ok(Some(block)) = ream_db.beacon_block_provider().get(block_root) else {
+                let Ok(Some(block)) = ream_db.block_provider().get(block_root) else {
                     trace!("No block found for root {block_root}");
                     p2p_sender.send_error_response(
                         peer_id,
@@ -82,7 +85,7 @@ pub async fn handle_req_resp_message(
         }
         BeaconRequestMessage::BeaconBlocksByRoot(BeaconBlocksByRootV2Request { inner }) => {
             for block_root in inner {
-                let Ok(Some(block)) = ream_db.beacon_block_provider().get(block_root) else {
+                let Ok(Some(block)) = ream_db.block_provider().get(block_root) else {
                     trace!("No block found for root {block_root}");
                     p2p_sender.send_error_response(
                         peer_id,
@@ -118,7 +121,7 @@ pub async fn handle_req_resp_message(
                     );
                     return;
                 };
-                let Ok(Some(block)) = ream_db.beacon_block_provider().get(block_root) else {
+                let Ok(Some(block)) = ream_db.block_provider().get(block_root) else {
                     trace!("No block found for root {block_root}");
                     p2p_sender.send_error_response(
                         peer_id,
@@ -188,9 +191,7 @@ pub async fn handle_req_resp_message(
                     return;
                 };
 
-                let Ok(Some(block)) = ream_db
-                    .beacon_block_provider()
-                    .get(blob_identifier.block_root)
+                let Ok(Some(block)) = ream_db.block_provider().get(blob_identifier.block_root)
                 else {
                     trace!("No block found for root {}", blob_identifier.block_root);
                     p2p_sender.send_error_response(

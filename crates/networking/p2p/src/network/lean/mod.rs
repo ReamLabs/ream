@@ -1,35 +1,42 @@
 use std::{
-    collections::HashMap,
     fs,
     net::IpAddr,
     num::{NonZeroU8, NonZeroUsize},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use alloy_primitives::hex;
 use anyhow::anyhow;
 use delay_map::HashMapDelay;
 use discv5::multiaddr::Protocol;
-use futures::StreamExt;
+use futures::{StreamExt, stream::FuturesUnordered};
 use libp2p::{
     Multiaddr, SwarmBuilder,
     connection_limits::{self, ConnectionLimits},
+    core::ConnectedPoint,
     gossipsub::{Event as GossipsubEvent, IdentTopic, MessageAuthenticity},
     identify,
-    swarm::{Config, NetworkBehaviour, Swarm, SwarmEvent},
+    swarm::{Config, ConnectionId, NetworkBehaviour, Swarm, SwarmEvent},
 };
 use libp2p_identity::{Keypair, PeerId, secp256k1};
-use parking_lot::Mutex;
 use ream_chain_lean::{messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest};
 use ream_executor::ReamExecutor;
+use ream_network_spec::networks::{Devnet, lean_network_spec};
+use ream_network_state_lean::NetworkState;
+use ream_peer::ConnectionState;
 use ssz::Encode;
 use tokio::{
-    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+    sync::{
+        mpsc::{UnboundedReceiver, UnboundedSender},
+        oneshot,
+    },
     time::Duration,
 };
 use tracing::{info, trace, warn};
 
-use super::peer::ConnectionState;
 use crate::{
     bootnodes::Bootnodes,
     gossipsub::{
@@ -41,7 +48,12 @@ use crate::{
         snappy::SnappyTransform,
     },
     network::misc::Executor,
-    req_resp::{Chain, ReqResp, ReqRespMessage},
+    req_resp::{
+        Chain, ReqResp, ReqRespMessage,
+        handler::{ReqRespMessageReceived, RespMessage},
+        lean::messages::{LeanRequestMessage, LeanResponseMessage, status::Status},
+        messages::{RequestMessage, ResponseMessage},
+    },
 };
 
 const BOOTNODE_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -65,8 +77,12 @@ pub enum ReamNetworkEvent {
     PeerConnectedOutgoing(PeerId),
     PeerDisconnected(PeerId),
     Status(PeerId),
-    Ping(PeerId),
-    MetaData(PeerId),
+    RequestMessage {
+        peer_id: PeerId,
+        stream_id: u64,
+        connection_id: ConnectionId,
+        message: LeanRequestMessage,
+    },
     DisconnectPeer(PeerId),
 }
 
@@ -77,18 +93,15 @@ pub struct LeanNetworkConfig {
     pub private_key_path: Option<std::path::PathBuf>,
 }
 
-/// NetworkService is responsible for the following:
-/// 1. Peer management. (We will connect with static peers for PQ devnet.)
-/// 2. Gossiping blocks and attestations.
-///
-/// TBD: It will be best if we reuse the existing NetworkManagerService for the beacon node.
 pub struct LeanNetworkService {
     network_config: Arc<LeanNetworkConfig>,
     swarm: Swarm<ReamBehaviour>,
-    peer_table: Arc<Mutex<HashMap<PeerId, ConnectionState>>>,
     chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
     outbound_p2p_request: UnboundedReceiver<LeanP2PRequest>,
     bootnode_retry_state: HashMapDelay<PeerId, (u32, Vec<Multiaddr>)>,
+    request_id: AtomicU64,
+    pub network_state: Arc<NetworkState>,
+    check_canonical_futures: FuturesUnordered<oneshot::Receiver<(PeerId, bool)>>,
 }
 
 impl LeanNetworkService {
@@ -97,6 +110,7 @@ impl LeanNetworkService {
         executor: ReamExecutor,
         chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
         outbound_p2p_request: UnboundedReceiver<LeanP2PRequest>,
+        network_state: Arc<NetworkState>,
     ) -> anyhow::Result<Self> {
         let connection_limits = {
             let limits = ConnectionLimits::default()
@@ -174,10 +188,12 @@ impl LeanNetworkService {
         let mut lean_network_service = LeanNetworkService {
             network_config: network_config.clone(),
             swarm,
-            peer_table: Arc::new(Mutex::new(HashMap::new())),
             chain_message_sender,
             outbound_p2p_request,
             bootnode_retry_state: HashMapDelay::new(BOOTNODE_RETRY_TIMEOUT),
+            request_id: AtomicU64::new(1),
+            network_state,
+            check_canonical_futures: FuturesUnordered::new(),
         };
 
         let mut multi_addr: Multiaddr = lean_network_service.network_config.socket_address.into();
@@ -215,7 +231,7 @@ impl LeanNetworkService {
         loop {
             tokio::select! {
                 Some(Ok((peer_id, (attempts, addresses)))) = self.bootnode_retry_state.next() => {
-                    if matches!(self.peer_table.lock().get(&peer_id), Some(ConnectionState::Connected)) {
+                    if matches!(self.network_state.peer_table.lock().get(&peer_id).map(|peer| peer.state), Some(ConnectionState::Connected)) {
                         continue;
                     }
                     if attempts >= 8 {
@@ -224,7 +240,7 @@ impl LeanNetworkService {
                     };
 
                     for address in &addresses {
-                        if let Err(err) = self.swarm.dial(address.clone()) {
+                        if let Err(err) = self.dial_peer(address.clone()) {
                             warn!("retry to peer_id: {peer_id:?}, address: {address} error: {err}");
                         }
                     }
@@ -296,6 +312,29 @@ impl LeanNetworkService {
                         info!("Swarm event: {event:?}");
                     }
                 }
+                Some(result) = self.check_canonical_futures.next() => {
+                    match result {
+                        Ok((peer_id, is_canonical)) => {
+                            if is_canonical {
+                                info!(
+                                    ?peer_id,
+                                    "Peer has canonical checkpoint"
+                                );
+                            } else {
+                                warn!(
+                                    ?peer_id,
+                                    "Peer does not have canonical checkpoint, disconnecting"
+                                );
+                                if let Err(err) = self.swarm.disconnect_peer_id(peer_id) {
+                                    warn!("Failed to disconnect peer: {err:?}");
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            warn!("Failed to receive CheckIfCanonicalCheckpoint result: {err:?}");
+                        }
+                    }
+                }
             }
         }
     }
@@ -309,22 +348,33 @@ impl LeanNetworkService {
                 self.handle_gossipsub_event(gossipsub_event)
             }
             SwarmEvent::Behaviour(ReamBehaviourEvent::ReqResp(req_resp_event)) => {
-                self.handle_request_response_event(req_resp_event)
+                self.handle_request_response_event(req_resp_event).await
             }
-            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                self.peer_table
-                    .lock()
-                    .insert(peer_id, ConnectionState::Connected);
+            SwarmEvent::ConnectionEstablished {
+                peer_id, endpoint, ..
+            } => {
+                match endpoint {
+                    ConnectedPoint::Dialer { .. } => {
+                        self.bootnode_retry_state.remove(&peer_id);
 
-                self.bootnode_retry_state.remove(&peer_id);
+                        if lean_network_spec().is_devnet_enabled(Devnet::Two) {
+                            // send status request to the peer
+                            let status_message = LeanRequestMessage::Status(self.our_status());
+                            self.send_request(peer_id, status_message);
+                        }
+                    }
+                    ConnectedPoint::Listener { .. } => {
+                        self.network_state
+                            .update_peer_state(peer_id, ConnectionState::Connected);
+                    }
+                }
 
                 info!("Connected to peer: {peer_id:?}");
                 None
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                self.peer_table
-                    .lock()
-                    .insert(peer_id, ConnectionState::Disconnected);
+                self.network_state
+                    .update_peer_state(peer_id, ConnectionState::Disconnected);
 
                 info!("Disconnected from peer: {peer_id:?}");
                 Some(ReamNetworkEvent::PeerDisconnected(peer_id))
@@ -355,7 +405,6 @@ impl LeanNetworkService {
                         self.chain_message_sender
                             .send(LeanChainServiceMessage::ProcessBlock {
                                 signed_block_with_attestation,
-                                is_trusted: false,
                                 need_gossip: true,
                             })
                     {
@@ -368,7 +417,6 @@ impl LeanNetworkService {
                     if let Err(err) = self.chain_message_sender.send(
                         LeanChainServiceMessage::ProcessAttestation {
                             signed_attestation,
-                            is_trusted: false,
                             need_gossip: true,
                         },
                     ) {
@@ -381,11 +429,109 @@ impl LeanNetworkService {
         None
     }
 
-    fn handle_request_response_event(
+    async fn handle_request_response_event(
         &mut self,
-        _event: ReqRespMessage,
+        message: ReqRespMessage,
     ) -> Option<ReamNetworkEvent> {
-        None
+        let ReqRespMessage {
+            peer_id,
+            connection_id,
+            message,
+        } = message;
+
+        // update last seen time for the peer
+        self.network_state
+            .peer_table
+            .lock()
+            .entry(peer_id)
+            .and_modify(|cached_peer| {
+                cached_peer.update_last_seen();
+            });
+
+        let message = match message {
+            Ok(message) => message,
+            Err(err) => {
+                warn!(
+                    ?peer_id,
+                    ?connection_id,
+                    "Failed to parse req/resp message from peer: {err:?}"
+                );
+                return None;
+            }
+        };
+
+        match message {
+            ReqRespMessageReceived::Request { stream_id, message } => {
+                if let RequestMessage::Lean(message) = *message {
+                    match message {
+                        LeanRequestMessage::Status(status) => {
+                            trace!(
+                                ?peer_id,
+                                ?stream_id,
+                                ?connection_id,
+                                ?status,
+                                "Received Status request"
+                            );
+
+                            self.handle_status_response(peer_id, status);
+
+                            let our_status = self.our_status();
+                            self.send_response(
+                                peer_id,
+                                connection_id,
+                                stream_id,
+                                LeanResponseMessage::Status(our_status),
+                            );
+
+                            Some(ReamNetworkEvent::RequestMessage {
+                                peer_id,
+                                stream_id,
+                                connection_id,
+                                message: LeanRequestMessage::Status(status),
+                            })
+                        }
+                        _ => Some(ReamNetworkEvent::RequestMessage {
+                            peer_id,
+                            stream_id,
+                            connection_id,
+                            message,
+                        }),
+                    }
+                } else {
+                    warn!(
+                        "Received unexpected Beacon request message: {:?} from peer: {:?}",
+                        message, peer_id
+                    );
+                    None
+                }
+            }
+            ReqRespMessageReceived::Response {
+                request_id,
+                message,
+            } => {
+                if let ResponseMessage::Lean(response_message) = *message {
+                    if let LeanResponseMessage::Status(status) = *response_message {
+                        trace!(
+                            ?peer_id,
+                            ?request_id,
+                            "Received Status response: head_hash: {}, head_slot: {}",
+                            status.head.root,
+                            status.head.slot
+                        );
+
+                        self.handle_status_response(peer_id, status);
+                    }
+                } else {
+                    warn!(
+                        "Received unexpected Beacon response message: {:?} from peer: {:?}",
+                        message, peer_id
+                    );
+                }
+
+                None
+            }
+            ReqRespMessageReceived::EndOfStream { .. } => None,
+        }
     }
 
     async fn connect_to_bootnodes(&mut self, peers: Vec<Multiaddr>) {
@@ -407,31 +553,107 @@ impl LeanNetworkService {
                         .insert(peer_id, (0, vec![peer.clone()])),
                 };
 
-                if let Err(err) = self.swarm.dial(peer.clone()) {
+                if let Err(err) = self.dial_peer(peer.clone()) {
                     warn!("Failed to dial peer: {err:?}");
                     continue;
                 }
 
                 info!("Dialing peer: {peer_id:?}");
-                self.peer_table
-                    .lock()
-                    .insert(peer_id, ConnectionState::Connecting);
+                self.network_state
+                    .update_peer_state(peer_id, ConnectionState::Connecting);
             }
         }
     }
 
-    pub fn peer_table(&self) -> Arc<Mutex<HashMap<PeerId, ConnectionState>>> {
-        self.peer_table.clone()
+    pub fn handle_status_response(&mut self, peer_id: PeerId, status: Status) {
+        if !lean_network_spec().is_devnet_enabled(Devnet::Two) {
+            return;
+        }
+
+        info!(
+            ?peer_id,
+            head_slot = status.head.slot,
+            finalized_slot = status.finalized.slot,
+            "Received status response from peer"
+        );
+
+        let (sender, receiver) = oneshot::channel();
+        match self
+            .chain_message_sender
+            .send(LeanChainServiceMessage::CheckIfCanonicalCheckpoint {
+                peer_id,
+                checkpoint: status.finalized,
+                sender,
+            }) {
+            Ok(_) => self.check_canonical_futures.push(receiver),
+            Err(err) => warn!(
+                ?peer_id,
+                finalized_slot = status.finalized.slot,
+                "Failed to send CheckIfCanonicalCheckpoint request: {err:?}"
+            ),
+        }
     }
 
     pub fn local_peer_id(&self) -> PeerId {
         *self.swarm.local_peer_id()
     }
+
+    fn dial_peer(&mut self, peer_addr: Multiaddr) -> anyhow::Result<()> {
+        self.swarm
+            .dial(peer_addr.clone())
+            .map_err(|err| anyhow!("Failed to dial peer at address {peer_addr:?}, error: {err:?}"))
+    }
+
+    fn send_request(&mut self, peer_id: PeerId, message: LeanRequestMessage) -> RequestResult<u64> {
+        if !self.swarm.is_connected(&peer_id) {
+            return RequestResult::NotConnected;
+        }
+
+        let request_id = self.request_id();
+        self.swarm.behaviour_mut().req_resp.send_request(
+            peer_id,
+            request_id,
+            RequestMessage::Lean(message),
+        );
+
+        RequestResult::Success(request_id)
+    }
+
+    fn request_id(&mut self) -> u64 {
+        self.request_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn send_response(
+        &mut self,
+        peer_id: PeerId,
+        connection_id: ConnectionId,
+        stream_id: u64,
+        message: LeanResponseMessage,
+    ) {
+        self.swarm.behaviour_mut().req_resp.send_response(
+            peer_id,
+            connection_id,
+            stream_id,
+            RespMessage::Response(Box::new(ResponseMessage::Lean(message.into()))),
+        );
+    }
+
+    fn our_status(&self) -> Status {
+        Status {
+            finalized: *self.network_state.finalized_checkpoint.read(),
+            head: *self.network_state.head_checkpoint.read(),
+        }
+    }
+}
+
+enum RequestResult<T> {
+    Success(T),
+    NotConnected,
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{net::Ipv4Addr, sync::Once, time::Duration};
+    use std::{net::Ipv4Addr, time::Duration};
 
     use libp2p::{Multiaddr, multiaddr::Protocol};
     use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
@@ -441,18 +663,10 @@ mod tests {
     use super::*;
     use crate::bootnodes::Bootnodes;
 
-    static INIT: Once = Once::new();
-
-    fn ensure_network_spec_init() {
-        INIT.call_once(|| {
-            set_lean_network_spec(LeanNetworkSpec::default().into());
-        });
-    }
-
     pub async fn setup_lean_node(
         socket_port: u16,
     ) -> anyhow::Result<(LeanNetworkService, Multiaddr)> {
-        ensure_network_spec_init();
+        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
 
         let executor = ReamExecutor::new().expect("Failed to create executor");
         let config = Arc::new(LeanNetworkConfig {
@@ -464,9 +678,14 @@ mod tests {
         let (sender, _receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
         let (_outbound_request_sender_unused, outbound_request_receiver) =
             mpsc::unbounded_channel::<LeanP2PRequest>();
-        let node =
-            LeanNetworkService::new(config.clone(), executor, sender, outbound_request_receiver)
-                .await?;
+        let node = LeanNetworkService::new(
+            config.clone(),
+            executor,
+            sender,
+            outbound_request_receiver,
+            Arc::new(NetworkState::new(Default::default(), Default::default())),
+        )
+        .await?;
         let multi_addr: Multiaddr = config.socket_address.into();
         Ok((node, multi_addr))
     }

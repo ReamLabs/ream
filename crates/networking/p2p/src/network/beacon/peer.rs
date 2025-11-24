@@ -2,11 +2,9 @@ use std::time::Instant;
 
 use discv5::Enr;
 use libp2p::{Multiaddr, PeerId};
+use ream_peer::{ConnectionState, Direction};
 
-use crate::{
-    network::peer::{ConnectionState, Direction},
-    req_resp::beacon::messages::{meta_data::GetMetaDataV2, status::Status},
-};
+use crate::req_resp::beacon::messages::{meta_data::GetMetaDataV2, status::Status};
 
 #[derive(Clone, Debug)]
 pub struct CachedPeer {

@@ -39,7 +39,7 @@ use crate::{
         error::ReqRespError,
         inbound_protocol::ResponseCode,
         lean::{
-            messages::{LeanResponseMessage, status::LeanStatus},
+            messages::{LeanResponseMessage, status::Status as LeanStatus},
             protocol_id::LeanSupportedProtocol,
         },
         messages::{RequestMessage, ResponseMessage},

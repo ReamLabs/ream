@@ -23,7 +23,7 @@ use ream_consensus_misc::{
     misc::{compute_epoch_at_slot, compute_signing_root},
     validator::Validator,
 };
-use ream_fork_choice::store::Store;
+use ream_fork_choice_beacon::store::Store;
 use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::Field};
 use ream_validator_beacon::{

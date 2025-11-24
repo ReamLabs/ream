@@ -5,9 +5,6 @@ pub mod config;
 pub mod state;
 pub mod validator;
 
-/// We allow justification of slots either <= 5 or a perfect square or oblong after
-/// the latest finalized slot. This gives us a backoff technique and ensures
-/// finality keeps progressing even under high latency
 pub fn is_justifiable_slot(finalized_slot: u64, candidate_slot: u64) -> bool {
     assert!(
         candidate_slot >= finalized_slot,

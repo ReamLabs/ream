@@ -1,18 +1,14 @@
-use alloy_primitives::FixedBytes;
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use ream_chain_lean::{clock::create_lean_clock_interval, messages::LeanChainServiceMessage};
 use ream_consensus_lean::{
-    attestation::{Attestation, AttestationData, SignedAttestation},
-    block::{BlockWithAttestation, SignedBlockWithAttestation},
-    checkpoint::Checkpoint,
+    attestation::{Attestation, SignedAttestation},
+    block::{BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
 };
+use ream_keystore::lean_keystore::ValidatorKeystore;
 use ream_network_spec::networks::lean_network_spec;
-use ssz_types::VariableList;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, info};
 use tree_hash::TreeHash;
-
-use crate::registry::LeanKeystore;
 
 /// ValidatorService is responsible for managing validator operations
 /// such as proposing blocks and submitting attestations on them. This service also holds the
@@ -23,13 +19,13 @@ use crate::registry::LeanKeystore;
 ///
 /// NOTE: Other ticks should be handled by the other services, such as [LeanChainService].
 pub struct ValidatorService {
-    keystores: Vec<LeanKeystore>,
+    keystores: Vec<ValidatorKeystore>,
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
 }
 
 impl ValidatorService {
     pub async fn new(
-        keystores: Vec<LeanKeystore>,
+        keystores: Vec<ValidatorKeystore>,
         chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     ) -> Self {
         ValidatorService {
@@ -47,57 +43,59 @@ impl ValidatorService {
 
         let mut tick_count = 0u64;
 
-        let mut interval =
-            create_lean_clock_interval().context("Failed to create clock interval")?;
+        let mut interval = create_lean_clock_interval()
+            .map_err(|err| anyhow!("Failed to create clock interval: {err:?}"))?;
 
         loop {
             tokio::select! {
                 _ = interval.tick() => {
                     let slot = tick_count / 4;
-
                     match tick_count % 4 {
                         0 => {
                             // First tick (t=0): Propose a block.
                             if slot > 0 && let Some(keystore) = self.is_proposer(slot) {
-                                info!(slot, tick = tick_count, "Proposing block by Validator {}", keystore.validator_id);
-
+                                info!(slot, tick = tick_count, "Proposing block by Validator {}", keystore.index);
                                 let (tx, rx) = oneshot::channel();
+
                                 self.chain_sender
                                     .send(LeanChainServiceMessage::ProduceBlock { slot, sender: tx })
                                     .expect("Failed to send produce block to LeanChainService");
 
                                 // Wait for the block to be produced.
-                                let new_block = rx.await.expect("Failed to receive block from LeanChainService");
+                                let BlockWithSignatures { block, mut signatures } = rx.await.expect("Failed to receive block from LeanChainService");
 
                                 info!(
-                                    slot = new_block.slot,
-                                    block_root = ?new_block.tree_hash_root(),
+                                    slot = block.slot,
+                                    block_root = ?block.tree_hash_root(),
                                     "Building block finished by Validator {}",
-                                    keystore.validator_id,
+                                    keystore.index,
                                 );
 
-                                // TODO: Sign the block with the keystore once spec is finalized.
+                            let (tx, rx) = oneshot::channel();
+                            self.chain_sender
+                                .send(LeanChainServiceMessage::BuildAttestationData { slot, sender: tx })
+                                .expect("Failed to send attestation to LeanChainService");
+
+                            let attestation_data = rx.await.expect("Failed to receive attestation data from LeanChainService");
+                                let message = Attestation { validator_id: keystore.index, data: attestation_data };
+                                signatures.push(keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?).map_err(|err| anyhow!("Failed to push signature {err:?}"))?;
                                 let signed_block_with_attestation = SignedBlockWithAttestation {
                                     message: BlockWithAttestation {
-                                        block: new_block.clone(),
-                                        proposer_attestation: Attestation { validator_id: keystore.validator_id, data: AttestationData {
-                                            slot: new_block.slot,
-                                            head: Checkpoint::default(),
-                                            target: Checkpoint::default(),
-                                            source: Checkpoint::default(),
-                                            }
-                                        },
+                                        block: block.clone(),
+                                        proposer_attestation: message,
                                     },
-                                    signature: VariableList::empty(),
+                                    signature: signatures,
                                 };
 
                                 // Send block to the LeanChainService.
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation: Box::new(signed_block_with_attestation), is_trusted: true, need_gossip: true })
+                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation: Box::new(signed_block_with_attestation), need_gossip: true })
                                     .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
                             } else {
+
                                 let proposer_index = slot % lean_network_spec().num_validators;
                                 info!("Not proposer for slot {slot} (proposer is validator {proposer_index}), skipping");
+
                             }
                         }
                         1 => {
@@ -130,19 +128,21 @@ impl ValidatorService {
                             }
 
                             // TODO: Sign the attestation with the keystore.
-                            let signed_attestations = self.keystores.iter().map(|keystore| {
-                                SignedAttestation {
-                                    message: Attestation{
-                                        validator_id: keystore.validator_id,
+                            let mut signed_attestations = vec![];
+                            for (_, keystore) in self.keystores.iter().enumerate().filter(|(index, _)| *index as u64 != slot % lean_network_spec().num_validators) {
+                                let message = Attestation {
+                                        validator_id: keystore.index,
                                         data: attestation_data.clone()
-                                    },
-                                    signature: FixedBytes::default(),
-                                }
-                            }).collect::<Vec<_>>();
+                                    };
+                                    signed_attestations.push(SignedAttestation {
+                                    signature: keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?,
+                                    message,
+                                });
+                            }
 
                             for signed_attestation in signed_attestations {
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation: Box::new(signed_attestation), is_trusted: true, need_gossip: true })
+                                    .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation: Box::new(signed_attestation), need_gossip: true })
                                     .map_err(|err| anyhow!("Failed to send attestation to LeanChainService: {err:?}"))?;
                             }
                         }
@@ -157,11 +157,11 @@ impl ValidatorService {
     }
 
     /// Determine if one of the keystores is the proposer for the current slot.
-    fn is_proposer(&self, slot: u64) -> Option<&LeanKeystore> {
+    fn is_proposer(&self, slot: u64) -> Option<&ValidatorKeystore> {
         let proposer_index = slot % lean_network_spec().num_validators;
 
         self.keystores
             .iter()
-            .find(|keystore| keystore.validator_id == proposer_index as u64)
+            .find(|keystore| keystore.index == proposer_index as u64)
     }
 }

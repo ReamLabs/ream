@@ -1,26 +1,16 @@
 use alloy_primitives::{Bytes, hex};
-use bincode::{
-    self,
-    config::{Fixint, LittleEndian, NoLimit},
-};
+use anyhow::anyhow;
+use bincode::{self};
 use hashsig::signature::SignatureScheme;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use ssz::Encode;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U52};
 use tree_hash_derive::TreeHash;
 
+use super::BINCODE_CONFIG;
 use crate::hashsig::HashSigScheme;
 
-type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
-
-// NOTE: `GeneralizedXMSSPublicKey` doesn't implement methods like `to_bytes`,
-// which means we need to use bincode to serialize/deserialize it.
-// However, using bincode's default config (little-endian + variable int encoding)
-// add extra bytes to the serialized output, which is not what we want.
-// Thus, define a custom configuration for bincode here.
-const BINCODE_CONFIG: bincode::config::Configuration<LittleEndian, Fixint, NoLimit> =
-    bincode::config::standard().with_fixed_int_encoding();
+pub type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
 
 /// Wrapper around the `GeneralizedXMSSPublicKey` from the hashsig crate.
 ///
@@ -71,7 +61,7 @@ impl PublicKey {
     pub fn to_hash_sig_public_key(&self) -> anyhow::Result<HashSigPublicKey> {
         bincode::serde::decode_from_slice(&self.inner, BINCODE_CONFIG)
             .map(|(value, _)| value)
-            .map_err(|err| anyhow::anyhow!("Failed to decode public key: {err}"))
+            .map_err(|err| anyhow!("Failed to decode public key: {err}"))
     }
 }
 
@@ -80,7 +70,7 @@ impl Serialize for PublicKey {
     where
         S: Serializer,
     {
-        let val = format!("0x{}", hex::encode(self.inner.as_ssz_bytes()));
+        let val = format!("0x{}", hex::encode(self.inner.iter().as_slice()));
         serializer.serialize_str(&val)
     }
 }

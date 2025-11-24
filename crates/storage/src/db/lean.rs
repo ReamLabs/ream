@@ -5,7 +5,9 @@ use redb::Database;
 use crate::tables::lean::{
     latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
     latest_known_attestation::LatestKnownAttestationTable, lean_block::LeanBlockTable,
-    lean_state::LeanStateTable, slot_index::SlotIndexTable, state_root_index::StateRootIndexTable,
+    lean_head::LeanHeadField, lean_latest_new_attestations::LeanLatestNewAttestationsTable,
+    lean_safe_target::LeanSafeTargetField, lean_state::LeanStateTable, lean_time::LeanTimeField,
+    slot_index::LeanSlotIndexTable, state_root_index::LeanStateRootIndexTable,
 };
 
 #[derive(Clone, Debug)]
@@ -14,25 +16,25 @@ pub struct LeanDB {
 }
 
 impl LeanDB {
-    pub fn lean_block_provider(&self) -> LeanBlockTable {
+    pub fn block_provider(&self) -> LeanBlockTable {
         LeanBlockTable {
             db: self.db.clone(),
         }
     }
-    pub fn lean_state_provider(&self) -> LeanStateTable {
+    pub fn state_provider(&self) -> LeanStateTable {
         LeanStateTable {
             db: self.db.clone(),
         }
     }
 
-    pub fn slot_index_provider(&self) -> SlotIndexTable {
-        SlotIndexTable {
+    pub fn slot_index_provider(&self) -> LeanSlotIndexTable {
+        LeanSlotIndexTable {
             db: self.db.clone(),
         }
     }
 
-    pub fn state_root_index_provider(&self) -> StateRootIndexTable {
-        StateRootIndexTable {
+    pub fn state_root_index_provider(&self) -> LeanStateRootIndexTable {
+        LeanStateRootIndexTable {
             db: self.db.clone(),
         }
     }
@@ -51,6 +53,30 @@ impl LeanDB {
 
     pub fn latest_justified_provider(&self) -> LatestJustifiedField {
         LatestJustifiedField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn time_provider(&self) -> LeanTimeField {
+        LeanTimeField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn head_provider(&self) -> LeanHeadField {
+        LeanHeadField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn safe_target_provider(&self) -> LeanSafeTargetField {
+        LeanSafeTargetField {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn latest_new_attestations_provider(&self) -> LeanLatestNewAttestationsTable {
+        LeanLatestNewAttestationsTable {
             db: self.db.clone(),
         }
     }

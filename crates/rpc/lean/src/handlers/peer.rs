@@ -1,27 +1,31 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use actix_web::{HttpResponse, Responder, get, web::Data};
-use libp2p::PeerId;
-use parking_lot::Mutex;
 use ream_api_types_common::error::ApiError;
-use ream_p2p::network::peer::{ConnectionState, PeerCount};
+use ream_network_state_lean::NetworkState;
+use ream_peer::{ConnectionState, PeerCount};
 
 // /lean/v0/node/peers
 #[get("/node/peers")]
 pub async fn list_peers(
-    peer_table: Data<Arc<Mutex<HashMap<PeerId, ConnectionState>>>>,
+    network_state: Data<Arc<NetworkState>>,
 ) -> Result<impl Responder, ApiError> {
-    Ok(HttpResponse::Ok().json(peer_table.lock().clone()))
+    Ok(HttpResponse::Ok().json(network_state.peer_table.lock().clone()))
 }
 
 // /lean/v0/node/peer_count
 #[get("/node/peer_count")]
 pub async fn get_peer_count(
-    peer_table: Data<Arc<Mutex<HashMap<PeerId, ConnectionState>>>>,
+    network_state: Data<Arc<NetworkState>>,
 ) -> Result<impl Responder, ApiError> {
     let mut peer_count = PeerCount::default();
 
-    for connection_state in peer_table.lock().values() {
+    for connection_state in network_state
+        .peer_table
+        .lock()
+        .values()
+        .map(|peer| peer.state)
+    {
         match connection_state {
             ConnectionState::Connected => peer_count.connected += 1,
             ConnectionState::Connecting => peer_count.connecting += 1,

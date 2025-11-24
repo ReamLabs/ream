@@ -2141,7 +2141,7 @@ dependencies = [
  "ream-bls",
  "ream-consensus-beacon",
  "ream-consensus-misc",
- "ream-fork-choice",
+ "ream-fork-choice-beacon",
  "ream-merkle",
  "ream-network-spec",
  "ream-storage",
@@ -2805,7 +2805,7 @@ dependencies = [
 [[package]]
 name = "hashsig"
 version = "0.1.0"
-source = "git+https://github.com/b-wagn/hash-sig?rev=9f2b0bbaa9deee3d072122b32c39b8027c3fccd8#9f2b0bbaa9deee3d072122b32c39b8027c3fccd8"
+source = "git+https://github.com/leanEthereum/leanSig.git?rev=2bd2b422dd225aa211fa37a1589b1fa55acb7992#2bd2b422dd225aa211fa37a1589b1fa55acb7992"
 dependencies = [
  "dashmap",
  "num-bigint",
@@ -5304,6 +5304,8 @@ dependencies = [
  "ream-consensus-misc",
  "ream-discv5",
  "ream-executor",
+ "ream-fork-choice-beacon",
+ "ream-fork-choice-lean",
  "ream-keystore",
  "ream-network-manager",
  "ream-network-spec",
@@ -5410,7 +5412,7 @@ dependencies = [
  "ream-consensus-beacon",
  "ream-consensus-misc",
  "ream-execution-engine",
- "ream-fork-choice",
+ "ream-fork-choice-beacon",
  "ream-network-spec",
  "ream-operation-pool",
  "ream-p2p",
@@ -5425,9 +5427,10 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "libp2p-identity",
  "ream-consensus-lean",
  "ream-consensus-misc",
- "ream-fork-choice",
+ "ream-fork-choice-lean",
  "ream-metrics",
  "ream-network-spec",
  "ream-storage",
@@ -5449,7 +5452,7 @@ dependencies = [
  "ethereum_ssz_derive",
  "ream-consensus-beacon",
  "ream-consensus-misc",
- "ream-fork-choice",
+ "ream-fork-choice-beacon",
  "ream-network-spec",
  "ream-storage",
  "reqwest",
@@ -5585,7 +5588,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-fork-choice"
+name = "ream-fork-choice-beacon"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
@@ -5609,6 +5612,42 @@ dependencies = [
  "ream-polynomial-commitments",
  "ream-storage",
  "rust-kzg-blst",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "ssz_types",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
+name = "ream-fork-choice-lean"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
+ "alloy-rlp",
+ "anyhow",
+ "async-trait",
+ "ethereum_hashing 0.7.0 (git+https://github.com/ReamLabs/ethereum_hashing.git?rev=c14a9ad96436e6b8b631faf49a3666e4558b71ae)",
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "hashbrown 0.16.0",
+ "itertools 0.14.0",
+ "ream-bls",
+ "ream-consensus-beacon",
+ "ream-consensus-lean",
+ "ream-consensus-misc",
+ "ream-metrics",
+ "ream-network-spec",
+ "ream-network-state-lean",
+ "ream-post-quantum-crypto",
+ "ream-storage",
+ "ream-sync",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -5690,7 +5729,7 @@ dependencies = [
  "ream-discv5",
  "ream-execution-engine",
  "ream-executor",
- "ream-fork-choice",
+ "ream-fork-choice-beacon",
  "ream-network-spec",
  "ream-operation-pool",
  "ream-p2p",
@@ -5714,6 +5753,18 @@ dependencies = [
  "ream-consensus-misc",
  "serde",
  "serde_yaml",
+ "tracing",
+]
+
+[[package]]
+name = "ream-network-state-lean"
+version = "0.1.0"
+dependencies = [
+ "libp2p",
+ "parking_lot",
+ "ream-consensus-lean",
+ "ream-peer",
+ "serde",
 ]
 
 [[package]]
@@ -5762,6 +5813,8 @@ dependencies = [
  "ream-executor",
  "ream-light-client",
  "ream-network-spec",
+ "ream-network-state-lean",
+ "ream-peer",
  "ream-storage",
  "ream-sync",
  "ream-validator-beacon",
@@ -5779,6 +5832,14 @@ dependencies = [
  "tracing-test",
  "tree_hash",
  "unsigned-varint 0.8.0",
+]
+
+[[package]]
+name = "ream-peer"
+version = "0.1.0"
+dependencies = [
+ "ethereum_serde_utils",
+ "serde",
 ]
 
 [[package]]
@@ -5824,6 +5885,7 @@ dependencies = [
  "serde_json",
  "ssz_types",
  "thiserror 2.0.17",
+ "tracing",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -5848,13 +5910,14 @@ dependencies = [
  "ream-consensus-beacon",
  "ream-consensus-misc",
  "ream-execution-engine",
- "ream-fork-choice",
+ "ream-fork-choice-beacon",
  "ream-light-client",
  "ream-network-manager",
  "ream-network-spec",
  "ream-node",
  "ream-operation-pool",
  "ream-p2p",
+ "ream-peer",
  "ream-rpc-common",
  "ream-storage",
  "ream-validator-beacon",
@@ -5887,9 +5950,10 @@ dependencies = [
  "parking_lot",
  "ream-api-types-common",
  "ream-api-types-lean",
- "ream-chain-lean",
  "ream-consensus-lean",
- "ream-p2p",
+ "ream-fork-choice-lean",
+ "ream-network-state-lean",
+ "ream-peer",
  "ream-rpc-common",
  "ream-storage",
  "tokio",
@@ -5995,12 +6059,16 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "ethereum_ssz",
  "ream-chain-lean",
  "ream-consensus-lean",
  "ream-consensus-misc",
+ "ream-keystore",
  "ream-network-spec",
+ "ream-post-quantum-crypto",
  "ream-sync",
  "serde",
+ "serde_json",
  "serde_yaml",
  "ssz_types",
  "tokio",

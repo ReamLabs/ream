@@ -7,9 +7,9 @@ use ream_api_types_beacon::{
 };
 use ream_api_types_common::error::ApiError;
 use ream_execution_engine::ExecutionEngine;
-use ream_fork_choice::store::Store;
+use ream_fork_choice_beacon::store::Store;
 use ream_operation_pool::OperationPool;
-use ream_storage::{db::beacon::BeaconDB, tables::table::Table};
+use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
@@ -49,7 +49,7 @@ pub async fn get_syncing_status(
         ApiError::InternalError(format!("Failed to get current slot, error: {err:?}"))
     })?;
 
-    let head_slot = match db.beacon_block_provider().get(head) {
+    let head_slot = match db.block_provider().get(head) {
         Ok(Some(block)) => block.message.slot,
         err => {
             return Err(ApiError::InternalError(format!(

@@ -12,6 +12,7 @@ version.workspace = true
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
+libp2p-identity.workspace = true
 serde.workspace = true
 ssz_types.workspace = true
 tokio.workspace = true
@@ -21,7 +22,7 @@ tree_hash.workspace = true
 # ream dependencies
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
-ream-fork-choice.workspace = true
+ream-fork-choice-lean.workspace = true
 ream-metrics.workspace = true
 ream-network-spec.workspace = true
 ream-storage.workspace = true

@@ -16,7 +16,7 @@ Options:
       --validator-registry-path <VALIDATOR_REGISTRY_PATH>
           The path to the validator registry
       --node-id <NODE_ID>
-          Node identifier for validator registry (e.g., 'ream_0', 'zeam_0') [default: ream]
+          Node identifier for validator registry (e.g., 'ream_0', 'zeam_0') [default: ream_0]
       --private-key-path <PRIVATE_KEY_PATH>
           The path to the hex encoded secp256k1 libp2p key
       --socket-address <SOCKET_ADDRESS>
@@ -35,6 +35,8 @@ Options:
           Set metrics address [default: 127.0.0.1]
       --metrics-port <METRICS_PORT>
           Set metrics port [default: 8080]
+      --devnet <DEVNET>
+          Set which devnet version to run, options are 1 and 2 [default: 1]
   -h, --help
           Print help
 ```

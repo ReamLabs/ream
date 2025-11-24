@@ -7,7 +7,7 @@ use tree_hash_derive::TreeHash;
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Validator {
     #[serde(rename = "pubkey")]
-    public_key: PublicKey,
+    pub public_key: PublicKey,
 }
 
 impl Validator {
@@ -18,4 +18,8 @@ impl Validator {
             })
             .collect()
     }
+}
+
+pub fn is_proposer(validator_index: u64, slot: u64, validator_count: u64) -> bool {
+    slot % validator_count == validator_index
 }

@@ -3,12 +3,17 @@ use std::collections::HashMap;
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
 use itertools::Itertools;
-use ream_metrics::{FINALIZED_SLOT, JUSTIFIED_SLOT, set_int_gauge_vec};
+use ream_metrics::{
+    FINALIZED_SLOT, JUSTIFIED_SLOT, STATE_TRANSITION_ATTESTATIONS_PROCESSED_TOTAL,
+    STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME, STATE_TRANSITION_BLOCK_PROCESSING_TIME,
+    STATE_TRANSITION_SLOTS_PROCESSED_TOTAL, STATE_TRANSITION_SLOTS_PROCESSING_TIME,
+    STATE_TRANSITION_TIME, inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
+};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitList, VariableList,
-    typenum::{U4096, U262144, U1073741824},
+    typenum::{U262144, U1073741824},
 };
 use tracing::info;
 use tree_hash::TreeHash;
@@ -20,7 +25,7 @@ use crate::{
     checkpoint::Checkpoint,
     config::Config,
     is_justifiable_slot,
-    validator::Validator,
+    validator::{Validator, is_proposer},
 };
 
 /// Represents the state of the Lean chain.
@@ -46,13 +51,19 @@ pub struct LeanState {
 }
 
 impl LeanState {
-    pub fn new(genesis_time: u64, validators: Option<Vec<Validator>>) -> LeanState {
+    pub fn generate_genesis(genesis_time: u64, validators: Option<Vec<Validator>>) -> LeanState {
         LeanState {
             config: Config { genesis_time },
             slot: 0,
             latest_block_header: BlockHeader {
-                body_root: BlockBody::default().tree_hash_root(),
-                ..BlockHeader::default()
+                slot: 0,
+                proposer_index: 0,
+                parent_root: B256::ZERO,
+                state_root: B256::ZERO,
+                body_root: BlockBody {
+                    attestations: Default::default(),
+                }
+                .tree_hash_root(),
             },
 
             latest_justified: Checkpoint::default(),
@@ -70,171 +81,90 @@ impl LeanState {
         }
     }
 
-    /// Returns a map of `root -> justifications` constructed from the
-    /// flattened data in the state.
-    pub fn get_justifications(&self) -> anyhow::Result<HashMap<B256, BitList<U4096>>> {
-        let mut justifications = HashMap::new();
-
-        // Loop each root and reconstruct the justifications from the flattened BitList
-        for (i, root) in self.justifications_roots.iter().enumerate() {
-            let mut attestations_list = BitList::with_capacity(self.validators.len())
-                .map_err(|err| anyhow!("Failed to create BitList for justifications: {err:?}"))?;
-
-            // Loop each validator and set their justification
-            self.justifications_validators
-                .iter()
-                .skip(i * self.validators.len())
-                .take(self.validators.len())
-                .enumerate()
-                .try_for_each(|(validator_index, justification)| -> anyhow::Result<()> {
-                    attestations_list
-                        .set(validator_index, justification)
-                        .map_err(|err| anyhow!("Failed to set justification: {err:?}"))?;
-                    Ok(())
-                })?;
-
-            // Insert the root and its justifications into the map
-            justifications.insert(*root, attestations_list);
-        }
-
-        Ok(justifications)
-    }
-
-    /// Saves a map of `root -> justifications` back into the state's flattened
-    /// data structure.
-    pub fn set_justifications(
-        &mut self,
-        justifications: HashMap<B256, BitList<U4096>>,
-    ) -> anyhow::Result<()> {
-        let mut justifications_roots = VariableList::<B256, U262144>::empty();
-        let mut flattened_justifications = Vec::new();
-
-        for root in justifications.keys().sorted() {
-            let justifications_for_root = justifications
-                .get(root)
-                .ok_or_else(|| anyhow!("Root {root} not found in justifications"))?;
-
-            // Assert that attestations list has exactly num_validators items.
-            // If the length is incorrect, the constructed bitlist will be corrupt.
-            ensure!(
-                justifications_for_root.len() == self.validators.len(),
-                "Justifications length ({}) does not match validators length ({})",
-                justifications_for_root.len(),
-                self.validators.len()
-            );
-
-            justifications_roots
-                .push(*root)
-                .map_err(|err| anyhow!("Failed to add root to justifications_roots: {err:?}"))?;
-
-            justifications_for_root
-                .iter()
-                .for_each(|justification| flattened_justifications.push(justification));
-        }
-
-        // Create a new Bitlist with all the flattened attestations
-        let mut justifications_validators =
-            BitList::with_capacity(justifications.len() * self.validators.len()).map_err(
-                |err| anyhow!("Failed to create BitList for justifications_validators: {err:?}"),
-            )?;
-
-        flattened_justifications.iter().enumerate().try_for_each(
-            |(index, justification)| -> anyhow::Result<()> {
-                justifications_validators
-                    .set(index, *justification)
-                    .map_err(|err| anyhow!("Failed to set justification bit: {err:?}"))
-            },
-        )?;
-
-        self.justifications_roots = justifications_roots;
-        self.justifications_validators = justifications_validators;
-
-        Ok(())
-    }
-
     pub fn state_transition(
         &mut self,
         block: &Block,
         valid_signatures: bool,
-        validate_result: bool,
     ) -> anyhow::Result<()> {
-        // Verify signatures
+        let timer = start_timer(&STATE_TRANSITION_TIME, &[]);
+
+        // Validate signatures if required
         ensure!(valid_signatures, "Signatures are not valid");
-
-        // Process slots (including those with no blocks) since block
         self.process_slots(block.slot)
-            .context("Failed to process slots")?;
-
-        // Process block
+            .context("failed to process intermediate slots")?;
         self.process_block(block)
-            .context("Failed to process block")?;
+            .context("failed to process block")?;
 
-        // Verify state root
-        if validate_result {
-            ensure!(
-                block.state_root == self.tree_hash_root(),
-                "Block's state root does not match transitioned state root"
-            );
-        }
+        ensure!(
+            block.state_root == self.tree_hash_root(),
+            "Invalid block state root"
+        );
 
+        stop_timer(timer);
         Ok(())
     }
 
-    fn process_slots(&mut self, slot: u64) -> anyhow::Result<()> {
-        ensure!(self.slot < slot, "State slot must be less than block slot");
+    pub fn process_slots(&mut self, target_slot: u64) -> anyhow::Result<()> {
+        ensure!(
+            self.slot < target_slot,
+            "Target slot must be in the future, expected {} < {target_slot}",
+            self.slot,
+        );
 
-        while self.slot < slot {
-            self.process_slot()?;
+        let timer = start_timer(&STATE_TRANSITION_SLOTS_PROCESSING_TIME, &[]);
+
+        while self.slot < target_slot {
+            if self.latest_block_header.state_root == B256::ZERO {
+                self.latest_block_header.state_root = self.tree_hash_root();
+            }
             self.slot += 1;
+            inc_int_counter_vec(&STATE_TRANSITION_SLOTS_PROCESSED_TOTAL, &[]);
         }
 
+        stop_timer(timer);
         Ok(())
     }
 
-    fn process_slot(&mut self) -> anyhow::Result<()> {
-        // Cache latest block header state root
-        if self.latest_block_header.state_root == B256::ZERO {
-            self.latest_block_header.state_root = self.tree_hash_root();
-        }
+    pub fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
+        let timer = start_timer(&STATE_TRANSITION_BLOCK_PROCESSING_TIME, &[]);
 
-        Ok(())
-    }
-
-    fn process_block(&mut self, block: &Block) -> anyhow::Result<()> {
         self.process_block_header(block)?;
-        self.process_operations(&block.body)?;
+        self.process_attestations(&block.body.attestations)?;
 
+        stop_timer(timer);
         Ok(())
     }
 
+    /// Check if a validator is the proposer for the current slot.
+    fn is_proposer(&self, validator_index: u64) -> bool {
+        is_proposer(validator_index, self.slot, self.validators.len() as u64)
+    }
+
+    /// Validate the block header and update header-linked state.
     fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
-        // Verify that the slots match
+        // The block must be for the current slot.
         ensure!(
             block.slot == self.slot,
             "Block slot number does not match state slot number"
         );
-        // Verify that the block is newer than latest block header
+        // Block is older than latest header
         ensure!(
             block.slot > self.latest_block_header.slot,
             "Block slot number is not greater than latest block header slot number"
         );
-        // Verify that the proposer index is the correct index
+        // The proposer must be the expected validator for this slot.
         ensure!(
-            block.proposer_index == block.slot % (self.validators.len() as u64),
+            self.is_proposer(block.proposer_index),
             "Block proposer index does not match the expected proposer index"
         );
 
-        // Verify that the parent matches
+        // The declared parent must match the hash of the latest block header.
         ensure!(
             block.parent_root == self.latest_block_header.tree_hash_root(),
             "Block parent root does not match latest block header root"
         );
 
-        // If this was first block post genesis, 3sf mini special treatment is required
-        // to correctly set genesis block root as already justified and finalized.
-        // This is not possible at the time of genesis state generation and are set at
-        // zero bytes because genesis block is calculated using genesis state causing a
-        // circular dependancy
+        // Special case: first block after genesis.
         if self.latest_block_header.slot == 0 {
             // block.parent_root is the genesis root
             self.latest_justified.root = block.parent_root;
@@ -265,17 +195,15 @@ impl LeanState {
 
         // if there were empty slots, push zero hash for those ancestors
         let num_empty_slots = block.slot - self.latest_block_header.slot - 1;
-        for _ in 0..num_empty_slots {
-            self.historical_block_hashes
-                .push(B256::ZERO)
-                .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
-
+        if num_empty_slots > 0 {
+            for _ in 0..num_empty_slots {
+                self.historical_block_hashes
+                    .push(B256::ZERO)
+                    .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
+            }
             let length = self.justified_slots.len();
-            let mut new_bitlist = BitList::with_capacity(length + 1)
+            let new_bitlist = BitList::with_capacity(length + num_empty_slots as usize)
                 .map_err(|err| anyhow!("Failed to resize justified_slots BitList: {err:?}"))?;
-            new_bitlist.set(length, false).map_err(|err| {
-                anyhow!("Failed to set justified slot for empty slot {length}: {err:?}",)
-            })?;
             self.justified_slots = new_bitlist.union(&self.justified_slots);
         }
 
@@ -292,19 +220,40 @@ impl LeanState {
         Ok(())
     }
 
-    fn process_operations(&mut self, body: &BlockBody) -> anyhow::Result<()> {
-        // Process attestations
-        self.process_attestations(&body.attestations)?;
-        // other operations will get added as the functionality evolves
-        Ok(())
-    }
-
     pub fn process_attestations(&mut self, attestations: &[Attestation]) -> anyhow::Result<()> {
-        // get justifications, justified slots and historical block hashes are
-        // already up to date as per the processing in process_block_header
-        let mut justifications_map = self.get_justifications()?;
+        let timer = start_timer(&STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME, &[]);
+
+        let mut justifications_map = HashMap::new();
+
+        if !self.justifications_roots.is_empty() {
+            let validator_count = self.validators.len();
+
+            let flat_votes = self.justifications_validators.iter().collect::<Vec<_>>();
+
+            for (i, root) in self.justifications_roots.iter().enumerate() {
+                let start_index = i * validator_count;
+                let end_index = start_index + validator_count;
+                let vote_slice = &flat_votes
+                    .get(start_index..end_index)
+                    .expect("Could not get indexs");
+
+                let mut new_bitlist = BitList::<U1073741824>::with_capacity(validator_count)
+                    .map_err(|err| {
+                        anyhow!("Failed to create BitList for justifications: {err:?}")
+                    })?;
+
+                for (validator_index, &bit) in vote_slice.iter().enumerate() {
+                    new_bitlist
+                        .set(validator_index, bit)
+                        .map_err(|err| anyhow!("Failed to set justification: {err:?}"))?;
+                }
+
+                justifications_map.insert(*root, new_bitlist);
+            }
+        }
 
         for attestation in attestations {
+            inc_int_counter_vec(&STATE_TRANSITION_ATTESTATIONS_PROCESSED_TOTAL, &[]);
             // Ignore attestations whose source is not already justified,
             // or whose target is not in the history, or whose target is not a
             // valid justifiable slot
@@ -465,287 +414,97 @@ impl LeanState {
         }
 
         // flatten and set updated justifications back to the state
-        self.set_justifications(justifications_map)?;
+        let mut roots_list = VariableList::<B256, U262144>::empty();
+        let mut votes_list: Vec<bool> = Vec::new();
 
+        for root in justifications_map.keys().sorted() {
+            let votes = justifications_map
+                .get(root)
+                .ok_or_else(|| anyhow!("Root {root} not found in justifications"))?;
+            ensure!(
+                votes.len() == self.validators.len(),
+                "Vote list for root {root} has incorrect length expected: {}, got: {}",
+                votes.len(),
+                self.validators.len(),
+            );
+
+            roots_list
+                .push(*root)
+                .map_err(|err| anyhow!("Could not append root: {err:?}"))?;
+            votes.iter().for_each(|vote| votes_list.push(vote));
+        }
+
+        let mut justifications_validators =
+            BitList::with_capacity(justifications_map.len() * self.validators.len()).map_err(
+                |err| anyhow!("Failed to create BitList for justifications_validators: {err:?}"),
+            )?;
+
+        votes_list.iter().enumerate().try_for_each(
+            |(index, justification)| -> anyhow::Result<()> {
+                justifications_validators
+                    .set(index, *justification)
+                    .map_err(|err| anyhow!("Failed to set justification bit: {err:?}"))
+            },
+        )?;
+
+        self.justifications_roots = roots_list;
+        self.justifications_validators = justifications_validators;
+
+        stop_timer(timer);
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
+    use alloy_primitives::hex;
+    use ssz::{Decode, Encode};
+
     use super::*;
-    use crate::attestation::{Attestation, AttestationData};
 
     #[test]
-    fn get_justifications_empty() {
-        let state = LeanState::new(10, None);
+    fn test_encode_decode_signed_block_with_attestation_roundtrip() -> anyhow::Result<()> {
+        let state = LeanState {
+            config: Config { genesis_time: 1000 },
+            slot: 0,
+            latest_block_header: BlockHeader {
+                slot: 0,
+                proposer_index: 0,
+                parent_root: B256::ZERO,
+                state_root: B256::ZERO,
+                body_root: B256::ZERO,
+            },
 
-        // Ensure the base state has empty justification lists
-        assert_eq!(state.justifications_roots.len(), 0);
-        assert_eq!(state.justifications_validators.num_set_bits(), 0);
+            latest_justified: Checkpoint::default(),
+            latest_finalized: Checkpoint::default(),
 
-        let justifications_map = state.get_justifications().unwrap();
-        assert_eq!(justifications_map, HashMap::new());
-    }
+            historical_block_hashes: VariableList::empty(),
+            justified_slots: BitList::with_capacity(0)
+                .expect("Failed to initialize an empty BitList"),
 
-    #[test]
-    fn get_justifications_single_root() {
-        let num_validators: usize = 3;
-        let mut state = LeanState::new(
-            0,
-            Some(Validator::generate_default_validators(num_validators)),
-        );
-        state.justifications_validators = BitList::with_capacity(num_validators).unwrap();
-        let root = B256::repeat_byte(1);
+            validators: VariableList::empty(),
 
-        state.justifications_roots.push(root).unwrap();
-        state.justifications_validators.set(1, true).unwrap();
+            justifications_roots: VariableList::empty(),
+            justifications_validators: BitList::with_capacity(0)
+                .expect("Failed to initialize an empty BitList"),
+        };
 
-        let mut expected_bitlist = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        expected_bitlist.set(1, true).unwrap();
-
-        let mut expected_map = HashMap::<B256, BitList<U4096>>::new();
-        expected_map.insert(root, expected_bitlist);
-
-        let justifications_map = state.get_justifications().unwrap();
-        assert_eq!(justifications_map, expected_map);
-    }
-
-    #[test]
-    fn get_justifications_multiple_roots() {
-        let num_validators = 3;
-        let mut state = LeanState::new(
-            0,
-            Some(Validator::generate_default_validators(num_validators)),
-        );
-        state.justifications_validators = BitList::with_capacity(num_validators * 3).unwrap();
-        let root0 = B256::repeat_byte(0);
-        let root1 = B256::repeat_byte(1);
-        let root2 = B256::repeat_byte(2);
-
-        // root0 is attestation by validator 0
-        state.justifications_roots.push(root0).unwrap();
-        state.justifications_validators.set(0, true).unwrap();
-
-        // root1 is attestation by validator 1 and 2
-        state.justifications_roots.push(root1).unwrap();
-        state
-            .justifications_validators
-            .set(state.validators.len() + 1, true)
-            .unwrap();
-        state
-            .justifications_validators
-            .set(state.validators.len() + 2, true)
-            .unwrap();
-
-        // root2 is attestation by none
-        state.justifications_roots.push(root2).unwrap();
-
-        // Verify that the reconstructed map is identical to the expected map
-        // Because HashMap is not ordered, we need to check root by root
-        let justifications = state.get_justifications().unwrap();
-
-        // check root0 attestation by validator 0
-        let mut expected_bitlist0 = BitList::with_capacity(state.validators.len()).unwrap();
-        expected_bitlist0.set(0, true).unwrap();
-        assert_eq!(justifications[&root0], expected_bitlist0);
-
-        // Prepare expected root1 attested by validator 1 and 2
-        let mut expected_bitlist1 = BitList::with_capacity(state.validators.len()).unwrap();
-        expected_bitlist1.set(1, true).unwrap();
-        expected_bitlist1.set(2, true).unwrap();
-        assert_eq!(justifications[&root1], expected_bitlist1);
-
-        // Prepare expected root2 attested by none
-        let expected_bitlist2 = BitList::with_capacity(state.validators.len()).unwrap();
-        assert_eq!(justifications[&root2], expected_bitlist2);
-
-        // Also verify that the number of roots matches
-        assert_eq!(justifications.len(), 3);
-    }
-
-    #[test]
-    fn set_justifications_empty() {
-        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
-        state.justifications_validators = BitList::with_capacity(state.validators.len()).unwrap();
-        state
-            .justifications_roots
-            .push(B256::repeat_byte(1))
-            .unwrap();
-        state.justifications_validators.set(0, true).unwrap();
-
-        assert_eq!(state.justifications_roots.len(), 1);
-        assert_eq!(state.justifications_validators.num_set_bits(), 1);
-
-        let justifications = HashMap::<B256, BitList<U4096>>::new();
-        state.set_justifications(justifications).unwrap();
-
-        assert_eq!(state.justifications_roots.len(), 0);
-        assert_eq!(state.justifications_validators.num_set_bits(), 0);
-    }
-
-    #[test]
-    fn set_justifications_deterministic_order() {
-        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
-        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
-
-        // root0 attested by validator0
-        let root0 = B256::repeat_byte(0);
-        let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist0.set(0, true).unwrap();
-
-        // root1 attested by validator1
-        let root1 = B256::repeat_byte(1);
-        let mut bitlist1 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist1.set(1, true).unwrap();
-
-        // root2 attested by validator2
-        let root2 = B256::repeat_byte(2);
-        let mut bitlist2 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist2.set(2, true).unwrap();
-
-        // Insert unordered: root0, root2, root1
-        justifications.insert(root0, bitlist0);
-        justifications.insert(root2, bitlist2);
-        justifications.insert(root1, bitlist1);
-
-        state.set_justifications(justifications).unwrap();
-
-        assert_eq!(state.justifications_roots[0], B256::repeat_byte(0));
-        assert!(state.justifications_validators.get(0).unwrap());
-        assert_eq!(state.justifications_roots[1], B256::repeat_byte(1));
-        assert!(
-            state
-                .justifications_validators
-                .get(state.validators.len() + 1)
-                .unwrap()
-        );
-        assert_eq!(state.justifications_roots[2], B256::repeat_byte(2));
-        assert!(
-            state
-                .justifications_validators
-                .get(2 * state.validators.len() + 2)
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn set_justifications_correct_flattened_size() {
-        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
-        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
-
-        // Test with a single root
-        let root0 = B256::repeat_byte(0);
-        let bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-
-        justifications.insert(root0, bitlist0);
-
-        state.set_justifications(justifications.clone()).unwrap();
-        assert_eq!(state.justifications_roots.len(), 1);
+        let encode = state.as_ssz_bytes();
+        let decoded = LeanState::from_ssz_bytes(&encode);
         assert_eq!(
-            state.justifications_validators.len(),
-            state.validators.len()
+            hex::encode(encode),
+            "e8030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e4000000e4000000e5000000e5000000e50000000101"
         );
+        assert_eq!(decoded, Ok(state));
 
-        // Test with 2 roots
-        let root1 = B256::repeat_byte(1);
-        let bitlist1 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-
-        justifications.insert(root1, bitlist1);
-        state.set_justifications(justifications).unwrap();
-        assert_eq!(state.justifications_roots.len(), 2);
-        assert_eq!(
-            state.justifications_validators.len(),
-            2 * state.validators.len()
-        );
-    }
-
-    #[test]
-    fn set_justifications_invalid_length() {
-        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
-        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
-        let invalid_length = state.validators.len() - 1;
-
-        // root0 attested by validator0
-        let root0 = B256::repeat_byte(0);
-        let bitlist0 = BitList::<U4096>::with_capacity(invalid_length).unwrap();
-        justifications.insert(root0, bitlist0);
-
-        let result = state.set_justifications(justifications);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn set_justifications_roundtrip_empty() {
-        let mut state = LeanState::new(10, None);
-        let justifications = HashMap::<B256, BitList<U4096>>::new();
-
-        // Set empty justifications to state
-        state.set_justifications(justifications.clone()).unwrap();
-
-        // Get justifications back from state
-        let reconstructed = state.get_justifications().unwrap();
-
-        // Verify roundtrip equality
-        assert_eq!(reconstructed, justifications);
-    }
-
-    #[test]
-    fn set_justifications_roundtrip_single_root() {
-        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
-        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
-
-        // root0 attested by validator 0
-        let root0 = B256::repeat_byte(1);
-        let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist0.set(0, true).unwrap();
-
-        justifications.insert(root0, bitlist0);
-
-        // Set justifications to state
-        state.set_justifications(justifications.clone()).unwrap();
-
-        // Get justifications back from state
-        let reconstructed = state.get_justifications().unwrap();
-
-        // Verify roundtrip equality
-        assert_eq!(reconstructed, justifications);
-    }
-
-    #[test]
-    fn set_justifications_roundtrip_multiple_roots() {
-        let mut state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
-        let mut justifications = HashMap::<B256, BitList<U4096>>::new();
-
-        // root0 attested by validator 0
-        let root0 = B256::repeat_byte(1);
-        let mut bitlist0 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist0.set(0, true).unwrap();
-
-        // root1 attested by validator 1 and 2
-        let root1 = B256::repeat_byte(2);
-        let mut bitlist1 = BitList::<U4096>::with_capacity(state.validators.len()).unwrap();
-        bitlist1.set(1, true).unwrap();
-        bitlist1.set(2, true).unwrap();
-
-        justifications.insert(root0, bitlist0);
-        justifications.insert(root1, bitlist1);
-
-        // Set justifications to state
-        state.set_justifications(justifications.clone()).unwrap();
-
-        // Get justifications back from state
-        let reconstructed = state.get_justifications().unwrap();
-
-        // Verify roundtrip equality
-        assert_eq!(reconstructed, justifications);
+        Ok(())
     }
 
     #[test]
     fn generate_genesis() {
         let config = Config { genesis_time: 0 };
 
-        let state = LeanState::new(
+        let state = LeanState::generate_genesis(
             config.genesis_time,
             Some(Validator::generate_default_validators(10)),
         );
@@ -759,7 +518,10 @@ mod test {
         // Body root must commit to an empty body at genesis.
         assert_eq!(
             state.latest_block_header.body_root,
-            BlockBody::default().tree_hash_root()
+            BlockBody {
+                attestations: Default::default()
+            }
+            .tree_hash_root()
         );
 
         // History and justifications must be empty initially.
@@ -770,26 +532,9 @@ mod test {
     }
 
     #[test]
-    fn process_slot() {
-        let mut genesis_state = LeanState::new(10, None);
-
-        assert_eq!(genesis_state.latest_block_header.state_root, B256::ZERO);
-
-        // Capture the hash of the pre-slot state
-        let expected_root = genesis_state.tree_hash_root();
-
-        // Process one slot; this should backfill the header's state_root
-        genesis_state.process_slot().unwrap();
-        assert_eq!(genesis_state.latest_block_header.state_root, expected_root);
-
-        // Re-processing the slot should be a no-op for the state_root
-        genesis_state.process_slot().unwrap();
-        assert_eq!(genesis_state.latest_block_header.state_root, expected_root);
-    }
-
-    #[test]
     fn process_slots() {
-        let mut genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
+        let mut genesis_state =
+            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
 
         // Choose a future slot target
         let target_slot = 5;
@@ -813,7 +558,8 @@ mod test {
 
     #[test]
     fn process_block_header_valid() {
-        let mut genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
+        let mut genesis_state =
+            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
 
         genesis_state.process_slots(1).unwrap();
 
@@ -859,7 +605,8 @@ mod test {
 
     #[test]
     fn process_block_header_invalid_slot() {
-        let mut genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
+        let mut genesis_state =
+            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
 
         // Move to slot 1
         genesis_state.process_slots(1).unwrap();
@@ -889,7 +636,8 @@ mod test {
 
     #[test]
     fn process_block_header_invalid_proposer() {
-        let mut genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
+        let mut genesis_state =
+            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
 
         // Move to slot 1
         genesis_state.process_slots(1).unwrap();
@@ -909,17 +657,18 @@ mod test {
 
         let result = genesis_state.process_block_header(&block);
         assert!(result.is_err());
+        let result_error_string = result.unwrap_err().to_string();
         assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Block proposer index does not match the expected proposer index")
+            result_error_string
+                .contains("Block proposer index does not match the expected proposer index"),
+            "unexpeceted result: {result_error_string}"
         );
     }
 
     #[test]
     fn process_block_header_invalid_parent_root() {
-        let mut genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
+        let mut genesis_state =
+            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
 
         // Move to slot 1
         genesis_state.process_slots(1).unwrap();
@@ -946,100 +695,9 @@ mod test {
     }
 
     #[test]
-    fn process_attestations_justification_and_finalization() {
-        let genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
-        let mut state = genesis_state.clone();
-
-        // Move to slot 1 to allow producing a block there.
-        state.process_slots(1).unwrap();
-
-        // Create and process the block at slot 1.
-        let block_1 = Block {
-            slot: 1,
-            proposer_index: 1,
-            parent_root: state.latest_block_header.tree_hash_root(),
-            state_root: B256::ZERO,
-            body: BlockBody {
-                attestations: VariableList::empty(),
-            },
-        };
-        state.process_block(&block_1).unwrap();
-
-        // Move to slot 4 and produce/process a block.
-        state.process_slots(4).unwrap();
-        let block_4 = Block {
-            slot: 4,
-            proposer_index: 4,
-            parent_root: state.latest_block_header.tree_hash_root(),
-            state_root: B256::ZERO,
-            body: BlockBody {
-                attestations: VariableList::empty(),
-            },
-        };
-        state.process_block(&block_4).unwrap();
-
-        // Advance to slot 5 so the header at slot 4 caches its state root.
-        state.process_slots(5).unwrap();
-
-        // Process a block at slot 5 to push block_4's root into historical_block_hashes.
-        // This is required by the our implementation based off 3SF-mini which validates that target
-        // roots exist in historical_block_hashes before accepting attestations
-        // This validation does not exist in leanSpec so the test passes without processing block 5
-        // We deviate from the leanSpec in this test and process block 5 before testing
-        // process_attestations for slot 4
-        let block_5 = Block {
-            slot: 5,
-            proposer_index: 5,
-            parent_root: state.latest_block_header.tree_hash_root(),
-            state_root: B256::ZERO,
-            body: BlockBody {
-                attestations: VariableList::empty(),
-            },
-        };
-        state.process_block(&block_5).unwrap();
-
-        // Define source (genesis) and target (slot 4) checkpoints for voting.
-        let genesis_checkpoint = Checkpoint {
-            root: state.historical_block_hashes[0], // Canonical root for slot 0
-            slot: 0,
-        };
-        let checkpoint_4 = Checkpoint {
-            root: state.historical_block_hashes[4], // Root of the block at slot 4
-            slot: 4,
-        };
-
-        // Create 7 attestations from distinct validators (indices 0..6) to reach ≥2/3.
-        let mut attestations_for_4 = VariableList::<Attestation, U4096>::empty();
-        for i in 0..7 {
-            let attestations = Attestation {
-                validator_id: i,
-                data: AttestationData {
-                    slot: 4,
-                    head: checkpoint_4,
-                    target: checkpoint_4,
-                    source: genesis_checkpoint,
-                },
-            };
-            attestations_for_4.push(attestations).unwrap();
-        }
-
-        // Process attestations directly; mutates state in place.
-        state.process_attestations(&attestations_for_4).unwrap();
-
-        // The target (slot 4) should now be justified.
-        assert_eq!(state.latest_justified, checkpoint_4);
-        // The justified bit for slot 4 must be set.
-        assert!(state.justified_slots.get(4).unwrap_or(false));
-        // Since no other justifiable slot exists between 0 and 4, genesis is finalized.
-        assert_eq!(state.latest_finalized, genesis_checkpoint);
-        // The per-root attestations tracker for the justified target has been cleared.
-        let justifications = state.get_justifications().unwrap();
-        assert!(!justifications.contains_key(&checkpoint_4.root));
-    }
-
-    #[test]
     fn state_transition_full() {
-        let genesis_state = LeanState::new(0, Some(Validator::generate_default_validators(10)));
+        let genesis_state =
+            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
 
         // Manually compute the post-state result by processing slots first
         let mut state_at_slot_1 = genesis_state.clone();
@@ -1077,7 +735,7 @@ mod test {
         // Run state transition from genesis
         let mut state = genesis_state.clone();
         state
-            .state_transition(&block_with_correct_root, true, true)
+            .state_transition(&block_with_correct_root, true)
             .unwrap();
 
         // The result must match the expected state
@@ -1085,7 +743,7 @@ mod test {
 
         // Invalid signatures must cause error
         let mut state_2 = genesis_state.clone();
-        let result = state_2.state_transition(&block_with_correct_root, false, true);
+        let result = state_2.state_transition(&block_with_correct_root, false);
         assert!(result.is_err());
         assert!(
             result
@@ -1106,7 +764,7 @@ mod test {
         };
 
         let mut state_3 = genesis_state.clone();
-        let result = state_3.state_transition(&block_with_bad_root, true, true);
+        let result = state_3.state_transition(&block_with_bad_root, true);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("state root"));
     }

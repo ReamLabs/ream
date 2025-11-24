@@ -1,7 +1,6 @@
 pub mod account_manager;
 pub mod beacon_node;
 pub mod constants;
-pub mod generate_keystores;
 pub mod generate_private_key;
 pub mod import_keystores;
 pub mod lean_node;
@@ -17,7 +16,6 @@ use ream_node::version::FULL_VERSION;
 use crate::cli::{
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
-    generate_keystores::GenerateKeystoreConfig,
     generate_private_key::GeneratePrivateKeyConfig,
     lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig,
@@ -77,10 +75,6 @@ pub enum Commands {
     /// Generate a secp256k1 keypair for lean node
     #[command(name = "generate_private_key")]
     GeneratePrivateKey(Box<GeneratePrivateKeyConfig>),
-
-    /// Generate keystore file
-    #[command(name = "generate_keystore")]
-    GenerateKeystore(Box<GenerateKeystoreConfig>),
 }
 
 #[cfg(test)]
@@ -125,7 +119,8 @@ mod tests {
                 assert_eq!(config.network.seconds_per_slot, 12);
                 assert_eq!(config.network.genesis_time, 0);
                 assert_eq!(config.network.justification_lookback_slots, 3);
-                assert_eq!(config.network.num_validators, 4);
+                // Will be set later in main.rs
+                assert_eq!(config.network.num_validators, 0);
 
                 assert_eq!(
                     config.private_key_path.as_ref().unwrap().to_str().unwrap(),

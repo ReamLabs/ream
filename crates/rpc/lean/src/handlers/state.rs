@@ -3,14 +3,14 @@ use actix_web::{
     web::{Data, Path},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_chain_lean::lean_chain::LeanChainReader;
-use ream_storage::tables::{field::Field, table::Table};
+use ream_fork_choice_lean::store::LeanStoreReader;
+use ream_storage::tables::{field::REDBField, table::REDBTable};
 
 // GET /lean/v0/states/{state_id}
 #[get("/states/{state_id}")]
 pub async fn get_state(
     state_id: Path<ID>,
-    lean_chain: Data<LeanChainReader>,
+    lean_chain: Data<LeanStoreReader>,
 ) -> Result<impl Responder, ApiError> {
     let lean_chain = lean_chain.read().await;
 
@@ -25,8 +25,18 @@ pub async fn get_state(
                 })?
                 .root)
         }
-        ID::Genesis => Ok(lean_chain.genesis_hash),
-        ID::Head => Ok(lean_chain.head),
+        ID::Genesis => {
+            return Err(ApiError::NotFound(
+                "This ID type is currently not supported".to_string(),
+            ));
+        }
+        ID::Head => lean_chain
+            .store
+            .lock()
+            .await
+            .head_provider()
+            .get()
+            .map_err(|err| ApiError::InternalError(format!("Could not get head: {err:?}"))),
         ID::Justified => {
             let db = lean_chain.store.lock().await;
             Ok(db
@@ -53,7 +63,7 @@ pub async fn get_state(
         }
     };
 
-    let provider = lean_chain.store.clone().lock().await.lean_state_provider();
+    let provider = lean_chain.store.clone().lock().await.state_provider();
 
     Ok(HttpResponse::Ok().json(
         provider

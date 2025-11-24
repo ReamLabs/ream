@@ -3,15 +3,15 @@ use actix_web::{
     web::{Data, Path},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_chain_lean::lean_chain::LeanChainReader;
 use ream_consensus_lean::block::Block;
-use ream_storage::tables::{field::Field, table::Table};
+use ream_fork_choice_lean::store::LeanStoreReader;
+use ream_storage::tables::{field::REDBField, table::REDBTable};
 
 // GET /lean/v0/blocks/{block_id}
 #[get("/blocks/{block_id}")]
 pub async fn get_block(
     block_id: Path<ID>,
-    lean_chain: Data<LeanChainReader>,
+    lean_chain: Data<LeanStoreReader>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::Ok().json(
         get_block_by_id(block_id.into_inner(), lean_chain)
@@ -23,7 +23,7 @@ pub async fn get_block(
 // Retrieve a block from the lean chain by its block ID.
 pub async fn get_block_by_id(
     block_id: ID,
-    lean_chain: Data<LeanChainReader>,
+    lean_chain: Data<LeanStoreReader>,
 ) -> Result<Option<Block>, ApiError> {
     let lean_chain = lean_chain.read().await;
     let block_root = match block_id {
@@ -35,8 +35,18 @@ pub async fn get_block_by_id(
             .get()
             .map(|checkpoint| checkpoint.root)
             .map_err(|err| ApiError::InternalError(format!("No latest finalized hash: {err:?}"))),
-        ID::Genesis => Ok(lean_chain.genesis_hash),
-        ID::Head => Ok(lean_chain.head),
+        ID::Genesis => {
+            return Err(ApiError::NotFound(
+                "This ID type is currently not supported".to_string(),
+            ));
+        }
+        ID::Head => lean_chain
+            .store
+            .lock()
+            .await
+            .head_provider()
+            .get()
+            .map_err(|err| ApiError::InternalError(format!("Could not get head: {err:?}"))),
         ID::Justified => lean_chain
             .store
             .lock()
@@ -52,7 +62,7 @@ pub async fn get_block_by_id(
         ID::Root(root) => Ok(root),
     };
 
-    let provider = lean_chain.store.clone().lock().await.lean_block_provider();
+    let provider = lean_chain.store.clone().lock().await.block_provider();
     provider
         .get(block_root?)
         .map(|maybe_signed_block| {

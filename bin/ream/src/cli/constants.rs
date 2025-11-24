@@ -1,6 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr};
 
 pub const DEFAULT_BEACON_API_ENDPOINT: &str = "http://localhost:5052";
+pub const DEFAULT_DEVNET: &str = "1";
 pub const DEFAULT_DISABLE_DISCOVERY: bool = false;
 pub const DEFAULT_DISCOVERY_PORT: u16 = 9000;
 pub const DEFAULT_HTTP_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));

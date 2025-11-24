@@ -10,9 +10,9 @@ use ream_api_types_beacon::responses::{
     ForkChoiceValidity,
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_fork_choice::store::{BlockWithEpochInfo, Store};
+use ream_fork_choice_beacon::store::{BlockWithEpochInfo, Store};
 use ream_operation_pool::OperationPool;
-use ream_storage::{db::beacon::BeaconDB, tables::field::Field};
+use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use serde_json::json;
 
 use crate::handlers::state::get_state_from_id;

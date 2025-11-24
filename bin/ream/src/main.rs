@@ -17,7 +17,6 @@ use ream::cli::{
     Cli, Commands,
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
-    generate_keystores::run_generate_keystore,
     generate_private_key::GeneratePrivateKeyConfig,
     import_keystores::{load_keystore_directory, load_password_from_config, process_password},
     lean_node::LeanNodeConfig,
@@ -28,8 +27,8 @@ use ream_account_manager::{message_types::MessageType, seed::derive_seed_with_us
 use ream_api_types_beacon::id::ValidatorID;
 use ream_api_types_common::id::ID;
 use ream_chain_lean::{
-    genesis as lean_genesis, lean_chain::LeanChain, messages::LeanChainServiceMessage,
-    p2p_request::LeanP2PRequest, service::LeanChainService,
+    genesis as lean_genesis, messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest,
+    service::LeanChainService,
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus_lean::{
@@ -41,6 +40,7 @@ use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
 };
 use ream_executor::ReamExecutor;
+use ream_fork_choice_lean::store::Store;
 use ream_keystore::keystore::EncryptedKeystore;
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::{
@@ -59,7 +59,7 @@ use ream_rpc_common::config::RpcServerConfig;
 use ream_storage::{
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
-    tables::table::Table,
+    tables::table::REDBTable,
 };
 use ream_sync::rwlock::Writer;
 use ream_validator_beacon::{
@@ -67,7 +67,8 @@ use ream_validator_beacon::{
     voluntary_exit::process_voluntary_exit,
 };
 use ream_validator_lean::{
-    registry::load_validator_registry, service::ValidatorService as LeanValidatorService,
+    registry::{load_validator_public_keys, load_validator_registry},
+    service::ValidatorService as LeanValidatorService,
 };
 use ssz_types::VariableList;
 use tokio::{sync::mpsc, time::Instant};
@@ -121,10 +122,6 @@ fn main() {
         Commands::GeneratePrivateKey(config) => {
             executor_clone.spawn(async move { run_generate_private_key(*config).await });
         }
-        Commands::GenerateKeystore(config) => {
-            run_generate_keystore(*config).expect("failed to generate hash-sig keystore");
-            process::exit(0);
-        }
     }
 
     executor_clone.runtime().block_on(async {
@@ -162,7 +159,19 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         );
     }
 
-    set_lean_network_spec(config.network);
+    let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
+        .expect("Failed to load validator registry");
+    let mut validator_keys_manifest_path = config.validator_registry_path;
+    validator_keys_manifest_path.pop();
+    validator_keys_manifest_path.push("hash-sig-keys/validator-keys-manifest.yaml");
+    let validators = load_validator_public_keys(&validator_keys_manifest_path)
+        .expect("Failed to get load_validator_public_keys");
+
+    // Fill in which devnet we are running
+    let mut network = config.network;
+    network.devnet = config.devnet;
+    network.num_validators = validators.len() as u64;
+    set_lean_network_spec(Arc::new(network));
 
     // Initialize the lean database
     let lean_db = ream_db
@@ -171,34 +180,38 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     info!("ream lean database has been initialized");
 
-    // Initialize the lean chain with genesis block and state.
-    let (genesis_block, genesis_state) = lean_genesis::setup_genesis();
-    let (lean_chain_writer, lean_chain_reader) = Writer::new(LeanChain::new(
-        SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: genesis_block,
-                proposer_attestation: Attestation {
-                    validator_id: 0,
-                    data: AttestationData {
-                        slot: 0,
-                        head: Checkpoint::default(),
-                        target: Checkpoint::default(),
-                        source: Checkpoint::default(),
-                    },
-                },
-            },
-            signature: VariableList::default(),
-        },
-        genesis_state,
-        lean_db,
-    ));
-
     // Initialize the services that will run in the lean node.
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
     let (outbound_p2p_sender, outbound_p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
-    let chain_service =
-        LeanChainService::new(lean_chain_writer, chain_receiver, outbound_p2p_sender).await;
+    // Initialize the lean chain with genesis block and state.
+    let (genesis_block, genesis_state) = lean_genesis::setup_genesis(validators);
+    let (lean_chain_writer, lean_chain_reader) = Writer::new(
+        Store::get_forkchoice_store(
+            SignedBlockWithAttestation {
+                message: BlockWithAttestation {
+                    block: genesis_block,
+                    proposer_attestation: Attestation {
+                        validator_id: 0,
+                        data: AttestationData {
+                            slot: 0,
+                            head: Checkpoint::default(),
+                            target: Checkpoint::default(),
+                            source: Checkpoint::default(),
+                        },
+                    },
+                },
+                signature: VariableList::default(),
+            },
+            genesis_state,
+            lean_db,
+        )
+        .expect("Could not get forkchoice store"),
+    );
+
+    let network_state = lean_chain_reader.read().await.network_state.clone();
+
+    // Initialize the lean network service
 
     let fork = "devnet0".to_string();
     let topics: Vec<LeanGossipTopic> = vec![
@@ -212,14 +225,12 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         },
     ];
 
-    let gossipsub_config = LeanGossipsubConfig {
-        topics,
-        ..Default::default()
-    };
-
     let mut network_service = LeanNetworkService::new(
         Arc::new(LeanNetworkConfig {
-            gossipsub_config,
+            gossipsub_config: LeanGossipsubConfig {
+                topics,
+                ..Default::default()
+            },
             socket_address: config.socket_address,
             socket_port: config.socket_port,
             private_key_path: config.private_key_path,
@@ -227,14 +238,14 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         executor.clone(),
         chain_sender.clone(),
         outbound_p2p_receiver,
+        network_state.clone(),
     )
     .await
     .expect("Failed to create network service");
 
-    let peer_table = network_service.peer_table();
+    let chain_service =
+        LeanChainService::new(lean_chain_writer, chain_receiver, outbound_p2p_sender).await;
 
-    let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
-        .expect("Failed to load validator registry");
     let validator_service = LeanValidatorService::new(keystores, chain_sender).await;
 
     let server_config = RpcServerConfig::new(
@@ -260,7 +271,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         }
     });
     let http_future = executor.spawn(async move {
-        ream_rpc_lean::server::start(server_config, lean_chain_reader, peer_table).await
+        ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
     });
 
     tokio::select! {
@@ -316,7 +327,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         .expect("No oldest root found");
     set_genesis_validator_root(
         beacon_db
-            .beacon_state_provider()
+            .state_provider()
             .get(oldest_root)
             .expect("Failed to access beacon state provider")
             .expect("No beacon state found")
@@ -601,4 +612,134 @@ pub async fn run_generate_private_key(config: GeneratePrivateKeyConfig) {
     );
 
     process::exit(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use clap::Parser;
+    use ream::cli::{Cli, Commands};
+    use ream_executor::ReamExecutor;
+    use ream_storage::{
+        db::ReamDB,
+        dir::setup_data_dir,
+        tables::{field::REDBField, table::REDBTable},
+    };
+    use tokio::time::{sleep, timeout};
+
+    use crate::{APP_NAME, run_lean_node};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_lean_node_runs_10_seconds_without_panicking() {
+        let cli = Cli::parse_from([
+            "ream",
+            "--ephemeral",
+            "lean_node",
+            "--network",
+            "ephemery",
+            "--validator-registry-path",
+            "./assets/lean/validators.yaml",
+        ]);
+
+        let Commands::LeanNode(config) = cli.command else {
+            panic!("Expected lean_node command");
+        };
+
+        let ream_dir = setup_data_dir(APP_NAME, None, true).unwrap();
+        let db = ReamDB::new(ream_dir).unwrap();
+        let executor = ReamExecutor::new().unwrap();
+
+        let handle = tokio::spawn(async move {
+            run_lean_node(*config, executor.clone(), db).await;
+        });
+
+        let result = timeout(Duration::from_secs(10), async {
+            sleep(Duration::from_secs(10)).await;
+            Ok::<_, ()>(())
+        })
+        .await;
+
+        match result {
+            Ok(Ok(())) => {}
+            Err(err) => panic!("lean_node panicked or exited early {err:?}"),
+            Ok(Err(err)) => panic!("internal error {err:?}"),
+        }
+
+        handle.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_lean_node_finalizes() {
+        let cli = Cli::parse_from([
+            "ream",
+            "--ephemeral",
+            "lean_node",
+            "--network",
+            "ephemery",
+            "--validator-registry-path",
+            "./assets/lean/validators.yaml",
+            "--socket-port",
+            "9001",
+            "--http-port",
+            "5053",
+        ]);
+
+        let Commands::LeanNode(config) = cli.command else {
+            panic!("Expected lean_node command");
+        };
+
+        let ream_dir = setup_data_dir(APP_NAME, None, true).unwrap();
+        let db = ReamDB::new(ream_dir).unwrap();
+        let executor = ReamExecutor::new().unwrap();
+
+        let cloned_db = db.clone();
+        let handle = tokio::spawn(async move {
+            run_lean_node(*config, executor.clone(), cloned_db).await;
+        });
+
+        let result = timeout(Duration::from_secs(60), async {
+            sleep(Duration::from_secs(60)).await;
+            Ok::<_, ()>(())
+        })
+        .await;
+
+        match result {
+            Ok(Ok(())) => {}
+            Err(err) => panic!("lean_node panicked or exited early {err:?}"),
+            Ok(Err(err)) => panic!("internal error {err:?}"),
+        }
+
+        handle.abort();
+
+        let lean_db = db.init_lean_db().unwrap();
+        let head = lean_db.head_provider().get().unwrap();
+        let head_state = lean_db.state_provider().get(head).unwrap().unwrap();
+
+        let justfication_lag = 4;
+        let finalization_lag = 5;
+
+        assert!(
+            head_state.slot > finalization_lag,
+            "Expected the head slot to be greater than finalization lag"
+        );
+        assert!(
+            head_state.latest_finalized.slot > 0,
+            "Expected the finalized checkpoint to have advanced from genesis current slot {} finalized slot {}",
+            head_state.slot,
+            head_state.latest_finalized.slot
+        );
+        assert!(
+            head_state.latest_justified.slot + justfication_lag == head_state.slot,
+            "Expected the head to be at least {justfication_lag} slots ahead of the justified checkpoint {:?} + {justfication_lag} vs {:?}",
+            head_state.latest_justified.slot,
+            head_state.slot
+        );
+        assert!(
+            head_state.latest_finalized.slot + finalization_lag == head_state.slot,
+            "Expected the head to be at least {finalization_lag} slots ahead of the finalized checkpoint {:?} + {finalization_lag} vs {:?}",
+            head_state.latest_finalized.slot,
+            head_state.slot
+        );
+    }
 }

@@ -7,7 +7,7 @@ use ream_consensus_beacon::{
 };
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_execution_engine::ExecutionEngine;
-use ream_fork_choice::{
+use ream_fork_choice_beacon::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
     store::Store,
 };
@@ -16,7 +16,7 @@ use ream_operation_pool::OperationPool;
 use ream_p2p::req_resp::beacon::messages::status::Status;
 use ream_storage::{
     db::beacon::BeaconDB,
-    tables::{field::Field, table::Table},
+    tables::{field::REDBField, table::REDBTable},
 };
 use tokio::sync::Mutex;
 use tracing::warn;
@@ -97,14 +97,7 @@ impl BeaconChain {
             }
         };
 
-        let head_slot = match self
-            .store
-            .lock()
-            .await
-            .db
-            .beacon_block_provider()
-            .get(head_root)
-        {
+        let head_slot = match self.store.lock().await.db.block_provider().get(head_root) {
             Ok(Some(block)) => block.message.slot,
             err => {
                 bail!("Failed to get block for head root {head_root}: {err:?}");
