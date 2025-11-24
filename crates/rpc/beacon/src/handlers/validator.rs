@@ -512,7 +512,7 @@ pub async fn post_beacon_committee_selections(
 }
 
 #[post("/validator/aggregate_and_proofs")]
-pub async fn post_aggregate_and_proofs(
+pub async fn post_aggregate_and_proofs_v2(
     db: Data<BeaconDB>,
     aggregates: Json<Vec<SignedAggregateAndProof>>,
 ) -> Result<impl Responder, ApiError> {
