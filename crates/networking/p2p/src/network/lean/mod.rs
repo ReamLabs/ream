@@ -423,7 +423,7 @@ impl LeanNetworkService {
                         warn!("failed to send attestation for slot {slot} to chain: {err:?}");
                     }
                 }
-                Err(err) => warn!("gossip decode failed: {err:?}"),
+                Err(err) => warn!("Failed to decode {:?} gossip topic: {err:?}", message.topic),
             }
         }
         None
