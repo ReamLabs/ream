@@ -394,6 +394,8 @@ impl Store {
                     .message
                     .block
                     .parent_root;
+            } else {
+                break;
             }
         }
 
