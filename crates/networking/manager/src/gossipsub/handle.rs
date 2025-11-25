@@ -408,7 +408,7 @@ pub async fn handle_gossipsub_message(
                     "Light Client Optimistic Update received over gossipsub: root: {}",
                     light_client_optimistic_update.tree_hash_root()
                 );
-                // do the validation here
+
                 match validate_light_client_optimistic_update(
                     &light_client_optimistic_update,
                     beacon_chain,
