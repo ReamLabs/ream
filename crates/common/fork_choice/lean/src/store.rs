@@ -97,7 +97,7 @@ impl Store {
 
     /// Use LMD GHOST to get the head, given a particular root (usually the
     /// latest known justified block)
-    pub async fn get_fork_choice_head(
+    async fn compute_lmd_ghost_head(
         &self,
         latest_votes: impl Iterator<Item = anyhow::Result<SignedAttestation>>,
         provided_root: B256,
@@ -214,7 +214,7 @@ impl Store {
         let latest_justified_root = latest_justified_provider.get()?.root;
 
         safe_target_provider.insert(
-            self.get_fork_choice_head(
+            self.compute_lmd_ghost_head(
                 latest_new_attestations_provider.iter_values()?,
                 latest_justified_root,
                 min_target_score,
@@ -319,7 +319,7 @@ impl Store {
         };
 
         let new_head = self
-            .get_fork_choice_head(
+            .compute_lmd_ghost_head(
                 latest_known_attestations.into_values().map(Ok),
                 latest_justified.root,
                 0,
