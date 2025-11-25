@@ -25,6 +25,7 @@ use crate::{
         beacon_attestation::validate_beacon_attestation,
         beacon_block::validate_gossip_beacon_block, blob_sidecar::validate_blob_sidecar,
         bls_to_execution_change::validate_bls_to_execution_change,
+        light_client_optimistic_update::validate_light_client_optimistic_update,
         proposer_slashing::validate_proposer_slashing, result::ValidationResult,
         sync_committee::validate_sync_committee,
         sync_committee_contribution_and_proof::validate_sync_committee_contribution_and_proof,
@@ -408,6 +409,35 @@ pub async fn handle_gossipsub_message(
                     light_client_optimistic_update.tree_hash_root()
                 );
                 // do the validation here
+                match validate_light_client_optimistic_update(
+                    &light_client_optimistic_update,
+                    beacon_chain,
+                    cached_db,
+                )
+                .await
+                {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("Invalid topic hash"),
+                                data: light_client_optimistic_update.as_ssz_bytes(),
+                            });
+
+                            *cached_db.forwarded_optimistic_update_slot.write().await =
+                                Some(light_client_optimistic_update.attested_header.beacon.slot);
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Light client optimistic update ignored: {reason}");
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("Light client optimistic update rejected: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate light client optimistic update: {err}");
+                    }
+                }
             }
             GossipsubMessage::VoluntaryExit(voluntary_exit) => {
                 info!(

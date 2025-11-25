@@ -11,7 +11,7 @@ use crate::gossipsub::validate::result::ValidationResult;
 pub async fn validate_light_client_optimistic_update(
     light_client_optimistic_update: &LightClientOptimisticUpdate,
     beacon_chain: &BeaconChain,
-    cache_db: &CachedDB,
+    cached_db: &CachedDB,
 ) -> anyhow::Result<ValidationResult> {
     let store = beacon_chain.store.lock().await;
     let head_root = store.get_head()?;
@@ -39,7 +39,7 @@ pub async fn validate_light_client_optimistic_update(
     };
 
     let attested_header_slot = light_client_optimistic_update.attested_header.beacon.slot;
-    let last_forwarded_slot = *cache_db.forwarded_optimistic_update_slot.read().await;
+    let last_forwarded_slot = *cached_db.forwarded_optimistic_update_slot.read().await;
 
     // [IGNORE] The attested_header.beacon.slot is greater than that of all previously forwarded
     // optimistic_update(s)
@@ -49,7 +49,7 @@ pub async fn validate_light_client_optimistic_update(
         ));
     };
 
-    let match_finality_update = if let Some(forwarded_lc_finality_update) = cache_db
+    let match_finality_update = if let Some(forwarded_lc_finality_update) = cached_db
         .forwarded_light_client_finality_update
         .read()
         .await
