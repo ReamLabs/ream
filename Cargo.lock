@@ -5977,6 +5977,7 @@ dependencies = [
  "ream-consensus-beacon",
  "ream-consensus-lean",
  "ream-consensus-misc",
+ "ream-light-client",
  "redb",
  "snap",
  "ssz_types",

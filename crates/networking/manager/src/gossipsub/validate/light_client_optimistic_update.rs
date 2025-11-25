@@ -39,13 +39,35 @@ pub async fn validate_light_client_optimistic_update(
     };
 
     let attested_header_slot = light_client_optimistic_update.attested_header.beacon.slot;
-    let last_forwarded_slot = *cache_db.last_forwarded_optimistic_update_slot.read().await;
+    let last_forwarded_slot = *cache_db.forwarded_optimistic_update_slot.read().await;
 
     // [IGNORE] The attested_header.beacon.slot is greater than that of all previously forwarded
     // optimistic_update(s)
     if last_forwarded_slot.is_some_and(|slot| slot >= attested_header_slot) {
         return Ok(ValidationResult::Ignore(
             "Optimistic update slot is older than previously forwarded update".to_string(),
+        ));
+    };
+
+    let match_finality_update = if let Some(forwarded_lc_finality_update) = cache_db
+        .forwarded_light_client_finality_update
+        .read()
+        .await
+        .clone()
+    {
+        forwarded_lc_finality_update.attested_header
+            == light_client_optimistic_update.attested_header
+            && forwarded_lc_finality_update.sync_aggregate
+                == light_client_optimistic_update.sync_aggregate
+            && forwarded_lc_finality_update.signature_slot
+                == light_client_optimistic_update.signature_slot
+    } else {
+        false
+    };
+
+    if !match_finality_update {
+        return Ok(ValidationResult::Ignore(
+            "Does not match finality update".to_string(),
         ));
     };
 
