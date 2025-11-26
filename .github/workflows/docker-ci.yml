@@ -25,7 +25,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
-          context: .  
+          context: .
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
