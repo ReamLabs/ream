@@ -18,6 +18,7 @@ use ream::cli::{
     account_manager::AccountManagerConfig,
     beacon_node::BeaconNodeConfig,
     generate_private_key::GeneratePrivateKeyConfig,
+    generate_validator_registry::run_generate_validator_registry,
     import_keystores::{load_keystore_directory, load_password_from_config, process_password},
     lean_node::LeanNodeConfig,
     validator_node::ValidatorNodeConfig,
@@ -123,6 +124,10 @@ fn main() {
         }
         Commands::GeneratePrivateKey(config) => {
             executor_clone.spawn(async move { run_generate_private_key(*config).await });
+        }
+        Commands::GenerateKeystore(config) => {
+            run_generate_validator_registry(*config).expect("failed to generate hash-sig keystore");
+            process::exit(0);
         }
     }
 

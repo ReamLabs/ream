@@ -5,4 +5,5 @@
   - [`ream account_manager`](./ream/account_manager.md)
   - [`ream voluntary_exit`](./ream/voluntary_exit.md)
   - [`ream generate_private_key`](./ream/generate_private_key.md)
+  - [`ream generate_validator_registry`](./ream/generate_validator_registry.md)
 
