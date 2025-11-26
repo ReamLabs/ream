@@ -5,6 +5,7 @@ use lru::LruCache;
 use ream_bls::{BLSSignature, PublicKey};
 use ream_consensus_beacon::bls_to_execution_change::BLSToExecutionChange;
 use ream_consensus_misc::constants::beacon::SYNC_COMMITTEE_SIZE;
+use ream_light_client::finality_update::LightClientFinalityUpdate;
 use tokio::sync::RwLock;
 const LRU_CACHE_SIZE: usize = 64;
 
@@ -55,6 +56,8 @@ pub struct CachedDB {
     pub seen_voluntary_exit: RwLock<LruCache<u64, ()>>,
     pub seen_proposer_slashings: RwLock<LruCache<u64, ()>>,
     pub prior_seen_attester_slashing_indices: RwLock<LruCache<u64, ()>>,
+    pub forwarded_optimistic_update_slot: RwLock<Option<u64>>,
+    pub forwarded_light_client_finality_update: RwLock<Option<LightClientFinalityUpdate>>,
 }
 
 impl CachedDB {
@@ -100,6 +103,8 @@ impl CachedDB {
                 NonZeroUsize::new(SYNC_COMMITTEE_SIZE as usize).expect("Invalid cache size"),
             )
             .into(),
+            forwarded_optimistic_update_slot: None.into(),
+            forwarded_light_client_finality_update: None.into(),
         }
     }
 }

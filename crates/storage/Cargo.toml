@@ -30,6 +30,7 @@ tree_hash.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
+ream-light-client.workspace = true
 
 [lints]
 workspace = true
