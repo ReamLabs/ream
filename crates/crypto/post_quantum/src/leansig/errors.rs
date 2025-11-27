@@ -1,7 +1,7 @@
 #[derive(Debug, thiserror::Error)]
 pub enum SignatureError {
     #[error("Signing failed: {0:?}")]
-    SigningFailed(hashsig::signature::SigningError),
+    SigningFailed(leansig::signature::SigningError),
 
     #[error("Signature encode failed: {0:?}")]
     SignatureEncodeFailed(bincode::error::EncodeError),

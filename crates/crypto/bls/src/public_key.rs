@@ -37,7 +37,7 @@ impl<'de> Deserialize<'de> for PublicKey {
     {
         let result: String = Deserialize::deserialize(deserializer)?;
         let result = hex::decode(&result).map_err(serde::de::Error::custom)?;
-        let key = FixedVector::from(result);
+        let key = FixedVector::try_from(result).map_err(serde::de::Error::custom)?;
         Ok(Self { inner: key })
     }
 }
@@ -53,7 +53,7 @@ impl FromStr for PublicKey {
         }
 
         Ok(PublicKey {
-            inner: FixedVector::from(bytes),
+            inner: FixedVector::try_from(bytes).map_err(|_| BLSError::InvalidPublicKey)?,
         })
     }
 }

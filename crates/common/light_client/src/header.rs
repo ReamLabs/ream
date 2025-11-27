@@ -1,4 +1,5 @@
 use alloy_primitives::B256;
+use anyhow::anyhow;
 use ream_consensus_beacon::electra::{
     beacon_block::SignedBeaconBlock, execution_payload_header::ExecutionPayloadHeader,
 };
@@ -37,7 +38,10 @@ impl LightClientHeader {
                 .message
                 .body
                 .execution_payload_inclusion_proof()?
-                .into(),
+                .try_into()
+                .map_err(|err| {
+                    anyhow!("Failed to convert execution_payload_inclusion_proof to FixedVector: {err:?}")
+                })?,
         })
     }
 }

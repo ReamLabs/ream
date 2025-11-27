@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use anyhow::anyhow;
 use ream_keystore::lean_keystore::{ValidatorKeysManifest, ValidatorKeystore, ValidatorRegistry};
-use ream_post_quantum_crypto::hashsig::private_key::{HashSigPrivateKey, PrivateKey};
+use ream_post_quantum_crypto::leansig::private_key::{HashSigPrivateKey, PrivateKey};
 
 /// Load validator registry from YAML file for a specific node
 ///

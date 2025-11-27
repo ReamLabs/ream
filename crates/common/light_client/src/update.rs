@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use anyhow::ensure;
+use anyhow::{anyhow, ensure};
 use ream_consensus_beacon::{
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     sync_aggregate::SyncAggregate,
@@ -88,13 +88,21 @@ impl LightClientUpdate {
             "Signature period must match attested period"
         );
         let next_sync_committee = attested_state.next_sync_committee.as_ref().clone();
-        let next_sync_committee_branch =
-            attested_state.next_sync_committee_inclusion_proof()?.into();
+        let next_sync_committee_branch = attested_state
+            .next_sync_committee_inclusion_proof()?
+            .try_into()
+            .map_err(|err| {
+                anyhow!(
+                    "Failed to convert next_sync_committee_inclusion_proof to FixedVector: {err:?}"
+                )
+            })?;
 
         // Indicate finality whenever possible
         let (finalized_header, finality_branch) = match finalized_block {
             Some(finalized_block) => {
-                let proof = attested_state.finalized_root_inclusion_proof()?.into();
+                let proof = attested_state.finalized_root_inclusion_proof()?.try_into().map_err(|err| {
+                    anyhow!("Failed to convert finalized_root_inclusion_proof to FixedVector: {err:?}")
+                })?;
                 if finalized_block.message.slot != GENESIS_SLOT {
                     let header = LightClientHeader::new(&finalized_block)?;
                     ensure!(

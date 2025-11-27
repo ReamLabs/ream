@@ -561,7 +561,9 @@ impl BeaconState {
             .sorted()
             .collect::<Vec<_>>();
         Ok(IndexedAttestation {
-            attesting_indices: attesting_indices.into(),
+            attesting_indices: attesting_indices.try_into().map_err(|err| {
+                anyhow!("Failed to convert attesting_indices to VariableList: {err:?}")
+            })?,
             data: attestation.data.clone(),
             signature: attestation.signature.clone(),
         })
@@ -2551,7 +2553,8 @@ impl BeaconState {
             eth_aggregate_public_keys(&public_keys.iter().collect::<Vec<_>>())?;
 
         Ok(SyncCommittee {
-            public_keys: FixedVector::from(public_keys),
+            public_keys: FixedVector::try_from(public_keys)
+                .map_err(|err| anyhow!("Failed to convert public_keys to FixedVector: {err:?}"))?,
             aggregate_public_key,
         })
     }
@@ -2568,7 +2571,9 @@ impl BeaconState {
 
     pub fn process_participation_flag_updates(&mut self) -> anyhow::Result<()> {
         self.previous_epoch_participation = self.current_epoch_participation.clone();
-        self.current_epoch_participation = vec![0; self.validators.len()].into();
+        self.current_epoch_participation = vec![0; self.validators.len()]
+            .try_into()
+            .map_err(|err| anyhow!("Failed to convert validators list to VariableList: {err:?}"))?;
 
         Ok(())
     }

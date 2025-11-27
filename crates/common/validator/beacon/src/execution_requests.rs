@@ -102,7 +102,9 @@ pub async fn prepare_execution_payload(
                 timestamp: state.compute_timestamp_at_slot(state.slot),
                 prev_randao: state.get_randao_mix(state.get_current_epoch()),
                 suggested_fee_recipient,
-                withdrawals: withdrawals.into(),
+                withdrawals: withdrawals.try_into().map_err(|err| {
+                    anyhow!("Failed to convert withdrawals list to VariableList {err:?}")
+                })?,
                 parent_beacon_block_root: state.latest_block_header.tree_hash_root(),
             }),
         )

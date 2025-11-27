@@ -1,11 +1,11 @@
 use alloy_primitives::FixedBytes;
-use hashsig::{MESSAGE_LENGTH, signature::SignatureScheme};
+use leansig::{MESSAGE_LENGTH, signature::SignatureScheme};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
 use super::{BINCODE_CONFIG, errors::SignatureError};
-use crate::hashsig::{HashSigScheme, public_key::PublicKey};
+use crate::leansig::{HashSigScheme, public_key::PublicKey};
 
 type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
 
@@ -83,7 +83,7 @@ impl Signature {
 mod tests {
     use rand::rng;
 
-    use crate::hashsig::{private_key::PrivateKey, signature::Signature};
+    use crate::leansig::{private_key::PrivateKey, signature::Signature};
 
     #[test]
     fn test_serialization_roundtrip() {

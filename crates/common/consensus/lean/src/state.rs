@@ -73,7 +73,8 @@ impl LeanState {
             justified_slots: BitList::with_capacity(0)
                 .expect("Failed to initialize an empty BitList"),
 
-            validators: VariableList::from(validators.unwrap_or_default()),
+            validators: VariableList::try_from(validators.unwrap_or_default())
+                .expect("Should be able to convert validators list to VariableList"),
 
             justifications_roots: VariableList::empty(),
             justifications_validators: BitList::with_capacity(0)
@@ -458,7 +459,7 @@ impl LeanState {
 #[cfg(test)]
 mod test {
     use alloy_primitives::hex;
-    use ream_post_quantum_crypto::hashsig::public_key::PublicKey;
+    use ream_post_quantum_crypto::leansig::public_key::PublicKey;
     use ssz::{Decode, Encode};
 
     use super::*;

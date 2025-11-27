@@ -1,5 +1,5 @@
 use alloy_primitives::FixedBytes;
-use ream_post_quantum_crypto::hashsig::signature::Signature;
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{BitList, VariableList, typenum::U4096};

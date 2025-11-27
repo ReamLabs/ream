@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ream_post_quantum_crypto::hashsig::{private_key::PrivateKey, public_key::PublicKey};
+use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, public_key::PublicKey};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]

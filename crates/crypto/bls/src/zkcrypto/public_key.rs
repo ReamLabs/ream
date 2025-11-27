@@ -9,7 +9,11 @@ use crate::{
 impl From<G1Projective> for PublicKey {
     fn from(value: G1Projective) -> Self {
         Self {
-            inner: G1Affine::from(value).to_compressed().to_vec().into(),
+            inner: G1Affine::from(value)
+                .to_compressed()
+                .to_vec()
+                .try_into()
+                .expect("Our inner should be the right length"),
         }
     }
 }

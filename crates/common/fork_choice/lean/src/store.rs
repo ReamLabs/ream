@@ -18,7 +18,7 @@ use ream_metrics::{
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
-use ream_post_quantum_crypto::hashsig::signature::Signature;
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::{
     db::lean::LeanDB,
     tables::{field::REDBField, table::REDBTable},
