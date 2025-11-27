@@ -32,6 +32,26 @@ impl<T: Serialize> DataResponse<T> {
     }
 }
 
+/// A DataResponseWithMeta data struct that can be used to wrap data type
+/// used for json rpc responses
+///
+/// # Example
+/// {
+///  "data": json!(T),
+///  "meta": json!(U)
+/// }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DataResponseWithMeta<T, U> {
+    pub data: T,
+    pub meta: U,
+}
+
+impl<T: Serialize, U: Serialize> DataResponseWithMeta<T, U> {
+    pub fn new(data: T, meta: U) -> Self {
+        Self { data, meta }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct RootResponse {
     pub root: B256,

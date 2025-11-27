@@ -28,3 +28,9 @@ pub struct PeerCount {
     #[serde(with = "serde_utils::quoted_u64")]
     pub disconnecting: u64,
 }
+
+#[derive(Default, Clone, Debug, Serialize)]
+pub struct PeersMetadata {
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub count: u64,
+}

@@ -1,4 +1,5 @@
 use alloy_primitives::B256;
+use ream_peer::{ConnectionState, Direction};
 use serde::{Deserialize, Serialize};
 
 use super::id::ValidatorID;
@@ -48,6 +49,16 @@ pub struct StatusQuery {
 pub struct AttestationQuery {
     pub slot: u64,
     pub committee_index: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConnectionStateQuery {
+    pub state: Option<Vec<ConnectionState>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DirectionQuery {
+    pub direction: Option<Vec<Direction>>,
 }
 
 impl StatusQuery {
