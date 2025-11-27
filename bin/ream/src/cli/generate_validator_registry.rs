@@ -10,7 +10,7 @@ use rand::rng;
 use ream_keystore::lean_keystore::{
     ValidatorKeysManifest, ValidatorKeystoreRaw, ValidatorRegistry,
 };
-use ream_post_quantum_crypto::hashsig::private_key::PrivateKey;
+use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
 
 const NUM_ACTIVE_EPOCHS: u64 = 262144;
 

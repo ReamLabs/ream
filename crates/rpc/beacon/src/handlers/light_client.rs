@@ -261,7 +261,9 @@ pub async fn get_light_client_finality_update(
                     "Failed to get finalized root inclusion proof, error: {err:?}"
                 ))
             })?
-            .into(),
+            .try_into().map_err(|err|ApiError::InternalError(format!(
+                    "Failed to convert finalized_root_inclusion_proof to FixedVector, error: {err:?}"
+                )))?,
         sync_aggregate: head_block.message.body.sync_aggregate,
         signature_slot: head_block.message.slot,
     };

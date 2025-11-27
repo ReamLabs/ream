@@ -56,7 +56,7 @@ use ream_p2p::{
     },
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
-use ream_post_quantum_crypto::hashsig::{
+use ream_post_quantum_crypto::leansig::{
     private_key::PrivateKey as HashSigPrivateKey, public_key::PublicKey,
 };
 use ream_rpc_common::config::RpcServerConfig;

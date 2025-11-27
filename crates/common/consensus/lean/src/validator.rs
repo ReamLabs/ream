@@ -1,4 +1,4 @@
-use ream_post_quantum_crypto::hashsig::public_key::PublicKey;
+use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;

@@ -1,0 +1,174 @@
+use std::{fmt, fmt::Debug, ops::Range};
+
+use alloy_primitives::{Bytes, hex};
+use bincode::{self};
+use leansig::{
+    MESSAGE_LENGTH,
+    signature::{SignatureScheme, SignatureSchemeSecretKey},
+};
+use rand::Rng;
+use serde::{Deserialize, Deserializer, Serialize};
+
+use super::{BINCODE_CONFIG, errors::SignatureError};
+use crate::leansig::{HashSigScheme, public_key::PublicKey, signature::Signature};
+
+pub type HashSigPrivateKey = <HashSigScheme as SignatureScheme>::SecretKey;
+
+pub struct PrivateKey {
+    pub inner: HashSigPrivateKey,
+}
+
+impl PrivateKey {
+    pub fn new(inner: HashSigPrivateKey) -> Self {
+        Self { inner }
+    }
+
+    pub fn to_bytes(&self) -> Bytes {
+        bincode::serde::encode_to_vec(&self.inner, BINCODE_CONFIG)
+            .expect("Failed to serialize hash sig public key")
+            .into()
+    }
+
+    pub fn generate_key_pair<R: Rng>(
+        rng: &mut R,
+        activation_epoch: usize,
+        num_active_epochs: usize,
+    ) -> (PublicKey, Self) {
+        let (public_key, private_key) =
+            <HashSigScheme as SignatureScheme>::key_gen(rng, activation_epoch, num_active_epochs);
+
+        (
+            PublicKey::from_hash_sig_public_key(public_key),
+            Self::new(private_key),
+        )
+    }
+
+    /// Returns the total interval of epochs for which this key is valid.
+    pub fn get_activation_interval(&self) -> Range<u64> {
+        self.inner.get_activation_interval()
+    }
+
+    /// Returns the sub-interval for which the key is currently prepared to sign messages.
+    pub fn get_prepared_interval(&self) -> Range<u64> {
+        self.inner.get_prepared_interval()
+    }
+
+    /// Advances the prepared interval to the next one.
+    ///
+    /// This should be called proactively in the background as soon as half of the
+    /// current prepared interval has passed.
+    pub fn prepare_signature(&mut self) {
+        self.inner.advance_preparation()
+    }
+
+    /// Signs a message for a given epoch.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the epoch is not within the activation interval
+    pub fn sign(
+        &self,
+        message: &[u8; MESSAGE_LENGTH],
+        epoch: u32,
+    ) -> anyhow::Result<Signature, SignatureError> {
+        let activation_interval = self.get_activation_interval();
+
+        assert!(
+            activation_interval.contains(&(epoch as u64)),
+            "Epoch {epoch} is outside the activation interval {activation_interval:?}",
+        );
+
+        let signature = <HashSigScheme as SignatureScheme>::sign(&self.inner, epoch, message)
+            .map_err(SignatureError::SigningFailed)?;
+
+        Signature::from_hash_sig_public_key(signature)
+    }
+}
+
+impl Debug for PrivateKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.to_bytes())
+    }
+}
+
+impl PartialEq for PrivateKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_bytes() == other.to_bytes()
+    }
+}
+
+impl Serialize for PrivateKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let serialized = bincode::serde::encode_to_vec(&self.inner, BINCODE_CONFIG)
+            .map_err(serde::ser::Error::custom)?;
+        serializer.serialize_str(&format!("0x{}", &hex::encode(serialized)))
+    }
+}
+
+impl<'de> Deserialize<'de> for PrivateKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let result: String = Deserialize::deserialize(deserializer)?;
+        let bytes = hex::decode(&result).map_err(serde::de::Error::custom)?;
+        let bincode = bincode::serde::decode_from_slice(&bytes, BINCODE_CONFIG)
+            .map(|(value, _)| value)
+            .expect("Should be able to decode bytes");
+        Ok(Self { inner: bincode })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::rng;
+
+    use crate::leansig::private_key::PrivateKey;
+
+    #[test]
+    fn test_sign_and_verify() {
+        let mut rng = rng();
+        let activation_epoch = 0;
+        let num_active_epochs = 10; // Test for 10 epochs for quick key generation
+
+        let (public_key, private_key) =
+            PrivateKey::generate_key_pair(&mut rng, activation_epoch, num_active_epochs);
+
+        let epoch = 5;
+
+        // Create a test message (32 bytes as required by hashsig)
+        let message = [0u8; 32];
+
+        // Sign the message
+        let result = private_key.sign(&message, epoch);
+
+        assert!(result.is_ok(), "Signing should succeed");
+        let signature = result.unwrap();
+
+        // Verify the signature
+        let verify_result = signature.verify(&public_key, epoch, &message);
+
+        assert!(verify_result.is_ok(), "Verification should succeed");
+        assert!(verify_result.unwrap(), "Signature should be valid");
+    }
+
+    #[test]
+    #[should_panic(expected = "Epoch 100 is outside the activation interval")]
+    fn test_signing_outside_activation_interval_panics() {
+        let mut rng = rng();
+        let activation_epoch = 5;
+        let num_active_epochs = 10;
+
+        let (_public_key, private_key) =
+            PrivateKey::generate_key_pair(&mut rng, activation_epoch, num_active_epochs);
+
+        let message = [0u8; 32];
+
+        // Hash sig expands the interval (5, 10) to (0, 32)
+        // Try to sign with an epoch outside the (expanded) activation interval (should panic)
+        let _ = private_key.sign(&message, 100);
+    }
+}

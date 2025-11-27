@@ -1,13 +1,13 @@
 use alloy_primitives::{Bytes, FixedBytes, hex};
 use anyhow::anyhow;
 use bincode::{self};
-use hashsig::signature::SignatureScheme;
+use leansig::signature::SignatureScheme;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
 use super::BINCODE_CONFIG;
-use crate::hashsig::HashSigScheme;
+use crate::leansig::HashSigScheme;
 
 pub type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
 

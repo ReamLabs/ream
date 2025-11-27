@@ -272,7 +272,7 @@ mod tests {
             },
             description: "Test Keystore".to_string(),
             public_key: PublicKey {
-                inner: FixedVector::from(vec![0x12; 48]),
+                inner: FixedVector::try_from(vec![0x12; 48]).unwrap(),
             },
             path: "m/44'/60'/0'/0/0".to_string(),
             uuid: "123e4567-e89b-12d3-a456-426614174000".to_string(),
@@ -315,7 +315,7 @@ mod tests {
             },
             description: "".to_string(),
             public_key: PublicKey {
-                inner: FixedVector::from(vec![0x12; 48]),
+                inner: FixedVector::try_from(vec![0x12; 48]).unwrap(),
             },
             path: "".to_string(),
             uuid: "123e4567-e89b-12d3-a456-426614174000".to_string(),
@@ -362,12 +362,12 @@ mod tests {
             },
             description: "".to_string(),
             public_key: PublicKey {
-                inner: FixedVector::from(
+                inner: FixedVector::try_from(
                     hex::decode(
                         "b69dfa082ca75d4e50ed4da8fa07d550ba9ec4019815409f42a98b79861d7ad96633a2476594b94c8a6e3048e1b2623e",
                     )
                     .expect("Failed to decode public_key"),
-                ),
+                ).unwrap(),
             },
             path: "m/12381/3600/0/0/0".to_string(),
             uuid: "8f6774f8-3b29-448f-b407-499fb1e98a20".to_string(),
@@ -416,12 +416,12 @@ mod tests {
             },
             description: "".to_string(),
             public_key: PublicKey {
-                inner: FixedVector::from(
+                inner: FixedVector::try_from(
                     hex::decode(
                         "b69dfa082ca75d4e50ed4da8fa07d550ba9ec4019815409f42a98b79861d7ad96633a2476594b94c8a6e3048e1b2623e",
                     )
                     .expect("Failed to decode public_key"),
-                ),
+                ).unwrap(),
             },
             path: "".to_string(),
             uuid: "123e4567-e89b-12d3-a456-426614174000".to_string(),

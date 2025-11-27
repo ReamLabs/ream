@@ -137,7 +137,12 @@ impl Encoder<RespMessage> for InboundSSZSnappyCodec {
         let bytes = match item {
             RespMessage::Response(messages) => messages.as_ssz_bytes(),
             RespMessage::Error(req_resp_error) => {
-                VariableList::<u8, U256>::from(req_resp_error.to_string().as_bytes().to_vec())
+                VariableList::<u8, U256>::try_from(req_resp_error.to_string().as_bytes().to_vec())
+                    .map_err(|err| {
+                        ReqRespError::InvalidData(format!(
+                            "Failed to convert error code to variable list {err:?}",
+                        ))
+                    })?
                     .as_ssz_bytes()
             }
             RespMessage::EndOfStream => unreachable!("EndOfStream cannot be sent"),

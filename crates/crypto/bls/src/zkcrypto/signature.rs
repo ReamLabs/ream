@@ -32,7 +32,11 @@ impl TryFrom<&BLSSignature> for G2Affine {
 impl From<G2Projective> for BLSSignature {
     fn from(value: G2Projective) -> Self {
         Self {
-            inner: G2Affine::from(value).to_compressed().to_vec().into(),
+            inner: G2Affine::from(value)
+                .to_compressed()
+                .to_vec()
+                .try_into()
+                .expect("Our inner should be the right length"),
         }
     }
 }

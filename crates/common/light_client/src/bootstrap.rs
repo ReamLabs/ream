@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use anyhow::ensure;
+use anyhow::{anyhow, ensure};
 use ream_consensus_beacon::{
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     sync_committee::SyncCommittee,
@@ -35,7 +35,7 @@ impl LightClientBootstrap {
         Ok(LightClientBootstrap {
             header: LightClientHeader::new(signed_block)?,
             current_sync_committee: (*state.current_sync_committee).clone(),
-            current_sync_committee_branch: state.current_sync_committee_inclusion_proof()?.into(),
+            current_sync_committee_branch: state.current_sync_committee_inclusion_proof()?.try_into().map_err(|err| anyhow!("Failed to convert current_sync_committee_inclusion_proof to FixedVector: {err:?}"))?,
         })
     }
 }

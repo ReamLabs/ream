@@ -114,10 +114,11 @@ mod tests {
             kzg_commitment: KZGCommitment([0u8; 48]),
             kzg_proof: KZGProof::default(),
             signed_block_header,
-            kzg_commitment_inclusion_proof: FixedVector::<B256, U17>::from(vec![
+            kzg_commitment_inclusion_proof: FixedVector::<B256, U17>::try_from(vec![
                 B256::default();
                 17
-            ]),
+            ])
+            .unwrap(),
         };
 
         let result = blob_sidecar.verify_blob_sidecar_inclusion_proof();

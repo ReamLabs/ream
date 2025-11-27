@@ -33,7 +33,7 @@ pub fn setup_genesis(genesis_time: u64, validators: Vec<Validator>) -> (Block, L
 mod test {
     use alloy_primitives::{FixedBytes, hex::ToHexExt};
     use ream_consensus_lean::validator::Validator;
-    use ream_post_quantum_crypto::hashsig::public_key::PublicKey;
+    use ream_post_quantum_crypto::leansig::public_key::PublicKey;
     use tree_hash::TreeHash;
 
     use crate::genesis::setup_genesis;
