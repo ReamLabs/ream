@@ -50,6 +50,13 @@ pub struct AttestationQuery {
     pub committee_index: u64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SyncCommitteeContributionQuery {
+    pub slot: u64,
+    pub subcommittee_index: u64,
+    pub beacon_block_root: B256,
+}
+
 impl StatusQuery {
     pub fn has_status(&self) -> bool {
         match &self.status {
