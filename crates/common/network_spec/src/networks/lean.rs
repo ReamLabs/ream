@@ -4,6 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use alloy_primitives::{FixedBytes, hex::FromHex};
 use serde::{Deserialize, Deserializer};
 use tracing::warn;
 
@@ -72,6 +73,12 @@ fn default_seconds_per_slot() -> u64 {
 #[serde(rename_all = "UPPERCASE")]
 pub struct LeanNetworkSpec {
     pub genesis_time: u64,
+    #[serde(alias = "VALIDATOR_COUNT")]
+    pub num_validators: u64,
+
+    #[serde(alias = "GENESIS_VALIDATORS")]
+    pub validator_public_keys: Vec<FixedBytes<52>>,
+
     #[serde(default = "default_justification_lookback_slots")]
     pub justification_lookback_slots: u64,
     #[serde(default = "default_seconds_per_slot")]
@@ -80,9 +87,6 @@ pub struct LeanNetworkSpec {
     /// Skipped in YAML, defaults to Devnet::One
     #[serde(skip)]
     pub devnet: Devnet,
-
-    #[serde(skip, alias = "VALIDATOR_COUNT")]
-    pub num_validators: u64,
 
     /// Capture any extra fields we aren't interested in
     #[serde(flatten)]
@@ -103,6 +107,9 @@ impl LeanNetworkSpec {
             justification_lookback_slots: 3,
             seconds_per_slot: 4,
             num_validators: 3,
+            validator_public_keys: vec![FixedBytes::from_hex("0x77c50d29d6cdab52b0a6f54329d12047fa62bd7a64324966e9785c3971b24766a5183a4d4799a72e97c7b55b9a3264020d8eb51a").expect("These bytes are the correct length"),
+            FixedBytes::from_hex("0xb05a754cded564006863110f946ad3130310c376c365f17144240c4388d0106bef07d81d5bbc5f62cbdc3f1802ac226af74ae05e").expect("These bytes are the correct length"),
+            FixedBytes::from_hex("0x05fed65f19de962b7a3f4402c288b54e0018d65885263415068cd30adf05440aa978fa43ea20502937f3ce7a54e50a2f51b8fa19").expect("These bytes are the correct length"),],
             devnet: Devnet::One,
             discarded_values: DiscardUnknown,
         }

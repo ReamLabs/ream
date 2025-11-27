@@ -5884,7 +5884,6 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "serde_json",
- "ssz_types",
  "thiserror 2.0.17",
  "tracing",
  "tree_hash",

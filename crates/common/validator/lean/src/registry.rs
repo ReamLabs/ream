@@ -1,7 +1,6 @@
 use std::{fs, path::Path};
 
 use anyhow::anyhow;
-use ream_consensus_lean::validator::Validator;
 use ream_keystore::lean_keystore::{ValidatorKeysManifest, ValidatorKeystore, ValidatorRegistry};
 use ream_post_quantum_crypto::hashsig::private_key::{HashSigPrivateKey, PrivateKey};
 
@@ -55,23 +54,4 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
         path.pop();
     }
     Ok(validator_keystores)
-}
-
-pub fn load_validator_public_keys<P: AsRef<Path> + std::fmt::Debug>(
-    path: P,
-) -> anyhow::Result<Vec<Validator>> {
-    let validator_keys_manifest_yaml = fs::read_to_string(&path)
-        .map_err(|err| anyhow!("Failed to read validator keys manifest yaml file {err}",))?;
-
-    let validator_keys_manifest =
-        serde_yaml::from_str::<ValidatorKeysManifest>(&validator_keys_manifest_yaml)
-            .map_err(|err| anyhow!("Failed to parse validator keys manifest yaml: {err}"))?;
-
-    let mut validator_public_keys = vec![];
-    for validator in validator_keys_manifest.validators {
-        validator_public_keys.push(Validator {
-            public_key: validator.public_key,
-        });
-    }
-    Ok(validator_public_keys)
 }

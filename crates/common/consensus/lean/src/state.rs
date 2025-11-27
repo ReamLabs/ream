@@ -458,9 +458,19 @@ impl LeanState {
 #[cfg(test)]
 mod test {
     use alloy_primitives::hex;
+    use ream_post_quantum_crypto::hashsig::public_key::PublicKey;
     use ssz::{Decode, Encode};
 
     use super::*;
+
+    pub fn generate_default_validators(number_of_validators: usize) -> Vec<Validator> {
+        (0..number_of_validators)
+            .map(|index| Validator {
+                public_key: PublicKey::from(&[0_u8; 52][..]),
+                index: index as u64,
+            })
+            .collect()
+    }
 
     #[test]
     fn test_encode_decode_signed_block_with_attestation_roundtrip() -> anyhow::Result<()> {
@@ -504,10 +514,8 @@ mod test {
     fn generate_genesis() {
         let config = Config { genesis_time: 0 };
 
-        let state = LeanState::generate_genesis(
-            config.genesis_time,
-            Some(Validator::generate_default_validators(10)),
-        );
+        let state =
+            LeanState::generate_genesis(config.genesis_time, Some(generate_default_validators(10)));
 
         // Config in state should match the input.
         assert_eq!(state.config, config);
@@ -534,7 +542,7 @@ mod test {
     #[test]
     fn process_slots() {
         let mut genesis_state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
+            LeanState::generate_genesis(0, Some(generate_default_validators(10)));
 
         // Choose a future slot target
         let target_slot = 5;
@@ -559,7 +567,7 @@ mod test {
     #[test]
     fn process_block_header_valid() {
         let mut genesis_state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
+            LeanState::generate_genesis(0, Some(generate_default_validators(10)));
 
         genesis_state.process_slots(1).unwrap();
 
@@ -606,7 +614,7 @@ mod test {
     #[test]
     fn process_block_header_invalid_slot() {
         let mut genesis_state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
+            LeanState::generate_genesis(0, Some(generate_default_validators(10)));
 
         // Move to slot 1
         genesis_state.process_slots(1).unwrap();
@@ -637,7 +645,7 @@ mod test {
     #[test]
     fn process_block_header_invalid_proposer() {
         let mut genesis_state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
+            LeanState::generate_genesis(0, Some(generate_default_validators(10)));
 
         // Move to slot 1
         genesis_state.process_slots(1).unwrap();
@@ -668,7 +676,7 @@ mod test {
     #[test]
     fn process_block_header_invalid_parent_root() {
         let mut genesis_state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
+            LeanState::generate_genesis(0, Some(generate_default_validators(10)));
 
         // Move to slot 1
         genesis_state.process_slots(1).unwrap();
@@ -696,8 +704,7 @@ mod test {
 
     #[test]
     fn state_transition_full() {
-        let genesis_state =
-            LeanState::generate_genesis(0, Some(Validator::generate_default_validators(10)));
+        let genesis_state = LeanState::generate_genesis(0, Some(generate_default_validators(10)));
 
         // Manually compute the post-state result by processing slots first
         let mut state_at_slot_1 = genesis_state.clone();
