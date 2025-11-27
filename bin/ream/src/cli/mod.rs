@@ -116,11 +116,11 @@ mod tests {
                 );
 
                 // Verify the network spec was loaded from the YAML file (sample_spec.yml)
-                assert_eq!(config.network.seconds_per_slot, 12);
-                assert_eq!(config.network.genesis_time, 0);
+                assert_eq!(config.network.seconds_per_slot, 4);
+                assert_eq!(config.network.genesis_time, 1704085200);
                 assert_eq!(config.network.justification_lookback_slots, 3);
                 // Will be set later in main.rs
-                assert_eq!(config.network.num_validators, 0);
+                assert_eq!(config.network.num_validators, 3);
 
                 assert_eq!(
                     config.private_key_path.as_ref().unwrap().to_str().unwrap(),

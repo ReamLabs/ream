@@ -1,10 +1,9 @@
-use alloy_primitives::{Bytes, hex};
+use alloy_primitives::{Bytes, FixedBytes, hex};
 use anyhow::anyhow;
 use bincode::{self};
 use hashsig::signature::SignatureScheme;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz_derive::{Decode, Encode};
-use ssz_types::{FixedVector, typenum::U52};
 use tree_hash_derive::TreeHash;
 
 use super::BINCODE_CONFIG;
@@ -30,18 +29,22 @@ pub type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
 /// bottleneck.
 #[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default, Eq, Hash)]
 pub struct PublicKey {
-    inner: FixedVector<u8, U52>,
+    inner: FixedBytes<52>,
 }
 
 impl From<&[u8]> for PublicKey {
     fn from(value: &[u8]) -> Self {
         Self {
-            inner: FixedVector::from(value.to_vec()),
+            inner: FixedBytes::from_slice(value),
         }
     }
 }
 
 impl PublicKey {
+    pub fn new(inner: FixedBytes<52>) -> Self {
+        Self { inner }
+    }
+
     pub fn to_bytes(&self) -> Bytes {
         self.inner.to_vec().into()
     }
@@ -50,16 +53,18 @@ impl PublicKey {
     /// with serialization.
     pub fn from_hash_sig_public_key(hash_sig_public_key: HashSigPublicKey) -> Self {
         Self {
-            inner: bincode::serde::encode_to_vec(&hash_sig_public_key, BINCODE_CONFIG)
-                .expect("Failed to serialize hash sig public key")
-                .into(),
+            inner: FixedBytes::from_slice(
+                bincode::serde::encode_to_vec(&hash_sig_public_key, BINCODE_CONFIG)
+                    .expect("Failed to serialize hash sig public key")
+                    .as_slice(),
+            ),
         }
     }
 
     /// Convert back to the original `GeneralizedXMSSPublicKey` type from the hashsig crate.
     /// To use this public key for signature verification.
     pub fn to_hash_sig_public_key(&self) -> anyhow::Result<HashSigPublicKey> {
-        bincode::serde::decode_from_slice(&self.inner, BINCODE_CONFIG)
+        bincode::serde::decode_from_slice(&self.inner.0, BINCODE_CONFIG)
             .map(|(value, _)| value)
             .map_err(|err| anyhow!("Failed to decode public key: {err}"))
     }
@@ -82,7 +87,8 @@ impl<'de> Deserialize<'de> for PublicKey {
     {
         let result: String = Deserialize::deserialize(deserializer)?;
         let result = hex::decode(&result).map_err(serde::de::Error::custom)?;
-        let key = FixedVector::from(result);
-        Ok(Self { inner: key })
+        Ok(Self {
+            inner: FixedBytes::from_slice(&result),
+        })
     }
 }

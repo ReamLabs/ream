@@ -35,6 +35,7 @@ use ream_consensus_lean::{
     attestation::{Attestation, AttestationData},
     block::{BlockWithAttestation, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
+    validator::Validator,
 };
 use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
@@ -44,7 +45,7 @@ use ream_fork_choice_lean::store::Store;
 use ream_keystore::keystore::EncryptedKeystore;
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::{
-    beacon_network_spec, set_beacon_network_spec, set_lean_network_spec,
+    beacon_network_spec, lean_network_spec, set_beacon_network_spec, set_lean_network_spec,
 };
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
@@ -54,7 +55,9 @@ use ream_p2p::{
     },
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
-use ream_post_quantum_crypto::hashsig::private_key::PrivateKey as HashSigPrivateKey;
+use ream_post_quantum_crypto::hashsig::{
+    private_key::PrivateKey as HashSigPrivateKey, public_key::PublicKey,
+};
 use ream_rpc_common::config::RpcServerConfig;
 use ream_storage::{
     db::{ReamDB, reset_db},
@@ -67,8 +70,7 @@ use ream_validator_beacon::{
     voluntary_exit::process_voluntary_exit,
 };
 use ream_validator_lean::{
-    registry::{load_validator_public_keys, load_validator_registry},
-    service::ValidatorService as LeanValidatorService,
+    registry::load_validator_registry, service::ValidatorService as LeanValidatorService,
 };
 use ssz_types::VariableList;
 use tokio::{sync::mpsc, time::Instant};
@@ -161,16 +163,10 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
         .expect("Failed to load validator registry");
-    let mut validator_keys_manifest_path = config.validator_registry_path;
-    validator_keys_manifest_path.pop();
-    validator_keys_manifest_path.push("hash-sig-keys/validator-keys-manifest.yaml");
-    let validators = load_validator_public_keys(&validator_keys_manifest_path)
-        .expect("Failed to get load_validator_public_keys");
 
     // Fill in which devnet we are running
     let mut network = config.network;
     network.devnet = config.devnet;
-    network.num_validators = validators.len() as u64;
     set_lean_network_spec(Arc::new(network));
 
     // Initialize the lean database
@@ -185,6 +181,15 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let (outbound_p2p_sender, outbound_p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
     // Initialize the lean chain with genesis block and state.
+    let validators = lean_network_spec()
+        .validator_public_keys
+        .iter()
+        .enumerate()
+        .map(|(index, public_key)| Validator {
+            public_key: PublicKey::new(*public_key),
+            index: index as u64,
+        })
+        .collect::<Vec<_>>();
     let (genesis_block, genesis_state) = lean_genesis::setup_genesis(validators);
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
