@@ -15,7 +15,7 @@ use crate::hashsig::{HashSigScheme, public_key::PublicKey, signature::Signature}
 pub type HashSigPrivateKey = <HashSigScheme as SignatureScheme>::SecretKey;
 
 pub struct PrivateKey {
-    inner: HashSigPrivateKey,
+    pub inner: HashSigPrivateKey,
 }
 
 impl PrivateKey {
