@@ -190,7 +190,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             index: index as u64,
         })
         .collect::<Vec<_>>();
-    let (genesis_block, genesis_state) = lean_genesis::setup_genesis(validators);
+    let (genesis_block, genesis_state) =
+        lean_genesis::setup_genesis(lean_network_spec().genesis_time, validators);
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
             SignedBlockWithAttestation {
