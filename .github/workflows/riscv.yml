@@ -18,6 +18,10 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true          
+
     - name: Install toolchain
       run: |
         git clone https://github.com/succinctlabs/sp1
@@ -39,6 +43,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true        
 
     - name: Install toolchain
       run: |
