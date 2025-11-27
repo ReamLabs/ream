@@ -5357,6 +5357,7 @@ dependencies = [
  "ream-bls",
  "ream-consensus-beacon",
  "ream-consensus-misc",
+ "ream-peer",
  "reqwest",
  "serde",
  "serde_json",

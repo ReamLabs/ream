@@ -25,6 +25,7 @@ url.workspace = true
 ream-bls.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
+ream-peer.workspace = true
 
 [lints]
 workspace = true

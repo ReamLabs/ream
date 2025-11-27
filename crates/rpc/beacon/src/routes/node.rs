@@ -3,7 +3,7 @@ use ream_rpc_common::handlers::version::get_version;
 
 use crate::handlers::{
     identity::get_identity,
-    peers::{get_peer, get_peer_count},
+    peers::{get_peer, get_peer_count, get_peers},
     syncing::get_syncing_status,
 };
 
@@ -11,6 +11,7 @@ pub fn register_node_routes(cfg: &mut ServiceConfig) {
     cfg.service(get_version)
         .service(get_peer)
         .service(get_peer_count)
+        .service(get_peers)
         .service(get_syncing_status)
         .service(get_identity);
 }
