@@ -23,6 +23,10 @@ jobs:
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu rustfmt
 
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true    
+
     - name: Run rustfmt
       run: cargo +nightly fmt -- --check
 
@@ -31,6 +35,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true        
 
     - name: Run Clippy
       run: |
@@ -42,6 +50,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true        
 
     # Install this commit as there isn't a release yet which works for workspace's
     - name: Install cargo sort
@@ -57,6 +69,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true    
+
     - name: Build
       run: cargo build --verbose
 
@@ -67,6 +83,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true        
+
     - name: Test
       run: cargo test --release --workspace -- --nocapture
 
@@ -76,6 +96,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true    
 
     - name: Test consensus spec tests
       run: cd testing/ef-tests && make test
