@@ -18,17 +18,17 @@ pub static LEAN_NETWORK_SPEC: OnceLock<Arc<LeanNetworkSpec>> = OnceLock::new();
 ///
 /// The static `LeanNetworkSpec` can be accessed using [lean_network_spec].
 pub fn set_lean_network_spec(network_spec: Arc<LeanNetworkSpec>) {
-    HAS_NETWORK_SPEC_BEEN_INITIALIZED.call_once(|| {
-        LEAN_NETWORK_SPEC
-            .set(network_spec)
-            .expect("LeanNetworkSpec should be set only once at the start of the application");
-    });
-
     if HAS_NETWORK_SPEC_BEEN_INITIALIZED.is_completed() {
         warn!(
             "LeanNetworkSpec has already been initialized. Subsequent calls to set_lean_network_spec will be ignored. If this is production code, this is likely a bug."
         );
     }
+
+    HAS_NETWORK_SPEC_BEEN_INITIALIZED.call_once(|| {
+        LEAN_NETWORK_SPEC
+            .set(network_spec)
+            .expect("LeanNetworkSpec should be set only once at the start of the application");
+    });
 }
 
 /// Returns the static [LeanNetworkSpec] initialized by [set_lean_network_spec].
