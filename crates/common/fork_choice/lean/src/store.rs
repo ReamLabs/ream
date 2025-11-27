@@ -313,7 +313,7 @@ impl Store {
         Ok(())
     }
 
-    async fn get_attestation_target(&self) -> anyhow::Result<Checkpoint> {
+    pub async fn get_attestation_target(&self) -> anyhow::Result<Checkpoint> {
         let (head_provider, block_provider, safe_target_provider, latest_finalized_provider) = {
             let db = self.store.lock().await;
             (

@@ -142,7 +142,7 @@ impl LeanState {
     }
 
     /// Validate the block header and update header-linked state.
-    fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
+    pub fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
         // The block must be for the current slot.
         ensure!(
             block.slot == self.slot,
