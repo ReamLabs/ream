@@ -67,8 +67,12 @@ impl LeanChainService {
 
                             info!(
                                 slot = get_current_slot(),
+                                head_root = head.to_string(),
+                                head_parent_root = head_state.latest_block_header.parent_root.to_string(),
                                 justified_slot = head_state.latest_justified.slot,
+                                justified_root = head_state.latest_justified.root.to_string(),
                                 finalized_slot = head_state.latest_finalized.slot,
+                                finalized_root = head_state.latest_finalized.root.to_string(),
                                 "Current head state information",
                             );
                         }
