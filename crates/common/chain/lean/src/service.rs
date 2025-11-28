@@ -242,7 +242,12 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<AttestationData>,
     ) -> anyhow::Result<()> {
-        let attestation_data = self.store.read().await.produce_attestation(slot).await?;
+        let attestation_data = self
+            .store
+            .read()
+            .await
+            .produce_attestation_data(slot)
+            .await?;
 
         // Send the built attestation data back to the requester
         response
