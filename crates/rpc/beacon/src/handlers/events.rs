@@ -19,8 +19,9 @@ fn deserialize_topics_array<'de, D>(deserializer: D) -> Result<Vec<String>, D::E
 where
     D: Deserializer<'de>,
 {
-    use serde::de::{self, Visitor};
     use std::fmt;
+
+    use serde::de::{self, Visitor};
 
     struct TopicsArrayVisitor;
 

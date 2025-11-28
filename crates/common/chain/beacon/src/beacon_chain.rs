@@ -58,7 +58,10 @@ impl BeaconChain {
 
         // Emit Block event
         if let Some(event_sender) = self.event_sender.as_ref() {
-            tracing::debug!("Emitting Block event for slot {}", signed_block.message.slot);
+            tracing::debug!(
+                "Emitting Block event for slot {}",
+                signed_block.message.slot
+            );
             if let Err(e) = event_sender.send(BeaconEvent::Block(Box::new(signed_block.clone()))) {
                 tracing::warn!("Failed to send Block event: {}", e);
             }
