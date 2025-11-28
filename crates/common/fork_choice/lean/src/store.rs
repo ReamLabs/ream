@@ -494,6 +494,7 @@ impl Store {
     pub async fn on_block(
         &mut self,
         signed_block_with_attestation: &SignedBlockWithAttestation,
+        verify_signatures: bool,
     ) -> anyhow::Result<()> {
         let block_processing_timer = start_timer(&FORK_CHOICE_BLOCK_PROCESSING_TIME, &[]);
 
@@ -521,7 +522,7 @@ impl Store {
             .get(block.parent_root)?
             .ok_or(anyhow!("State not found for parent root"))?;
 
-        signed_block_with_attestation.verify_signatures(&parent_state)?;
+        signed_block_with_attestation.verify_signatures(&parent_state, verify_signatures)?;
         parent_state.state_transition(block, true)?;
 
         let latest_justified =
@@ -911,7 +912,7 @@ mod tests {
             build_signed_block_with_attestation(attestation_data, &block, &mut signatures);
 
         store
-            .on_block(&signed_block_with_attestation)
+            .on_block(&signed_block_with_attestation, false)
             .await
             .unwrap();
 
@@ -1082,7 +1083,7 @@ mod tests {
             build_signed_block_with_attestation(attestation_data, &block, &mut signatures);
 
         store
-            .on_block(&signed_block_with_attestation)
+            .on_block(&signed_block_with_attestation, false)
             .await
             .unwrap();
 
