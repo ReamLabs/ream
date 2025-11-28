@@ -99,7 +99,7 @@ impl Store {
     /// latest known justified block)
     async fn compute_lmd_ghost_head(
         &self,
-        latest_votes: impl Iterator<Item = anyhow::Result<SignedAttestation>>,
+        attestations: impl Iterator<Item = anyhow::Result<SignedAttestation>>,
         provided_root: B256,
         min_score: u64,
     ) -> anyhow::Result<B256> {
@@ -117,49 +117,40 @@ impl Store {
                 .ok_or(anyhow!("No blocks found to calculate fork choice"))?;
         }
 
+        let start_slot = block_provider.get(root)?.expect("msg").message.block.slot;
         // For each block, count the number of votes for that block. A vote
         // for any descendant of a block also counts as a vote for that block
-        let mut vote_weights = HashMap::<B256, u64>::new();
+        let mut weights = HashMap::<B256, u64>::new();
 
-        for signed_vote in latest_votes {
-            let signed_vote = signed_vote?;
-            if block_provider.contains_key(signed_vote.message.head().root) {
-                let mut block_hash = signed_vote.message.head().root;
-                while {
-                    let current_block = block_provider
-                        .get(block_hash)?
-                        .ok_or_else(|| anyhow!("Block not found for vote head: {block_hash}"))?
-                        .message
-                        .block;
-                    let root_block = block_provider
-                        .get(root)?
-                        .ok_or_else(|| anyhow!("Block not found for root: {root}"))?
-                        .message
-                        .block;
-                    current_block.slot > root_block.slot
-                } {
-                    let current_weights = vote_weights.get(&block_hash).unwrap_or(&0);
-                    vote_weights.insert(block_hash, current_weights + 1);
-                    block_hash = block_provider
-                        .get(block_hash)?
-                        .map(|block| block.message.block.parent_root)
-                        .ok_or_else(|| anyhow!("Block not found for block parent: {block_hash}"))?;
+        for attestation in attestations {
+            let attestation = attestation?;
+            let mut current_root = attestation.message.data.head.root;
+
+            while let Some(block) = block_provider.get(current_root)? {
+                let block = block.message.block;
+
+                if block.slot <= start_slot {
+                    break;
                 }
+
+                *weights.entry(current_root).or_insert(0) += 1;
+
+                current_root = block.parent_root;
             }
         }
 
         // Identify the children of each block
-        let children_map = block_provider.get_children_map(min_score, &vote_weights)?;
+        let children_map = block_provider.get_children_map(min_score, &weights)?;
 
         // Start at the root (latest justified hash or genesis) and repeatedly
         // choose the child with the most latest votes, tiebreaking by slot then hash
-        let mut current_root = root;
+        let mut head = root;
 
-        while let Some(children) = children_map.get(&current_root) {
-            current_root = *children
+        while let Some(children) = children_map.get(&head) {
+            head = *children
                 .iter()
                 .max_by_key(|child_hash| {
-                    let vote_weight = vote_weights.get(*child_hash).unwrap_or(&0);
+                    let vote_weight = weights.get(*child_hash).unwrap_or(&0);
                     let slot = block_provider
                         .get(**child_hash)
                         .map(|maybe_block| match maybe_block {
@@ -169,10 +160,10 @@ impl Store {
                         .unwrap_or(0);
                     (*vote_weight, slot, *(*child_hash))
                 })
-                .ok_or_else(|| anyhow!("No children found for current root: {current_root}"))?;
+                .ok_or_else(|| anyhow!("No children found for current root: {head}"))?;
         }
 
-        Ok(current_root)
+        Ok(head)
     }
 
     pub async fn get_block_id_by_slot(&self, slot: u64) -> anyhow::Result<B256> {

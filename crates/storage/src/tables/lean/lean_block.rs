@@ -97,17 +97,21 @@ impl LeanBlockTable {
 
         for entry in table.iter()? {
             let (hash_entry, block_entry) = entry?;
-            let hash: B256 = hash_entry.value();
+            let root: B256 = hash_entry.value();
             let block = block_entry.value().message.block;
 
-            if block.parent_root != B256::ZERO
-                && *attestation_weights.get(&hash).unwrap_or(&0) >= min_score
-            {
-                children_map
-                    .entry(block.parent_root)
-                    .or_default()
-                    .push(hash);
+            if block.parent_root == B256::ZERO {
+                continue;
             }
+
+            if min_score > 0 && attestation_weights.get(&root).unwrap_or(&0) < &min_score {
+                continue;
+            }
+
+            children_map
+                .entry(block.parent_root)
+                .or_default()
+                .push(root);
         }
         Ok(children_map)
     }
