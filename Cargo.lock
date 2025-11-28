@@ -5438,6 +5438,7 @@ dependencies = [
  "ream-fork-choice-lean",
  "ream-metrics",
  "ream-network-spec",
+ "ream-network-state-lean",
  "ream-post-quantum-crypto",
  "ream-storage",
  "ream-sync",
