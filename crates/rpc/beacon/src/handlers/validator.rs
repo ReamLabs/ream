@@ -531,7 +531,7 @@ pub async fn post_aggregate_and_proofs_v2(
 
         let committee = state
             .get_beacon_committee(attestation.data.slot, attestation.data.index)
-            .map_err(|_| ApiError::InternalError("Failed due to internal error".to_string()))?;
+            .map_err(|e| ApiError::InternalError(format!("Failed due to internal error: {e}")))?;
 
         if !committee.contains(&(aggregator_index as u64)) {
             return Err(ApiError::BadRequest(
@@ -550,7 +550,7 @@ pub async fn post_aggregate_and_proofs_v2(
                 &aggregator.public_key,
                 aggregator_selection_signing_root.as_ref(),
             )
-            .map_err(|_| ApiError::InternalError("Failed due to internal error".to_string()))?
+            .map_err(|e| ApiError::InternalError(format!("Failed due to internal error: {e}")))?
         {
             return Err(ApiError::BadRequest(
                 "Aggregator selection proof is not valid".to_string(),
@@ -581,7 +581,7 @@ pub async fn post_aggregate_and_proofs_v2(
                 committee_pub_keys,
                 aggregate_signature_signing_root.as_ref(),
             )
-            .map_err(|_| ApiError::InternalError("Failed due to internal error".to_string()))?
+            .map_err(|e| ApiError::InternalError(format!("Failed due to internal error: {e}")))?
         {
             return Err(ApiError::BadRequest(
                 "Aggregated signature verification failed".to_string(),
