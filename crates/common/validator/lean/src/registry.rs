@@ -48,7 +48,7 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
 
         validator_keystores.push(ValidatorKeystore {
             index: *ream_validator_index,
-            public_key: validator.public_key.clone(),
+            public_key: validator.public_key,
             private_key,
         });
         path.pop();

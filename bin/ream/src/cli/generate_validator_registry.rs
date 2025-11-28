@@ -8,9 +8,9 @@ use anyhow::ensure;
 use clap::Parser;
 use rand::rng;
 use ream_keystore::lean_keystore::{
-    ValidatorKeysManifest, ValidatorKeystoreRaw, ValidatorRegistry,
+    ConfigFile, ValidatorKeysManifest, ValidatorKeystoreRaw, ValidatorRegistry,
 };
-use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
+use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, public_key::PublicKey};
 
 const NUM_ACTIVE_EPOCHS: u64 = 262144;
 
@@ -60,11 +60,13 @@ pub fn run_generate_validator_registry(
     path.push("hash-sig-keys");
     create_dir_all(&path)?;
     let mut validators: Vec<ValidatorKeystoreRaw> = Vec::new();
+    let mut genesis_validators: Vec<PublicKey> = vec![];
     for i in 0..(keystore_config.number_of_nodes * keystore_config.number_of_validators_per_node) {
         let (public_key, private_key) =
             PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
+        genesis_validators.push(public_key);
 
-        let filename = format!("validator_{i}_sk.json");
+        let filename: String = format!("validator_{i}_sk.json");
         path.push(&filename);
         fs::write(&path, serde_json::to_string(&private_key.inner)?)?;
         path.pop();
@@ -78,7 +80,7 @@ pub fn run_generate_validator_registry(
 
     path.push("validator-keys-manifest.yaml");
     fs::write(
-        path,
+        &path,
         serde_yaml::to_string(&ValidatorKeysManifest {
             key_scheme: "SIGTopLevelTargetSumLifetime32Dim64Base8".to_string(),
             hash_function: "Poseidon2".to_string(),
@@ -88,6 +90,18 @@ pub fn run_generate_validator_registry(
             num_active_epochs: NUM_ACTIVE_EPOCHS,
             num_validators: validators.len() as u64,
             validators,
+        })?,
+    )?;
+
+    path.pop();
+    path.pop();
+    path.push("config.yaml");
+    fs::write(
+        &path,
+        serde_yaml::to_string(&ConfigFile {
+            genesis_time: 1704085200,
+            num_validators: genesis_validators.len() as u64,
+            genesis_validators,
         })?,
     )?;
 
