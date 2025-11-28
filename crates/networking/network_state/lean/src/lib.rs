@@ -33,4 +33,12 @@ impl NetworkState {
                 cached_peer.state = state;
             });
     }
+
+    pub fn connected_peers(&self) -> usize {
+        self.peer_table
+            .lock()
+            .values()
+            .filter(|peer| matches!(peer.state, ConnectionState::Connected))
+            .count()
+    }
 }
