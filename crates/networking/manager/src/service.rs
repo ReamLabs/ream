@@ -59,6 +59,7 @@ impl NetworkManagerService {
         ream_db: BeaconDB,
         ream_dir: PathBuf,
         operation_pool: Arc<OperationPool>,
+        event_sender: tokio::sync::broadcast::Sender<ream_api_types_beacon::events::BeaconEvent>,
     ) -> anyhow::Result<Self> {
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
             config.socket_address,
@@ -102,6 +103,7 @@ impl NetworkManagerService {
             ream_db.clone(),
             operation_pool,
             execution_engine,
+            Some(event_sender),
         ));
         let status = beacon_chain.build_status_request().await?;
 

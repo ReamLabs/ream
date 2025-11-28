@@ -7,6 +7,7 @@ use crate::handlers::{
         get_block_root, get_genesis, post_sync_committee_rewards,
     },
     committee::get_committees,
+    events::get_events,
     header::{get_headers, get_headers_from_block},
     light_client::{
         get_light_client_bootstrap, get_light_client_finality_update,
@@ -32,6 +33,7 @@ use crate::handlers::{
 /// Creates and returns all `/beacon` routes.
 pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
     cfg.service(get_blob_sidecars)
+        .service(get_events)
         .service(get_block_rewards)
         .service(get_block_root)
         .service(get_committees)
