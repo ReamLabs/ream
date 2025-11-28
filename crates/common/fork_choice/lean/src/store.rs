@@ -281,55 +281,24 @@ impl Store {
 
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
-        let (
-            latest_known_attestations,
-            latest_justified_provider,
-            states,
-            head_provider,
-            latest_finalized_provider,
-            block_provider,
-        ) = {
+        let (latest_known_attestations, latest_justified_provider, head_provider, block_provider) = {
             let db = self.store.lock().await;
             (
                 db.latest_known_attestations_provider()
                     .get_all_attestations()?,
                 db.latest_justified_provider(),
-                db.state_provider(),
                 db.head_provider(),
-                db.latest_finalized_provider(),
                 db.block_provider(),
             )
-        };
-        let mut latest_justified: Option<Checkpoint> = None;
-
-        for state in states.iter_values()? {
-            let state = state?;
-
-            match &latest_justified {
-                Some(current) if current.slot >= state.latest_justified.slot => {}
-                _ => {
-                    latest_justified = Some(state.latest_justified);
-                }
-            }
-        }
-
-        let latest_justified = match latest_justified {
-            Some(checkpoint) => checkpoint,
-            None => latest_justified_provider.get()?,
         };
 
         let new_head = self
             .compute_lmd_ghost_head(
                 latest_known_attestations.into_values().map(Ok),
-                latest_justified.root,
+                latest_justified_provider.get()?.root,
                 0,
             )
             .await?;
-
-        let latest_finalized = match states.get(new_head)? {
-            Some(state) => state.latest_finalized,
-            None => latest_finalized_provider.get()?,
-        };
 
         set_int_gauge_vec(
             &HEAD_SLOT,
@@ -341,11 +310,6 @@ impl Store {
                 .slot as i64,
             &[],
         );
-        set_int_gauge_vec(&JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
-        set_int_gauge_vec(&FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
-        set_int_gauge_vec(&LATEST_JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
-        set_int_gauge_vec(&LATEST_FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
-
         let head_block = block_provider
             .get(new_head)?
             .ok_or(anyhow!("Failed to get head block"))?;
@@ -354,9 +318,6 @@ impl Store {
             slot: head_block.message.block.slot,
         };
         head_provider.insert(new_head)?;
-        latest_justified_provider.insert(latest_justified)?;
-        latest_finalized_provider.insert(latest_finalized)?;
-        *self.network_state.finalized_checkpoint.write() = latest_finalized;
 
         Ok(())
     }
@@ -545,9 +506,14 @@ impl Store {
     ) -> anyhow::Result<()> {
         let block_processing_timer = start_timer(&FORK_CHOICE_BLOCK_PROCESSING_TIME, &[]);
 
-        let (state_provider, block_provider) = {
+        let (state_provider, block_provider, latest_justified_provider, latest_finalized_provider) = {
             let db = self.store.lock().await;
-            (db.state_provider(), db.block_provider())
+            (
+                db.state_provider(),
+                db.block_provider(),
+                db.latest_justified_provider(),
+                db.latest_finalized_provider(),
+            )
         };
         let block = &signed_block_with_attestation.message.block;
         let signatures = &signed_block_with_attestation.signature;
@@ -567,8 +533,30 @@ impl Store {
         signed_block_with_attestation.verify_signatures(&parent_state)?;
         parent_state.state_transition(block, true)?;
 
+        let latest_justified =
+            if parent_state.latest_justified.slot > latest_justified_provider.get()?.slot {
+                parent_state.latest_justified
+            } else {
+                latest_justified_provider.get()?
+            };
+
+        let latest_finalized =
+            if parent_state.latest_finalized.slot > latest_finalized_provider.get()?.slot {
+                parent_state.latest_finalized
+            } else {
+                latest_finalized_provider.get()?
+            };
+
+        set_int_gauge_vec(&JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
+        set_int_gauge_vec(&FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
+        set_int_gauge_vec(&LATEST_JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
+        set_int_gauge_vec(&LATEST_FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
+
         block_provider.insert(block_root, signed_block_with_attestation.clone())?;
         state_provider.insert(block_root, parent_state)?;
+        latest_justified_provider.insert(latest_justified)?;
+        latest_finalized_provider.insert(latest_finalized)?;
+        *self.network_state.finalized_checkpoint.write() = latest_finalized;
 
         for (attestation, signature) in signed_block_with_attestation
             .message
