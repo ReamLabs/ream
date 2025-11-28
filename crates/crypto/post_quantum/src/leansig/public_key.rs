@@ -1,8 +1,8 @@
-use alloy_primitives::{Bytes, FixedBytes, hex};
+use alloy_primitives::{Bytes, FixedBytes};
 use anyhow::anyhow;
 use bincode::{self};
 use leansig::signature::SignatureScheme;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
@@ -27,9 +27,23 @@ pub type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
 ///
 /// NOTE 2: We might use caching here (e.g., `OnceCell`) if serialization/deserialization becomes a
 /// bottleneck.
-#[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default, Eq, Hash)]
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Encode,
+    Decode,
+    TreeHash,
+    Default,
+    Eq,
+    Hash,
+    Copy,
+    Deserialize,
+    Serialize,
+)]
+#[serde(transparent)]
 pub struct PublicKey {
-    inner: FixedBytes<52>,
+    pub inner: FixedBytes<52>,
 }
 
 impl From<&[u8]> for PublicKey {
@@ -67,28 +81,5 @@ impl PublicKey {
         bincode::serde::decode_from_slice(&self.inner.0, BINCODE_CONFIG)
             .map(|(value, _)| value)
             .map_err(|err| anyhow!("Failed to decode public key: {err}"))
-    }
-}
-
-impl Serialize for PublicKey {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let val = format!("0x{}", hex::encode(self.inner.iter().as_slice()));
-        serializer.serialize_str(&val)
-    }
-}
-
-impl<'de> Deserialize<'de> for PublicKey {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let result: String = Deserialize::deserialize(deserializer)?;
-        let result = hex::decode(&result).map_err(serde::de::Error::custom)?;
-        Ok(Self {
-            inner: FixedBytes::from_slice(&result),
-        })
     }
 }

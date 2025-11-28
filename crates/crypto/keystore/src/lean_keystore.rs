@@ -39,3 +39,11 @@ pub struct ValidatorRegistry {
     #[serde(flatten)]
     pub nodes: HashMap<String, Vec<u64>>,
 }
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "UPPERCASE")]
+pub struct ConfigFile {
+    pub genesis_time: u64,
+    pub num_validators: u64,
+    pub genesis_validators: Vec<PublicKey>,
+}
