@@ -43,7 +43,7 @@ mod test {
         let public_keys_1 = (0..3)
             .map(|index| Validator {
                 public_key: PublicKey::new(FixedBytes::from_slice(&[index + 1; 52])),
-                index: 0,
+                index: index as u64,
             })
             .collect::<Vec<_>>();
 
@@ -54,7 +54,7 @@ mod test {
         let public_keys_2 = (0..3)
             .map(|index| Validator {
                 public_key: PublicKey::new(FixedBytes::from_slice(&[index + 10; 52])),
-                index: 0,
+                index: index as u64,
             })
             .collect::<Vec<_>>();
 
@@ -66,15 +66,15 @@ mod test {
 
         assert_eq!(
             block_1.tree_hash_root().encode_hex(),
-            "4c0bcc4750b71818224a826cd59f8bcb75ae2920eb3e75b4097b818be6d1049a"
+            "cc03f11dd80dd79a4add86265fad0a141d0a553812d43b8f2c03aa43e4b002e3"
         );
         assert_eq!(
             block_2.tree_hash_root().encode_hex(),
-            "639b6162e6b432653a77a64b678717e7634428eda88ad6ccb1862e6397c0c47b"
+            "6bd5347aa1397c63ed8558079fdd3042112a5f4258066e3a659a659ff75ba14f"
         );
         assert_eq!(
             block_3.tree_hash_root().encode_hex(),
-            "6593976e31c915b5d534e2ee6172652aed7690be24777947de39c726aa2af59e"
+            "ce48a709189aa2b23b6858800996176dc13eb49c0c95d717c39e60042de1ac91"
         );
     }
 }
