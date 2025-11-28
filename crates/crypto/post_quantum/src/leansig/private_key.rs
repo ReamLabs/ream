@@ -1,32 +1,25 @@
 use std::{fmt, fmt::Debug, ops::Range};
 
-use alloy_primitives::{Bytes, hex};
-use bincode::{self};
+use alloy_primitives::hex::ToHexExt;
 use leansig::{
     MESSAGE_LENGTH,
+    serialization::Serializable,
     signature::{SignatureScheme, SignatureSchemeSecretKey},
 };
 use rand::Rng;
-use serde::{Deserialize, Deserializer, Serialize};
 
-use super::{BINCODE_CONFIG, errors::SignatureError};
-use crate::leansig::{HashSigScheme, public_key::PublicKey, signature::Signature};
+use super::errors::LeanSigError;
+use crate::leansig::{LeanSigScheme, public_key::PublicKey, signature::Signature};
 
-pub type HashSigPrivateKey = <HashSigScheme as SignatureScheme>::SecretKey;
+pub type LeanSigPrivateKey = <LeanSigScheme as SignatureScheme>::SecretKey;
 
 pub struct PrivateKey {
-    pub inner: HashSigPrivateKey,
+    pub inner: LeanSigPrivateKey,
 }
 
 impl PrivateKey {
-    pub fn new(inner: HashSigPrivateKey) -> Self {
+    pub fn new(inner: LeanSigPrivateKey) -> Self {
         Self { inner }
-    }
-
-    pub fn to_bytes(&self) -> Bytes {
-        bincode::serde::encode_to_vec(&self.inner, BINCODE_CONFIG)
-            .expect("Failed to serialize hash sig public key")
-            .into()
     }
 
     pub fn generate_key_pair<R: Rng>(
@@ -35,10 +28,11 @@ impl PrivateKey {
         num_active_epochs: usize,
     ) -> (PublicKey, Self) {
         let (public_key, private_key) =
-            <HashSigScheme as SignatureScheme>::key_gen(rng, activation_epoch, num_active_epochs);
+            <LeanSigScheme as SignatureScheme>::key_gen(rng, activation_epoch, num_active_epochs);
 
         (
-            PublicKey::from_hash_sig_public_key(public_key),
+            PublicKey::from_lean_sig(public_key)
+                .expect("We are generating this internally so it shouldn't fail"),
             Self::new(private_key),
         )
     }
@@ -70,7 +64,7 @@ impl PrivateKey {
         &self,
         message: &[u8; MESSAGE_LENGTH],
         epoch: u32,
-    ) -> anyhow::Result<Signature, SignatureError> {
+    ) -> anyhow::Result<Signature, LeanSigError> {
         let activation_interval = self.get_activation_interval();
 
         assert!(
@@ -78,47 +72,22 @@ impl PrivateKey {
             "Epoch {epoch} is outside the activation interval {activation_interval:?}",
         );
 
-        let signature = <HashSigScheme as SignatureScheme>::sign(&self.inner, epoch, message)
-            .map_err(SignatureError::SigningFailed)?;
+        let signature = <LeanSigScheme as SignatureScheme>::sign(&self.inner, epoch, message)
+            .map_err(LeanSigError::SigningFailed)?;
 
-        Signature::from_hash_sig_public_key(signature)
+        Signature::from_lean_sig(signature)
     }
 }
 
 impl Debug for PrivateKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.to_bytes())
+        write!(f, "{}", self.inner.to_bytes().encode_hex())
     }
 }
 
 impl PartialEq for PrivateKey {
     fn eq(&self, other: &Self) -> bool {
-        self.to_bytes() == other.to_bytes()
-    }
-}
-
-impl Serialize for PrivateKey {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let serialized = bincode::serde::encode_to_vec(&self.inner, BINCODE_CONFIG)
-            .map_err(serde::ser::Error::custom)?;
-        serializer.serialize_str(&format!("0x{}", &hex::encode(serialized)))
-    }
-}
-
-impl<'de> Deserialize<'de> for PrivateKey {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let result: String = Deserialize::deserialize(deserializer)?;
-        let bytes = hex::decode(&result).map_err(serde::de::Error::custom)?;
-        let bincode = bincode::serde::decode_from_slice(&bytes, BINCODE_CONFIG)
-            .map(|(value, _)| value)
-            .expect("Should be able to decode bytes");
-        Ok(Self { inner: bincode })
+        self.inner.to_bytes() == other.inner.to_bytes()
     }
 }
 
@@ -139,7 +108,7 @@ mod tests {
 
         let epoch = 5;
 
-        // Create a test message (32 bytes as required by hashsig)
+        // Create a test message (32 bytes as required by leansig)
         let message = [0u8; 32];
 
         // Sign the message

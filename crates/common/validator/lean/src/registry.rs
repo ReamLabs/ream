@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use anyhow::anyhow;
 use ream_keystore::lean_keystore::{ValidatorKeysManifest, ValidatorKeystore, ValidatorRegistry};
-use ream_post_quantum_crypto::leansig::private_key::{HashSigPrivateKey, PrivateKey};
+use ream_post_quantum_crypto::leansig::private_key::{LeanSigPrivateKey, PrivateKey};
 
 /// Load validator registry from YAML file for a specific node
 ///
@@ -42,7 +42,7 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
         let validator_private_key_json = fs::read_to_string(&path)
             .map_err(|err| anyhow!("Failed to read validator private key json file {err}",))?;
         let hash_sig_private_key =
-            serde_json::from_str::<HashSigPrivateKey>(&validator_private_key_json)
+            serde_json::from_str::<LeanSigPrivateKey>(&validator_private_key_json)
                 .map_err(|err| anyhow!("Failed to parse validator private key json: {err}"))?;
         let private_key = PrivateKey::new(hash_sig_private_key);
 

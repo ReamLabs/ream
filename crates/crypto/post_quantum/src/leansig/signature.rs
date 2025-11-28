@@ -1,15 +1,13 @@
 use alloy_primitives::FixedBytes;
-use leansig::{MESSAGE_LENGTH, signature::SignatureScheme};
+use anyhow::anyhow;
+use leansig::{MESSAGE_LENGTH, serialization::Serializable, signature::SignatureScheme};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
-use super::{BINCODE_CONFIG, errors::SignatureError};
-use crate::leansig::{HashSigScheme, public_key::PublicKey};
+use crate::leansig::{LeanSigScheme, SIGNATURE_SIZE, errors::LeanSigError, public_key::PublicKey};
 
-type HashSigSignature = <HashSigScheme as SignatureScheme>::Signature;
-
-const SIGNATURE_SIZE: usize = 3116;
+type LeanSigSignature = <LeanSigScheme as SignatureScheme>::Signature;
 
 /// Wrapper around a fixed-size serialized hash-based signature.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Copy)]
@@ -34,34 +32,15 @@ impl Signature {
         Self::new(Default::default())
     }
 
-    /// Create a new `Signature` wrapper from the original `GeneralizedXMSSSignature` type
-    /// with serialization.
-    pub fn from_hash_sig_public_key(
-        hash_sig_signature: HashSigSignature,
-    ) -> Result<Self, SignatureError> {
-        let serialized = bincode::serde::encode_to_vec(&hash_sig_signature, BINCODE_CONFIG)
-            .map_err(SignatureError::SignatureEncodeFailed)?;
-
-        if serialized.len() > SIGNATURE_SIZE {
-            return Err(SignatureError::InvalidSignatureLength(serialized.len()));
-        }
-        let mut buffer = [0u8; SIGNATURE_SIZE];
-        buffer[..serialized.len()].copy_from_slice(&serialized);
-
+    pub fn from_lean_sig(signature: LeanSigSignature) -> Result<Self, LeanSigError> {
         Ok(Self {
-            inner: FixedBytes::from(buffer),
+            inner: FixedBytes::try_from(signature.to_bytes().as_slice())?,
         })
     }
 
-    /// Convert back to the original `GeneralizedXMSSSignature` type from the hashsig crate.
-    pub fn to_hash_sig_signature(&self) -> Result<HashSigSignature, SignatureError> {
-        if self.inner.len() != SIGNATURE_SIZE {
-            return Err(SignatureError::InvalidSignatureLength(self.inner.len()));
-        }
-
-        bincode::serde::decode_from_slice(&self.inner[..], BINCODE_CONFIG)
-            .map(|(signature, _)| signature)
-            .map_err(SignatureError::SignatureDecodeFailed)
+    pub fn as_lean_sig(&self) -> anyhow::Result<LeanSigSignature> {
+        LeanSigSignature::from_bytes(self.inner.as_slice())
+            .map_err(|err| anyhow!("Failed to decode LeanSigSignature from SSZ: {err:?}"))
     }
 
     pub fn verify(
@@ -70,11 +49,11 @@ impl Signature {
         epoch: u32,
         message: &[u8; MESSAGE_LENGTH],
     ) -> anyhow::Result<bool> {
-        Ok(<HashSigScheme as SignatureScheme>::verify(
-            &public_key.to_hash_sig_public_key()?,
+        Ok(<LeanSigScheme as SignatureScheme>::verify(
+            &public_key.as_lean_sig()?,
             epoch,
             message,
-            &self.to_hash_sig_signature()?,
+            &self.as_lean_sig()?,
         ))
     }
 }
@@ -96,7 +75,7 @@ mod tests {
 
         let epoch = 5;
 
-        // Create a test message (32 bytes as required by hashsig)
+        // Create a test message (32 bytes as required by leansig)
         let message = [0u8; 32];
 
         // Sign the message
@@ -105,11 +84,11 @@ mod tests {
         assert!(result.is_ok(), "Signing should succeed");
         let signature = result.unwrap();
 
-        // convert to hashsig signature
-        let hash_sig_signature = signature.to_hash_sig_signature().unwrap();
+        // convert to leansig signature
+        let hash_sig_signature = signature.as_lean_sig().unwrap();
 
         // convert back to signature
-        let signature_returned = Signature::from_hash_sig_public_key(hash_sig_signature).unwrap();
+        let signature_returned = Signature::from_lean_sig(hash_sig_signature).unwrap();
 
         // verify roundtrip
         assert_eq!(signature, signature_returned);

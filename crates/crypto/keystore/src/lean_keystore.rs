@@ -25,8 +25,7 @@ pub struct ValidatorKeystoreRaw {
     pub privkey_file: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, PartialEq)]
 pub struct ValidatorKeystore {
     pub index: u64,
     pub public_key: PublicKey,
