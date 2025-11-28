@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use alloy_primitives::{FixedBytes, hex::FromHex};
+use alloy_primitives::FixedBytes;
 use serde::{Deserialize, Deserializer};
 use tracing::warn;
 
@@ -102,14 +102,16 @@ impl LeanNetworkSpec {
             .expect("System time is before UNIX epoch")
             .as_secs();
 
+        let config: &str = include_str!("../../../../../bin/ream/assets/lean/config.yaml");
+        let config = serde_yaml::from_str::<LeanNetworkSpec>(config)
+            .expect("Our sample config should always be correct");
+
         Self {
             genesis_time: current_timestamp + 10,
             justification_lookback_slots: 3,
             seconds_per_slot: 4,
-            num_validators: 3,
-            validator_public_keys: vec![FixedBytes::from_hex("0x77c50d29d6cdab52b0a6f54329d12047fa62bd7a64324966e9785c3971b24766a5183a4d4799a72e97c7b55b9a3264020d8eb51a").expect("These bytes are the correct length"),
-            FixedBytes::from_hex("0xb05a754cded564006863110f946ad3130310c376c365f17144240c4388d0106bef07d81d5bbc5f62cbdc3f1802ac226af74ae05e").expect("These bytes are the correct length"),
-            FixedBytes::from_hex("0x05fed65f19de962b7a3f4402c288b54e0018d65885263415068cd30adf05440aa978fa43ea20502937f3ce7a54e50a2f51b8fa19").expect("These bytes are the correct length"),],
+            num_validators: config.num_validators,
+            validator_public_keys: config.validator_public_keys,
             devnet: Devnet::One,
             discarded_values: DiscardUnknown,
         }

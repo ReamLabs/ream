@@ -104,7 +104,7 @@ mod tests {
             "5",
             "lean_node",
             "--network",
-            "./assets/lean/sample_spec.yml",
+            "./assets/lean/config.yaml",
             "--validator-registry-path",
             "./assets/lean/validator_registry.yml",
             // Test for alias of `private-key-path`
@@ -123,7 +123,6 @@ mod tests {
 
                 // Verify the network spec was loaded from the YAML file (sample_spec.yml)
                 assert_eq!(config.network.seconds_per_slot, 4);
-                assert_eq!(config.network.genesis_time, 1704085200);
                 assert_eq!(config.network.justification_lookback_slots, 3);
                 // Will be set later in main.rs
                 assert_eq!(config.network.num_validators, 3);
