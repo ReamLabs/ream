@@ -18,7 +18,9 @@ use ream_api_types_beacon::{
 use ream_api_types_common::id::ID;
 use ream_bls::{BLSSignature, PublicKey, traits::Signable};
 use ream_consensus_beacon::{
-    electra::beacon_state::BeaconState, single_attestation::SingleAttestation,
+    contribution_and_proof::{ContributionAndProof, SignedContributionAndProof},
+    electra::beacon_state::BeaconState,
+    single_attestation::SingleAttestation,
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
@@ -41,9 +43,7 @@ use crate::{
     beacon_api_client::BeaconApiClient,
     block::{sign_beacon_block, sign_blinded_beacon_block},
     constants::SYNC_COMMITTEE_SUBNET_COUNT,
-    contribution_and_proof::{
-        ContributionAndProof, SignedContributionAndProof, get_contribution_and_proof_signature,
-    },
+    contribution_and_proof::get_contribution_and_proof_signature,
     randao::sign_randao_reveal,
     sync_committee::{get_sync_committee_selection_proof, is_sync_committee_aggregator},
     voluntary_exit::sign_voluntary_exit,

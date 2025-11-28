@@ -9,12 +9,16 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+eventsource-client = ["dep:eventsource-client"]
+
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
 ethereum_serde_utils.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
+eventsource-client = { workspace = true, optional = true }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

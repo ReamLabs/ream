@@ -1,7 +1,8 @@
 use libp2p::gossipsub::TopicHash;
 use ream_consensus_beacon::{
     attester_slashing::AttesterSlashing, blob_sidecar::BlobSidecar,
-    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_block::SignedBeaconBlock,
+    bls_to_execution_change::SignedBLSToExecutionChange,
+    contribution_and_proof::SignedContributionAndProof, electra::beacon_block::SignedBeaconBlock,
     proposer_slashing::ProposerSlashing, single_attestation::SingleAttestation,
     voluntary_exit::SignedVoluntaryExit,
 };
@@ -11,8 +12,7 @@ use ream_light_client::{
 };
 use ream_network_spec::networks::beacon_network_spec;
 use ream_validator_beacon::{
-    aggregate_and_proof::AggregateAndProof, contribution_and_proof::SignedContributionAndProof,
-    sync_committee::SyncCommitteeMessage,
+    aggregate_and_proof::AggregateAndProof, sync_committee::SyncCommitteeMessage,
 };
 use ssz::Decode;
 

@@ -7,6 +7,7 @@ use ream_bls::{
     traits::{Aggregatable, Signable},
 };
 use ream_consensus_beacon::{
+    contribution_and_proof::SyncCommitteeContribution,
     electra::{beacon_block::BeaconBlock, beacon_state::BeaconState},
     sync_aggregate::SyncAggregate,
 };
@@ -24,7 +25,6 @@ use tree_hash_derive::TreeHash;
 
 use crate::{
     constants::{SYNC_COMMITTEE_SUBNET_COUNT, TARGET_AGGREGATORS_PER_COMMITTEE},
-    contribution_and_proof::SyncCommitteeContribution,
     hash_signature_prefix_to_u64,
 };
 
