@@ -3532,7 +3532,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 [[package]]
 name = "leansig"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanSig.git?rev=397e7cc9bf405d788bfd34cee9fe8b427a464074#397e7cc9bf405d788bfd34cee9fe8b427a464074"
+source = "git+https://github.com/leanEthereum/leanSig.git?rev=f10dcbefac2502d356d93f686e8b4ecd8dc8840a#f10dcbefac2502d356d93f686e8b4ecd8dc8840a"
 dependencies = [
  "dashmap",
  "ethereum_ssz",
