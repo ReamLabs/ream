@@ -1,0 +1,3 @@
+Cargo.lock linguist-generated=true
+book/cli/**/*.md linguist-generated=true
+book/cli/cli.md -linguist-generated
