@@ -12,7 +12,7 @@ pub fn get_v1_routes(config: &mut ServiceConfig) {
             .configure(beacon::register_beacon_routes)
             .configure(node::register_node_routes)
             .configure(config::register_config_routes)
-            .configure(validator::register_validator_routes)
+            .configure(validator::register_validator_routes_v1)
             .configure(debug::register_debug_routes_v1),
     );
 }
@@ -21,7 +21,8 @@ pub fn get_v2_routes(config: &mut ServiceConfig) {
     config.service(
         scope("/eth/v2")
             .configure(debug::register_debug_routes_v2)
-            .configure(beacon::register_beacon_routes_v2),
+            .configure(beacon::register_beacon_routes_v2)
+            .configure(validator::register_validator_routes_v2),
     );
 }
 

@@ -12,17 +12,23 @@ use ream_api_types_beacon::{
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_bls::PublicKey;
+use ream_bls::{PublicKey, traits::Verifiable};
 use ream_consensus_beacon::{
     beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState,
     sync_committe_selection::SyncCommitteeSelection,
 };
 use ream_consensus_misc::{
-    attestation_data::AttestationData, constants::beacon::SLOTS_PER_EPOCH, validator::Validator,
+    attestation_data::AttestationData,
+    constants::beacon::{DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, SLOTS_PER_EPOCH},
+    misc::{compute_epoch_at_slot, compute_signing_root},
+    validator::Validator,
 };
 use ream_fork_choice_beacon::store::Store;
 use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
+use ream_validator_beacon::{
+    aggregate_and_proof::SignedAggregateAndProof, constants::DOMAIN_SELECTION_PROOF,
+};
 use serde::Serialize;
 
 use super::state::get_state_from_id;
@@ -503,4 +509,115 @@ pub async fn post_beacon_committee_selections(
     _selections: Json<Vec<BeaconCommitteeSelection>>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::NotImplemented())
+}
+
+#[post("/validator/aggregate_and_proofs")]
+pub async fn post_aggregate_and_proofs_v2(
+    db: Data<BeaconDB>,
+    aggregates: Json<Vec<SignedAggregateAndProof>>,
+) -> Result<impl Responder, ApiError> {
+    for signed_aggregate in aggregates.into_inner() {
+        let aggregate_and_proof = signed_aggregate.message;
+        let attestation = aggregate_and_proof.aggregate.clone();
+        let slot = attestation.data.slot;
+        let state = get_state_from_id(ID::Slot(slot), &db).await?;
+
+        let aggregator_index = aggregate_and_proof.aggregator_index as usize;
+
+        let aggregator = state
+            .validators
+            .get(aggregator_index)
+            .ok_or_else(|| ApiError::NotFound("Aggregator not found".to_string()))?;
+
+        let committee = state
+            .get_beacon_committee(attestation.data.slot, attestation.data.index)
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?;
+
+        if !committee.contains(&(aggregator_index as u64)) {
+            return Err(ApiError::BadRequest(
+                "Aggregator not part of the committee".to_string(),
+            ));
+        }
+
+        let aggregator_selection_domain =
+            state.get_domain(DOMAIN_SELECTION_PROOF, Some(compute_epoch_at_slot(slot)));
+        let aggregator_selection_signing_root =
+            compute_signing_root(attestation.data.slot, aggregator_selection_domain);
+
+        if !aggregate_and_proof
+            .selection_proof
+            .verify(
+                &aggregator.public_key,
+                aggregator_selection_signing_root.as_ref(),
+            )
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?
+        {
+            return Err(ApiError::BadRequest(
+                "Aggregator selection proof is not valid".to_string(),
+            ));
+        }
+
+        let committee_pub_keys: Vec<&PublicKey> = committee
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| attestation.aggregation_bits.get(*i).unwrap_or(false))
+            .map(|(i, _)| &state.validators[committee[i] as usize].public_key)
+            .collect();
+
+        if committee_pub_keys.is_empty() {
+            return Err(ApiError::BadRequest(
+                "No aggregation bits set in the attestation".into(),
+            ));
+        }
+
+        let aggregate_signature_domain =
+            state.get_domain(DOMAIN_BEACON_ATTESTER, Some(attestation.data.target.epoch));
+        let aggregate_signature_signing_root =
+            compute_signing_root(&attestation.data, aggregate_signature_domain);
+
+        if !attestation
+            .signature
+            .fast_aggregate_verify(
+                committee_pub_keys,
+                aggregate_signature_signing_root.as_ref(),
+            )
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?
+        {
+            return Err(ApiError::BadRequest(
+                "Aggregated signature verification failed".to_string(),
+            ));
+        }
+
+        let aggregate_proof_domain = state.get_domain(
+            DOMAIN_AGGREGATE_AND_PROOF,
+            Some(compute_epoch_at_slot(attestation.data.slot)),
+        );
+        let aggregate_proof_signing_root =
+            compute_signing_root(aggregate_and_proof, aggregate_proof_domain);
+
+        if !signed_aggregate
+            .signature
+            .verify(
+                &aggregator.public_key,
+                aggregate_proof_signing_root.as_ref(),
+            )
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?
+        {
+            return Err(ApiError::BadRequest(
+                "Aggregate proof verification failed".to_string(),
+            ));
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "data": "success"
+    })))
 }
