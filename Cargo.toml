@@ -85,6 +85,7 @@ anyhow = "1.0.100"
 async-trait = "0.1.89"
 bip39 = { version = "2.2.0", features = ["rand"] }
 clap = "4.5.50"
+const-hex = "1.17"
 delay_map = "0.4.1"
 directories = { version = "6.0.0" }
 discv5 = { version = "0.10.2", features = ["libp2p"] }

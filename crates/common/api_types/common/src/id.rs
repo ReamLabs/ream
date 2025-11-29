@@ -37,13 +37,13 @@ impl<'de> Deserialize<'de> for ID {
             "justified" => Ok(ID::Justified),
             _ => {
                 if s.starts_with("0x") {
-                    B256::from_str(&s)
-                        .map(ID::Root)
-                        .map_err(|_| serde::de::Error::custom(format!("Invalid hex root: {s}")))
+                    B256::from_str(&s).map(ID::Root).map_err(|err| {
+                        serde::de::Error::custom(format!("Invalid hex root: {s}, error: {err}"))
+                    })
                 } else if s.chars().all(|c| c.is_ascii_digit()) {
-                    s.parse::<u64>()
-                        .map(ID::Slot)
-                        .map_err(|_| serde::de::Error::custom(format!("Invalid slot number: {s}")))
+                    s.parse::<u64>().map(ID::Slot).map_err(|err| {
+                        serde::de::Error::custom(format!("Invalid slot number: {s}, error: {err}"))
+                    })
                 } else {
                     Err(serde::de::Error::custom(format!("Invalid state ID: {s}")))
                 }

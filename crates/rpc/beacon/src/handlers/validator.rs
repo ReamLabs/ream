@@ -395,7 +395,7 @@ pub async fn post_validator_liveness(
     for validator_index_str in validator_indices {
         let validator_index: u64 = validator_index_str
             .parse()
-            .map_err(|_| ApiError::BadRequest("Invalid validator index".to_string()))?;
+            .map_err(|err| ApiError::BadRequest(format!("Invalid validator index: {err:?}")))?;
         let index = validator_index as usize;
 
         match state.validators.get(index) {
