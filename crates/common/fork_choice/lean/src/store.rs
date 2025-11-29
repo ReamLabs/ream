@@ -810,6 +810,8 @@ mod tests {
         }
     }
 
+    // BLOCK PRODUCTION TESTS
+
     /// Test basic block production by authorized proposer.
     #[tokio::test]
     async fn test_produce_block_basic() {
@@ -1015,6 +1017,162 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .tree_hash_root()
+        );
+    }
+
+    // ATTESTATION TESTS
+
+    /// Test basic attestation production.
+    #[tokio::test]
+    pub async fn test_produce_attestation_basic() {
+        let slot = 1;
+        let validator_idx = 5;
+
+        let (store, _) = sample_store(10).await;
+        let latest_justified_checkpoint = store
+            .store
+            .lock()
+            .await
+            .latest_justified_provider()
+            .get()
+            .unwrap();
+
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+
+        let attestation = Attestation {
+            validator_id: validator_idx,
+            data: attestation_data,
+        };
+        assert_eq!(attestation.validator_id, validator_idx);
+        assert_eq!(attestation.data.slot, slot);
+        assert_eq!(attestation.data.source, latest_justified_checkpoint);
+    }
+
+    /// Test that attestation references correct head.
+    #[tokio::test]
+    pub async fn test_produce_attestation_head_reference() {
+        let slot = 2;
+        let validator_idx = 8;
+
+        let (store, _) = sample_store(10).await;
+        let block_provider = store.store.lock().await.block_provider();
+
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+
+        let attestation = Attestation {
+            validator_id: validator_idx,
+            data: attestation_data,
+        };
+        let head = store.get_proposal_head(slot).await.unwrap();
+
+        assert_eq!(attestation.data.head.root, head);
+
+        let head_block = block_provider.get(head).unwrap().unwrap();
+        assert_eq!(attestation.data.head.slot, head_block.message.block.slot);
+    }
+
+    /// Test that attestation calculates target correctly.
+    #[tokio::test]
+    pub async fn test_produce_attestation_target_calculation() {
+        let slot = 3;
+        let validator_idx = 9;
+        let (store, _) = sample_store(10).await;
+
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+
+        let attestation = Attestation {
+            validator_id: validator_idx,
+            data: attestation_data,
+        };
+        let expected_target = store.get_attestation_target().await.unwrap();
+        assert_eq!(attestation.data.target.root, expected_target.root);
+        assert_eq!(attestation.data.target.slot, expected_target.slot);
+    }
+
+    /// Test attestation production for different validators in same slot.
+    #[tokio::test]
+    pub async fn test_produce_attestation_different_validators() {
+        let slot = 4;
+        let (store, _) = sample_store(10).await;
+
+        let mut attestations = Vec::new();
+        for validator_idx in 0..5 {
+            let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+
+            let attestation = Attestation {
+                validator_id: validator_idx,
+                data: attestation_data,
+            };
+
+            assert_eq!(attestation.validator_id, validator_idx);
+            assert_eq!(attestation.data.slot, slot);
+
+            attestations.push(attestation);
+        }
+        let first_attestation = &attestations[0];
+        for attestation in attestations.iter().skip(1) {
+            assert_eq!(attestation.data.head, first_attestation.data.head);
+            assert_eq!(attestation.data.target, first_attestation.data.target);
+            assert_eq!(attestation.data.source, first_attestation.data.source);
+        }
+    }
+
+    /// Test attestation production across sequential slots.
+    #[tokio::test]
+    pub async fn test_produce_attestation_sequential_slots() {
+        let validator_idx = 3;
+
+        let (store, _) = sample_store(10).await;
+        let latest_justified_provider = store.store.lock().await.latest_justified_provider();
+
+        let attestation_data_1 = store.produce_attestation_data(1).await.unwrap();
+        let attestation_1 = Attestation {
+            validator_id: validator_idx,
+            data: attestation_data_1,
+        };
+
+        let attestation_data_2 = store.produce_attestation_data(2).await.unwrap();
+
+        let attestation_2 = Attestation {
+            validator_id: validator_idx,
+            data: attestation_data_2,
+        };
+
+        assert_ne!(attestation_1.slot(), attestation_2.slot());
+        assert_eq!(attestation_1.source(), attestation_2.source());
+        assert_eq!(
+            attestation_1.source(),
+            latest_justified_provider.get().unwrap()
+        );
+    }
+
+    /// Test that attestation source uses current justified checkpoint.
+    #[tokio::test]
+    pub async fn test_produce_attestation_justification_consistency() {
+        let slot = 5;
+        let validator_idx = 2;
+
+        let (store, _) = sample_store(10).await;
+        let (latest_justified_provider, block_provider) = {
+            let db = store.store.lock().await;
+            (db.latest_justified_provider(), db.block_provider())
+        };
+
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        let attestation = Attestation {
+            validator_id: validator_idx,
+            data: attestation_data,
+        };
+
+        assert_eq!(
+            attestation.source(),
+            latest_justified_provider.get().unwrap()
+        );
+        assert!(
+            block_provider
+                .get(attestation.source().root)
+                .unwrap()
+                .is_some()
         );
     }
 }
