@@ -733,7 +733,6 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-
     use alloy_primitives::B256;
     use ream_consensus_lean::{
         attestation::{Attestation, AttestationData, SignedAttestation},
@@ -779,8 +778,8 @@ mod tests {
                 target: checkpoint,
                 source: checkpoint,
             },
-            &genesis_block,
-            &mut VariableList::default(),
+            genesis_block.clone(),
+            VariableList::default(),
         );
 
         set_lean_network_spec(LeanNetworkSpec::ephemery().into());
@@ -793,45 +792,21 @@ mod tests {
         )
     }
 
-    pub fn build_signed_attestation(
-        validator: u64,
-        slot: u64,
-        head: Option<Checkpoint>,
-        source: Option<Checkpoint>,
-        target: Option<Checkpoint>,
-    ) -> SignedAttestation {
-        let data = Attestation {
-            validator_id: validator,
-            data: AttestationData {
-                slot,
-                head: head.unwrap_or_default(),
-                target: target.unwrap_or_default(),
-                source: source.unwrap_or_default(),
-            },
-        };
-        SignedAttestation {
-            message: data,
-            signature: Signature::blank(),
-        }
-    }
-
     pub fn build_signed_block_with_attestation(
         attestation_data: AttestationData,
-        block: &Block,
-        signatures: &mut VariableList<Signature, U4096>,
+        block: Block,
+        mut signatures: VariableList<Signature, U4096>,
     ) -> SignedBlockWithAttestation {
-        let attestation = Attestation {
-            validator_id: block.proposer_index,
-            data: attestation_data,
-        };
-
         signatures.push(Signature::blank()).unwrap();
         SignedBlockWithAttestation {
             message: BlockWithAttestation {
-                block: block.clone(),
-                proposer_attestation: attestation,
+                proposer_attestation: Attestation {
+                    validator_id: block.proposer_index,
+                    data: attestation_data,
+                },
+                block,
             },
-            signature: signatures.clone(),
+            signature: signatures,
         }
     }
 
@@ -848,10 +823,8 @@ mod tests {
             (store.block_provider(), store.state_provider())
         };
 
-        let BlockWithSignatures {
-            block,
-            mut signatures,
-        } = store.produce_block_with_signatures(1, 1).await.unwrap();
+        let BlockWithSignatures { block, signatures } =
+            store.produce_block_with_signatures(1, 1).await.unwrap();
 
         assert_eq!(block.slot, 1);
         assert_eq!(block.proposer_index, 1);
@@ -860,25 +833,15 @@ mod tests {
 
         let attestation_data = store.produce_attestation_data(1).await.unwrap();
         let signed_block_with_attestation =
-            build_signed_block_with_attestation(attestation_data, &block, &mut signatures);
+            build_signed_block_with_attestation(attestation_data, block.clone(), signatures);
 
         store
             .on_block(&signed_block_with_attestation, false)
             .await
             .unwrap();
-
-        assert!(
-            block_provider
-                .get(block.tree_hash_root())
-                .unwrap()
-                .is_some()
-        );
-        assert!(
-            state_provider
-                .get(block.tree_hash_root())
-                .unwrap()
-                .is_some()
-        );
+        let block_hash = block.tree_hash_root();
+        assert!(block_provider.get(block_hash).unwrap().is_some());
+        assert!(state_provider.get(block_hash).unwrap().is_some());
     }
 
     /// Test block production fails for unauthorized proposer.
@@ -909,27 +872,37 @@ mod tests {
         let justified_checkpoint = justified_provider.get().unwrap();
         let attestation_target = store.get_attestation_target().await.unwrap();
 
-        let attestation_1 = build_signed_attestation(
-            5,
-            head_block.message.block.slot,
-            Some(Checkpoint {
-                root: head,
-                slot: head_block.message.block.slot,
-            }),
-            Some(justified_checkpoint),
-            Some(attestation_target),
-        );
+        let attestation_1 = SignedAttestation {
+            message: Attestation {
+                validator_id: 5,
+                data: AttestationData {
+                    slot: head_block.message.block.slot,
+                    head: Checkpoint {
+                        root: head,
+                        slot: head_block.message.block.slot,
+                    },
+                    target: justified_checkpoint,
+                    source: attestation_target,
+                },
+            },
+            signature: Signature::blank(),
+        };
 
-        let attestation_2 = build_signed_attestation(
-            6,
-            head_block.message.block.slot,
-            Some(Checkpoint {
-                root: head,
-                slot: head_block.message.block.slot,
-            }),
-            Some(justified_checkpoint),
-            Some(attestation_target),
-        );
+        let attestation_2 = SignedAttestation {
+            message: Attestation {
+                validator_id: 6,
+                data: AttestationData {
+                    slot: head_block.message.block.slot,
+                    head: Checkpoint {
+                        root: head,
+                        slot: head_block.message.block.slot,
+                    },
+                    target: justified_checkpoint,
+                    source: attestation_target,
+                },
+            },
+            signature: Signature::blank(),
+        };
         latest_known_attestations
             .batch_insert([(5, attestation_1), (6, attestation_2)])
             .unwrap();
@@ -950,6 +923,7 @@ mod tests {
     #[tokio::test]
     pub async fn test_produce_block_sequential_slots() {
         let (store, mut genesis_state) = sample_store(10).await;
+        let block_provider = store.store.lock().await.block_provider();
 
         genesis_state.process_slots(1).unwrap();
         let genesis_hash = store.store.lock().await.head_provider().get().unwrap();
@@ -958,6 +932,7 @@ mod tests {
             block,
             signatures: _,
         } = store.produce_block_with_signatures(1, 1).await.unwrap();
+        assert_eq!(block.slot, 1);
         assert_eq!(block.parent_root, genesis_hash);
 
         let BlockWithSignatures {
@@ -965,7 +940,9 @@ mod tests {
             signatures: _,
         } = store.produce_block_with_signatures(2, 2).await.unwrap();
 
+        assert_eq!(block.slot, 2);
         assert_eq!(block.parent_root, genesis_hash);
+        assert!(block_provider.get(genesis_hash).unwrap().is_some());
     }
 
     /// Test block production with no available attestations.
@@ -1002,35 +979,42 @@ mod tests {
         };
         let head_block = block_provider.get(head).unwrap().unwrap();
 
-        let attestation = build_signed_attestation(
-            7,
-            head_block.message.block.slot,
-            Some(Checkpoint {
-                root: head,
-                slot: head_block.message.block.slot,
-            }),
-            latest_justified_provider.get().ok(),
-            store.get_attestation_target().await.ok(),
-        );
+        let attestation = SignedAttestation {
+            message: Attestation {
+                validator_id: 7,
+                data: AttestationData {
+                    slot: head_block.message.block.slot,
+                    head: Checkpoint {
+                        root: head,
+                        slot: head_block.message.block.slot,
+                    },
+                    target: latest_justified_provider.get().unwrap(),
+                    source: store.get_attestation_target().await.unwrap(),
+                },
+            },
+            signature: Signature::blank(),
+        };
         latest_known_attestations.insert(7, attestation).unwrap();
 
-        let BlockWithSignatures {
-            block,
-            mut signatures,
-        } = store.produce_block_with_signatures(4, 4).await.unwrap();
-
-        let block_hash = block.tree_hash_root();
+        let BlockWithSignatures { block, signatures } =
+            store.produce_block_with_signatures(4, 4).await.unwrap();
 
         let attestation_data = store.produce_attestation_data(4).await.unwrap();
         let signed_block_with_attestation =
-            build_signed_block_with_attestation(attestation_data, &block, &mut signatures);
+            build_signed_block_with_attestation(attestation_data, block.clone(), signatures);
 
         store
             .on_block(&signed_block_with_attestation, false)
             .await
             .unwrap();
 
-        let latest_state = state_provider.get(block_hash).unwrap().unwrap();
-        assert_eq!(block.state_root, latest_state.tree_hash_root());
+        assert_eq!(
+            block.state_root,
+            state_provider
+                .get(block.tree_hash_root())
+                .unwrap()
+                .unwrap()
+                .tree_hash_root()
+        );
     }
 }
