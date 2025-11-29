@@ -13,16 +13,19 @@ use clap::Parser;
 use libp2p_identity::secp256k1;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use ream::cli::{
-    Cli, Commands,
-    account_manager::AccountManagerConfig,
-    beacon_node::BeaconNodeConfig,
-    generate_private_key::GeneratePrivateKeyConfig,
-    generate_validator_registry::run_generate_validator_registry,
-    import_keystores::{load_keystore_directory, load_password_from_config, process_password},
-    lean_node::LeanNodeConfig,
-    validator_node::ValidatorNodeConfig,
-    voluntary_exit::VoluntaryExitConfig,
+use ream::{
+    cli::{
+        Cli, Commands,
+        account_manager::AccountManagerConfig,
+        beacon_node::BeaconNodeConfig,
+        generate_private_key::GeneratePrivateKeyConfig,
+        generate_validator_registry::run_generate_validator_registry,
+        import_keystores::{load_keystore_directory, load_password_from_config, process_password},
+        lean_node::LeanNodeConfig,
+        validator_node::ValidatorNodeConfig,
+        voluntary_exit::VoluntaryExitConfig,
+    },
+    startup_message::startup_message,
 };
 use ream_account_manager::{message_types::MessageType, seed::derive_seed_with_user_input};
 use ream_api_types_beacon::id::ValidatorID;
@@ -92,8 +95,8 @@ fn main() {
         true => EnvFilter::builder().parse_lossy(cli.verbosity.directive()),
         false => EnvFilter::builder().parse_lossy(rust_log),
     };
-
     tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    info!("\n{}", startup_message());
 
     let executor = ReamExecutor::new().expect("unable to create executor");
     let executor_clone = executor.clone();
