@@ -29,11 +29,13 @@ impl<'de> Deserialize<'de> for ValidatorID {
         if s.starts_with("0x") {
             PublicKey::from_str(&s)
                 .map(ValidatorID::Address)
-                .map_err(|_| serde::de::Error::custom(format!("Invalid hex address: {s}")))
+                .map_err(|err| {
+                    serde::de::Error::custom(format!("Invalid hex address: {s}, error: {err}"))
+                })
         } else if s.chars().all(|c| c.is_ascii_digit()) {
-            s.parse::<u64>()
-                .map(ValidatorID::Index)
-                .map_err(|_| serde::de::Error::custom(format!("Invalid validator index: {s}")))
+            s.parse::<u64>().map(ValidatorID::Index).map_err(|err| {
+                serde::de::Error::custom(format!("Invalid validator index: {s}, error: {err}"))
+            })
         } else {
             Err(serde::de::Error::custom(format!(
                 "Invalid validator ID: {s}"

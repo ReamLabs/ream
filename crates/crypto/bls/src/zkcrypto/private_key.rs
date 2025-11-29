@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use bls12_381::{
     G2Projective, Scalar,
     hash_to_curve::{ExpandMsgXmd, HashToCurve},
@@ -24,13 +25,16 @@ impl Signable for PrivateKey {
 
         let scalar = Scalar::from_bytes(self.inner.as_ref())
             .into_option()
-            .ok_or(BLSError::InvalidPrivateKey)?;
+            .ok_or(BLSError::InvalidPrivateKey(anyhow!(
+                "Failed to convert inner to scalar"
+            )))?;
         let signature_point = hash_point * scalar;
         let signature_bytes = signature_point.to_affine().to_compressed();
 
         Ok(BLSSignature {
-            inner: FixedVector::new(signature_bytes.to_vec())
-                .map_err(|_| BLSError::InvalidPrivateKey)?,
+            inner: FixedVector::new(signature_bytes.to_vec()).map_err(|err| {
+                BLSError::InvalidPrivateKey(anyhow!("Failed to convert vec to FixedVector {err:?}"))
+            })?,
         })
     }
 }

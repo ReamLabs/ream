@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use bls12_381::{G1Affine, G1Projective};
 
 use crate::{
@@ -22,16 +23,15 @@ impl TryFrom<&PublicKey> for G1Affine {
     type Error = BLSError;
 
     fn try_from(value: &PublicKey) -> Result<Self, Self::Error> {
-        match G1Affine::from_compressed(
-            &value
-                .to_bytes()
-                .try_into()
-                .map_err(|_| BLSError::InvalidByteLength)?,
-        )
+        match G1Affine::from_compressed(&value.to_bytes().try_into().map_err(|err| {
+            BLSError::InvalidByteLength(anyhow!("Failed to convert to array {err:?}"))
+        })?)
         .into_option()
         {
             Some(point) => Ok(point),
-            None => Err(BLSError::InvalidPublicKey),
+            None => Err(BLSError::InvalidPublicKey(anyhow!(
+                "Invalid public key point"
+            ))),
         }
     }
 }

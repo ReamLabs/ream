@@ -4,6 +4,7 @@ use ream_consensus_misc::{constants::beacon::FAR_FUTURE_EPOCH, fork_data::ForkDa
 use ream_network_spec::networks::beacon_network_spec;
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
+use tracing::warn;
 
 pub const ENR_ETH2_KEY: &str = "eth2";
 
@@ -45,8 +46,10 @@ impl Encodable for EnrForkId {
 impl Decodable for EnrForkId {
     fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
         let bytes = Bytes::decode(buf)?;
-        let enr_fork_id = EnrForkId::from_ssz_bytes(&bytes)
-            .map_err(|_| alloy_rlp::Error::Custom("Failed to decode SSZ ENRForkID"))?;
+        let enr_fork_id = EnrForkId::from_ssz_bytes(&bytes).map_err(|err| {
+            warn!("Failed to decode SSZ ENRForkID: {err:?}");
+            alloy_rlp::Error::Custom("Failed to decode SSZ ENRForkID")
+        })?;
         Ok(enr_fork_id)
     }
 }
