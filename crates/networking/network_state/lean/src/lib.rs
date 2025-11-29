@@ -2,10 +2,10 @@ pub mod cached_peer;
 
 use std::{collections::HashMap, sync::Arc};
 
-use libp2p::PeerId;
+use libp2p::{Multiaddr, PeerId};
 use parking_lot::{Mutex, RwLock};
 use ream_consensus_lean::checkpoint::Checkpoint;
-use ream_peer::ConnectionState;
+use ream_peer::{ConnectionState, Direction};
 
 use crate::cached_peer::CachedPeer;
 
@@ -25,13 +25,24 @@ impl NetworkState {
         }
     }
 
-    pub fn update_peer_state(&self, peer_id: PeerId, state: ConnectionState) {
+    pub fn upsert_peer(
+        &self,
+        peer_id: PeerId,
+        address: Option<Multiaddr>,
+        state: ConnectionState,
+        direction: Direction,
+    ) {
         self.peer_table
             .lock()
             .entry(peer_id)
             .and_modify(|cached_peer| {
+                if let Some(address_ref) = &address {
+                    cached_peer.last_seen_p2p_address = Some(address_ref.clone());
+                }
                 cached_peer.state = state;
-            });
+                cached_peer.direction = direction;
+            })
+            .or_insert(CachedPeer::new(peer_id, address, state, direction));
     }
 
     pub fn connected_peers(&self) -> usize {
@@ -40,5 +51,10 @@ impl NetworkState {
             .values()
             .filter(|peer| matches!(peer.state, ConnectionState::Connected))
             .count()
+    }
+
+    /// Returns the cached peer from the peer table.
+    pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
+        self.peer_table.lock().get(id).cloned()
     }
 }

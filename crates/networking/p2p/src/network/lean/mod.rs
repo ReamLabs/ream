@@ -25,8 +25,8 @@ use libp2p_identity::{Keypair, PeerId, secp256k1};
 use ream_chain_lean::{messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::{Devnet, lean_network_spec};
-use ream_network_state_lean::NetworkState;
-use ream_peer::ConnectionState;
+use ream_network_state_lean::{NetworkState, cached_peer::CachedPeer};
+use ream_peer::{ConnectionState, Direction};
 use ssz::Encode;
 use tokio::{
     sync::{
@@ -102,6 +102,7 @@ pub struct LeanNetworkService {
     request_id: AtomicU64,
     pub network_state: Arc<NetworkState>,
     check_canonical_futures: FuturesUnordered<oneshot::Receiver<(PeerId, bool)>>,
+    pub multi_addr: Multiaddr,
 }
 
 impl LeanNetworkService {
@@ -185,6 +186,12 @@ impl LeanNetworkService {
                 .build()
         };
 
+        let mut multi_addr: Multiaddr = network_config.socket_address.into();
+        multi_addr.push(Protocol::Udp(network_config.socket_port));
+        multi_addr.push(Protocol::QuicV1);
+        multi_addr.push(Protocol::P2p(local_key.public().to_peer_id()));
+        info!("Listening on {multi_addr:?}");
+
         let mut lean_network_service = LeanNetworkService {
             network_config: network_config.clone(),
             swarm,
@@ -194,14 +201,8 @@ impl LeanNetworkService {
             request_id: AtomicU64::new(1),
             network_state,
             check_canonical_futures: FuturesUnordered::new(),
+            multi_addr: multi_addr.clone(),
         };
-
-        let mut multi_addr: Multiaddr = lean_network_service.network_config.socket_address.into();
-        multi_addr.push(Protocol::Udp(
-            lean_network_service.network_config.socket_port,
-        ));
-        multi_addr.push(Protocol::QuicV1);
-        info!("Listening on {multi_addr:?}");
 
         lean_network_service
             .swarm
@@ -353,8 +354,8 @@ impl LeanNetworkService {
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
-                match endpoint {
-                    ConnectedPoint::Dialer { .. } => {
+                let (address, direction) = match endpoint {
+                    ConnectedPoint::Dialer { address, .. } => {
                         self.bootnode_retry_state.remove(&peer_id);
 
                         if lean_network_spec().is_devnet_enabled(Devnet::Two) {
@@ -362,19 +363,38 @@ impl LeanNetworkService {
                             let status_message = LeanRequestMessage::Status(self.our_status());
                             self.send_request(peer_id, status_message);
                         }
+                        (address, Direction::Outbound)
                     }
-                    ConnectedPoint::Listener { .. } => {
-                        self.network_state
-                            .update_peer_state(peer_id, ConnectionState::Connected);
+                    ConnectedPoint::Listener { send_back_addr, .. } => {
+                        (send_back_addr, Direction::Inbound)
                     }
-                }
+                };
+                self.network_state.upsert_peer(
+                    peer_id,
+                    Some(address),
+                    ConnectionState::Connected,
+                    direction,
+                );
 
-                info!("Connected to peer: {peer_id:?}");
+                info!(
+                    "Connected to peer: {peer_id:?} {:?}",
+                    self.network_state.peer_table
+                );
                 None
             }
-            SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                self.network_state
-                    .update_peer_state(peer_id, ConnectionState::Disconnected);
+            SwarmEvent::ConnectionClosed {
+                peer_id, endpoint, ..
+            } => {
+                let direction = match endpoint {
+                    ConnectedPoint::Dialer { .. } => Direction::Outbound,
+                    ConnectedPoint::Listener { .. } => Direction::Inbound,
+                };
+                self.network_state.upsert_peer(
+                    peer_id,
+                    None,
+                    ConnectionState::Disconnected,
+                    direction,
+                );
 
                 info!("Disconnected from peer: {peer_id:?}");
                 Some(ReamNetworkEvent::PeerDisconnected(peer_id))
@@ -559,8 +579,12 @@ impl LeanNetworkService {
                 }
 
                 info!("Dialing peer: {peer_id:?}");
-                self.network_state
-                    .update_peer_state(peer_id, ConnectionState::Connecting);
+                self.network_state.upsert_peer(
+                    peer_id,
+                    Some(peer),
+                    ConnectionState::Connecting,
+                    Direction::Outbound,
+                );
             }
         }
     }
@@ -644,6 +668,11 @@ impl LeanNetworkService {
             head: *self.network_state.head_checkpoint.read(),
         }
     }
+
+    /// Returns the cached peer from the peer table.
+    pub fn cached_peer(&self, id: &PeerId) -> Option<CachedPeer> {
+        self.network_state.peer_table.lock().get(id).cloned()
+    }
 }
 
 enum RequestResult<T> {
@@ -655,17 +684,15 @@ enum RequestResult<T> {
 mod tests {
     use std::{net::Ipv4Addr, time::Duration};
 
-    use libp2p::{Multiaddr, multiaddr::Protocol};
     use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
+    use ream_peer::Direction;
     use tokio::sync::mpsc;
     use tracing_test::traced_test;
 
     use super::*;
     use crate::bootnodes::Bootnodes;
 
-    pub async fn setup_lean_node(
-        socket_port: u16,
-    ) -> anyhow::Result<(LeanNetworkService, Multiaddr)> {
+    pub async fn setup_lean_node(socket_port: u16) -> anyhow::Result<LeanNetworkService> {
         set_lean_network_spec(LeanNetworkSpec::ephemery().into());
 
         let executor = ReamExecutor::new().expect("Failed to create executor");
@@ -686,55 +713,55 @@ mod tests {
             Arc::new(NetworkState::new(Default::default(), Default::default())),
         )
         .await?;
-        let multi_addr: Multiaddr = config.socket_address.into();
-        Ok((node, multi_addr))
+        Ok(node)
     }
 
-    // Test to check connection between 2 QUIC lean nodes
     #[tokio::test]
     #[traced_test]
     async fn test_two_quic_lean_nodes_connection() -> anyhow::Result<()> {
         let socket_port1 = 9000;
         let socket_port2 = 9001;
 
-        let (mut node1, mut node1_addr) = setup_lean_node(socket_port1).await?;
-        let (mut node2, _) = setup_lean_node(socket_port2).await?;
+        let mut node_1 = setup_lean_node(socket_port1).await?;
+        let mut node_2 = setup_lean_node(socket_port2).await?;
 
-        let node1_peer_id = node1.local_peer_id();
-        let node2_peer_id = node2.local_peer_id();
+        let peer_id_network_1 = node_1.local_peer_id();
+        let peer_id_network_2 = node_2.local_peer_id();
 
-        node1_addr.push(Protocol::Udp(socket_port1));
-        node1_addr.push(Protocol::QuicV1);
-        node1_addr.push(Protocol::P2p(node1_peer_id));
+        let network_state_1 = node_1.network_state.clone();
+        let network_state_2 = node_2.network_state.clone();
 
-        let node1_handle = tokio::spawn(async move {
+        let node_1_addr = node_1.multi_addr.clone();
+
+        let node_1_handle = tokio::spawn(async move {
             let bootnodes = Bootnodes::Default;
-
-            node1.start(bootnodes).await.unwrap();
+            node_1.start(bootnodes).await.unwrap();
         });
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        let node2_handle = tokio::spawn(async move {
-            let bootnodes = Bootnodes::Multiaddr(vec![node1_addr]);
-
-            node2.start(bootnodes).await.unwrap();
+        let node_2_handle = tokio::spawn(async move {
+            let bootnodes = Bootnodes::Multiaddr(vec![node_1_addr]);
+            node_2.start(bootnodes).await.unwrap();
         });
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        node1_handle.abort();
-        node2_handle.abort();
+        node_1_handle.abort();
+        node_2_handle.abort();
 
-        assert!(logs_contain(&format!(
-            "Dialing peer: PeerId(\"{node1_peer_id}\")"
-        )));
-        assert!(logs_contain(&format!(
-            "Connected to peer: PeerId(\"{node1_peer_id}\")"
-        )));
-        assert!(logs_contain(&format!(
-            "Connected to peer: PeerId(\"{node2_peer_id}\")"
-        )));
+        let peer_from_network_1 = network_state_1
+            .cached_peer(&peer_id_network_2)
+            .expect("network_1 peer exists");
+        let peer_from_network_2 = network_state_2
+            .cached_peer(&peer_id_network_1)
+            .expect("network_2 peer exists");
+
+        assert_eq!(peer_from_network_1.state, ConnectionState::Connected);
+        assert_eq!(peer_from_network_1.direction, Direction::Inbound);
+
+        assert_eq!(peer_from_network_2.state, ConnectionState::Connected);
+        assert_eq!(peer_from_network_2.direction, Direction::Outbound);
 
         Ok(())
     }
