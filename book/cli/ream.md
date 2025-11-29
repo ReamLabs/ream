@@ -5,6 +5,7 @@ A Rust implementation of the Ethereum Beam Chain specification.
 ```bash
 $ ream --help
 ```
+
 ```txt
 Usage: ream [OPTIONS] <COMMAND>
 
