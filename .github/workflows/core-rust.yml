@@ -31,20 +31,8 @@ jobs:
       run: cargo +nightly fmt -- --check
 
     - name: Check `map_err` variable naming
-      run: |
-        echo "Checking for invalid .map_err(|...|) usage..."
-        all_occurrences=$(grep -RIn --include="*.rs" "\.map_err(|" . || true)
-        violations=$(echo "$all_occurrences" | grep -Ev "\.map_err\(\|err\|" || true)
-        if [ -n "$violations" ]; then
-          echo "Invalid .map_err closure naming found:"
-          echo "$violations"
-          echo
-          echo "Only this form is allowed:"
-          echo "    .map_err(|err| ... )"
-          exit 1
-        fi
-        echo "map_err naming check passed"
-
+      run: make fmt
+      
   cargo-clippy:
     runs-on: ubuntu-latest
 
