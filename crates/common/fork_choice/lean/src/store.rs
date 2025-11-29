@@ -701,7 +701,7 @@ impl Store {
         Ok(())
     }
 
-    pub async fn produce_attestation(&self, slot: u64) -> anyhow::Result<AttestationData> {
+    pub async fn produce_attestation_data(&self, slot: u64) -> anyhow::Result<AttestationData> {
         let (head_provider, block_provider, latest_justified_provider) = {
             let db = self.store.lock().await;
             (
