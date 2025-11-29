@@ -74,7 +74,7 @@ impl LeanChainService {
                             info!(
                                 "\n\
                             ============================================================\n\
-                            CHAIN STATUS: Next Slot: {current_slot} | Head Slot: {head_slot}\n\
+                            REAM's CHAIN STATUS: Next Slot: {current_slot} | Head Slot: {head_slot}\n\
                             ------------------------------------------------------------\n\
                             Connected Peers:   {connected_peer_count}\n\
                             ------------------------------------------------------------\n\
