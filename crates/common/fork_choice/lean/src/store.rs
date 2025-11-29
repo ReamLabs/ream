@@ -50,6 +50,7 @@ impl Store {
         anchor_block: SignedBlockWithAttestation,
         anchor_state: LeanState,
         db: LeanDB,
+        time: Option<u64>,
     ) -> anyhow::Result<Store> {
         ensure!(
             anchor_block.message.block.state_root == anchor_state.tree_hash_root(),
@@ -62,7 +63,7 @@ impl Store {
             slot: anchor_slot,
         };
         db.time_provider()
-            .insert(anchor_slot * lean_network_spec().seconds_per_slot)
+            .insert(time.unwrap_or(anchor_slot * lean_network_spec().seconds_per_slot))
             .expect("Failed to insert anchor slot");
         db.block_provider()
             .insert(anchor_root, anchor_block)
@@ -731,24 +732,18 @@ impl Store {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
-    use std::sync::Arc;
 
     use alloy_primitives::B256;
     use ream_consensus_lean::{
         attestation::{Attestation, AttestationData, SignedAttestation},
-        block::{
-            Block, BlockBody, BlockHeader, BlockWithAttestation, BlockWithSignatures,
-            SignedBlockWithAttestation,
-        },
+        block::{Block, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
         checkpoint::Checkpoint,
         state::LeanState,
-        validator::Validator,
+        utils::generate_default_validators,
     };
     use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
-    use ream_network_state_lean::NetworkState;
-    use ream_post_quantum_crypto::leansig::{public_key::PublicKey, signature::Signature};
+    use ream_post_quantum_crypto::leansig::signature::Signature;
     use ream_storage::{
         db::{ReamDB, lean::LeanDB},
         tables::{field::REDBField, table::REDBTable},
@@ -758,6 +753,7 @@ mod tests {
     use tree_hash::TreeHash;
 
     use super::Store;
+    use crate::genesis::setup_genesis;
 
     pub fn db_setup() -> LeanDB {
         let temp_dir = TempDir::new("lean_test").unwrap();
@@ -766,83 +762,33 @@ mod tests {
         ream_db.init_lean_db().unwrap()
     }
 
-    pub fn generate_default_validators(number_of_validators: usize) -> Vec<Validator> {
-        (0..number_of_validators)
-            .map(|index| Validator {
-                public_key: PublicKey::from(&[0_u8; 52][..]),
-                index: index as u64,
-            })
-            .collect()
-    }
-
     pub async fn sample_store(no_of_validators: usize) -> (Store, LeanState) {
-        let mut genesis_state =
-            LeanState::generate_genesis(0, Some(generate_default_validators(no_of_validators)));
-        let genesis_block = Block {
-            slot: 0,
-            proposer_index: 0,
-            parent_root: B256::ZERO,
-            state_root: genesis_state.tree_hash_root(),
-            body: BlockBody {
-                attestations: VariableList::empty(),
-            },
-        };
+        let (genesis_block, genesis_state) =
+            setup_genesis(0, generate_default_validators(no_of_validators));
+
         let genesis_block_hash = genesis_block.tree_hash_root();
 
-        let genesis_header = BlockHeader {
-            slot: genesis_block.slot,
-            proposer_index: genesis_block.proposer_index,
-            parent_root: genesis_block.parent_root,
-            state_root: genesis_block.state_root,
-            body_root: genesis_block.body.tree_hash_root(),
-        };
-
-        let signed_genesis_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: genesis_block,
-                proposer_attestation: Attestation {
-                    validator_id: 0,
-                    data: AttestationData {
-                        slot: 0,
-                        head: Checkpoint::default(),
-                        target: Checkpoint::default(),
-                        source: Checkpoint::default(),
-                    },
-                },
-            },
-            signature: VariableList::default(),
-        };
         let checkpoint = Checkpoint {
-            slot: 0,
+            slot: genesis_block.slot,
             root: genesis_block_hash,
         };
+        let signed_genesis_block = build_signed_block_with_attestation(
+            AttestationData {
+                slot: genesis_block.slot,
+                head: checkpoint,
+                target: checkpoint,
+                source: checkpoint,
+            },
+            &genesis_block,
+            &mut VariableList::default(),
+        );
 
         set_lean_network_spec(LeanNetworkSpec::ephemery().into());
-        genesis_state.latest_block_header = genesis_header;
-        genesis_state.latest_finalized = checkpoint;
-        genesis_state.latest_justified = checkpoint;
 
         let db = db_setup();
-
-        db.time_provider().insert(100).unwrap();
-        db.block_provider()
-            .insert(genesis_block_hash, signed_genesis_block.clone())
-            .unwrap();
-        db.latest_finalized_provider().insert(checkpoint).unwrap();
-        db.latest_justified_provider().insert(checkpoint).unwrap();
-        db.head_provider().insert(genesis_block_hash).unwrap();
-        db.safe_target_provider()
-            .insert(genesis_block_hash)
-            .unwrap();
-        db.state_provider()
-            .insert(genesis_block_hash, genesis_state.clone())
-            .unwrap();
-
         (
-            Store {
-                store: Arc::new(tokio::sync::Mutex::new(db)),
-                network_state: Arc::new(NetworkState::new(checkpoint, checkpoint)),
-            },
+            Store::get_forkchoice_store(signed_genesis_block, genesis_state.clone(), db, None)
+                .unwrap(),
             genesis_state,
         )
     }
@@ -889,13 +835,18 @@ mod tests {
         }
     }
 
-    // Test basic block production by authorized proposer.
+    /// Test basic block production by authorized proposer.
     #[tokio::test]
     async fn test_produce_block_basic() {
         let (mut store, mut genesis_state) = sample_store(10).await;
 
         genesis_state.process_slots(1).unwrap();
         let store_head = store.store.lock().await.head_provider().get().unwrap();
+
+        let (block_provider, state_provider) = {
+            let store = store.store.lock().await;
+            (store.block_provider(), store.state_provider())
+        };
 
         let BlockWithSignatures {
             block,
@@ -907,7 +858,7 @@ mod tests {
         assert_eq!(block.parent_root, store_head);
         assert_ne!(block.state_root, B256::ZERO);
 
-        let attestation_data = store.produce_attestation(1).await.unwrap();
+        let attestation_data = store.produce_attestation_data(1).await.unwrap();
         let signed_block_with_attestation =
             build_signed_block_with_attestation(attestation_data, &block, &mut signatures);
 
@@ -917,28 +868,20 @@ mod tests {
             .unwrap();
 
         assert!(
-            store
-                .store
-                .lock()
-                .await
-                .block_provider()
+            block_provider
                 .get(block.tree_hash_root())
                 .unwrap()
                 .is_some()
         );
         assert!(
-            store
-                .store
-                .lock()
-                .await
-                .state_provider()
+            state_provider
                 .get(block.tree_hash_root())
                 .unwrap()
                 .is_some()
         );
     }
 
-    // Test block production fails for unauthorized proposer.
+    /// Test block production fails for unauthorized proposer.
     #[tokio::test]
     async fn test_produce_block_unauthorized_proposer() {
         let (store, _) = sample_store(10).await;
@@ -947,7 +890,7 @@ mod tests {
         assert!(block_with_signature.is_err());
     }
 
-    // Test block production includes available attestations.
+    /// Test block production includes available attestations.
     #[tokio::test]
     async fn test_produce_block_with_attestations() {
         let (store, _) = sample_store(10).await;
@@ -966,7 +909,7 @@ mod tests {
         let justified_checkpoint = justified_provider.get().unwrap();
         let attestation_target = store.get_attestation_target().await.unwrap();
 
-        let attestation1 = build_signed_attestation(
+        let attestation_1 = build_signed_attestation(
             5,
             head_block.message.block.slot,
             Some(Checkpoint {
@@ -977,7 +920,7 @@ mod tests {
             Some(attestation_target),
         );
 
-        let attestation2 = build_signed_attestation(
+        let attestation_2 = build_signed_attestation(
             6,
             head_block.message.block.slot,
             Some(Checkpoint {
@@ -988,7 +931,7 @@ mod tests {
             Some(attestation_target),
         );
         latest_known_attestations
-            .batch_insert([(5, attestation1), (6, attestation2)])
+            .batch_insert([(5, attestation_1), (6, attestation_2)])
             .unwrap();
 
         let block_with_signature = store.produce_block_with_signatures(2, 2).await.unwrap();
@@ -1003,7 +946,7 @@ mod tests {
         assert_ne!(block_with_signature.block.state_root, B256::ZERO);
     }
 
-    // Test producing blocks in sequential slots.
+    /// Test producing blocks in sequential slots.
     #[tokio::test]
     pub async fn test_produce_block_sequential_slots() {
         let (store, mut genesis_state) = sample_store(10).await;
@@ -1025,7 +968,7 @@ mod tests {
         assert_eq!(block.parent_root, genesis_hash);
     }
 
-    // Test block production with no available attestations.
+    /// Test block production with no available attestations.
     #[tokio::test]
     pub async fn test_produce_block_empty_attestations() {
         let (store, _) = sample_store(10).await;
@@ -1042,7 +985,7 @@ mod tests {
         assert!(!block.state_root.is_zero());
     }
 
-    // Test that produced block's state is consistent with block content
+    /// Test that produced block's state is consistent with block content
     #[tokio::test]
     pub async fn test_produce_block_state_consistency() {
         let (mut store, _) = sample_store(10).await;
@@ -1078,7 +1021,7 @@ mod tests {
 
         let block_hash = block.tree_hash_root();
 
-        let attestation_data = store.produce_attestation(4).await.unwrap();
+        let attestation_data = store.produce_attestation_data(4).await.unwrap();
         let signed_block_with_attestation =
             build_signed_block_with_attestation(attestation_data, &block, &mut signatures);
 

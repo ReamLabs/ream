@@ -31,8 +31,7 @@ use ream_account_manager::{message_types::MessageType, seed::derive_seed_with_us
 use ream_api_types_beacon::id::ValidatorID;
 use ream_api_types_common::id::ID;
 use ream_chain_lean::{
-    genesis as lean_genesis, messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest,
-    service::LeanChainService,
+    messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest, service::LeanChainService,
 };
 use ream_checkpoint_sync::initialize_db_from_checkpoint;
 use ream_consensus_lean::{
@@ -45,7 +44,7 @@ use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
 };
 use ream_executor::ReamExecutor;
-use ream_fork_choice_lean::store::Store;
+use ream_fork_choice_lean::{genesis as lean_genesis, store::Store};
 use ream_keystore::keystore::EncryptedKeystore;
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::{
@@ -219,6 +218,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             },
             genesis_state,
             lean_db,
+            None,
         )
         .expect("Could not get forkchoice store"),
     );
