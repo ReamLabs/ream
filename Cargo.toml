@@ -110,6 +110,28 @@ parking_lot = "0.12.5"
 prometheus_exporter = { git = "https://github.com/AlexanderThaller/prometheus_exporter", rev = "c49efe614486f998b20eb410ae0caf3e904cf540" }
 rand = "0.9"
 rand_chacha = "0.9"
+redb = "3.1.0"
+reqwest = { version = "0.12.24", features = ["json"] }
+rstest = "0.26.1"
+rust-kzg-blst = { git = 'https://github.com/grandinetech/rust-kzg.git' }
+serde = { version = '1.0', features = ['derive', "rc"] }
+serde_json = "1.0.145"
+serde_yaml = "0.9"
+sha2 = "0.10.9"
+snap = "1.1"
+ssz_types = { git = "https://github.com/ReamLabs/ssz_types", branch = "removable-variable-list" }
+tempdir = "0.3.7"
+tempfile = "3.23.0"
+thiserror = "2.0.17"
+tokio = { version = "1.48.0", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
+tokio-util = { version = "0.7.16", features = ["compat"] }
+tracing = "0.1"
+tracing-subscriber = "0.3.20"
+tracing-test = "0.2.5"
+tree_hash = "0.10"
+tree_hash_derive = "0.11.0"
+unicode-normalization = "0.1.24"
+url = "2.5.7"
 
 # ream dependencies
 ream-account-manager = { path = "crates/common/account_manager" }
@@ -149,28 +171,6 @@ ream-sync = { path = "crates/common/sync" }
 ream-syncer = { path = "crates/networking/syncer" }
 ream-validator-beacon = { path = "crates/common/validator/beacon" }
 ream-validator-lean = { path = "crates/common/validator/lean" }
-redb = "3.1.0"
-reqwest = { version = "0.12.24", features = ["json"] }
-rstest = "0.26.1"
-rust-kzg-blst = { git = 'https://github.com/grandinetech/rust-kzg.git' }
-serde = { version = '1.0', features = ['derive', "rc"] }
-serde_json = "1.0.145"
-serde_yaml = "0.9"
-sha2 = "0.10.9"
-snap = "1.1"
-ssz_types = { git = "https://github.com/ReamLabs/ssz_types", branch = "removable-variable-list" }
-tempdir = "0.3.7"
-tempfile = "3.23.0"
-thiserror = "2.0.17"
-tokio = { version = "1.48.0", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
-tokio-util = { version = "0.7.16", features = ["compat"] }
-tracing = "0.1"
-tracing-subscriber = "0.3.20"
-tracing-test = "0.2.5"
-tree_hash = "0.10"
-tree_hash_derive = "0.11.0"
-unicode-normalization = "0.1.24"
-url = "2.5.7"
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }
