@@ -44,8 +44,18 @@ test: # Run all tests.
 	cargo test --workspace -- --nocapture
 
 .PHONY: fmt
-fmt: # Run `rustfmt` on the entire workspace.
+fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `map_err` to be `err`
 	cargo +nightly fmt --all
+	@all_occurrences=$$(grep -RIn --include="*.rs" "\.map_err(|" . || true); \
+	violations=$$(echo "$$all_occurrences" | grep -Ev "\.map_err\(\|err\|" || true); \
+	if [ -n "$$violations" ]; then \
+		echo "Invalid .map_err closure naming found:"; \
+		echo "$$violations"; \
+		echo; \
+		echo "Only this form is allowed:"; \
+		echo "    .map_err(|err| ... )"; \
+		exit 1; \
+	fi
 
 .PHONY: clippy
 clippy: # Run `clippy` on the entire workspace.
