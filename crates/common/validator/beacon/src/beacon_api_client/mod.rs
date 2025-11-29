@@ -27,6 +27,7 @@ use ream_api_types_common::id::ID;
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     attestation::Attestation,
+    contribution_and_proof::{SignedContributionAndProof, SyncCommitteeContribution},
     electra::{
         beacon_block::SignedBeaconBlock,
         blinded_beacon_block::{BlindedBeaconBlock, SignedBlindedBeaconBlock},
@@ -42,10 +43,7 @@ use serde_json::json;
 use ssz::{Decode, Encode};
 use tracing::{error, info};
 
-use crate::{
-    aggregate_and_proof::SignedAggregateAndProof,
-    contribution_and_proof::{SignedContributionAndProof, SyncCommitteeContribution},
-};
+use crate::aggregate_and_proof::SignedAggregateAndProof;
 
 #[derive(Clone)]
 pub struct BeaconApiClient {

@@ -26,6 +26,7 @@ tree_hash.workspace = true
 url.workspace = true
 
 # ream dependencies
+ream-api-types-beacon.workspace = true
 ream-bls.workspace = true
 ream-chain-beacon.workspace = true
 ream-consensus-beacon.workspace = true

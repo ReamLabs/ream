@@ -2,6 +2,7 @@ pub mod block;
 pub mod committee;
 pub mod duties;
 pub mod error;
+pub mod events;
 pub mod id;
 pub mod query;
 pub mod request;

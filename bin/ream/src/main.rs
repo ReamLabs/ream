@@ -28,7 +28,7 @@ use ream::{
     startup_message::startup_message,
 };
 use ream_account_manager::{message_types::MessageType, seed::derive_seed_with_user_input};
-use ream_api_types_beacon::id::ValidatorID;
+use ream_api_types_beacon::{events::BeaconEvent, id::ValidatorID};
 use ream_api_types_common::id::ID;
 use ream_chain_lean::{
     genesis as lean_genesis, messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest,
@@ -77,7 +77,10 @@ use ream_validator_lean::{
     registry::load_validator_registry, service::ValidatorService as LeanValidatorService,
 };
 use ssz_types::VariableList;
-use tokio::{sync::mpsc, time::Instant};
+use tokio::{
+    sync::{broadcast, mpsc},
+    time::Instant,
+};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -350,6 +353,8 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
 
     let operation_pool = Arc::new(OperationPool::default());
 
+    let (event_sender, _) = broadcast::channel::<BeaconEvent>(1024);
+
     let server_config = RpcServerConfig::new(
         config.http_address,
         config.http_port,
@@ -362,6 +367,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         beacon_db.clone(),
         beacon_db.data_dir.clone(),
         operation_pool.clone(),
+        event_sender.clone(),
     )
     .await
     .expect("Failed to create manager service");
@@ -381,6 +387,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
             network_state,
             operation_pool,
             execution_engine,
+            event_sender,
         )
         .await
     });

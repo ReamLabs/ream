@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::bail;
+use ream_api_types_beacon::events::{BeaconEvent, HeadEvent};
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     electra::beacon_block::SignedBeaconBlock,
@@ -18,13 +19,14 @@ use ream_storage::{
     db::beacon::BeaconDB,
     tables::{field::REDBField, table::REDBTable},
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, broadcast};
 use tracing::warn;
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
     pub store: Mutex<Store>,
     pub execution_engine: Option<ExecutionEngine>,
+    pub event_sender: Option<broadcast::Sender<BeaconEvent>>,
 }
 
 impl BeaconChain {
@@ -33,15 +35,19 @@ impl BeaconChain {
         db: BeaconDB,
         operation_pool: Arc<OperationPool>,
         execution_engine: Option<ExecutionEngine>,
+        event_sender: Option<broadcast::Sender<BeaconEvent>>,
     ) -> Self {
         Self {
             store: Mutex::new(Store::new(db, operation_pool)),
             execution_engine,
+            event_sender,
         }
     }
 
     pub async fn process_block(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
+        let old_head = store.get_head().ok();
+
         on_block(
             &mut store,
             &signed_block,
@@ -49,6 +55,44 @@ impl BeaconChain {
             signed_block.message.slot >= beacon_network_spec().slot_n_days_ago(17),
         )
         .await?;
+
+        // Emit Block event
+        if let Some(event_sender) = self.event_sender.as_ref() {
+            tracing::debug!(
+                "Emitting Block event for slot {}",
+                signed_block.message.slot
+            );
+            if let Err(e) = event_sender.send(BeaconEvent::Block(Box::new(signed_block.clone()))) {
+                tracing::warn!("Failed to send Block event: {}", e);
+            }
+        }
+
+        // Check for head change
+        if let Ok(new_head) = store.get_head()
+            && Some(new_head) != old_head
+        {
+            // Fetch block to get state root
+            if let Ok(Some(block)) = store.db.block_provider().get(new_head) {
+                let state_root = block.message.state_root;
+                // For now, we use placeholders for dependent roots or try to calculate them if
+                // possible. To do it properly we need the state.
+
+                let head_event = HeadEvent {
+                    slot: block.message.slot,
+                    block: new_head,
+                    state: state_root,
+                    epoch_transition: false, // TODO: calculate
+                    previous_duty_dependent_root: Default::default(), // TODO: calculate
+                    current_duty_dependent_root: Default::default(), // TODO: calculate
+                    execution_optimistic: false, // TODO
+                };
+
+                if let Some(event_sender) = self.event_sender.as_ref() {
+                    let _ = event_sender.send(BeaconEvent::Head(head_event));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -57,7 +101,8 @@ impl BeaconChain {
         attester_slashing: AttesterSlashing,
     ) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
-        on_attester_slashing(&mut store, attester_slashing)?;
+        on_attester_slashing(&mut store, attester_slashing.clone())?;
+
         Ok(())
     }
 
@@ -67,7 +112,8 @@ impl BeaconChain {
         is_from_block: bool,
     ) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
-        on_attestation(&mut store, attestation, is_from_block)?;
+        on_attestation(&mut store, attestation.clone(), is_from_block)?;
+
         Ok(())
     }
 

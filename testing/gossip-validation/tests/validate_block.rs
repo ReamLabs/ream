@@ -73,7 +73,7 @@ mod tests {
 
         let operation_pool = OperationPool::default();
         let cached_db = CachedDB::default();
-        let beacon_chain = BeaconChain::new(db, operation_pool.into(), None);
+        let beacon_chain = BeaconChain::new(db, operation_pool.into(), None, None);
 
         (beacon_chain, cached_db, block_root)
     }
