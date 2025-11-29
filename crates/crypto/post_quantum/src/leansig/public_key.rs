@@ -1,17 +1,15 @@
-use alloy_primitives::{Bytes, FixedBytes};
+use alloy_primitives::FixedBytes;
 use anyhow::anyhow;
-use bincode::{self};
-use leansig::signature::SignatureScheme;
+use leansig::{serialization::Serializable, signature::SignatureScheme};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
-use super::BINCODE_CONFIG;
-use crate::leansig::HashSigScheme;
+use crate::leansig::{LeanSigScheme, errors::LeanSigError};
 
-pub type HashSigPublicKey = <HashSigScheme as SignatureScheme>::PublicKey;
+pub type LeanSigPublicKey = <LeanSigScheme as SignatureScheme>::PublicKey;
 
-/// Wrapper around the `GeneralizedXMSSPublicKey` from the hashsig crate.
+/// Wrapper around the `GeneralizedXMSSPublicKey` from the leansig crate.
 ///
 /// With current signature parameters, the serialized public key is 52 bytes:
 /// - Public key consists of:
@@ -59,27 +57,14 @@ impl PublicKey {
         Self { inner }
     }
 
-    pub fn to_bytes(&self) -> Bytes {
-        self.inner.to_vec().into()
+    pub fn from_lean_sig(public_key: LeanSigPublicKey) -> Result<Self, LeanSigError> {
+        Ok(Self {
+            inner: FixedBytes::try_from(public_key.to_bytes().as_slice())?,
+        })
     }
 
-    /// Create a new `PublicKey` wrapper from the original `GeneralizedXMSSPublicKey` type
-    /// with serialization.
-    pub fn from_hash_sig_public_key(hash_sig_public_key: HashSigPublicKey) -> Self {
-        Self {
-            inner: FixedBytes::from_slice(
-                bincode::serde::encode_to_vec(&hash_sig_public_key, BINCODE_CONFIG)
-                    .expect("Failed to serialize hash sig public key")
-                    .as_slice(),
-            ),
-        }
-    }
-
-    /// Convert back to the original `GeneralizedXMSSPublicKey` type from the hashsig crate.
-    /// To use this public key for signature verification.
-    pub fn to_hash_sig_public_key(&self) -> anyhow::Result<HashSigPublicKey> {
-        bincode::serde::decode_from_slice(&self.inner.0, BINCODE_CONFIG)
-            .map(|(value, _)| value)
-            .map_err(|err| anyhow!("Failed to decode public key: {err}"))
+    pub fn as_lean_sig(&self) -> anyhow::Result<LeanSigPublicKey> {
+        LeanSigPublicKey::from_bytes(self.inner.as_slice())
+            .map_err(|err| anyhow!("Failed to decode LeanSigPublicKey from SSZ: {err:?}"))
     }
 }

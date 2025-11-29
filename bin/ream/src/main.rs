@@ -60,7 +60,7 @@ use ream_p2p::{
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
 use ream_post_quantum_crypto::leansig::{
-    private_key::PrivateKey as HashSigPrivateKey, public_key::PublicKey,
+    private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey,
 };
 use ream_rpc_common::config::RpcServerConfig;
 use ream_storage::{
@@ -490,7 +490,7 @@ pub async fn run_account_manager(config: AccountManagerConfig, ream_dir: PathBuf
             config.passphrase.as_deref().unwrap_or(""),
         );
 
-        let (public_key, _private_key) = HashSigPrivateKey::generate_key_pair(
+        let (public_key, _private_key) = LeanSigPrivateKey::generate_key_pair(
             &mut <ChaCha20Rng as SeedableRng>::from_seed(seed),
             config.activation_epoch as usize,
             config.num_active_epochs as usize,

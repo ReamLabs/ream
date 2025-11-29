@@ -100,9 +100,6 @@ impl From<Block> for BlockHeader {
 /// Represents the body of a block in the Lean chain.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BlockBody {
-    /// TODO: Diverged from current ongoing spec change. This should be
-    /// `VariableList<Attestation, U4096>`.
-    /// Tracking issue: https://github.com/ReamLabs/ream/issues/856
     pub attestations: VariableList<Attestation, U4096>,
 }
 
