@@ -1,7 +1,7 @@
 # This image is meant to enable cross-architecture builds.
 # It assumes the ream binary has already been
 # compiled for `$TARGETPLATFORM` and moved to `./dist/bin/$TARGETARCH`.
-FROM ubuntu:24.04
+FROM ubuntu:22.04
 
 LABEL org.opencontainers.image.source=https://github.com/reamlabs/ream
 LABEL org.opencontainers.image.description="Ream is a modular, open-source Ethereum Beam Chain client."
@@ -12,5 +12,5 @@ ARG TARGETARCH
 
 COPY ./dist/bin/$TARGETARCH/ream /usr/local/bin/ream
 
-EXPOSE 8545 8546
+EXPOSE 9000/udp 5052 8080
 ENTRYPOINT ["/usr/local/bin/ream"]

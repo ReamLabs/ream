@@ -110,7 +110,7 @@ prometheus_exporter = { git = "https://github.com/AlexanderThaller/prometheus_ex
 rand = "0.9"
 rand_chacha = "0.9"
 redb = "3.1.0"
-reqwest = { version = "0.12.24", features = ["json"] }
+reqwest = { version = "0.12.24", features = ["native-tls-vendored", "json"] }
 rstest = "0.26.1"
 rust-kzg-blst = { git = 'https://github.com/grandinetech/rust-kzg.git' }
 serde = { version = '1.0', features = ['derive', "rc"] }
