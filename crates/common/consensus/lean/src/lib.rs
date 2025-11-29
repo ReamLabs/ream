@@ -3,6 +3,7 @@ pub mod block;
 pub mod checkpoint;
 pub mod config;
 pub mod state;
+pub mod utils;
 pub mod validator;
 
 pub fn is_justifiable_slot(finalized_slot: u64, candidate_slot: u64) -> bool {

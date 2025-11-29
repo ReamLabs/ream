@@ -142,7 +142,7 @@ impl LeanState {
     }
 
     /// Validate the block header and update header-linked state.
-    fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
+    pub fn process_block_header(&mut self, block: &Block) -> anyhow::Result<()> {
         // The block must be for the current slot.
         ensure!(
             block.slot == self.slot,
@@ -459,19 +459,10 @@ impl LeanState {
 #[cfg(test)]
 mod test {
     use alloy_primitives::hex;
-    use ream_post_quantum_crypto::leansig::public_key::PublicKey;
     use ssz::{Decode, Encode};
 
     use super::*;
-
-    pub fn generate_default_validators(number_of_validators: usize) -> Vec<Validator> {
-        (0..number_of_validators)
-            .map(|index| Validator {
-                public_key: PublicKey::from(&[0_u8; 52][..]),
-                index: index as u64,
-            })
-            .collect()
-    }
+    use crate::utils::generate_default_validators;
 
     #[test]
     fn test_encode_decode_signed_block_with_attestation_roundtrip() -> anyhow::Result<()> {

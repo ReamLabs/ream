@@ -50,6 +50,7 @@ impl Store {
         anchor_block: SignedBlockWithAttestation,
         anchor_state: LeanState,
         db: LeanDB,
+        time: Option<u64>,
     ) -> anyhow::Result<Store> {
         ensure!(
             anchor_block.message.block.state_root == anchor_state.tree_hash_root(),
@@ -62,7 +63,7 @@ impl Store {
             slot: anchor_slot,
         };
         db.time_provider()
-            .insert(anchor_slot * lean_network_spec().seconds_per_slot)
+            .insert(time.unwrap_or(anchor_slot * lean_network_spec().seconds_per_slot))
             .expect("Failed to insert anchor slot");
         db.block_provider()
             .insert(anchor_root, anchor_block)
@@ -313,7 +314,7 @@ impl Store {
         Ok(())
     }
 
-    async fn get_attestation_target(&self) -> anyhow::Result<Checkpoint> {
+    pub async fn get_attestation_target(&self) -> anyhow::Result<Checkpoint> {
         let (head_provider, block_provider, safe_target_provider, latest_finalized_provider) = {
             let db = self.store.lock().await;
             (
@@ -494,6 +495,7 @@ impl Store {
     pub async fn on_block(
         &mut self,
         signed_block_with_attestation: &SignedBlockWithAttestation,
+        verify_signatures: bool,
     ) -> anyhow::Result<()> {
         let block_processing_timer = start_timer(&FORK_CHOICE_BLOCK_PROCESSING_TIME, &[]);
 
@@ -521,7 +523,7 @@ impl Store {
             .get(block.parent_root)?
             .ok_or(anyhow!("State not found for parent root"))?;
 
-        signed_block_with_attestation.verify_signatures(&parent_state)?;
+        signed_block_with_attestation.verify_signatures(&parent_state, verify_signatures)?;
         parent_state.state_transition(block, true)?;
 
         let latest_justified =
@@ -726,5 +728,293 @@ impl Store {
             target: self.get_attestation_target().await?,
             source: latest_justified_provider.get()?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::B256;
+    use ream_consensus_lean::{
+        attestation::{Attestation, AttestationData, SignedAttestation},
+        block::{Block, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
+        checkpoint::Checkpoint,
+        state::LeanState,
+        utils::generate_default_validators,
+    };
+    use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
+    use ream_post_quantum_crypto::leansig::signature::Signature;
+    use ream_storage::{
+        db::{ReamDB, lean::LeanDB},
+        tables::{field::REDBField, table::REDBTable},
+    };
+    use ssz_types::{VariableList, typenum::U4096};
+    use tempdir::TempDir;
+    use tree_hash::TreeHash;
+
+    use super::Store;
+    use crate::genesis::setup_genesis;
+
+    pub fn db_setup() -> LeanDB {
+        let temp_dir = TempDir::new("lean_test").unwrap();
+        let temp_path = temp_dir.path().to_path_buf();
+        let ream_db = ReamDB::new(temp_path).expect("unable to init Ream Database");
+        ream_db.init_lean_db().unwrap()
+    }
+
+    pub async fn sample_store(no_of_validators: usize) -> (Store, LeanState) {
+        let (genesis_block, genesis_state) =
+            setup_genesis(0, generate_default_validators(no_of_validators));
+
+        let genesis_block_hash = genesis_block.tree_hash_root();
+
+        let checkpoint = Checkpoint {
+            slot: genesis_block.slot,
+            root: genesis_block_hash,
+        };
+        let signed_genesis_block = build_signed_block_with_attestation(
+            AttestationData {
+                slot: genesis_block.slot,
+                head: checkpoint,
+                target: checkpoint,
+                source: checkpoint,
+            },
+            genesis_block.clone(),
+            VariableList::default(),
+        );
+
+        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
+
+        let db = db_setup();
+        (
+            Store::get_forkchoice_store(signed_genesis_block, genesis_state.clone(), db, None)
+                .unwrap(),
+            genesis_state,
+        )
+    }
+
+    pub fn build_signed_block_with_attestation(
+        attestation_data: AttestationData,
+        block: Block,
+        mut signatures: VariableList<Signature, U4096>,
+    ) -> SignedBlockWithAttestation {
+        signatures.push(Signature::blank()).unwrap();
+        SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                proposer_attestation: Attestation {
+                    validator_id: block.proposer_index,
+                    data: attestation_data,
+                },
+                block,
+            },
+            signature: signatures,
+        }
+    }
+
+    /// Test basic block production by authorized proposer.
+    #[tokio::test]
+    async fn test_produce_block_basic() {
+        let (mut store, mut genesis_state) = sample_store(10).await;
+
+        genesis_state.process_slots(1).unwrap();
+        let store_head = store.store.lock().await.head_provider().get().unwrap();
+
+        let (block_provider, state_provider) = {
+            let store = store.store.lock().await;
+            (store.block_provider(), store.state_provider())
+        };
+
+        let BlockWithSignatures { block, signatures } =
+            store.produce_block_with_signatures(1, 1).await.unwrap();
+
+        assert_eq!(block.slot, 1);
+        assert_eq!(block.proposer_index, 1);
+        assert_eq!(block.parent_root, store_head);
+        assert_ne!(block.state_root, B256::ZERO);
+
+        let attestation_data = store.produce_attestation_data(1).await.unwrap();
+        let signed_block_with_attestation =
+            build_signed_block_with_attestation(attestation_data, block.clone(), signatures);
+
+        store
+            .on_block(&signed_block_with_attestation, false)
+            .await
+            .unwrap();
+        let block_hash = block.tree_hash_root();
+        assert!(block_provider.get(block_hash).unwrap().is_some());
+        assert!(state_provider.get(block_hash).unwrap().is_some());
+    }
+
+    /// Test block production fails for unauthorized proposer.
+    #[tokio::test]
+    async fn test_produce_block_unauthorized_proposer() {
+        let (store, _) = sample_store(10).await;
+
+        let block_with_signature = store.produce_block_with_signatures(1, 2).await;
+        assert!(block_with_signature.is_err());
+    }
+
+    /// Test block production includes available attestations.
+    #[tokio::test]
+    async fn test_produce_block_with_attestations() {
+        let (store, _) = sample_store(10).await;
+
+        let (head_provider, block_provider, justified_provider, latest_known_attestations) = {
+            let db = store.store.lock().await;
+            (
+                db.head_provider(),
+                db.block_provider(),
+                db.latest_justified_provider(),
+                db.latest_known_attestations_provider(),
+            )
+        };
+        let head = head_provider.get().unwrap();
+        let head_block = block_provider.get(head).unwrap().unwrap();
+        let justified_checkpoint = justified_provider.get().unwrap();
+        let attestation_target = store.get_attestation_target().await.unwrap();
+
+        let attestation_1 = SignedAttestation {
+            message: Attestation {
+                validator_id: 5,
+                data: AttestationData {
+                    slot: head_block.message.block.slot,
+                    head: Checkpoint {
+                        root: head,
+                        slot: head_block.message.block.slot,
+                    },
+                    target: justified_checkpoint,
+                    source: attestation_target,
+                },
+            },
+            signature: Signature::blank(),
+        };
+
+        let attestation_2 = SignedAttestation {
+            message: Attestation {
+                validator_id: 6,
+                data: AttestationData {
+                    slot: head_block.message.block.slot,
+                    head: Checkpoint {
+                        root: head,
+                        slot: head_block.message.block.slot,
+                    },
+                    target: justified_checkpoint,
+                    source: attestation_target,
+                },
+            },
+            signature: Signature::blank(),
+        };
+        latest_known_attestations
+            .batch_insert([(5, attestation_1), (6, attestation_2)])
+            .unwrap();
+
+        let block_with_signature = store.produce_block_with_signatures(2, 2).await.unwrap();
+
+        assert!(!block_with_signature.block.body.attestations.is_empty());
+        assert_eq!(block_with_signature.block.slot, 2);
+        assert_eq!(block_with_signature.block.proposer_index, 2);
+        assert_eq!(
+            block_with_signature.block.parent_root,
+            store.get_proposal_head(2).await.unwrap()
+        );
+        assert_ne!(block_with_signature.block.state_root, B256::ZERO);
+    }
+
+    /// Test producing blocks in sequential slots.
+    #[tokio::test]
+    pub async fn test_produce_block_sequential_slots() {
+        let (store, mut genesis_state) = sample_store(10).await;
+        let block_provider = store.store.lock().await.block_provider();
+
+        genesis_state.process_slots(1).unwrap();
+        let genesis_hash = store.store.lock().await.head_provider().get().unwrap();
+
+        let BlockWithSignatures {
+            block,
+            signatures: _,
+        } = store.produce_block_with_signatures(1, 1).await.unwrap();
+        assert_eq!(block.slot, 1);
+        assert_eq!(block.parent_root, genesis_hash);
+
+        let BlockWithSignatures {
+            block,
+            signatures: _,
+        } = store.produce_block_with_signatures(2, 2).await.unwrap();
+
+        assert_eq!(block.slot, 2);
+        assert_eq!(block.parent_root, genesis_hash);
+        assert!(block_provider.get(genesis_hash).unwrap().is_some());
+    }
+
+    /// Test block production with no available attestations.
+    #[tokio::test]
+    pub async fn test_produce_block_empty_attestations() {
+        let (store, _) = sample_store(10).await;
+        let head = store.get_proposal_head(3).await.unwrap();
+
+        let BlockWithSignatures {
+            block,
+            signatures: _,
+        } = store.produce_block_with_signatures(3, 3).await.unwrap();
+
+        assert_eq!(block.body.attestations.len(), 0);
+        assert_eq!(block.slot, 3);
+        assert_eq!(block.parent_root, head);
+        assert!(!block.state_root.is_zero());
+    }
+
+    /// Test that produced block's state is consistent with block content
+    #[tokio::test]
+    pub async fn test_produce_block_state_consistency() {
+        let (mut store, _) = sample_store(10).await;
+
+        let head = store.get_proposal_head(3).await.unwrap();
+        let (block_provider, state_provider, latest_known_attestations, latest_justified_provider) = {
+            let store = store.store.lock().await;
+            (
+                store.block_provider(),
+                store.state_provider(),
+                store.latest_known_attestations_provider(),
+                store.latest_justified_provider(),
+            )
+        };
+        let head_block = block_provider.get(head).unwrap().unwrap();
+
+        let attestation = SignedAttestation {
+            message: Attestation {
+                validator_id: 7,
+                data: AttestationData {
+                    slot: head_block.message.block.slot,
+                    head: Checkpoint {
+                        root: head,
+                        slot: head_block.message.block.slot,
+                    },
+                    target: latest_justified_provider.get().unwrap(),
+                    source: store.get_attestation_target().await.unwrap(),
+                },
+            },
+            signature: Signature::blank(),
+        };
+        latest_known_attestations.insert(7, attestation).unwrap();
+
+        let BlockWithSignatures { block, signatures } =
+            store.produce_block_with_signatures(4, 4).await.unwrap();
+
+        let attestation_data = store.produce_attestation_data(4).await.unwrap();
+        let signed_block_with_attestation =
+            build_signed_block_with_attestation(attestation_data, block.clone(), signatures);
+
+        store
+            .on_block(&signed_block_with_attestation, false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            block.state_root,
+            state_provider
+                .get(block.tree_hash_root())
+                .unwrap()
+                .unwrap()
+                .tree_hash_root()
+        );
     }
 }

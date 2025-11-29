@@ -17,7 +17,11 @@ pub struct SignedBlockWithAttestation {
 }
 
 impl SignedBlockWithAttestation {
-    pub fn verify_signatures(&self, parent_state: &LeanState) -> anyhow::Result<bool> {
+    pub fn verify_signatures(
+        &self,
+        parent_state: &LeanState,
+        verify_signatures: bool,
+    ) -> anyhow::Result<bool> {
         let block = &self.message.block;
         let signatures = &self.signature;
         let mut all_attestations = block.body.attestations.to_vec();
@@ -42,14 +46,16 @@ impl SignedBlockWithAttestation {
                 .get(validator_id)
                 .ok_or(anyhow!("Failed to get validator"))?;
 
-            ensure!(
-                signature.verify(
-                    &validator.public_key,
-                    attestation.data.slot as u32,
-                    &attestation.tree_hash_root(),
-                )?,
-                "Failed to verify"
-            );
+            if verify_signatures {
+                ensure!(
+                    signature.verify(
+                        &validator.public_key,
+                        attestation.data.slot as u32,
+                        &attestation.tree_hash_root(),
+                    )?,
+                    "Failed to verify"
+                );
+            }
         }
 
         Ok(true)

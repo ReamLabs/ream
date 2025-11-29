@@ -264,7 +264,7 @@ impl LeanChainService {
         self.store
             .write()
             .await
-            .on_block(signed_block_with_attestation)
+            .on_block(signed_block_with_attestation, true)
             .await?;
 
         Ok(())
