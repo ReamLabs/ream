@@ -25,6 +25,7 @@ use crate::{
         beacon_attestation::validate_beacon_attestation,
         beacon_block::validate_gossip_beacon_block, blob_sidecar::validate_blob_sidecar,
         bls_to_execution_change::validate_bls_to_execution_change,
+        light_client_finality_update::validate_light_client_finality_update,
         light_client_optimistic_update::validate_light_client_optimistic_update,
         proposer_slashing::validate_proposer_slashing, result::ValidationResult,
         sync_committee::validate_sync_committee,
@@ -402,6 +403,33 @@ pub async fn handle_gossipsub_message(
                     "Light Client Finality Update received over gossipsub: root: {}",
                     light_client_finality_update.tree_hash_root()
                 );
+
+                match validate_light_client_finality_update(
+                    &light_client_finality_update,
+                    beacon_chain,
+                    cached_db,
+                )
+                .await
+                {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: light_client_finality_update.as_ssz_bytes(),
+                            });
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("Light client finality update rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Light client finality update ignored: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate light client finality update: {err}");
+                    }
+                }
             }
             GossipsubMessage::LightClientOptimisticUpdate(light_client_optimistic_update) => {
                 info!(
