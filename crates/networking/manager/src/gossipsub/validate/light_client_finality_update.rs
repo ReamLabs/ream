@@ -66,12 +66,17 @@ pub async fn validate_light_client_finality_update(
         return Ok(ValidationResult::Ignore("Too early".to_string()));
     };
 
-    *cached_db.seen_forwarded_finality_update_slot.write().await =
-        Some((new_slot, has_supermajority));
-    *cached_db
-        .forwarded_light_client_finality_update
-        .write()
-        .await = Some(update.clone());
+    {
+        let mut slot_cache = cached_db.seen_forwarded_finality_update_slot.write().await;
+        *slot_cache = Some((new_slot, has_supermajority));
+    };
+    {
+        let mut forwarded_light_client_finality_update = cached_db
+            .forwarded_light_client_finality_update
+            .write()
+            .await;
+        *forwarded_light_client_finality_update = Some(update.clone());
+    }
 
     Ok(ValidationResult::Accept)
 }
