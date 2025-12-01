@@ -53,6 +53,7 @@ pub struct CachedDB {
     pub seen_bls_to_execution_change: RwLock<LruCache<AddressValidaterIndexIdentifier, ()>>,
     pub seen_sync_messages: RwLock<LruCache<SyncCommitteeKey, ()>>,
     pub seen_sync_committee_contributions: RwLock<LruCache<CacheSyncCommitteeContribution, ()>>,
+    pub seen_forwarded_finality_update_slot: RwLock<Option<(u64, bool)>>,
     pub seen_voluntary_exit: RwLock<LruCache<u64, ()>>,
     pub seen_proposer_slashings: RwLock<LruCache<u64, ()>>,
     pub prior_seen_attester_slashing_indices: RwLock<LruCache<u64, ()>>,
@@ -103,6 +104,7 @@ impl CachedDB {
                 NonZeroUsize::new(SYNC_COMMITTEE_SIZE as usize).expect("Invalid cache size"),
             )
             .into(),
+            seen_forwarded_finality_update_slot: RwLock::new(None),
             forwarded_optimistic_update_slot: None.into(),
             forwarded_light_client_finality_update: None.into(),
         }
