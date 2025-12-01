@@ -9,12 +9,6 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
-[features]
-default = ["signature-scheme-prod"]
-
-signature-scheme-prod = []
-signature-scheme-test = []
-
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
