@@ -106,6 +106,7 @@ docker-build-push:
 
 	docker buildx build --file ./Dockerfile.cross . \
 		--platform linux/amd64,linux/arm64 \
+		--tag ghcr.io/reamlabs/ream:$(shell git rev-parse --short HEAD) \
 		--tag ghcr.io/reamlabs/ream:latest \
 		--provenance=false \
 		--push
