@@ -24,9 +24,9 @@ pub async fn validate_light_client_finality_update(
         .count() as u64;
 
     let has_supermajority = participation_count * 3 > SYNC_COMMITTEE_SIZE * 2;
-
-    let last_forwarded_update = cached_db.seen_forwarded_finality_update_slot.read().await;
-    if let Some((prev_slot, prev_slot_supermajority)) = *last_forwarded_update {
+    if let Some((prev_slot, prev_slot_supermajority)) =
+        *cached_db.seen_forwarded_finality_update_slot.read().await
+    {
         if new_slot < prev_slot {
             return Ok(ValidationResult::Ignore(
                 "Finality update slot is less than the last forwarded update slot".into(),
@@ -66,17 +66,13 @@ pub async fn validate_light_client_finality_update(
         return Ok(ValidationResult::Ignore("Too early".to_string()));
     };
 
-    {
-        let mut slot_cache = cached_db.seen_forwarded_finality_update_slot.write().await;
-        *slot_cache = Some((new_slot, has_supermajority));
-    };
-    {
-        let mut forwarded_light_client_finality_update = cached_db
-            .forwarded_light_client_finality_update
-            .write()
-            .await;
-        *forwarded_light_client_finality_update = Some(update.clone());
-    }
+    *cached_db.seen_forwarded_finality_update_slot.write().await =
+        Some((new_slot, has_supermajority));
+
+    *cached_db
+        .forwarded_light_client_finality_update
+        .write()
+        .await = Some(update.clone());
 
     Ok(ValidationResult::Accept)
 }
