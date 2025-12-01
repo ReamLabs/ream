@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
-use crate::leansig::{LeanSigScheme, SIGNATURE_SIZE, errors::LeanSigError, public_key::PublicKey};
+use crate::leansig::{LeanSigScheme, errors::LeanSigError, public_key::PublicKey};
+
+const SIGNATURE_SIZE: usize = 3112;
 
 type LeanSigSignature = <LeanSigScheme as SignatureScheme>::Signature;
 
