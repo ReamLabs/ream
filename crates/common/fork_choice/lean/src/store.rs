@@ -405,7 +405,7 @@ impl Store {
                 db.block_provider(),
             )
         };
-        let mut head_state = state_provider
+        let head_state = state_provider
             .get(head_root)?
             .ok_or(anyhow!("State not found for head root"))?;
         stop_timer(initialize_block_timer);
@@ -423,7 +423,7 @@ impl Store {
         let mut attestations = VariableList::empty();
         let mut signatures: Vec<Signature> = Vec::new();
 
-        loop {
+        let (mut candidate_block, post_state) = loop {
             let candidate_block = Block {
                 slot,
                 proposer_index: validator_index,
@@ -458,7 +458,7 @@ impl Store {
                 }
             }
             if new_attestations.is_empty() {
-                break;
+                break (candidate_block, advanced_state);
             }
 
             for attestation in new_attestations {
@@ -470,23 +470,14 @@ impl Store {
             for signature in new_signatures {
                 signatures.push(signature);
             }
-        }
-        stop_timer(add_attestations_timer);
-        head_state.process_slots(slot)?;
-
-        let mut final_block = Block {
-            slot,
-            proposer_index: validator_index,
-            parent_root: head_root,
-            state_root: B256::ZERO,
-            body: BlockBody { attestations },
         };
-        head_state.process_block(&final_block)?;
+        stop_timer(add_attestations_timer);
+
         let compute_state_root_timer = start_timer(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
-        final_block.state_root = head_state.tree_hash_root();
+        candidate_block.state_root = post_state.tree_hash_root();
         stop_timer(compute_state_root_timer);
         Ok(BlockWithSignatures {
-            block: final_block,
+            block: candidate_block,
             signatures: VariableList::new(signatures)
                 .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?,
         })
