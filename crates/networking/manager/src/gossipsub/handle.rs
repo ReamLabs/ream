@@ -406,7 +406,6 @@ pub async fn handle_gossipsub_message(
 
                 match validate_light_client_finality_update(
                     &light_client_finality_update,
-                    beacon_chain,
                     cached_db,
                 )
                 .await
