@@ -5,6 +5,7 @@ use ream_consensus_lean::{
     block::{BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
 };
 use ream_keystore::lean_keystore::ValidatorKeystore;
+use ream_metrics::{VALIDATORS_COUNT, set_int_gauge_vec};
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, info};
@@ -40,6 +41,7 @@ impl ValidatorService {
             "ValidatorService started with {} validator(s)",
             self.keystores.len()
         );
+        set_int_gauge_vec(&VALIDATORS_COUNT, self.keystores.len() as i64, &[]);
 
         let mut tick_count = 0u64;
 
