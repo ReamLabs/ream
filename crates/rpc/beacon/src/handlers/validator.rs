@@ -631,9 +631,11 @@ pub async fn post_aggregate_and_proofs_v2(
 #[post("/validator/beacon_committee_subscriptions")]
 pub async fn post_beacon_committee_subscriptions(
     db: Data<BeaconDB>,
+    network_manager: Data<NetworkManagerService>,
     committees: Json<Vec<BeaconCommitteeSubscription>>,
 ) -> Result<impl Responder, ApiError> {
-    let mut subnet_to_validators: HashMap<u64, Vec<u64>> = HashMap::new();
+    let mut subnet_to_subscriptions: HashMap<u64, Vec<BeaconCommitteeSubscription>> =
+        HashMap::new();
     for committee in committees.into_inner() {
         let state = get_state_from_id(ID::Slot(committee.slot), &db).await?;
         if committee.committees_at_slot > MAX_COMMITTEES_PER_SLOT {
@@ -665,13 +667,25 @@ pub async fn post_beacon_committee_subscriptions(
             committee.committee_index,
         );
 
-        subnet_to_validators
+        subnet_to_subscriptions
             .entry(subnet_id)
             .or_insert_with(|| Vec::new())
-            .push(committee.validator_index);
+            .push(committee);
+    }
+
+    for (_, subscriptions_vec) in subnet_to_subscriptions {
+        if (subscriptions_vec.is_empty()) {
+            continue;
+        }
+
+        let max_slot = subscriptions_vec.iter().max_by_key(|sub| sub.slot);
+        let min_slot = subscriptions_vec.iter().min_by_key(|sub| sub.slot);
+
+        let aggregator_exists = subscriptions_vec.iter().any(|sub| sub.is_aggregator);
     }
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "data": "success"
     })))
 }
+

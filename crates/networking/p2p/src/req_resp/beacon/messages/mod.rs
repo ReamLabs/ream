@@ -4,11 +4,13 @@ pub mod goodbye;
 pub mod meta_data;
 pub mod ping;
 pub mod status;
+pub mod attestation;
 
 use std::sync::Arc;
 
 use blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request};
 use blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request};
+use attestation::AttestationSubnetRequest;
 use goodbye::Goodbye;
 use meta_data::GetMetaDataV2;
 use ping::Ping;
@@ -30,6 +32,7 @@ pub enum BeaconRequestMessage {
     BeaconBlocksByRoot(BeaconBlocksByRootV2Request),
     BlobSidecarsByRange(BlobSidecarsByRangeV1Request),
     BlobSidecarsByRoot(BlobSidecarsByRootV1Request),
+    AttestationSubnet(AttestationSubnetRequest),
 }
 
 impl BeaconRequestMessage {
@@ -65,6 +68,11 @@ impl BeaconRequestMessage {
             BeaconRequestMessage::BlobSidecarsByRoot(_) => {
                 vec![ProtocolId::new(SupportedProtocol::Beacon(
                     BeaconSupportedProtocol::BlobSidecarsByRootV1,
+                ))]
+            }
+            BeaconRequestMessage::AttestationSubnet(_) => {
+                vec![ProtocolId::new(SupportedProtocol::Beacon(
+                    BeaconSupportedProtocol::AttestationSubnet,
                 ))]
             }
         }

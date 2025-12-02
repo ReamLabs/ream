@@ -50,6 +50,7 @@ use crate::{
         Chain, ReqResp, ReqRespMessage,
         beacon::messages::{
             BeaconRequestMessage, BeaconResponseMessage,
+            attestation::{AttestationSubnetRequest, AttestationSubnetResponse},
             blob_sidecars::BlobSidecarsByRootV1Request,
             blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
             meta_data::GetMetaDataV2,
@@ -324,6 +325,13 @@ impl Network {
                             },
                             P2PRequest::BlobIdentifiers { peer_id, blob_identifiers, callback } => {
                                 if let Some(request_id) = self.send_request(peer_id, BeaconRequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request::new(blob_identifiers))) {
+                                    self.callbacks.insert(request_id, callback);
+                                } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
+                                    warn!("Failed to send error response: {err:?}");
+                                }
+                            }
+                            P2PRequest::AttestationSubnet { peer_id, subnet_id, start_slot, end_slot, needs_aggregator, callback } => {
+                                if let Some(request_id) = self.send_request(peer_id, BeaconRequestMessage::AttestationSubnet(AttestationSubnetRequest::new(subnet_id, start_slot, end_slot, needs_aggregator))) {
                                     self.callbacks.insert(request_id, callback);
                                 } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
                                     warn!("Failed to send error response: {err:?}");

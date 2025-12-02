@@ -240,6 +240,12 @@ impl Decoder for OutboundSSZSnappyCodec {
                                             .map_err(ReqRespError::from)?,
                                     )
                                 }
+                                BeaconSupportedProtocol::AttestationSubnet => {
+                                    BeaconResponseMessage::AttestationSubnet(
+                                        BeaconCommitteeSubscription::from_ssz_bytes(&buf)
+                                            .map_err(ReqRespError::from)?,
+                                    )
+                                }
                             };
                             Ok(Some(RespMessage::Response(Box::new(
                                 ResponseMessage::Beacon(response_message.into()),

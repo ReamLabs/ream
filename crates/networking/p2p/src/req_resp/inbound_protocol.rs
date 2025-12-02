@@ -40,6 +40,7 @@ use crate::{
     req_resp::{
         Chain,
         beacon::messages::{
+            attestation::AttestationSubnetRequest,
             blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
             blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
             goodbye::Goodbye,
@@ -236,6 +237,12 @@ impl Decoder for InboundSSZSnappyCodec {
                                 return Err(ReqRespError::InvalidData(
                                     "GetMetaDataV2 is already handled above".to_string(),
                                 ));
+                            }
+                            BeaconSupportedProtocol::AttestationSubnet => {
+                                BeaconRequestMessage::AttestationSubnet(
+                                    AttestationSubnetRequest::from_ssz_bytes(&buf)
+                                        .map_err(ReqRespError::from)?,
+                                )
                             }
                         };
                         Ok(Some(RequestMessage::Beacon(request_message)))
