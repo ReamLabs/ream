@@ -50,7 +50,7 @@ use crate::{
         Chain, ReqResp, ReqRespMessage,
         beacon::messages::{
             BeaconRequestMessage, BeaconResponseMessage,
-            attestation::{AttestationSubnetRequest, AttestationSubnetResponse},
+            attestation::AttestationSubnetRequest,
             blob_sidecars::BlobSidecarsByRootV1Request,
             blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
             meta_data::GetMetaDataV2,

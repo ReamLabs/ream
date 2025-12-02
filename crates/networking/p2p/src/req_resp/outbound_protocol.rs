@@ -32,7 +32,8 @@ use crate::{
     req_resp::{
         beacon::{
             messages::{
-                BeaconResponseMessage, meta_data::GetMetaDataV2, ping::Ping, status::Status,
+                BeaconResponseMessage, attestation::AttestationSubnetResponse,
+                meta_data::GetMetaDataV2, ping::Ping, status::Status,
             },
             protocol_id::BeaconSupportedProtocol,
         },
@@ -242,7 +243,7 @@ impl Decoder for OutboundSSZSnappyCodec {
                                 }
                                 BeaconSupportedProtocol::AttestationSubnet => {
                                     BeaconResponseMessage::AttestationSubnet(
-                                        BeaconCommitteeSubscription::from_ssz_bytes(&buf)
+                                        AttestationSubnetResponse::from_ssz_bytes(&buf)
                                             .map_err(ReqRespError::from)?,
                                     )
                                 }

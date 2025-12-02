@@ -1,16 +1,16 @@
+pub mod attestation;
 pub mod blob_sidecars;
 pub mod blocks;
 pub mod goodbye;
 pub mod meta_data;
 pub mod ping;
 pub mod status;
-pub mod attestation;
 
 use std::sync::Arc;
 
+use attestation::{AttestationSubnetRequest, AttestationSubnetResponse};
 use blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request};
 use blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request};
-use attestation::AttestationSubnetRequest;
 use goodbye::Goodbye;
 use meta_data::GetMetaDataV2;
 use ping::Ping;
@@ -90,4 +90,5 @@ pub enum BeaconResponseMessage {
     BeaconBlocksByRoot(SignedBeaconBlock),
     BlobSidecarsByRange(BlobSidecar),
     BlobSidecarsByRoot(BlobSidecar),
+    AttestationSubnet(AttestationSubnetResponse),
 }

@@ -29,6 +29,7 @@ use ream_consensus_misc::{
     validator::Validator,
 };
 use ream_fork_choice_beacon::store::Store;
+use ream_network_manager::service::NetworkManagerService;
 use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use ream_validator_beacon::{
