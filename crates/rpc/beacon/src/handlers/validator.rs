@@ -5,6 +5,7 @@ use actix_web::{
     web::{Data, Json, Path, Query},
 };
 use ream_api_types_beacon::{
+    committee::BeaconCommitteeSubscription,
     id::ValidatorID,
     query::{AttestationQuery, IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
@@ -19,7 +20,10 @@ use ream_consensus_beacon::{
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
-    constants::beacon::{DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, SLOTS_PER_EPOCH},
+    constants::beacon::{
+        DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, MAX_COMMITTEES_PER_SLOT,
+        SLOTS_PER_EPOCH,
+    },
     misc::{compute_epoch_at_slot, compute_signing_root},
     validator::Validator,
 };
@@ -27,7 +31,8 @@ use ream_fork_choice_beacon::store::Store;
 use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use ream_validator_beacon::{
-    aggregate_and_proof::SignedAggregateAndProof, constants::DOMAIN_SELECTION_PROOF,
+    aggregate_and_proof::SignedAggregateAndProof, attestation::compute_subnet_for_attestation,
+    constants::DOMAIN_SELECTION_PROOF,
 };
 use serde::Serialize;
 
@@ -614,6 +619,40 @@ pub async fn post_aggregate_and_proofs_v2(
             return Err(ApiError::BadRequest(
                 "Aggregate proof verification failed".to_string(),
             ));
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "data": "success"
+    })))
+}
+
+#[post("/validator/beacon_committee_subscriptions")]
+pub async fn post_beacon_committee_subscriptions(
+    db: Data<BeaconDB>,
+    committees: Json<Vec<BeaconCommitteeSubscription>>,
+) -> Result<impl Responder, ApiError> {
+    for committee in committees.into_inner() {
+        let state = get_state_from_id(ID::Slot(committee.slot), &db);
+        if committee.committees_at_slot > MAX_COMMITTEES_PER_SLOT {
+            return Err(ApiError::BadRequest(
+                "Committees at a slot should be less than the maximum committees per slot".into(),
+            ));
+        }
+        if committee.committee_index >= committee.committees_at_slot {
+            return Err(ApiError::BadRequest(
+                "Committee index cannot be more than the committees in a slot".into(),
+            ));
+        }
+
+        let subnet_id = compute_subnet_for_attestation(
+            committee.committees_at_slot,
+            committee.slot,
+            committee.committee_index,
+        );
+
+        if (!committee.is_aggregator) {
+            
         }
     }
 

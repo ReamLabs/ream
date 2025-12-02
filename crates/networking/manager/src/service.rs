@@ -23,10 +23,10 @@ use tokio::{sync::mpsc, time::interval};
 use tracing::{error, info};
 
 use crate::{
-    config::ManagerConfig,
+    config::ManagerConfig, 
     gossipsub::handle::{handle_gossipsub_message, init_gossipsub_config_with_topics},
     p2p_sender::P2PSender,
-    req_resp::handle_req_resp_message,
+    req_resp::handle_req_resp_message, 
 };
 
 pub struct NetworkManagerService {

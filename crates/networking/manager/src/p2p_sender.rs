@@ -18,11 +18,11 @@ impl P2PSender {
             warn!("Failed to send gossip message: {err}");
         }
     }
-
+ 
     pub fn send_response(
         &self,
         peer_id: PeerId,
-        connection_id: ConnectionId,
+        connection_id: ConnectionId, 
         stream_id: u64,
         message: BeaconResponseMessage,
     ) {
