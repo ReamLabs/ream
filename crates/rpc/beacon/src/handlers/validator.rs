@@ -4,6 +4,7 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
+use hashbrown::HashMap;
 use ream_api_types_beacon::{
     committee::BeaconCommitteeSubscription,
     id::ValidatorID,
@@ -632,8 +633,9 @@ pub async fn post_beacon_committee_subscriptions(
     db: Data<BeaconDB>,
     committees: Json<Vec<BeaconCommitteeSubscription>>,
 ) -> Result<impl Responder, ApiError> {
+    let mut subnet_to_validators: HashMap<u64, Vec<u64>> = HashMap::new();
     for committee in committees.into_inner() {
-        let state = get_state_from_id(ID::Slot(committee.slot), &db);
+        let state = get_state_from_id(ID::Slot(committee.slot), &db).await?;
         if committee.committees_at_slot > MAX_COMMITTEES_PER_SLOT {
             return Err(ApiError::BadRequest(
                 "Committees at a slot should be less than the maximum committees per slot".into(),
@@ -645,15 +647,28 @@ pub async fn post_beacon_committee_subscriptions(
             ));
         }
 
+        let committee_members = state
+            .get_beacon_committee(committee.slot, committee.committee_index)
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?;
+
+        if !committee_members.contains(&committee.validator_index) {
+            return Err(ApiError::BadRequest(
+                "Validator not part of the committee".to_string(),
+            ));
+        }
+
         let subnet_id = compute_subnet_for_attestation(
             committee.committees_at_slot,
             committee.slot,
             committee.committee_index,
         );
 
-        if (!committee.is_aggregator) {
-            
-        }
+        subnet_to_validators
+            .entry(subnet_id)
+            .or_insert_with(|| Vec::new())
+            .push(committee.validator_index);
     }
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
