@@ -1,7 +1,10 @@
-use alloy_primitives::FixedBytes;
+use alloy_primitives::{
+    FixedBytes,
+    hex::{self, ToHexExt},
+};
 use anyhow::anyhow;
 use leansig::{serialization::Serializable, signature::SignatureScheme};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
@@ -25,21 +28,7 @@ pub type LeanSigPublicKey = <LeanSigScheme as SignatureScheme>::PublicKey;
 ///
 /// NOTE 2: We might use caching here (e.g., `OnceCell`) if serialization/deserialization becomes a
 /// bottleneck.
-#[derive(
-    Debug,
-    PartialEq,
-    Clone,
-    Encode,
-    Decode,
-    TreeHash,
-    Default,
-    Eq,
-    Hash,
-    Copy,
-    Deserialize,
-    Serialize,
-)]
-#[serde(transparent)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode, TreeHash, Default, Eq, Hash, Copy)]
 pub struct PublicKey {
     pub inner: FixedBytes<52>,
 }
@@ -66,5 +55,36 @@ impl PublicKey {
     pub fn as_lean_sig(&self) -> anyhow::Result<LeanSigPublicKey> {
         LeanSigPublicKey::from_bytes(self.inner.as_slice())
             .map_err(|err| anyhow!("Failed to decode LeanSigPublicKey from SSZ: {err:?}"))
+    }
+}
+
+impl Serialize for PublicKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!(
+            "0x{}",
+            self.as_lean_sig()
+                .map_err(serde::ser::Error::custom)?
+                .to_bytes()
+                .encode_hex()
+        ))
+    }
+}
+
+impl<'de> Deserialize<'de> for PublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let result: String = Deserialize::deserialize(deserializer)?;
+        let result = hex::decode(&result).map_err(serde::de::Error::custom)?;
+        Self::from_lean_sig(
+            LeanSigPublicKey::from_bytes(&result)
+                .map_err(|err| anyhow!("Convert to error, with error trait implemented {err:?}"))
+                .map_err(serde::de::Error::custom)?,
+        )
+        .map_err(serde::de::Error::custom)
     }
 }
