@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use anyhow::anyhow;
 use ream_keystore::lean_keystore::{ValidatorKeysManifest, ValidatorKeystore, ValidatorRegistry};
-use ream_post_quantum_crypto::leansig::private_key::{LeanSigPrivateKey, PrivateKey};
+use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
 
 /// Load validator registry from YAML file for a specific node
 ///
@@ -22,7 +22,9 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
     path.pop();
     path.push("hash-sig-keys/");
     let mut validator_keystores = vec![];
-    for ream_validator_index in validator_registry.nodes.get(node_id).expect("") {
+    for ream_validator_index in validator_registry.nodes.get(node_id).expect(format!(
+        "Failed to get validator indexes for given node ID {node_id}"
+    )) {
         path.push("validator-keys-manifest.yaml");
 
         let validator_keys_manifest_yaml = fs::read_to_string(&path)
@@ -39,12 +41,9 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
 
         path.pop();
         path.push(validator.privkey_file.clone());
-        let validator_private_key_json = fs::read_to_string(&path)
+        let validator_private_key_bytes = fs::read(&path)
             .map_err(|err| anyhow!("Failed to read validator private key json file {err}",))?;
-        let hash_sig_private_key =
-            serde_json::from_str::<LeanSigPrivateKey>(&validator_private_key_json)
-                .map_err(|err| anyhow!("Failed to parse validator private key json: {err}"))?;
-        let private_key = PrivateKey::new(hash_sig_private_key);
+        let private_key = PrivateKey::from_bytes(&validator_private_key_bytes)?;
 
         validator_keystores.push(ValidatorKeystore {
             index: *ream_validator_index,

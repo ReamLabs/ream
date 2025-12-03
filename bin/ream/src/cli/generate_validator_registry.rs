@@ -66,9 +66,9 @@ pub fn run_generate_validator_registry(
             PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
         genesis_validators.push(public_key);
 
-        let filename: String = format!("validator_{i}_sk.json");
+        let filename: String = format!("validator_{i}_sk.ssz");
         path.push(&filename);
-        fs::write(&path, serde_json::to_string(&private_key.inner)?)?;
+        fs::write(&path, private_key.to_bytes())?;
         path.pop();
 
         validators.push(ValidatorKeystoreRaw {

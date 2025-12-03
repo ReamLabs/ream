@@ -7,11 +7,11 @@ num_active_epochs: 262144
 num_validators: 3
 validators:
 - index: 0
-  pubkey_hex: 0x605065094422b9525f864d75d7dad0610f08b604513d112d5513e324f772411accb191097ea55e21733d221360b4407776b6e079
-  privkey_file: validator_0_sk.json
+  pubkey_hex: 0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65ec589c858b9c7980b276ebe550056b23f0bdc3b5a
+  privkey_file: validator_0_sk.ssz
 - index: 1
-  pubkey_hex: 0x9661f8676e93b542deea3d6585cfb91c7f98b44c2a2bd225dc1fd44d0ad4d940b551aa10bcc5f50fb543b9135cbbc8247dfb6244
-  privkey_file: validator_1_sk.json
+  pubkey_hex: 0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e377237595d9a27887421b5233d09a50832db2f303d
+  privkey_file: validator_1_sk.ssz
 - index: 2
-  pubkey_hex: 0xba43383d5dd7ff449468f47cfece54501fec7b77609cd6312e379d01d414df232b1742090d4e8202f95ebf47c57bf4148c98dc21
-  privkey_file: validator_2_sk.json
+  pubkey_hex: 0xd4355005bc37f76f390dcd2bcc51677d8c6ab44e0cc64913fb84ad459789a31105bd9a69afd2690ffd737d22ec6e3b31d47a642f
+  privkey_file: validator_2_sk.ssz
