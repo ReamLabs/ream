@@ -674,19 +674,19 @@ pub async fn post_beacon_committee_subscriptions(
             .push(committee);
     }
 
-    for (_, subscriptions_vec) in subnet_to_subscriptions {
-        if (subscriptions_vec.is_empty()) {
+    for (subnet_id, subscriptions_vec) in subnet_to_subscriptions {
+        if subscriptions_vec.is_empty() {
             continue;
         }
 
-        let max_slot = subscriptions_vec.iter().max_by_key(|sub| sub.slot);
-        let min_slot = subscriptions_vec.iter().min_by_key(|sub| sub.slot);
+        let max_slot = subscriptions_vec.iter().map(|s| s.slot).max().unwrap();
+        let min_slot = subscriptions_vec.iter().map(|s| s.slot).min().unwrap();
 
         let aggregator_exists = subscriptions_vec.iter().any(|sub| sub.is_aggregator);
+
     }
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "data": "success"
     })))
 }
-

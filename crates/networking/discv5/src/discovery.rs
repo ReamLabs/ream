@@ -51,7 +51,7 @@ enum EventStream {
     ),
     Present(mpsc::Receiver<discv5::Event>),
 }
-
+ 
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueryType {
     Peers,

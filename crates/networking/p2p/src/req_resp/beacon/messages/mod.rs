@@ -1,4 +1,3 @@
-pub mod attestation;
 pub mod blob_sidecars;
 pub mod blocks;
 pub mod goodbye;
@@ -8,7 +7,6 @@ pub mod status;
 
 use std::sync::Arc;
 
-use attestation::{AttestationSubnetRequest, AttestationSubnetResponse};
 use blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request};
 use blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request};
 use goodbye::Goodbye;
@@ -32,7 +30,6 @@ pub enum BeaconRequestMessage {
     BeaconBlocksByRoot(BeaconBlocksByRootV2Request),
     BlobSidecarsByRange(BlobSidecarsByRangeV1Request),
     BlobSidecarsByRoot(BlobSidecarsByRootV1Request),
-    AttestationSubnet(AttestationSubnetRequest),
 }
 
 impl BeaconRequestMessage {
@@ -70,11 +67,6 @@ impl BeaconRequestMessage {
                     BeaconSupportedProtocol::BlobSidecarsByRootV1,
                 ))]
             }
-            BeaconRequestMessage::AttestationSubnet(_) => {
-                vec![ProtocolId::new(SupportedProtocol::Beacon(
-                    BeaconSupportedProtocol::AttestationSubnet,
-                ))]
-            }
         }
     }
 }
@@ -90,5 +82,4 @@ pub enum BeaconResponseMessage {
     BeaconBlocksByRoot(SignedBeaconBlock),
     BlobSidecarsByRange(BlobSidecar),
     BlobSidecarsByRoot(BlobSidecar),
-    AttestationSubnet(AttestationSubnetResponse),
 }

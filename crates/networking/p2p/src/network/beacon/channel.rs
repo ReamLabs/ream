@@ -47,14 +47,6 @@ pub enum P2PRequest {
         blob_identifiers: Vec<BlobIdentifier>,
         callback: mpsc::Sender<anyhow::Result<P2PCallbackResponse>>,
     },
-    AttestationSubnet {
-        peer_id: PeerId,
-        subnet_id: u64,
-        start_slot: u64,
-        end_slot: u64,
-        needs_aggregator: bool,
-        callback: mpsc::Sender<anyhow::Result<P2PCallbackResponse>>,
-    },
 }
 
 pub struct P2PResponse {

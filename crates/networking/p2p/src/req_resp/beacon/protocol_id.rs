@@ -5,7 +5,6 @@ pub enum BeaconSupportedProtocol {
     BeaconBlocksByRootV2,
     BlobSidecarsByRangeV1,
     BlobSidecarsByRootV1,
-    AttestationSubnet,
     GetMetaDataV2,
     GoodbyeV1,
     PingV1,
@@ -19,7 +18,6 @@ impl BeaconSupportedProtocol {
             BeaconSupportedProtocol::BeaconBlocksByRootV2 => "beacon_blocks_by_root",
             BeaconSupportedProtocol::BlobSidecarsByRangeV1 => "blob_sidecars_by_range",
             BeaconSupportedProtocol::BlobSidecarsByRootV1 => "blob_sidecars_by_root",
-            BeaconSupportedProtocol::AttestationSubnet => "attestation_subnet",
             BeaconSupportedProtocol::GetMetaDataV2 => "metadata",
             BeaconSupportedProtocol::GoodbyeV1 => "goodbye",
             BeaconSupportedProtocol::PingV1 => "ping",
@@ -33,7 +31,6 @@ impl BeaconSupportedProtocol {
             BeaconSupportedProtocol::BeaconBlocksByRootV2 => "2",
             BeaconSupportedProtocol::BlobSidecarsByRangeV1 => "1",
             BeaconSupportedProtocol::BlobSidecarsByRootV1 => "1",
-            BeaconSupportedProtocol::AttestationSubnet => "1",
             BeaconSupportedProtocol::GetMetaDataV2 => "2",
             BeaconSupportedProtocol::GoodbyeV1 => "1",
             BeaconSupportedProtocol::PingV1 => "1",
@@ -51,7 +48,6 @@ impl BeaconSupportedProtocol {
             BeaconSupportedProtocol::BeaconBlocksByRootV2 => true,
             BeaconSupportedProtocol::BlobSidecarsByRangeV1 => true,
             BeaconSupportedProtocol::BlobSidecarsByRootV1 => true,
-            BeaconSupportedProtocol::AttestationSubnet => true,
         }
     }
 }
