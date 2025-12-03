@@ -13,8 +13,8 @@ use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_metrics::{
     ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL, ATTESTATIONS_VALID_TOTAL,
     FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT,
-    LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME, VALIDATORS_COUNT,
-    inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
+    LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME, inc_int_counter_vec,
+    set_int_gauge_vec, start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -83,12 +83,6 @@ impl Store {
         db.safe_target_provider()
             .insert(anchor_root)
             .expect("Failed to insert genesis block hash");
-
-        set_int_gauge_vec(
-            &VALIDATORS_COUNT,
-            lean_network_spec().num_validators as i64,
-            &[],
-        );
 
         Ok(Store {
             store: Arc::new(Mutex::new(db)),
