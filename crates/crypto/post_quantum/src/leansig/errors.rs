@@ -8,6 +8,9 @@ pub enum LeanSigError {
 
     #[error("Invalid signature length: {0}")]
     InvalidSignatureLength(usize),
+
+    #[error("Deserialization error: {0}")]
+    DeserializationError(anyhow::Error),
 }
 
 impl From<core::array::TryFromSliceError> for LeanSigError {

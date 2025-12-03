@@ -1,6 +1,7 @@
 use std::{fmt, fmt::Debug, ops::Range};
 
 use alloy_primitives::hex::ToHexExt;
+use anyhow::anyhow;
 use leansig::{
     MESSAGE_LENGTH,
     serialization::Serializable,
@@ -76,6 +77,17 @@ impl PrivateKey {
             .map_err(LeanSigError::SigningFailed)?;
 
         Signature::from_lean_sig(signature)
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, LeanSigError> {
+        Ok(Self {
+            inner: LeanSigPrivateKey::from_bytes(bytes)
+                .map_err(|err| LeanSigError::DeserializationError(anyhow!("{err:?}")))?,
+        })
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.inner.to_bytes()
     }
 }
 
