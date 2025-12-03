@@ -725,10 +725,15 @@ mod tests {
     use alloy_primitives::B256;
     use ream_consensus_lean::{
         attestation::{Attestation, AttestationData, SignedAttestation},
-        block::{Block, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
+        block::{
+            Block, BlockBody, BlockHeader, BlockWithAttestation, BlockWithSignatures,
+            SignedBlockWithAttestation,
+        },
         checkpoint::Checkpoint,
+        config::Config,
         state::LeanState,
         utils::generate_default_validators,
+        validator::is_proposer,
     };
     use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
     use ream_post_quantum_crypto::leansig::signature::Signature;
@@ -736,7 +741,7 @@ mod tests {
         db::{ReamDB, lean::LeanDB},
         tables::{field::REDBField, table::REDBTable},
     };
-    use ssz_types::{VariableList, typenum::U4096};
+    use ssz_types::{BitList, VariableList, typenum::U4096};
     use tempdir::TempDir;
     use tree_hash::TreeHash;
 
@@ -1143,5 +1148,291 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+    }
+
+    // VALIDATOR INTEGRATION TESTS
+
+    /// Test producing a block then creating attestation for it.
+    #[tokio::test]
+    pub async fn test_block_production_then_attestation() {
+        let (mut store, _) = sample_store(10).await;
+
+        let latest_justified_provider = {
+            let store = store.store.lock().await;
+            store.latest_justified_provider()
+        };
+        let BlockWithSignatures { block, signatures } =
+            store.produce_block_with_signatures(1, 1).await.unwrap();
+
+        let signed_block_with_attestation = build_signed_block_with_attestation(
+            store.produce_attestation_data(1).await.unwrap(),
+            block.clone(),
+            signatures,
+        );
+
+        store
+            .on_block(&signed_block_with_attestation, false)
+            .await
+            .unwrap();
+
+        store.update_head().await.unwrap();
+
+        let attestation = Attestation {
+            validator_id: 7,
+            data: store.produce_attestation_data(2).await.unwrap(),
+        };
+
+        assert_eq!(attestation.validator_id, 7);
+        assert_eq!(attestation.slot(), 2);
+        assert_eq!(
+            attestation.data.source,
+            latest_justified_provider.get().unwrap()
+        );
+    }
+
+    /// Test producing a block then creating attestation for it.
+    #[tokio::test]
+    pub async fn test_multiple_validators_coordination() {
+        let (mut store, _) = sample_store(10).await;
+
+        let (block_provider, head_provider) = {
+            let store = store.store.lock().await;
+            (store.block_provider(), store.head_provider())
+        };
+
+        let genesis_hash = head_provider.get().unwrap();
+        let BlockWithSignatures { block, signatures } =
+            store.produce_block_with_signatures(1, 1).await.unwrap();
+
+        let signed_block_with_attestation_1 = build_signed_block_with_attestation(
+            store.produce_attestation_data(1).await.unwrap(),
+            block.clone(),
+            signatures,
+        );
+
+        store
+            .on_block(&signed_block_with_attestation_1, false)
+            .await
+            .unwrap();
+
+        let block_1_hash = block.tree_hash_root();
+        assert!(block_provider.get(block_1_hash).unwrap().is_some());
+
+        let mut attestations = Vec::new();
+        for i in 2..6 {
+            let attestation = Attestation {
+                validator_id: i,
+                data: store.produce_attestation_data(2).await.unwrap(),
+            };
+            attestations.push(attestation);
+        }
+
+        let first_attestation = &attestations[0];
+        for attestation in attestations.iter().skip(1) {
+            assert_eq!(attestation.data.head, first_attestation.data.head);
+            assert_eq!(attestation.data.target, first_attestation.data.target);
+            assert_eq!(attestation.data.source, first_attestation.data.source);
+        }
+
+        let BlockWithSignatures { block, signatures } =
+            store.produce_block_with_signatures(2, 2).await.unwrap();
+
+        let signed_block_with_attestation_2 = build_signed_block_with_attestation(
+            store.produce_attestation_data(2).await.unwrap(),
+            block.clone(),
+            signatures,
+        );
+        store
+            .on_block(&signed_block_with_attestation_2, false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            signed_block_with_attestation_2.message.block.proposer_index,
+            2
+        );
+        assert_eq!(signed_block_with_attestation_2.message.block.slot, 2);
+
+        assert!(
+            block_provider
+                .get(block.tree_hash_root())
+                .unwrap()
+                .is_some()
+        );
+
+        assert_eq!(
+            signed_block_with_attestation_1.message.block.parent_root,
+            genesis_hash
+        );
+        assert_eq!(
+            signed_block_with_attestation_2.message.block.parent_root,
+            block_1_hash
+        );
+    }
+
+    /// Test edge cases in validator operations.
+    #[tokio::test]
+    pub async fn test_validator_edge_cases() {
+        let (mut store, _) = sample_store(10).await;
+
+        let BlockWithSignatures { block, signatures } =
+            store.produce_block_with_signatures(9, 9).await.unwrap();
+        assert_eq!(block.proposer_index, 9);
+
+        let signed_block_with_attestation_1 = build_signed_block_with_attestation(
+            store.produce_attestation_data(9).await.unwrap(),
+            block.clone(),
+            signatures,
+        );
+
+        store
+            .on_block(&signed_block_with_attestation_1, false)
+            .await
+            .unwrap();
+
+        let attestation = Attestation {
+            validator_id: 9,
+            data: store.produce_attestation_data(10).await.unwrap(),
+        };
+
+        assert_eq!(attestation.validator_id, 9);
+        assert_eq!(attestation.slot(), 10);
+    }
+
+    /// Test validator operations with minimal store state.
+    #[tokio::test]
+    pub async fn test_validator_operations_empty_store() {
+        let empty_checkpoint = Checkpoint {
+            slot: 0,
+            root: B256::ZERO,
+        };
+        let genesis_state = LeanState {
+            config: Config { genesis_time: 1000 },
+            slot: 0,
+            latest_block_header: BlockHeader {
+                slot: 0,
+                proposer_index: 0,
+                parent_root: B256::ZERO,
+                state_root: B256::ZERO,
+                body_root: BlockBody {
+                    attestations: Default::default(),
+                }
+                .tree_hash_root(),
+            },
+            latest_justified: empty_checkpoint,
+            latest_finalized: empty_checkpoint,
+            historical_block_hashes: VariableList::empty(),
+            justified_slots: BitList::with_capacity(0).unwrap(),
+            validators: VariableList::try_from(generate_default_validators(3)).unwrap(),
+            justifications_roots: VariableList::empty(),
+            justifications_validators: BitList::with_capacity(0).unwrap(),
+        };
+
+        let genesis_block = Block {
+            slot: 0,
+            proposer_index: 0,
+            parent_root: B256::ZERO,
+            state_root: genesis_state.tree_hash_root(),
+            body: BlockBody {
+                attestations: Default::default(),
+            },
+        };
+
+        let final_checkpoint = Checkpoint {
+            slot: 0,
+            root: genesis_block.tree_hash_root(),
+        };
+
+        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
+
+        let mut store = Store::get_forkchoice_store(
+            build_signed_block_with_attestation(
+                AttestationData {
+                    slot: genesis_block.slot,
+                    head: final_checkpoint,
+                    target: final_checkpoint,
+                    source: final_checkpoint,
+                },
+                genesis_block,
+                VariableList::default(),
+            ),
+            genesis_state,
+            db_setup(),
+            None,
+        )
+        .unwrap();
+
+        let BlockWithSignatures { block, signatures } =
+            store.produce_block_with_signatures(1, 1).await.unwrap();
+
+        let signed_block_with_attestation_1 = build_signed_block_with_attestation(
+            store.produce_attestation_data(1).await.unwrap(),
+            block.clone(),
+            signatures,
+        );
+
+        assert!(
+            store
+                .on_block(&signed_block_with_attestation_1, false)
+                .await
+                .is_ok()
+        );
+        assert!(store.produce_attestation_data(1).await.is_ok());
+    }
+
+    // VALIDATOR ERROR HANDLING TESTS
+
+    /// Test error when wrong validator tries to produce block.
+    #[tokio::test]
+    pub async fn test_produce_block_wrong_proposer() {
+        let (store, _) = sample_store(10).await;
+
+        let block = store.produce_block_with_signatures(5, 3).await;
+        assert!(block.is_err());
+        assert_eq!(
+            block.unwrap_err().to_string(),
+            "Validator 3 is not the proposer for slot 5".to_string()
+        );
+    }
+
+    /// Test error when parent state is missing.
+    #[tokio::test]
+    pub async fn test_produce_block_missing_parent_state() {
+        let (store, _) = sample_store(10).await;
+        store
+            .store
+            .lock()
+            .await
+            .head_provider()
+            .insert(B256::ZERO)
+            .unwrap();
+        store
+            .store
+            .lock()
+            .await
+            .safe_target_provider()
+            .insert(B256::ZERO)
+            .unwrap();
+
+        let block = store.produce_block_with_signatures(1, 1).await;
+        assert_eq!(
+            block.unwrap_err().to_string(),
+            "Failed to get head state for safe target update".to_string()
+        );
+    }
+
+    /// Test validator operations with invalid parameters.
+    #[tokio::test]
+    pub async fn test_validator_operations_invalid_parameters() {
+        let (store, _) = sample_store(10).await;
+
+        // shoudl fail
+        assert!(!is_proposer(1000000, 1000000, 10));
+
+        let attestation = Attestation {
+            validator_id: 1000000,
+            data: store.produce_attestation_data(1).await.unwrap(),
+        };
+        assert_eq!(attestation.validator_id, 1000000);
     }
 }
