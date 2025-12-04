@@ -8,7 +8,7 @@ You can build Ream on Linux.
 
 ### Dependencies
 
-First install Rust using <a href="https://rustup.rs/">rustup</a>:
+First install Rust using [rustup](https://rustup.rs/)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh

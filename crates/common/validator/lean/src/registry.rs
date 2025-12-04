@@ -2,7 +2,24 @@ use std::{fs, path::Path};
 
 use anyhow::anyhow;
 use ream_keystore::lean_keystore::{ValidatorKeysManifest, ValidatorKeystore, ValidatorRegistry};
-use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
+use ream_post_quantum_crypto::leansig::private_key::{LeanSigPrivateKey, PrivateKey};
+
+enum PrivateKeyFormat {
+    Json,
+    Ssz,
+}
+
+impl TryFrom<&str> for PrivateKeyFormat {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "json" => Ok(PrivateKeyFormat::Json),
+            "ssz" => Ok(PrivateKeyFormat::Ssz),
+            _ => Err(anyhow!("Unsupported private key format: {value}")),
+        }
+    }
+}
 
 /// Load validator registry from YAML file for a specific node
 ///
@@ -43,9 +60,19 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
 
         path.pop();
         path.push(validator.privkey_file.clone());
-        let validator_private_key_bytes = fs::read(&path)
-            .map_err(|err| anyhow!("Failed to read validator private key json file {err}",))?;
-        let private_key = PrivateKey::from_bytes(&validator_private_key_bytes)?;
+        let private_key = match PrivateKeyFormat::try_from(
+            path.extension().and_then(|s| s.to_str()).unwrap_or(""),
+        )? {
+            PrivateKeyFormat::Json => PrivateKey::new(
+                serde_json::from_str::<LeanSigPrivateKey>(&fs::read_to_string(&path)?)
+                    .map_err(|err| anyhow!("Failed to parse validator private key json: {err}"))?,
+            ),
+            PrivateKeyFormat::Ssz => {
+                PrivateKey::from_bytes(&fs::read(&path).map_err(|err| {
+                    anyhow!("Failed to read validator private key ssz file {err}",)
+                })?)?
+            }
+        };
 
         validator_keystores.push(ValidatorKeystore {
             index: *ream_validator_index,
