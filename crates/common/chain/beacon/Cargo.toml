@@ -20,6 +20,7 @@ tracing.workspace = true
 # ream dependencies
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
+ream-events-beacon.workspace = true
 ream-execution-engine.workspace = true
 ream-fork-choice-beacon.workspace = true
 ream-network-spec.workspace = true

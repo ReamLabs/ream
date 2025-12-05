@@ -9,6 +9,7 @@ use ream_discv5::{
     config::DiscoveryConfig,
     subnet::{AttestationSubnets, SyncCommitteeSubnets},
 };
+use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::beacon_network_spec;
@@ -59,6 +60,7 @@ impl NetworkManagerService {
         ream_db: BeaconDB,
         ream_dir: PathBuf,
         operation_pool: Arc<OperationPool>,
+        event_sender: tokio::sync::broadcast::Sender<BeaconEvent>,
     ) -> anyhow::Result<Self> {
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
             config.socket_address,
@@ -102,6 +104,7 @@ impl NetworkManagerService {
             ream_db.clone(),
             operation_pool,
             execution_engine,
+            Some(event_sender),
         ));
         let status = beacon_chain.build_status_request().await?;
 
