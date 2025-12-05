@@ -17,7 +17,7 @@ impl P2PSender {
         if let Err(err) = self.0.send(P2PMessage::Gossip(message)) {
             warn!("Failed to send gossip message: {err}");
         }
-    } 
+    }
 
     pub fn send_response(
         &self,

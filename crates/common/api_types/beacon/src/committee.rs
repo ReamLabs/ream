@@ -10,6 +10,5 @@ pub struct BeaconCommitteeSubscription {
     pub committees_at_slot: u64,
     #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,
-    pub is_aggregator: bool, 
+    pub is_aggregator: bool,
 }
- 

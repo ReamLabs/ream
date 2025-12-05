@@ -16,7 +16,7 @@ use ream_consensus_misc::{
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root, get_committee_indices},
 };
 use ream_network_spec::networks::beacon_network_spec;
-use ssz_types::{ 
+use ssz_types::{
     BitList, BitVector,
     typenum::{U64, U131072},
 };
@@ -30,7 +30,7 @@ pub fn is_aggregator(
     state: &BeaconState,
     slot: u64,
     committee_index: u64,
-    slot_signature: BLSSignature, 
+    slot_signature: BLSSignature,
 ) -> anyhow::Result<bool> {
     Ok(
         (hash_signature_prefix_to_u64(&slot_signature) as usize).is_multiple_of(max(

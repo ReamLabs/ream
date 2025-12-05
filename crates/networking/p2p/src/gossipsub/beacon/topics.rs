@@ -25,7 +25,7 @@ pub const BLOB_SIDECAR_PREFIX_TOPIC: &str = "blob_sidecar_";
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct GossipTopic {
-    pub fork: B32,  
+    pub fork: B32,
     pub kind: GossipTopicKind,
 }
 

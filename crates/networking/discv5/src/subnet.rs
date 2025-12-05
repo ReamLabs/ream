@@ -19,10 +19,10 @@ pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
 /// and handles encoding/decoding to raw bytes for ENR records.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AttestationSubnets(pub BitVector<U64>);
- 
+
 impl AttestationSubnets {
     pub fn new() -> Self {
-        Self(BitVector::new()) 
+        Self(BitVector::new())
     }
 
     pub fn enable_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {

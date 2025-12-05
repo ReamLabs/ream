@@ -117,7 +117,7 @@ pub async fn post_voluntary_exits(
         .as_ref()
         .p2p_sender
         .send_gossip(GossipMessage {
-            topic: GossipTopic { 
+            topic: GossipTopic {
                 fork: beacon_state.fork.current_version,
                 kind: GossipTopicKind::VoluntaryExit,
             },

@@ -32,8 +32,7 @@ use crate::{
     req_resp::{
         beacon::{
             messages::{
-                BeaconResponseMessage, 
-                meta_data::GetMetaDataV2, ping::Ping, status::Status,
+                BeaconResponseMessage, meta_data::GetMetaDataV2, ping::Ping, status::Status,
             },
             protocol_id::BeaconSupportedProtocol,
         },
