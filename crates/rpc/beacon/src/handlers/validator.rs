@@ -672,6 +672,9 @@ pub async fn post_beacon_committee_subscriptions(
             .push(committee);
     }
 
+    // TODO
+    // add support for attestation subnet subscriptions for validators
+
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "data": "success"
     })))
