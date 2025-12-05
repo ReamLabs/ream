@@ -328,7 +328,7 @@ impl Network {
                                 } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
                                     warn!("Failed to send error response: {err:?}");
                                 }
-                            }
+                            },
                             P2PRequest::Status { peer_id, status } => {
                                 self.send_request(peer_id, BeaconRequestMessage::Status(status));
                             }

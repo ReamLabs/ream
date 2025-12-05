@@ -4,7 +4,9 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
+use hashbrown::HashMap;
 use ream_api_types_beacon::{
+    committee::BeaconCommitteeSubscription,
     id::ValidatorID,
     query::{AttestationQuery, IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
@@ -19,7 +21,10 @@ use ream_consensus_beacon::{
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
-    constants::beacon::{DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, SLOTS_PER_EPOCH},
+    constants::beacon::{
+        DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, MAX_COMMITTEES_PER_SLOT,
+        SLOTS_PER_EPOCH,
+    },
     misc::{compute_epoch_at_slot, compute_signing_root},
     validator::Validator,
 };
@@ -27,7 +32,8 @@ use ream_fork_choice_beacon::store::Store;
 use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use ream_validator_beacon::{
-    aggregate_and_proof::SignedAggregateAndProof, constants::DOMAIN_SELECTION_PROOF,
+    aggregate_and_proof::SignedAggregateAndProof, attestation::compute_subnet_for_attestation,
+    constants::DOMAIN_SELECTION_PROOF,
 };
 use serde::Serialize;
 
@@ -616,6 +622,55 @@ pub async fn post_aggregate_and_proofs_v2(
             ));
         }
     }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "data": "success"
+    })))
+}
+
+#[post("/validator/beacon_committee_subscriptions")]
+pub async fn post_beacon_committee_subscriptions(
+    db: Data<BeaconDB>,
+    subscriptions: Json<Vec<BeaconCommitteeSubscription>>,
+) -> Result<impl Responder, ApiError> {
+    let mut subnet_to_subscriptions: HashMap<u64, Vec<BeaconCommitteeSubscription>> =
+        HashMap::new();
+    for sub in subscriptions.into_inner() {
+        let state = get_state_from_id(ID::Slot(sub.slot), &db).await?;
+        if sub.committees_at_slot > MAX_COMMITTEES_PER_SLOT {
+            return Err(ApiError::BadRequest(
+                "Committees at a slot should be less than the maximum committees per slot".into(),
+            ));
+        }
+        if sub.committee_index >= sub.committees_at_slot {
+            return Err(ApiError::BadRequest(
+                "Committee index cannot be more than the committees in a slot".into(),
+            ));
+        }
+
+        let committee_members = state
+            .get_beacon_committee(sub.slot, sub.committee_index)
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?;
+
+        if !committee_members.contains(&sub.validator_index) {
+            return Err(ApiError::BadRequest(
+                "Validator not part of the committee".to_string(),
+            ));
+        }
+
+        let subnet_id =
+            compute_subnet_for_attestation(sub.committees_at_slot, sub.slot, sub.committee_index);
+
+        subnet_to_subscriptions
+            .entry(subnet_id)
+            .or_default()
+            .push(sub);
+    }
+
+    // TODO
+    // add support for attestation subnet subscriptions for validators
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "data": "success"
