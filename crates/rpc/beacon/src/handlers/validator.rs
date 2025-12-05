@@ -665,7 +665,7 @@ pub async fn post_beacon_committee_subscriptions(
 
         subnet_to_subscriptions
             .entry(subnet_id)
-            .or_insert_with(|| Vec::new())
+            .or_insert_with(Vec::new)
             .push(sub);
     }
 
