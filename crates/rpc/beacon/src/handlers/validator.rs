@@ -31,6 +31,7 @@ use ream_consensus_misc::{
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::service::NetworkManagerService;
 use ream_operation_pool::OperationPool;
+use ream_p2p::{gossipsub::beacon::topics::{GossipTopic, GossipTopicKind}, network::beacon::channel::GossipMessage};
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof, attestation::compute_subnet_for_attestation,
@@ -682,7 +683,20 @@ pub async fn post_beacon_committee_subscriptions(
         let max_slot = subscriptions_vec.iter().map(|s| s.slot).max().unwrap();
         let min_slot = subscriptions_vec.iter().map(|s| s.slot).min().unwrap();
 
+        let state = get_state_from_id(ID::Slot(max_slot), &db).await?;
+
         let aggregator_exists = subscriptions_vec.iter().any(|sub| sub.is_aggregator);
+
+        network_manager
+        .as_ref()
+        .p2p_sender
+        .send_gossip(GossipMessage {
+            topic: GossipTopic { 
+                fork: state.fork.current_version,
+                kind: GossipTopicKind::BeaconAttestation(subnet_id),
+            },
+            data: subscriptions_vec.as_ssz_bytes(),
+        });
 
     }
 
