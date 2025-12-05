@@ -57,11 +57,10 @@ impl BeaconChain {
 
         // Build and Emit Block event
         let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
-        let block_event = BlockEvent::from_block(
-            &signed_block,
-            finalized_checkpoint,
-            |block_root, epoch| store.get_checkpoint_block(block_root, epoch),
-        )?;
+        let block_event =
+            BlockEvent::from_block(&signed_block, finalized_checkpoint, |block_root, epoch| {
+                store.get_checkpoint_block(block_root, epoch)
+            })?;
         self.event_sender
             .send_event(BeaconEvent::Block(block_event));
 
@@ -128,5 +127,4 @@ impl BeaconChain {
             head_slot,
         })
     }
-
 }

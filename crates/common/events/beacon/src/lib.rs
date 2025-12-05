@@ -8,12 +8,11 @@ pub use eventsource_client::Event;
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     bls_to_execution_change::BLSToExecutionChange, contribution_and_proof::ContributionAndProof,
+    electra::beacon_block::SignedBeaconBlock,
     polynomial_commitments::kzg_commitment::KZGCommitment, voluntary_exit::VoluntaryExit,
 };
-use ream_consensus_beacon::electra::beacon_block::SignedBeaconBlock;
 use ream_consensus_misc::{
-    beacon_block_header::SignedBeaconBlockHeader,
-    checkpoint::Checkpoint,
+    beacon_block_header::SignedBeaconBlockHeader, checkpoint::Checkpoint,
     indexed_attestation::IndexedAttestation,
 };
 use ream_light_client::{
@@ -79,12 +78,14 @@ impl BlockEvent {
                         ream_consensus_misc::misc::compute_epoch_at_slot(signed_block.message.slot);
                     let finalized_epoch = finalized_checkpoint.epoch;
 
-                    // If block's epoch is before or equal to finalized epoch, check if it's an ancestor
+                    // If block's epoch is before or equal to finalized epoch, check if it's an
+                    // ancestor
                     if block_epoch <= finalized_epoch {
                         match get_checkpoint_block(block_root, finalized_epoch) {
                             Ok(checkpoint_block_at_finalized_epoch) => {
-                                // If the checkpoint block at finalized epoch equals the finalized checkpoint root,
-                                // this block is an ancestor of the finalized checkpoint, so it's finalized
+                                // If the checkpoint block at finalized epoch equals the finalized
+                                // checkpoint root, this block is an
+                                // ancestor of the finalized checkpoint, so it's finalized
                                 checkpoint_block_at_finalized_epoch != finalized_checkpoint.root
                             }
                             Err(_) => true, // If we can't determine, assume optimistic
