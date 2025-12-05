@@ -29,12 +29,7 @@ use ream_consensus_misc::{
     validator::Validator,
 };
 use ream_fork_choice_beacon::store::Store;
-// use ream_network_manager::service::NetworkManagerService;
 use ream_operation_pool::OperationPool;
-// use ream_p2p::{
-//     gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
-//     network::beacon::channel::GossipMessage,
-// };
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof, attestation::compute_subnet_for_attestation,
@@ -636,7 +631,6 @@ pub async fn post_aggregate_and_proofs_v2(
 #[post("/validator/beacon_committee_subscriptions")]
 pub async fn post_beacon_committee_subscriptions(
     db: Data<BeaconDB>,
-    // network_manager: Data<NetworkManagerService>,
     committees: Json<Vec<BeaconCommitteeSubscription>>,
 ) -> Result<impl Responder, ApiError> {
     let mut subnet_to_subscriptions: HashMap<u64, Vec<BeaconCommitteeSubscription>> =
@@ -677,20 +671,6 @@ pub async fn post_beacon_committee_subscriptions(
             .or_insert_with(|| Vec::new())
             .push(committee);
     }
-
-    // for (subnet_id, subscriptions_vec) in subnet_to_subscriptions {
-    //     if subscriptions_vec.is_empty() {
-    //         continue;
-    //     }
-
-    //     let max_slot = subscriptions_vec.iter().map(|s| s.slot).max().unwrap();
-    //     let min_slot = subscriptions_vec.iter().map(|s| s.slot).min().unwrap();
-
-    //     let state = get_state_from_id(ID::Slot(max_slot), &db).await?;
-
-    //     let aggregator_exists = subscriptions_vec.iter().any(|sub| sub.is_aggregator);
-
-    // }
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "data": "success"
