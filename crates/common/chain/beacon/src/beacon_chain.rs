@@ -56,7 +56,12 @@ impl BeaconChain {
         .await?;
 
         // Build and Emit Block event
-        let block_event = self.build_block_event(signed_block).await?;
+        let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
+        let block_event = BlockEvent::from_block(
+            &signed_block,
+            finalized_checkpoint,
+            |block_root, epoch| store.get_checkpoint_block(block_root, epoch),
+        )?;
         self.event_sender
             .send_event(BeaconEvent::Block(block_event));
 
@@ -124,51 +129,4 @@ impl BeaconChain {
         })
     }
 
-    async fn build_block_event(
-        &self,
-        signed_block: SignedBeaconBlock,
-    ) -> anyhow::Result<BlockEvent> {
-        let block_root = signed_block.message.block_root();
-        let execution_optimistic = match self
-            .store
-            .lock()
-            .await
-            .db
-            .finalized_checkpoint_provider()
-            .get()
-        {
-            Ok(finalized_checkpoint) => {
-                if block_root == finalized_checkpoint.root {
-                    false
-                } else {
-                    let block_epoch =
-                        ream_consensus_misc::misc::compute_epoch_at_slot(signed_block.message.slot);
-                    let finalized_epoch = finalized_checkpoint.epoch;
-
-                    if block_epoch <= finalized_epoch {
-                        match self
-                            .store
-                            .lock()
-                            .await
-                            .get_checkpoint_block(block_root, finalized_epoch)
-                        {
-                            Ok(checkpoint_block_at_finalized_epoch) => {
-                                checkpoint_block_at_finalized_epoch != finalized_checkpoint.root
-                            }
-                            Err(_) => true,
-                        }
-                    } else {
-                        true
-                    }
-                }
-            }
-            Err(_) => true,
-        };
-
-        Ok(BlockEvent {
-            slot: signed_block.message.slot,
-            block: block_root,
-            execution_optimistic,
-        })
-    }
 }

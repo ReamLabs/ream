@@ -10,8 +10,11 @@ use ream_consensus_beacon::{
     bls_to_execution_change::BLSToExecutionChange, contribution_and_proof::ContributionAndProof,
     polynomial_commitments::kzg_commitment::KZGCommitment, voluntary_exit::VoluntaryExit,
 };
+use ream_consensus_beacon::electra::beacon_block::SignedBeaconBlock;
 use ream_consensus_misc::{
-    beacon_block_header::SignedBeaconBlockHeader, indexed_attestation::IndexedAttestation,
+    beacon_block_header::SignedBeaconBlockHeader,
+    checkpoint::Checkpoint,
+    indexed_attestation::IndexedAttestation,
 };
 use ream_light_client::{
     finality_update::LightClientFinalityUpdate, optimistic_update::LightClientOptimisticUpdate,
@@ -50,6 +53,57 @@ pub struct BlockEvent {
     pub slot: u64,
     pub block: B256,
     pub execution_optimistic: bool,
+}
+
+impl BlockEvent {
+    /// Creates a new `BlockEvent` from a signed block.
+    ///
+    /// `get_checkpoint_block` is a function that computes the checkpoint block for a given epoch
+    /// in the chain of the given block root.
+    pub fn from_block<F>(
+        signed_block: &SignedBeaconBlock,
+        finalized_checkpoint: Option<Checkpoint>,
+        get_checkpoint_block: F,
+    ) -> anyhow::Result<Self>
+    where
+        F: FnOnce(B256, u64) -> anyhow::Result<B256>,
+    {
+        let block_root = signed_block.message.block_root();
+        let execution_optimistic = match finalized_checkpoint {
+            Some(finalized_checkpoint) => {
+                // Block is not optimistic (finalized) if it's the finalized checkpoint block itself
+                if block_root == finalized_checkpoint.root {
+                    false
+                } else {
+                    let block_epoch =
+                        ream_consensus_misc::misc::compute_epoch_at_slot(signed_block.message.slot);
+                    let finalized_epoch = finalized_checkpoint.epoch;
+
+                    // If block's epoch is before or equal to finalized epoch, check if it's an ancestor
+                    if block_epoch <= finalized_epoch {
+                        match get_checkpoint_block(block_root, finalized_epoch) {
+                            Ok(checkpoint_block_at_finalized_epoch) => {
+                                // If the checkpoint block at finalized epoch equals the finalized checkpoint root,
+                                // this block is an ancestor of the finalized checkpoint, so it's finalized
+                                checkpoint_block_at_finalized_epoch != finalized_checkpoint.root
+                            }
+                            Err(_) => true, // If we can't determine, assume optimistic
+                        }
+                    } else {
+                        // Block is after finalized epoch, so it's optimistic
+                        true
+                    }
+                }
+            }
+            None => true, // If no finalized checkpoint, assume optimistic
+        };
+
+        Ok(Self {
+            slot: signed_block.message.slot,
+            block: block_root,
+            execution_optimistic,
+        })
+    }
 }
 
 /// Finalized checkpoint event.
