@@ -631,45 +631,42 @@ pub async fn post_aggregate_and_proofs_v2(
 #[post("/validator/beacon_committee_subscriptions")]
 pub async fn post_beacon_committee_subscriptions(
     db: Data<BeaconDB>,
-    committees: Json<Vec<BeaconCommitteeSubscription>>,
+    subscriptions: Json<Vec<BeaconCommitteeSubscription>>,
 ) -> Result<impl Responder, ApiError> {
     let mut subnet_to_subscriptions: HashMap<u64, Vec<BeaconCommitteeSubscription>> =
         HashMap::new();
-    for committee in committees.into_inner() {
-        let state = get_state_from_id(ID::Slot(committee.slot), &db).await?;
-        if committee.committees_at_slot > MAX_COMMITTEES_PER_SLOT {
+    for sub in subscriptions.into_inner() {
+        let state = get_state_from_id(ID::Slot(sub.slot), &db).await?;
+        if sub.committees_at_slot > MAX_COMMITTEES_PER_SLOT {
             return Err(ApiError::BadRequest(
                 "Committees at a slot should be less than the maximum committees per slot".into(),
             ));
         }
-        if committee.committee_index >= committee.committees_at_slot {
+        if sub.committee_index >= sub.committees_at_slot {
             return Err(ApiError::BadRequest(
                 "Committee index cannot be more than the committees in a slot".into(),
             ));
         }
 
         let committee_members = state
-            .get_beacon_committee(committee.slot, committee.committee_index)
+            .get_beacon_committee(sub.slot, sub.committee_index)
             .map_err(|err| {
                 ApiError::InternalError(format!("Failed due to internal error: {err}"))
             })?;
 
-        if !committee_members.contains(&committee.validator_index) {
+        if !committee_members.contains(&sub.validator_index) {
             return Err(ApiError::BadRequest(
                 "Validator not part of the committee".to_string(),
             ));
         }
 
-        let subnet_id = compute_subnet_for_attestation(
-            committee.committees_at_slot,
-            committee.slot,
-            committee.committee_index,
-        );
+        let subnet_id =
+            compute_subnet_for_attestation(sub.committees_at_slot, sub.slot, sub.committee_index);
 
         subnet_to_subscriptions
             .entry(subnet_id)
             .or_insert_with(|| Vec::new())
-            .push(committee);
+            .push(sub);
     }
 
     // TODO
