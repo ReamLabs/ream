@@ -112,7 +112,12 @@ impl Store {
                 .ok_or(anyhow!("No blocks found to calculate fork choice"))?;
         }
 
-        let start_slot = block_provider.get(root)?.expect("msg").message.block.slot;
+        let start_slot = block_provider
+            .get(root)?
+            .expect("Failed to get block for root")
+            .message
+            .block
+            .slot;
         // For each block, count the number of votes for that block. A vote
         // for any descendant of a block also counts as a vote for that block
         let mut weights = HashMap::<B256, u64>::new();

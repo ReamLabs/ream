@@ -263,7 +263,7 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
         let head_block = db
             .block_provider()
             .get(head_root)?
-            .ok_or_else(|| anyhow::anyhow!("Head block not found"))?;
+            .ok_or_else(|| anyhow!("Head block not found"))?;
         let actual_slot = head_block.message.block.slot;
 
         ensure!(

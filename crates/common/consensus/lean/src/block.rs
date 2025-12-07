@@ -37,13 +37,12 @@ impl SignedBlockWithAttestation {
         let validators = &parent_state.validators;
 
         for (attestation, signature) in all_attestations.iter().zip(signatures.iter()) {
-            let validator_id = attestation.validator_id as usize;
             ensure!(
-                validator_id < validators.len(),
+                attestation.validator_id < validators.len() as u64,
                 "Validator index out of range"
             );
             let validator = validators
-                .get(validator_id)
+                .get(attestation.validator_id as usize)
                 .ok_or(anyhow!("Failed to get validator"))?;
 
             if verify_signatures {
