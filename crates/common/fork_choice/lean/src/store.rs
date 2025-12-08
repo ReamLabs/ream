@@ -404,6 +404,10 @@ impl Store {
             .ok_or(anyhow!("State not found for head root"))?;
         stop_timer(initialize_block_timer);
 
+        // cache latest known attestations
+        let latest_known_attestations_map =
+            latest_known_attestation_provider.get_all_attestations()?;
+
         let num_validators = head_state.validators.len();
 
         ensure!(
@@ -433,10 +437,7 @@ impl Store {
 
             let mut new_attestations: VariableList<Attestation, U4096> = VariableList::empty();
             let mut new_signatures: Vec<Signature> = Vec::new();
-            for signed_attestation in latest_known_attestation_provider
-                .get_all_attestations()?
-                .values()
-            {
+            for signed_attestation in latest_known_attestations_map.values() {
                 let data = &signed_attestation.message.data;
                 if !block_provider.contains_key(data.head.root) {
                     continue;
