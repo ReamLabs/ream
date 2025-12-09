@@ -1,6 +1,8 @@
 //! https://ethereum.github.io/consensus-specs/specs/phase0/p2p-interface/#the-gossip-domain-gossipsub
 
 pub mod beacon;
+#[cfg(test)]
+pub mod configurations;
 pub mod error;
 pub mod lean;
 pub mod snappy;

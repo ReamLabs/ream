@@ -1,6 +1,6 @@
 use std::{
     fmt::{self, Display},
-    sync::{Arc, Once, OnceLock},
+    sync::{Arc, LazyLock, Once, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -23,11 +23,14 @@ pub fn set_lean_network_spec(network_spec: Arc<LeanNetworkSpec>) {
             "LeanNetworkSpec has already been initialized. Subsequent calls to set_lean_network_spec will be ignored. If this is production code, this is likely a bug."
         );
     }
-
     HAS_NETWORK_SPEC_BEEN_INITIALIZED.call_once(|| {
-        LEAN_NETWORK_SPEC
-            .set(network_spec)
-            .expect("LeanNetworkSpec should be set only once at the start of the application");
+        set_lean_network_spec(network_spec);
+    });
+}
+
+pub fn initialize_lean_test_network_spec() {
+    HAS_NETWORK_SPEC_BEEN_INITIALIZED.call_once(|| {
+        set_lean_network_spec(TEST.clone());
     });
 }
 
@@ -138,3 +141,6 @@ impl<'de> Deserialize<'de> for DiscardUnknown {
         Ok(DiscardUnknown)
     }
 }
+
+pub static TEST: LazyLock<Arc<LeanNetworkSpec>> =
+    LazyLock::new(|| LeanNetworkSpec::ephemery().into());
