@@ -398,6 +398,17 @@ pub async fn handle_gossipsub_message(
                     }
                 }
             }
+            GossipsubMessage::DataColumnSidecar(data_column_sidecar) => {
+                info!(
+                    "Data Column Sidecar received over gossipsub: index: {}, root: {}",
+                    data_column_sidecar.index,
+                    data_column_sidecar
+                        .signed_block_header
+                        .message
+                        .tree_hash_root()
+                );
+                // TODO validate, store and propagate
+            }
             GossipsubMessage::LightClientFinalityUpdate(light_client_finality_update) => {
                 info!(
                     "Light Client Finality Update received over gossipsub: root: {}",

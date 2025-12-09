@@ -22,6 +22,7 @@ pub const BLS_TO_EXECUTION_CHANGE_TOPIC: &str = "bls_to_execution_change";
 pub const LIGHT_CLIENT_FINALITY_UPDATE_TOPIC: &str = "light_client_finality_update";
 pub const LIGHT_CLIENT_OPTIMISTIC_UPDATE_TOPIC: &str = "light_client_optimistic_update";
 pub const BLOB_SIDECAR_PREFIX_TOPIC: &str = "blob_sidecar_";
+pub const DATA_COLUMN_SIDECAR_PREFIX_TOPIC: &str = "data_column_sidecar_";
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct GossipTopic {
@@ -58,6 +59,11 @@ impl GossipTopic {
                     .strip_prefix(BLOB_SIDECAR_PREFIX_TOPIC)
                     .and_then(|s| s.parse().ok())
                     .map(GossipTopicKind::BlobSidecar)
+            } else if topic.starts_with(DATA_COLUMN_SIDECAR_PREFIX_TOPIC) {
+                topic
+                    .strip_prefix(DATA_COLUMN_SIDECAR_PREFIX_TOPIC)
+                    .and_then(|s| s.parse().ok())
+                    .map(GossipTopicKind::DataColumnSidecar)
             } else {
                 None
             }
@@ -140,6 +146,12 @@ impl From<GossipTopic> for TopicHash {
                     val.fork.encode_hex(),
                 ));
             }
+            DataColumnSidecar(index) => {
+                return TopicHash::from_raw(format!(
+                    "/{TOPIC_PREFIX}/{}/{DATA_COLUMN_SIDECAR_PREFIX_TOPIC}{index}{ENCODING_POSTFIX}",
+                    val.fork.encode_hex(),
+                ));
+            }
         };
 
         TopicHash::from_raw(format!(
@@ -163,6 +175,7 @@ pub enum GossipTopicKind {
     LightClientFinalityUpdate,
     LightClientOptimisticUpdate,
     BlobSidecar(u64),
+    DataColumnSidecar(u64),
 }
 
 impl std::fmt::Display for GossipTopicKind {
@@ -195,6 +208,9 @@ impl std::fmt::Display for GossipTopicKind {
             }
             GossipTopicKind::BlobSidecar(blob_index) => {
                 write!(f, "{BLOB_SIDECAR_PREFIX_TOPIC}{blob_index}")
+            }
+            GossipTopicKind::DataColumnSidecar(column_index) => {
+                write!(f, "{DATA_COLUMN_SIDECAR_PREFIX_TOPIC}{column_index}")
             }
         }
     }
