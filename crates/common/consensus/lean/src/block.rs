@@ -1,5 +1,6 @@
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
+use ream_metrics::{PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, start_timer, stop_timer};
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -46,6 +47,7 @@ impl SignedBlockWithAttestation {
                 .ok_or(anyhow!("Failed to get validator"))?;
 
             if verify_signatures {
+                let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, &[]);
                 ensure!(
                     signature.verify(
                         &validator.public_key,
@@ -54,6 +56,7 @@ impl SignedBlockWithAttestation {
                     )?,
                     "Failed to verify"
                 );
+                stop_timer(timer);
             }
         }
 

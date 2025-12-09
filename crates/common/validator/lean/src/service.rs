@@ -5,7 +5,10 @@ use ream_consensus_lean::{
     block::{BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
 };
 use ream_keystore::lean_keystore::ValidatorKeystore;
-use ream_metrics::{VALIDATORS_COUNT, set_int_gauge_vec};
+use ream_metrics::{
+    PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, VALIDATORS_COUNT, set_int_gauge_vec, start_timer,
+    stop_timer,
+};
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, info};
@@ -80,7 +83,12 @@ impl ValidatorService {
 
                             let attestation_data = rx.await.expect("Failed to receive attestation data from LeanChainService");
                                 let message = Attestation { validator_id: keystore.index, data: attestation_data };
-                                signatures.push(keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?).map_err(|err| anyhow!("Failed to push signature {err:?}"))?;
+
+                                let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
+                                let signature = keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
+                                stop_timer(timer);
+
+                                signatures.push(signature).map_err(|err| anyhow!("Failed to push signature {err:?}"))?;
                                 let signed_block_with_attestation = SignedBlockWithAttestation {
                                     message: BlockWithAttestation {
                                         block: block.clone(),
@@ -133,11 +141,14 @@ impl ValidatorService {
                             let mut signed_attestations = vec![];
                             for (_, keystore) in self.keystores.iter().enumerate().filter(|(index, _)| *index as u64 != slot % lean_network_spec().num_validators) {
                                 let message = Attestation {
-                                        validator_id: keystore.index,
-                                        data: attestation_data.clone()
-                                    };
+                                    validator_id: keystore.index,
+                                    data: attestation_data.clone()
+                                };
+                                let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
+                                let signature =keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
+                                stop_timer(timer);
                                     signed_attestations.push(SignedAttestation {
-                                    signature: keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?,
+                                    signature,
                                     message,
                                 });
                             }

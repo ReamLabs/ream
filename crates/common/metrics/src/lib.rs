@@ -130,6 +130,21 @@ lazy_static::lazy_static! {
         &[],
         default_registry()
     ).expect("failed to create STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME histogram vec");
+
+    // PQ Signature Metrics
+    pub static ref PQ_SIGNATURE_ATTESTATION_SIGNING_TIME: HistogramVec = register_histogram_vec_with_registry!(
+        "lean_pq_signature_attestation_signing_time_seconds",
+        "Time taken to sign an attestation",
+        &[],
+        default_registry()
+    ).expect("failed to create PQ_SIGNATURE_ATTESTATION_SIGNING_TIME histogram vec");
+
+    pub static ref PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME: HistogramVec = register_histogram_vec_with_registry!(
+        "lean_pq_signature_attestation_verification_time_seconds",
+        "Time taken to verify an attestation signature",
+        &[],
+        default_registry()
+    ).expect("failed to create PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME histogram vec");
 }
 
 /// Set the value of a gauge metric
