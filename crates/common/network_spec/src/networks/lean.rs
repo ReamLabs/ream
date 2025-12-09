@@ -29,9 +29,7 @@ pub fn set_lean_network_spec(network_spec: Arc<LeanNetworkSpec>) {
 }
 
 pub fn initialize_lean_test_network_spec() {
-    HAS_NETWORK_SPEC_BEEN_INITIALIZED.call_once(|| {
-        set_lean_network_spec(TEST.clone());
-    });
+    set_lean_network_spec(TEST.clone());
 }
 
 /// Returns the static [LeanNetworkSpec] initialized by [set_lean_network_spec].
