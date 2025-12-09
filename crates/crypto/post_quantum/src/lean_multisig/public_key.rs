@@ -42,9 +42,8 @@ impl PublicKey {
         let mut bytes = Vec::new();
 
         // Serialize merkle_root (8 field elements, 4 bytes each)
-        for elem in &public_key.merkle_root {
-            let value_str = format!("{elem:?}");
-            let value: u32 = value_str.parse().map_err(|err| {
+        for element in &public_key.merkle_root {
+            let value: u32 = format!("{element:?}").parse().map_err(|err| {
                 SerializationError(anyhow!("Failed to parse field element: {err}"))
             })?;
             bytes.extend_from_slice(&value.to_le_bytes());
