@@ -14,6 +14,7 @@ alloy-primitives.workspace = true
 anyhow.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
+lean-multisig.workspace = true
 leansig.workspace = true
 rand.workspace = true
 serde.workspace = true
