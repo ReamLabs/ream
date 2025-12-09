@@ -24,7 +24,9 @@ pub fn set_lean_network_spec(network_spec: Arc<LeanNetworkSpec>) {
         );
     }
     HAS_NETWORK_SPEC_BEEN_INITIALIZED.call_once(|| {
-        set_lean_network_spec(network_spec);
+        LEAN_NETWORK_SPEC
+            .set(network_spec)
+            .expect("LeanNetworkSpec should be set only once at the start of the application");
     });
 }
 
