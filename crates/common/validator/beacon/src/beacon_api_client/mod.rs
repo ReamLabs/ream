@@ -25,7 +25,6 @@ use ream_api_types_common::id::ID;
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     attestation::Attestation,
-    contribution_and_proof::{SignedContributionAndProof, SyncCommitteeContribution},
     electra::{
         beacon_block::SignedBeaconBlock,
         blinded_beacon_block::{BlindedBeaconBlock, SignedBlindedBeaconBlock},
@@ -35,7 +34,10 @@ use ream_consensus_beacon::{
     voluntary_exit::SignedVoluntaryExit,
 };
 use ream_consensus_misc::{attestation_data::AttestationData, fork::Fork};
-use ream_events_beacon::{BeaconEvent, EventTopic};
+use ream_events_beacon::{
+    BeaconEvent, EventTopic,
+    contribution_and_proof::{SignedContributionAndProof, SyncCommitteeContribution},
+};
 use ream_network_spec::networks::BeaconNetworkSpec;
 use reqwest::{Url, header::HeaderMap};
 use serde_json::json;

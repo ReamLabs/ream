@@ -7,8 +7,7 @@ use anyhow::anyhow;
 pub use eventsource_client::Event;
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
-    bls_to_execution_change::BLSToExecutionChange, contribution_and_proof::ContributionAndProof,
-    electra::beacon_block::SignedBeaconBlock,
+    bls_to_execution_change::BLSToExecutionChange, electra::beacon_block::SignedBeaconBlock,
     polynomial_commitments::kzg_commitment::KZGCommitment, voluntary_exit::VoluntaryExit,
 };
 use ream_consensus_misc::{
@@ -22,6 +21,9 @@ use serde::{
     Deserialize, Serialize,
     de::{DeserializeOwned, Error},
 };
+
+use crate::contribution_and_proof::ContributionAndProof;
+pub mod contribution_and_proof;
 
 /// Head event.
 ///

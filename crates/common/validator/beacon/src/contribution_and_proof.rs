@@ -1,8 +1,6 @@
 use ream_bls::{BLSSignature, PrivateKey, traits::Signable};
-pub use ream_consensus_beacon::contribution_and_proof::{
-    ContributionAndProof, SignedContributionAndProof, SyncCommitteeContribution,
-};
 use ream_consensus_misc::misc::{compute_domain, compute_signing_root};
+use ream_events_beacon::contribution_and_proof::{ContributionAndProof, SyncCommitteeContribution};
 use ream_network_spec::networks::beacon_network_spec;
 
 use crate::{

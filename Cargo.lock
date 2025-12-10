@@ -6026,9 +6026,12 @@ dependencies = [
  "ream-light-client",
  "serde",
  "serde_json",
+ "ssz_types",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -6291,6 +6294,7 @@ dependencies = [
  "ream-consensus-lean",
  "ream-consensus-misc",
  "ream-discv5",
+ "ream-events-beacon",
  "ream-executor",
  "ream-light-client",
  "ream-network-spec",

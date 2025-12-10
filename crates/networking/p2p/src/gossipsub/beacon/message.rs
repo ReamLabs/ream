@@ -1,12 +1,12 @@
 use libp2p::gossipsub::TopicHash;
 use ream_consensus_beacon::{
     attester_slashing::AttesterSlashing, blob_sidecar::BlobSidecar,
-    bls_to_execution_change::SignedBLSToExecutionChange,
-    contribution_and_proof::SignedContributionAndProof, electra::beacon_block::SignedBeaconBlock,
+    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_block::SignedBeaconBlock,
     proposer_slashing::ProposerSlashing, single_attestation::SingleAttestation,
     voluntary_exit::SignedVoluntaryExit,
 };
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
+use ream_events_beacon::contribution_and_proof::SignedContributionAndProof;
 use ream_light_client::{
     finality_update::LightClientFinalityUpdate, optimistic_update::LightClientOptimisticUpdate,
 };

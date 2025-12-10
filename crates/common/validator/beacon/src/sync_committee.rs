@@ -7,7 +7,6 @@ use ream_bls::{
     traits::{Aggregatable, Signable},
 };
 use ream_consensus_beacon::{
-    contribution_and_proof::SyncCommitteeContribution,
     electra::{beacon_block::BeaconBlock, beacon_state::BeaconState},
     sync_aggregate::SyncAggregate,
 };
@@ -17,6 +16,7 @@ use ream_consensus_misc::{
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
 };
+use ream_events_beacon::contribution_and_proof::SyncCommitteeContribution;
 use ream_network_spec::networks::beacon_network_spec;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};

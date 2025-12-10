@@ -18,9 +18,7 @@ use ream_api_types_beacon::{
 use ream_api_types_common::id::ID;
 use ream_bls::{BLSSignature, PublicKey, traits::Signable};
 use ream_consensus_beacon::{
-    contribution_and_proof::{ContributionAndProof, SignedContributionAndProof},
-    electra::beacon_state::BeaconState,
-    single_attestation::SingleAttestation,
+    electra::beacon_state::BeaconState, single_attestation::SingleAttestation,
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
@@ -28,6 +26,9 @@ use ream_consensus_misc::{
         DOMAIN_SYNC_COMMITTEE, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH, SYNC_COMMITTEE_SIZE,
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+};
+use ream_events_beacon::contribution_and_proof::{
+    ContributionAndProof, SignedContributionAndProof,
 };
 use ream_executor::ReamExecutor;
 use ream_keystore::keystore::Keystore;

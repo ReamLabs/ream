@@ -1,13 +1,12 @@
 use anyhow::anyhow;
 use ream_bls::{PublicKey, traits::Verifiable};
 use ream_chain_beacon::beacon_chain::BeaconChain;
-use ream_consensus_beacon::{
-    contribution_and_proof::SignedContributionAndProof, electra::beacon_state::BeaconState,
-};
+use ream_consensus_beacon::electra::beacon_state::BeaconState;
 use ream_consensus_misc::{
     constants::beacon::{DOMAIN_SYNC_COMMITTEE, SYNC_COMMITTEE_SIZE},
     misc::{compute_epoch_at_slot, compute_signing_root, compute_sync_committee_period},
 };
+use ream_events_beacon::contribution_and_proof::SignedContributionAndProof;
 use ream_storage::{
     cache::{CacheSyncCommitteeContribution, CachedDB, SyncCommitteeKey},
     tables::table::REDBTable,
