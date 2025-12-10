@@ -727,7 +727,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::B256;
+    use alloy_primitives::{B256, FixedBytes};
     use ream_consensus_lean::{
         attestation::{Attestation, AttestationData, SignedAttestation},
         block::{
@@ -740,7 +740,8 @@ mod tests {
         utils::generate_default_validators,
         validator::is_proposer,
     };
-    use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
+    use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
+    use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
     use ream_post_quantum_crypto::leansig::signature::Signature;
     use ream_storage::{
         db::{ReamDB, lean::LeanDB},
@@ -761,8 +762,11 @@ mod tests {
     }
 
     pub async fn sample_store(no_of_validators: usize) -> (Store, LeanState) {
-        let (genesis_block, genesis_state) =
-            setup_genesis(0, generate_default_validators(no_of_validators));
+        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
+        let (genesis_block, genesis_state) = setup_genesis(
+            lean_network_spec().genesis_time,
+            generate_default_validators(no_of_validators),
+        );
 
         let checkpoint = Checkpoint {
             slot: genesis_block.slot,
@@ -779,14 +783,12 @@ mod tests {
             VariableList::default(),
         );
 
-        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
-
         (
             Store::get_forkchoice_store(
                 signed_genesis_block,
                 genesis_state.clone(),
                 db_setup(),
-                None,
+                Some(0),
             )
             .unwrap(),
             genesis_state,
@@ -1439,5 +1441,616 @@ mod tests {
             data: store.produce_attestation_data(1).await.unwrap(),
         };
         assert_eq!(attestation.validator_id, 1000000);
+    }
+
+    // ON TICK TESTS
+
+    // Test basic on_tick functionality.
+    #[tokio::test]
+    pub async fn test_on_tick_basic() {
+        let (store, state) = sample_store(10).await;
+
+        let initial_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+        let target_time = state.config.genesis_time + 200;
+
+        store.on_tick(target_time, true).await.unwrap();
+
+        let new_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        assert!(new_time > initial_time);
+    }
+
+    // Test on_tick without proposal.
+    #[tokio::test]
+    pub async fn test_on_tick_no_proposal() {
+        let (store, state) = sample_store(10).await;
+
+        let initial_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+        let target_time = state.config.genesis_time + 100;
+
+        store.on_tick(target_time, false).await.unwrap();
+
+        let new_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        assert!(new_time >= initial_time);
+    }
+
+    // Test on_tick when already at target time.
+    #[tokio::test]
+    pub async fn test_on_tick_already_current() {
+        let (store, state) = sample_store(10).await;
+
+        let initial_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+        let current_target = state.config.genesis_time + initial_time;
+
+        store.on_tick(current_target, true).await.unwrap();
+
+        let new_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        assert!(new_time - initial_time <= 10);
+    }
+
+    // Test on_tick with small time increment.
+    #[tokio::test]
+    pub async fn test_on_tick_small_increment() {
+        let (store, state) = sample_store(10).await;
+
+        let initial_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+        let target_time = state.config.genesis_time + initial_time + 1;
+
+        store.on_tick(target_time, false).await.unwrap();
+
+        let new_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        assert!(new_time >= initial_time);
+    }
+
+    // TEST INTERVAL TICKING
+
+    // Test basic interval ticking.
+    #[tokio::test]
+    pub async fn test_tick_interval_basic() {
+        let (store, _) = sample_store(10).await;
+
+        let initial_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        store.tick_interval(false).await.unwrap();
+
+        let new_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        assert!(new_time == initial_time + 1)
+    }
+
+    // Test interval ticking with proposal.
+    #[tokio::test]
+    pub async fn test_tick_interval_with_proposal() {
+        let (store, _) = sample_store(10).await;
+
+        let initial_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        store.tick_interval(true).await.unwrap();
+
+        let new_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        assert!(new_time == initial_time + 1)
+    }
+
+    // Test sequence of interval ticks.
+    #[tokio::test]
+    pub async fn test_tick_interval_sequence() {
+        let (store, _) = sample_store(10).await;
+
+        let initial_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        for i in 0..5 {
+            store.tick_interval((i % 2) == 0).await.unwrap();
+        }
+
+        let new_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        assert!(new_time == initial_time + 5)
+    }
+
+    // Test different actions performed based on interval phase.
+    #[tokio::test]
+    pub async fn test_tick_interval_actions_by_phase() {
+        let (store, _) = sample_store(10).await;
+
+        let mut root = [0u8; 32];
+        root[..4].copy_from_slice(b"test");
+        let test_checkpoint = Checkpoint {
+            slot: 1,
+            root: FixedBytes::new(root),
+        };
+
+        {
+            let db = store.store.lock().await;
+            let justified_provider = db.latest_justified_provider();
+            let justified_checkpoint = justified_provider.get().unwrap();
+            let attestation_data = AttestationData {
+                slot: 1,
+                head: justified_checkpoint,
+                target: test_checkpoint,
+                source: justified_checkpoint,
+            };
+            let message = Attestation {
+                validator_id: 5,
+                data: attestation_data,
+            };
+            let signed_attestation = SignedAttestation {
+                message,
+                signature: Signature::blank(),
+            };
+            let db_table = db.latest_new_attestations_provider();
+            db_table
+                .insert(signed_attestation.message.validator_id, signed_attestation)
+                .unwrap();
+        };
+
+        for interval in 0..INTERVALS_PER_SLOT {
+            let has_proposal = interval == 0;
+            store.tick_interval(has_proposal).await.unwrap();
+
+            let new_time = {
+                let time_provider = store.store.lock().await.time_provider();
+                time_provider.get().unwrap()
+            };
+            let current_interval = new_time % INTERVALS_PER_SLOT;
+            let expected_interval = (interval + 1) % INTERVALS_PER_SLOT;
+
+            assert!(current_interval == expected_interval);
+        }
+    }
+
+    // TEST SLOT TIME CALCULATIONS
+
+    // Test conversion from slot to time.
+    #[tokio::test]
+    pub async fn test_slot_to_time_conversion() {
+        let (_, state) = sample_store(10).await;
+
+        let genesis_time = state.config.genesis_time;
+
+        let slot_0_time = genesis_time + 0 * lean_network_spec().seconds_per_slot;
+        assert!(slot_0_time == genesis_time);
+
+        let slot_1_time = genesis_time + 1 * lean_network_spec().seconds_per_slot;
+        assert!(slot_1_time == genesis_time + lean_network_spec().seconds_per_slot);
+
+        let slot_10_time = genesis_time + 10 * lean_network_spec().seconds_per_slot;
+        assert!(slot_10_time == genesis_time + 10 * lean_network_spec().seconds_per_slot);
+    }
+
+    // Test conversion from time to slot.
+    #[tokio::test]
+    pub async fn test_time_to_slot_conversion() {
+        let (_, state) = sample_store(10).await;
+
+        let genesis_time = state.config.genesis_time;
+
+        let time_at_genesis = genesis_time;
+        let slot_0 = (time_at_genesis - genesis_time) / lean_network_spec().seconds_per_slot;
+        assert!(slot_0 == 0);
+
+        let time_after_one_slot = genesis_time + lean_network_spec().seconds_per_slot;
+        let slot_1 = (time_after_one_slot - genesis_time) / lean_network_spec().seconds_per_slot;
+        assert!(slot_1 == 1);
+
+        let time_after_five_slots = genesis_time + 5 * lean_network_spec().seconds_per_slot;
+        let slot_5 = (time_after_five_slots - genesis_time) / lean_network_spec().seconds_per_slot;
+        assert!(slot_5 == 5);
+    }
+
+    // Test interval calculations within slots.
+    #[tokio::test]
+    pub async fn test_interval_calculations() {
+        let total_intervals = 10;
+        let slot_number = total_intervals / INTERVALS_PER_SLOT;
+        let interval_in_slot = total_intervals % INTERVALS_PER_SLOT;
+
+        assert!(slot_number == 2);
+        assert!(interval_in_slot == 2);
+
+        let boundary_intervals = INTERVALS_PER_SLOT;
+        let boundary_slot = boundary_intervals / INTERVALS_PER_SLOT;
+        let boundary_interval = boundary_intervals % INTERVALS_PER_SLOT;
+
+        assert!(boundary_slot == 1);
+        assert!(boundary_interval == 0);
+    }
+
+    // TEST ATTESTATION PROCESSING TIMING
+
+    // Test basic new attestation processing.
+    #[tokio::test]
+    pub async fn test_accept_new_attestations_basic() {
+        let (store, _) = sample_store(10).await;
+
+        let mut root = [0u8; 32];
+        root[..4].copy_from_slice(b"test");
+        let checkpoint = Checkpoint {
+            slot: 1,
+            root: FixedBytes::new(root),
+        };
+        {
+            let db = store.store.lock().await;
+            let justified_provider = db.latest_justified_provider();
+            let justified_checkpoint = justified_provider.get().unwrap();
+            let attestation_data = AttestationData {
+                slot: 1,
+                head: justified_checkpoint,
+                target: checkpoint,
+                source: justified_checkpoint,
+            };
+            let message = Attestation {
+                validator_id: 5,
+                data: attestation_data,
+            };
+            let signed_attestation = SignedAttestation {
+                message,
+                signature: Signature::blank(),
+            };
+            let db_table = db.latest_new_attestations_provider();
+            db_table
+                .insert(signed_attestation.message.validator_id, signed_attestation)
+                .unwrap();
+        };
+
+        let inititial_new_attestations_length = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_attestations_provider()
+                .iter_values()
+                .unwrap()
+                .count()
+        };
+        let initial_known_attestations_length = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_known_attestations_provider()
+                .get_all_attestations()
+                .unwrap()
+                .keys()
+                .len()
+        };
+
+        store.accept_new_attestations().await.unwrap();
+
+        let final_new_attestations_length = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_attestations_provider()
+                .iter_values()
+                .unwrap()
+                .count()
+        };
+        let final_latest_known_attestations_length = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_known_attestations_provider()
+                .get_all_attestations()
+                .unwrap()
+                .keys()
+                .len()
+        };
+
+        assert!(final_new_attestations_length == 0);
+        assert!(
+            final_latest_known_attestations_length
+                == initial_known_attestations_length + inititial_new_attestations_length
+        );
+    }
+
+    // Test accepting multiple new attestations.
+    #[tokio::test]
+    pub async fn test_accept_new_attestations_multiple() {
+        let (store, _) = sample_store(10).await;
+
+        let mut checkpoints: Vec<Checkpoint> = Vec::new();
+        for i in 0..5 {
+            let root = {
+                let mut root_vec = [0u8; 32];
+                root_vec[..4].copy_from_slice(b"test");
+                root_vec[5] = i;
+                FixedBytes::new(root_vec)
+            };
+
+            checkpoints.push(Checkpoint {
+                root,
+                slot: i.into(),
+            });
+        }
+
+        for (i, checkpoint) in checkpoints.iter().enumerate().map(|(i, c)| (i as u64, c)) {
+            let db = store.store.lock().await;
+            let justified_provider = db.latest_justified_provider();
+            let justified_checkpoint = justified_provider.get().unwrap();
+            let attestation_data = AttestationData {
+                slot: i,
+                head: justified_checkpoint,
+                target: *checkpoint,
+                source: justified_checkpoint,
+            };
+            let message = Attestation {
+                validator_id: i,
+                data: attestation_data,
+            };
+            let signed_attestation = SignedAttestation {
+                message,
+                signature: Signature::blank(),
+            };
+            let db_table = db.latest_new_attestations_provider();
+            db_table
+                .insert(signed_attestation.message.validator_id, signed_attestation)
+                .unwrap();
+        }
+
+        store.accept_new_attestations().await.unwrap();
+
+        let new_attestations_length = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_attestations_provider()
+                .iter_values()
+                .unwrap()
+                .count()
+        };
+        let latest_known_attestations_length = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_known_attestations_provider()
+                .get_all_attestations()
+                .unwrap()
+                .keys()
+                .len()
+        };
+
+        assert!(new_attestations_length == 0);
+        assert!(latest_known_attestations_length == 5);
+
+        for (i, checkpoint) in checkpoints.iter().enumerate().map(|(i, c)| (i as u64, c)) {
+            let stored_checkpoint = {
+                store
+                    .store
+                    .lock()
+                    .await
+                    .latest_known_attestations_provider()
+                    .get(i)
+                    .unwrap()
+                    .unwrap()
+                    .message
+                    .data
+                    .target
+            };
+            assert!(stored_checkpoint == *checkpoint);
+        }
+    }
+
+    // Test accepting new attestations when there are none.
+    #[tokio::test]
+    pub async fn test_accept_new_attestations_empty() {
+        let (store, _) = sample_store(10).await;
+
+        let initial_known_attestations_length = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_known_attestations_provider()
+                .get_all_attestations()
+                .unwrap()
+                .keys()
+                .len()
+        };
+
+        store.accept_new_attestations().await.unwrap();
+
+        let final_new_attestations_length = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_attestations_provider()
+                .iter_values()
+                .unwrap()
+                .count()
+        };
+        let latest_known_attestations_length = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_known_attestations_provider()
+                .get_all_attestations()
+                .unwrap()
+                .keys()
+                .len()
+        };
+
+        assert!(final_new_attestations_length == 0);
+        assert!(latest_known_attestations_length == initial_known_attestations_length);
+    }
+
+    // TEST PROPOSAL HEAD TIMING
+
+    // Test getting proposal head for a slot.
+    #[tokio::test]
+    pub async fn test_get_proposal_head_basic() {
+        let (store, _) = sample_store(10).await;
+
+        let head = store.get_proposal_head(0).await.unwrap();
+
+        let stored_head = { store.store.lock().await.head_provider().get().unwrap() };
+
+        assert!(head == stored_head);
+    }
+
+    // Test that get_proposal_head advances store time appropriately.
+    #[tokio::test]
+    pub async fn test_get_proposal_head_advances_time() {
+        let (store, _) = sample_store(10).await;
+
+        let initial_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        store.get_proposal_head(5).await.unwrap();
+
+        let new_time = {
+            let time_provider = store.store.lock().await.time_provider();
+            time_provider.get().unwrap()
+        };
+
+        assert!(new_time >= initial_time);
+    }
+
+    // Test that get_proposal_head processes pending attestations.
+    #[tokio::test]
+    pub async fn test_get_proposal_head_processes_attestations() {
+        let (store, _) = sample_store(10).await;
+
+        let root = {
+            let mut root_vec = [0u8; 32];
+            root_vec[..11].copy_from_slice(b"attestation");
+            FixedBytes::new(root_vec)
+        };
+        let checkpoint = Checkpoint { slot: 10, root };
+
+        {
+            let db = store.store.lock().await;
+            let justified_provider = db.latest_justified_provider();
+            let justified_checkpoint = justified_provider.get().unwrap();
+            let attestation_data = AttestationData {
+                slot: 10,
+                head: justified_checkpoint,
+                target: checkpoint,
+                source: justified_checkpoint,
+            };
+            let message = Attestation {
+                validator_id: 10,
+                data: attestation_data,
+            };
+            let signed_attestation = SignedAttestation {
+                message,
+                signature: Signature::blank(),
+            };
+            let db_table = db.latest_new_attestations_provider();
+            db_table
+                .insert(signed_attestation.message.validator_id, signed_attestation)
+                .unwrap();
+        };
+
+        store.get_proposal_head(1).await.unwrap();
+
+        let new_attestations_length = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_attestations_provider()
+                .iter_values()
+                .unwrap()
+                .count()
+        };
+
+        let known_attestations_correct_checkpoint = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_known_attestations_provider()
+                .get_all_attestations()
+                .unwrap()
+                .get(&10)
+                .unwrap()
+                .message
+                .data
+                .target
+        };
+
+        assert!(new_attestations_length == 0);
+        assert!(known_attestations_correct_checkpoint.slot == 10);
+        assert!(known_attestations_correct_checkpoint == checkpoint);
+    }
+
+    // TEST TIME CONSTANTS
+
+    // Test that time constants are consistent with each other.
+    #[tokio::test]
+    pub async fn test_time_constants_consistency() {
+        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
+        let seconds_per_interval = lean_network_spec().seconds_per_slot / INTERVALS_PER_SLOT;
+
+        assert!(INTERVALS_PER_SLOT > 0);
+        assert!(seconds_per_interval > 0);
+        assert!(lean_network_spec().seconds_per_slot > 0);
+    }
+
+    // Test the relationship between intervals and slots.
+    #[tokio::test]
+    pub async fn test_interval_slot_relationship() {
+        assert!(INTERVALS_PER_SLOT >= 2);
+
+        let total_intervals = 100;
+        let complete_slots = total_intervals / INTERVALS_PER_SLOT;
+        let remaining_intervals = total_intervals % INTERVALS_PER_SLOT;
+
+        let reconstructed = complete_slots * INTERVALS_PER_SLOT + remaining_intervals;
+        assert!(reconstructed == total_intervals);
     }
 }
