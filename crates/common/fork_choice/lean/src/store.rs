@@ -1653,10 +1653,10 @@ mod tests {
 
         let genesis_time = state.config.genesis_time;
 
-        let slot_0_time = genesis_time + 0 * lean_network_spec().seconds_per_slot;
+        let slot_0_time = genesis_time;
         assert!(slot_0_time == genesis_time);
 
-        let slot_1_time = genesis_time + 1 * lean_network_spec().seconds_per_slot;
+        let slot_1_time = genesis_time + lean_network_spec().seconds_per_slot;
         assert!(slot_1_time == genesis_time + lean_network_spec().seconds_per_slot);
 
         let slot_10_time = genesis_time + 10 * lean_network_spec().seconds_per_slot;
@@ -2031,6 +2031,9 @@ mod tests {
     // TEST TIME CONSTANTS
 
     // Test that time constants are consistent with each other.
+    #[allow(clippy::erasing_op)]
+    #[allow(clippy::identity_op)]
+    #[allow(clippy::assertions_on_constants)]
     #[tokio::test]
     pub async fn test_time_constants_consistency() {
         set_lean_network_spec(LeanNetworkSpec::ephemery().into());
@@ -2042,6 +2045,9 @@ mod tests {
     }
 
     // Test the relationship between intervals and slots.
+    #[allow(clippy::erasing_op)]
+    #[allow(clippy::identity_op)]
+    #[allow(clippy::assertions_on_constants)]
     #[tokio::test]
     pub async fn test_interval_slot_relationship() {
         assert!(INTERVALS_PER_SLOT >= 2);
