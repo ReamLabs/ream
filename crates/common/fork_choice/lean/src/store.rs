@@ -1449,19 +1449,14 @@ mod tests {
     #[tokio::test]
     pub async fn test_on_tick_basic() {
         let (store, state) = sample_store(10).await;
+        let time_provider = { store.store.lock().await.time_provider() };
 
-        let initial_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let initial_time = time_provider.get().unwrap();
         let target_time = state.config.genesis_time + 200;
 
         store.on_tick(target_time, true).await.unwrap();
 
-        let new_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let new_time = time_provider.get().unwrap();
 
         assert!(new_time > initial_time);
     }
@@ -1470,19 +1465,14 @@ mod tests {
     #[tokio::test]
     pub async fn test_on_tick_no_proposal() {
         let (store, state) = sample_store(10).await;
+        let time_provider = { store.store.lock().await.time_provider() };
 
-        let initial_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let initial_time = time_provider.get().unwrap();
         let target_time = state.config.genesis_time + 100;
 
         store.on_tick(target_time, false).await.unwrap();
 
-        let new_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let new_time = time_provider.get().unwrap();
 
         assert!(new_time >= initial_time);
     }
@@ -1491,19 +1481,14 @@ mod tests {
     #[tokio::test]
     pub async fn test_on_tick_already_current() {
         let (store, state) = sample_store(10).await;
+        let time_provider = { store.store.lock().await.time_provider() };
 
-        let initial_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let initial_time = time_provider.get().unwrap();
         let current_target = state.config.genesis_time + initial_time;
 
         store.on_tick(current_target, true).await.unwrap();
 
-        let new_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let new_time = time_provider.get().unwrap();
 
         assert!(new_time - initial_time <= 10);
     }
@@ -1512,19 +1497,14 @@ mod tests {
     #[tokio::test]
     pub async fn test_on_tick_small_increment() {
         let (store, state) = sample_store(10).await;
+        let time_provider = { store.store.lock().await.time_provider() };
 
-        let initial_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let initial_time = time_provider.get().unwrap();
         let target_time = state.config.genesis_time + initial_time + 1;
 
         store.on_tick(target_time, false).await.unwrap();
 
-        let new_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let new_time = time_provider.get().unwrap();
 
         assert!(new_time >= initial_time);
     }
@@ -1535,18 +1515,13 @@ mod tests {
     #[tokio::test]
     pub async fn test_tick_interval_basic() {
         let (store, _) = sample_store(10).await;
+        let time_provider = { store.store.lock().await.time_provider() };
 
-        let initial_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let initial_time = time_provider.get().unwrap();
 
         store.tick_interval(false).await.unwrap();
 
-        let new_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let new_time = time_provider.get().unwrap();
 
         assert!(new_time == initial_time + 1)
     }
@@ -1555,18 +1530,13 @@ mod tests {
     #[tokio::test]
     pub async fn test_tick_interval_with_proposal() {
         let (store, _) = sample_store(10).await;
+        let time_provider = { store.store.lock().await.time_provider() };
 
-        let initial_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let initial_time = time_provider.get().unwrap();
 
         store.tick_interval(true).await.unwrap();
 
-        let new_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let new_time = time_provider.get().unwrap();
 
         assert!(new_time == initial_time + 1)
     }
@@ -1575,20 +1545,15 @@ mod tests {
     #[tokio::test]
     pub async fn test_tick_interval_sequence() {
         let (store, _) = sample_store(10).await;
+        let time_provider = { store.store.lock().await.time_provider() };
 
-        let initial_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let initial_time = time_provider.get().unwrap();
 
         for i in 0..5 {
             store.tick_interval((i % 2) == 0).await.unwrap();
         }
 
-        let new_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let new_time = time_provider.get().unwrap();
 
         assert!(new_time == initial_time + 5)
     }
@@ -1609,18 +1574,16 @@ mod tests {
             let db = store.store.lock().await;
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
-            let attestation_data = AttestationData {
-                slot: 1,
-                head: justified_checkpoint,
-                target: test_checkpoint,
-                source: justified_checkpoint,
-            };
-            let message = Attestation {
-                validator_id: 5,
-                data: attestation_data,
-            };
             let signed_attestation = SignedAttestation {
-                message,
+                message: Attestation {
+                    validator_id: 5,
+                    data: AttestationData {
+                        slot: 1,
+                        head: justified_checkpoint,
+                        target: test_checkpoint,
+                        source: justified_checkpoint,
+                    },
+                },
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
@@ -1718,18 +1681,16 @@ mod tests {
             let db = store.store.lock().await;
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
-            let attestation_data = AttestationData {
-                slot: 1,
-                head: justified_checkpoint,
-                target: checkpoint,
-                source: justified_checkpoint,
-            };
-            let message = Attestation {
-                validator_id: 5,
-                data: attestation_data,
-            };
             let signed_attestation = SignedAttestation {
-                message,
+                message: Attestation {
+                    validator_id: 5,
+                    data: AttestationData {
+                        slot: 1,
+                        head: justified_checkpoint,
+                        target: checkpoint,
+                        source: justified_checkpoint,
+                    },
+                },
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
@@ -1737,52 +1698,37 @@ mod tests {
                 .insert(signed_attestation.message.validator_id, signed_attestation)
                 .unwrap();
         };
-
-        let inititial_new_attestations_length = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_attestations_provider()
-                .iter_values()
-                .unwrap()
-                .count()
-        };
-        let initial_known_attestations_length = {
+        let latest_new_attestations_provider =
+            { store.store.lock().await.latest_new_attestations_provider() };
+        let latest_known_attestations_provider = {
             store
                 .store
                 .lock()
                 .await
                 .latest_known_attestations_provider()
-                .get_all_attestations()
-                .unwrap()
-                .keys()
-                .len()
         };
+
+        let inititial_new_attestations_length = latest_new_attestations_provider
+            .iter_values()
+            .unwrap()
+            .count();
+        let initial_known_attestations_length = latest_known_attestations_provider
+            .get_all_attestations()
+            .unwrap()
+            .keys()
+            .len();
 
         store.accept_new_attestations().await.unwrap();
 
-        let final_new_attestations_length = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_attestations_provider()
-                .iter_values()
-                .unwrap()
-                .count()
-        };
-        let final_latest_known_attestations_length = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_known_attestations_provider()
-                .get_all_attestations()
-                .unwrap()
-                .keys()
-                .len()
-        };
+        let final_new_attestations_length = latest_new_attestations_provider
+            .iter_values()
+            .unwrap()
+            .count();
+        let final_latest_known_attestations_length = latest_known_attestations_provider
+            .get_all_attestations()
+            .unwrap()
+            .keys()
+            .len();
 
         assert!(final_new_attestations_length == 0);
         assert!(
@@ -1815,18 +1761,16 @@ mod tests {
             let db = store.store.lock().await;
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
-            let attestation_data = AttestationData {
-                slot: i,
-                head: justified_checkpoint,
-                target: *checkpoint,
-                source: justified_checkpoint,
-            };
-            let message = Attestation {
-                validator_id: i,
-                data: attestation_data,
-            };
             let signed_attestation = SignedAttestation {
-                message,
+                message: Attestation {
+                    validator_id: i,
+                    data: AttestationData {
+                        slot: i,
+                        head: justified_checkpoint,
+                        target: *checkpoint,
+                        source: justified_checkpoint,
+                    },
+                },
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
@@ -1834,6 +1778,14 @@ mod tests {
                 .insert(signed_attestation.message.validator_id, signed_attestation)
                 .unwrap();
         }
+
+        let latest_known_attestations_provider = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_known_attestations_provider()
+        };
 
         store.accept_new_attestations().await.unwrap();
 
@@ -1847,35 +1799,23 @@ mod tests {
                 .unwrap()
                 .count()
         };
-        let latest_known_attestations_length = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_known_attestations_provider()
-                .get_all_attestations()
-                .unwrap()
-                .keys()
-                .len()
-        };
+        let latest_known_attestations_length = latest_known_attestations_provider
+            .get_all_attestations()
+            .unwrap()
+            .keys()
+            .len();
 
         assert!(new_attestations_length == 0);
         assert!(latest_known_attestations_length == 5);
 
         for (i, checkpoint) in checkpoints.iter().enumerate().map(|(i, c)| (i as u64, c)) {
-            let stored_checkpoint = {
-                store
-                    .store
-                    .lock()
-                    .await
-                    .latest_known_attestations_provider()
-                    .get(i)
-                    .unwrap()
-                    .unwrap()
-                    .message
-                    .data
-                    .target
-            };
+            let stored_checkpoint = latest_known_attestations_provider
+                .get(i)
+                .unwrap()
+                .unwrap()
+                .message
+                .data
+                .target;
             assert!(stored_checkpoint == *checkpoint);
         }
     }
@@ -1885,17 +1825,19 @@ mod tests {
     pub async fn test_accept_new_attestations_empty() {
         let (store, _) = sample_store(10).await;
 
-        let initial_known_attestations_length = {
+        let latest_known_attestations_provider = {
             store
                 .store
                 .lock()
                 .await
                 .latest_known_attestations_provider()
-                .get_all_attestations()
-                .unwrap()
-                .keys()
-                .len()
         };
+
+        let initial_known_attestations_length = latest_known_attestations_provider
+            .get_all_attestations()
+            .unwrap()
+            .keys()
+            .len();
 
         store.accept_new_attestations().await.unwrap();
 
@@ -1909,17 +1851,11 @@ mod tests {
                 .unwrap()
                 .count()
         };
-        let latest_known_attestations_length = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_known_attestations_provider()
-                .get_all_attestations()
-                .unwrap()
-                .keys()
-                .len()
-        };
+        let latest_known_attestations_length = latest_known_attestations_provider
+            .get_all_attestations()
+            .unwrap()
+            .keys()
+            .len();
 
         assert!(final_new_attestations_length == 0);
         assert!(latest_known_attestations_length == initial_known_attestations_length);
@@ -1943,18 +1879,13 @@ mod tests {
     #[tokio::test]
     pub async fn test_get_proposal_head_advances_time() {
         let (store, _) = sample_store(10).await;
+        let time_provider = { store.store.lock().await.time_provider() };
 
-        let initial_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let initial_time = time_provider.get().unwrap();
 
         store.get_proposal_head(5).await.unwrap();
 
-        let new_time = {
-            let time_provider = store.store.lock().await.time_provider();
-            time_provider.get().unwrap()
-        };
+        let new_time = time_provider.get().unwrap();
 
         assert!(new_time >= initial_time);
     }
@@ -1975,18 +1906,16 @@ mod tests {
             let db = store.store.lock().await;
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
-            let attestation_data = AttestationData {
-                slot: 10,
-                head: justified_checkpoint,
-                target: checkpoint,
-                source: justified_checkpoint,
-            };
-            let message = Attestation {
-                validator_id: 10,
-                data: attestation_data,
-            };
             let signed_attestation = SignedAttestation {
-                message,
+                message: Attestation {
+                    validator_id: 10,
+                    data: AttestationData {
+                        slot: 10,
+                        head: justified_checkpoint,
+                        target: checkpoint,
+                        source: justified_checkpoint,
+                    },
+                },
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
@@ -2031,8 +1960,6 @@ mod tests {
     // TEST TIME CONSTANTS
 
     // Test that time constants are consistent with each other.
-    #[allow(clippy::erasing_op)]
-    #[allow(clippy::identity_op)]
     #[allow(clippy::assertions_on_constants)]
     #[tokio::test]
     pub async fn test_time_constants_consistency() {
@@ -2045,8 +1972,6 @@ mod tests {
     }
 
     // Test the relationship between intervals and slots.
-    #[allow(clippy::erasing_op)]
-    #[allow(clippy::identity_op)]
     #[allow(clippy::assertions_on_constants)]
     #[tokio::test]
     pub async fn test_interval_slot_relationship() {
