@@ -49,6 +49,7 @@ pub struct CachedDB {
     pub seen_bls_to_execution_signature:
         RwLock<LruCache<AddressSlotIdentifier, BLSToExecutionChange>>,
     pub seen_blob_sidecars: RwLock<LruCache<(u64, u64, u64), ()>>,
+    pub seen_data_column_sidecars: RwLock<LruCache<(u64, u64, u64), ()>>,
     pub seen_attestations: RwLock<LruCache<AtestationKey, ()>>,
     pub seen_bls_to_execution_change: RwLock<LruCache<AddressValidaterIndexIdentifier, ()>>,
     pub seen_sync_messages: RwLock<LruCache<SyncCommitteeKey, ()>>,
@@ -73,6 +74,10 @@ impl CachedDB {
             )
             .into(),
             seen_blob_sidecars: LruCache::new(
+                NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
+            )
+            .into(),
+            seen_data_column_sidecars: LruCache::new(
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),

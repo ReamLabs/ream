@@ -3,6 +3,7 @@ pub mod beacon_attestation;
 pub mod beacon_block;
 pub mod blob_sidecar;
 pub mod bls_to_execution_change;
+pub mod data_column_sidecar;
 pub mod light_client_finality_update;
 pub mod light_client_optimistic_update;
 pub mod proposer_slashing;
