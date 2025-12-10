@@ -62,7 +62,7 @@ keywords = [
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/ReamLabs/ream"
-rust-version = "1.88.0"
+rust-version = "1.90.0"
 version = "0.1.0"
 
 [workspace.lints.clippy]
@@ -91,7 +91,7 @@ delay_map = "0.4.1"
 directories = { version = "6.0.0" }
 discv5 = { version = "0.10.2", features = ["libp2p"] }
 enr = "0.13.0"
-ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git", rev = "c14a9ad96436e6b8b631faf49a3666e4558b71ae" }
+ethereum_hashing = "0.7.0"
 ethereum_serde_utils = "0.8"
 ethereum_ssz = "0.10"
 ethereum_ssz_derive = "0.10"
@@ -175,7 +175,7 @@ ream-validator-beacon = { path = "crates/common/validator/beacon" }
 ream-validator-lean = { path = "crates/common/validator/lean" }
 
 [patch.crates-io]
-ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git" }
+ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git", rev = "c14a9ad96436e6b8b631faf49a3666e4558b71ae" }
 
 [profile.test]
 inherits = "release"
