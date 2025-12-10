@@ -67,3 +67,58 @@ impl LeanGossipsubConfig {
         self.topics = topics;
     }
 }
+
+#[cfg(test)]
+mod test {
+    use ream_network_spec::networks::lean::initialize_lean_test_network_spec;
+
+    use crate::gossipsub::{
+        configurations::{
+            assert_common, consistant_message_id_caching, message_collisions,
+            message_instantiation_edge_cases, valid_message_id_computation,
+        },
+        lean::configurations::LeanGossipsubConfig,
+    };
+
+    #[test]
+    fn test_gossipsub_parameters() {
+        initialize_lean_test_network_spec();
+
+        let gossipsub_config = LeanGossipsubConfig::default();
+        let config = &gossipsub_config.config;
+
+        assert_common(config);
+    }
+
+    #[test]
+    fn test_message_id_computation() {
+        initialize_lean_test_network_spec();
+        let config = &LeanGossipsubConfig::default().config;
+
+        valid_message_id_computation(config);
+    }
+
+    #[test]
+    fn test_message_id_caching() {
+        initialize_lean_test_network_spec();
+        let config = &LeanGossipsubConfig::default().config;
+
+        consistant_message_id_caching(config);
+    }
+
+    #[test]
+    fn test_message_id_edge_cases() {
+        initialize_lean_test_network_spec();
+        let config = &LeanGossipsubConfig::default().config;
+
+        message_instantiation_edge_cases(config);
+    }
+
+    #[test]
+    fn test_message_uniqueness_and_collision_resistance() {
+        initialize_lean_test_network_spec();
+        let config = &LeanGossipsubConfig::default().config;
+
+        message_collisions(config);
+    }
+}

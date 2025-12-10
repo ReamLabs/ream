@@ -838,7 +838,7 @@ mod tests {
         subnet::{AttestationSubnets, SyncCommitteeSubnets},
     };
     use ream_executor::ReamExecutor;
-    use ream_network_spec::networks::initialize_test_network_spec;
+    use ream_network_spec::networks::beacon::initialize_test_network_spec;
     use tokio::{runtime::Runtime, time::sleep};
 
     use super::*;

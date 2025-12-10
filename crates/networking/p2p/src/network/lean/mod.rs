@@ -684,8 +684,7 @@ enum RequestResult<T> {
 mod tests {
     use std::{net::Ipv4Addr, time::Duration};
 
-    use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
-    use ream_peer::Direction;
+    use ream_network_spec::networks::initialize_lean_test_network_spec;
     use tokio::sync::mpsc;
     use tracing_test::traced_test;
 
@@ -693,7 +692,7 @@ mod tests {
     use crate::bootnodes::Bootnodes;
 
     pub async fn setup_lean_node(socket_port: u16) -> anyhow::Result<LeanNetworkService> {
-        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
+        initialize_lean_test_network_spec();
 
         let executor = ReamExecutor::new().expect("Failed to create executor");
         let config = Arc::new(LeanNetworkConfig {
