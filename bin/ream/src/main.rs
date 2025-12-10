@@ -350,6 +350,31 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         config.http_allow_origin,
     );
 
+    // Initialize builder client if enabled
+    let builder_client = if config.enable_builder {
+        if let Some(builder_url) = config.builder.clone() {
+            use std::time::Duration;
+
+            use ream_validator_beacon::{
+                beacon_api_client::http_client::ContentType,
+                builder::builder_client::{BuilderClient, BuilderConfig},
+            };
+
+            let builder_config = BuilderConfig {
+                builder_enabled: true,
+                mev_relay_url: builder_url,
+            };
+            Some(Arc::new(
+                BuilderClient::new(builder_config, Duration::from_secs(30), ContentType::Json)
+                    .expect("Failed to create builder client"),
+            ))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let network_manager = NetworkManagerService::new(
         executor.clone(),
         config.into(),
@@ -375,6 +400,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
             network_state,
             operation_pool,
             execution_engine,
+            builder_client,
         )
         .await
     });

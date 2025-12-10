@@ -35,6 +35,10 @@ Options:
           The URL of the execution endpoint. This is used to send requests to the engine api.
       --execution-jwt-secret <EXECUTION_JWT_SECRET>
           The JWT secret used to authenticate with the execution endpoint. This is used to send requests to the engine api.
+      --enable-builder
+          Enable external block builder (MEV-boost)
+      --builder <BUILDER>
+          The URL of a service compatible with the MEV-boost API
   -h, --help
           Print help
 ```

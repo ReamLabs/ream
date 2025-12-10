@@ -85,7 +85,7 @@ impl BuilderClient {
     }
 
     /// Registers a validator's preferred fee recipient and gas limit.
-    pub async fn resgister_validator(
+    pub async fn register_validator(
         &self,
         signed_registration: SignedValidatorRegistrationV1,
     ) -> anyhow::Result<()> {
