@@ -5800,7 +5800,6 @@ dependencies = [
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
- "eventsource-client",
  "ream-bls",
  "ream-consensus-beacon",
  "ream-consensus-misc",

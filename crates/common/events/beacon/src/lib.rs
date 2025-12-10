@@ -2,7 +2,6 @@ use std::str::FromStr;
 
 use anyhow::anyhow;
 // Re-export for compatibility
-#[cfg(feature = "eventsource-client")]
 pub use eventsource_client::Event;
 use serde::{
     Deserialize, Serialize,
@@ -189,7 +188,6 @@ impl BeaconEvent {
     }
 }
 
-#[cfg(feature = "eventsource-client")]
 impl TryFrom<Event> for BeaconEvent {
     type Error = serde_json::Error;
 
