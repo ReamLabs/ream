@@ -80,12 +80,11 @@ pub async fn validate_data_column_sidecar_full(
         ));
     }
 
-    // TODO [REJECT] The sidecar's kzg_commitments field inclusion proof is valid as verified by verify_data_column_sidecar_inclusion_proof(sidecar).
-    // if !data_column_sidecar.verify_inclusion_proof() {
-    //     return Ok(ValidationResult::Reject(
-    //         "Invalid data column sidecar inclusion proof".to_string(),
-    //     ));
-    // }
+    if !data_column_sidecar.verify_inclusion_proof() {
+        return Ok(ValidationResult::Reject(
+            "Invalid data column sidecar inclusion proof".to_string(),
+        ));
+    }
 
     // TODO: implement verify_data_column_sidecar_kzg_proofs
     // https://ethereum.github.io/consensus-specs/specs/fulu/p2p-interface/#verify_data_column_sidecar_kzg_proofs

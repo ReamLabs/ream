@@ -1,8 +1,13 @@
 use alloy_primitives::B256;
-use ream_consensus_misc::beacon_block_header::SignedBeaconBlockHeader;
+use ream_consensus_misc::{
+    beacon_block_header::SignedBeaconBlockHeader,
+    constants::beacon::{BLOB_KZG_COMMITMENTS_INDEX, KZG_COMMITMENT_INCLUSION_PROOF_DEPTH},
+};
+use ream_merkle::is_valid_merkle_branch;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, VariableList, typenum};
+use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof};
@@ -59,9 +64,15 @@ impl DataColumnSidecar {
         self.index % DATA_COLUMN_SIDECAR_SUBNET_COUNT
     }
 
+    /// Verifies that the kzg_commitments list is included in the block body
     pub fn verify_inclusion_proof(&self) -> bool {
-        // TODO needs verification
-        true
+        is_valid_merkle_branch(
+            self.kzg_commitments.tree_hash_root(),
+            &self.kzg_commitments_inclusion_proof,
+            KZG_COMMITMENT_INCLUSION_PROOF_DEPTH,
+            BLOB_KZG_COMMITMENTS_INDEX,
+            self.signed_block_header.message.body_root,
+        )
     }
 }
 
