@@ -4,6 +4,7 @@ use ream_consensus_beacon::data_column_sidecar::{DataColumnSidecar, NUMBER_OF_CO
 use ream_consensus_misc::{
     constants::beacon::MAX_BLOBS_PER_BLOCK, misc::compute_start_slot_at_epoch,
 };
+use ream_polynomial_commitments::handlers::verify_cell_kzg_proof_batch;
 use ream_storage::{
     cache::CachedDB,
     tables::{field::REDBField, table::REDBTable},
@@ -86,8 +87,17 @@ pub async fn validate_data_column_sidecar_full(
         ));
     }
 
-    // TODO: implement verify_data_column_sidecar_kzg_proofs
-    // https://ethereum.github.io/consensus-specs/specs/fulu/p2p-interface/#verify_data_column_sidecar_kzg_proofs
+    let cell_indices: Vec<u64> = vec![data_column_sidecar.index; data_column_sidecar.column.len()];
+    if !verify_cell_kzg_proof_batch(
+        &data_column_sidecar.kzg_commitments,
+        &cell_indices,
+        &data_column_sidecar.column,
+        &data_column_sidecar.kzg_proofs,
+    )? {
+        return Ok(ValidationResult::Reject(
+            "Invalid KZG proofs for data column sidecar".to_string(),
+        ));
+    }
 
     let tuple = (
         header.slot,
