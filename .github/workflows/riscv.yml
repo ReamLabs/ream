@@ -1,11 +1,11 @@
 name: RISC-V
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
-  merge_group:
+# push:
+  #   branches: [ "master" ]
+  # pull_request:
+  #   branches: [ "master" ]
+  # merge_group:
 
 env:
   CARGO_TERM_COLOR: always
