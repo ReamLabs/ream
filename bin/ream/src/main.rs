@@ -106,38 +106,43 @@ fn main() {
         reset_db(&ream_dir).expect("Unable to delete database");
     }
 
-    match cli.command {
+    let task_handle = match cli.command {
         Commands::LeanNode(config) => {
             let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
-            executor_clone.spawn(async move { run_lean_node(*config, executor, ream_db).await });
+            executor_clone.spawn(async move { run_lean_node(*config, executor, ream_db).await })
         }
         Commands::BeaconNode(config) => {
             let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
-            executor_clone.spawn(async move { run_beacon_node(*config, executor, ream_db).await });
+            executor_clone.spawn(async move { run_beacon_node(*config, executor, ream_db).await })
         }
         Commands::ValidatorNode(config) => {
-            executor_clone.spawn(async move { run_validator_node(*config, executor).await });
+            executor_clone.spawn(async move { run_validator_node(*config, executor).await })
         }
         Commands::AccountManager(config) => {
-            executor_clone.spawn(async move { run_account_manager(*config, ream_dir).await });
+            executor_clone.spawn(async move { run_account_manager(*config, ream_dir).await })
         }
         Commands::VoluntaryExit(config) => {
-            executor_clone.spawn(async move { run_voluntary_exit(*config).await });
+            executor_clone.spawn(async move { run_voluntary_exit(*config).await })
         }
         Commands::GeneratePrivateKey(config) => {
-            executor_clone.spawn(async move { run_generate_private_key(*config).await });
+            executor_clone.spawn(async move { run_generate_private_key(*config).await })
         }
         Commands::GenerateKeystore(config) => {
             run_generate_validator_registry(*config).expect("failed to generate hash-sig keystore");
             process::exit(0);
         }
-    }
+    };
 
     executor_clone.runtime().block_on(async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to pause until ctrl-c");
-        info!("Ctrl-C received, shutting down...");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("Ctrl-C received, shutting down...");
+            }
+            _ = task_handle => {
+                info!("Service exited, shutting down...");
+            }
+        }
+
         executor_clone.shutdown_signal();
     });
 
@@ -269,37 +274,26 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     );
 
     // Start the services concurrently.
-    let chain_future = executor.spawn(async move {
-        if let Err(err) = chain_service.start().await {
-            panic!("Chain service exited with error: {err:?}");
-        }
-    });
-    let network_future = executor.spawn(async move {
-        if let Err(err) = network_service.start(config.bootnodes).await {
-            panic!("Network service exited with error: {err:?}");
-        }
-    });
-    let validator_future = executor.spawn(async move {
-        if let Err(err) = validator_service.start().await {
-            panic!("Validator service exited with error: {err:?}");
-        }
-    });
+    let chain_future = executor.spawn(async move { chain_service.start().await });
+    let network_future =
+        executor.spawn(async move { network_service.start(config.bootnodes).await });
+    let validator_future = executor.spawn(async move { validator_service.start().await });
     let http_future = executor.spawn(async move {
         ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
     });
 
     tokio::select! {
-        _ = chain_future => {
-            info!("Chain service has stopped unexpectedly");
-        }
-        _ = network_future => {
-            info!("Network service has stopped unexpectedly");
-        }
-        _ = validator_future => {
-            info!("Validator service has stopped unexpectedly");
-        }
-        _ = http_future => {
-            info!("RPC service has stopped unexpectedly");
+        result = chain_future => {
+            error!("Chain service has stopped unexpectedly: {result:?}");
+        },
+        result = network_future => {
+            error!("Network service has stopped unexpectedly: {result:?}");
+        },
+        result = validator_future => {
+            error!("Validator service has stopped unexpectedly: {result:?}");
+        },
+        result = http_future => {
+            error!("RPC service has stopped unexpectedly: {result:?}");
         }
     }
 }
