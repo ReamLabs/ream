@@ -82,7 +82,7 @@ pub struct BeaconNodeConfig {
         help = "The URL of a service compatible with the MEV-boost API",
         requires = "enable_builder"
     )]
-    pub builder: Option<Url>,
+    pub mev_relay_url: Option<Url>,
 }
 
 impl From<BeaconNodeConfig> for ManagerConfig {
@@ -100,7 +100,7 @@ impl From<BeaconNodeConfig> for ManagerConfig {
             execution_endpoint: config.execution_endpoint,
             execution_jwt_secret: config.execution_jwt_secret,
             enable_builder: config.enable_builder,
-            builder: config.builder,
+            mev_relay_url: config.mev_relay_url,
         }
     }
 }

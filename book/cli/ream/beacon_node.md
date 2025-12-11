@@ -37,7 +37,7 @@ Options:
           The JWT secret used to authenticate with the execution endpoint. This is used to send requests to the engine api.
       --enable-builder
           Enable external block builder (MEV-boost)
-      --builder <BUILDER>
+      --mev-relay-url <MEV_RELAY_URL>
           The URL of a service compatible with the MEV-boost API
   -h, --help
           Print help

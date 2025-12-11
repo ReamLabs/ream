@@ -16,5 +16,5 @@ pub struct ManagerConfig {
     pub execution_endpoint: Option<Url>,
     pub execution_jwt_secret: Option<PathBuf>,
     pub enable_builder: bool,
-    pub builder: Option<Url>,
+    pub mev_relay_url: Option<Url>,
 }
