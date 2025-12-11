@@ -134,6 +134,7 @@ tree_hash = "0.12"
 tree_hash_derive = "0.12"
 unicode-normalization = "0.1.24"
 url = "2.5.7"
+xmss = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "55ce53ef201b1baff10112792efc83278e55fcd8" }
 
 # ream dependencies
 ream-account-manager = { path = "crates/common/account_manager" }

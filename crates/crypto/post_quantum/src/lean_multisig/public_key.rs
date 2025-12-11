@@ -38,7 +38,7 @@ impl PublicKey {
         Self { inner }
     }
 
-    pub fn from_xmss(public_key: XmssPublicKey) -> Result<Self, LeanMultisigError> {
+    pub fn from_xmss(public_key: &XmssPublicKey) -> Result<Self, LeanMultisigError> {
         let mut bytes = Vec::new();
 
         // Serialize merkle_root (8 field elements, 4 bytes each)
