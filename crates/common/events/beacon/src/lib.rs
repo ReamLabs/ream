@@ -1,36 +1,25 @@
+pub mod contribution_and_proof;
+pub mod event;
+
 use std::str::FromStr;
 
 use anyhow::anyhow;
-// Re-export for compatibility
-pub use eventsource_client::Event;
+use eventsource_client::Event;
 use serde::{
     Deserialize, Serialize,
     de::{DeserializeOwned, Error},
 };
 
-pub mod attestation;
-pub mod blob;
-pub mod chain;
-pub mod contribution_and_proof;
-pub mod execution;
-pub mod light_client;
-pub mod slashing;
-pub mod sync_committee;
-pub mod validator;
-
-pub use attestation::{AttestationEvent, SingleAttestationEvent};
-pub use blob::{BlobSidecarEvent, DataColumnSidecarEvent};
-pub use chain::{
-    BlockEvent, BlockGossipEvent, ChainReorgEvent, FinalizedCheckpointEvent, HeadEvent,
+use crate::event::{
+    attestation::{AttestationEvent, SingleAttestationEvent},
+    blob::{BlobSidecarEvent, DataColumnSidecarEvent},
+    chain::{BlockEvent, BlockGossipEvent, ChainReorgEvent, FinalizedCheckpointEvent, HeadEvent},
+    execution::PayloadAttributesEvent,
+    light_client::{LightClientFinalityUpdateEvent, LightClientOptimisticUpdateEvent},
+    slashing::{AttesterSlashingEvent, ProposerSlashingEvent},
+    sync_committee::ContributionAndProofEvent,
+    validator::{BlsToExecutionChangeEvent, VoluntaryExitEvent},
 };
-pub use contribution_and_proof::{
-    ContributionAndProof, SignedContributionAndProof, SyncCommitteeContribution,
-};
-pub use execution::PayloadAttributesEvent;
-pub use light_client::{LightClientFinalityUpdateEvent, LightClientOptimisticUpdateEvent};
-pub use slashing::{AttesterSlashingEvent, ProposerSlashingEvent};
-pub use sync_committee::ContributionAndProofEvent;
-pub use validator::{BlsToExecutionChangeEvent, VoluntaryExitEvent};
 
 /// Event topic enum for filtering events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

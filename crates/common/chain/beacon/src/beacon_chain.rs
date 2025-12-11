@@ -6,7 +6,7 @@ use ream_consensus_beacon::{
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
-use ream_events_beacon::{BeaconEvent, BeaconEventSender, BlockEvent};
+use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice_beacon::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
