@@ -67,29 +67,30 @@ pub async fn get_events(
         let topics = topics.clone();
         async move {
             loop {
-                match rx.recv().await {
-                    Ok(event) => {
-                        let event_name = event.event_name();
-                        if topics.contains(&event_name.to_string()) {
-                            match event.serialize_data() {
-                                Ok(json_data) => {
-                                    let sse_event = sse::Event::Data(
-                                        sse::Data::new(json_data).event(event_name),
-                                    );
-                                    return Some((Ok::<_, actix_web::Error>(sse_event), rx));
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Failed to serialize event {event_name}: {e}");
-                                    continue;
-                                }
-                            }
-                        }
-                    }
+                let event = match rx.recv().await {
+                    Ok(event) => event,
                     Err(broadcast::error::RecvError::Lagged(_)) => {
                         continue;
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         return None;
+                    }
+                };
+
+                let event_name = event.event_name();
+                if !topics.contains(&event_name.to_string()) {
+                    continue;
+                }
+
+                match event.serialize_data() {
+                    Ok(json_data) => {
+                        let sse_event =
+                            sse::Event::Data(sse::Data::new(json_data).event(event_name));
+                        return Some((Ok::<_, actix_web::Error>(sse_event), rx));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to serialize event {event_name}: {e}");
+                        continue;
                     }
                 }
             }
