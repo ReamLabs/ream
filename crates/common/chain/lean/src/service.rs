@@ -54,7 +54,7 @@ impl LeanChainService {
         let mut tick_count = 0u64;
 
         let mut interval = create_lean_clock_interval()
-            .map_err(|err| anyhow!("Failed to create clock interval: {err:?}"))?;
+            .map_err(|err| anyhow!("Expected Ream to be started before genesis time: {err:?}"))?;
 
         loop {
             tokio::select! {
