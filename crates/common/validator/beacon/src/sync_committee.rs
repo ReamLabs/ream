@@ -16,6 +16,7 @@ use ream_consensus_misc::{
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
 };
+use ream_events_beacon::contribution_and_proof::SyncCommitteeContribution;
 use ream_network_spec::networks::beacon_network_spec;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -24,7 +25,6 @@ use tree_hash_derive::TreeHash;
 
 use crate::{
     constants::{SYNC_COMMITTEE_SUBNET_COUNT, TARGET_AGGREGATORS_PER_COMMITTEE},
-    contribution_and_proof::SyncCommitteeContribution,
     hash_signature_prefix_to_u64,
 };
 

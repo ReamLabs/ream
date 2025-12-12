@@ -27,6 +27,9 @@ use ream_consensus_misc::{
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
 };
+use ream_events_beacon::contribution_and_proof::{
+    ContributionAndProof, SignedContributionAndProof,
+};
 use ream_executor::ReamExecutor;
 use ream_keystore::keystore::Keystore;
 use ream_network_spec::networks::beacon_network_spec;
@@ -41,9 +44,7 @@ use crate::{
     beacon_api_client::BeaconApiClient,
     block::{sign_beacon_block, sign_blinded_beacon_block},
     constants::SYNC_COMMITTEE_SUBNET_COUNT,
-    contribution_and_proof::{
-        ContributionAndProof, SignedContributionAndProof, get_contribution_and_proof_signature,
-    },
+    contribution_and_proof::get_contribution_and_proof_signature,
     randao::sign_randao_reveal,
     sync_committee::{get_sync_committee_selection_proof, is_sync_committee_aggregator},
     voluntary_exit::sign_voluntary_exit,

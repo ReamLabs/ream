@@ -4,6 +4,7 @@ pub mod committee;
 pub mod config;
 pub mod debug;
 pub mod duties;
+pub mod events;
 pub mod header;
 pub mod identity;
 pub mod light_client;

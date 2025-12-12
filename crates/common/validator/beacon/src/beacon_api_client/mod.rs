@@ -1,11 +1,9 @@
-pub mod event;
 pub mod http_client;
 
 use std::{pin::Pin, str::FromStr, time::Duration};
 
 use alloy_primitives::{B256, hex};
 use anyhow::anyhow;
-use event::{BeaconEvent, EventTopic};
 use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
 use http_client::{ClientWithBaseUrl, ContentType};
@@ -36,16 +34,17 @@ use ream_consensus_beacon::{
     voluntary_exit::SignedVoluntaryExit,
 };
 use ream_consensus_misc::{attestation_data::AttestationData, fork::Fork};
+use ream_events_beacon::{
+    BeaconEvent, EventTopic,
+    contribution_and_proof::{SignedContributionAndProof, SyncCommitteeContribution},
+};
 use ream_network_spec::networks::BeaconNetworkSpec;
 use reqwest::{Url, header::HeaderMap};
 use serde_json::json;
 use ssz::{Decode, Encode};
 use tracing::{error, info};
 
-use crate::{
-    aggregate_and_proof::SignedAggregateAndProof,
-    contribution_and_proof::{SignedContributionAndProof, SyncCommitteeContribution},
-};
+use crate::aggregate_and_proof::SignedAggregateAndProof;
 
 #[derive(Clone)]
 pub struct BeaconApiClient {
