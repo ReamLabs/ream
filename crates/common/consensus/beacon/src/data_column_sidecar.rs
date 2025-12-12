@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 use ream_consensus_misc::{
     beacon_block_header::SignedBeaconBlockHeader,
-    constants::beacon::{BLOB_KZG_COMMITMENTS_INDEX, KZG_COMMITMENT_INCLUSION_PROOF_DEPTH},
+    constants::beacon::{BLOB_KZG_COMMITMENTS_INDEX, DATA_COLUMN_SIDECAR_KZG_PROOF_DEPTH},
 };
 use ream_merkle::is_valid_merkle_branch;
 use serde::{Deserialize, Serialize};
@@ -20,8 +20,6 @@ pub const DATA_COLUMN_SIDECAR_SUBNET_COUNT: u64 = 128;
 
 pub type MaxBlobCommitmentsPerBlock = typenum::U6;
 
-pub type KzgCommitmentInclusionProofDepth = typenum::U17;
-
 // TODO remove this and use from PR of issue 1038
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Encode, Decode, TreeHash)]
 pub struct DataColumnSidecar {
@@ -30,7 +28,7 @@ pub struct DataColumnSidecar {
     pub kzg_commitments: VariableList<KZGCommitment, MaxBlobCommitmentsPerBlock>,
     pub kzg_proofs: VariableList<KZGProof, MaxBlobCommitmentsPerBlock>,
     pub signed_block_header: SignedBeaconBlockHeader,
-    pub kzg_commitments_inclusion_proof: FixedVector<B256, KzgCommitmentInclusionProofDepth>,
+    pub kzg_commitments_inclusion_proof: FixedVector<B256, typenum::U4>,
 }
 
 #[derive(
@@ -69,7 +67,7 @@ impl DataColumnSidecar {
         is_valid_merkle_branch(
             self.kzg_commitments.tree_hash_root(),
             &self.kzg_commitments_inclusion_proof,
-            KZG_COMMITMENT_INCLUSION_PROOF_DEPTH,
+            DATA_COLUMN_SIDECAR_KZG_PROOF_DEPTH,
             BLOB_KZG_COMMITMENTS_INDEX,
             self.signed_block_header.message.body_root,
         )
