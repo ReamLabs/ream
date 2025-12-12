@@ -30,7 +30,7 @@ use crate::{
     eth2::{ENR_ETH2_KEY, EnrForkId},
     subnet::{
         ATTESTATION_BITFIELD_ENR_KEY, CUSTODY_GROUP_COUNT_ENR_KEY, NEXT_FORK_DIGEST_ENR_KEY,
-        SYNC_COMMITTEE_BITFIELD_ENR_KEY, NextForkDigest, attestation_subnet_predicate,
+        NextForkDigest, SYNC_COMMITTEE_BITFIELD_ENR_KEY, attestation_subnet_predicate,
         sync_committee_subnet_predicate,
     },
 };

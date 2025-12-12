@@ -54,12 +54,8 @@ impl BeaconRequestMessage {
                 BeaconSupportedProtocol::GoodbyeV1,
             ))],
             BeaconRequestMessage::Status(_) => vec![
-                ProtocolId::new(SupportedProtocol::Beacon(
-                    BeaconSupportedProtocol::StatusV2,
-                )),
-                ProtocolId::new(SupportedProtocol::Beacon(
-                    BeaconSupportedProtocol::StatusV1,
-                )),
+                ProtocolId::new(SupportedProtocol::Beacon(BeaconSupportedProtocol::StatusV2)),
+                ProtocolId::new(SupportedProtocol::Beacon(BeaconSupportedProtocol::StatusV1)),
             ],
             BeaconRequestMessage::Ping(_) => vec![ProtocolId::new(SupportedProtocol::Beacon(
                 BeaconSupportedProtocol::PingV1,

@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use libp2p::{PeerId, swarm::ConnectionId};
-use ream_consensus_beacon::{
-    blob_sidecar::BlobIdentifier, data_column_sidecar::ColumnIdentifier,
-};
+use ream_consensus_beacon::{blob_sidecar::BlobIdentifier, data_column_sidecar::ColumnIdentifier};
 use ream_p2p::{
     network::beacon::network_state::NetworkState,
     req_resp::beacon::messages::{
         BeaconRequestMessage, BeaconResponseMessage,
         blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
         blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
-        data_column_sidecars::{DataColumnSidecarsByRangeV1Request, DataColumnSidecarsByRootV1Request},
+        data_column_sidecars::{
+            DataColumnSidecarsByRangeV1Request, DataColumnSidecarsByRootV1Request,
+        },
     },
 };
 use ream_storage::{
@@ -269,7 +269,8 @@ pub async fn handle_req_resp_message(
         }) => {
             for identifier in inner {
                 for &column_index in &identifier.columns {
-                    let column_identifier = ColumnIdentifier::new(identifier.block_root, column_index);
+                    let column_identifier =
+                        ColumnIdentifier::new(identifier.block_root, column_index);
                     let Ok(Some(column_sidecar)) =
                         ream_db.column_sidecars_provider().get(column_identifier)
                     else {
