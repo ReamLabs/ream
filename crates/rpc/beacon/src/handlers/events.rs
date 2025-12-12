@@ -88,8 +88,8 @@ pub async fn get_events(
                             sse::Event::Data(sse::Data::new(json_data).event(event_name));
                         return Some((Ok::<_, actix_web::Error>(sse_event), rx));
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to serialize event {event_name}: {e}");
+                    Err(err) => {
+                        tracing::warn!("Failed to serialize event {event_name}: {err}");
                         continue;
                     }
                 }

@@ -243,8 +243,8 @@ impl BeaconEventSender for Option<tokio::sync::broadcast::Sender<BeaconEvent>> {
         };
 
         let event_name = event.event_name();
-        if let Err(e) = sender.send(event) {
-            tracing::warn!("Failed to send {} event: {}", event_name, e);
+        if let Err(err) = sender.send(event) {
+            tracing::warn!("Failed to send {} event: {}", event_name, err);
         }
     }
 }
