@@ -15,4 +15,6 @@ pub struct ManagerConfig {
     pub checkpoint_sync_url: Option<Url>,
     pub execution_endpoint: Option<Url>,
     pub execution_jwt_secret: Option<PathBuf>,
+    pub enable_builder: bool,
+    pub mev_relay_url: Option<Url>,
 }

@@ -14,6 +14,7 @@ pub struct ValidatorRegistrationV1 {
     pub gas_limit: u64,
     #[serde(with = "serde_utils::quoted_u64")]
     pub timestamp: u64,
+    #[serde(rename = "pubkey")]
     pub public_key: PublicKey,
 }
 

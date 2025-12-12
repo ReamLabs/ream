@@ -25,7 +25,7 @@ use ream_consensus_misc::{
         DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, MAX_COMMITTEES_PER_SLOT,
         SLOTS_PER_EPOCH,
     },
-    misc::{compute_epoch_at_slot, compute_signing_root},
+    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
     validator::Validator,
 };
 use ream_fork_choice_beacon::store::Store;
@@ -33,6 +33,7 @@ use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof, attestation::compute_subnet_for_attestation,
+    builder::validator_registration::SignedValidatorRegistrationV1,
     constants::DOMAIN_SELECTION_PROOF,
 };
 use serde::Serialize;
@@ -86,12 +87,7 @@ pub async fn get_validator_from_state(
                 }
             },
             ValidatorID::Address(public_key) => {
-                match state
-                    .validators
-                    .iter()
-                    .enumerate()
-                    .find(|(_, validator)| validator.public_key == *public_key)
-                {
+                match find_validator_by_public_key(&state, public_key) {
                     Some((i, validator)) => (i, validator.to_owned()),
                     None => {
                         return Err(ApiError::NotFound(format!(
@@ -133,12 +129,32 @@ pub async fn validator_status(
             "Failed to find highest slot".to_string(),
         ))?;
     let state = get_state_from_id(ID::Slot(highest_slot), db).await?;
+    let current_epoch = state.get_current_epoch();
 
-    if validator.exit_epoch < state.get_current_epoch() {
+    // Check if validator is pending (not yet activated)
+    if validator.activation_epoch > current_epoch {
+        Ok(ValidatorStatus::Pending)
+    }
+    // Check if validator has exited
+    else if validator.exit_epoch <= current_epoch {
         Ok(ValidatorStatus::Offline)
-    } else {
+    }
+    // Validator is active
+    else {
         Ok(ValidatorStatus::ActiveOngoing)
     }
+}
+
+/// Helper function to find validator by public key in state
+fn find_validator_by_public_key<'a>(
+    state: &'a BeaconState,
+    public_key: &PublicKey,
+) -> Option<(usize, &'a Validator)> {
+    state
+        .validators
+        .iter()
+        .enumerate()
+        .find(|(_, v)| v.public_key == *public_key)
 }
 
 #[get("/beacon/states/{state_id}/validators")]
@@ -172,12 +188,7 @@ pub async fn get_validators_from_state(
                         }
                     },
                     ValidatorID::Address(public_key) => {
-                        match state
-                            .validators
-                            .iter()
-                            .enumerate()
-                            .find(|(_, validator)| validator.public_key == *public_key)
-                        {
+                        match find_validator_by_public_key(&state, public_key) {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
                                 return Err(ApiError::NotFound(format!(
@@ -246,12 +257,7 @@ pub async fn post_validators_from_state(
                         }
                     },
                     ValidatorID::Address(public_key) => {
-                        match state
-                            .validators
-                            .iter()
-                            .enumerate()
-                            .find(|(_, validator)| validator.public_key == *public_key)
-                        {
+                        match find_validator_by_public_key(&state, public_key) {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
                                 return Err(ApiError::NotFound(format!(
@@ -675,4 +681,86 @@ pub async fn post_beacon_committee_subscriptions(
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "data": "success"
     })))
+}
+
+/// Verify validator registration signature
+fn verify_validator_registration_signature(
+    signed_registration: &SignedValidatorRegistrationV1,
+) -> Result<bool, ApiError> {
+    use ream_validator_beacon::builder::DOMAIN_APPLICATION_BUILDER;
+
+    let domain = compute_domain(DOMAIN_APPLICATION_BUILDER, None, None);
+    let signing_root = compute_signing_root(signed_registration.message.clone(), domain);
+
+    signed_registration
+        .signature
+        .verify(
+            &signed_registration.message.public_key,
+            signing_root.as_ref(),
+        )
+        .map_err(|err| ApiError::InternalError(format!("Signature verification failed: {err:?}")))
+}
+
+#[post("/validator/register_validator")]
+pub async fn post_register_validator(
+    db: Data<BeaconDB>,
+    builder_client: Option<
+        Data<Arc<ream_validator_beacon::builder::builder_client::BuilderClient>>,
+    >,
+    registrations: Json<Vec<SignedValidatorRegistrationV1>>,
+) -> Result<impl Responder, ApiError> {
+    let registrations = registrations.into_inner();
+
+    if registrations.is_empty() {
+        return Err(ApiError::BadRequest("Empty request body".to_string()));
+    }
+
+    // Get the current state once for all validator status checks
+    let highest_slot = db
+        .slot_index_provider()
+        .get_highest_slot()
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get_highest_slot, error: {err:?}"))
+        })?
+        .ok_or(ApiError::NotFound(
+            "Failed to find highest slot".to_string(),
+        ))?;
+    let state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
+    let current_epoch = state.get_current_epoch();
+
+    for registration in registrations {
+        // Verify signature
+        let signature_valid = verify_validator_registration_signature(&registration)?;
+        if !signature_valid {
+            continue;
+        }
+
+        // Check if validator is active or pending (not exited or unknown)
+        let is_valid = if let Some((_index, validator)) =
+            find_validator_by_public_key(&state, &registration.message.public_key)
+        {
+            let is_pending = validator.activation_epoch > current_epoch;
+            let is_active =
+                validator.activation_epoch <= current_epoch && current_epoch < validator.exit_epoch;
+            is_pending || is_active
+        } else {
+            false
+        };
+
+        if !is_valid {
+            continue;
+        }
+
+        // Forward immediately to builder if available
+        if let Some(ref client) = builder_client {
+            client
+                .register_validator(registration)
+                .await
+                .map_err(|err| {
+                    ApiError::InternalError(format!("Failed to forward to builder: {err}"))
+                })?;
+        }
+    }
+
+    Ok(HttpResponse::Ok().body("Validator registrations have been received."))
 }

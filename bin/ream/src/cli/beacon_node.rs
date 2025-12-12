@@ -73,6 +73,16 @@ pub struct BeaconNodeConfig {
         requires = "execution_endpoint"
     )]
     pub execution_jwt_secret: Option<PathBuf>,
+
+    #[arg(long, help = "Enable external block builder (MEV-boost)")]
+    pub enable_builder: bool,
+
+    #[arg(
+        long,
+        help = "The URL of a service compatible with the MEV-boost API",
+        requires = "enable_builder"
+    )]
+    pub mev_relay_url: Option<Url>,
 }
 
 impl From<BeaconNodeConfig> for ManagerConfig {
@@ -89,6 +99,8 @@ impl From<BeaconNodeConfig> for ManagerConfig {
             checkpoint_sync_url: config.checkpoint_sync_url,
             execution_endpoint: config.execution_endpoint,
             execution_jwt_secret: config.execution_jwt_secret,
+            enable_builder: config.enable_builder,
+            mev_relay_url: config.mev_relay_url,
         }
     }
 }
