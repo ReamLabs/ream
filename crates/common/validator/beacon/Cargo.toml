@@ -11,7 +11,6 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
-alloy-rpc-types-beacon.workspace = true
 anyhow.workspace = true
 ethereum_hashing.workspace = true
 ethereum_serde_utils.workspace = true
@@ -19,8 +18,7 @@ ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
 eventsource-client.workspace = true
 futures.workspace = true
-ream-api-types-beacon.workspace = true
-ream-api-types-common.workspace = true
+
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -33,9 +31,12 @@ tree_hash_derive.workspace = true
 url.workspace = true
 
 # ream dependencies
+ream-api-types-beacon.workspace = true
+ream-api-types-common.workspace = true
 ream-bls.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
+ream-events-beacon.workspace = true
 ream-execution-engine.workspace = true
 ream-executor.workspace = true
 ream-keystore.workspace = true

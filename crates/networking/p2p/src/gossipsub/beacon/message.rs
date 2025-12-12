@@ -6,13 +6,13 @@ use ream_consensus_beacon::{
     voluntary_exit::SignedVoluntaryExit,
 };
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
+use ream_events_beacon::contribution_and_proof::SignedContributionAndProof;
 use ream_light_client::{
     finality_update::LightClientFinalityUpdate, optimistic_update::LightClientOptimisticUpdate,
 };
 use ream_network_spec::networks::beacon_network_spec;
 use ream_validator_beacon::{
-    aggregate_and_proof::AggregateAndProof, contribution_and_proof::SignedContributionAndProof,
-    sync_committee::SyncCommitteeMessage,
+    aggregate_and_proof::AggregateAndProof, sync_committee::SyncCommitteeMessage,
 };
 use ssz::Decode;
 
