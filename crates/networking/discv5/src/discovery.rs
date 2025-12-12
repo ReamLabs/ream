@@ -29,8 +29,9 @@ use crate::{
     config::DiscoveryConfig,
     eth2::{ENR_ETH2_KEY, EnrForkId},
     subnet::{
-        ATTESTATION_BITFIELD_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
-        attestation_subnet_predicate, sync_committee_subnet_predicate,
+        ATTESTATION_BITFIELD_ENR_KEY, CUSTODY_GROUP_COUNT_ENR_KEY, NEXT_FORK_DIGEST_ENR_KEY,
+        SYNC_COMMITTEE_BITFIELD_ENR_KEY, NextForkDigest, attestation_subnet_predicate,
+        sync_committee_subnet_predicate,
     },
 };
 
@@ -89,6 +90,8 @@ impl Discovery {
                 SYNC_COMMITTEE_BITFIELD_ENR_KEY,
                 &config.sync_committee_subnets,
             )
+            .add_value(CUSTODY_GROUP_COUNT_ENR_KEY, &config.custody_group_count)
+            .add_value(NEXT_FORK_DIGEST_ENR_KEY, &NextForkDigest::default())
             .build(&enr_local)
             .map_err(|err| anyhow!("Failed to build ENR: {err}"))?;
 

@@ -7,7 +7,7 @@ use std::{
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_discv5::{
     config::DiscoveryConfig,
-    subnet::{AttestationSubnets, SyncCommitteeSubnets},
+    subnet::{AttestationSubnets, CustodyGroupCount, SyncCommitteeSubnets},
 };
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
@@ -80,6 +80,7 @@ impl NetworkManagerService {
             disable_discovery: config.disable_discovery,
             attestation_subnets: AttestationSubnets::new(),
             sync_committee_subnets: SyncCommitteeSubnets::new(),
+            custody_group_count: CustodyGroupCount::default(),
         };
 
         let gossipsub_config = init_gossipsub_config_with_topics();

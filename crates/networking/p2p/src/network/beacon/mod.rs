@@ -835,7 +835,7 @@ mod tests {
     use libp2p_identity::{Keypair, PeerId};
     use ream_discv5::{
         config::DiscoveryConfig,
-        subnet::{AttestationSubnets, SyncCommitteeSubnets},
+        subnet::{AttestationSubnets, CustodyGroupCount, SyncCommitteeSubnets},
     };
     use ream_executor::ReamExecutor;
     use ream_network_spec::networks::beacon::initialize_test_network_spec;
@@ -873,6 +873,7 @@ mod tests {
                 disable_discovery,
                 attestation_subnets: AttestationSubnets::new(),
                 sync_committee_subnets: SyncCommitteeSubnets::new(),
+                custody_group_count: CustodyGroupCount::default(),
             },
             gossipsub_config: GossipsubConfig {
                 topics,

@@ -1,5 +1,5 @@
-use alloy_primitives::{B256, Bytes, aliases::B32, bytes};
-use alloy_rlp::{Decodable, Encodable};
+use alloy_primitives::{B256, aliases::B32};
+use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
 use ream_consensus_misc::{constants::beacon::FAR_FUTURE_EPOCH, fork_data::ForkData};
 use ream_network_spec::networks::beacon_network_spec;
 use ssz::{Decode, Encode};
@@ -36,7 +36,7 @@ impl EnrForkId {
 }
 
 impl Encodable for EnrForkId {
-    fn encode(&self, out: &mut dyn bytes::BufMut) {
+    fn encode(&self, out: &mut dyn BufMut) {
         let ssz_bytes = self.as_ssz_bytes();
         let bytes = Bytes::from(ssz_bytes);
         bytes.encode(out);

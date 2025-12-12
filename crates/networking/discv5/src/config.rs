@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use discv5::{ConfigBuilder, Enr, ListenConfig};
 
-use crate::subnet::{AttestationSubnets, SyncCommitteeSubnets};
+use crate::subnet::{AttestationSubnets, CustodyGroupCount, SyncCommitteeSubnets};
 
 pub struct DiscoveryConfig {
     pub discv5_config: discv5::Config,
@@ -13,6 +13,7 @@ pub struct DiscoveryConfig {
     pub disable_discovery: bool,
     pub attestation_subnets: AttestationSubnets,
     pub sync_committee_subnets: SyncCommitteeSubnets,
+    pub custody_group_count: CustodyGroupCount,
 }
 
 impl Default for DiscoveryConfig {
@@ -44,6 +45,7 @@ impl Default for DiscoveryConfig {
             disable_discovery: false,
             attestation_subnets,
             sync_committee_subnets,
+            custody_group_count: CustodyGroupCount::default(),
         }
     }
 }
