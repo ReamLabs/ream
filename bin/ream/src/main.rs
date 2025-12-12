@@ -353,7 +353,11 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
     );
 
     // Initialize builder client if enabled
-    let builder_client = config.mev_relay_url.clone().map(|mev_relay_url| {
+    let builder_client = config.enable_builder.then(|| {
+        let mev_relay_url = config
+            .mev_relay_url
+            .clone()
+            .expect("MEV relay URL must be present when builder is enabled");
         let builder_config = BuilderConfig {
             builder_enabled: true,
             mev_relay_url,
