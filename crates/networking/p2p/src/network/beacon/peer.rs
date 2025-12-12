@@ -4,7 +4,7 @@ use discv5::Enr;
 use libp2p::{Multiaddr, PeerId};
 use ream_peer::{ConnectionState, Direction};
 
-use crate::req_resp::beacon::messages::{meta_data::GetMetaDataV2, status::Status};
+use crate::req_resp::beacon::messages::{meta_data::GetMetaDataV3, status::Status};
 
 #[derive(Clone, Debug)]
 pub struct CachedPeer {
@@ -28,7 +28,7 @@ pub struct CachedPeer {
 
     pub status: Option<Status>,
 
-    pub meta_data: Option<GetMetaDataV2>,
+    pub meta_data: Option<GetMetaDataV3>,
 }
 
 impl CachedPeer {

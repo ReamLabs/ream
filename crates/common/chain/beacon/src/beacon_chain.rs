@@ -125,6 +125,7 @@ impl BeaconChain {
             finalized_epoch: finalized_checkpoint.epoch,
             head_root,
             head_slot,
+            earliest_available_slot: 0,
         })
     }
 }

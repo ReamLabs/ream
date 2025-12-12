@@ -74,14 +74,18 @@ impl SupportedProtocol {
     pub fn supported_protocols(chain: Chain) -> Vec<ProtocolId> {
         match chain {
             Chain::Beacon => vec![
+                BeaconSupportedProtocol::GetMetaDataV3,
                 BeaconSupportedProtocol::GetMetaDataV2,
                 BeaconSupportedProtocol::GoodbyeV1,
                 BeaconSupportedProtocol::PingV1,
+                BeaconSupportedProtocol::StatusV2,
                 BeaconSupportedProtocol::StatusV1,
                 BeaconSupportedProtocol::BeaconBlocksByRangeV2,
                 BeaconSupportedProtocol::BeaconBlocksByRootV2,
                 BeaconSupportedProtocol::BlobSidecarsByRangeV1,
                 BeaconSupportedProtocol::BlobSidecarsByRootV1,
+                BeaconSupportedProtocol::DataColumnSidecarsByRangeV1,
+                BeaconSupportedProtocol::DataColumnSidecarsByRootV1,
             ]
             .into_iter()
             .map(SupportedProtocol::Beacon)
