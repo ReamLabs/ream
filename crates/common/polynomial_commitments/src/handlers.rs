@@ -94,7 +94,7 @@ pub fn verify_cell_kzg_proof_batch(
     let commitments: Vec<FsG1> = commitments_bytes
         .iter()
         .map(|c| {
-            FsG1::from_bytes(&c.0).map_err(|e| anyhow::anyhow!("Invalid commitment bytes: {e}"))
+            FsG1::from_bytes(&c.0).map_err(|err| anyhow::anyhow!("Invalid commitment bytes: {err}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -107,7 +107,7 @@ pub fn verify_cell_kzg_proof_batch(
             cell.chunks(32) // BYTES_PER_FIELD_ELEMENT = 32
                 .map(|bytes| {
                     FsFr::from_bytes(bytes)
-                        .map_err(|e| anyhow::anyhow!("Invalid cell field element: {e}"))
+                        .map_err(|err| anyhow::anyhow!("Invalid cell field element: {err}"))
                 })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -116,7 +116,7 @@ pub fn verify_cell_kzg_proof_batch(
     let proofs: Vec<FsG1> = proofs_bytes
         .iter()
         .map(|proof| {
-            FsG1::from_bytes(&proof.0).map_err(|e| anyhow::anyhow!("Invalid proof bytes: {e}"))
+            FsG1::from_bytes(&proof.0).map_err(|err| anyhow::anyhow!("Invalid proof bytes: {err}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -128,5 +128,5 @@ pub fn verify_cell_kzg_proof_batch(
         &cosets_evals,
         &proofs,
     )
-    .map_err(|e| anyhow::anyhow!("Cell KZG proof batch verification failed: {e}"))
+    .map_err(|err| anyhow::anyhow!("Cell KZG proof batch verification failed: {err}"))
 }
