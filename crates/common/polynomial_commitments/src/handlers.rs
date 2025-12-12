@@ -61,7 +61,8 @@ pub fn verify_cell_kzg_proof_batch(
         );
     }
 
-    // Spec: for commitment_bytes in commitments_bytes: assert len(commitment_bytes) == BYTES_PER_COMMITMENT
+    // Spec: for commitment_bytes in commitments_bytes: assert len(commitment_bytes) ==
+    // BYTES_PER_COMMITMENT
     for commitment in commitments_bytes.iter() {
         if commitment.0.len() != 48 {
             anyhow::bail!("Invalid commitment length: expected 48 bytes");

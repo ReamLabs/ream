@@ -59,7 +59,8 @@ pub async fn validate_data_column_sidecar_full(
         ));
     }
 
-    // TODO [REJECT] The sidecar's block's parent (defined by block_header.parent_root) passes validation.
+    // TODO [REJECT] The sidecar's block's parent (defined by block_header.parent_root) passes
+    // validation.
 
     let Some(parent_block) = store.db.block_provider().get(header.parent_root)? else {
         return Ok(ValidationResult::Ignore(
