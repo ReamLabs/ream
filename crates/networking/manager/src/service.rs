@@ -9,11 +9,8 @@ use ream_discv5::{
     config::DiscoveryConfig,
     subnet::{AttestationSubnets, CustodyGroupCount, SyncCommitteeSubnets},
 };
-use ream_events_beacon::BeaconEvent;
-use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::beacon_network_spec;
-use ream_operation_pool::OperationPool;
 use ream_p2p::{
     config::NetworkConfig,
     network::beacon::{Network, ReamNetworkEvent, network_state::NetworkState},
@@ -37,7 +34,7 @@ pub struct NetworkManagerService {
     pub network_state: Arc<NetworkState>,
     pub block_range_syncer: BlockRangeSyncer,
     pub ream_db: BeaconDB,
-    pub cached_db: CachedDB,
+    pub cached_db: Arc<CachedDB>,
 }
 
 /// The `NetworkManagerService` acts as the manager for all networking activities in Ream.
@@ -59,8 +56,8 @@ impl NetworkManagerService {
         config: ManagerConfig,
         ream_db: BeaconDB,
         ream_dir: PathBuf,
-        operation_pool: Arc<OperationPool>,
-        event_sender: tokio::sync::broadcast::Sender<BeaconEvent>,
+        beacon_chain: Arc<BeaconChain>,
+        cached_db: Arc<CachedDB>,
     ) -> anyhow::Result<Self> {
         let discv5_config = discv5::ConfigBuilder::new(discv5::ListenConfig::from_ip(
             config.socket_address,
@@ -94,19 +91,6 @@ impl NetworkManagerService {
         let (manager_sender, manager_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, p2p_receiver) = mpsc::unbounded_channel();
 
-        let execution_engine = if let (Some(execution_endpoint), Some(jwt_path)) =
-            (config.execution_endpoint, config.execution_jwt_secret)
-        {
-            Some(ExecutionEngine::new(execution_endpoint, jwt_path)?)
-        } else {
-            None
-        };
-        let beacon_chain = Arc::new(BeaconChain::new(
-            ream_db.clone(),
-            operation_pool,
-            execution_engine,
-            Some(event_sender),
-        ));
         let status = beacon_chain.build_status_request().await?;
 
         let network = Network::init(executor.clone(), &network_config, status).await?;
@@ -123,8 +107,6 @@ impl NetworkManagerService {
             network_state.clone(),
             executor.clone(),
         );
-
-        let cached_db = CachedDB::new();
 
         Ok(Self {
             beacon_chain,

@@ -30,6 +30,7 @@ use ream::{
 use ream_account_manager::{message_types::MessageType, seed::derive_seed_with_user_input};
 use ream_api_types_beacon::id::ValidatorID;
 use ream_api_types_common::id::ID;
+use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_chain_lean::{
     messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest, service::LeanChainService,
 };
@@ -44,6 +45,7 @@ use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
 };
 use ream_events_beacon::BeaconEvent;
+use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
 use ream_fork_choice_lean::{genesis as lean_genesis, store::Store};
 use ream_keystore::keystore::EncryptedKeystore;
@@ -374,20 +376,42 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         )
     });
 
+    // Create execution engine if configured
+    let execution_engine = if let (Some(execution_endpoint), Some(jwt_path)) = (
+        config.execution_endpoint.clone(),
+        config.execution_jwt_secret.clone(),
+    ) {
+        Some(
+            ExecutionEngine::new(execution_endpoint, jwt_path)
+                .expect("Failed to create execution engine"),
+        )
+    } else {
+        None
+    };
+
+    // Create beacon chain
+    let beacon_chain = Arc::new(BeaconChain::new(
+        beacon_db.clone(),
+        operation_pool.clone(),
+        execution_engine.clone(),
+        Some(event_sender.clone()),
+    ));
+    let cached_db = Arc::new(ream_storage::cache::CachedDB::new());
+
+    // Create network manager
     let network_manager = NetworkManagerService::new(
         executor.clone(),
         config.into(),
         beacon_db.clone(),
         beacon_db.data_dir.clone(),
-        operation_pool.clone(),
-        event_sender.clone(),
+        beacon_chain.clone(),
+        cached_db.clone(),
     )
     .await
     .expect("Failed to create manager service");
 
     let network_state = network_manager.network_state.clone();
-
-    let execution_engine = network_manager.beacon_chain.execution_engine.clone();
+    let p2p_sender = Arc::new(network_manager.p2p_sender.clone());
 
     let network_future = executor.spawn(async move {
         network_manager.start().await;
@@ -402,6 +426,9 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
             execution_engine,
             builder_client,
             event_sender,
+            beacon_chain,
+            p2p_sender,
+            cached_db,
         )
         .await
     });

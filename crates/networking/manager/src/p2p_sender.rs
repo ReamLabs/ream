@@ -10,6 +10,7 @@ use ream_p2p::{
 use tokio::sync::mpsc;
 use tracing::warn;
 
+#[derive(Clone)]
 pub struct P2PSender(pub mpsc::UnboundedSender<P2PMessage>);
 
 impl P2PSender {
