@@ -1,3 +1,4 @@
+pub mod attestation;
 pub mod blob_sidecar;
 pub mod block;
 pub mod committee;

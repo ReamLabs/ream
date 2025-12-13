@@ -1,6 +1,7 @@
 use actix_web::web::ServiceConfig;
 
 use crate::handlers::{
+    attestation::post_attestation_rewards,
     blob_sidecar::get_blob_sidecars,
     block::{
         get_blind_block, get_block_attestations, get_block_from_id, get_block_rewards,
@@ -53,6 +54,7 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(post_validator_identities_from_state)
         .service(post_validators_from_state)
         .service(post_sync_committee_rewards)
+        .service(post_attestation_rewards)
         .service(get_validator_balances_from_state)
         .service(post_validator_balances_from_state)
         .service(get_bls_to_execution_changes)
