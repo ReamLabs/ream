@@ -33,6 +33,7 @@ tree_hash.workspace = true
 ream-api-types-beacon.workspace = true
 ream-api-types-common.workspace = true
 ream-bls.workspace = true
+ream-chain-beacon.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
 ream-events-beacon.workspace = true
