@@ -3,7 +3,7 @@ use actix_web::{
     web::{Data, Json, Path},
 };
 use ream_api_types_beacon::{
-    duties::{AttesterDuty, ProposerDuty},
+    duties::{AttesterDuty, ProposerDuty, SyncCommitteeDuty},
     responses::DutiesResponse,
 };
 use ream_api_types_common::{error::ApiError, id::ID};
@@ -39,7 +39,7 @@ pub async fn get_proposer_duties(
             slot,
         });
     }
-    Ok(HttpResponse::Ok().json(DutiesResponse::new(dependent_root, duties)))
+    Ok(HttpResponse::Ok().json(DutiesResponse::new(Some(dependent_root), duties)))
 }
 
 #[post("/validator/duties/attester/{epoch}")]
@@ -90,5 +90,50 @@ pub async fn get_attester_duties(
             });
         }
     }
-    Ok(HttpResponse::Ok().json(DutiesResponse::new(dependent_root, duties)))
+    Ok(HttpResponse::Ok().json(DutiesResponse::new(Some(dependent_root), duties)))
+}
+
+#[post("/validator/duties/sync/{epoch}")]
+pub async fn get_sync_committee_duties(
+    db: Data<BeaconDB>,
+    epoch: Path<u64>,
+    validator_indices: Json<Vec<u64>>,
+) -> Result<impl Responder, ApiError> {
+    let epoch = epoch.into_inner();
+    let state = get_state_from_id(ID::Slot(compute_start_slot_at_epoch(epoch)), &db).await?;
+    let validator_indices = validator_indices.into_inner();
+
+    let mut duties = vec![];
+    for validator_index in validator_indices {
+        let Some(validator) = state.validators.get(validator_index as usize) else {
+            return Err(ApiError::ValidatorNotFound(format!(
+                "Validator with index {validator_index} not found in state at epoch {epoch}"
+            )));
+        };
+
+        let sync_committee_indices = state
+            .get_sync_committee_indices(&state.current_sync_committee)
+            .map_err(|err| {
+                ApiError::BadRequest(format!("Failed to get sync committee indices {err:?}"))
+            })?;
+
+        let validator_sync_committee_indices = sync_committee_indices
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &committee_index)| {
+                if validator_index == committee_index as u64 {
+                    Some(index as u64)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        duties.push(SyncCommitteeDuty {
+            public_key: validator.public_key.clone(),
+            validator_index,
+            validator_sync_committee_indices,
+        });
+    }
+    Ok(HttpResponse::Ok().json(DutiesResponse::new(None, duties)))
 }

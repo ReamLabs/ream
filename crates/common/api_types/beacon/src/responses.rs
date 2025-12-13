@@ -156,13 +156,13 @@ impl<T: Serialize> DataVersionedResponse<T> {
 /// }
 #[derive(Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct DutiesResponse<T: Encode + Decode> {
-    pub dependent_root: B256,
+    pub dependent_root: Option<B256>,
     pub execution_optimistic: bool,
     pub data: Vec<T>,
 }
 
 impl<T: Serialize + Encode + Decode> DutiesResponse<T> {
-    pub fn new(dependent_root: B256, data: Vec<T>) -> Self {
+    pub fn new(dependent_root: Option<B256>, data: Vec<T>) -> Self {
         Self {
             dependent_root,
             execution_optimistic: EXECUTION_OPTIMISTIC,
