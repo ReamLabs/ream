@@ -111,6 +111,7 @@ pub async fn validate_data_column_sidecar_full(
         ));
     }
     seen.put(tuple, ());
+    drop(seen);
 
     match state.get_beacon_proposer_index(Some(header.slot)) {
         Ok(expected_index) => {
