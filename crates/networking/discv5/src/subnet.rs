@@ -21,7 +21,9 @@ pub const NEXT_FORK_DIGEST_ENR_KEY: &str = "nfd";
 // Subscription constants
 const SUBNETS_PER_NODE: usize = 2;
 pub const EPOCHS_PER_SUBNET_SUBSCRIPTION: u64 = 256;
-const ATTESTATION_SUBNET_PREFIX_BITS: u32 = 8;
+// ceillog2(ATTESTATION_SUBNET_COUNT) + ATTESTATION_SUBNET_EXTRA_BITS
+// = ceillog2(64) + 0 = 6
+const ATTESTATION_SUBNET_PREFIX_BITS: u32 = 6;
 
 /// Represents the attestation subnets a node is subscribed to
 ///
@@ -35,9 +37,9 @@ impl AttestationSubnets {
         Self(BitVector::new())
     }
 
-    pub fn enable_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
+    pub fn enable_attestation_subnet(&mut self, subnet_id: u64) -> anyhow::Result<()> {
         ensure!(
-            subnet_id < ATTESTATION_SUBNET_COUNT as u8,
+            subnet_id < ATTESTATION_SUBNET_COUNT as u64,
             "Subnet ID {subnet_id} exceeds maximum attestation subnet count {ATTESTATION_SUBNET_COUNT}",
         );
         self.0
@@ -45,9 +47,9 @@ impl AttestationSubnets {
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
-    pub fn disable_attestation_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
+    pub fn disable_attestation_subnet(&mut self, subnet_id: u64) -> anyhow::Result<()> {
         ensure!(
-            subnet_id < ATTESTATION_SUBNET_COUNT as u8,
+            subnet_id < ATTESTATION_SUBNET_COUNT as u64,
             "Subnet ID {subnet_id} exceeds maximum attestation subnet count {ATTESTATION_SUBNET_COUNT}",
         );
         self.0
@@ -55,9 +57,9 @@ impl AttestationSubnets {
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
-    pub fn is_attestation_subnet_enabled(&self, subnet_id: u8) -> anyhow::Result<bool> {
+    pub fn is_attestation_subnet_enabled(&self, subnet_id: u64) -> anyhow::Result<bool> {
         ensure!(
-            subnet_id < ATTESTATION_SUBNET_COUNT as u8,
+            subnet_id < ATTESTATION_SUBNET_COUNT as u64,
             "Subnet ID {subnet_id} exceeds maximum attestation subnet count {ATTESTATION_SUBNET_COUNT}",
         );
         self.0
@@ -97,9 +99,9 @@ impl SyncCommitteeSubnets {
         Self(BitVector::new())
     }
 
-    pub fn enable_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
+    pub fn enable_sync_committee_subnet(&mut self, subnet_id: u64) -> anyhow::Result<()> {
         ensure!(
-            subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
+            subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u64,
             "Subnet ID {subnet_id} exceeds maximum sync committee subnet count {SYNC_COMMITTEE_SUBNET_COUNT}",
         );
         self.0
@@ -107,9 +109,9 @@ impl SyncCommitteeSubnets {
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
-    pub fn disable_sync_committee_subnet(&mut self, subnet_id: u8) -> anyhow::Result<()> {
+    pub fn disable_sync_committee_subnet(&mut self, subnet_id: u64) -> anyhow::Result<()> {
         ensure!(
-            subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
+            subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u64,
             "Subnet ID {subnet_id} exceeds maximum sync committee subnet count {SYNC_COMMITTEE_SUBNET_COUNT}",
         );
         self.0
@@ -117,9 +119,9 @@ impl SyncCommitteeSubnets {
             .map_err(|err| anyhow!("Subnet ID out of bounds: {err:?}"))
     }
 
-    pub fn is_sync_committee_subnet_enabled(&self, subnet_id: u8) -> anyhow::Result<bool> {
+    pub fn is_sync_committee_subnet_enabled(&self, subnet_id: u64) -> anyhow::Result<bool> {
         ensure!(
-            subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u8,
+            subnet_id < SYNC_COMMITTEE_SUBNET_COUNT as u64,
             "Subnet ID {subnet_id} exceeds maximum sync committee subnet count {SYNC_COMMITTEE_SUBNET_COUNT}",
         );
         self.0
@@ -207,13 +209,16 @@ impl Decodable for NextForkDigest {
 }
 
 /// Compute a single subscribed subnet based on node_id, epoch, and index
-pub fn compute_subscribed_subnet(node_id: NodeId, epoch: u64, index: usize) -> anyhow::Result<u8> {
-    // Extract prefix from first 8 bytes of node_id
+pub fn compute_subscribed_subnet(node_id: NodeId, epoch: u64, index: usize) -> anyhow::Result<u64> {
+    // Extract prefix from node_id using proper bit operations
+    // Get the first 8 bytes and shift to get the prefix bits
     let mut node_id_prefix_bytes = [0u8; 8];
     node_id_prefix_bytes.copy_from_slice(&node_id.raw()[..8]);
+    // We work with the first 64 bits of the 256-bit node_id
     let node_id_prefix =
         u64::from_be_bytes(node_id_prefix_bytes) >> (64 - ATTESTATION_SUBNET_PREFIX_BITS);
 
+    // Extract node_offset from last 8 bytes
     let mut node_offset_bytes = [0u8; 8];
     node_offset_bytes.copy_from_slice(&node_id.raw()[24..32]);
     let node_offset = u64::from_be_bytes(node_offset_bytes) % EPOCHS_PER_SUBNET_SUBSCRIPTION;
@@ -224,13 +229,13 @@ pub fn compute_subscribed_subnet(node_id: NodeId, epoch: u64, index: usize) -> a
     let permutated_prefix = compute_shuffled_index(
         node_id_prefix as usize,
         1 << ATTESTATION_SUBNET_PREFIX_BITS,
-        B256::from_slice(permutation_seed.as_slice()),
+        B256::from_slice(&permutation_seed[..]),
     )?;
-    Ok(((permutated_prefix + index) % ATTESTATION_SUBNET_COUNT) as u8)
+    Ok(((permutated_prefix + index) % ATTESTATION_SUBNET_COUNT) as u64)
 }
 
 /// Compute all subscribed subnets for a node
-pub fn compute_subscribed_subnets(node_id: NodeId, epoch: u64) -> anyhow::Result<Vec<u8>> {
+pub fn compute_subscribed_subnets(node_id: NodeId, epoch: u64) -> anyhow::Result<Vec<u64>> {
     (0..SUBNETS_PER_NODE).try_fold(Vec::new(), |mut acc, i| {
         let subnet = compute_subscribed_subnet(node_id, epoch, i)?;
         acc.push(subnet);
@@ -238,7 +243,7 @@ pub fn compute_subscribed_subnets(node_id: NodeId, epoch: u64) -> anyhow::Result
     })
 }
 
-pub fn attestation_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool + Send + Sync {
+pub fn attestation_subnet_predicate(subnets: Vec<u64>) -> impl Fn(&Enr) -> bool + Send + Sync {
     move |enr: &Enr| {
         if subnets.is_empty() {
             return true;
@@ -257,7 +262,7 @@ pub fn attestation_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool +
             };
 
         for subnet_id in &subnets {
-            if *subnet_id >= ATTESTATION_SUBNET_COUNT as u8 {
+            if *subnet_id >= ATTESTATION_SUBNET_COUNT as u64 {
                 error!(
                     "Peer rejected: subnet ID {} exceeds attestation bitfield length; peer_id: {}",
                     subnet_id,
@@ -281,7 +286,7 @@ pub fn attestation_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool +
     }
 }
 
-pub fn sync_committee_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> bool + Send + Sync {
+pub fn sync_committee_subnet_predicate(subnets: Vec<u64>) -> impl Fn(&Enr) -> bool + Send + Sync {
     move |enr: &Enr| {
         if subnets.is_empty() {
             return true;
@@ -300,7 +305,7 @@ pub fn sync_committee_subnet_predicate(subnets: Vec<u8>) -> impl Fn(&Enr) -> boo
             };
 
         for subnet_id in &subnets {
-            if *subnet_id >= SYNC_COMMITTEE_SUBNET_COUNT as u8 {
+            if *subnet_id >= SYNC_COMMITTEE_SUBNET_COUNT as u64 {
                 trace!(
                     "Peer rejected: subnet ID {} exceeds sync committee bitfield length; peer_id: {}",
                     subnet_id,
@@ -601,7 +606,7 @@ mod tests {
         // Test valid subnet
         let subnet = compute_subscribed_subnet(node_id, epoch, index).unwrap();
         assert!(
-            subnet < ATTESTATION_SUBNET_COUNT as u8,
+            subnet < ATTESTATION_SUBNET_COUNT as u64,
             "Subnet ID out of bounds: {subnet}"
         );
 
@@ -620,14 +625,14 @@ mod tests {
         let subnet_index1 = compute_subscribed_subnet(node_id, epoch, 1).unwrap();
         // Subnets may be same or different (spec allows either)
         assert!(
-            subnet_index1 < ATTESTATION_SUBNET_COUNT as u8,
+            subnet_index1 < ATTESTATION_SUBNET_COUNT as u64,
             "Subnet ID for index 1 out of bounds: {subnet_index1}"
         );
 
         // Test edge cases
         let subnet_epoch_zero = compute_subscribed_subnet(node_id, 0, index).unwrap();
         assert!(
-            subnet_epoch_zero < ATTESTATION_SUBNET_COUNT as u8,
+            subnet_epoch_zero < ATTESTATION_SUBNET_COUNT as u64,
             "Subnet ID for epoch 0 out of bounds"
         );
     }
