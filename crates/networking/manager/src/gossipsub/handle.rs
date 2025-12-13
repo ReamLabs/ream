@@ -425,7 +425,7 @@ pub async fn handle_gossipsub_message(
                     }
                 };
 
-                match validate_data_column_sidecar_full(
+                let validation_result = match validate_data_column_sidecar_full(
                     &data_column_sidecar,
                     beacon_chain,
                     subnet_id,
@@ -433,44 +433,47 @@ pub async fn handle_gossipsub_message(
                 )
                 .await
                 {
-                    Ok(validation_result) => match validation_result {
-                        ValidationResult::Accept => {
-                            let data_column_sidecar_bytes = data_column_sidecar.as_ssz_bytes();
-                            if let Err(err) = beacon_chain
-                                .store
-                                .lock()
-                                .await
-                                .db
-                                .column_sidecars_provider()
-                                .insert(
-                                    ColumnIdentifier::new(
-                                        data_column_sidecar
-                                            .signed_block_header
-                                            .message
-                                            .tree_hash_root(),
-                                        data_column_sidecar.index,
-                                    ),
-                                    *data_column_sidecar,
-                                )
-                            {
-                                error!("Failed to insert data_column_sidecar: {err}");
-                            }
-
-                            p2p_sender.send_gossip(GossipMessage {
-                                topic: GossipTopic::from_topic_hash(&message.topic)
-                                    .expect("invalid topic hash"),
-                                data: data_column_sidecar_bytes,
-                            });
-                        }
-                        ValidationResult::Reject(reason) => {
-                            info!("Data column sidecar rejected: {reason}");
-                        }
-                        ValidationResult::Ignore(reason) => {
-                            info!("Data column sidecar ignored: {reason}");
-                        }
-                    },
+                    Ok(validation_result) => validation_result,
                     Err(err) => {
                         error!("Could not validate data_column_sidecar: {err}");
+                        return;
+                    }
+                };
+
+                match validation_result {
+                    ValidationResult::Accept => {
+                        let data_column_sidecar_bytes = data_column_sidecar.as_ssz_bytes();
+                        if let Err(err) = beacon_chain
+                            .store
+                            .lock()
+                            .await
+                            .db
+                            .column_sidecars_provider()
+                            .insert(
+                                ColumnIdentifier::new(
+                                    data_column_sidecar
+                                        .signed_block_header
+                                        .message
+                                        .tree_hash_root(),
+                                    data_column_sidecar.index,
+                                ),
+                                *data_column_sidecar,
+                            )
+                        {
+                            error!("Failed to insert data_column_sidecar: {err}");
+                        }
+
+                        p2p_sender.send_gossip(GossipMessage {
+                            topic: GossipTopic::from_topic_hash(&message.topic)
+                                .expect("invalid topic hash"),
+                            data: data_column_sidecar_bytes,
+                        });
+                    }
+                    ValidationResult::Reject(reason) => {
+                        info!("Data column sidecar rejected: {reason}");
+                    }
+                    ValidationResult::Ignore(reason) => {
+                        info!("Data column sidecar ignored: {reason}");
                     }
                 }
             }

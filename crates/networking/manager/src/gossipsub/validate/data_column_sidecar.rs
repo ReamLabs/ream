@@ -88,10 +88,9 @@ pub async fn validate_data_column_sidecar_full(
         ));
     }
 
-    let cell_indices: Vec<u64> = vec![data_column_sidecar.index; data_column_sidecar.column.len()];
     if !verify_cell_kzg_proof_batch(
         &data_column_sidecar.kzg_commitments,
-        &cell_indices,
+        &vec![data_column_sidecar.index; data_column_sidecar.column.len()],
         &data_column_sidecar.column,
         &data_column_sidecar.kzg_proofs,
     )? {

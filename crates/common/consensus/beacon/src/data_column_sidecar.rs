@@ -13,17 +13,15 @@ use tree_hash_derive::TreeHash;
 use crate::polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof};
 
 pub type Cell = FixedVector<u8, typenum::U2048>;
-pub type ColumnIndex = u64;
 
 pub const NUMBER_OF_COLUMNS: u64 = 128;
 pub const DATA_COLUMN_SIDECAR_SUBNET_COUNT: u64 = 128;
 
 pub type MaxBlobCommitmentsPerBlock = typenum::U6;
 
-// TODO remove this and use from PR of issue 1038
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Encode, Decode, TreeHash)]
 pub struct DataColumnSidecar {
-    pub index: ColumnIndex,
+    pub index: u64,
     pub column: VariableList<Cell, MaxBlobCommitmentsPerBlock>,
     pub kzg_commitments: VariableList<KZGCommitment, MaxBlobCommitmentsPerBlock>,
     pub kzg_proofs: VariableList<KZGProof, MaxBlobCommitmentsPerBlock>,
@@ -48,11 +46,11 @@ pub struct DataColumnSidecar {
 )]
 pub struct ColumnIdentifier {
     pub block_root: B256,
-    pub index: ColumnIndex,
+    pub index: u64,
 }
 
 impl ColumnIdentifier {
-    pub fn new(block_root: B256, index: ColumnIndex) -> Self {
+    pub fn new(block_root: B256, index: u64) -> Self {
         Self { block_root, index }
     }
 }
