@@ -925,3 +925,12 @@ pub async fn post_contribution_and_proofs(
 
     Ok(HttpResponse::Ok().body("success"))
 }
+
+#[get("/validator/aggregate_attestation")]
+pub async fn get_aggregate_attestation(
+    db: Data<BeaconDB>,
+    attestation_data_root: Query<String>,
+    attestation_query: Query<AttestationQuery>
+) -> Result<impl Responder, ApiError> {
+
+}
