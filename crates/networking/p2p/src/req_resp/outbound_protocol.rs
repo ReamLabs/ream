@@ -13,7 +13,10 @@ use futures::{
     prelude::{AsyncRead, AsyncWrite},
 };
 use libp2p::{OutboundUpgrade, bytes::Buf, core::UpgradeInfo};
-use ream_consensus_beacon::{blob_sidecar::BlobSidecar, electra::beacon_block::SignedBeaconBlock};
+use ream_consensus_beacon::{
+    blob_sidecar::BlobSidecar, data_column_sidecar::DataColumnSidecar,
+    electra::beacon_block::SignedBeaconBlock,
+};
 use ream_consensus_lean::block::SignedBlockWithAttestation;
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_network_spec::networks::beacon_network_spec;
@@ -32,7 +35,7 @@ use crate::{
     req_resp::{
         beacon::{
             messages::{
-                BeaconResponseMessage, meta_data::GetMetaDataV2, ping::Ping, status::Status,
+                BeaconResponseMessage, meta_data::GetMetaDataV3, ping::Ping, status::Status,
             },
             protocol_id::BeaconSupportedProtocol,
         },
@@ -203,14 +206,18 @@ impl Decoder for OutboundSSZSnappyCodec {
                                         ),
                                     )));
                                 }
-                                BeaconSupportedProtocol::GetMetaDataV2 => {
+                                BeaconSupportedProtocol::GetMetaDataV2
+                                | BeaconSupportedProtocol::GetMetaDataV3 => {
                                     BeaconResponseMessage::MetaData(
-                                        GetMetaDataV2::from_ssz_bytes(&buf)
+                                        GetMetaDataV3::from_ssz_bytes(&buf)
                                             .map_err(ReqRespError::from)?
                                             .into(),
                                     )
                                 }
                                 BeaconSupportedProtocol::StatusV1 => BeaconResponseMessage::Status(
+                                    Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                                ),
+                                BeaconSupportedProtocol::StatusV2 => BeaconResponseMessage::Status(
                                     Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
                                 ),
                                 BeaconSupportedProtocol::PingV1 => BeaconResponseMessage::Ping(
@@ -237,6 +244,18 @@ impl Decoder for OutboundSSZSnappyCodec {
                                 BeaconSupportedProtocol::BlobSidecarsByRootV1 => {
                                     BeaconResponseMessage::BlobSidecarsByRoot(
                                         BlobSidecar::from_ssz_bytes(&buf)
+                                            .map_err(ReqRespError::from)?,
+                                    )
+                                }
+                                BeaconSupportedProtocol::DataColumnSidecarsByRangeV1 => {
+                                    BeaconResponseMessage::DataColumnSidecarsByRange(
+                                        DataColumnSidecar::from_ssz_bytes(&buf)
+                                            .map_err(ReqRespError::from)?,
+                                    )
+                                }
+                                BeaconSupportedProtocol::DataColumnSidecarsByRootV1 => {
+                                    BeaconResponseMessage::DataColumnSidecarsByRoot(
+                                        DataColumnSidecar::from_ssz_bytes(&buf)
                                             .map_err(ReqRespError::from)?,
                                     )
                                 }

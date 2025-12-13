@@ -52,7 +52,7 @@ use crate::{
             BeaconRequestMessage, BeaconResponseMessage,
             blob_sidecars::BlobSidecarsByRootV1Request,
             blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
-            meta_data::GetMetaDataV2,
+            meta_data::GetMetaDataV3,
             ping::Ping,
             status::Status,
         },
@@ -199,7 +199,7 @@ impl Network {
             meta_data: RwLock::new(
                 read_meta_data_from_disk(config.data_dir.clone()).unwrap_or_else(|err| {
                     error!("Failed to read meta data from disk: {err:?}");
-                    GetMetaDataV2::default()
+                    GetMetaDataV3::default()
                 }),
             ),
             status: RwLock::new(status),
@@ -598,13 +598,13 @@ impl Network {
             ReqRespMessageReceived::Request { stream_id, message } => {
                 if let RequestMessage::Beacon(message) = *message {
                     match message {
-                        BeaconRequestMessage::MetaData(get_meta_data_v2) => {
+                        BeaconRequestMessage::MetaData(get_meta_data) => {
                             trace!(
                                 ?peer_id,
                                 ?stream_id,
                                 ?connection_id,
-                                ?get_meta_data_v2,
-                                "Received GetMetaDataV2 request"
+                                ?get_meta_data,
+                                "Received GetMetaData request"
                             );
                             let response = BeaconResponseMessage::MetaData(
                                 self.network_state.meta_data.read().clone().into(),
@@ -835,7 +835,7 @@ mod tests {
     use libp2p_identity::{Keypair, PeerId};
     use ream_discv5::{
         config::DiscoveryConfig,
-        subnet::{AttestationSubnets, SyncCommitteeSubnets},
+        subnet::{AttestationSubnets, CustodyGroupCount, SyncCommitteeSubnets},
     };
     use ream_executor::ReamExecutor;
     use ream_network_spec::networks::beacon::initialize_test_network_spec;
@@ -873,6 +873,7 @@ mod tests {
                 disable_discovery,
                 attestation_subnets: AttestationSubnets::new(),
                 sync_committee_subnets: SyncCommitteeSubnets::new(),
+                custody_group_count: CustodyGroupCount::default(),
             },
             gossipsub_config: GossipsubConfig {
                 topics,

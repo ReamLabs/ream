@@ -1,9 +1,9 @@
 use libp2p::gossipsub::TopicHash;
 use ream_consensus_beacon::{
     attester_slashing::AttesterSlashing, blob_sidecar::BlobSidecar,
-    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_block::SignedBeaconBlock,
-    proposer_slashing::ProposerSlashing, single_attestation::SingleAttestation,
-    voluntary_exit::SignedVoluntaryExit,
+    bls_to_execution_change::SignedBLSToExecutionChange, data_column_sidecar::DataColumnSidecar,
+    electra::beacon_block::SignedBeaconBlock, proposer_slashing::ProposerSlashing,
+    single_attestation::SingleAttestation, voluntary_exit::SignedVoluntaryExit,
 };
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_events_beacon::contribution_and_proof::SignedContributionAndProof;
@@ -26,6 +26,7 @@ pub enum GossipsubMessage {
     ProposerSlashing(Box<ProposerSlashing>),
     AggregateAndProof(Box<AggregateAndProof>),
     BlobSidecar(Box<BlobSidecar>),
+    DataColumnSidecar(Box<DataColumnSidecar>),
     BeaconAttestation((Box<SingleAttestation>, u64)),
     SyncCommittee((Box<SyncCommitteeMessage>, u64)),
     BlsToExecutionChange(Box<SignedBLSToExecutionChange>),
@@ -76,6 +77,9 @@ impl GossipsubMessage {
             ))),
             GossipTopicKind::BlobSidecar(_) => Ok(Self::BlobSidecar(Box::new(
                 BlobSidecar::from_ssz_bytes(data)?,
+            ))),
+            GossipTopicKind::DataColumnSidecar(_) => Ok(Self::DataColumnSidecar(Box::new(
+                DataColumnSidecar::from_ssz_bytes(data)?,
             ))),
             GossipTopicKind::LightClientFinalityUpdate => Ok(Self::LightClientFinalityUpdate(
                 Box::new(LightClientFinalityUpdate::from_ssz_bytes(data)?),

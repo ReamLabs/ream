@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
 use libp2p::{PeerId, swarm::ConnectionId};
-use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
+use ream_consensus_beacon::{blob_sidecar::BlobIdentifier, data_column_sidecar::ColumnIdentifier};
 use ream_p2p::{
     network::beacon::network_state::NetworkState,
     req_resp::beacon::messages::{
         BeaconRequestMessage, BeaconResponseMessage,
         blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
         blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+        data_column_sidecars::{
+            DataColumnSidecarsByRangeV1Request, DataColumnSidecarsByRootV1Request,
+        },
     },
 };
 use ream_storage::{
@@ -226,6 +229,67 @@ pub async fn handle_req_resp_message(
                     BeaconResponseMessage::BlobSidecarsByRoot(blob_sidecar),
                 );
             }
+            p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
+        }
+        BeaconRequestMessage::DataColumnSidecarsByRange(DataColumnSidecarsByRangeV1Request {
+            start_slot,
+            count,
+            columns,
+        }) => {
+            for slot in start_slot..start_slot + count {
+                let Ok(Some(block_root)) = ream_db.slot_index_provider().get(slot) else {
+                    trace!("No block root found for slot {slot}");
+                    continue;
+                };
+
+                for &column_index in &columns {
+                    let column_identifier = ColumnIdentifier::new(block_root, column_index);
+                    let Ok(Some(column_sidecar)) =
+                        ream_db.column_sidecars_provider().get(column_identifier)
+                    else {
+                        trace!(
+                            "No column sidecar found for block root {block_root} and index {column_index}"
+                        );
+                        continue;
+                    };
+
+                    p2p_sender.send_response(
+                        peer_id,
+                        connection_id,
+                        stream_id,
+                        BeaconResponseMessage::DataColumnSidecarsByRange(column_sidecar),
+                    );
+                }
+            }
+
+            p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
+        }
+        BeaconRequestMessage::DataColumnSidecarsByRoot(DataColumnSidecarsByRootV1Request {
+            inner,
+        }) => {
+            for identifier in inner {
+                for &column_index in &identifier.columns {
+                    let column_identifier =
+                        ColumnIdentifier::new(identifier.block_root, column_index);
+                    let Ok(Some(column_sidecar)) =
+                        ream_db.column_sidecars_provider().get(column_identifier)
+                    else {
+                        trace!(
+                            "No column sidecar found for block root {} and index {column_index}",
+                            identifier.block_root
+                        );
+                        continue;
+                    };
+
+                    p2p_sender.send_response(
+                        peer_id,
+                        connection_id,
+                        stream_id,
+                        BeaconResponseMessage::DataColumnSidecarsByRoot(column_sidecar),
+                    );
+                }
+            }
+
             p2p_sender.send_end_of_stream_response(peer_id, connection_id, stream_id);
         }
         _ => warn!("This message shouldn't be handled in the network manager: {message:?}"),

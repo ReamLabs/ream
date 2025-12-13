@@ -8,7 +8,8 @@ use crate::tables::{
     beacon::{
         beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
         blobs_and_proofs::BlobsAndProofsTable, block_timeliness::BlockTimelinessTable,
-        checkpoint_states::CheckpointStatesTable, equivocating_indices::EquivocatingIndicesField,
+        checkpoint_states::CheckpointStatesTable, column_sidecars::ColumnSidecarsTable,
+        equivocating_indices::EquivocatingIndicesField,
         finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
         justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
         parent_root_index::ParentRootIndexMultimapTable,
@@ -41,6 +42,12 @@ impl BeaconDB {
 
     pub fn blobs_and_proofs_provider(&self) -> BlobsAndProofsTable {
         BlobsAndProofsTable {
+            data_dir: self.data_dir.clone(),
+        }
+    }
+
+    pub fn column_sidecars_provider(&self) -> ColumnSidecarsTable {
+        ColumnSidecarsTable {
             data_dir: self.data_dir.clone(),
         }
     }
