@@ -21,9 +21,12 @@ use ream_consensus_beacon::{
     beacon_committee_selection::BeaconCommitteeSelection,
     electra::{
         beacon_block::BeaconBlock, beacon_block_body::BeaconBlockBody, beacon_state::BeaconState,
-        execution_payload::ExecutionPayload,
+        blinded_beacon_block::BlindedBeaconBlock,
+        blinded_beacon_block_body::BlindedBeaconBlockBody, execution_payload::ExecutionPayload,
     },
+    execution_requests::ExecutionRequests,
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
+    sync_aggregate::SyncAggregate,
     sync_committe_selection::SyncCommitteeSelection,
 };
 use ream_consensus_misc::{
@@ -57,6 +60,7 @@ use ream_validator_beacon::{
         DOMAIN_CONTRIBUTION_AND_PROOF, DOMAIN_SELECTION_PROOF,
         DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF, SYNC_COMMITTEE_SUBNET_COUNT,
     },
+    execution_requests::get_execution_requests,
     sync_committee::{SyncAggregatorSelectionData, is_sync_committee_aggregator},
 };
 use serde::Serialize;
@@ -963,7 +967,7 @@ pub async fn get_blocks_v3(
     let randao_reveal = query_params.randao_reveal;
     let graffiti = query_params.graffiti.unwrap_or_default();
     let skip_randao_verification = query_params.skip_randao_verification.unwrap_or(true);
-    let _builder_boost_factor = query_params.builder_boost_factor.unwrap_or(100);
+    let builder_boost_factor = query_params.builder_boost_factor.unwrap_or(100);
 
     let mut state = db
         .get_latest_state()
@@ -1044,37 +1048,146 @@ pub async fn get_blocks_v3(
         parent_beacon_block_root: state.latest_block_header.tree_hash_root(),
     };
 
-    if let Some(ref builder) = builder_client {
-        let parent_hash = state.latest_execution_payload_header.block_hash;
-        let _builder_bid = builder
-            .get_builder_header(parent_hash, &proposer_public_key, slot)
-            .await
-            .map_err(|err| {
-                ApiError::InternalError(format!("Failed to get builder header: {err}"))
-            })?;
-
-            
-    }
-
     let Some(ref execution_engine) = execution_engine else {
         return Err(ApiError::InternalError(
             "Execution engine not available".into(),
         ));
     };
 
-    let result = execution_engine
-        .engine_forkchoice_updated_v3(forkchoice_state, Some(payload_attribute))
+    let local_result = execution_engine
+        .engine_forkchoice_updated_v3(
+            ForkchoiceStateV1 {
+                head_block_hash: forkchoice_state.head_block_hash,
+                safe_block_hash: forkchoice_state.safe_block_hash,
+                finalized_block_hash: forkchoice_state.finalized_block_hash,
+            },
+            Some(PayloadAttributesV3 {
+                timestamp: payload_attribute.timestamp,
+                prev_randao: payload_attribute.prev_randao,
+                suggested_fee_recipient: payload_attribute.suggested_fee_recipient,
+                withdrawals: payload_attribute.withdrawals.clone(),
+                parent_beacon_block_root: payload_attribute.parent_beacon_block_root,
+            }),
+        )
         .await
         .map_err(|err| ApiError::InternalError(format!("Failed to update forkchoice: {err}")))?;
 
-    let payload_id = result.payload_id.ok_or_else(|| {
+    let local_payload_id = local_result.payload_id.ok_or_else(|| {
         ApiError::InternalError("No payload id returned from forkchoice update".into())
     })?;
 
-    let payload_v4 = execution_engine
-        .engine_get_payload_v4(payload_id)
+    let local_payload_v4 = execution_engine
+        .engine_get_payload_v4(local_payload_id)
         .await
         .map_err(|err| ApiError::InternalError(format!("Failed to get payload: {err}")))?;
+
+    let local_execution_value = u64::from_be_bytes(
+        local_payload_v4.block_value[24..32]
+            .try_into()
+            .unwrap_or([0; 8]),
+    );
+
+    let (use_builder, builder_bid, builder_value) = if let Some(builder) = builder_client {
+        let parent_hash = state.latest_execution_payload_header.block_hash;
+        match builder
+            .get_builder_header(parent_hash, &proposer_public_key, slot)
+            .await
+        {
+            Ok(bid) => {
+                // Compare builder value with local execution value
+                // Apply boost factor: builder_value * (100 + boost_factor) / 100
+                let builder_value_u256 = bid.message.value;
+                let builder_value_u64 = builder_value_u256.to::<u64>();
+                let boosted_builder_value = builder_value_u64
+                    .saturating_mul(100 + builder_boost_factor)
+                    .saturating_div(100);
+
+                let use_builder = boosted_builder_value > local_execution_value;
+                (use_builder, Some(bid), builder_value_u64)
+            }
+            Err(_) => (false, None, 0),
+        }
+    } else {
+        (false, None, 0)
+    };
+
+    let common_body_fields = (
+        randao_reveal.clone(),
+        state.eth1_data.clone(),
+        graffiti,
+        operation_pool
+            .get_all_proposer_slahsings()
+            .try_into()
+            .unwrap_or_default(),
+        operation_pool
+            .get_all_attester_slashings()
+            .try_into()
+            .unwrap_or_default(),
+        VariableList::default(), // Attestations - would need to be collected from network/gossip
+        VariableList::default(), // Deposits - would need to be collected from eth1
+        operation_pool
+            .get_signed_voluntary_exits()
+            .try_into()
+            .unwrap_or_default(),
+        SyncAggregate::default(), // Sync aggregate - would need to be computed from contributions
+        operation_pool
+            .get_signed_bls_to_execution_changes()
+            .try_into()
+            .unwrap_or_default(),
+    );
+
+    if use_builder {
+        let builder_bid = builder_bid.expect("Builder bid should exist when use_builder is true");
+
+        let execution_requests = builder_bid.message.execution_requests.clone();
+
+        let blinded_beacon_block_body = BlindedBeaconBlockBody {
+            randao_reveal: common_body_fields.0,
+            eth1_data: common_body_fields.1,
+            graffiti: common_body_fields.2,
+            proposer_slashings: common_body_fields.3,
+            attester_slashings: common_body_fields.4,
+            attestations: common_body_fields.5,
+            deposits: common_body_fields.6,
+            voluntary_exits: common_body_fields.7,
+            sync_aggregate: common_body_fields.8,
+            execution_payload_header: builder_bid.message.header.clone(),
+            bls_to_execution_changes: common_body_fields.9,
+            blob_kzg_commitments: builder_bid.message.blob_kzg_commitments.clone(),
+            execution_requests,
+        };
+
+        let blinded_beacon_block = BlindedBeaconBlock {
+            slot,
+            proposer_index,
+            parent_root: state.latest_block_header.tree_hash_root(),
+            state_root: state.tree_hash_root(),
+            body: blinded_beacon_block_body,
+        };
+
+        let response = ProduceBlockResponse {
+            version: "electra".to_string(),
+            execution_payload_blinded: true,
+            execution_payload_value: builder_value,
+            consensus_block_value: 0, // Consensus block value is typically 0 for builder blocks
+            data: ProduceBlockData::Blinded(blinded_beacon_block),
+        };
+
+        return Ok(HttpResponse::Ok()
+            .insert_header(("Eth-Consensus-Version", "electra"))
+            .insert_header(("Eth-Execution-Payload-Blinded", "true"))
+            .insert_header((
+                "Eth-Execution-Payload-Value",
+                response.execution_payload_value.to_string(),
+            ))
+            .insert_header((
+                "Eth-Consensus-Block-Value",
+                response.consensus_block_value.to_string(),
+            ))
+            .json(response));
+    }
+
+    let payload_v4 = local_payload_v4;
 
     let execution_payload = ExecutionPayload {
         parent_hash: payload_v4.execution_payload.parent_hash,
@@ -1105,11 +1218,7 @@ pub async fn get_blocks_v3(
             if vec.len() == 48 {
                 let mut bytes = [0u8; 48];
                 bytes.copy_from_slice(&vec);
-                Some(
-                    ream_consensus_beacon::polynomial_commitments::kzg_commitment::KZGCommitment(
-                        bytes,
-                    ),
-                )
+                Some(KZGCommitment(bytes))
             } else {
                 None
             }
@@ -1132,55 +1241,46 @@ pub async fn get_blocks_v3(
         })
         .collect();
 
+    let execution_requests =
+        get_execution_requests(payload_v4.execution_requests).unwrap_or_default();
+
     let block_body = BeaconBlockBody {
-        randao_reveal,
-        eth1_data: state.eth1_data.clone(),
-        graffiti,
-        proposer_slashings: operation_pool
-            .get_all_proposer_slahsings()
-            .try_into()
-            .unwrap_or_default(),
-        attester_slashings: operation_pool
-            .get_all_attester_slashings()
-            .try_into()
-            .unwrap_or_default(),
-        attestations: VariableList::default(), // TODO: Get from operation pool
-        deposits: VariableList::default(),     // TODO: Get from operation pool
-        voluntary_exits: operation_pool
-            .get_signed_voluntary_exits()
-            .try_into()
-            .unwrap_or_default(),
-        sync_aggregate: ream_consensus_beacon::sync_aggregate::SyncAggregate::default(),
+        randao_reveal: common_body_fields.0,
+        eth1_data: common_body_fields.1,
+        graffiti: common_body_fields.2,
+        proposer_slashings: common_body_fields.3,
+        attester_slashings: common_body_fields.4,
+        attestations: common_body_fields.5,
+        deposits: common_body_fields.6,
+        voluntary_exits: common_body_fields.7,
+        sync_aggregate: common_body_fields.8,
         execution_payload,
-        bls_to_execution_changes: operation_pool
-            .get_signed_bls_to_execution_changes()
-            .try_into()
-            .unwrap_or_default(),
+        bls_to_execution_changes: common_body_fields.9,
         blob_kzg_commitments: blob_kzg_commitments.try_into().unwrap_or_default(),
-        execution_requests: Default::default(), // TODO: Get from payload_v4.execution_requests
+        execution_requests,
     };
 
-    let parent_root = state.latest_block_header.tree_hash_root();
-    let state_root = state.tree_hash_root();
     let block = BeaconBlock {
         slot,
         proposer_index,
-        parent_root,
-        state_root,
+        parent_root: state.latest_block_header.tree_hash_root(),
+        state_root: state.tree_hash_root(),
         body: block_body,
     };
 
+    // Note: Blobs are not included in PayloadV4 response, they would need to be fetched separately
+    // For now, we return empty blobs list. The blobs would typically be fetched via
+    // engine_getBlobsV1 or included in a different API response format.
     let response = ProduceBlockResponse {
         version: "electra".to_string(),
         execution_payload_blinded: false,
-        execution_payload_value: u64::from_be_bytes(
-            payload_v4.block_value[24..32].try_into().unwrap_or([0; 8]),
-        ),
-        consensus_block_value: 0, // TODO: Calculate consensus block value
+        execution_payload_value: local_execution_value,
+        consensus_block_value: 0, // Consensus block value is the sum of all validator rewards
+        // This would need to be calculated from attestations, sync committee, etc.
         data: ProduceBlockData::Full(FullBlockData {
             block,
             kzg_proofs,
-            blobs: Vec::new(), // TODO: Get blobs from appropriate source
+            blobs: Vec::new(), // Blobs not available in PayloadV4, would need separate fetch
         }),
     };
 
