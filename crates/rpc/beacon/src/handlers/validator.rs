@@ -4,7 +4,6 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
-use actix_web_lab::sse::Data;
 use alloy_primitives::B256;
 use hashbrown::HashMap;
 use ream_api_types_beacon::{
@@ -18,7 +17,8 @@ use ream_api_types_beacon::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_bls::{BLSSignature, PublicKey, traits::Verifiable};
 use ream_consensus_beacon::{
-    beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState, execution_engine, sync_committe_selection::SyncCommitteeSelection
+    beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState,
+    sync_committe_selection::SyncCommitteeSelection,
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
@@ -33,7 +33,10 @@ use ream_events_beacon::{
     BeaconEvent, contribution_and_proof::SignedContributionAndProof,
     event::sync_committee::ContributionAndProofEvent,
 };
-use ream_execution_engine::{ExecutionEngine, rpc_types::forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3}};
+use ream_execution_engine::{
+    ExecutionEngine,
+    rpc_types::forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3},
+};
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;
 use ream_operation_pool::OperationPool;
@@ -941,6 +944,7 @@ pub async fn get_blocks_v3(
     path: Path<u64>,
     query: Query<BlockQuery>,
     db: Data<BeaconDB>,
+    node_config: Data<BeaconNodeConfig>,
 ) -> Result<impl Responder, ApiError> {
     let slot = path.into_inner();
     let query_params = query.into_inner();
@@ -949,9 +953,12 @@ pub async fn get_blocks_v3(
     let skip_randao_verification = query_params.skip_randao_verification.unwrap_or(true);
     let builder_boost_factor = query_params.builder_boost_factor.unwrap_or(100);
 
-    let state = db.get_latest_state().map_err(|err| {
-        ApiError::InternalError(format!("Unable to fetch the latest state: {}", err))
-    })?.clone();
+    let state = db
+        .get_latest_state()
+        .map_err(|err| {
+            ApiError::InternalError(format!("Unable to fetch the latest state: {}", err))
+        })?
+        .clone();
 
     let current_slot = state.slot;
 
@@ -999,6 +1006,8 @@ pub async fn get_blocks_v3(
         ApiError::InternalError(format!("Failed to process slots: {}", err));
     });
 
+    let config = node_config.as_ref();
+
     let forkchoice_state = ForkchoiceStateV1 {
         head_block_hash: state.latest_execution_payload_header.block_hash,
         safe_block_hash: state.current_justified_checkpoint.root,
@@ -1010,21 +1019,34 @@ pub async fn get_blocks_v3(
         prev_randao: randao_reveal,
         suggested_fee_recipient: proposer,
         withdrawals: state.get_expected_withdrawals(),
-        parent_beacon_block_root: state.latest_block_header.hash(state),
+        parent_beacon_block_root: state.latest_block_header.hash(&mut state),
     };
 
-    let config = BeaconNodeConfig::parse();
-
-    let execution_engine = if let (Some(endpoint), Some(jwt_secret)) = (&config.execution_endpoint, &config.execution_jwt_secret) {
+    let execution_engine = if let (Some(endpoint), Some(jwt_secret)) =
+        (&config.execution_endpoint, &config.execution_jwt_secret)
+    {
         ExecutionEngine::new(endpoint.clone(), jwt_secret.clone())?
     } else {
-        return Err(ApiError::InternalError("Execution endpoint or JWT secret not provided".into()));
+        return Err(ApiError::InternalError(
+            "Execution endpoint or JWT secret not provided".into(),
+        ));
     };
 
-    let result = execution_engine.engine_forkchoice_updated_v3(forkchoice_state, Some(payload_attribute)).await?;
+    let result = execution_engine
+        .engine_forkchoice_updated_v3(forkchoice_state, Some(payload_attribute))
+        .await?;
 
-    let payload_id = result.payload_id.ok_or_else(|| format!("No payload id returned"))?
+    if config.enable_builder {
+    } else {
+        let payload_id = result
+            .payload_id
+            .ok_or_else(|| format!("No payload id returned"))
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {}", err));
+            });
 
-    let payload = execution_engine.engine_get_payload_v4(payload_id);
-    
+        let payload = execution_engine.engine_get_payload_v4(payload_id.unwrap());
+    }
+
+    Ok(HttpResponse::Ok().json({}))
 }
