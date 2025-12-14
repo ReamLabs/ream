@@ -4,6 +4,8 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
+use actix_web_lab::sse::Data;
+use alloy_primitives::B256;
 use hashbrown::HashMap;
 use ream_api_types_beacon::{
     committee::BeaconCommitteeSubscription,
@@ -14,7 +16,7 @@ use ream_api_types_beacon::{
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_bls::{PublicKey, traits::Verifiable};
+use ream_bls::{BLSSignature, PublicKey, traits::Verifiable};
 use ream_consensus_beacon::{
     beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState,
     sync_committe_selection::SyncCommitteeSelection,
@@ -22,7 +24,7 @@ use ream_consensus_beacon::{
 use ream_consensus_misc::{
     attestation_data::AttestationData,
     constants::beacon::{
-        DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, DOMAIN_SYNC_COMMITTEE,
+        DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
         MAX_COMMITTEES_PER_SLOT, SLOTS_PER_EPOCH,
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
@@ -924,4 +926,76 @@ pub async fn post_contribution_and_proofs(
     }
 
     Ok(HttpResponse::Ok().body("success"))
+}
+
+#[derive(serde::Deserialize)]
+struct BlockQuery {
+    randao_reveal: BLSSignature,
+    graffiti: Option<B256>,
+    skip_randao_verification: Option<bool>,
+    builder_boost_factor: Option<u64>,
+}
+
+#[get("/validator/blocks/{slot}")]
+pub async fn get_blocks_v3(
+    path: Path<u64>,
+    query: Query<BlockQuery>,
+    db: Data<BeaconDB>,
+) -> Result<impl Responder, ApiError> {
+    let slot = path.into_inner();
+    let query_params = query.into_inner();
+    let randao_reveal = query_params.randao_reveal;
+    let graffiti = query_params.graffiti.unwrap_or_default();
+    let skip_randao_verification = query_params.skip_randao_verification.unwrap_or(true);
+    let builder_boost_factor = query_params.builder_boost_factor.unwrap_or(100);
+
+    let state = db.get_latest_state().map_err(|err| {
+        ApiError::InternalError(format!("Unable to fetch the latest state: {}", err))
+    })?.clone();
+
+    let current_slot = state.slot;
+
+    if slot < current_slot {
+        return Err(ApiError::BadRequest(
+            "Current slot is greater than requested slot".into(),
+        ));
+    }
+
+    let proposer_index = state.get_beacon_proposer_index(Some(slot)).map_err(|err| {
+        ApiError::InternalError(format!(
+            "Failed to get the proposer index for slot {}: {}",
+            slot, err
+        ))
+    })?;
+
+    let Some(proposer) = state.validators.get(proposer_index as usize) else {
+        return Err(ApiError::ValidatorNotFound(format!("{proposer_index}")));
+    };
+
+    let proposer_public_key = proposer.public_key;
+
+    if skip_randao_verification {
+        if !randao_reveal.is_infinity() {
+            return Err(ApiError::BadRequest("If randao verification is skipped then the randao reveal must be equal to point at infinity".into()));
+        }
+    } else {
+        let epoch = compute_epoch_at_slot(slot);
+
+        let randao_proof_domain = state.get_domain(DOMAIN_RANDAO, Some(epoch));
+        let randao_proof_signing_root = compute_signing_root(randao_reveal, randao_proof_domain);
+        if !randao_reveal
+            .verify(&proposer_public_key, randao_proof_signing_root.as_ref())
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?
+        {
+            return Err(ApiError::BadRequest(
+                "Randao reveal verification failed".to_string(),
+            ));
+        }
+    }
+
+    state.process_slots(slot).map_err(|err| {
+        ApiError::InternalError(format!("Failed to process slots: {}", err));
+    });
 }
