@@ -33,7 +33,7 @@ use ream_events_beacon::{
     BeaconEvent, contribution_and_proof::SignedContributionAndProof,
     event::sync_committee::ContributionAndProofEvent,
 };
-use ream_execution_engine::rpc_types::forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3};
+use ream_execution_engine::{ExecutionEngine, rpc_types::forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3}};
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;
 use ream_operation_pool::OperationPool;
@@ -1011,7 +1011,20 @@ pub async fn get_blocks_v3(
         suggested_fee_recipient: proposer,
         withdrawals: state.get_expected_withdrawals(),
         parent_beacon_block_root: state.latest_block_header.hash(state),
-    }
+    };
 
-    let execution_engine = 
+    let config = BeaconNodeConfig::parse();
+
+    let execution_engine = if let (Some(endpoint), Some(jwt_secret)) = (&config.execution_endpoint, &config.execution_jwt_secret) {
+        ExecutionEngine::new(endpoint.clone(), jwt_secret.clone())?
+    } else {
+        return Err(ApiError::InternalError("Execution endpoint or JWT secret not provided".into()));
+    };
+
+    let result = execution_engine.engine_forkchoice_updated_v3(forkchoice_state, Some(payload_attribute)).await?;
+
+    let payload_id = result.payload_id.ok_or_else(|| format!("No payload id returned"))?
+
+    let payload = execution_engine.engine_get_payload_v4(payload_id);
+    
 }

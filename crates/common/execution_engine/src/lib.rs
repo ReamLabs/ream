@@ -208,7 +208,7 @@ impl ExecutionEngine {
             id: 1,
             jsonrpc: "2.0".to_string(),
             method: "eth_getLogs".to_string(),
-            params: vec![json!(filter)],
+            params: vec![json!(filter)], 
         };
 
         let http_post_request = self.build_request(request_body)?;
