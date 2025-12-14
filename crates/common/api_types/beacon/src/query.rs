@@ -57,6 +57,11 @@ pub struct ConnectionStateQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct HealthQuery {
+    pub syncing_status: Option<u16>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct DirectionQuery {
     pub direction: Option<Vec<Direction>>,
 }
