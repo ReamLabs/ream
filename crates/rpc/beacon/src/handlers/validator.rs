@@ -18,22 +18,27 @@ use ream_api_types_beacon::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_bls::{BLSSignature, PublicKey, traits::Verifiable};
 use ream_consensus_beacon::{
+    attestation::Attestation,
+    attester_slashing::AttesterSlashing,
     beacon_committee_selection::BeaconCommitteeSelection,
+    bls_to_execution_change::SignedBLSToExecutionChange,
+    deposit::Deposit,
     electra::{
         beacon_block::BeaconBlock, beacon_block_body::BeaconBlockBody, beacon_state::BeaconState,
         blinded_beacon_block::BlindedBeaconBlock,
         blinded_beacon_block_body::BlindedBeaconBlockBody, execution_payload::ExecutionPayload,
     },
-    execution_requests::ExecutionRequests,
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
+    proposer_slashing::ProposerSlashing,
     sync_aggregate::SyncAggregate,
     sync_committe_selection::SyncCommitteeSelection,
+    voluntary_exit::SignedVoluntaryExit,
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
     constants::beacon::{
         DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
-        MAX_COMMITTEES_PER_SLOT, SLOTS_PER_EPOCH,
+        MAX_COMMITTEES_PER_SLOT, SLOTS_PER_EPOCH, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
     validator::Validator,
@@ -44,7 +49,10 @@ use ream_events_beacon::{
 };
 use ream_execution_engine::{
     ExecutionEngine,
-    rpc_types::forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3},
+    rpc_types::{
+        forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3},
+        get_payload::PayloadV4,
+    },
 };
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;
@@ -54,7 +62,8 @@ use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof,
     attestation::compute_subnet_for_attestation,
     builder::{
-        builder_client::BuilderClient, validator_registration::SignedValidatorRegistrationV1,
+        builder_bid::SignedBuilderBid, builder_client::BuilderClient,
+        validator_registration::SignedValidatorRegistrationV1,
     },
     constants::{
         DOMAIN_CONTRIBUTION_AND_PROOF, DOMAIN_SELECTION_PROOF,
@@ -64,7 +73,10 @@ use ream_validator_beacon::{
     sync_committee::{SyncAggregatorSelectionData, is_sync_committee_aggregator},
 };
 use serde::Serialize;
-use ssz_types::VariableList;
+use ssz_types::{
+    VariableList,
+    typenum::{U1, U8, U16, U256},
+};
 use tokio::sync::broadcast;
 use tree_hash::TreeHash;
 
@@ -953,6 +965,166 @@ struct BlockQuery {
     builder_boost_factor: Option<u64>,
 }
 
+fn verify_randao_reveal(
+    state: &BeaconState,
+    epoch: u64,
+    randao_reveal: &BLSSignature,
+    skip_randao_verification: bool,
+    proposer_public_key: &PublicKey,
+) -> Result<(), ApiError> {
+    if skip_randao_verification {
+        if !randao_reveal.is_infinity() {
+            return Err(ApiError::BadRequest(
+                "If randao verification is skipped then the randao reveal must be equal to point at infinity".into(),
+            ));
+        }
+    } else {
+        let randao_proof_domain = state.get_domain(DOMAIN_RANDAO, Some(epoch));
+        let randao_proof_signing_root = compute_signing_root(epoch, randao_proof_domain);
+        if !randao_reveal
+            .verify(proposer_public_key, randao_proof_signing_root.as_ref())
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?
+        {
+            return Err(ApiError::BadRequest(
+                "Randao reveal verification failed".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn calculate_consensus_block_value(
+    state: &BeaconState,
+    attestations: &VariableList<Attestation, U8>,
+    proposer_slashings: &VariableList<ProposerSlashing, U16>,
+    attester_slashings: &VariableList<AttesterSlashing, U1>,
+    sync_aggregate: &SyncAggregate,
+) -> Result<u64, ApiError> {
+    let mut total_reward = 0u64;
+
+    // Calculate attestation rewards
+    for attestation in attestations {
+        if let Ok(attesting_indices) = state.get_attesting_indices(attestation) {
+            for index in attesting_indices {
+                total_reward += state.get_proposer_reward(index);
+            }
+        }
+    }
+
+    // Calculate proposer slashing rewards
+    for proposer_slashing in proposer_slashings {
+        let index = proposer_slashing.signed_header_1.message.proposer_index;
+        if let Some(validator) = state.validators.get(index as usize) {
+            total_reward += validator.effective_balance;
+        }
+    }
+
+    // Calculate attester slashing rewards
+    let current_epoch = state.get_current_epoch();
+    for attester_slashing in attester_slashings {
+        if let Ok((attestation_indices_1, attestation_indices_2)) =
+            state.get_slashable_attester_indices(attester_slashing)
+        {
+            for index in &attestation_indices_1 & &attestation_indices_2 {
+                if let Some(validator) = state.validators.get(index as usize) {
+                    if validator.is_slashable_validator(current_epoch) {
+                        total_reward += validator.effective_balance / WHISTLEBLOWER_REWARD_QUOTIENT;
+                    }
+                }
+            }
+        }
+    }
+
+    // Calculate sync committee rewards
+    let (_, proposer_reward) = state.get_proposer_and_participant_rewards();
+    let sync_committee_participants = sync_aggregate.sync_committee_bits.num_set_bits() as u64;
+    total_reward += sync_committee_participants * proposer_reward;
+
+    Ok(total_reward)
+}
+
+async fn get_local_execution_payload(
+    execution_engine: &ExecutionEngine,
+    forkchoice_state: ForkchoiceStateV1,
+    payload_attribute: PayloadAttributesV3,
+) -> Result<(PayloadV4, u64), ApiError> {
+    let result = execution_engine
+        .engine_forkchoice_updated_v3(
+            ForkchoiceStateV1 {
+                head_block_hash: forkchoice_state.head_block_hash,
+                safe_block_hash: forkchoice_state.safe_block_hash,
+                finalized_block_hash: forkchoice_state.finalized_block_hash,
+            },
+            Some(PayloadAttributesV3 {
+                timestamp: payload_attribute.timestamp,
+                prev_randao: payload_attribute.prev_randao,
+                suggested_fee_recipient: payload_attribute.suggested_fee_recipient,
+                withdrawals: payload_attribute.withdrawals.clone(),
+                parent_beacon_block_root: payload_attribute.parent_beacon_block_root,
+            }),
+        )
+        .await
+        .map_err(|err| ApiError::InternalError(format!("Failed to update forkchoice: {err}")))?;
+
+    let payload_id = result.payload_id.ok_or_else(|| {
+        ApiError::InternalError("No payload id returned from forkchoice update".into())
+    })?;
+
+    let payload_v4 = execution_engine
+        .engine_get_payload_v4(payload_id)
+        .await
+        .map_err(|err| ApiError::InternalError(format!("Failed to get payload: {err}")))?;
+
+    let execution_value = if payload_v4.block_value.len() >= 32 {
+        let mut tmp = [0u8; 8];
+        tmp.copy_from_slice(&payload_v4.block_value[24..32]);
+        u64::from_be_bytes(tmp)
+    } else {
+        return Err(ApiError::InternalError(
+            "Engine returned invalid block_value length".into(),
+        ));
+    };
+
+    Ok((payload_v4, execution_value))
+}
+
+async fn compare_builder_vs_local(
+    builder_client: Option<&Arc<BuilderClient>>,
+    parent_hash: B256,
+    proposer_public_key: &PublicKey,
+    slot: u64,
+    local_execution_value: u64,
+    builder_boost_factor: u64,
+) -> Result<(bool, Option<SignedBuilderBid>, u64), ApiError> {
+    if let Some(builder) = builder_client {
+        match builder
+            .get_builder_header(parent_hash, proposer_public_key, slot)
+            .await
+        {
+            Ok(bid) => {
+                let builder_value_u256 = bid.message.value;
+                let builder_value_u64 = builder_value_u256.to::<u64>();
+                let boosted_builder_value = builder_value_u64
+                    .saturating_mul(100 + builder_boost_factor)
+                    .saturating_div(100);
+
+                let use_builder = boosted_builder_value > local_execution_value;
+                Ok((use_builder, Some(bid), builder_value_u64))
+            }
+            Err(err) => {
+                tracing::warn!(
+                    "Failed to get builder header: {err:?}, falling back to local execution"
+                );
+                Ok((false, None, 0))
+            }
+        }
+    } else {
+        Ok((false, None, 0))
+    }
+}
+
 #[get("/validator/blocks/{slot}")]
 pub async fn get_blocks_v3(
     path: Path<u64>,
@@ -966,15 +1138,12 @@ pub async fn get_blocks_v3(
     let query_params = query.into_inner();
     let randao_reveal = query_params.randao_reveal;
     let graffiti = query_params.graffiti.unwrap_or_default();
-    let skip_randao_verification = query_params.skip_randao_verification.unwrap_or(true);
+    let skip_randao_verification = query_params.skip_randao_verification.unwrap_or(false);
     let builder_boost_factor = query_params.builder_boost_factor.unwrap_or(100);
 
-    let mut state = db
-        .get_latest_state()
-        .map_err(|err| {
-            ApiError::InternalError(format!("Unable to fetch the latest state: {}", err))
-        })?
-        .clone();
+    let mut state = db.get_latest_state().map_err(|err| {
+        ApiError::InternalError(format!("Unable to fetch the latest state: {}", err))
+    })?;
 
     let current_slot = state.slot;
 
@@ -996,28 +1165,17 @@ pub async fn get_blocks_v3(
     };
 
     let proposer_public_key = proposer.public_key.clone();
+    let epoch = compute_epoch_at_slot(slot);
 
-    if skip_randao_verification {
-        if !randao_reveal.is_infinity() {
-            return Err(ApiError::BadRequest("If randao verification is skipped then the randao reveal must be equal to point at infinity".into()));
-        }
-    } else {
-        let epoch = compute_epoch_at_slot(slot);
+    verify_randao_reveal(
+        &state,
+        epoch,
+        &randao_reveal,
+        skip_randao_verification,
+        &proposer_public_key,
+    )?;
 
-        let randao_proof_domain = state.get_domain(DOMAIN_RANDAO, Some(epoch));
-        let randao_proof_signing_root = compute_signing_root(epoch, randao_proof_domain);
-        if !randao_reveal
-            .verify(&proposer_public_key, randao_proof_signing_root.as_ref())
-            .map_err(|err| {
-                ApiError::InternalError(format!("Failed due to internal error: {err}"))
-            })?
-        {
-            return Err(ApiError::BadRequest(
-                "Randao reveal verification failed".to_string(),
-            ));
-        }
-    }
-
+    // Process slots to get state at the requested slot
     state
         .process_slots(slot)
         .map_err(|err| ApiError::InternalError(format!("Failed to process slots: {}", err)))?;
@@ -1038,7 +1196,7 @@ pub async fn get_blocks_v3(
 
     let payload_attribute = PayloadAttributesV3 {
         timestamp: state.compute_timestamp_at_slot(slot),
-        prev_randao: state.get_randao_mix(state.get_current_epoch()),
+        prev_randao: state.get_randao_mix(epoch),
         suggested_fee_recipient: fee_recipient,
         withdrawals: withdrawals.try_into().map_err(|err| {
             ApiError::InternalError(format!(
@@ -1054,110 +1212,77 @@ pub async fn get_blocks_v3(
         ));
     };
 
-    let local_result = execution_engine
-        .engine_forkchoice_updated_v3(
-            ForkchoiceStateV1 {
-                head_block_hash: forkchoice_state.head_block_hash,
-                safe_block_hash: forkchoice_state.safe_block_hash,
-                finalized_block_hash: forkchoice_state.finalized_block_hash,
-            },
-            Some(PayloadAttributesV3 {
-                timestamp: payload_attribute.timestamp,
-                prev_randao: payload_attribute.prev_randao,
-                suggested_fee_recipient: payload_attribute.suggested_fee_recipient,
-                withdrawals: payload_attribute.withdrawals.clone(),
-                parent_beacon_block_root: payload_attribute.parent_beacon_block_root,
-            }),
-        )
-        .await
-        .map_err(|err| ApiError::InternalError(format!("Failed to update forkchoice: {err}")))?;
+    let (local_payload_v4, local_execution_value) = get_local_execution_payload(
+        execution_engine,
+        ForkchoiceStateV1 {
+            head_block_hash: forkchoice_state.head_block_hash,
+            safe_block_hash: forkchoice_state.safe_block_hash,
+            finalized_block_hash: forkchoice_state.finalized_block_hash,
+        },
+        PayloadAttributesV3 {
+            timestamp: payload_attribute.timestamp,
+            prev_randao: payload_attribute.prev_randao,
+            suggested_fee_recipient: payload_attribute.suggested_fee_recipient,
+            withdrawals: payload_attribute.withdrawals.clone(),
+            parent_beacon_block_root: payload_attribute.parent_beacon_block_root,
+        },
+    )
+    .await?;
 
-    let local_payload_id = local_result.payload_id.ok_or_else(|| {
-        ApiError::InternalError("No payload id returned from forkchoice update".into())
-    })?;
+    let builder_client_ref = builder_client.as_ref().map(|bc| bc.as_ref());
+    let (use_builder, builder_bid, builder_value) = compare_builder_vs_local(
+        builder_client_ref,
+        state.latest_execution_payload_header.block_hash,
+        &proposer_public_key,
+        slot,
+        local_execution_value,
+        builder_boost_factor,
+    )
+    .await?;
 
-    let local_payload_v4 = execution_engine
-        .engine_get_payload_v4(local_payload_id)
-        .await
-        .map_err(|err| ApiError::InternalError(format!("Failed to get payload: {err}")))?;
-
-    let local_execution_value = u64::from_be_bytes(
-        local_payload_v4.block_value[24..32]
-            .try_into()
-            .unwrap_or([0; 8]),
-    );
-
-    let (use_builder, builder_bid, builder_value) = if let Some(builder) = builder_client {
-        let parent_hash = state.latest_execution_payload_header.block_hash;
-        match builder
-            .get_builder_header(parent_hash, &proposer_public_key, slot)
-            .await
-        {
-            Ok(bid) => {
-                // Compare builder value with local execution value
-                // Apply boost factor: builder_value * (100 + boost_factor) / 100
-                let builder_value_u256 = bid.message.value;
-                let builder_value_u64 = builder_value_u256.to::<u64>();
-                let boosted_builder_value = builder_value_u64
-                    .saturating_mul(100 + builder_boost_factor)
-                    .saturating_div(100);
-
-                let use_builder = boosted_builder_value > local_execution_value;
-                (use_builder, Some(bid), builder_value_u64)
-            }
-            Err(_) => (false, None, 0),
-        }
-    } else {
-        (false, None, 0)
-    };
-
-    let common_body_fields = (
-        randao_reveal.clone(),
-        state.eth1_data.clone(),
-        graffiti,
-        operation_pool
-            .get_all_proposer_slahsings()
-            .try_into()
-            .unwrap_or_default(),
-        operation_pool
-            .get_all_attester_slashings()
-            .try_into()
-            .unwrap_or_default(),
-        VariableList::default(), // Attestations - would need to be collected from network/gossip
-        VariableList::default(), // Deposits - would need to be collected from eth1
-        operation_pool
-            .get_signed_voluntary_exits()
-            .try_into()
-            .unwrap_or_default(),
-        SyncAggregate::default(), // Sync aggregate - would need to be computed from contributions
-        operation_pool
-            .get_signed_bls_to_execution_changes()
-            .try_into()
-            .unwrap_or_default(),
-    );
+    let proposer_slashings: VariableList<ProposerSlashing, U16> = operation_pool
+        .get_all_proposer_slahsings()
+        .try_into()
+        .unwrap_or_default();
+    let attester_slashings: VariableList<AttesterSlashing, U1> = operation_pool
+        .get_all_attester_slashings()
+        .try_into()
+        .unwrap_or_default();
+    // Attestations would need to be collected from network/gossip
+    let attestations: VariableList<Attestation, U8> = VariableList::default();
+    // Deposits would need to be fetched from eth1 chain
+    let deposits: VariableList<Deposit, U16> = VariableList::default();
+    let voluntary_exits: VariableList<SignedVoluntaryExit, U16> = operation_pool
+        .get_signed_voluntary_exits()
+        .try_into()
+        .unwrap_or_default();
+    // Sync aggregate would need to be computed from sync committee contributions
+    let sync_aggregate = SyncAggregate::default();
+    let bls_to_execution_changes: VariableList<SignedBLSToExecutionChange, U16> = operation_pool
+        .get_signed_bls_to_execution_changes()
+        .try_into()
+        .unwrap_or_default();
 
     if use_builder {
         let builder_bid = builder_bid.expect("Builder bid should exist when use_builder is true");
 
-        let execution_requests = builder_bid.message.execution_requests.clone();
-
         let blinded_beacon_block_body = BlindedBeaconBlockBody {
-            randao_reveal: common_body_fields.0,
-            eth1_data: common_body_fields.1,
-            graffiti: common_body_fields.2,
-            proposer_slashings: common_body_fields.3,
-            attester_slashings: common_body_fields.4,
-            attestations: common_body_fields.5,
-            deposits: common_body_fields.6,
-            voluntary_exits: common_body_fields.7,
-            sync_aggregate: common_body_fields.8,
+            randao_reveal: randao_reveal.clone(),
+            eth1_data: state.eth1_data.clone(),
+            graffiti,
+            proposer_slashings: proposer_slashings.clone(),
+            attester_slashings: attester_slashings.clone(),
+            attestations: attestations.clone(),
+            deposits: deposits.clone(),
+            voluntary_exits: voluntary_exits.clone(),
+            sync_aggregate: sync_aggregate.clone(),
             execution_payload_header: builder_bid.message.header.clone(),
-            bls_to_execution_changes: common_body_fields.9,
+            bls_to_execution_changes: bls_to_execution_changes.clone(),
             blob_kzg_commitments: builder_bid.message.blob_kzg_commitments.clone(),
-            execution_requests,
+            execution_requests: builder_bid.message.execution_requests.clone(),
         };
 
-        let blinded_beacon_block = BlindedBeaconBlock {
+        let blinded_block = BlindedBeaconBlock {
             slot,
             proposer_index,
             parent_root: state.latest_block_header.tree_hash_root(),
@@ -1165,12 +1290,20 @@ pub async fn get_blocks_v3(
             body: blinded_beacon_block_body,
         };
 
+        let consensus_block_value = calculate_consensus_block_value(
+            &state,
+            &attestations,
+            &proposer_slashings,
+            &attester_slashings,
+            &sync_aggregate,
+        )?;
+
         let response = ProduceBlockResponse {
             version: "electra".to_string(),
             execution_payload_blinded: true,
             execution_payload_value: builder_value,
-            consensus_block_value: 0, // Consensus block value is typically 0 for builder blocks
-            data: ProduceBlockData::Blinded(blinded_beacon_block),
+            consensus_block_value,
+            data: ProduceBlockData::Blinded(blinded_block),
         };
 
         return Ok(HttpResponse::Ok()
@@ -1187,29 +1320,27 @@ pub async fn get_blocks_v3(
             .json(response));
     }
 
-    let payload_v4 = local_payload_v4;
-
     let execution_payload = ExecutionPayload {
-        parent_hash: payload_v4.execution_payload.parent_hash,
-        fee_recipient: payload_v4.execution_payload.fee_recipient,
-        state_root: payload_v4.execution_payload.state_root,
-        receipts_root: payload_v4.execution_payload.receipts_root,
-        logs_bloom: payload_v4.execution_payload.logs_bloom,
-        prev_randao: payload_v4.execution_payload.prev_randao,
-        block_number: payload_v4.execution_payload.block_number,
-        gas_limit: payload_v4.execution_payload.gas_limit,
-        gas_used: payload_v4.execution_payload.gas_used,
-        timestamp: payload_v4.execution_payload.timestamp,
-        extra_data: payload_v4.execution_payload.extra_data,
-        base_fee_per_gas: payload_v4.execution_payload.base_fee_per_gas,
-        block_hash: payload_v4.execution_payload.block_hash,
-        transactions: payload_v4.execution_payload.transactions,
-        withdrawals: payload_v4.execution_payload.withdrawals,
-        blob_gas_used: payload_v4.execution_payload.blob_gas_used,
-        excess_blob_gas: payload_v4.execution_payload.excess_blob_gas,
+        parent_hash: local_payload_v4.execution_payload.parent_hash,
+        fee_recipient: local_payload_v4.execution_payload.fee_recipient,
+        state_root: local_payload_v4.execution_payload.state_root,
+        receipts_root: local_payload_v4.execution_payload.receipts_root,
+        logs_bloom: local_payload_v4.execution_payload.logs_bloom,
+        prev_randao: local_payload_v4.execution_payload.prev_randao,
+        block_number: local_payload_v4.execution_payload.block_number,
+        gas_limit: local_payload_v4.execution_payload.gas_limit,
+        gas_used: local_payload_v4.execution_payload.gas_used,
+        timestamp: local_payload_v4.execution_payload.timestamp,
+        extra_data: local_payload_v4.execution_payload.extra_data,
+        base_fee_per_gas: local_payload_v4.execution_payload.base_fee_per_gas,
+        block_hash: local_payload_v4.execution_payload.block_hash,
+        transactions: local_payload_v4.execution_payload.transactions,
+        withdrawals: local_payload_v4.execution_payload.withdrawals,
+        blob_gas_used: local_payload_v4.execution_payload.blob_gas_used,
+        excess_blob_gas: local_payload_v4.execution_payload.excess_blob_gas,
     };
 
-    let blob_kzg_commitments: Vec<KZGCommitment> = payload_v4
+    let blob_kzg_commitments: Vec<KZGCommitment> = local_payload_v4
         .blobs_bundle
         .commitments
         .iter()
@@ -1225,7 +1356,7 @@ pub async fn get_blocks_v3(
         })
         .collect();
 
-    let kzg_proofs: Vec<KZGProof> = payload_v4
+    let kzg_proofs: Vec<KZGProof> = local_payload_v4
         .blobs_bundle
         .proofs
         .iter()
@@ -1242,20 +1373,20 @@ pub async fn get_blocks_v3(
         .collect();
 
     let execution_requests =
-        get_execution_requests(payload_v4.execution_requests).unwrap_or_default();
+        get_execution_requests(local_payload_v4.execution_requests.clone()).unwrap_or_default();
 
     let block_body = BeaconBlockBody {
-        randao_reveal: common_body_fields.0,
-        eth1_data: common_body_fields.1,
-        graffiti: common_body_fields.2,
-        proposer_slashings: common_body_fields.3,
-        attester_slashings: common_body_fields.4,
-        attestations: common_body_fields.5,
-        deposits: common_body_fields.6,
-        voluntary_exits: common_body_fields.7,
-        sync_aggregate: common_body_fields.8,
+        randao_reveal: randao_reveal.clone(),
+        eth1_data: state.eth1_data.clone(),
+        graffiti,
+        proposer_slashings: proposer_slashings.clone(),
+        attester_slashings: attester_slashings.clone(),
+        attestations: attestations.clone(),
+        deposits: deposits.clone(),
+        voluntary_exits: voluntary_exits.clone(),
+        sync_aggregate: sync_aggregate.clone(),
         execution_payload,
-        bls_to_execution_changes: common_body_fields.9,
+        bls_to_execution_changes: bls_to_execution_changes.clone(),
         blob_kzg_commitments: blob_kzg_commitments.try_into().unwrap_or_default(),
         execution_requests,
     };
@@ -1268,6 +1399,14 @@ pub async fn get_blocks_v3(
         body: block_body,
     };
 
+    let consensus_block_value = calculate_consensus_block_value(
+        &state,
+        &attestations,
+        &proposer_slashings,
+        &attester_slashings,
+        &sync_aggregate,
+    )?;
+
     // Note: Blobs are not included in PayloadV4 response, they would need to be fetched separately
     // For now, we return empty blobs list. The blobs would typically be fetched via
     // engine_getBlobsV1 or included in a different API response format.
@@ -1275,8 +1414,7 @@ pub async fn get_blocks_v3(
         version: "electra".to_string(),
         execution_payload_blinded: false,
         execution_payload_value: local_execution_value,
-        consensus_block_value: 0, // Consensus block value is the sum of all validator rewards
-        // This would need to be calculated from attestations, sync committee, etc.
+        consensus_block_value,
         data: ProduceBlockData::Full(FullBlockData {
             block,
             kzg_proofs,
