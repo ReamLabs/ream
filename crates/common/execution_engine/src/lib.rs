@@ -355,7 +355,7 @@ impl ExecutionEngine {
             .to_result()
     }
 
-    pub async fn engine_forkchoice_updated_v3(
+    pub async fn engine_forkchoice_updated_v3( 
         &self,
         forkchoice_state: ForkchoiceStateV1,
         payload_attributes: Option<PayloadAttributesV3>,

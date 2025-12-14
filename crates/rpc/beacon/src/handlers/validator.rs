@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, hash::Hash, sync::Arc};
 
 use actix_web::{
     HttpResponse, Responder, get, post,
@@ -18,8 +18,7 @@ use ream_api_types_beacon::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_bls::{BLSSignature, PublicKey, traits::Verifiable};
 use ream_consensus_beacon::{
-    beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState,
-    sync_committe_selection::SyncCommitteeSelection,
+    beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState, execution_engine, sync_committe_selection::SyncCommitteeSelection
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
@@ -34,6 +33,7 @@ use ream_events_beacon::{
     BeaconEvent, contribution_and_proof::SignedContributionAndProof,
     event::sync_committee::ContributionAndProofEvent,
 };
+use ream_execution_engine::rpc_types::forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3};
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;
 use ream_operation_pool::OperationPool;
@@ -998,4 +998,20 @@ pub async fn get_blocks_v3(
     state.process_slots(slot).map_err(|err| {
         ApiError::InternalError(format!("Failed to process slots: {}", err));
     });
+
+    let forkchoice_state = ForkchoiceStateV1 {
+        head_block_hash: state.latest_execution_payload_header.block_hash,
+        safe_block_hash: state.current_justified_checkpoint.root,
+        finalized_block_hash: state.finalized_checkpoint.root,
+    };
+
+    let payload_attribute = PayloadAttributesV3 {
+        timestamp: state.compute_timestamp_at_slot(slot),
+        prev_randao: randao_reveal,
+        suggested_fee_recipient: proposer,
+        withdrawals: state.get_expected_withdrawals(),
+        parent_beacon_block_root: state.latest_block_header.hash(state),
+    }
+
+    let execution_engine = 
 }

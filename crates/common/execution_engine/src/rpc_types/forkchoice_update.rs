@@ -20,9 +20,9 @@ pub struct PayloadAttributesV3 {
     pub timestamp: u64,
     pub prev_randao: B256,
     pub suggested_fee_recipient: Address,
-    pub withdrawals: VariableList<Withdrawal, U16>,
+    pub withdrawals: VariableList<Withdrawal, U16>, 
     pub parent_beacon_block_root: B256,
-}
+} 
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
