@@ -427,7 +427,7 @@ impl BeaconState {
             proposer_indices.push(self.compute_proposer_index(indices, seed_for_slot)?);
         }
         FixedVector::new(proposer_indices)
-            .map_err(|e| anyhow!("Failed to create FixedVector: {e:?}"))
+            .map_err(|err| anyhow!("Failed to create FixedVector: {err:?}"))
     }
 
     pub fn get_beacon_proposer_indices(&self, epoch: u64) -> anyhow::Result<FixedVector<u64, U32>> {
@@ -451,7 +451,7 @@ impl BeaconState {
         new_vec.extend(new_indices.iter());
 
         self.proposer_lookahead = FixedVector::new(new_vec)
-            .map_err(|e| anyhow!("Failed to update proposer_lookahead: {e:?}"))?;
+            .map_err(|err| anyhow!("Failed to update proposer_lookahead: {err:?}"))?;
         Ok(())
     }
 
