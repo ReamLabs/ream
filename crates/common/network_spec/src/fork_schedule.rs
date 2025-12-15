@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct ForkSchedule(pub [Fork; ForkSchedule::TOTAL]);
 
 impl ForkSchedule {
-    pub const TOTAL: usize = 6;
+    pub const TOTAL: usize = 7;
 
     pub const fn new(forks: [Fork; ForkSchedule::TOTAL]) -> Self {
         Self(forks)
