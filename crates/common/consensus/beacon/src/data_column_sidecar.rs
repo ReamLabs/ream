@@ -4,6 +4,7 @@ use ream_consensus_misc::{
     constants::beacon::{BLOB_KZG_COMMITMENTS_INDEX, DATA_COLUMN_SIDECAR_KZG_PROOF_DEPTH},
 };
 use ream_merkle::is_valid_merkle_branch;
+use ream_network_spec::networks::beacon_network_spec;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, VariableList, typenum};
@@ -69,6 +70,36 @@ impl DataColumnSidecar {
             BLOB_KZG_COMMITMENTS_INDEX,
             self.signed_block_header.message.body_root,
         )
+    }
+
+    /// Verify if the data column sidecar is valid.
+    ///
+    /// Spec: https://ethereum.github.io/consensus-specs/specs/fulu/p2p-interface/#verify_data_column_sidecar
+    pub fn verify(&self) -> bool {
+        // The sidecar index must be within the valid range
+        if self.index >= NUMBER_OF_COLUMNS {
+            return false;
+        }
+
+        // A sidecar for zero blobs is invalid
+        if self.kzg_commitments.is_empty() {
+            return false;
+        }
+
+        // Check that the sidecar respects the blob limit
+        let max_blobs_per_block = beacon_network_spec().max_blobs_per_block_electra as usize;
+        if self.kzg_commitments.len() > max_blobs_per_block {
+            return false;
+        }
+
+        // The column length must be equal to the number of commitments/proofs
+        if self.column.len() != self.kzg_commitments.len()
+            || self.column.len() != self.kzg_proofs.len()
+        {
+            return false;
+        }
+
+        true
     }
 }
 
