@@ -28,6 +28,7 @@ use ream_consensus_beacon::{
         blinded_beacon_block::BlindedBeaconBlock,
         blinded_beacon_block_body::BlindedBeaconBlockBody, execution_payload::ExecutionPayload,
     },
+    execution_engine::engine_trait::ExecutionApi,
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     proposer_slashing::ProposerSlashing,
     sync_aggregate::SyncAggregate,
@@ -1019,7 +1020,7 @@ fn calculate_consensus_block_value(
                 .sum();
 
             let proposer_reward = total_participating_balance
-                .saturating_div(SLOTS_PER_EPOCH * PROPOSER_REWARD_QUOTIENT);
+                .saturating_div(SLOTS_PER_EPOCH.saturating_mul(PROPOSER_REWARD_QUOTIENT));
 
             total_reward = total_reward.saturating_add(proposer_reward);
         }
@@ -1029,9 +1030,11 @@ fn calculate_consensus_block_value(
     for proposer_slashing in proposer_slashings {
         let index = proposer_slashing.signed_header_1.message.proposer_index;
         if let Some(validator) = state.validators.get(index as usize) {
-            total_reward += validator
-                .effective_balance
-                .saturating_div(WHISTLEBLOWER_REWARD_QUOTIENT);
+            total_reward = total_reward.saturating_add(
+                validator
+                    .effective_balance
+                    .saturating_div(WHISTLEBLOWER_REWARD_QUOTIENT),
+            );
         }
     }
 
@@ -1047,12 +1050,14 @@ fn calculate_consensus_block_value(
                 .collect();
 
             for index in slashed_indices {
-                if let Some(validator) = state.validators.get(index as usize)
-                    && validator.is_slashable_validator(current_epoch)
-                {
-                    total_reward += validator
-                        .effective_balance
-                        .saturating_div(WHISTLEBLOWER_REWARD_QUOTIENT);
+                if let Some(validator) = state.validators.get(index as usize) {
+                    if validator.is_slashable_validator(current_epoch) {
+                        total_reward = total_reward.saturating_add(
+                            validator
+                                .effective_balance
+                                .saturating_div(WHISTLEBLOWER_REWARD_QUOTIENT),
+                        );
+                    }
                 }
             }
         }
@@ -1062,8 +1067,7 @@ fn calculate_consensus_block_value(
     if !sync_aggregate.sync_committee_bits.is_empty() {
         let (_, base_proposer_reward) = state.get_proposer_and_participant_rewards();
         let participating_count = sync_aggregate.sync_committee_bits.num_set_bits() as u64;
-        let sync_reward = participating_count
-            .saturating_mul(base_proposer_reward)
+        let sync_reward = (participating_count.saturating_mul(base_proposer_reward))
             .saturating_div(SYNC_COMMITTEE_PROPOSER_REWARD_QUOTIENT);
 
         total_reward = total_reward.saturating_add(sync_reward);
@@ -1126,9 +1130,15 @@ async fn compare_builder_vs_local(
         {
             Ok(bid) => {
                 let builder_value_u256 = bid.message.value;
-                let builder_value_u64: u64 = builder_value_u256.try_into().map_err(|err| {
-                    ApiError::InternalError(format!("Builder value exceeds u64::MAX: {err}"))
-                })?;
+                let builder_value_u64: u64 = match builder_value_u256.try_into() {
+                    Ok(value) => value,
+                    Err(err) => {
+                        tracing::warn!(
+                            "Builder bid value too large to fit in u64: {err:?}, falling back to local execution"
+                        );
+                        return Ok((false, None, 0));
+                    }
+                };
                 let boosted_builder_value = builder_value_u64
                     .saturating_mul(builder_boost_factor)
                     .saturating_div(100);
@@ -1228,14 +1238,14 @@ pub async fn get_blocks_v3(
         parent_beacon_block_root: state.latest_block_header.tree_hash_root(),
     };
 
-    let Some(ref execution_engine) = execution_engine else {
+    let Some(execution_engine) = execution_engine else {
         return Err(ApiError::InternalError(
             "Execution engine not available".into(),
         ));
     };
 
     let (local_payload_v4, local_execution_value) =
-        get_local_execution_payload(execution_engine, forkchoice_state, payload_attribute).await?;
+        get_local_execution_payload(&execution_engine, forkchoice_state, payload_attribute).await?;
 
     let builder_client_ref = builder_client.as_ref().map(|bc| bc.as_ref());
     let (use_builder, builder_bid, builder_value) = compare_builder_vs_local(
@@ -1256,38 +1266,59 @@ pub async fn get_blocks_v3(
         .get_all_attester_slashings()
         .try_into()
         .unwrap_or_default();
-    // Attestations would need to be collected from network/gossip
+    // TODO: collect attestations from operation_pool
     let attestations: VariableList<Attestation, U8> = VariableList::default();
-    // Deposits would need to be fetched from eth1 chain
+    // TODO: collect deposits from operation_pool
     let deposits: VariableList<Deposit, U16> = VariableList::default();
     let voluntary_exits: VariableList<SignedVoluntaryExit, U16> = operation_pool
         .get_signed_voluntary_exits()
         .try_into()
         .unwrap_or_default();
-    // Sync aggregate would need to be computed from sync committee contributions
+    // TODO: collect sync_aggregate from operation_pool
     let sync_aggregate = SyncAggregate::default();
     let bls_to_execution_changes: VariableList<SignedBLSToExecutionChange, U16> = operation_pool
         .get_signed_bls_to_execution_changes()
         .try_into()
         .unwrap_or_default();
 
+    let common_block_body_fields = (
+        randao_reveal,
+        state.eth1_data.clone(),
+        graffiti,
+        proposer_slashings.clone(),
+        attester_slashings.clone(),
+        attestations.clone(),
+        deposits,
+        voluntary_exits,
+        sync_aggregate.clone(),
+        bls_to_execution_changes,
+    );
+
+    let consensus_block_value = calculate_consensus_block_value(
+        &state,
+        &attestations,
+        &proposer_slashings,
+        &attester_slashings,
+        &sync_aggregate,
+    )?;
+
     if use_builder {
         let builder_bid = builder_bid.expect("Builder bid should exist when use_builder is true");
 
         let blinded_beacon_block_body = BlindedBeaconBlockBody {
-            randao_reveal: randao_reveal.clone(),
-            eth1_data: state.eth1_data.clone(),
-            graffiti,
-            proposer_slashings: proposer_slashings.clone(),
-            attester_slashings: attester_slashings.clone(),
-            attestations: attestations.clone(),
-            deposits: deposits.clone(),
-            voluntary_exits: voluntary_exits.clone(),
-            sync_aggregate: sync_aggregate.clone(),
-            execution_payload_header: builder_bid.message.header.clone(),
-            bls_to_execution_changes: bls_to_execution_changes.clone(),
-            blob_kzg_commitments: builder_bid.message.blob_kzg_commitments.clone(),
-            execution_requests: builder_bid.message.execution_requests.clone(),
+            randao_reveal: common_block_body_fields.0,
+            eth1_data: common_block_body_fields.1,
+            graffiti: common_block_body_fields.2,
+            proposer_slashings: common_block_body_fields.3,
+            attester_slashings: common_block_body_fields.4,
+            attestations: common_block_body_fields.5,
+            deposits: common_block_body_fields.6,
+            voluntary_exits: common_block_body_fields.7,
+            sync_aggregate: common_block_body_fields.8,
+            execution_payload_header: builder_bid.message.header,
+            bls_to_execution_changes: common_block_body_fields.9,
+            blob_kzg_commitments: builder_bid.message.blob_kzg_commitments,
+            execution_requests: builder_bid.message.execution_requests,
         };
 
         let blinded_block = BlindedBeaconBlock {
@@ -1297,14 +1328,6 @@ pub async fn get_blocks_v3(
             state_root: state.tree_hash_root(),
             body: blinded_beacon_block_body,
         };
-
-        let consensus_block_value = calculate_consensus_block_value(
-            &state,
-            &attestations,
-            &proposer_slashings,
-            &attester_slashings,
-            &sync_aggregate,
-        )?;
 
         let response = ProduceBlockResponse {
             version: "electra".to_string(),
@@ -1323,7 +1346,7 @@ pub async fn get_blocks_v3(
             ))
             .insert_header((
                 "Eth-Consensus-Block-Value",
-                response.consensus_block_value.to_string(),
+                consensus_block_value.to_string(),
             ))
             .json(response));
     }
@@ -1352,50 +1375,60 @@ pub async fn get_blocks_v3(
         .blobs_bundle
         .commitments
         .iter()
-        .filter_map(|c| {
-            let vec = c.to_vec();
+        .map(|c| {
+            let vec = c.clone().to_vec();
             if vec.len() == 48 {
                 let mut bytes = [0u8; 48];
                 bytes.copy_from_slice(&vec);
-                Some(KZGCommitment(bytes))
+                Ok(KZGCommitment(bytes))
             } else {
-                None
+                Err(ApiError::InternalError(
+                    "Invalid KZG commitment length (expected 48 bytes)".into(),
+                ))
             }
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     let kzg_proofs: Vec<KZGProof> = local_payload_v4
         .blobs_bundle
         .proofs
         .iter()
-        .filter_map(|p| {
-            let vec = p.to_vec();
+        .map(|p| {
+            let vec = p.clone().to_vec();
             if vec.len() == 48 {
                 let mut bytes = [0u8; 48];
                 bytes.copy_from_slice(&vec);
-                Some(KZGProof::from(bytes))
+                Ok(KZGProof { 0: bytes })
             } else {
-                None
+                Err(ApiError::InternalError(
+                    "Invalid KZG proof length (expected 48 bytes)".into(),
+                ))
             }
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
+
+    if blob_kzg_commitments.len() != kzg_proofs.len() {
+        return Err(ApiError::InternalError(
+            "Mismatch between blob commitments and KZG proofs".into(),
+        ));
+    }
 
     let execution_requests =
         get_execution_requests(local_payload_v4.execution_requests.clone()).unwrap_or_default();
 
     let block_body = BeaconBlockBody {
-        randao_reveal: randao_reveal.clone(),
-        eth1_data: state.eth1_data.clone(),
-        graffiti,
-        proposer_slashings: proposer_slashings.clone(),
-        attester_slashings: attester_slashings.clone(),
-        attestations: attestations.clone(),
-        deposits: deposits.clone(),
-        voluntary_exits: voluntary_exits.clone(),
-        sync_aggregate: sync_aggregate.clone(),
+        randao_reveal: common_block_body_fields.0,
+        eth1_data: common_block_body_fields.1,
+        graffiti: common_block_body_fields.2,
+        proposer_slashings: common_block_body_fields.3,
+        attester_slashings: common_block_body_fields.4,
+        attestations: common_block_body_fields.5,
+        deposits: common_block_body_fields.6,
+        voluntary_exits: common_block_body_fields.7,
+        sync_aggregate: common_block_body_fields.8,
         execution_payload,
-        bls_to_execution_changes: bls_to_execution_changes.clone(),
-        blob_kzg_commitments: blob_kzg_commitments.try_into().unwrap_or_default(),
+        bls_to_execution_changes: common_block_body_fields.9,
+        blob_kzg_commitments: blob_kzg_commitments.clone().try_into().unwrap_or_default(),
         execution_requests,
     };
 
@@ -1407,17 +1440,37 @@ pub async fn get_blocks_v3(
         body: block_body,
     };
 
-    let consensus_block_value = calculate_consensus_block_value(
-        &state,
-        &attestations,
-        &proposer_slashings,
-        &attester_slashings,
-        &sync_aggregate,
-    )?;
+    let blob_versioned_hashes: Vec<B256> = blob_kzg_commitments
+        .iter()
+        .map(|c| c.calculate_versioned_hash())
+        .collect();
 
-    // Note: Blobs are not included in PayloadV4 response, they would need to be fetched separately
-    // For now, we return empty blobs list. The blobs would typically be fetched via
-    // engine_getBlobsV1 or included in a different API response format.
+    let blobs_and_proofs = execution_engine
+        .clone()
+        .engine_get_blobs_v1(blob_versioned_hashes)
+        .await
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to fetch blobs from execution engine: {err}"
+            ))
+        })?;
+
+    if blobs_and_proofs.len() != blob_kzg_commitments.len() {
+        return Err(ApiError::InternalError(
+            "Blob count does not match commitments".to_string(),
+        ));
+    }
+
+    let blobs: Vec<_> = blobs_and_proofs
+        .into_iter()
+        .map(|bap| {
+            bap.expect(
+                "Missing blob and proof from execution engine: expected BlobAndProofV1, got None",
+            )
+            .blob
+        })
+        .collect();
+
     let response = ProduceBlockResponse {
         version: "electra".to_string(),
         execution_payload_blinded: false,
@@ -1426,7 +1479,7 @@ pub async fn get_blocks_v3(
         data: ProduceBlockData::Full(FullBlockData {
             block,
             kzg_proofs,
-            blobs: Vec::new(), // Blobs not available in PayloadV4, would need separate fetch
+            blobs,
         }),
     };
 
@@ -1435,11 +1488,11 @@ pub async fn get_blocks_v3(
         .insert_header(("Eth-Execution-Payload-Blinded", "false"))
         .insert_header((
             "Eth-Execution-Payload-Value",
-            response.execution_payload_value.to_string(),
+            local_execution_value.to_string(),
         ))
         .insert_header((
             "Eth-Consensus-Block-Value",
-            response.consensus_block_value.to_string(),
+            consensus_block_value.to_string(),
         ))
         .json(response))
 }
