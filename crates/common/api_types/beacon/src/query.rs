@@ -48,7 +48,8 @@ pub struct StatusQuery {
 #[derive(Default, Debug, Deserialize)]
 pub struct AttestationQuery {
     pub slot: u64,
-    pub committee_index: u64,
+    pub committee_index: Option<u64>,
+    pub attestation_data_root: Option<B256>,
 }
 
 #[derive(Debug, Deserialize)]

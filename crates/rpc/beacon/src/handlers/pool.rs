@@ -2,9 +2,12 @@ use std::sync::Arc;
 
 use actix_web::{
     HttpResponse, Responder, get, post,
-    web::{Data, Json},
+    web::{Data, Json, Query},
 };
-use ream_api_types_beacon::responses::{DataResponse, DataVersionedResponse};
+use ream_api_types_beacon::{
+    query::AttestationQuery,
+    responses::{DataResponse, DataVersionedResponse},
+};
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
@@ -279,7 +282,7 @@ pub async fn post_attestations(
                 ApiError::BadRequest(format!("Invalid attestation signature, rejected: {err:?}"))
             })?;
 
-        operation_pool.insert_attestation(attestation.clone());
+        operation_pool.insert_attestation(attestation.clone(), single_attestation.committee_index);
 
         beacon_chain
             .process_attestation(attestation.clone(), false)
@@ -313,8 +316,14 @@ pub async fn post_attestations(
 #[get("/beacon/pool/attestations")]
 pub async fn get_attestations(
     operation_pool: Data<Arc<OperationPool>>,
+    attestation_query: Query<AttestationQuery>,
 ) -> Result<impl Responder, ApiError> {
-    let all_attestations = operation_pool.get_all_attestations();
+    let slot = attestation_query.slot;
+    let committee_index = attestation_query.committee_index;
+    let attestaion_data_root = attestation_query.attestation_data_root;
+
+    let all_attestations =
+        operation_pool.get_attestations(slot, committee_index, attestaion_data_root);
 
     Ok(HttpResponse::Ok().json(DataVersionedResponse::new(all_attestations)))
 }
