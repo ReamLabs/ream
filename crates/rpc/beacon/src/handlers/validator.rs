@@ -1050,14 +1050,14 @@ fn calculate_consensus_block_value(
                 .collect();
 
             for index in slashed_indices {
-                if let Some(validator) = state.validators.get(index as usize) {
-                    if validator.is_slashable_validator(current_epoch) {
-                        total_reward = total_reward.saturating_add(
-                            validator
-                                .effective_balance
-                                .saturating_div(WHISTLEBLOWER_REWARD_QUOTIENT),
-                        );
-                    }
+                if let Some(validator) = state.validators.get(index as usize)
+                    && validator.is_slashable_validator(current_epoch)
+                {
+                    total_reward = total_reward.saturating_add(
+                        validator
+                            .effective_balance
+                            .saturating_div(WHISTLEBLOWER_REWARD_QUOTIENT),
+                    );
                 }
             }
         }
