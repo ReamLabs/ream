@@ -4,7 +4,7 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
-use alloy_primitives::{Address, B256};
+use alloy_primitives::{Address, B256, U256};
 use hashbrown::HashMap;
 use ream_api_types_beacon::{
     block::{FullBlockData, ProduceBlockData, ProduceBlockResponse},
@@ -38,7 +38,8 @@ use ream_consensus_misc::{
     attestation_data::AttestationData,
     constants::beacon::{
         DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
-        MAX_COMMITTEES_PER_SLOT, SLOTS_PER_EPOCH, WHISTLEBLOWER_REWARD_QUOTIENT,
+        MAX_COMMITTEES_PER_SLOT, PROPOSER_REWARD_QUOTIENT, SLOTS_PER_EPOCH,
+        WHISTLEBLOWER_REWARD_QUOTIENT, SYNC_COMMITTEE_PROPOSER_REWARD_QUOTIENT
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
     validator::Validator,
@@ -75,7 +76,7 @@ use ream_validator_beacon::{
 use serde::Serialize;
 use ssz_types::{
     VariableList,
-    typenum::{U1, U8, U16, U256},
+    typenum::{U1, U8, U16},
 };
 use tokio::sync::broadcast;
 use tree_hash::TreeHash;
@@ -1007,9 +1008,20 @@ fn calculate_consensus_block_value(
     // Calculate attestation rewards
     for attestation in attestations {
         if let Ok(attesting_indices) = state.get_attesting_indices(attestation) {
-            for index in attesting_indices {
-                total_reward += state.get_proposer_reward(index);
-            }
+            let total_participating_balance: u64 = attesting_indices
+                .iter()
+                .filter_map(|&idx| {
+                    state
+                        .validators
+                        .get(idx as usize)
+                        .map(|v| v.effective_balance)
+                })
+                .sum();
+
+            let proposer_reward = total_participating_balance
+                .saturating_div(SLOTS_PER_EPOCH * PROPOSER_REWARD_QUOTIENT);
+
+            total_reward = total_reward.saturating_add(proposer_reward);
         }
     }
 
@@ -1017,7 +1029,9 @@ fn calculate_consensus_block_value(
     for proposer_slashing in proposer_slashings {
         let index = proposer_slashing.signed_header_1.message.proposer_index;
         if let Some(validator) = state.validators.get(index as usize) {
-            total_reward += validator.effective_balance;
+            total_reward += validator
+                .effective_balance
+                .saturating_div(WHISTLEBLOWER_REWARD_QUOTIENT);
         }
     }
 
@@ -1027,10 +1041,17 @@ fn calculate_consensus_block_value(
         if let Ok((attestation_indices_1, attestation_indices_2)) =
             state.get_slashable_attester_indices(attester_slashing)
         {
-            for index in &attestation_indices_1 & &attestation_indices_2 {
+            let slashed_indices: HashSet<_> = attestation_indices_1
+                .intersection(&attestation_indices_2)
+                .copied()
+                .collect();
+
+            for index in slashed_indices {
                 if let Some(validator) = state.validators.get(index as usize) {
                     if validator.is_slashable_validator(current_epoch) {
-                        total_reward += validator.effective_balance / WHISTLEBLOWER_REWARD_QUOTIENT;
+                        total_reward += validator
+                            .effective_balance
+                            .saturating_div(WHISTLEBLOWER_REWARD_QUOTIENT);
                     }
                 }
             }
@@ -1038,9 +1059,15 @@ fn calculate_consensus_block_value(
     }
 
     // Calculate sync committee rewards
-    let (_, proposer_reward) = state.get_proposer_and_participant_rewards();
-    let sync_committee_participants = sync_aggregate.sync_committee_bits.num_set_bits() as u64;
-    total_reward += sync_committee_participants * proposer_reward;
+    if !sync_aggregate.sync_committee_bits.is_empty() {
+        let (_, base_proposer_reward) = state.get_proposer_and_participant_rewards();
+        let participating_count = sync_aggregate.sync_committee_bits.num_set_bits() as u64;
+        let sync_reward = participating_count
+            .saturating_mul(base_proposer_reward)
+            .saturating_div(SYNC_COMMITTEE_PROPOSER_REWARD_QUOTIENT);
+
+        total_reward = total_reward.saturating_add(sync_reward);
+    }
 
     Ok(total_reward)
 }
@@ -1077,15 +1104,9 @@ async fn get_local_execution_payload(
         .await
         .map_err(|err| ApiError::InternalError(format!("Failed to get payload: {err}")))?;
 
-    let execution_value = if payload_v4.block_value.len() >= 32 {
-        let mut tmp = [0u8; 8];
-        tmp.copy_from_slice(&payload_v4.block_value[24..32]);
-        u64::from_be_bytes(tmp)
-    } else {
-        return Err(ApiError::InternalError(
-            "Engine returned invalid block_value length".into(),
-        ));
-    };
+    let execution_value: u64 = U256::from_be_bytes(payload_v4.block_value.0)
+        .try_into()
+        .map_err(|_| ApiError::InternalError("Block value too large".into()))?;
 
     Ok((payload_v4, execution_value))
 }
@@ -1105,9 +1126,11 @@ async fn compare_builder_vs_local(
         {
             Ok(bid) => {
                 let builder_value_u256 = bid.message.value;
-                let builder_value_u64 = builder_value_u256.to::<u64>();
+                let builder_value_u64: u64 = builder_value_u256.try_into().map_err(|_| {
+                    ApiError::InternalError("Builder value exceeds u64::MAX".into())
+                })?;
                 let boosted_builder_value = builder_value_u64
-                    .saturating_mul(100 + builder_boost_factor)
+                    .saturating_mul(builder_boost_factor)
                     .saturating_div(100);
 
                 let use_builder = boosted_builder_value > local_execution_value;
@@ -1212,22 +1235,8 @@ pub async fn get_blocks_v3(
         ));
     };
 
-    let (local_payload_v4, local_execution_value) = get_local_execution_payload(
-        execution_engine,
-        ForkchoiceStateV1 {
-            head_block_hash: forkchoice_state.head_block_hash,
-            safe_block_hash: forkchoice_state.safe_block_hash,
-            finalized_block_hash: forkchoice_state.finalized_block_hash,
-        },
-        PayloadAttributesV3 {
-            timestamp: payload_attribute.timestamp,
-            prev_randao: payload_attribute.prev_randao,
-            suggested_fee_recipient: payload_attribute.suggested_fee_recipient,
-            withdrawals: payload_attribute.withdrawals.clone(),
-            parent_beacon_block_root: payload_attribute.parent_beacon_block_root,
-        },
-    )
-    .await?;
+    let (local_payload_v4, local_execution_value) =
+        get_local_execution_payload(execution_engine, forkchoice_state, payload_attribute).await?;
 
     let builder_client_ref = builder_client.as_ref().map(|bc| bc.as_ref());
     let (use_builder, builder_bid, builder_value) = compare_builder_vs_local(
