@@ -390,14 +390,14 @@ impl BeaconState {
             Some(slot) => (compute_epoch_at_slot(slot), slot),
             None => (self.get_current_epoch(), self.slot),
         };
-        
+
         // Fulu: Use proposer_lookahead if possible
         let start_slot = compute_start_slot_at_epoch(self.get_current_epoch());
         if slot >= start_slot {
-             let index = (slot - start_slot) as usize;
-             if let Some(proposer_index) = self.proposer_lookahead.get(index) {
-                 return Ok(*proposer_index);
-             }
+            let index = (slot - start_slot) as usize;
+            if let Some(proposer_index) = self.proposer_lookahead.get(index) {
+                return Ok(*proposer_index);
+            }
         }
 
         // Fallback for slots outside lookahead (or before current epoch)
@@ -422,18 +422,15 @@ impl BeaconState {
         let mut proposer_indices = Vec::with_capacity(SLOTS_PER_EPOCH as usize);
         for i in 0..SLOTS_PER_EPOCH {
             let slot = start_slot + i;
-            let seed_for_slot = B256::from(hash_fixed(
-                &[seed.as_slice(), &slot.to_le_bytes()].concat(),
-            ));
+            let seed_for_slot =
+                B256::from(hash_fixed(&[seed.as_slice(), &slot.to_le_bytes()].concat()));
             proposer_indices.push(self.compute_proposer_index(indices, seed_for_slot)?);
         }
-        FixedVector::new(proposer_indices).map_err(|e| anyhow!("Failed to create FixedVector: {:?}", e))
+        FixedVector::new(proposer_indices)
+            .map_err(|e| anyhow!("Failed to create FixedVector: {e:?}"))
     }
 
-    pub fn get_beacon_proposer_indices(
-        &self,
-        epoch: u64,
-    ) -> anyhow::Result<FixedVector<u64, U32>> {
+    pub fn get_beacon_proposer_indices(&self, epoch: u64) -> anyhow::Result<FixedVector<u64, U32>> {
         let indices = self.get_active_validator_indices(epoch);
         let seed = self.get_seed(epoch, DOMAIN_BEACON_PROPOSER);
         self.compute_proposer_indices(epoch, seed, &indices)
@@ -442,18 +439,19 @@ impl BeaconState {
     pub fn process_proposer_lookahead(&mut self) -> anyhow::Result<()> {
         let len = self.proposer_lookahead.len();
         let slots_per_epoch = SLOTS_PER_EPOCH as usize;
-        
+
         // Shift out proposers in the first epoch
         let mut new_vec = Vec::with_capacity(len);
         new_vec.extend_from_slice(&self.proposer_lookahead[slots_per_epoch..]);
-        
+
         // Fill in the last epoch with new proposer indices
         let next_epoch = self.get_current_epoch() + MIN_SEED_LOOKAHEAD + 1;
         let new_indices = self.get_beacon_proposer_indices(next_epoch)?;
-        
+
         new_vec.extend(new_indices.iter());
-        
-        self.proposer_lookahead = FixedVector::new(new_vec).map_err(|e| anyhow!("Failed to update proposer_lookahead: {:?}", e))?;
+
+        self.proposer_lookahead = FixedVector::new(new_vec)
+            .map_err(|e| anyhow!("Failed to update proposer_lookahead: {e:?}"))?;
         Ok(())
     }
 
