@@ -21,8 +21,6 @@ pub const NEXT_FORK_DIGEST_ENR_KEY: &str = "nfd";
 // Subscription constants
 const SUBNETS_PER_NODE: usize = 2;
 pub const EPOCHS_PER_SUBNET_SUBSCRIPTION: u64 = 256;
-// ceillog2(ATTESTATION_SUBNET_COUNT) + ATTESTATION_SUBNET_EXTRA_BITS
-// = ceillog2(64) + 0 = 6
 const ATTESTATION_SUBNET_PREFIX_BITS: u32 = 6;
 
 /// Represents the attestation subnets a node is subscribed to
@@ -210,15 +208,11 @@ impl Decodable for NextForkDigest {
 
 /// Compute a single subscribed subnet based on node_id, epoch, and index
 pub fn compute_subscribed_subnet(node_id: NodeId, epoch: u64, index: usize) -> anyhow::Result<u64> {
-    // Extract prefix from node_id using proper bit operations
-    // Get the first 8 bytes and shift to get the prefix bits
     let mut node_id_prefix_bytes = [0u8; 8];
     node_id_prefix_bytes.copy_from_slice(&node_id.raw()[..8]);
-    // We work with the first 64 bits of the 256-bit node_id
     let node_id_prefix =
         u64::from_be_bytes(node_id_prefix_bytes) >> (64 - ATTESTATION_SUBNET_PREFIX_BITS);
 
-    // Extract node_offset from last 8 bytes
     let mut node_offset_bytes = [0u8; 8];
     node_offset_bytes.copy_from_slice(&node_id.raw()[24..32]);
     let node_offset = u64::from_be_bytes(node_offset_bytes) % EPOCHS_PER_SUBNET_SUBSCRIPTION;

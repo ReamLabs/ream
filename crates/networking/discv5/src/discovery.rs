@@ -26,7 +26,7 @@ use ream_consensus_misc::{
     constants::beacon::genesis_validators_root, misc::compute_epoch_at_slot,
 };
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::{
     config::DiscoveryConfig,
@@ -162,48 +162,33 @@ impl Discovery {
     }
 
     /// Update attestation subnet subscriptions based on the current slot
-    /// This should be called periodically to rotate subnets according to the spec
     pub fn update_attestation_subnets(&mut self, current_slot: u64) -> Result<bool> {
         let current_epoch = compute_epoch_at_slot(current_slot);
 
-        // Only update if we've moved to a new epoch since last check
         if current_slot <= self.last_checked_slot {
             return Ok(false);
         }
 
         self.last_checked_slot = current_slot;
-
-        // Check if we need to rotate subscriptions
-        // Subscriptions are valid for EPOCHS_PER_SUBNET_SUBSCRIPTION epochs
         let epochs_since_subscription = current_epoch.saturating_sub(self.subscription_epoch);
 
         if epochs_since_subscription < EPOCHS_PER_SUBNET_SUBSCRIPTION {
             return Ok(false);
         }
 
-        debug!(
-            "Rotating attestation subnet subscriptions at epoch {}, last subscription epoch: {}",
-            current_epoch, self.subscription_epoch
-        );
-
-        // Compute new subnet subscriptions
         let node_id = self.discv5.local_enr().node_id();
         let new_subnets = compute_subscribed_subnets(node_id, current_epoch)?;
 
-        // Build new attestation subnet bitfield
         let mut new_attestation_subnets = AttestationSubnets::new();
         for subnet_id in new_subnets {
             new_attestation_subnets.enable_attestation_subnet(subnet_id)?;
         }
 
-        // Check if subnets actually changed
         if new_attestation_subnets == self.current_attestation_subnets {
             self.subscription_epoch = current_epoch;
             return Ok(false);
         }
 
-        // Update ENR with new attestation subnets using enr_insert
-        // The value needs to be RLP-encoded (via Encodable trait) for get_decodable to work
         let mut rlp_buffer = Vec::new();
         new_attestation_subnets.encode(&mut rlp_buffer);
 
@@ -227,12 +212,10 @@ impl Discovery {
         }
     }
 
-    /// Get the current attestation subnet subscriptions
     pub fn current_attestation_subnets(&self) -> &AttestationSubnets {
         &self.current_attestation_subnets
     }
 
-    /// Get the epoch at which the current subscriptions were set
     pub fn subscription_epoch(&self) -> u64 {
         self.subscription_epoch
     }
