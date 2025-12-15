@@ -146,7 +146,7 @@ pub struct BeaconState {
     #[serde(with = "serde_utils::quoted_u64")]
     pub genesis_time: u64,
     pub genesis_validators_root: B256,
-    #[serde(with = "serde_utils::quoted_u64")] 
+    #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,
     pub fork: Fork,
 

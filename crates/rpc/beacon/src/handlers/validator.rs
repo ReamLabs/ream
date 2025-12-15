@@ -39,7 +39,7 @@ use ream_consensus_misc::{
     constants::beacon::{
         DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
         MAX_COMMITTEES_PER_SLOT, PROPOSER_REWARD_QUOTIENT, SLOTS_PER_EPOCH,
-        WHISTLEBLOWER_REWARD_QUOTIENT, SYNC_COMMITTEE_PROPOSER_REWARD_QUOTIENT
+        SYNC_COMMITTEE_PROPOSER_REWARD_QUOTIENT, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
     validator::Validator,
@@ -1047,12 +1047,12 @@ fn calculate_consensus_block_value(
                 .collect();
 
             for index in slashed_indices {
-                if let Some(validator) = state.validators.get(index as usize) {
-                    if validator.is_slashable_validator(current_epoch) {
-                        total_reward += validator
-                            .effective_balance
-                            .saturating_div(WHISTLEBLOWER_REWARD_QUOTIENT);
-                    }
+                if let Some(validator) = state.validators.get(index as usize)
+                    && validator.is_slashable_validator(current_epoch)
+                {
+                    total_reward += validator
+                        .effective_balance
+                        .saturating_div(WHISTLEBLOWER_REWARD_QUOTIENT);
                 }
             }
         }
@@ -1106,7 +1106,7 @@ async fn get_local_execution_payload(
 
     let execution_value: u64 = U256::from_be_bytes(payload_v4.block_value.0)
         .try_into()
-        .map_err(|_| ApiError::InternalError("Block value too large".into()))?;
+        .map_err(|err| ApiError::InternalError(format!("Block value too large: {err}")))?;
 
     Ok((payload_v4, execution_value))
 }
@@ -1126,8 +1126,8 @@ async fn compare_builder_vs_local(
         {
             Ok(bid) => {
                 let builder_value_u256 = bid.message.value;
-                let builder_value_u64: u64 = builder_value_u256.try_into().map_err(|_| {
-                    ApiError::InternalError("Builder value exceeds u64::MAX".into())
+                let builder_value_u64: u64 = builder_value_u256.try_into().map_err(|err| {
+                    ApiError::InternalError(format!("Builder value exceeds u64::MAX: {err}"))
                 })?;
                 let boosted_builder_value = builder_value_u64
                     .saturating_mul(builder_boost_factor)
@@ -1165,7 +1165,7 @@ pub async fn get_blocks_v3(
     let builder_boost_factor = query_params.builder_boost_factor.unwrap_or(100);
 
     let mut state = db.get_latest_state().map_err(|err| {
-        ApiError::InternalError(format!("Unable to fetch the latest state: {}", err))
+        ApiError::InternalError(format!("Unable to fetch the latest state: {err}"))
     })?;
 
     let current_slot = state.slot;
@@ -1178,8 +1178,7 @@ pub async fn get_blocks_v3(
 
     let proposer_index = state.get_beacon_proposer_index(Some(slot)).map_err(|err| {
         ApiError::InternalError(format!(
-            "Failed to get the proposer index for slot {}: {}",
-            slot, err
+            "Failed to get the proposer index for slot {slot}: {err}",
         ))
     })?;
 
@@ -1201,11 +1200,11 @@ pub async fn get_blocks_v3(
     // Process slots to get state at the requested slot
     state
         .process_slots(slot)
-        .map_err(|err| ApiError::InternalError(format!("Failed to process slots: {}", err)))?;
+        .map_err(|err| ApiError::InternalError(format!("Failed to process slots: {err}")))?;
 
     let fee_recipient = operation_pool
         .get_proposer_preparation(proposer_index)
-        .unwrap_or_else(|| Address::ZERO);
+        .unwrap_or(Address::ZERO);
 
     let (withdrawals, _) = state.get_expected_withdrawals().map_err(|err| {
         ApiError::InternalError(format!("Failed to get expected withdrawals: {err}"))

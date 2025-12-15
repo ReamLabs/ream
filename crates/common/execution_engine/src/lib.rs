@@ -208,7 +208,7 @@ impl ExecutionEngine {
             id: 1,
             jsonrpc: "2.0".to_string(),
             method: "eth_getLogs".to_string(),
-            params: vec![json!(filter)], 
+            params: vec![json!(filter)],
         };
 
         let http_post_request = self.build_request(request_body)?;
@@ -355,7 +355,7 @@ impl ExecutionEngine {
             .to_result()
     }
 
-    pub async fn engine_forkchoice_updated_v3( 
+    pub async fn engine_forkchoice_updated_v3(
         &self,
         forkchoice_state: ForkchoiceStateV1,
         payload_attributes: Option<PayloadAttributesV3>,
