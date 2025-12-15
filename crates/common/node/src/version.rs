@@ -30,3 +30,5 @@ pub fn ream_node_version() -> String {
         "{APP_NAME}/{REAM_VERSION}-{REAM_SHORT_COMMIT}/{BUILD_OPERATING_SYSTEM}-{BUILD_ARCHITECTURE}/rustc{PROGRAMMING_LANGUAGE_VERSION}"
     )
 }
+
+pub const VERGEN_GIT_DESCRIBE: &str = env!("VERGEN_GIT_DESCRIBE");

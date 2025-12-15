@@ -10,9 +10,12 @@ use ream_consensus_beacon::{
     execution_engine::rpc_types::get_blobs::BlobAndProofV1,
 };
 use ream_consensus_misc::checkpoint::Checkpoint;
-use ream_fork_choice::{handlers::on_tick, store::get_forkchoice_store};
+use ream_fork_choice_beacon::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::beacon_network_spec;
-use ream_storage::{db::beacon::BeaconDB, tables::table::Table};
+use ream_storage::{
+    db::beacon::BeaconDB,
+    tables::table::{CustomTable, REDBTable},
+};
 use reqwest::{
     Url,
     header::{ACCEPT, HeaderValue},
@@ -36,9 +39,9 @@ pub async fn initialize_db_from_checkpoint(
             .get_highest_root()?
             .expect("No highest root found");
         let state = db
-            .beacon_state_provider()
+            .state_provider()
             .get(highest_root)?
-            .ok_or_else(|| anyhow!("Unable to fetch beacon state"))?;
+            .ok_or_else(|| anyhow!("Unable to fetch state"))?;
 
         if let Some(weak_subjectivity_checkpoint) = &weak_subjectivity_checkpoint {
             if !verify_state_from_weak_subjectivity_checkpoint(

@@ -33,6 +33,7 @@ use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::beacon_network_spec;
+use ream_peer::{ConnectionState, Direction};
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time::interval,
@@ -40,22 +41,18 @@ use tokio::{
 use tracing::{error, info, trace, warn};
 use utils::read_meta_data_from_disk;
 
-use super::peer::Direction;
 use crate::{
     config::NetworkConfig,
     constants::{PING_INTERVAL_DURATION, TARGET_PEER_COUNT},
     gossipsub::{GossipsubBehaviour, beacon::topics::GossipTopic, snappy::SnappyTransform},
-    network::{
-        misc::{Executor, build_transport, peer_id_from_enr},
-        peer::ConnectionState,
-    },
+    network::misc::{Executor, build_transport, peer_id_from_enr},
     req_resp::{
         Chain, ReqResp, ReqRespMessage,
         beacon::messages::{
             BeaconRequestMessage, BeaconResponseMessage,
             blob_sidecars::BlobSidecarsByRootV1Request,
             blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
-            meta_data::GetMetaDataV2,
+            meta_data::GetMetaDataV3,
             ping::Ping,
             status::Status,
         },
@@ -202,7 +199,7 @@ impl Network {
             meta_data: RwLock::new(
                 read_meta_data_from_disk(config.data_dir.clone()).unwrap_or_else(|err| {
                     error!("Failed to read meta data from disk: {err:?}");
-                    GetMetaDataV2::default()
+                    GetMetaDataV3::default()
                 }),
             ),
             status: RwLock::new(status),
@@ -331,7 +328,7 @@ impl Network {
                                 } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
                                     warn!("Failed to send error response: {err:?}");
                                 }
-                            }
+                            },
                             P2PRequest::Status { peer_id, status } => {
                                 self.send_request(peer_id, BeaconRequestMessage::Status(status));
                             }
@@ -601,13 +598,13 @@ impl Network {
             ReqRespMessageReceived::Request { stream_id, message } => {
                 if let RequestMessage::Beacon(message) = *message {
                     match message {
-                        BeaconRequestMessage::MetaData(get_meta_data_v2) => {
+                        BeaconRequestMessage::MetaData(get_meta_data) => {
                             trace!(
                                 ?peer_id,
                                 ?stream_id,
                                 ?connection_id,
-                                ?get_meta_data_v2,
-                                "Received GetMetaDataV2 request"
+                                ?get_meta_data,
+                                "Received GetMetaData request"
                             );
                             let response = BeaconResponseMessage::MetaData(
                                 self.network_state.meta_data.read().clone().into(),
@@ -838,10 +835,10 @@ mod tests {
     use libp2p_identity::{Keypair, PeerId};
     use ream_discv5::{
         config::DiscoveryConfig,
-        subnet::{AttestationSubnets, SyncCommitteeSubnets},
+        subnet::{AttestationSubnets, CustodyGroupCount, SyncCommitteeSubnets},
     };
     use ream_executor::ReamExecutor;
-    use ream_network_spec::networks::initialize_test_network_spec;
+    use ream_network_spec::networks::beacon::initialize_test_network_spec;
     use tokio::{runtime::Runtime, time::sleep};
 
     use super::*;
@@ -876,6 +873,7 @@ mod tests {
                 disable_discovery,
                 attestation_subnets: AttestationSubnets::new(),
                 sync_committee_subnets: SyncCommitteeSubnets::new(),
+                custody_group_count: CustodyGroupCount::default(),
             },
             gossipsub_config: GossipsubConfig {
                 topics,

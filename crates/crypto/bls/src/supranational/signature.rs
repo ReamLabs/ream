@@ -24,8 +24,11 @@ impl TryFrom<BlstSignature> for BLSSignature {
 
     fn try_from(value: BlstSignature) -> Result<Self, Self::Error> {
         Ok(BLSSignature {
-            inner: FixedVector::new(value.to_bytes().to_vec())
-                .map_err(|_| BLSError::InvalidSignature)?,
+            inner: FixedVector::new(value.to_bytes().to_vec()).map_err(|err| {
+                BLSError::InvalidSignature(anyhow!(
+                    "Failed to construct FixedVector for BLS signature: {err}"
+                ))
+            })?,
         })
     }
 }

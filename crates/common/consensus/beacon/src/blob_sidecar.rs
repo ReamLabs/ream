@@ -2,7 +2,7 @@ use alloy_primitives::B256;
 use ream_consensus_misc::{
     beacon_block_header::SignedBeaconBlockHeader,
     constants::beacon::{
-        BLOB_KZG_COMMITMENTS_INDEX, KZG_COMMITMENT_INCLUSION_PROOF_DEPTH, MAX_BLOBS_PER_BLOCK,
+        BLOB_KZG_COMMITMENTS_INDEX, BLOB_SIDECAR_KZG_PROOF_DEPTH, MAX_BLOBS_PER_BLOCK,
     },
 };
 use ream_merkle::{get_root_from_merkle_branch, is_valid_merkle_branch};
@@ -61,7 +61,7 @@ impl BlobSidecar {
         is_valid_merkle_branch(
             blob_kzg_commitments_root,
             kzg_commitments_to_block_body_proof,
-            KZG_COMMITMENT_INCLUSION_PROOF_DEPTH - kzg_commitments_tree_depth as u64,
+            BLOB_SIDECAR_KZG_PROOF_DEPTH - kzg_commitments_tree_depth as u64,
             BLOB_KZG_COMMITMENTS_INDEX,
             self.signed_block_header.message.body_root,
         )
@@ -114,10 +114,11 @@ mod tests {
             kzg_commitment: KZGCommitment([0u8; 48]),
             kzg_proof: KZGProof::default(),
             signed_block_header,
-            kzg_commitment_inclusion_proof: FixedVector::<B256, U17>::from(vec![
+            kzg_commitment_inclusion_proof: FixedVector::<B256, U17>::try_from(vec![
                 B256::default();
                 17
-            ]),
+            ])
+            .unwrap(),
         };
 
         let result = blob_sidecar.verify_blob_sidecar_inclusion_proof();

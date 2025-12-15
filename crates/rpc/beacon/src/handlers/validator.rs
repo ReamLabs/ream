@@ -4,7 +4,9 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
+use hashbrown::HashMap;
 use ream_api_types_beacon::{
+    committee::BeaconCommitteeSubscription,
     id::ValidatorID,
     query::{AttestationQuery, IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
@@ -12,18 +14,40 @@ use ream_api_types_beacon::{
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_bls::PublicKey;
+use ream_bls::{PublicKey, traits::Verifiable};
 use ream_consensus_beacon::{
     beacon_committee_selection::BeaconCommitteeSelection, electra::beacon_state::BeaconState,
     sync_committe_selection::SyncCommitteeSelection,
 };
 use ream_consensus_misc::{
-    attestation_data::AttestationData, constants::beacon::SLOTS_PER_EPOCH, validator::Validator,
+    attestation_data::AttestationData,
+    constants::beacon::{
+        DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, DOMAIN_SYNC_COMMITTEE,
+        MAX_COMMITTEES_PER_SLOT, SLOTS_PER_EPOCH,
+    },
+    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+    validator::Validator,
 };
-use ream_fork_choice::store::Store;
+use ream_events_beacon::{
+    BeaconEvent, contribution_and_proof::SignedContributionAndProof,
+    event::sync_committee::ContributionAndProofEvent,
+};
+use ream_fork_choice_beacon::store::Store;
+use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;
 use ream_operation_pool::OperationPool;
-use ream_storage::{db::beacon::BeaconDB, tables::field::Field};
+use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
+use ream_validator_beacon::{
+    aggregate_and_proof::SignedAggregateAndProof,
+    attestation::compute_subnet_for_attestation,
+    builder::validator_registration::SignedValidatorRegistrationV1,
+    constants::{
+        DOMAIN_CONTRIBUTION_AND_PROOF, DOMAIN_SELECTION_PROOF,
+        DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF, SYNC_COMMITTEE_SUBNET_COUNT,
+    },
+    sync_committee::{SyncAggregatorSelectionData, is_sync_committee_aggregator},
+};
 use serde::Serialize;
+use tokio::sync::broadcast;
 
 use super::state::get_state_from_id;
 
@@ -74,12 +98,7 @@ pub async fn get_validator_from_state(
                 }
             },
             ValidatorID::Address(public_key) => {
-                match state
-                    .validators
-                    .iter()
-                    .enumerate()
-                    .find(|(_, validator)| validator.public_key == *public_key)
-                {
+                match find_validator_by_public_key(&state, public_key) {
                     Some((i, validator)) => (i, validator.to_owned()),
                     None => {
                         return Err(ApiError::NotFound(format!(
@@ -121,12 +140,32 @@ pub async fn validator_status(
             "Failed to find highest slot".to_string(),
         ))?;
     let state = get_state_from_id(ID::Slot(highest_slot), db).await?;
+    let current_epoch = state.get_current_epoch();
 
-    if validator.exit_epoch < state.get_current_epoch() {
+    // Check if validator is pending (not yet activated)
+    if validator.activation_epoch > current_epoch {
+        Ok(ValidatorStatus::Pending)
+    }
+    // Check if validator has exited
+    else if validator.exit_epoch <= current_epoch {
         Ok(ValidatorStatus::Offline)
-    } else {
+    }
+    // Validator is active
+    else {
         Ok(ValidatorStatus::ActiveOngoing)
     }
+}
+
+/// Helper function to find validator by public key in state
+fn find_validator_by_public_key<'a>(
+    state: &'a BeaconState,
+    public_key: &PublicKey,
+) -> Option<(usize, &'a Validator)> {
+    state
+        .validators
+        .iter()
+        .enumerate()
+        .find(|(_, v)| v.public_key == *public_key)
 }
 
 #[get("/beacon/states/{state_id}/validators")]
@@ -160,12 +199,7 @@ pub async fn get_validators_from_state(
                         }
                     },
                     ValidatorID::Address(public_key) => {
-                        match state
-                            .validators
-                            .iter()
-                            .enumerate()
-                            .find(|(_, validator)| validator.public_key == *public_key)
-                        {
+                        match find_validator_by_public_key(&state, public_key) {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
                                 return Err(ApiError::NotFound(format!(
@@ -234,12 +268,7 @@ pub async fn post_validators_from_state(
                         }
                     },
                     ValidatorID::Address(public_key) => {
-                        match state
-                            .validators
-                            .iter()
-                            .enumerate()
-                            .find(|(_, validator)| validator.public_key == *public_key)
-                        {
+                        match find_validator_by_public_key(&state, public_key) {
                             Some((i, validator)) => (i, validator.to_owned()),
                             None => {
                                 return Err(ApiError::NotFound(format!(
@@ -389,7 +418,7 @@ pub async fn post_validator_liveness(
     for validator_index_str in validator_indices {
         let validator_index: u64 = validator_index_str
             .parse()
-            .map_err(|_| ApiError::BadRequest("Invalid validator index".to_string()))?;
+            .map_err(|err| ApiError::BadRequest(format!("Invalid validator index: {err:?}")))?;
         let index = validator_index as usize;
 
         match state.validators.get(index) {
@@ -503,4 +532,396 @@ pub async fn post_beacon_committee_selections(
     _selections: Json<Vec<BeaconCommitteeSelection>>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::NotImplemented())
+}
+
+#[post("/validator/aggregate_and_proofs")]
+pub async fn post_aggregate_and_proofs_v2(
+    db: Data<BeaconDB>,
+    aggregates: Json<Vec<SignedAggregateAndProof>>,
+) -> Result<impl Responder, ApiError> {
+    for signed_aggregate in aggregates.into_inner() {
+        let aggregate_and_proof = signed_aggregate.message;
+        let attestation = aggregate_and_proof.aggregate.clone();
+        let slot = attestation.data.slot;
+        let state = get_state_from_id(ID::Slot(slot), &db).await?;
+
+        let aggregator_index = aggregate_and_proof.aggregator_index as usize;
+
+        let aggregator = state
+            .validators
+            .get(aggregator_index)
+            .ok_or_else(|| ApiError::NotFound("Aggregator not found".to_string()))?;
+
+        let committee = state
+            .get_beacon_committee(attestation.data.slot, attestation.data.index)
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?;
+
+        if !committee.contains(&(aggregator_index as u64)) {
+            return Err(ApiError::BadRequest(
+                "Aggregator not part of the committee".to_string(),
+            ));
+        }
+
+        let aggregator_selection_domain =
+            state.get_domain(DOMAIN_SELECTION_PROOF, Some(compute_epoch_at_slot(slot)));
+        let aggregator_selection_signing_root =
+            compute_signing_root(attestation.data.slot, aggregator_selection_domain);
+
+        if !aggregate_and_proof
+            .selection_proof
+            .verify(
+                &aggregator.public_key,
+                aggregator_selection_signing_root.as_ref(),
+            )
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?
+        {
+            return Err(ApiError::BadRequest(
+                "Aggregator selection proof is not valid".to_string(),
+            ));
+        }
+
+        let committee_pub_keys: Vec<&PublicKey> = committee
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| attestation.aggregation_bits.get(*i).unwrap_or(false))
+            .map(|(i, _)| &state.validators[committee[i] as usize].public_key)
+            .collect();
+
+        if committee_pub_keys.is_empty() {
+            return Err(ApiError::BadRequest(
+                "No aggregation bits set in the attestation".into(),
+            ));
+        }
+
+        let aggregate_signature_domain =
+            state.get_domain(DOMAIN_BEACON_ATTESTER, Some(attestation.data.target.epoch));
+        let aggregate_signature_signing_root =
+            compute_signing_root(&attestation.data, aggregate_signature_domain);
+
+        if !attestation
+            .signature
+            .fast_aggregate_verify(
+                committee_pub_keys,
+                aggregate_signature_signing_root.as_ref(),
+            )
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?
+        {
+            return Err(ApiError::BadRequest(
+                "Aggregated signature verification failed".to_string(),
+            ));
+        }
+
+        let aggregate_proof_domain = state.get_domain(
+            DOMAIN_AGGREGATE_AND_PROOF,
+            Some(compute_epoch_at_slot(attestation.data.slot)),
+        );
+        let aggregate_proof_signing_root =
+            compute_signing_root(aggregate_and_proof, aggregate_proof_domain);
+
+        if !signed_aggregate
+            .signature
+            .verify(
+                &aggregator.public_key,
+                aggregate_proof_signing_root.as_ref(),
+            )
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?
+        {
+            return Err(ApiError::BadRequest(
+                "Aggregate proof verification failed".to_string(),
+            ));
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "data": "success"
+    })))
+}
+
+#[post("/validator/beacon_committee_subscriptions")]
+pub async fn post_beacon_committee_subscriptions(
+    db: Data<BeaconDB>,
+    subscriptions: Json<Vec<BeaconCommitteeSubscription>>,
+) -> Result<impl Responder, ApiError> {
+    let mut subnet_to_subscriptions: HashMap<u64, Vec<BeaconCommitteeSubscription>> =
+        HashMap::new();
+    for sub in subscriptions.into_inner() {
+        let state = get_state_from_id(ID::Slot(sub.slot), &db).await?;
+        if sub.committees_at_slot > MAX_COMMITTEES_PER_SLOT {
+            return Err(ApiError::BadRequest(
+                "Committees at a slot should be less than the maximum committees per slot".into(),
+            ));
+        }
+        if sub.committee_index >= sub.committees_at_slot {
+            return Err(ApiError::BadRequest(
+                "Committee index cannot be more than the committees in a slot".into(),
+            ));
+        }
+
+        let committee_members = state
+            .get_beacon_committee(sub.slot, sub.committee_index)
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?;
+
+        if !committee_members.contains(&sub.validator_index) {
+            return Err(ApiError::BadRequest(
+                "Validator not part of the committee".to_string(),
+            ));
+        }
+
+        let subnet_id =
+            compute_subnet_for_attestation(sub.committees_at_slot, sub.slot, sub.committee_index);
+
+        subnet_to_subscriptions
+            .entry(subnet_id)
+            .or_default()
+            .push(sub);
+    }
+
+    // TODO
+    // add support for attestation subnet subscriptions for validators
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "data": "success"
+    })))
+}
+
+/// Verify validator registration signature
+fn verify_validator_registration_signature(
+    signed_registration: &SignedValidatorRegistrationV1,
+) -> Result<bool, ApiError> {
+    use ream_validator_beacon::builder::DOMAIN_APPLICATION_BUILDER;
+
+    let domain = compute_domain(DOMAIN_APPLICATION_BUILDER, None, None);
+    let signing_root = compute_signing_root(signed_registration.message.clone(), domain);
+
+    signed_registration
+        .signature
+        .verify(
+            &signed_registration.message.public_key,
+            signing_root.as_ref(),
+        )
+        .map_err(|err| ApiError::InternalError(format!("Signature verification failed: {err:?}")))
+}
+
+#[post("/validator/register_validator")]
+pub async fn post_register_validator(
+    db: Data<BeaconDB>,
+    builder_client: Option<
+        Data<Arc<ream_validator_beacon::builder::builder_client::BuilderClient>>,
+    >,
+    registrations: Json<Vec<SignedValidatorRegistrationV1>>,
+) -> Result<impl Responder, ApiError> {
+    let registrations = registrations.into_inner();
+
+    if registrations.is_empty() {
+        return Err(ApiError::BadRequest("Empty request body".to_string()));
+    }
+
+    // Get the current state once for all validator status checks
+    let highest_slot = db
+        .slot_index_provider()
+        .get_highest_slot()
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get_highest_slot, error: {err:?}"))
+        })?
+        .ok_or(ApiError::NotFound(
+            "Failed to find highest slot".to_string(),
+        ))?;
+    let state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
+    let current_epoch = state.get_current_epoch();
+
+    for registration in registrations {
+        // Verify signature
+        let signature_valid = verify_validator_registration_signature(&registration)?;
+        if !signature_valid {
+            continue;
+        }
+
+        // Check if validator is active or pending (not exited or unknown)
+        let is_valid = if let Some((_index, validator)) =
+            find_validator_by_public_key(&state, &registration.message.public_key)
+        {
+            let is_pending = validator.activation_epoch > current_epoch;
+            let is_active =
+                validator.activation_epoch <= current_epoch && current_epoch < validator.exit_epoch;
+            is_pending || is_active
+        } else {
+            false
+        };
+
+        if !is_valid {
+            continue;
+        }
+
+        // Forward immediately to builder if available
+        if let Some(ref client) = builder_client {
+            client
+                .register_validator(registration)
+                .await
+                .map_err(|err| {
+                    ApiError::InternalError(format!("Failed to forward to builder: {err}"))
+                })?;
+        }
+    }
+
+    Ok(HttpResponse::Ok().body("Validator registrations have been received."))
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ContributionAndProofFailure {
+    index: usize,
+    message: String,
+}
+
+fn validate_signed_contribution_and_proof(
+    signed_contribution_and_proof: &SignedContributionAndProof,
+    state: &BeaconState,
+) -> Result<(), String> {
+    let contribution_and_proof = &signed_contribution_and_proof.message;
+    let contribution = &contribution_and_proof.contribution;
+    let epoch = compute_epoch_at_slot(contribution.slot);
+
+    if contribution.subcommittee_index >= SYNC_COMMITTEE_SUBNET_COUNT {
+        return Err("The subcommittee index is out of range".to_string());
+    }
+
+    if contribution.aggregation_bits.num_set_bits() == 0 {
+        return Err("The contribution has no participants".to_string());
+    }
+
+    if !is_sync_committee_aggregator(&contribution_and_proof.selection_proof) {
+        return Err("The selection proof is not a valid aggregator".to_string());
+    }
+
+    let aggregator_index = usize::try_from(contribution_and_proof.aggregator_index)
+        .map_err(|err| format!("Invalid aggregator index: {err:?}"))?;
+
+    let validator = state
+        .validators
+        .get(aggregator_index)
+        .ok_or_else(|| "Aggregator not found".to_string())?;
+
+    let sync_committee_validators =
+        get_sync_subcommittee_pubkeys(state, contribution.subcommittee_index);
+
+    if !sync_committee_validators.contains(&validator.public_key) {
+        return Err("The aggregator is not in the subcommittee".to_string());
+    }
+
+    let selection_data = SyncAggregatorSelectionData {
+        slot: contribution.slot,
+        subcommittee_index: contribution.subcommittee_index,
+    };
+
+    let selection_proof_valid = contribution_and_proof
+        .selection_proof
+        .verify(
+            &validator.public_key,
+            compute_signing_root(
+                selection_data,
+                state.get_domain(DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF, Some(epoch)),
+            )
+            .as_slice(),
+        )
+        .map_err(|err| format!("Selection proof verification error: {err:?}"))?;
+
+    if !selection_proof_valid {
+        return Err("The selection proof is not a valid signature".to_string());
+    }
+
+    let sync_committee_valid = contribution
+        .signature
+        .fast_aggregate_verify(
+            sync_committee_validators
+                .iter()
+                .collect::<Vec<&PublicKey>>(),
+            compute_signing_root(
+                contribution.beacon_block_root,
+                state.get_domain(DOMAIN_SYNC_COMMITTEE, Some(epoch)),
+            )
+            .as_ref(),
+        )
+        .map_err(|err| format!("Sync committee signature verification error: {err:?}"))?;
+
+    if !sync_committee_valid {
+        return Err("The aggregate signature is not valid".to_string());
+    }
+
+    let contribution_and_proof_valid = signed_contribution_and_proof
+        .signature
+        .verify(
+            &validator.public_key,
+            compute_signing_root(
+                contribution_and_proof,
+                state.get_domain(DOMAIN_CONTRIBUTION_AND_PROOF, Some(epoch)),
+            )
+            .as_slice(),
+        )
+        .map_err(|err| format!("Contribution and proof signature verification error: {err:?}"))?;
+
+    if !contribution_and_proof_valid {
+        return Err("The aggregator signature is not valid".to_string());
+    }
+
+    Ok(())
+}
+
+#[post("/validator/contribution_and_proofs")]
+pub async fn post_contribution_and_proofs(
+    db: Data<BeaconDB>,
+    operation_pool: Data<Arc<OperationPool>>,
+    event_sender: Data<broadcast::Sender<BeaconEvent>>,
+    contributions: Json<Vec<SignedContributionAndProof>>,
+) -> Result<impl Responder, ApiError> {
+    let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone());
+
+    if store.is_syncing().map_err(|err| {
+        ApiError::InternalError(format!("Failed to check syncing status: {err:?}"))
+    })? {
+        return Err(ApiError::UnderSyncing);
+    }
+
+    let highest_slot = db
+        .slot_index_provider()
+        .get_highest_slot()
+        .map_err(|err| ApiError::InternalError(format!("Failed to get highest slot: {err:?}")))?
+        .ok_or_else(|| ApiError::NotFound("Failed to find highest slot".to_string()))?;
+
+    let state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
+    let contributions = contributions.into_inner();
+    let mut failures = Vec::new();
+
+    for (index, signed_contribution_and_proof) in contributions.iter().enumerate() {
+        match validate_signed_contribution_and_proof(signed_contribution_and_proof, &state) {
+            Ok(()) => {
+                let event = BeaconEvent::ContributionAndProof(ContributionAndProofEvent {
+                    message: signed_contribution_and_proof.message.clone(),
+                    signature: signed_contribution_and_proof.signature.clone(),
+                });
+                let _ = event_sender.send(event);
+            }
+            Err(message) => {
+                failures.push(ContributionAndProofFailure { index, message });
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+            "code": 400,
+            "message": "some failures",
+            "failures": failures
+        })));
+    }
+
+    Ok(HttpResponse::Ok().body("success"))
 }

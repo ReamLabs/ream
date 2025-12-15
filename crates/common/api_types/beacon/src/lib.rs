@@ -6,5 +6,6 @@ pub mod id;
 pub mod query;
 pub mod request;
 pub mod responses;
+pub mod rewards;
 pub mod sync;
 pub mod validator;

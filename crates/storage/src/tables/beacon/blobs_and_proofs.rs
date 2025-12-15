@@ -1,5 +1,5 @@
 use std::{
-    fs::File,
+    fs::{File, remove_file},
     io::{Read, Write},
     path::PathBuf,
 };
@@ -10,7 +10,7 @@ use ream_consensus_beacon::{
 use snap::raw::{Decoder, Encoder};
 use ssz::{Decode, Encode};
 
-use crate::{errors::StoreError, tables::table::Table};
+use crate::{errors::StoreError, tables::table::CustomTable};
 
 pub(crate) const BLOB_FOLDER_NAME: &str = "beacon_blobs";
 
@@ -27,7 +27,7 @@ impl BlobsAndProofsTable {
     }
 }
 
-impl Table for BlobsAndProofsTable {
+impl CustomTable for BlobsAndProofsTable {
     type Key = BlobIdentifier;
 
     type Value = BlobAndProofV1;
@@ -57,6 +57,12 @@ impl Table for BlobsAndProofsTable {
 
         Ok(())
     }
+
+    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
+        let blob = self.get(key)?;
+        remove_file(self.blob_file_path(&key))?;
+        Ok(blob)
+    }
 }
 
 #[cfg(test)]
@@ -72,7 +78,7 @@ mod tests {
         errors::StoreError,
         tables::{
             beacon::blobs_and_proofs::{BLOB_FOLDER_NAME, BlobsAndProofsTable},
-            table::Table,
+            table::CustomTable,
         },
     };
 

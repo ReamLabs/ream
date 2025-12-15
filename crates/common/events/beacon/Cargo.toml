@@ -1,0 +1,35 @@
+[package]
+name = "ream-events-beacon"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-primitives.workspace = true
+anyhow.workspace = true
+ethereum_serde_utils.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
+eventsource-client.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ssz_types.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
+
+# ream dependencies
+ream-bls.workspace = true
+ream-consensus-beacon.workspace = true
+ream-consensus-misc.workspace = true
+ream-light-client.workspace = true
+
+[lints]
+workspace = true

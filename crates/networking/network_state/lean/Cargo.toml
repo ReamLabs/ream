@@ -1,0 +1,22 @@
+[package]
+name = "ream-network-state-lean"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+libp2p.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+
+# ream dependencies
+ream-consensus-lean.workspace = true
+ream-peer.workspace = true
+
+[lints]
+workspace = true

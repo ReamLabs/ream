@@ -7,7 +7,7 @@ use ream_consensus_misc::{
 use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use ream_storage::{
     cache::CachedDB,
-    tables::{field::Field, table::Table},
+    tables::{field::REDBField, table::REDBTable},
 };
 use ream_validator_beacon::blob_sidecars::compute_subnet_for_blob_sidecar;
 
@@ -55,7 +55,7 @@ pub async fn validate_blob_sidecar(
     let head_root = store.get_head()?;
     let state: BeaconState = store
         .db
-        .beacon_state_provider()
+        .state_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
 
@@ -68,7 +68,7 @@ pub async fn validate_blob_sidecar(
     }
 
     // [IGNORE] The sidecar's block's parent (defined by block_header.parent_root) has been seen
-    let Some(parent_block) = store.db.beacon_block_provider().get(header.parent_root)? else {
+    let Some(parent_block) = store.db.block_provider().get(header.parent_root)? else {
         return Ok(ValidationResult::Ignore(
             "Parent block not seen".to_string(),
         ));

@@ -1,31 +1,48 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
-use alloy_primitives::Bytes;
-use rand::rng;
-use ream_post_quantum_crypto::hashsig::private_key::PrivateKey;
+use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, public_key::PublicKey};
+use serde::{Deserialize, Serialize};
 
-#[derive(serde::Serialize)]
-pub struct KeyPair {
-    pub public_key: Bytes,
-    pub private_key: Bytes,
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct ValidatorKeysManifest {
+    pub key_scheme: String,
+    pub hash_function: String,
+    pub encoding: String,
+    pub lifetime: u64,
+    pub log_num_active_epochs: u64,
+    pub num_active_epochs: u64,
+    pub num_validators: u64,
+    pub validators: Vec<ValidatorKeystoreRaw>,
 }
 
-pub fn generate_keystore(
-    number_of_validators: u64,
-    number_of_keys: usize,
-) -> anyhow::Result<BTreeMap<String, Vec<KeyPair>>> {
-    let mut keystore = BTreeMap::new();
-    let mut range = rng();
-    for index in 0..number_of_validators {
-        let mut keys = vec![];
-        for _ in 0..number_of_keys {
-            let (public_key, private_key) = PrivateKey::generate_key_pair(&mut range, 0, 1);
-            keys.push(KeyPair {
-                public_key: public_key.to_bytes(),
-                private_key: private_key.to_bytes(),
-            });
-        }
-        keystore.insert(format!("validator_{index}"), keys);
-    }
-    Ok(keystore)
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct ValidatorKeystoreRaw {
+    pub index: u64,
+    #[serde(rename = "pubkey_hex")]
+    pub public_key: PublicKey,
+    pub privkey_file: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ValidatorKeystore {
+    pub index: u64,
+    pub public_key: PublicKey,
+    pub private_key: PrivateKey,
+}
+
+/// YAML structure for node-based validator mapping
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+pub struct ValidatorRegistry {
+    #[serde(flatten)]
+    pub nodes: HashMap<String, Vec<u64>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "UPPERCASE")]
+pub struct ConfigFile {
+    pub genesis_time: u64,
+    pub num_validators: u64,
+    pub genesis_validators: Vec<PublicKey>,
 }

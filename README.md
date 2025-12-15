@@ -3,7 +3,7 @@
 [![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)][tg-url]
 
 
-**[Install](https://ream.rs/installation.html)**
+**[Install](https://ream.rs/quickstart.html)**
 | [User Docs](https://ream.rs)
 
 ## What is Ream
@@ -20,7 +20,7 @@ The Lean consensus is beacon chain 2.0, the next generation of Ethereum: hardene
 
 ## What are our goals?
 
-Building the first Lean consenus client which is 
+Building the first Lean consensus client which is 
 - Modular
 - Contributor Friendly
 - Blazingly Fast

@@ -8,17 +8,18 @@ use crate::tables::{
     beacon::{
         beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
         blobs_and_proofs::BlobsAndProofsTable, block_timeliness::BlockTimelinessTable,
-        checkpoint_states::CheckpointStatesTable, equivocating_indices::EquivocatingIndicesField,
+        checkpoint_states::CheckpointStatesTable, column_sidecars::ColumnSidecarsTable,
+        equivocating_indices::EquivocatingIndicesField,
         finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
         justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
         parent_root_index::ParentRootIndexMultimapTable,
-        proposer_boost_root::ProposerBoostRootField, slot_index::SlotIndexTable,
-        state_root_index::StateRootIndexTable, time::TimeField,
+        proposer_boost_root::ProposerBoostRootField, slot_index::BeaconSlotIndexTable,
+        state_root_index::BeaconStateRootIndexTable, time::TimeField,
         unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
         unrealized_justifications::UnrealizedJustificationsTable,
         unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
     },
-    table::Table,
+    table::REDBTable,
 };
 
 #[derive(Clone, Debug)]
@@ -28,12 +29,12 @@ pub struct BeaconDB {
 }
 
 impl BeaconDB {
-    pub fn beacon_block_provider(&self) -> BeaconBlockTable {
+    pub fn block_provider(&self) -> BeaconBlockTable {
         BeaconBlockTable {
             db: self.db.clone(),
         }
     }
-    pub fn beacon_state_provider(&self) -> BeaconStateTable {
+    pub fn state_provider(&self) -> BeaconStateTable {
         BeaconStateTable {
             db: self.db.clone(),
         }
@@ -41,6 +42,12 @@ impl BeaconDB {
 
     pub fn blobs_and_proofs_provider(&self) -> BlobsAndProofsTable {
         BlobsAndProofsTable {
+            data_dir: self.data_dir.clone(),
+        }
+    }
+
+    pub fn column_sidecars_provider(&self) -> ColumnSidecarsTable {
+        ColumnSidecarsTable {
             data_dir: self.data_dir.clone(),
         }
     }
@@ -123,14 +130,14 @@ impl BeaconDB {
         }
     }
 
-    pub fn slot_index_provider(&self) -> SlotIndexTable {
-        SlotIndexTable {
+    pub fn slot_index_provider(&self) -> BeaconSlotIndexTable {
+        BeaconSlotIndexTable {
             db: self.db.clone(),
         }
     }
 
-    pub fn state_root_index_provider(&self) -> StateRootIndexTable {
-        StateRootIndexTable {
+    pub fn state_root_index_provider(&self) -> BeaconStateRootIndexTable {
+        BeaconStateRootIndexTable {
             db: self.db.clone(),
         }
     }
@@ -149,7 +156,7 @@ impl BeaconDB {
             .expect("No highest root found");
 
         let state = self
-            .beacon_state_provider()
+            .state_provider()
             .get(highest_root)?
             .ok_or_else(|| anyhow!("Unable to fetch latest state"))?;
 

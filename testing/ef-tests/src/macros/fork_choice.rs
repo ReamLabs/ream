@@ -12,14 +12,14 @@ macro_rules! test_fork_choice {
                     attestation::Attestation, attester_slashing::AttesterSlashing, blob_sidecar::BlobIdentifier, electra::{beacon_block::{BeaconBlock, SignedBeaconBlock}, beacon_state::BeaconState}, execution_engine::{mock_engine::MockExecutionEngine, rpc_types::get_blobs::{Blob, BlobAndProofV1}}, polynomial_commitments::kzg_proof::KZGProof
                 };
                 use ream_consensus_misc::checkpoint::Checkpoint;
-                use ream_fork_choice::{
+                use ream_fork_choice_beacon::{
                     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
                     store::{get_forkchoice_store, Store},
                 };
                 use ream_network_spec::networks::initialize_test_network_spec;
                 use ream_storage::{
                     db::{ReamDB, beacon::BeaconDB},
-                    tables::{table::Table, field::Field},
+                    tables::{table::CustomTable, field::REDBField},
                     dir::setup_data_dir
                 };
                 use rstest::rstest;

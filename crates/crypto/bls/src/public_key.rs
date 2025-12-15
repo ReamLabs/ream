@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use alloy_primitives::hex;
+use anyhow::anyhow;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz::Encode;
 use ssz_derive::{Decode, Encode};
@@ -37,7 +38,7 @@ impl<'de> Deserialize<'de> for PublicKey {
     {
         let result: String = Deserialize::deserialize(deserializer)?;
         let result = hex::decode(&result).map_err(serde::de::Error::custom)?;
-        let key = FixedVector::from(result);
+        let key = FixedVector::try_from(result).map_err(serde::de::Error::custom)?;
         Ok(Self { inner: key })
     }
 }
@@ -46,14 +47,21 @@ impl FromStr for PublicKey {
     type Err = BLSError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let clean_str = s.strip_prefix("0x").unwrap_or(s);
-        let bytes = hex::decode(clean_str).map_err(|_| BLSError::InvalidHexString)?;
+        let bytes = hex::decode(clean_str).map_err(BLSError::InvalidHexString)?;
 
         if bytes.len() != 48 {
-            return Err(BLSError::InvalidByteLength);
+            return Err(BLSError::InvalidByteLength(anyhow::anyhow!(
+                "Expected 48 bytes for PublicKey, got {} bytes",
+                bytes.len()
+            )));
         }
 
         Ok(PublicKey {
-            inner: FixedVector::from(bytes),
+            inner: FixedVector::try_from(bytes).map_err(|err| {
+                BLSError::InvalidPublicKey(anyhow!(
+                    "Failed to convert bytes to FixedVector {err:?}"
+                ))
+            })?,
         })
     }
 }

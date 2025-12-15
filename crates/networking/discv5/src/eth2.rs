@@ -1,9 +1,10 @@
-use alloy_primitives::{B256, Bytes, aliases::B32, bytes};
-use alloy_rlp::{Decodable, Encodable};
+use alloy_primitives::{B256, aliases::B32};
+use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
 use ream_consensus_misc::{constants::beacon::FAR_FUTURE_EPOCH, fork_data::ForkData};
 use ream_network_spec::networks::beacon_network_spec;
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
+use tracing::warn;
 
 pub const ENR_ETH2_KEY: &str = "eth2";
 
@@ -35,7 +36,7 @@ impl EnrForkId {
 }
 
 impl Encodable for EnrForkId {
-    fn encode(&self, out: &mut dyn bytes::BufMut) {
+    fn encode(&self, out: &mut dyn BufMut) {
         let ssz_bytes = self.as_ssz_bytes();
         let bytes = Bytes::from(ssz_bytes);
         bytes.encode(out);
@@ -45,8 +46,10 @@ impl Encodable for EnrForkId {
 impl Decodable for EnrForkId {
     fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
         let bytes = Bytes::decode(buf)?;
-        let enr_fork_id = EnrForkId::from_ssz_bytes(&bytes)
-            .map_err(|_| alloy_rlp::Error::Custom("Failed to decode SSZ ENRForkID"))?;
+        let enr_fork_id = EnrForkId::from_ssz_bytes(&bytes).map_err(|err| {
+            warn!("Failed to decode SSZ ENRForkID: {err:?}");
+            alloy_rlp::Error::Custom("Failed to decode SSZ ENRForkID")
+        })?;
         Ok(enr_fork_id)
     }
 }

@@ -6,7 +6,7 @@ use ream_api_types_beacon::responses::DataResponse;
 use ream_api_types_common::error::ApiError;
 use ream_p2p::{
     network::{beacon::network_state::NetworkState, misc::peer_id_from_enr},
-    req_resp::beacon::messages::meta_data::GetMetaDataV2,
+    req_resp::beacon::messages::meta_data::GetMetaDataV3,
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,11 +16,11 @@ pub struct Identity {
     pub enr: String,
     pub p2p_address: Vec<String>,
     pub discovery_address: Vec<String>,
-    pub metadata: GetMetaDataV2,
+    pub metadata: GetMetaDataV3,
 }
 
 impl Identity {
-    pub fn new(enr: Enr, metadata: GetMetaDataV2) -> Self {
+    pub fn new(enr: Enr, metadata: GetMetaDataV3) -> Self {
         let peer_id = peer_id_from_enr(&enr).expect("Unable to convert enr to peer id");
         Self {
             peer_id: peer_id.to_string(),

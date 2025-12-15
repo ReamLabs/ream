@@ -8,7 +8,7 @@ use ream_consensus_misc::{
 };
 use ream_storage::{
     cache::{CachedDB, SyncCommitteeKey},
-    tables::table::Table,
+    tables::table::REDBTable,
 };
 use ream_validator_beacon::sync_committee::{
     SyncCommitteeMessage, compute_subnets_for_sync_committee,
@@ -27,7 +27,7 @@ pub async fn validate_sync_committee(
     let head_root = store.get_head()?;
     let state: BeaconState = store
         .db
-        .beacon_state_provider()
+        .state_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
 

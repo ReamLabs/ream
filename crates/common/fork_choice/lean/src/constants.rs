@@ -1,0 +1,1 @@
+pub const JUSTIFICATION_LOOKBACK_SLOTS: u64 = 3;

@@ -3,8 +3,8 @@ use actix_web::{
     web::{Data, Path},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
-use ream_chain_lean::lean_chain::LeanChainReader;
 use ream_consensus_lean::block::BlockHeader;
+use ream_fork_choice_lean::store::LeanStoreReader;
 
 use super::block::get_block_by_id;
 
@@ -12,7 +12,7 @@ use super::block::get_block_by_id;
 #[get("/headers/{block_id}")]
 pub async fn get_block_header(
     block_id: Path<ID>,
-    lean_chain: Data<LeanChainReader>,
+    lean_chain: Data<LeanStoreReader>,
 ) -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::Ok().json(BlockHeader::from(
         get_block_by_id(block_id.into_inner(), lean_chain)

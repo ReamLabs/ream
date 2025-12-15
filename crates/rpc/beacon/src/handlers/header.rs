@@ -9,7 +9,7 @@ use ream_api_types_beacon::{
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_consensus_misc::beacon_block_header::SignedBeaconBlockHeader;
-use ream_storage::{db::beacon::BeaconDB, tables::table::Table};
+use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
 use serde::{Deserialize, Serialize};
 use tree_hash::TreeHash;
 
@@ -45,7 +45,7 @@ pub async fn get_headers(
         (None, Some(parent_root)) => {
             // get parent block to have access to `slot`
             let parent_block = db
-                .beacon_block_provider()
+                .block_provider()
                 .get(parent_root)
                 .map_err(|err| {
                     ApiError::InternalError(format!("Failed to get headers, error: {err:?}"))

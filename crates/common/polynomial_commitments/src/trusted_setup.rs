@@ -6,7 +6,8 @@ use kzg::eip_4844::{load_trusted_setup_rust, load_trusted_setup_string};
 fn load_trusted_setup() -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     static CONTENTS: &str = include_str!("trusted_setup.txt");
 
-    load_trusted_setup_string(CONTENTS).map_err(|error| anyhow!(error))
+    load_trusted_setup_string(CONTENTS)
+        .map_err(|err| anyhow!("Failed to load trusted setup string: {err}"))
 }
 
 macro_rules! impl_settings {

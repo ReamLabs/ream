@@ -1,6 +1,8 @@
 # Heavily inspired by Reth: https://github.com/paradigmxyz/reth/blob/4c39b98b621c53524c6533a9c7b52fc42c25abd6/Makefile
 .DEFAULT_GOAL := help
 
+BIN_DIR = "dist/bin"
+
 # Cargo features for builds.
 FEATURES ?=
 
@@ -42,8 +44,18 @@ test: # Run all tests.
 	cargo test --workspace -- --nocapture
 
 .PHONY: fmt
-fmt: # Run `rustfmt` on the entire workspace.
+fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `map_err` to be `err`
 	cargo +nightly fmt --all
+	@all_occurrences=$$(grep -RIn --include="*.rs" "\.map_err(|" . || true); \
+	violations=$$(echo "$$all_occurrences" | grep -Ev "\.map_err\(\|err\|" || true); \
+	if [ -n "$$violations" ]; then \
+		echo "Invalid .map_err closure naming found:"; \
+		echo "$$violations"; \
+		echo; \
+		echo "Only this form is allowed:"; \
+		echo "    .map_err(|err| ... )"; \
+		exit 1; \
+	fi
 
 .PHONY: clippy
 clippy: # Run `clippy` on the entire workspace.
@@ -78,3 +90,22 @@ clean-deps: # Run `cargo udeps` except `ef-tests` directory.
 
 .PHONY: pr
 pr: lint update-book-cli clean-deps test # Run all checks for a PR.
+
+build-%:
+	cross build --bin ream --target $* --features "$(FEATURES)" --profile "$(PROFILE)"
+
+.PHONY: docker-build-push
+docker-build-push:
+	$(MAKE) build-x86_64-unknown-linux-gnu
+	mkdir -p $(BIN_DIR)/amd64
+	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
+
+	$(MAKE) build-aarch64-unknown-linux-gnu
+	mkdir -p $(BIN_DIR)/arm64
+	cp $(CARGO_TARGET_DIR)/aarch64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/arm64/ream
+
+	docker buildx build --file ./Dockerfile.cross . \
+		--platform linux/amd64,linux/arm64 \
+		--tag ghcr.io/reamlabs/ream:latest \
+		--provenance=false \
+		--push

@@ -8,6 +8,8 @@ target/
 
 # Testdata
 testing/ef-tests/mainnet/*
+testing/lean-spec-tests/fixtures/
+testing/lean-spec-tests/fixtures/*
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
@@ -30,3 +32,6 @@ testing/ef-tests/mainnet/*
 
 # keystore
 .keystore
+
+# include dist directory, where the reth binary is located after compilation
+!/dist

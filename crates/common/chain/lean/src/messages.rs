@@ -1,6 +1,8 @@
+use libp2p_identity::PeerId;
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
-    block::{Block, SignedBlock},
+    block::{BlockWithSignatures, SignedBlockWithAttestation},
+    checkpoint::Checkpoint,
 };
 use tokio::sync::oneshot;
 
@@ -17,8 +19,6 @@ use tokio::sync::oneshot;
 /// flags, see below for the explanation.
 ///
 /// Flags:
-/// `is_trusted`: If true, the block/vote is considered to 1) be from local or 2) already verified.
-/// This flag avoids unnecessary validation of the PQ signature, which can be expensive.
 /// `need_gossip`: If true, the block/vote should be gossiped to other peers. In 3SF-mini, a node
 /// enqueues an item if it is not ready for processing. The node would later consume the queue
 /// (`self.dependencies` in the original Python implementation) for the items. In this case, the
@@ -27,20 +27,23 @@ use tokio::sync::oneshot;
 pub enum LeanChainServiceMessage {
     ProduceBlock {
         slot: u64,
-        sender: oneshot::Sender<Block>,
+        sender: oneshot::Sender<BlockWithSignatures>,
     },
     BuildAttestationData {
         slot: u64,
         sender: oneshot::Sender<AttestationData>,
     },
     ProcessBlock {
-        signed_block: SignedBlock,
-        is_trusted: bool,
+        signed_block_with_attestation: Box<SignedBlockWithAttestation>,
         need_gossip: bool,
     },
     ProcessAttestation {
-        signed_attestation: SignedAttestation,
-        is_trusted: bool,
+        signed_attestation: Box<SignedAttestation>,
         need_gossip: bool,
+    },
+    CheckIfCanonicalCheckpoint {
+        peer_id: PeerId,
+        checkpoint: Checkpoint,
+        sender: oneshot::Sender<(PeerId, bool)>,
     },
 }

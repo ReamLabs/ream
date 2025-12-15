@@ -1,7 +1,8 @@
+use alloy_primitives::aliases::B32;
 use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
 use anyhow::{anyhow, ensure};
 use discv5::Enr;
-use ssz::Encode;
+use ssz::{Decode, Encode};
 use ssz_types::{
     BitVector,
     typenum::{U4, U64},
@@ -12,6 +13,8 @@ pub const ATTESTATION_BITFIELD_ENR_KEY: &str = "attnets";
 pub const ATTESTATION_SUBNET_COUNT: usize = 64;
 pub const SYNC_COMMITTEE_BITFIELD_ENR_KEY: &str = "syncnets";
 pub const SYNC_COMMITTEE_SUBNET_COUNT: usize = 4;
+pub const CUSTODY_GROUP_COUNT_ENR_KEY: &str = "cgc";
+pub const NEXT_FORK_DIGEST_ENR_KEY: &str = "nfd";
 
 /// Represents the attestation subnets a node is subscribed to
 ///
@@ -134,6 +137,65 @@ impl Decodable for SyncCommitteeSubnets {
             ))
         })?;
         Ok(Self(subnets))
+    }
+}
+
+/// Custody group count for PeerDAS.
+///
+/// Encoded as a big-endian u64 with no leading zero bytes (0 is encoded as empty byte string).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CustodyGroupCount(pub u64);
+
+impl Encodable for CustodyGroupCount {
+    fn encode(&self, out: &mut dyn BufMut) {
+        // Big-endian u64 with no leading zeros
+        let bytes = self.0.to_be_bytes();
+        let trimmed = bytes
+            .iter()
+            .position(|&b| b != 0)
+            .map(|pos| &bytes[pos..])
+            .unwrap_or(&[]); // 0 is encoded as empty
+        Bytes::from(trimmed.to_vec()).encode(out);
+    }
+}
+
+impl Decodable for CustodyGroupCount {
+    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        let bytes = Bytes::decode(buf)?;
+        if bytes.is_empty() {
+            return Ok(Self(0));
+        }
+        if bytes.len() > 8 {
+            return Err(alloy_rlp::Error::Custom("CustodyGroupCount too large"));
+        }
+        let mut arr = [0u8; 8];
+        arr[8 - bytes.len()..].copy_from_slice(&bytes);
+        Ok(Self(u64::from_be_bytes(arr)))
+    }
+}
+
+/// Next fork digest for signaling upcoming forks.
+///
+/// SSZ-encoded Bytes4 (ForkDigest). Default is all zeros when no next fork is scheduled.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NextForkDigest(pub B32);
+
+impl Encodable for NextForkDigest {
+    fn encode(&self, out: &mut dyn BufMut) {
+        let bytes = Bytes::from(self.0.as_ssz_bytes());
+        bytes.encode(out);
+    }
+}
+
+impl Decodable for NextForkDigest {
+    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        let bytes = Bytes::decode(buf)?;
+        let digest = B32::from_ssz_bytes(&bytes).map_err(|err| {
+            alloy_rlp::Error::Custom(Box::leak(
+                format!("Failed to decode SSZ NextForkDigest: {err:?}").into_boxed_str(),
+            ))
+        })?;
+        Ok(Self(digest))
     }
 }
 

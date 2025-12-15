@@ -6,16 +6,16 @@ use ream_consensus_misc::{
     constants::beacon::{DOMAIN_SYNC_COMMITTEE, SYNC_COMMITTEE_SIZE},
     misc::{compute_epoch_at_slot, compute_signing_root, compute_sync_committee_period},
 };
+use ream_events_beacon::contribution_and_proof::SignedContributionAndProof;
 use ream_storage::{
     cache::{CacheSyncCommitteeContribution, CachedDB, SyncCommitteeKey},
-    tables::table::Table,
+    tables::table::REDBTable,
 };
 use ream_validator_beacon::{
     constants::{
         DOMAIN_CONTRIBUTION_AND_PROOF, DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF,
         SYNC_COMMITTEE_SUBNET_COUNT,
     },
-    contribution_and_proof::SignedContributionAndProof,
     sync_committee::{SyncAggregatorSelectionData, is_sync_committee_aggregator},
 };
 
@@ -34,13 +34,13 @@ pub async fn validate_sync_committee_contribution_and_proof(
 
     let block = store
         .db
-        .beacon_block_provider()
+        .block_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("Could not get block for head root: {head_root}"))?;
 
     let state = store
         .db
-        .beacon_state_provider()
+        .state_provider()
         .get(head_root)?
         .ok_or_else(|| anyhow!("No beacon state found for head root: {head_root}"))?;
 

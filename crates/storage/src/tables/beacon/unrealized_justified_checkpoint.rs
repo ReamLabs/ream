@@ -1,47 +1,28 @@
 use std::sync::Arc;
 
 use ream_consensus_misc::checkpoint::Checkpoint;
-use redb::{Database, Durability, ReadableDatabase, TableDefinition};
+use redb::{Database, TableDefinition};
 
-use crate::{
-    errors::StoreError,
-    tables::{field::Field, ssz_encoder::SSZEncoding},
-};
-
-/// Table definition for the Unrealized_Justified_Checkpoint table
-///
-/// Value: Checkpoint
-pub(crate) const UNREALIZED_JUSTIFED_CHECKPOINT_FIELD: TableDefinition<
-    &str,
-    SSZEncoding<Checkpoint>,
-> = TableDefinition::new("beacon_unrealized_justified_checkpoint");
-
-const UNREALIZED_JUSTIFED_CHECKPOINT_KEY: &str = "unrealized_justified_checkpoint_key";
+use crate::tables::{field::REDBField, ssz_encoder::SSZEncoding};
 
 pub struct UnrealizedJustifiedCheckpointField {
     pub db: Arc<Database>,
 }
 
-impl Field for UnrealizedJustifiedCheckpointField {
+/// Table definition for the Unrealized_Justified_Checkpoint table
+///
+/// Value: Checkpoint
+impl REDBField for UnrealizedJustifiedCheckpointField {
+    const FIELD_DEFINITION: TableDefinition<'_, &str, SSZEncoding<Checkpoint>> =
+        TableDefinition::new("beacon_unrealized_justified_checkpoint");
+
+    const KEY: &str = "unrealized_justified_checkpoint_key";
+
     type Value = Checkpoint;
 
-    fn get(&self) -> Result<Checkpoint, StoreError> {
-        let read_txn = self.db.begin_read()?;
+    type ValueFieldDefinition = SSZEncoding<Checkpoint>;
 
-        let table = read_txn.open_table(UNREALIZED_JUSTIFED_CHECKPOINT_FIELD)?;
-        let result = table
-            .get(UNREALIZED_JUSTIFED_CHECKPOINT_KEY)?
-            .ok_or(StoreError::FieldNotInitilized)?;
-        Ok(result.value())
-    }
-
-    fn insert(&self, value: Self::Value) -> Result<(), StoreError> {
-        let mut write_txn = self.db.begin_write()?;
-        write_txn.set_durability(Durability::Immediate)?;
-        let mut table = write_txn.open_table(UNREALIZED_JUSTIFED_CHECKPOINT_FIELD)?;
-        table.insert(UNREALIZED_JUSTIFED_CHECKPOINT_KEY, value)?;
-        drop(table);
-        write_txn.commit()?;
-        Ok(())
+    fn database(&self) -> Arc<Database> {
+        self.db.clone()
     }
 }

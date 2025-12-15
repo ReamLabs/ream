@@ -3,6 +3,7 @@ pub mod beacon_state;
 pub mod blobs_and_proofs;
 pub mod block_timeliness;
 pub mod checkpoint_states;
+pub mod column_sidecars;
 pub mod equivocating_indices;
 pub mod finalized_checkpoint;
 pub mod genesis_time;

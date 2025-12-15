@@ -3,7 +3,7 @@ use std::sync::Arc;
 use alloy_primitives::map::HashSet;
 use redb::{Database, Durability, ReadableDatabase, TableDefinition};
 
-use crate::{errors::StoreError, tables::field::Field};
+use crate::{errors::StoreError, tables::field::CustomField};
 
 /// Table definition for the Equivocating_Indices table
 ///
@@ -17,7 +17,7 @@ pub struct EquivocatingIndicesField {
     pub db: Arc<Database>,
 }
 
-impl Field for EquivocatingIndicesField {
+impl CustomField for EquivocatingIndicesField {
     type Value = HashSet<u64>;
 
     fn get(&self) -> Result<Self::Value, StoreError> {
@@ -41,5 +41,16 @@ impl Field for EquivocatingIndicesField {
         drop(table);
         write_txn.commit()?;
         Ok(())
+    }
+
+    fn remove(&self) -> Result<Option<Self::Value>, StoreError> {
+        let write_txn = self.db.begin_write()?;
+        let mut table = write_txn.open_table(EQUIVOCATING_INDICES_FIELD)?;
+        let value = table
+            .remove(EQUIVOCATING_INDICES_KEY)?
+            .map(|v| v.value().into_iter().collect::<HashSet<u64>>());
+        drop(table);
+        write_txn.commit()?;
+        Ok(value)
     }
 }

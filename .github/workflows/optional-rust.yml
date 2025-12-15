@@ -16,6 +16,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true        
+
     - name: Install cargo udeps
       run: cargo install cargo-udeps --locked
 
@@ -27,6 +31,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true        
 
     - name: Install cargo workspace lints
       run: cargo install cargo-workspace-lints --locked

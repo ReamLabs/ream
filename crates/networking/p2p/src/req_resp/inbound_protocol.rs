@@ -31,7 +31,7 @@ use unsigned_varint::codec::Uvi;
 
 use super::{
     beacon::{
-        messages::{BeaconRequestMessage, meta_data::GetMetaDataV2},
+        messages::{BeaconRequestMessage, meta_data::GetMetaDataV3},
         protocol_id::BeaconSupportedProtocol,
     },
     handler::RespMessage,
@@ -42,13 +42,19 @@ use crate::{
         beacon::messages::{
             blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
             blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+            data_column_sidecars::{
+                DataColumnSidecarsByRangeV1Request, DataColumnSidecarsByRootV1Request,
+            },
             goodbye::Goodbye,
             ping::Ping,
             status::Status,
         },
         error::ReqRespError,
         lean::{
-            messages::{LeanRequestMessage, blocks::LeanBlocksByRootV1Request, status::LeanStatus},
+            messages::{
+                LeanRequestMessage, blocks::BlocksByRootV1Request as LeanBlocksByRootV1Request,
+                status::Status as LeanStatus,
+            },
             protocol_id::LeanSupportedProtocol,
         },
         messages::RequestMessage,
@@ -90,9 +96,10 @@ where
             );
 
             match info.protocol {
-                SupportedProtocol::Beacon(BeaconSupportedProtocol::GetMetaDataV2) => Ok((
+                SupportedProtocol::Beacon(BeaconSupportedProtocol::GetMetaDataV2)
+                | SupportedProtocol::Beacon(BeaconSupportedProtocol::GetMetaDataV3) => Ok((
                     RequestMessage::Beacon(BeaconRequestMessage::MetaData(
-                        GetMetaDataV2::default().into(),
+                        GetMetaDataV3::default().into(),
                     )),
                     socket,
                 )),
@@ -134,7 +141,12 @@ impl Encoder<RespMessage> for InboundSSZSnappyCodec {
         let bytes = match item {
             RespMessage::Response(messages) => messages.as_ssz_bytes(),
             RespMessage::Error(req_resp_error) => {
-                VariableList::<u8, U256>::from(req_resp_error.to_string().as_bytes().to_vec())
+                VariableList::<u8, U256>::try_from(req_resp_error.to_string().as_bytes().to_vec())
+                    .map_err(|err| {
+                        ReqRespError::InvalidData(format!(
+                            "Failed to convert error code to variable list {err:?}",
+                        ))
+                    })?
                     .as_ssz_bytes()
             }
             RespMessage::EndOfStream => unreachable!("EndOfStream cannot be sent"),
@@ -172,9 +184,11 @@ impl Decoder for InboundSSZSnappyCodec {
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if self.protocol.protocol
             == SupportedProtocol::Beacon(BeaconSupportedProtocol::GetMetaDataV2)
+            || self.protocol.protocol
+                == SupportedProtocol::Beacon(BeaconSupportedProtocol::GetMetaDataV3)
         {
             return Ok(Some(RequestMessage::Beacon(
-                BeaconRequestMessage::MetaData(GetMetaDataV2::default().into()),
+                BeaconRequestMessage::MetaData(GetMetaDataV3::default().into()),
             )));
         }
 
@@ -195,6 +209,9 @@ impl Decoder for InboundSSZSnappyCodec {
                                 Goodbye::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
                             ),
                             BeaconSupportedProtocol::StatusV1 => BeaconRequestMessage::Status(
+                                Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
+                            ),
+                            BeaconSupportedProtocol::StatusV2 => BeaconRequestMessage::Status(
                                 Status::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
                             ),
                             BeaconSupportedProtocol::PingV1 => BeaconRequestMessage::Ping(
@@ -224,9 +241,26 @@ impl Decoder for InboundSSZSnappyCodec {
                                         .map_err(ReqRespError::from)?,
                                 )
                             }
+                            BeaconSupportedProtocol::DataColumnSidecarsByRangeV1 => {
+                                BeaconRequestMessage::DataColumnSidecarsByRange(
+                                    DataColumnSidecarsByRangeV1Request::from_ssz_bytes(&buf)
+                                        .map_err(ReqRespError::from)?,
+                                )
+                            }
+                            BeaconSupportedProtocol::DataColumnSidecarsByRootV1 => {
+                                BeaconRequestMessage::DataColumnSidecarsByRoot(
+                                    DataColumnSidecarsByRootV1Request::from_ssz_bytes(&buf)
+                                        .map_err(ReqRespError::from)?,
+                                )
+                            }
                             BeaconSupportedProtocol::GetMetaDataV2 => {
                                 return Err(ReqRespError::InvalidData(
                                     "GetMetaDataV2 is already handled above".to_string(),
+                                ));
+                            }
+                            BeaconSupportedProtocol::GetMetaDataV3 => {
+                                return Err(ReqRespError::InvalidData(
+                                    "GetMetaDataV3 is already handled above".to_string(),
                                 ));
                             }
                         };

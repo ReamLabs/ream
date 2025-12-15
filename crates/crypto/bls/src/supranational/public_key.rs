@@ -13,8 +13,11 @@ impl TryFrom<BlstPublicKey> for PublicKey {
 
     fn try_from(value: BlstPublicKey) -> Result<Self, Self::Error> {
         Ok(PublicKey {
-            inner: FixedVector::new(value.to_bytes().to_vec())
-                .map_err(|_| BLSError::InvalidPublicKey)?,
+            inner: FixedVector::new(value.to_bytes().to_vec()).map_err(|err| {
+                BLSError::InvalidPublicKey(anyhow!(
+                    "Failed to construct PublicKey from bytes: {err:?}"
+                ))
+            })?,
         })
     }
 }

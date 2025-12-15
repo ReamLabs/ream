@@ -1,12 +1,14 @@
 use actix_web::web::ServiceConfig;
 
 use crate::handlers::{
+    attestation::post_attestation_rewards,
     blob_sidecar::get_blob_sidecars,
     block::{
         get_blind_block, get_block_attestations, get_block_from_id, get_block_rewards,
         get_block_root, get_genesis, post_sync_committee_rewards,
     },
     committee::get_committees,
+    events::get_events,
     header::{get_headers, get_headers_from_block},
     light_client::{
         get_light_client_bootstrap, get_light_client_finality_update,
@@ -32,6 +34,7 @@ use crate::handlers::{
 /// Creates and returns all `/beacon` routes.
 pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
     cfg.service(get_blob_sidecars)
+        .service(get_events)
         .service(get_block_rewards)
         .service(get_block_root)
         .service(get_committees)
@@ -51,6 +54,7 @@ pub fn register_beacon_routes(cfg: &mut ServiceConfig) {
         .service(post_validator_identities_from_state)
         .service(post_validators_from_state)
         .service(post_sync_committee_rewards)
+        .service(post_attestation_rewards)
         .service(get_validator_balances_from_state)
         .service(post_validator_balances_from_state)
         .service(get_bls_to_execution_changes)

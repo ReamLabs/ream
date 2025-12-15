@@ -21,7 +21,7 @@ bip39.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 discv5.workspace = true
 hashbrown.workspace = true
-hashsig.workspace = true
+leansig.workspace = true
 libp2p-identity.workspace = true
 prometheus_exporter.workspace = true
 rand.workspace = true
@@ -29,6 +29,7 @@ rand_chacha.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
+ssz_types.workspace = true
 tokio.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
@@ -45,7 +46,10 @@ ream-consensus-beacon.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
 ream-discv5.workspace = true
+ream-events-beacon.workspace = true
 ream-executor.workspace = true
+ream-fork-choice-beacon.workspace = true
+ream-fork-choice-lean.workspace = true
 ream-keystore.workspace = true
 ream-network-manager.workspace = true
 ream-network-spec.workspace = true

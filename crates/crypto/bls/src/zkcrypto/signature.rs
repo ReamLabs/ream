@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use bls12_381::{
     G1Affine, G2Affine, G2Projective,
     hash_to_curve::{ExpandMsgXmd, HashToCurve},
@@ -15,16 +16,15 @@ impl TryFrom<&BLSSignature> for G2Affine {
     type Error = BLSError;
 
     fn try_from(value: &BLSSignature) -> Result<Self, Self::Error> {
-        match G2Affine::from_compressed(
-            &value
-                .to_slice()
-                .try_into()
-                .map_err(|_| BLSError::InvalidByteLength)?,
-        )
+        match G2Affine::from_compressed(&value.to_slice().try_into().map_err(|err| {
+            BLSError::InvalidByteLength(anyhow!("Failed to convert to array {err:?}"))
+        })?)
         .into_option()
         {
             Some(point) => Ok(point),
-            None => Err(BLSError::InvalidSignature),
+            None => Err(BLSError::InvalidSignature(anyhow!(
+                "Invalid signature point"
+            ))),
         }
     }
 }
@@ -32,7 +32,11 @@ impl TryFrom<&BLSSignature> for G2Affine {
 impl From<G2Projective> for BLSSignature {
     fn from(value: G2Projective) -> Self {
         Self {
-            inner: G2Affine::from(value).to_compressed().to_vec().into(),
+            inner: G2Affine::from(value)
+                .to_compressed()
+                .to_vec()
+                .try_into()
+                .expect("Our inner should be the right length"),
         }
     }
 }

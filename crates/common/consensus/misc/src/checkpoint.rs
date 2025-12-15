@@ -38,11 +38,11 @@ impl FromStr for Checkpoint {
         let root = root_str
             .strip_prefix("0x")
             .ok_or(CheckpointParseError::MissingHexPrefix)
-            .and_then(|hex| B256::from_str(hex).map_err(|_| CheckpointParseError::InvalidHex))?;
+            .and_then(|hex| B256::from_str(hex).map_err(CheckpointParseError::InvalidHex))?;
 
         let epoch = epoch_str
             .parse::<u64>()
-            .map_err(|_| CheckpointParseError::InvalidEpoch)?;
+            .map_err(CheckpointParseError::InvalidEpoch)?;
 
         Ok(Self { epoch, root })
     }
@@ -54,8 +54,8 @@ pub enum CheckpointParseError {
     InvalidFormat,
     #[error("Missing '0x' prefix on block_root")]
     MissingHexPrefix,
-    #[error("Invalid hex block_root (expected 32 bytes)")]
-    InvalidHex,
-    #[error("Epoch must be a valid u64 integer")]
-    InvalidEpoch,
+    #[error("Invalid hex block_root (expected 32 bytes): {0}")]
+    InvalidHex(const_hex::FromHexError),
+    #[error("Epoch must be a valid u64 integer: {0}")]
+    InvalidEpoch(std::num::ParseIntError),
 }

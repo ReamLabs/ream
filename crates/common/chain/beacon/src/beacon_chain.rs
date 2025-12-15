@@ -6,8 +6,9 @@ use ream_consensus_beacon::{
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
+use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
 use ream_execution_engine::ExecutionEngine;
-use ream_fork_choice::{
+use ream_fork_choice_beacon::{
     handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
     store::Store,
 };
@@ -16,15 +17,16 @@ use ream_operation_pool::OperationPool;
 use ream_p2p::req_resp::beacon::messages::status::Status;
 use ream_storage::{
     db::beacon::BeaconDB,
-    tables::{field::Field, table::Table},
+    tables::{field::REDBField, table::REDBTable},
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, broadcast};
 use tracing::warn;
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
     pub store: Mutex<Store>,
     pub execution_engine: Option<ExecutionEngine>,
+    pub event_sender: Option<broadcast::Sender<BeaconEvent>>,
 }
 
 impl BeaconChain {
@@ -33,15 +35,18 @@ impl BeaconChain {
         db: BeaconDB,
         operation_pool: Arc<OperationPool>,
         execution_engine: Option<ExecutionEngine>,
+        event_sender: Option<broadcast::Sender<BeaconEvent>>,
     ) -> Self {
         Self {
             store: Mutex::new(Store::new(db, operation_pool)),
             execution_engine,
+            event_sender,
         }
     }
 
     pub async fn process_block(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
+
         on_block(
             &mut store,
             &signed_block,
@@ -49,6 +54,16 @@ impl BeaconChain {
             signed_block.message.slot >= beacon_network_spec().slot_n_days_ago(17),
         )
         .await?;
+
+        // Build and Emit Block event
+        let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
+        let block_event =
+            BlockEvent::from_block(&signed_block, finalized_checkpoint, |block_root, epoch| {
+                store.get_checkpoint_block(block_root, epoch)
+            })?;
+        self.event_sender
+            .send_event(BeaconEvent::Block(block_event));
+
         Ok(())
     }
 
@@ -97,14 +112,7 @@ impl BeaconChain {
             }
         };
 
-        let head_slot = match self
-            .store
-            .lock()
-            .await
-            .db
-            .beacon_block_provider()
-            .get(head_root)
-        {
+        let head_slot = match self.store.lock().await.db.block_provider().get(head_root) {
             Ok(Some(block)) => block.message.slot,
             err => {
                 bail!("Failed to get block for head root {head_root}: {err:?}");
@@ -117,6 +125,7 @@ impl BeaconChain {
             finalized_epoch: finalized_checkpoint.epoch,
             head_root,
             head_slot,
+            earliest_available_slot: 0,
         })
     }
 }

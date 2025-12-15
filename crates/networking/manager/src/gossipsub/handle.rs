@@ -1,7 +1,8 @@
 use libp2p::gossipsub::Message;
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
-    blob_sidecar::BlobIdentifier, execution_engine::rpc_types::get_blobs::BlobAndProofV1,
+    blob_sidecar::BlobIdentifier, data_column_sidecar::ColumnIdentifier,
+    execution_engine::rpc_types::get_blobs::BlobAndProofV1,
 };
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_network_spec::networks::beacon_network_spec;
@@ -13,7 +14,7 @@ use ream_p2p::{
     },
     network::beacon::channel::GossipMessage,
 };
-use ream_storage::{cache::CachedDB, tables::table::Table};
+use ream_storage::{cache::CachedDB, tables::table::CustomTable};
 use ream_validator_beacon::blob_sidecars::compute_subnet_for_blob_sidecar;
 use ssz::Encode;
 use tracing::{error, info, trace, warn};
@@ -25,6 +26,9 @@ use crate::{
         beacon_attestation::validate_beacon_attestation,
         beacon_block::validate_gossip_beacon_block, blob_sidecar::validate_blob_sidecar,
         bls_to_execution_change::validate_bls_to_execution_change,
+        data_column_sidecar::validate_data_column_sidecar_full,
+        light_client_finality_update::validate_light_client_finality_update,
+        light_client_optimistic_update::validate_light_client_optimistic_update,
         proposer_slashing::validate_proposer_slashing, result::ValidationResult,
         sync_committee::validate_sync_committee,
         sync_committee_contribution_and_proof::validate_sync_committee_contribution_and_proof,
@@ -396,17 +400,150 @@ pub async fn handle_gossipsub_message(
                     }
                 }
             }
+            GossipsubMessage::DataColumnSidecar(data_column_sidecar) => {
+                info!(
+                    "Data Column Sidecar received over gossipsub: index: {}, root: {}",
+                    data_column_sidecar.index,
+                    data_column_sidecar
+                        .signed_block_header
+                        .message
+                        .tree_hash_root()
+                );
+
+                // Extract subnet_id from the gossip topic
+                let subnet_id = match GossipTopic::from_topic_hash(&message.topic) {
+                    Ok(topic) => match topic.kind {
+                        GossipTopicKind::DataColumnSidecar(id) => id,
+                        _ => {
+                            error!("Unexpected topic kind for data column sidecar");
+                            return;
+                        }
+                    },
+                    Err(err) => {
+                        error!("Failed to parse topic for data column sidecar: {err}");
+                        return;
+                    }
+                };
+
+                let validation_result = match validate_data_column_sidecar_full(
+                    &data_column_sidecar,
+                    beacon_chain,
+                    subnet_id,
+                    cached_db,
+                )
+                .await
+                {
+                    Ok(validation_result) => validation_result,
+                    Err(err) => {
+                        error!("Could not validate data_column_sidecar: {err}");
+                        return;
+                    }
+                };
+
+                match validation_result {
+                    ValidationResult::Accept => {
+                        let data_column_sidecar_bytes = data_column_sidecar.as_ssz_bytes();
+                        if let Err(err) = beacon_chain
+                            .store
+                            .lock()
+                            .await
+                            .db
+                            .column_sidecars_provider()
+                            .insert(
+                                ColumnIdentifier::new(
+                                    data_column_sidecar
+                                        .signed_block_header
+                                        .message
+                                        .tree_hash_root(),
+                                    data_column_sidecar.index,
+                                ),
+                                *data_column_sidecar,
+                            )
+                        {
+                            error!("Failed to insert data_column_sidecar: {err}");
+                        }
+
+                        p2p_sender.send_gossip(GossipMessage {
+                            topic: GossipTopic::from_topic_hash(&message.topic)
+                                .expect("invalid topic hash"),
+                            data: data_column_sidecar_bytes,
+                        });
+                    }
+                    ValidationResult::Reject(reason) => {
+                        info!("Data column sidecar rejected: {reason}");
+                    }
+                    ValidationResult::Ignore(reason) => {
+                        info!("Data column sidecar ignored: {reason}");
+                    }
+                }
+            }
             GossipsubMessage::LightClientFinalityUpdate(light_client_finality_update) => {
                 info!(
                     "Light Client Finality Update received over gossipsub: root: {}",
                     light_client_finality_update.tree_hash_root()
                 );
+
+                match validate_light_client_finality_update(
+                    &light_client_finality_update,
+                    cached_db,
+                )
+                .await
+                {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: light_client_finality_update.as_ssz_bytes(),
+                            });
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("Light client finality update rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Light client finality update ignored: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate light client finality update: {err}");
+                    }
+                }
             }
             GossipsubMessage::LightClientOptimisticUpdate(light_client_optimistic_update) => {
                 info!(
                     "Light Client Optimistic Update received over gossipsub: root: {}",
                     light_client_optimistic_update.tree_hash_root()
                 );
+
+                match validate_light_client_optimistic_update(
+                    &light_client_optimistic_update,
+                    beacon_chain,
+                    cached_db,
+                )
+                .await
+                {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("Invalid topic hash"),
+                                data: light_client_optimistic_update.as_ssz_bytes(),
+                            });
+
+                            *cached_db.forwarded_optimistic_update_slot.write().await =
+                                Some(light_client_optimistic_update.attested_header.beacon.slot);
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Light client optimistic update ignored: {reason}");
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("Light client optimistic update rejected: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate light client optimistic update: {err}");
+                    }
+                }
             }
             GossipsubMessage::VoluntaryExit(voluntary_exit) => {
                 info!(

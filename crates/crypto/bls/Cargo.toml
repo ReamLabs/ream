@@ -18,6 +18,7 @@ alloy-primitives.workspace = true
 anyhow.workspace = true
 bls12_381 = { git = "https://github.com/zkcrypto/bls12_381", rev = "9ea427c0eb1a7e2ac16902a322aea156c496ddb0", optional = true, features = ["experimental"] } # latest commit on 2024-06-22, which is the base commit of sp1-patches
 blst = { version = "0.3", optional = true }
+const-hex.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
 group = "0.13.0"

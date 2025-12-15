@@ -6,6 +6,7 @@ pub mod beacon_committee_selection;
 pub mod blob_sidecar;
 pub mod bls_to_execution_change;
 pub mod consolidation_request;
+pub mod data_column_sidecar;
 pub mod deposit;
 pub mod deposit_request;
 pub mod electra;

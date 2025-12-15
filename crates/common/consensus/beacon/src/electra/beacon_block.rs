@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use anyhow::ensure;
+use anyhow::{anyhow, ensure};
 use ream_bls::BLSSignature;
 use ream_consensus_misc::beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader};
 use serde::{Deserialize, Serialize};
@@ -58,7 +58,7 @@ impl SignedBeaconBlock {
                 .message
                 .body
                 .blob_kzg_commitment_inclusion_proof(index)?
-                .into(),
+                .try_into().map_err(|err| anyhow!("Failed to convert blob_kzg_commitment_inclusion_proof to FixedVector: {err:?}"))?,
         })
     }
 
