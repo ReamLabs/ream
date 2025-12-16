@@ -51,4 +51,10 @@ impl BLSSignature {
             .expect("This is supposed to be right"),
         }
     }
+
+    pub fn is_infinity(&self) -> bool {
+        let bytes = self.inner.iter().as_slice();
+
+        bytes.len() == 96 && bytes[0] == 0xc0 && bytes[1..].iter().all(|b| *b == 0x00)
+    }
 }
