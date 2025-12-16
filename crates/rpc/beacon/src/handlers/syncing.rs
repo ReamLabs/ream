@@ -32,16 +32,14 @@ impl Syncing {
     }
 }
 
-/// Called by `eth/v1/node/syncing` to get the Node Version.
-#[get("/node/syncing")]
-pub async fn get_syncing_status(
-    db: Data<BeaconDB>,
-    operation_pool: Data<Arc<OperationPool>>,
-    execution_engine: Data<Option<ExecutionEngine>>,
-) -> Result<impl Responder, ApiError> {
+pub async fn calculate_sync_status(
+    db: &BeaconDB,
+    operation_pool: &Arc<OperationPool>,
+    execution_engine: &Option<ExecutionEngine>,
+) -> Result<SyncStatus, ApiError> {
     let store = Store {
-        db: db.get_ref().clone(),
-        operation_pool: operation_pool.get_ref().clone(),
+        db: db.clone(),
+        operation_pool: operation_pool.clone(),
     };
 
     // get head_slot
@@ -66,7 +64,7 @@ pub async fn get_syncing_status(
     let sync_distance = current_slot.saturating_sub(head_slot);
 
     // get el_offline
-    let el_offline = match &**execution_engine {
+    let el_offline = match execution_engine {
         Some(execution_engine) => match execution_engine.eth_chain_id().await {
             Ok(_) => false,
             Err(err) => {
@@ -77,11 +75,23 @@ pub async fn get_syncing_status(
         None => true,
     };
 
-    Ok(HttpResponse::Ok().json(DataResponse::new(Syncing::new(
+    Ok(SyncStatus {
         head_slot,
         sync_distance,
+        is_syncing: sync_distance > 1,
         el_offline,
-        // get is_syncing
-        sync_distance > 1,
-    ))))
+        is_optimistic: EXECUTION_OPTIMISTIC,
+    })
+}
+
+/// Called by `eth/v1/node/syncing` to get the Node Version.
+#[get("/node/syncing")]
+pub async fn get_syncing_status(
+    db: Data<BeaconDB>,
+    operation_pool: Data<Arc<OperationPool>>,
+    execution_engine: Data<Option<ExecutionEngine>>,
+) -> Result<impl Responder, ApiError> {
+    let sync_status = calculate_sync_status(&db, &operation_pool, &execution_engine).await?;
+
+    Ok(HttpResponse::Ok().json(DataResponse::new(Syncing { sync_status })))
 }
