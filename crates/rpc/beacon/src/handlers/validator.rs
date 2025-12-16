@@ -1496,3 +1496,24 @@ pub async fn get_blocks_v3(
         ))
         .json(response))
 }
+
+#[get("/validator/aggregate_attestation")]
+pub async fn get_aggregate_attestation(
+    opertation_pool: Data<Arc<OperationPool>>,
+    attestation_query: Query<AttestationQuery>,
+) -> Result<impl Responder, ApiError> {
+    let attestations = opertation_pool.get_attestations(
+        attestation_query.slot,
+        attestation_query.committee_index,
+        attestation_query.attestation_data_root,
+    );
+    if attestations.is_empty() {
+        return Err(ApiError::NotFound(String::from("No attestations found")));
+    }
+
+    let aggregated_attestation = compute_on_chain_aggregate(attestations).map_err(|err| {
+        ApiError::InternalError(format!("Failed to compute attestation aggregate {err}"))
+    })?;
+
+    Ok(HttpResponse::Ok().json(DataVersionedResponse::new(aggregated_attestation)))
+}
