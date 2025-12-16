@@ -12,7 +12,7 @@ use ream_api_types_beacon::{
     id::ValidatorID,
     query::{AttestationQuery, IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
-    responses::{BeaconResponse, DataResponse},
+    responses::{BeaconResponse, DataResponse, DataVersionedResponse},
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
@@ -62,7 +62,7 @@ use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof,
-    attestation::compute_subnet_for_attestation,
+    attestation::{compute_on_chain_aggregate, compute_subnet_for_attestation},
     builder::{
         builder_bid::SignedBuilderBid, builder_client::BuilderClient,
         validator_registration::SignedValidatorRegistrationV1,

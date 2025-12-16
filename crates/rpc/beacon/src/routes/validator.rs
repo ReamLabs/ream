@@ -4,9 +4,15 @@ use crate::handlers::{
     duties::{get_attester_duties, get_proposer_duties, get_sync_committee_duties},
     prepare_beacon_proposer::prepare_beacon_proposer,
     validator::{
+<<<<<<< HEAD
         get_attestation_data, get_blocks_v3, post_aggregate_and_proofs_v2,
         post_beacon_committee_selections, post_beacon_committee_subscriptions,
         post_contribution_and_proofs, post_register_validator, get_aggregate_attestation
+=======
+        get_aggregate_attestation, get_attestation_data, post_aggregate_and_proofs_v2,
+        post_beacon_committee_selections, post_beacon_committee_subscriptions,
+        post_contribution_and_proofs, post_register_validator,
+>>>>>>> b8a4f9e (feat: compute attestation aggregate)
     },
 };
 
