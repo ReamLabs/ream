@@ -17,7 +17,12 @@ use ream_api_types_beacon::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
-    electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
+    electra::{
+        beacon_block::{BeaconBlock, SignedBeaconBlock},
+        beacon_block_body::BeaconBlockBody,
+        beacon_state::BeaconState,
+        blinded_beacon_block::SignedBlindedBeaconBlock,
+    },
     genesis::Genesis,
 };
 use ream_consensus_misc::constants::beacon::{
@@ -34,9 +39,10 @@ use ream_storage::{
     db::beacon::BeaconDB,
     tables::{field::REDBField, table::REDBTable},
 };
+use ream_validator_beacon::builder::builder_client::BuilderClient;
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, Encode};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use tree_hash::TreeHash;
 
 use crate::handlers::state::get_state_from_id;
@@ -335,104 +341,6 @@ pub struct BroadcastValidationQuery {
     pub broadcast_validation: BroadcastValidation,
 }
 
-/// POST /eth/v2/beacon/blocks
-/// Publishes a signed beacon block to the beacon network
-#[post("/beacon/blocks")]
-pub async fn post_beacon_block(
-    http_request: HttpRequest,
-    payload: Payload,
-    query: Query<BroadcastValidationQuery>,
-    _db: Data<BeaconDB>,
-    beacon_chain: Data<Arc<BeaconChain>>,
-    p2p_sender: Data<Arc<P2PSender>>,
-    cached_db: Data<Arc<CachedDB>>,
-) -> Result<impl Responder, ApiError> {
-    // 1. Validate Eth-Consensus-Version header
-    let consensus_version = http_request
-        .headers()
-        .get(ETH_CONSENSUS_VERSION_HEADER)
-        .and_then(|h| h.to_str().ok())
-        .ok_or_else(|| {
-            ApiError::BadRequest(format!(
-                "Missing required header: {ETH_CONSENSUS_VERSION_HEADER}"
-            ))
-        })?;
-
-    let valid_versions = [
-        "phase0",
-        "altair",
-        "bellatrix",
-        "capella",
-        "deneb",
-        "electra",
-        "fulu",
-    ];
-    if !valid_versions.contains(&consensus_version) {
-        let valid_list = valid_versions.join(", ");
-        return Err(ApiError::BadRequest(format!(
-            "Invalid consensus version: {consensus_version}. Must be one of: {valid_list}"
-        )));
-    }
-
-    // 2. Read SSZ payload
-    let mut body = actix_web::web::BytesMut::new();
-    let mut stream = payload.into_inner();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk
-            .map_err(|err| ApiError::BadRequest(format!("Failed to read request body: {err}")))?;
-        body.extend_from_slice(&chunk);
-    }
-
-    let signed_block = SignedBeaconBlock::from_ssz_bytes(&body.freeze())
-        .map_err(|err| ApiError::BadRequest(format!("Failed to decode SSZ block: {err:?}")))?;
-
-    // 3. Validate based on broadcast_validation level
-    validate_block_for_broadcast(
-        beacon_chain.as_ref(),
-        &signed_block,
-        &query.broadcast_validation,
-        cached_db.as_ref(),
-    )
-    .await
-    .map_err(|err| ApiError::BadRequest(format!("Block validation failed: {err}")))?;
-
-    // 4. Broadcast via P2P
-    let fork_digest = beacon_network_spec().fork_digest(genesis_validators_root());
-    let topic = GossipTopic {
-        fork: fork_digest,
-        kind: GossipTopicKind::BeaconBlock,
-    };
-
-    p2p_sender.send_gossip(GossipMessage {
-        topic,
-        data: signed_block.as_ssz_bytes(),
-    });
-
-    // 5. Integrate into state (after broadcast)
-    let integration_success = match beacon_chain.process_block(signed_block.clone()).await {
-        Ok(()) => true,
-        Err(err) => {
-            // Check if block is already known - this is not an error
-            if err.to_string().contains("already known")
-                || err.to_string().contains("ALREADY_KNOWN")
-            {
-                warn!("Block already known, ignoring: {}", err);
-                return Ok(HttpResponse::Ok().finish());
-            }
-            error!("Failed to integrate block into state: {}", err);
-            false
-        }
-    };
-
-    // 6. Return appropriate status
-    if integration_success {
-        Ok(HttpResponse::Ok().finish())
-    } else {
-        // 202: validation passed, broadcast succeeded, but integration failed
-        Ok(HttpResponse::Accepted().finish())
-    }
-}
-
 async fn validate_block_for_broadcast(
     beacon_chain: &BeaconChain,
     block: &SignedBeaconBlock,
@@ -565,4 +473,208 @@ async fn check_equivocation(
     }
 
     Ok(())
+}
+
+/// Validates the Eth-Consensus-Version header
+fn validate_consensus_version_header(http_request: &HttpRequest) -> Result<(), ApiError> {
+    let consensus_version = http_request
+        .headers()
+        .get(ETH_CONSENSUS_VERSION_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "Missing required header: {ETH_CONSENSUS_VERSION_HEADER}"
+            ))
+        })?;
+
+    let valid_versions = [
+        "phase0",
+        "altair",
+        "bellatrix",
+        "capella",
+        "deneb",
+        "electra",
+        "fulu",
+    ];
+    if !valid_versions.contains(&consensus_version) {
+        let valid_list = valid_versions.join(", ");
+        return Err(ApiError::BadRequest(format!(
+            "Invalid consensus version: {consensus_version}. Must be one of: {valid_list}"
+        )));
+    }
+
+    Ok(())
+}
+
+/// Reads and accumulates SSZ payload from the request stream
+async fn read_ssz_payload(payload: Payload) -> Result<actix_web::web::Bytes, ApiError> {
+    let mut body = actix_web::web::BytesMut::new();
+    let mut stream = payload.into_inner();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk
+            .map_err(|err| ApiError::BadRequest(format!("Failed to read request body: {err}")))?;
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body.freeze())
+}
+
+/// Publishes a validated block to the network and processes it
+async fn publish_and_process_block(
+    signed_block: SignedBeaconBlock,
+    beacon_chain: Data<Arc<BeaconChain>>,
+    p2p_sender: Data<Arc<P2PSender>>,
+) -> Result<HttpResponse, ApiError> {
+    // Broadcast via P2P
+    let fork_digest = beacon_network_spec().fork_digest(genesis_validators_root());
+    let topic = GossipTopic {
+        fork: fork_digest,
+        kind: GossipTopicKind::BeaconBlock,
+    };
+
+    p2p_sender.send_gossip(GossipMessage {
+        topic,
+        data: signed_block.as_ssz_bytes(),
+    });
+
+    // Integrate into state (after broadcast)
+    let integration_success = match beacon_chain.process_block(signed_block.clone()).await {
+        Ok(()) => true,
+        Err(err) => {
+            if err.to_string().contains("already known")
+                || err.to_string().contains("ALREADY_KNOWN")
+            {
+                warn!("Block already known, ignoring: {err}");
+                return Ok(HttpResponse::Ok().finish());
+            }
+            error!("Failed to integrate block into state: {err}");
+            false
+        }
+    };
+
+    if integration_success {
+        Ok(HttpResponse::Ok().finish())
+    } else {
+        Ok(HttpResponse::Accepted().finish())
+    }
+}
+
+/// POST /eth/v2/beacon/blocks
+/// Publishes a signed beacon block to the beacon network
+#[post("/beacon/blocks")]
+pub async fn post_beacon_block(
+    http_request: HttpRequest,
+    payload: Payload,
+    query: Query<BroadcastValidationQuery>,
+    beacon_chain: Data<Arc<BeaconChain>>,
+    p2p_sender: Data<Arc<P2PSender>>,
+    cached_db: Data<Arc<CachedDB>>,
+) -> Result<impl Responder, ApiError> {
+    validate_consensus_version_header(&http_request)?;
+
+    let body = read_ssz_payload(payload).await?;
+
+    let signed_block = SignedBeaconBlock::from_ssz_bytes(&body)
+        .map_err(|err| ApiError::BadRequest(format!("Failed to decode SSZ block: {err:?}")))?;
+
+    // Validate based on broadcast_validation level
+    validate_block_for_broadcast(
+        beacon_chain.as_ref(),
+        &signed_block,
+        &query.broadcast_validation,
+        cached_db.as_ref(),
+    )
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("Block validation failed: {err}")))?;
+
+    publish_and_process_block(signed_block, beacon_chain, p2p_sender).await
+}
+
+/// POST /eth/v2/beacon/blinded_blocks
+/// Publishes a signed blinded beacon block to the beacon network.
+#[post("/beacon/blinded_blocks")]
+pub async fn post_blinded_beacon_block(
+    http_request: HttpRequest,
+    payload: Payload,
+    query: Query<BroadcastValidationQuery>,
+    beacon_chain: Data<Arc<BeaconChain>>,
+    p2p_sender: Data<Arc<P2PSender>>,
+    cached_db: Data<Arc<CachedDB>>,
+    builder_client: Option<Data<Arc<BuilderClient>>>,
+) -> Result<impl Responder, ApiError> {
+    validate_consensus_version_header(&http_request)?;
+
+    let body = read_ssz_payload(payload).await?;
+
+    let signed_blinded_block = SignedBlindedBeaconBlock::from_ssz_bytes(&body).map_err(|err| {
+        ApiError::BadRequest(format!("Failed to decode SSZ blinded block: {err:?}"))
+    })?;
+
+    let slot = signed_blinded_block.message.slot;
+    let block_root = signed_blinded_block.message.tree_hash_root();
+
+    let builder = builder_client.as_ref().ok_or_else(|| {
+        ApiError::InternalError("Builder client not available for unblinding blocks".into())
+    })?;
+
+    // Call the builder to get the execution payload and blobs
+    let execution_payload_and_blobs = builder
+        .get_blinded_blocks(signed_blinded_block.clone())
+        .await
+        .map_err(|err| {
+            ApiError::InternalError(format!(
+                "Failed to get execution payload from builder: {err}"
+            ))
+        })?;
+
+    info!(
+        "Reconstructing full signed block from blinded block: slot={slot}, block_root={block_root:?}, source=builder",
+    );
+
+    // Construct the full SignedBeaconBlock from the blinded block and execution payload
+    let signed_block = SignedBeaconBlock {
+        message: BeaconBlock {
+            slot: signed_blinded_block.message.slot,
+            proposer_index: signed_blinded_block.message.proposer_index,
+            parent_root: signed_blinded_block.message.parent_root,
+            state_root: signed_blinded_block.message.state_root,
+            body: BeaconBlockBody {
+                randao_reveal: signed_blinded_block.message.body.randao_reveal.clone(),
+                eth1_data: signed_blinded_block.message.body.eth1_data.clone(),
+                graffiti: signed_blinded_block.message.body.graffiti,
+                proposer_slashings: signed_blinded_block.message.body.proposer_slashings.clone(),
+                attester_slashings: signed_blinded_block.message.body.attester_slashings.clone(),
+                attestations: signed_blinded_block.message.body.attestations.clone(),
+                deposits: signed_blinded_block.message.body.deposits.clone(),
+                voluntary_exits: signed_blinded_block.message.body.voluntary_exits.clone(),
+                sync_aggregate: signed_blinded_block.message.body.sync_aggregate.clone(),
+                execution_payload: execution_payload_and_blobs.execution_payload,
+                bls_to_execution_changes: signed_blinded_block
+                    .message
+                    .body
+                    .bls_to_execution_changes
+                    .clone(),
+                blob_kzg_commitments: signed_blinded_block
+                    .message
+                    .body
+                    .blob_kzg_commitments
+                    .clone(),
+                execution_requests: signed_blinded_block.message.body.execution_requests.clone(),
+            },
+        },
+        signature: signed_blinded_block.signature.clone(),
+    };
+
+    // Validate the reconstructed full block
+    validate_block_for_broadcast(
+        beacon_chain.as_ref(),
+        &signed_block,
+        &query.broadcast_validation,
+        cached_db.as_ref(),
+    )
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("Block validation failed: {err}")))?;
+
+    info!("Publishing assembled block from blinded block: slot={slot}, block_root={block_root:?}",);
+
+    publish_and_process_block(signed_block, beacon_chain, p2p_sender).await
 }
