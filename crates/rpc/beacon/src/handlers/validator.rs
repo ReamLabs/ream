@@ -12,7 +12,7 @@ use ream_api_types_beacon::{
     id::ValidatorID,
     query::{AttestationQuery, IdQuery, StatusQuery},
     request::ValidatorsPostRequest,
-    responses::{BeaconResponse, DataResponse},
+    responses::{BeaconResponse, DataResponse, DataVersionedResponse},
     validator::{ValidatorBalance, ValidatorData, ValidatorStatus},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
@@ -62,7 +62,7 @@ use ream_operation_pool::OperationPool;
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof,
-    attestation::compute_subnet_for_attestation,
+    attestation::{compute_on_chain_aggregate, compute_subnet_for_attestation},
     builder::{
         builder_bid::SignedBuilderBid, builder_client::BuilderClient,
         validator_registration::SignedValidatorRegistrationV1,
@@ -1495,4 +1495,25 @@ pub async fn get_blocks_v3(
             consensus_block_value.to_string(),
         ))
         .json(response))
+}
+
+#[get("/validator/aggregate_attestation")]
+pub async fn get_aggregate_attestation(
+    opertation_pool: Data<Arc<OperationPool>>,
+    attestation_query: Query<AttestationQuery>,
+) -> Result<impl Responder, ApiError> {
+    let attestations = opertation_pool.get_attestations(
+        attestation_query.slot,
+        attestation_query.committee_index,
+        attestation_query.attestation_data_root,
+    );
+    if attestations.is_empty() {
+        return Err(ApiError::NotFound(String::from("No attestations found")));
+    }
+
+    let aggregated_attestation = compute_on_chain_aggregate(attestations).map_err(|err| {
+        ApiError::InternalError(format!("Failed to compute attestation aggregate {err}"))
+    })?;
+
+    Ok(HttpResponse::Ok().json(DataVersionedResponse::new(aggregated_attestation)))
 }
