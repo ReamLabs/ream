@@ -6393,6 +6393,7 @@ dependencies = [
  "ream-api-types-beacon",
  "ream-api-types-common",
  "ream-bls",
+ "ream-chain-beacon",
  "ream-consensus-beacon",
  "ream-consensus-misc",
  "ream-events-beacon",

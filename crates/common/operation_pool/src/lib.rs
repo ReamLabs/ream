@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use alloy_primitives::{Address, B256, map::HashSet};
 use parking_lot::RwLock;
 use ream_consensus_beacon::{
-    attester_slashing::AttesterSlashing, bls_to_execution_change::SignedBLSToExecutionChange,
-    electra::beacon_state::BeaconState, proposer_slashing::ProposerSlashing,
-    voluntary_exit::SignedVoluntaryExit,
+    attestation::Attestation, attester_slashing::AttesterSlashing,
+    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
+    proposer_slashing::ProposerSlashing, voluntary_exit::SignedVoluntaryExit,
 };
 use tree_hash::TreeHash;
 
@@ -15,6 +15,13 @@ pub struct ProposerPreparation {
     pub submission_epoch: u64,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct AttestationKey {
+    slot: u64,
+    attestation_data_root: B256,
+    committee_index: u64,
+}
+
 #[derive(Debug, Default)]
 pub struct OperationPool {
     signed_voluntary_exits: RwLock<HashMap<u64, SignedVoluntaryExit>>,
@@ -22,6 +29,7 @@ pub struct OperationPool {
     proposer_preparations: RwLock<HashMap<u64, ProposerPreparation>>,
     attester_slashings: RwLock<HashSet<AttesterSlashing>>,
     proposer_slashings: RwLock<HashSet<ProposerSlashing>>,
+    attestations: RwLock<HashMap<AttestationKey, Vec<Attestation>>>,
 }
 
 impl OperationPool {
@@ -123,6 +131,60 @@ impl OperationPool {
 
     pub fn insert_proposer_slashing(&self, slashing: ProposerSlashing) {
         self.proposer_slashings.write().insert(slashing);
+    }
+
+    pub fn get_attestations(
+        &self,
+        slot: u64,
+        committee_index: Option<u64>,
+        attestation_data_root: Option<B256>,
+    ) -> Vec<Attestation> {
+        self.attestations
+            .read()
+            .iter()
+            .filter(|(key, _)| {
+                if key.slot != slot {
+                    return false;
+                }
+
+                if let Some(c_index) = committee_index
+                    && key.committee_index != c_index
+                {
+                    return false;
+                }
+
+                if let Some(data_root) = attestation_data_root
+                    && key.attestation_data_root != data_root
+                {
+                    return false;
+                }
+
+                true
+            })
+            .flat_map(|(_, attestations)| attestations.iter().cloned())
+            .collect()
+    }
+
+    pub fn get_all_attestations(&self) -> Vec<Attestation> {
+        self.attestations
+            .read()
+            .iter()
+            .flat_map(|(_, attestations)| attestations.clone())
+            .collect()
+    }
+
+    pub fn insert_attestation(&self, attestation: Attestation, committee_index: u64) {
+        let key = AttestationKey {
+            slot: attestation.data.slot,
+            attestation_data_root: attestation.data.tree_hash_root(),
+            committee_index,
+        };
+        let mut map = self.attestations.write();
+        if let Some(attestations) = map.get_mut(&key) {
+            attestations.push(attestation);
+        } else {
+            map.insert(key, vec![attestation]);
+        }
     }
 }
 
