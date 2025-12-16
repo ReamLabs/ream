@@ -10,10 +10,19 @@ use tree_hash_derive::TreeHash;
 
 use crate::{attestation::Attestation, state::LeanState};
 
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+pub struct BlockSignatures {
+    pub attestation_signatures: VariableList<Signature, U4096>,
+    pub proposer_signature: Signature,
+}
+
 /// Envelope carrying a block, an attestation from proposer, and aggregated signatures.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct SignedBlockWithAttestation {
     pub message: BlockWithAttestation,
+    #[cfg(feature = "devnet2")]
+    pub signature: BlockSignatures,
+    #[cfg(feature = "devnet1")]
     pub signature: VariableList<Signature, U4096>,
 }
 
@@ -108,6 +117,9 @@ impl From<Block> for BlockHeader {
 /// Represents the body of a block in the Lean chain.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BlockBody {
+    #[cfg(feature = "devnet2")]
+    pub attestations: VariableList<AggregatedAttestations, U4096>,
+    #[cfg(feature = "devnet1")]
     pub attestations: VariableList<Attestation, U4096>,
 }
 
