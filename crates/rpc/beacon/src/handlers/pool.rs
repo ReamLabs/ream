@@ -21,8 +21,6 @@ use ream_network_manager::{
         beacon_attestation::validate_beacon_attestation, result::ValidationResult,
     },
     service::NetworkManagerService,
-    bls_to_execution_change::SignedBLSToExecutionChange, proposer_slashing::ProposerSlashing,
-    single_attestation::SingleAttestation, voluntary_exit::SignedVoluntaryExit,
 };
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
@@ -253,7 +251,6 @@ pub async fn post_proposer_slashings(
 /// POST /eth/v2/beacon/pool/attestations
 #[post("/beacon/pool/attestations")]
 pub async fn post_attestations(
-    _db: Data<BeaconDB>,
     operation_pool: Data<Arc<OperationPool>>,
     network_manager: Data<Arc<NetworkManagerService>>,
     beacon_chain: Data<Arc<BeaconChain>>,
