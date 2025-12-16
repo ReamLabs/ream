@@ -12,16 +12,24 @@ use ream_api_types_common::{error::ApiError, id::ID};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
+    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
+    proposer_slashing::ProposerSlashing, single_attestation::SingleAttestation,
+    voluntary_exit::SignedVoluntaryExit,
+};
+use ream_network_manager::{
+    gossipsub::validate::{
+        beacon_attestation::validate_beacon_attestation, result::ValidationResult,
+    },
+    service::NetworkManagerService,
     bls_to_execution_change::SignedBLSToExecutionChange, proposer_slashing::ProposerSlashing,
     single_attestation::SingleAttestation, voluntary_exit::SignedVoluntaryExit,
 };
-use ream_network_manager::service::NetworkManagerService;
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
     gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
     network::beacon::channel::GossipMessage,
 };
-use ream_storage::db::beacon::BeaconDB;
+use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
 use ream_validator_beacon::attestation::compute_subnet_for_attestation;
 use ssz::Encode;
 use ssz_types::{
@@ -245,7 +253,7 @@ pub async fn post_proposer_slashings(
 /// POST /eth/v2/beacon/pool/attestations
 #[post("/beacon/pool/attestations")]
 pub async fn post_attestations(
-    db: Data<BeaconDB>,
+    _db: Data<BeaconDB>,
     operation_pool: Data<Arc<OperationPool>>,
     network_manager: Data<Arc<NetworkManagerService>>,
     beacon_chain: Data<Arc<BeaconChain>>,
@@ -253,44 +261,9 @@ pub async fn post_attestations(
 ) -> Result<impl Responder, ApiError> {
     let attestations = attestations.into_inner();
 
-    let highest_slot = db
-        .slot_index_provider()
-        .get_highest_slot()
-        .map_err(|err| {
-            ApiError::InternalError(format!("Failed to get_highest_slot, error: {err:?}"))
-        })?
-        .ok_or(ApiError::NotFound(
-            "Failed to find highest slot".to_string(),
-        ))?;
-
-    let beacon_state = get_state_from_id(ID::Slot(highest_slot), &db).await?;
+    let beacon_state = get_head_state(beacon_chain.get_ref().as_ref()).await?;
 
     for single_attestation in attestations {
-        let attestation = convert_single_to_attestation(&single_attestation, &beacon_state)
-            .map_err(|err| ApiError::BadRequest(format!("Invalid attestation: {err:?}")))?;
-
-        let indexed_attestation =
-            beacon_state
-                .get_indexed_attestation(&attestation)
-                .map_err(|err| {
-                    ApiError::BadRequest(format!("Failed to get indexed attestation: {err:?}"))
-                })?;
-
-        beacon_state
-            .is_valid_indexed_attestation(&indexed_attestation)
-            .map_err(|err| {
-                ApiError::BadRequest(format!("Invalid attestation signature, rejected: {err:?}"))
-            })?;
-
-        operation_pool.insert_attestation(attestation.clone(), single_attestation.committee_index);
-
-        beacon_chain
-            .process_attestation(attestation.clone(), false)
-            .await
-            .map_err(|err| {
-                ApiError::InternalError(format!("Failed to process attestation: {err:?}"))
-            })?;
-
         let committees_per_slot =
             beacon_state.get_committee_count_per_slot(single_attestation.data.target.epoch);
 
@@ -299,6 +272,42 @@ pub async fn post_attestations(
             single_attestation.data.slot,
             single_attestation.committee_index,
         );
+
+        match validate_beacon_attestation(
+            &single_attestation,
+            beacon_chain.get_ref().as_ref(),
+            subnet_id,
+            &network_manager.cached_db,
+        )
+        .await
+        {
+            Ok(ValidationResult::Accept) => {}
+            Ok(ValidationResult::Ignore(_reason)) => {
+                continue;
+            }
+            Ok(ValidationResult::Reject(reason)) => {
+                return Err(ApiError::BadRequest(format!(
+                    "Invalid attestation, rejected: {reason}"
+                )));
+            }
+            Err(err) => {
+                return Err(ApiError::InternalError(format!(
+                    "Failed to validate attestation: {err:?}"
+                )));
+            }
+        }
+
+        let attestation = convert_single_to_attestation(&single_attestation, &beacon_state)
+            .map_err(|err| ApiError::BadRequest(format!("Invalid attestation: {err:?}")))?;
+
+        operation_pool.insert_attestation(attestation.clone(), single_attestation.committee_index);
+
+        beacon_chain
+            .process_attestation(attestation.clone(), false)
+            .await
+            .map_err(|err| {
+                ApiError::BadRequest(format!("Attestation failed processing: {err:?}"))
+            })?;
 
         network_manager.p2p_sender.send_gossip(GossipMessage {
             topic: GossipTopic {
@@ -358,4 +367,21 @@ fn convert_single_to_attestation(
         signature: single.signature.clone(),
         committee_bits,
     })
+}
+
+async fn get_head_state(beacon_chain: &BeaconChain) -> Result<BeaconState, ApiError> {
+    let store = beacon_chain.store.lock().await;
+
+    let head_root = store
+        .get_head()
+        .map_err(|err| ApiError::InternalError(format!("Failed to get head root: {err:?}")))?;
+
+    store
+        .db
+        .state_provider()
+        .get(head_root)
+        .map_err(|err| ApiError::InternalError(format!("Failed to get head state: {err:?}")))?
+        .ok_or_else(|| {
+            ApiError::NotFound(format!("No beacon state found for head root: {head_root}"))
+        })
 }
