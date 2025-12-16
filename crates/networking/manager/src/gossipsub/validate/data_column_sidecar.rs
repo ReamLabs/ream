@@ -1,9 +1,8 @@
 use anyhow::anyhow;
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::data_column_sidecar::{DataColumnSidecar, NUMBER_OF_COLUMNS};
-use ream_consensus_misc::{
-    constants::beacon::MAX_BLOBS_PER_BLOCK, misc::compute_start_slot_at_epoch,
-};
+use ream_consensus_misc::misc::compute_start_slot_at_epoch;
+use ream_network_spec::networks::beacon_network_spec;
 use ream_polynomial_commitments::handlers::verify_cell_kzg_proof_batch;
 use ream_storage::{
     cache::CachedDB,
@@ -148,8 +147,8 @@ async fn validate_data_column_sidecar(
         ));
     }
 
-    // TODO dynamically get MAX_BLOBS_PER_BLOCK based on network spec for the epoch
-    if data_column_sidecar.kzg_commitments.len() > MAX_BLOBS_PER_BLOCK {
+    let max_blobs_per_block = beacon_network_spec().max_blobs_per_block_electra as usize;
+    if data_column_sidecar.kzg_commitments.len() > max_blobs_per_block {
         return Ok(ValidationResult::Reject(
             "Too many KZG commitments in data column sidecar".to_string(),
         ));

@@ -7,6 +7,7 @@ pub mod debug;
 pub mod duties;
 pub mod events;
 pub mod header;
+pub mod health;
 pub mod identity;
 pub mod light_client;
 pub mod peers;

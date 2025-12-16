@@ -15,6 +15,13 @@ pub struct ProposerPreparation {
     pub submission_epoch: u64,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct AttestationKey {
+    slot: u64,
+    attestation_data_root: B256,
+    committee_index: u64,
+}
+
 #[derive(Debug, Default)]
 pub struct OperationPool {
     signed_voluntary_exits: RwLock<HashMap<u64, SignedVoluntaryExit>>,
@@ -22,7 +29,7 @@ pub struct OperationPool {
     proposer_preparations: RwLock<HashMap<u64, ProposerPreparation>>,
     attester_slashings: RwLock<HashSet<AttesterSlashing>>,
     proposer_slashings: RwLock<HashSet<ProposerSlashing>>,
-    attestations: RwLock<HashMap<(u64, B256), Vec<Attestation>>>,
+    attestations: RwLock<HashMap<AttestationKey, Vec<Attestation>>>,
 }
 
 impl OperationPool {
@@ -126,18 +133,35 @@ impl OperationPool {
         self.proposer_slashings.write().insert(slashing);
     }
 
-    pub fn get_attestations(&self, slot: u64) -> Vec<Attestation> {
+    pub fn get_attestations(
+        &self,
+        slot: u64,
+        committee_index: Option<u64>,
+        attestation_data_root: Option<B256>,
+    ) -> Vec<Attestation> {
         self.attestations
             .read()
             .iter()
-            .filter_map(|((att_slot, _), attestations)| {
-                if *att_slot == slot {
-                    Some(attestations.clone())
-                } else {
-                    None
+            .filter(|(key, _)| {
+                if key.slot != slot {
+                    return false;
                 }
+
+                if let Some(c_index) = committee_index
+                    && key.committee_index != c_index
+                {
+                    return false;
+                }
+
+                if let Some(data_root) = attestation_data_root
+                    && key.attestation_data_root != data_root
+                {
+                    return false;
+                }
+
+                true
             })
-            .flatten()
+            .flat_map(|(_, attestations)| attestations.iter().cloned())
             .collect()
     }
 
@@ -149,8 +173,12 @@ impl OperationPool {
             .collect()
     }
 
-    pub fn insert_attestation(&self, attestation: Attestation) {
-        let key = (attestation.data.slot, attestation.data.tree_hash_root());
+    pub fn insert_attestation(&self, attestation: Attestation, committee_index: u64) {
+        let key = AttestationKey {
+            slot: attestation.data.slot,
+            attestation_data_root: attestation.data.tree_hash_root(),
+            committee_index,
+        };
         let mut map = self.attestations.write();
         if let Some(attestations) = map.get_mut(&key) {
             attestations.push(attestation);
