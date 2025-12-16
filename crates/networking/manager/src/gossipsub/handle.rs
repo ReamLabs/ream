@@ -22,6 +22,7 @@ use tree_hash::TreeHash;
 
 use crate::{
     gossipsub::validate::{
+        aggregate_and_proof::validate_aggregate_and_proof,
         attester_slashing::validate_attester_slashing,
         beacon_attestation::validate_beacon_attestation,
         beacon_block::validate_gossip_beacon_block, blob_sidecar::validate_blob_sidecar,
@@ -220,6 +221,29 @@ pub async fn handle_gossipsub_message(
                     "Aggregate And Proof received over gossipsub: root: {}",
                     aggregate_and_proof.tree_hash_root()
                 );
+
+                match validate_aggregate_and_proof(&aggregate_and_proof, beacon_chain, cached_db)
+                    .await
+                {
+                    Ok(validation_result) => match validation_result {
+                        ValidationResult::Accept => {
+                            p2p_sender.send_gossip(GossipMessage {
+                                topic: GossipTopic::from_topic_hash(&message.topic)
+                                    .expect("invalid topic hash"),
+                                data: aggregate_and_proof.as_ssz_bytes(),
+                            });
+                        }
+                        ValidationResult::Reject(reason) => {
+                            info!("Aggregate and proof rejected: {reason}");
+                        }
+                        ValidationResult::Ignore(reason) => {
+                            info!("Aggregate and proof ignored: {reason}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("Could not validate aggregate and proof: {err}");
+                    }
+                }
             }
             GossipsubMessage::SyncCommittee((sync_committee, subnet_id)) => {
                 info!(

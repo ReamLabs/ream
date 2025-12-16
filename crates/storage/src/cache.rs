@@ -42,6 +42,12 @@ pub struct CacheSyncCommitteeContribution {
     pub subcommittee_index: u64,
 }
 
+#[derive(Debug, Hash, Eq, PartialEq, Default, Clone)]
+pub struct AggregateAndProofKey {
+    pub aggregator_index: u64,
+    pub target_epoch: u64,
+}
+
 /// In-memory LRU cache.
 #[derive(Debug)]
 pub struct CachedDB {
@@ -60,6 +66,7 @@ pub struct CachedDB {
     pub prior_seen_attester_slashing_indices: RwLock<LruCache<u64, ()>>,
     pub forwarded_optimistic_update_slot: RwLock<Option<u64>>,
     pub forwarded_light_client_finality_update: RwLock<Option<LightClientFinalityUpdate>>,
+    pub seen_aggregate_and_proof: RwLock<LruCache<AggregateAndProofKey, ()>>,
 }
 
 impl CachedDB {
@@ -112,6 +119,10 @@ impl CachedDB {
             seen_forwarded_finality_update_slot: RwLock::new(None),
             forwarded_optimistic_update_slot: None.into(),
             forwarded_light_client_finality_update: None.into(),
+            seen_aggregate_and_proof: LruCache::new(
+                NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
+            )
+            .into(),
         }
     }
 }
