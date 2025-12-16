@@ -112,6 +112,9 @@ pub struct BeaconNetworkSpec {
     #[serde(with = "crate::b32_hex")]
     pub electra_fork_version: B32,
     pub electra_fork_epoch: u64,
+    #[serde(with = "crate::b32_hex")]
+    pub fulu_fork_version: B32,
+    pub fulu_fork_epoch: u64,
 
     // Time parameters
     pub seconds_per_slot: u64,
@@ -175,7 +178,7 @@ pub struct BeaconNetworkSpec {
 impl BeaconNetworkSpec {
     pub fn fork_digest(&self, genesis_validators_root: B256) -> B32 {
         ForkData {
-            current_version: self.electra_fork_version,
+            current_version: self.fulu_fork_version,
             genesis_validators_root,
         }
         .compute_fork_digest()
@@ -212,6 +215,11 @@ impl BeaconNetworkSpec {
                 previous_version: self.deneb_fork_version,
                 current_version: self.electra_fork_version,
                 epoch: self.electra_fork_epoch,
+            },
+            Fork {
+                previous_version: self.electra_fork_version,
+                current_version: self.fulu_fork_version,
+                epoch: self.fulu_fork_epoch,
             },
         ])
     }
@@ -253,6 +261,8 @@ pub static MAINNET: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         deneb_fork_epoch: 269568,
         electra_fork_version: fixed_bytes!("0x05000000"),
         electra_fork_epoch: 364032,
+        fulu_fork_version: fixed_bytes!("0x06000000"),
+        fulu_fork_epoch: 411392,
         seconds_per_slot: 12,
         seconds_per_eth1_block: 14,
         min_validator_withdrawability_delay: 256,
@@ -322,6 +332,8 @@ pub static HOLESKY: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         deneb_fork_epoch: 29696,
         electra_fork_version: fixed_bytes!("0x06017000"),
         electra_fork_epoch: 115968,
+        fulu_fork_version: fixed_bytes!("0x07017000"),
+        fulu_fork_epoch: 165120,
         seconds_per_slot: 12,
         seconds_per_eth1_block: 14,
         min_validator_withdrawability_delay: 256,
@@ -391,6 +403,8 @@ pub static SEPOLIA: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         deneb_fork_epoch: 132608,
         electra_fork_version: fixed_bytes!("0x90000074"),
         electra_fork_epoch: 222464,
+        fulu_fork_version: fixed_bytes!("0x90000075"),
+        fulu_fork_epoch: 272640,
         seconds_per_slot: 12,
         seconds_per_eth1_block: 14,
         min_validator_withdrawability_delay: 256,
@@ -460,6 +474,8 @@ pub static HOODI: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         deneb_fork_epoch: 0,
         electra_fork_version: fixed_bytes!("0x60000910"),
         electra_fork_epoch: 2048,
+        fulu_fork_version: fixed_bytes!("0x70000910"),
+        fulu_fork_epoch: 50688,
         seconds_per_slot: 12,
         seconds_per_eth1_block: 14,
         min_validator_withdrawability_delay: 256,
@@ -529,6 +545,8 @@ pub static DEV: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         deneb_fork_epoch: 269568,
         electra_fork_version: fixed_bytes!("0x05000000"),
         electra_fork_epoch: 364032,
+        fulu_fork_version: fixed_bytes!("0x06000000"),
+        fulu_fork_epoch: 411392,
         seconds_per_slot: 12,
         seconds_per_eth1_block: 14,
         min_validator_withdrawability_delay: 256,
