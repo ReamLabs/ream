@@ -1,5 +1,5 @@
 use alloy_primitives::{Address, B256, U256};
-use ream_consensus_beacon::{electra::execution_payload::ExecutionPayload, withdrawal::Withdrawal};
+use ream_consensus_misc::withdrawal::Withdrawal;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -8,6 +8,8 @@ use ssz_types::{
     typenum::{self, U16, U32, U1048576, U1073741824},
 };
 use tree_hash_derive::TreeHash;
+
+use crate::electra::execution_payload::ExecutionPayload;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 #[serde(rename_all = "camelCase")]

@@ -22,14 +22,11 @@ use ream_consensus_beacon::{
     attester_slashing::AttesterSlashing,
     beacon_committee_selection::BeaconCommitteeSelection,
     bls_to_execution_change::SignedBLSToExecutionChange,
-    deposit::Deposit,
     electra::{
         beacon_block::BeaconBlock, beacon_block_body::BeaconBlockBody, beacon_state::BeaconState,
         blinded_beacon_block::BlindedBeaconBlock,
-        blinded_beacon_block_body::BlindedBeaconBlockBody, execution_payload::ExecutionPayload,
+        blinded_beacon_block_body::BlindedBeaconBlockBody,
     },
-    execution_engine::engine_trait::ExecutionApi,
-    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     proposer_slashing::ProposerSlashing,
     sync_aggregate::SyncAggregate,
     sync_committe_selection::SyncCommitteeSelection,
@@ -42,19 +39,20 @@ use ream_consensus_misc::{
         MAX_COMMITTEES_PER_SLOT, PROPOSER_REWARD_QUOTIENT, SLOTS_PER_EPOCH,
         SYNC_COMMITTEE_PROPOSER_REWARD_QUOTIENT, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
+    deposit::Deposit,
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     validator::Validator,
 };
 use ream_events_beacon::{
     BeaconEvent, contribution_and_proof::SignedContributionAndProof,
     event::sync_committee::ContributionAndProofEvent,
 };
-use ream_execution_engine::{
-    ExecutionEngine,
-    rpc_types::{
-        forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3},
-        get_payload::PayloadV4,
-    },
+use ream_execution_engine::{ExecutionEngine, engine_trait::ExecutionApi};
+use ream_execution_rpc_types::{
+    electra::execution_payload::ExecutionPayload,
+    forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3},
+    get_payload::PayloadV4,
 };
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;

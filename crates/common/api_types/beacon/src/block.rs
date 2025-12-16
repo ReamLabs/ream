@@ -1,8 +1,8 @@
-use ream_consensus_beacon::{
-    electra::{beacon_block::BeaconBlock, blinded_beacon_block::BlindedBeaconBlock},
-    execution_engine::rpc_types::get_blobs::Blob,
-    polynomial_commitments::kzg_proof::KZGProof,
+use ream_consensus_beacon::electra::{
+    beacon_block::BeaconBlock, blinded_beacon_block::BlindedBeaconBlock,
 };
+use ream_consensus_misc::polynomial_commitments::kzg_proof::KZGProof;
+use ream_execution_rpc_types::get_blobs::Blob;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 

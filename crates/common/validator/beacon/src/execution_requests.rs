@@ -1,18 +1,18 @@
 use alloy_primitives::{Address, B256, Bytes};
 use anyhow::{anyhow, bail, ensure};
-use ream_consensus_beacon::{
-    consolidation_request::ConsolidationRequest, deposit_request::DepositRequest,
-    electra::beacon_state::BeaconState, execution_requests::ExecutionRequests,
+use ream_consensus_beacon::electra::beacon_state::BeaconState;
+use ream_consensus_misc::{
+    consolidation_request::ConsolidationRequest,
+    constants::beacon::{
+        CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE,
+    },
+    deposit_request::DepositRequest,
+    execution_requests::ExecutionRequests,
     withdrawal_request::WithdrawalRequest,
 };
-use ream_consensus_misc::constants::beacon::{
-    CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE,
-};
-use ream_execution_engine::{
-    ExecutionEngine,
-    rpc_types::forkchoice_update::{
-        ForkchoiceStateV1, ForkchoiceUpdateResult, PayloadAttributesV3,
-    },
+use ream_execution_engine::ExecutionEngine;
+use ream_execution_rpc_types::forkchoice_update::{
+    ForkchoiceStateV1, ForkchoiceUpdateResult, PayloadAttributesV3,
 };
 use ssz::Decode;
 use ssz_types::{

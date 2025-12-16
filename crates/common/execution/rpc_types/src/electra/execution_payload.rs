@@ -4,7 +4,7 @@ use alloy_consensus::{
 };
 use alloy_primitives::{Address, B64, B256, Bloom, Bytes, U256, b256};
 use alloy_rlp::Encodable;
-use ream_consensus_misc::misc::checksummed_address;
+use ream_consensus_misc::{misc::checksummed_address, withdrawal::Withdrawal};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ssz_derive::{Decode, Encode};
@@ -17,7 +17,6 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use super::execution_payload_header::ExecutionPayloadHeader;
-use crate::withdrawal::Withdrawal;
 
 const EMPTY_UNCLE_ROOT_HASH: B256 =
     b256!("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347");

@@ -1,9 +1,9 @@
 use alloy_primitives::U256;
 use ream_bls::{BLSSignature, PublicKey};
-use ream_consensus_beacon::{
-    electra::execution_payload_header::ExecutionPayloadHeader,
+use ream_consensus_misc::{
     execution_requests::ExecutionRequests, polynomial_commitments::kzg_commitment::KZGCommitment,
 };
+use ream_execution_rpc_types::electra::execution_payload_header::ExecutionPayloadHeader;
 use serde::{Deserialize, Serialize};
 use ssz_types::{VariableList, typenum::U4096};
 use tree_hash_derive::TreeHash;

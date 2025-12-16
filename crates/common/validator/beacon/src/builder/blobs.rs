@@ -1,7 +1,5 @@
-use ream_consensus_beacon::{
-    electra::execution_payload::ExecutionPayload,
-    polynomial_commitments::kzg_commitment::KZGCommitment,
-};
+use ream_consensus_misc::polynomial_commitments::kzg_commitment::KZGCommitment;
+use ream_execution_rpc_types::electra::execution_payload::ExecutionPayload;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{

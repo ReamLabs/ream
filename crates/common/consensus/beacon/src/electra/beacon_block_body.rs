@@ -5,8 +5,12 @@ use ream_consensus_misc::{
         BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH, EXECUTION_PAYLOAD_INDEX,
         KZG_COMMITMENTS_MERKLE_DEPTH,
     },
+    deposit::Deposit,
     eth_1_data::Eth1Data,
+    execution_requests::ExecutionRequests,
+    polynomial_commitments::kzg_commitment::KZGCommitment,
 };
+use ream_execution_rpc_types::electra::execution_payload::ExecutionPayload;
 use ream_merkle::{generate_proof, merkle_tree};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -17,13 +21,10 @@ use ssz_types::{
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use super::execution_payload::ExecutionPayload;
 use crate::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
-    bls_to_execution_change::SignedBLSToExecutionChange, deposit::Deposit,
-    execution_requests::ExecutionRequests, polynomial_commitments::kzg_commitment::KZGCommitment,
-    proposer_slashing::ProposerSlashing, sync_aggregate::SyncAggregate,
-    voluntary_exit::SignedVoluntaryExit,
+    bls_to_execution_change::SignedBLSToExecutionChange, proposer_slashing::ProposerSlashing,
+    sync_aggregate::SyncAggregate, voluntary_exit::SignedVoluntaryExit,
 };
 
 #[derive(

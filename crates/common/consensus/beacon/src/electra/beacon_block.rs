@@ -1,7 +1,11 @@
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 use ream_bls::BLSSignature;
-use ream_consensus_misc::beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader};
+use ream_consensus_misc::{
+    beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
+    polynomial_commitments::kzg_proof::KZGProof,
+};
+use ream_execution_rpc_types::get_blobs::{Blob, BlobAndProofV1};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash::TreeHash;
@@ -14,8 +18,6 @@ use crate::{
         blinded_beacon_block::{BlindedBeaconBlock, SignedBlindedBeaconBlock},
         blinded_beacon_block_body::BlindedBeaconBlockBody,
     },
-    execution_engine::rpc_types::get_blobs::{Blob, BlobAndProofV1},
-    polynomial_commitments::kzg_proof::KZGProof,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]

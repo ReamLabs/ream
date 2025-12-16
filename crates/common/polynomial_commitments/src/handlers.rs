@@ -1,10 +1,12 @@
 use anyhow::{anyhow, bail};
 use kzg::{DAS, Fr, G1, eip_4844::verify_blob_kzg_proof_batch_raw};
-use ream_consensus_beacon::{
-    data_column_sidecar::{Cell, DataColumnSidecar, MaxBlobCommitmentsPerBlock},
-    execution_engine::rpc_types::get_blobs::Blob,
-    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
+use ream_consensus_beacon::data_column_sidecar::{
+    Cell, DataColumnSidecar, MaxBlobCommitmentsPerBlock,
 };
+use ream_consensus_misc::polynomial_commitments::{
+    kzg_commitment::KZGCommitment, kzg_proof::KZGProof,
+};
+use ream_execution_rpc_types::get_blobs::Blob;
 use rust_kzg_blst::{
     eip_7594::BlstBackend,
     types::{fr::FsFr, g1::FsG1, kzg_settings::FsKZGSettings},

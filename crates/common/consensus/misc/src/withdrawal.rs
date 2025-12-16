@@ -1,9 +1,10 @@
 use alloy_primitives::Address;
 use alloy_rlp::RlpEncodable;
-use ream_consensus_misc::misc::checksummed_address;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
+
+use crate::misc::checksummed_address;
 
 #[derive(
     Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, RlpEncodable,

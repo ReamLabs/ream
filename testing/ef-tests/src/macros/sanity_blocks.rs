@@ -7,7 +7,7 @@ macro_rules! test_sanity_blocks {
             mod $operation_name {
                 use std::{fs, path::Path};
 
-                use ream_consensus_beacon::execution_engine::mock_engine::MockExecutionEngine;
+                use ream_execution_engine::mock_engine::MockExecutionEngine;
                 use ream_network_spec::networks::initialize_test_network_spec;
                 use serde_yaml;
 

@@ -1,7 +1,8 @@
 use alloy_primitives::B256;
 use async_trait::async_trait;
+use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
 
-use super::{new_payload_request::NewPayloadRequest, rpc_types::get_blobs::BlobAndProofV1};
+use super::new_payload_request::NewPayloadRequest;
 
 #[async_trait]
 pub trait ExecutionApi {

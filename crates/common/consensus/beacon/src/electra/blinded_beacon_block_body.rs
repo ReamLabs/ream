@@ -1,6 +1,10 @@
 use alloy_primitives::B256;
 use ream_bls::BLSSignature;
-use ream_consensus_misc::eth_1_data::Eth1Data;
+use ream_consensus_misc::{
+    deposit::Deposit, eth_1_data::Eth1Data, execution_requests::ExecutionRequests,
+    polynomial_commitments::kzg_commitment::KZGCommitment,
+};
+use ream_execution_rpc_types::electra::execution_payload_header::ExecutionPayloadHeader;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -11,11 +15,8 @@ use tree_hash_derive::TreeHash;
 
 use crate::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
-    bls_to_execution_change::SignedBLSToExecutionChange, deposit::Deposit,
-    electra::execution_payload_header::ExecutionPayloadHeader,
-    execution_requests::ExecutionRequests, polynomial_commitments::kzg_commitment::KZGCommitment,
-    proposer_slashing::ProposerSlashing, sync_aggregate::SyncAggregate,
-    voluntary_exit::SignedVoluntaryExit,
+    bls_to_execution_change::SignedBLSToExecutionChange, proposer_slashing::ProposerSlashing,
+    sync_aggregate::SyncAggregate, voluntary_exit::SignedVoluntaryExit,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]

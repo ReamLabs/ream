@@ -3,12 +3,10 @@ use std::path::Path;
 use alloy_primitives::B256;
 use anyhow::Ok;
 use async_trait::async_trait;
+use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
 use serde::Deserialize;
 
-use super::{
-    engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest,
-    rpc_types::get_blobs::BlobAndProofV1,
-};
+use super::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest};
 
 #[derive(Deserialize, Debug, Default)]
 pub struct MockExecutionEngine {

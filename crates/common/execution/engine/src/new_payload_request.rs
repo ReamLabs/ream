@@ -1,8 +1,8 @@
 use alloy_primitives::B256;
+use ream_consensus_misc::execution_requests::ExecutionRequests;
+use ream_execution_rpc_types::electra::execution_payload::ExecutionPayload;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-
-use crate::{electra::execution_payload::ExecutionPayload, execution_requests::ExecutionRequests};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct NewPayloadRequest {
