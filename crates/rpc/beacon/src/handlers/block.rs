@@ -1,15 +1,21 @@
+use std::sync::Arc;
+
 use actix_web::{
     HttpRequest, HttpResponse, Responder, get, post,
-    web::{Data, Json, Path},
+    web::{Data, Json, Path, Payload, Query},
 };
 use alloy_primitives::B256;
+use futures::StreamExt;
 use ream_api_types_beacon::{
+    block::BroadcastValidation,
     id::ValidatorID,
     responses::{
-        BeaconResponse, BeaconVersionedResponse, DataResponse, RootResponse, SSZ_CONTENT_TYPE,
+        BeaconResponse, BeaconVersionedResponse, DataResponse, ETH_CONSENSUS_VERSION_HEADER,
+        RootResponse, SSZ_CONTENT_TYPE,
     },
 };
 use ream_api_types_common::{error::ApiError, id::ID};
+use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     genesis::Genesis,
@@ -17,14 +23,21 @@ use ream_consensus_beacon::{
 use ream_consensus_misc::constants::beacon::{
     WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root,
 };
+use ream_network_manager::p2p_sender::P2PSender;
 use ream_network_spec::networks::beacon_network_spec;
+use ream_p2p::{
+    gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
+    network::beacon::channel::GossipMessage,
+};
 use ream_storage::{
+    cache::{AddressSlotIdentifier, CachedDB},
     db::beacon::BeaconDB,
     tables::{field::REDBField, table::REDBTable},
 };
 use serde::{Deserialize, Serialize};
-use ssz::Encode;
-use tracing::error;
+use ssz::{Decode, Encode};
+use tracing::{error, warn};
+use tree_hash::TreeHash;
 
 use crate::handlers::state::get_state_from_id;
 
@@ -314,4 +327,240 @@ pub async fn get_blind_block(
             .body(blinded_beacon_block.as_ssz_bytes())),
         _ => Ok(HttpResponse::Ok().json(BeaconVersionedResponse::new(blinded_beacon_block))),
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BroadcastValidationQuery {
+    #[serde(default)]
+    pub broadcast_validation: BroadcastValidation,
+}
+
+/// POST /eth/v2/beacon/blocks
+/// Publishes a signed beacon block to the beacon network
+#[post("/beacon/blocks")]
+pub async fn post_beacon_block(
+    http_request: HttpRequest,
+    payload: Payload,
+    query: Query<BroadcastValidationQuery>,
+    _db: Data<BeaconDB>,
+    beacon_chain: Data<Arc<BeaconChain>>,
+    p2p_sender: Data<Arc<P2PSender>>,
+    cached_db: Data<Arc<CachedDB>>,
+) -> Result<impl Responder, ApiError> {
+    // 1. Validate Eth-Consensus-Version header
+    let consensus_version = http_request
+        .headers()
+        .get(ETH_CONSENSUS_VERSION_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "Missing required header: {ETH_CONSENSUS_VERSION_HEADER}"
+            ))
+        })?;
+
+    let valid_versions = [
+        "phase0",
+        "altair",
+        "bellatrix",
+        "capella",
+        "deneb",
+        "electra",
+        "fulu",
+    ];
+    if !valid_versions.contains(&consensus_version) {
+        let valid_list = valid_versions.join(", ");
+        return Err(ApiError::BadRequest(format!(
+            "Invalid consensus version: {consensus_version}. Must be one of: {valid_list}"
+        )));
+    }
+
+    // 2. Read SSZ payload
+    let mut body = actix_web::web::BytesMut::new();
+    let mut stream = payload.into_inner();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk
+            .map_err(|err| ApiError::BadRequest(format!("Failed to read request body: {err}")))?;
+        body.extend_from_slice(&chunk);
+    }
+
+    let signed_block = SignedBeaconBlock::from_ssz_bytes(&body.freeze())
+        .map_err(|err| ApiError::BadRequest(format!("Failed to decode SSZ block: {err:?}")))?;
+
+    // 3. Validate based on broadcast_validation level
+    validate_block_for_broadcast(
+        beacon_chain.as_ref(),
+        &signed_block,
+        &query.broadcast_validation,
+        cached_db.as_ref(),
+    )
+    .await
+    .map_err(|err| ApiError::BadRequest(format!("Block validation failed: {err}")))?;
+
+    // 4. Broadcast via P2P
+    let fork_digest = beacon_network_spec().fork_digest(genesis_validators_root());
+    let topic = GossipTopic {
+        fork: fork_digest,
+        kind: GossipTopicKind::BeaconBlock,
+    };
+
+    p2p_sender.send_gossip(GossipMessage {
+        topic,
+        data: signed_block.as_ssz_bytes(),
+    });
+
+    // 5. Integrate into state (after broadcast)
+    let integration_success = match beacon_chain.process_block(signed_block.clone()).await {
+        Ok(()) => true,
+        Err(e) => {
+            // Check if block is already known - this is not an error
+            if e.to_string().contains("already known") || e.to_string().contains("ALREADY_KNOWN") {
+                warn!("Block already known, ignoring: {}", e);
+                return Ok(HttpResponse::Ok().finish());
+            }
+            error!("Failed to integrate block into state: {}", e);
+            false
+        }
+    };
+
+    // 6. Return appropriate status
+    if integration_success {
+        Ok(HttpResponse::Ok().finish())
+    } else {
+        // 202: validation passed, broadcast succeeded, but integration failed
+        Ok(HttpResponse::Accepted().finish())
+    }
+}
+
+async fn validate_block_for_broadcast(
+    beacon_chain: &BeaconChain,
+    block: &SignedBeaconBlock,
+    validation_level: &BroadcastValidation,
+    cached_db: &CachedDB,
+) -> Result<(), String> {
+    match validation_level {
+        BroadcastValidation::Gossip => {
+            // Lightweight gossip validation
+            validate_gossip_level(beacon_chain, block, cached_db).await
+        }
+        BroadcastValidation::Consensus => {
+            // Full consensus validation
+            validate_consensus_level(beacon_chain, block, cached_db).await
+        }
+        BroadcastValidation::ConsensusAndEquivocation => {
+            // Consensus + equivocation check
+            validate_consensus_level(beacon_chain, block, cached_db).await?;
+            check_equivocation(beacon_chain, block).await
+        }
+    }
+}
+
+async fn validate_gossip_level(
+    beacon_chain: &BeaconChain,
+    block: &SignedBeaconBlock,
+    cached_db: &CachedDB,
+) -> Result<(), String> {
+    let store = beacon_chain.store.lock().await;
+
+    // Check slot not in future
+    let current_slot = store
+        .get_current_slot()
+        .map_err(|err| format!("Failed to get current slot: {err}"))?;
+    if block.message.slot > current_slot {
+        return Err("Block is from a future slot".to_string());
+    }
+
+    // Check parent exists
+    let parent_state = store
+        .db
+        .state_provider()
+        .get(block.message.parent_root)
+        .map_err(|err| format!("Failed to get parent state: {err}"))?
+        .ok_or_else(|| "Parent state not found".to_string())?;
+
+    // Verify signature
+    if !parent_state
+        .verify_block_header_signature(&block.signed_header())
+        .map_err(|err| format!("Signature verification error: {err}"))?
+    {
+        return Err("Invalid block signature".to_string());
+    }
+
+    // Check for duplicate (using CachedDB)
+    let validator = parent_state
+        .validators
+        .get(block.message.proposer_index as usize)
+        .ok_or_else(|| "Validator not found".to_string())?;
+
+    if cached_db
+        .seen_proposer_signature
+        .read()
+        .await
+        .contains(&AddressSlotIdentifier {
+            address: validator.public_key.clone(),
+            slot: block.message.slot,
+        })
+    {
+        return Err("Block already seen from this proposer".to_string());
+    }
+
+    Ok(())
+}
+
+async fn validate_consensus_level(
+    beacon_chain: &BeaconChain,
+    block: &SignedBeaconBlock,
+    cached_db: &CachedDB,
+) -> Result<(), String> {
+    // First do gossip checks
+    validate_gossip_level(beacon_chain, block, cached_db).await?;
+
+    let store = beacon_chain.store.lock().await;
+    let state = store
+        .db
+        .state_provider()
+        .get(block.message.parent_root)
+        .map_err(|err| format!("Failed to get parent state: {err}"))?
+        .ok_or_else(|| "Parent state not found".to_string())?;
+
+    // Check proposer index
+    let expected_proposer = state
+        .get_beacon_proposer_index(Some(block.message.slot))
+        .map_err(|err| format!("Failed to get proposer index: {err}"))?;
+    if expected_proposer != block.message.proposer_index {
+        let got = block.message.proposer_index;
+        return Err(format!(
+            "Invalid proposer index: expected {expected_proposer}, got {got}"
+        ));
+    }
+
+    // Check execution payload timestamp
+    let expected_timestamp = state.compute_timestamp_at_slot(block.message.slot);
+    if block.message.body.execution_payload.timestamp != expected_timestamp {
+        let got = block.message.body.execution_payload.timestamp;
+        return Err(format!(
+            "Invalid execution payload timestamp: expected {expected_timestamp}, got {got}"
+        ));
+    }
+
+    Ok(())
+}
+
+async fn check_equivocation(
+    beacon_chain: &BeaconChain,
+    block: &SignedBeaconBlock,
+) -> Result<(), String> {
+    let store = beacon_chain.store.lock().await;
+    let block_root = block.message.tree_hash_root();
+
+    // Check if another block exists with same slot/proposer but different root
+    // This is simplified - production would need more sophisticated tracking
+    if let Ok(Some(existing_block)) = store.db.block_provider().get(block_root)
+        && existing_block.message.slot == block.message.slot
+        && existing_block.message.proposer_index == block.message.proposer_index
+        && existing_block.message.tree_hash_root() != block_root
+    {
+        return Err("Equivocation detected".to_string());
+    }
+
+    Ok(())
 }

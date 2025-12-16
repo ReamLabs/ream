@@ -5,7 +5,7 @@ use crate::handlers::{
     blob_sidecar::get_blob_sidecars,
     block::{
         get_blind_block, get_block_attestations, get_block_from_id, get_block_rewards,
-        get_block_root, get_genesis, post_sync_committee_rewards,
+        get_block_root, get_genesis, post_beacon_block, post_sync_committee_rewards,
     },
     committee::get_committees,
     events::get_events,
@@ -77,5 +77,6 @@ pub fn register_beacon_routes_v2(cfg: &mut ServiceConfig) {
         .service(get_attester_slashings)
         .service(post_attester_slashings)
         .service(get_attestations)
-        .service(post_attestations);
+        .service(post_attestations)
+        .service(post_beacon_block);
 }
