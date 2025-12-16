@@ -123,9 +123,16 @@ impl Network {
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
-        let mut discovery =
-            Discovery::new(Keypair::from(local_key.clone()), &config.discv5_config).await?;
-        discovery.discover_peers(QueryType::Peers, 16);
+        let discovery = {
+            let mut discovery = Discovery::new(
+                Keypair::from(local_key.clone()),
+                &config.discv5_config,
+                status.head_slot,
+            )
+            .await?;
+            discovery.discover_peers(QueryType::Peers, 16);
+            discovery
+        };
 
         let req_resp = ReqResp::new(Chain::Beacon);
 
@@ -287,8 +294,8 @@ impl Network {
     /// - A swarm event
     /// - A p2p message
     /// - A peer pinging
-    /// - An interval tick to perform p2p maintenance e.g. peer pinging, peer clean up and peer
-    ///   discovery
+    /// - An interval tick to perform p2p maintenance e.g. peer pinging, peer clean up, peer
+    ///   discovery, and attestation subnet subscription updates
     ///
     /// The network worker will then route each event to the appropriate handler. The handlers are
     /// defined in `NetworkManagerService`.
@@ -387,6 +394,12 @@ impl Network {
                     let seq_number = self.network_state.meta_data.read().seq_number;
 
                     info!("Peer statuses: {counts:?}, Peers with Status {status_is_some_count}, Peers with MetaData {meta_data_some_count}, Peers to ping: {peers_to_ping_count}, MetaData seq_number: {seq_number}");
+
+                    // Update attestation subnet subscriptions based on current slot
+                    let current_slot = self.network_state.status.read().head_slot;
+                    if let Err(err) = self.swarm.behaviour_mut().discovery.update_attestation_subnets(current_slot) {
+                        warn!("Failed to update attestation subnet subscriptions: {err:?}");
+                    }
 
                     if peer_count < TARGET_PEER_COUNT {
                         info!("Peer count is below target: {peer_count}, discovering more peers");
