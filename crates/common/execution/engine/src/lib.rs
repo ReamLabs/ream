@@ -1,4 +1,3 @@
-pub mod rpc_types;
 pub mod utils;
 
 use std::path::PathBuf;
@@ -8,29 +7,32 @@ use alloy_rpc_types_eth::{Block, BlockId, BlockNumberOrTag, Filter, Log, Transac
 use anyhow::anyhow;
 use async_trait::async_trait;
 use jsonwebtoken::{EncodingKey, Header, encode, get_current_timestamp};
-use ream_consensus_beacon::{
-    electra::execution_payload::ExecutionPayload,
-    execution_engine::{
-        engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest,
-        rpc_types::get_blobs::BlobAndProofV1,
+use ream_consensus_misc::{
+    constants::beacon::{
+        CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE,
     },
     execution_requests::ExecutionRequests,
 };
-use ream_consensus_misc::constants::beacon::{
-    CONSOLIDATION_REQUEST_TYPE, DEPOSIT_REQUEST_TYPE, WITHDRAWAL_REQUEST_TYPE,
-};
-use reqwest::{Client, Request, Url};
-use rpc_types::{
+use ream_execution_rpc_types::{
+    electra::execution_payload::ExecutionPayload,
     eth_syncing::EthSyncing,
     execution_payload::ExecutionPayloadV3,
     forkchoice_update::{ForkchoiceStateV1, ForkchoiceUpdateResult, PayloadAttributesV3},
+    get_blobs::BlobAndProofV1,
     get_payload::PayloadV4,
     payload_status::{PayloadStatus, PayloadStatusV1},
 };
+use reqwest::{Client, Request, Url};
 use serde_json::json;
 use ssz::Encode;
 use ssz_types::VariableList;
 use utils::{Claims, JsonRpcRequest, JsonRpcResponse, blob_versioned_hashes, strip_prefix};
+
+pub mod engine_trait;
+pub mod mock_engine;
+pub mod new_payload_request;
+
+use crate::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest};
 
 #[derive(Clone)]
 pub struct ExecutionEngine {

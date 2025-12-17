@@ -1,9 +1,9 @@
 use alloy_primitives::B256;
 use alloy_rlp::Decodable;
 use anyhow::{anyhow, bail};
-use ream_consensus_beacon::{
+use ream_execution_rpc_types::{
     electra::execution_payload::Transactions,
-    execution_engine::rpc_types::transaction::{BlobTransaction, TransactionType},
+    transaction::{BlobTransaction, TransactionType},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

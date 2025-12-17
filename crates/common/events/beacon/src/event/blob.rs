@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use ream_consensus_beacon::polynomial_commitments::kzg_commitment::KZGCommitment;
+use ream_consensus_misc::polynomial_commitments::kzg_commitment::KZGCommitment;
 use serde::{Deserialize, Serialize};
 
 /// Blob sidecar event.

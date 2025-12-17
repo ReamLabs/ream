@@ -2,12 +2,12 @@ use alloy_primitives::{B256, map::HashSet};
 use anyhow::{anyhow, ensure};
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
-    electra::beacon_block::SignedBeaconBlock, execution_engine::engine_trait::ExecutionApi,
-    predicates::is_slashable_attestation_data,
+    electra::beacon_block::SignedBeaconBlock, predicates::is_slashable_attestation_data,
 };
 use ream_consensus_misc::{
     constants::beacon::INTERVALS_PER_SLOT, misc::compute_start_slot_at_epoch,
 };
+use ream_execution_engine::engine_trait::ExecutionApi;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
     errors::StoreError,

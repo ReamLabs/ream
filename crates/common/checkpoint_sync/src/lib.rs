@@ -7,9 +7,9 @@ use checkpoint::get_checkpoint_sync_sources;
 use ream_consensus_beacon::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
-    execution_engine::rpc_types::get_blobs::BlobAndProofV1,
 };
 use ream_consensus_misc::checkpoint::Checkpoint;
+use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
 use ream_fork_choice_beacon::{handlers::on_tick, store::get_forkchoice_store};
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{

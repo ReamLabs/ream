@@ -34,6 +34,7 @@ tree_hash_derive.workspace = true
 ream-bls.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
+ream-execution-rpc-types.workspace = true
 
 [lints]
 workspace = true

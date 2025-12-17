@@ -9,17 +9,11 @@ use ream_consensus_beacon::{
     attestation::Attestation,
     attester_slashing::AttesterSlashing,
     bls_to_execution_change::{BLSToExecutionChange, SignedBLSToExecutionChange},
-    consolidation_request::ConsolidationRequest,
-    deposit::Deposit,
-    deposit_request::DepositRequest,
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_block_body::BeaconBlockBody,
         beacon_state::BeaconState,
-        execution_payload::ExecutionPayload,
-        execution_payload_header::ExecutionPayloadHeader,
     },
-    execution_requests::ExecutionRequests,
     historical_summary::HistoricalSummary,
     pending_consolidation::PendingConsolidation,
     pending_deposit::PendingDeposit,
@@ -29,15 +23,18 @@ use ream_consensus_beacon::{
     sync_aggregate::SyncAggregate,
     sync_committee::SyncCommittee,
     voluntary_exit::{SignedVoluntaryExit, VoluntaryExit},
-    withdrawal::Withdrawal,
-    withdrawal_request::WithdrawalRequest,
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData, beacon_block_header::BeaconBlockHeader,
-    checkpoint::Checkpoint, deposit_data::DepositData, eth_1_data::Eth1Data, fork::Fork,
-    fork_data::ForkData, historical_batch::HistoricalBatch,
-    indexed_attestation::IndexedAttestation, misc::compute_shuffled_index,
-    signing_data::SigningData, validator::Validator,
+    checkpoint::Checkpoint, consolidation_request::ConsolidationRequest, deposit::Deposit,
+    deposit_data::DepositData, deposit_request::DepositRequest, eth_1_data::Eth1Data,
+    execution_requests::ExecutionRequests, fork::Fork, fork_data::ForkData,
+    historical_batch::HistoricalBatch, indexed_attestation::IndexedAttestation,
+    misc::compute_shuffled_index, signing_data::SigningData, validator::Validator,
+    withdrawal::Withdrawal, withdrawal_request::WithdrawalRequest,
+};
+use ream_execution_rpc_types::electra::{
+    execution_payload::ExecutionPayload, execution_payload_header::ExecutionPayloadHeader,
 };
 use ream_merkle::is_valid_normalized_merkle_branch;
 

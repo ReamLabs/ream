@@ -18,6 +18,7 @@ use ream_consensus_misc::{
     attestation_data::AttestationData,
     beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
     checkpoint::Checkpoint,
+    consolidation_request::ConsolidationRequest,
     constants::beacon::{
         BASE_REWARD_FACTOR, BEACON_STATE_MERKLE_DEPTH, BLS_WITHDRAWAL_PREFIX, CAPELLA_FORK_VERSION,
         CHURN_LIMIT_QUOTIENT, COMPOUNDING_WITHDRAWAL_PREFIX, CURRENT_SYNC_COMMITTEE_INDEX,
@@ -46,7 +47,9 @@ use ream_consensus_misc::{
         TIMELY_TARGET_FLAG_INDEX, UINT64_MAX, UINT64_MAX_SQRT, UNSET_DEPOSIT_REQUESTS_START_INDEX,
         WEIGHT_DENOMINATOR, WHISTLEBLOWER_REWARD_QUOTIENT_ELECTRA,
     },
+    deposit::Deposit,
     deposit_message::DepositMessage,
+    deposit_request::DepositRequest,
     eth_1_data::Eth1Data,
     fork::Fork,
     indexed_attestation::IndexedAttestation,
@@ -56,6 +59,12 @@ use ream_consensus_misc::{
         compute_start_slot_at_epoch, get_committee_indices, is_sorted_and_unique,
     },
     validator::Validator,
+    withdrawal::Withdrawal,
+    withdrawal_request::WithdrawalRequest,
+};
+use ream_execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest};
+use ream_execution_rpc_types::electra::{
+    execution_payload::ExecutionPayload, execution_payload_header::ExecutionPayloadHeader,
 };
 use ream_merkle::{generate_proof, is_valid_merkle_branch, merkle_tree};
 use ream_network_spec::networks::beacon_network_spec;
@@ -72,31 +81,16 @@ use tree_hash_derive::TreeHash;
 use super::{
     beacon_block::{BeaconBlock, SignedBeaconBlock},
     beacon_block_body::BeaconBlockBody,
-    execution_payload::ExecutionPayload,
-    execution_payload_header::ExecutionPayloadHeader,
     zkvm_types::ValidatorRegistryLimit,
 };
 use crate::{
-    attestation::Attestation,
-    attester_slashing::AttesterSlashing,
-    bls_to_execution_change::SignedBLSToExecutionChange,
-    consolidation_request::ConsolidationRequest,
-    deposit::Deposit,
-    deposit_request::DepositRequest,
-    eth_1_block::Eth1Block,
-    execution_engine::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest},
-    helpers::xor,
-    historical_summary::HistoricalSummary,
-    pending_consolidation::PendingConsolidation,
-    pending_deposit::PendingDeposit,
-    pending_partial_withdrawal::PendingPartialWithdrawal,
-    predicates::is_slashable_attestation_data,
-    proposer_slashing::ProposerSlashing,
-    sync_aggregate::SyncAggregate,
-    sync_committee::SyncCommittee,
+    attestation::Attestation, attester_slashing::AttesterSlashing,
+    bls_to_execution_change::SignedBLSToExecutionChange, eth_1_block::Eth1Block, helpers::xor,
+    historical_summary::HistoricalSummary, pending_consolidation::PendingConsolidation,
+    pending_deposit::PendingDeposit, pending_partial_withdrawal::PendingPartialWithdrawal,
+    predicates::is_slashable_attestation_data, proposer_slashing::ProposerSlashing,
+    sync_aggregate::SyncAggregate, sync_committee::SyncCommittee,
     voluntary_exit::SignedVoluntaryExit,
-    withdrawal::Withdrawal,
-    withdrawal_request::WithdrawalRequest,
 };
 
 pub mod quoted_u8_var_list {

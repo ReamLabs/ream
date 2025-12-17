@@ -4,18 +4,15 @@ use ream_consensus_misc::{
     constants::beacon::{
         BLOB_KZG_COMMITMENTS_INDEX, BLOB_SIDECAR_KZG_PROOF_DEPTH, MAX_BLOBS_PER_BLOCK,
     },
+    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
+use ream_execution_rpc_types::get_blobs::{Blob, BlobAndProofV1};
 use ream_merkle::{get_root_from_merkle_branch, is_valid_merkle_branch};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, typenum::U17};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
-
-use crate::{
-    execution_engine::rpc_types::get_blobs::Blob,
-    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
-};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Encode, Decode, TreeHash)]
 pub struct BlobSidecar {
@@ -65,6 +62,15 @@ impl BlobSidecar {
             BLOB_KZG_COMMITMENTS_INDEX,
             self.signed_block_header.message.body_root,
         )
+    }
+}
+
+impl From<BlobSidecar> for BlobAndProofV1 {
+    fn from(blob_sidecar: BlobSidecar) -> Self {
+        BlobAndProofV1 {
+            blob: blob_sidecar.blob,
+            proof: blob_sidecar.kzg_proof,
+        }
     }
 }
 

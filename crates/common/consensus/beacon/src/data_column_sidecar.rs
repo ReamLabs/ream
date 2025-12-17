@@ -2,6 +2,7 @@ use alloy_primitives::B256;
 use ream_consensus_misc::{
     beacon_block_header::SignedBeaconBlockHeader,
     constants::beacon::{BLOB_KZG_COMMITMENTS_INDEX, DATA_COLUMN_SIDECAR_KZG_PROOF_DEPTH},
+    polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
 use ream_merkle::is_valid_merkle_branch;
 use ream_network_spec::networks::beacon_network_spec;
@@ -10,8 +11,6 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, VariableList, typenum};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
-
-use crate::polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof};
 
 pub type Cell = FixedVector<u8, typenum::U2048>;
 

@@ -6,13 +6,14 @@ use std::{
 
 use alloy_primitives::{B256, hex};
 use ethereum_hashing::hash_fixed;
-use ream_consensus_misc::constants::beacon::BYTES_PER_COMMITMENT;
 use serde::{
     de::{Deserialize, Deserializer},
     ser::{Serialize, Serializer},
 };
 use ssz_derive::{Decode, Encode};
 use tree_hash::{PackedEncoding, TreeHash};
+
+use crate::constants::beacon::BYTES_PER_COMMITMENT;
 pub const VERSIONED_HASH_VERSION_KZG: u8 = 0x01;
 
 #[derive(Clone, Copy, Encode, Decode, PartialEq, Eq, Hash)]

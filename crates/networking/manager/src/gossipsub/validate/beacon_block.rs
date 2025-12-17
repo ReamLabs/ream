@@ -1,13 +1,11 @@
 use anyhow::anyhow;
 use ream_chain_beacon::beacon_chain::BeaconChain;
-use ream_consensus_beacon::{
-    electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
-    execution_engine::new_payload_request::NewPayloadRequest,
-};
+use ream_consensus_beacon::electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
 use ream_consensus_misc::{
     constants::beacon::MAX_BLOBS_PER_BLOCK_ELECTRA, misc::compute_start_slot_at_epoch,
 };
-use ream_execution_engine::rpc_types::payload_status::PayloadStatus;
+use ream_execution_engine::new_payload_request::NewPayloadRequest;
+use ream_execution_rpc_types::payload_status::PayloadStatus;
 use ream_storage::{
     cache::{AddressSlotIdentifier, CachedDB},
     tables::{field::REDBField, table::REDBTable},
