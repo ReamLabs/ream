@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail};
 use kzg::{DAS, Fr, G1, eip_4844::verify_blob_kzg_proof_batch_raw};
 use ream_consensus_beacon::{
-    data_column_sidecar::{Cell, MaxBlobCommitmentsPerBlock},
+    data_column_sidecar::{Cell, DataColumnSidecar, MaxBlobCommitmentsPerBlock},
     execution_engine::rpc_types::get_blobs::Blob,
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
 };
@@ -118,4 +118,20 @@ pub fn verify_cell_kzg_proof_batch(
         &proofs,
     )
     .map_err(|err| anyhow!("Cell KZG proof batch verification failed: {err}"))
+}
+
+/// Verify if the KZG proofs are correct for a data column sidecar.
+///
+/// Spec: https://ethereum.github.io/consensus-specs/specs/fulu/p2p-interface/#verify_data_column_sidecar_kzg_proofs
+pub fn verify_data_column_sidecar_kzg_proofs(sidecar: &DataColumnSidecar) -> anyhow::Result<bool> {
+    // The column index also represents the cell index
+    let cell_indices = vec![sidecar.index; sidecar.column.len()];
+
+    // Batch verify that the cells match the corresponding commitments and proofs
+    verify_cell_kzg_proof_batch(
+        &sidecar.kzg_commitments,
+        &cell_indices,
+        &sidecar.column,
+        &sidecar.kzg_proofs,
+    )
 }

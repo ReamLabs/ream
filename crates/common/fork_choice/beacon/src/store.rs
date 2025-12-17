@@ -7,11 +7,11 @@ use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     attestation::Attestation,
     blob_sidecar::BlobIdentifier,
+    data_column_sidecar::{ColumnIdentifier, DataColumnSidecar, NUMBER_OF_COLUMNS},
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
     },
-    execution_engine::{engine_trait::ExecutionApi, rpc_types::get_blobs::BlobAndProofV1},
     fork_choice::latest_message::LatestMessage,
     helpers::{calculate_committee_fraction, get_total_active_balance},
     polynomial_commitments::kzg_commitment::KZGCommitment,
@@ -23,7 +23,9 @@ use ream_consensus_misc::{
 };
 use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
-use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
+use ream_polynomial_commitments::handlers::{
+    verify_blob_kzg_proof_batch, verify_data_column_sidecar_kzg_proofs,
+};
 use ream_storage::{
     db::beacon::BeaconDB,
     tables::{
@@ -697,74 +699,93 @@ impl Store {
         Ok(())
     }
 
-    pub async fn is_data_available(
+    /// Check if data is available for a block.
+    ///
+    /// For Fulu: https://ethereum.github.io/consensus-specs/specs/fulu/fork-choice/#modified-is_data_available
+    /// For Deneb: https://ethereum.github.io/consensus-specs/specs/deneb/fork-choice/#is_data_available
+    pub fn is_data_available(
         &self,
-        blob_kzg_commitments: &[KZGCommitment],
-        execution_engine: &Option<impl ExecutionApi>,
         beacon_block_root: B256,
+        blob_kzg_commitments: &[KZGCommitment],
     ) -> anyhow::Result<bool> {
-        // `retrieve_blobs_and_proofs` is implementation and context dependent
-        // It returns all the blobs for the given block root, and raises an exception if not
-        // available Note: the p2p network does not guarantee sidecar retrieval outside of
-        // `MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS`
-        let mut blobs_and_proofs: Vec<Option<BlobAndProofV1>> =
-            vec![None; blob_kzg_commitments.len()];
+        // `retrieve_column_sidecars` is implementation and context dependent, replacing
+        // `retrieve_blobs_and_proofs`. For the given block root, it returns all column
+        // sidecars to sample, or raises an exception if they are not available.
+        // The p2p network does not guarantee sidecar retrieval outside of
+        // `MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS` epochs.
+        let column_sidecars = self.retrieve_column_sidecars(beacon_block_root)?;
 
-        // Try to get blobs_and_proofs from p2p cache
-        for (index, blob_and_proof) in blobs_and_proofs.iter_mut().enumerate() {
-            *blob_and_proof = self
-                .db
-                .blobs_and_proofs_provider()
-                .get(BlobIdentifier::new(beacon_block_root, index as u64))?;
+        if !column_sidecars.is_empty() {
+            // Fulu column sidecars validation
+            for column_sidecar in column_sidecars {
+                if !column_sidecar.verify() {
+                    return Ok(false);
+                }
+                if !verify_data_column_sidecar_kzg_proofs(&column_sidecar)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        } else {
+            // Fallback to Deneb blobs validation
+            if blob_kzg_commitments.is_empty() {
+                return Ok(true);
+            }
+
+            self.is_blob_data_available(beacon_block_root, blob_kzg_commitments)
         }
+    }
 
-        // Fallback to trying engine api
-        if let Some(execution_engine) = execution_engine
-            && blobs_and_proofs.contains(&None)
-        {
-            let indexed_blob_versioned_hashes = blobs_and_proofs
-                .iter()
-                .enumerate()
-                .filter_map(|(index, blob_and_proof)| {
-                    if blob_and_proof.is_none() {
-                        Some((
-                            index,
-                            blob_kzg_commitments[index].calculate_versioned_hash(),
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            let (indices, blob_versioned_hashes): (Vec<_>, Vec<_>) =
-                indexed_blob_versioned_hashes.into_iter().unzip();
-            let execution_blobs_and_proofs = execution_engine
-                .engine_get_blobs_v1(blob_versioned_hashes)
-                .await?;
-            for (index, blob_and_proof) in indices
-                .into_iter()
-                .zip(execution_blobs_and_proofs.into_iter())
-            {
-                blobs_and_proofs[index] = blob_and_proof;
+    /// Check if blob data is available for a Deneb block.
+    ///
+    /// Spec: https://ethereum.github.io/consensus-specs/specs/deneb/fork-choice/#is_data_available
+    fn is_blob_data_available(
+        &self,
+        beacon_block_root: B256,
+        blob_kzg_commitments: &[KZGCommitment],
+    ) -> anyhow::Result<bool> {
+        let mut blobs = Vec::with_capacity(blob_kzg_commitments.len());
+        let mut proofs = Vec::with_capacity(blob_kzg_commitments.len());
+
+        // Retrieve all blobs and proofs
+        for index in 0..blob_kzg_commitments.len() {
+            let blob_id = BlobIdentifier::new(beacon_block_root, index as u64);
+            if let Some(blob_and_proof) = self.db.blobs_and_proofs_provider().get(blob_id)? {
+                blobs.push(blob_and_proof.blob);
+                proofs.push(blob_and_proof.proof);
+            } else {
+                // Data not available
+                return Ok(false);
             }
         }
 
-        let blobs_and_proofs = blobs_and_proofs
-            .into_iter()
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| anyhow!("Couldn't find all blobs_and_proofs"))?;
+        // Verify the number of blobs matches
+        if blobs.len() != blob_kzg_commitments.len() {
+            return Ok(false);
+        }
 
-        let (blobs, proofs): (Vec<_>, Vec<_>) = blobs_and_proofs
-            .into_iter()
-            .map(|blob_and_proof| (blob_and_proof.blob, blob_and_proof.proof))
-            .unzip();
+        // Verify blob KZG proofs
+        verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)
+    }
 
-        ensure!(
-            verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)?,
-            "Blob KZG proof batch verification failed (from store)"
-        );
+    /// Retrieve column sidecars for a block.
+    ///
+    /// We retrieve all columns that we have stored and returns an empty vector
+    /// if no sidecars are found (valid for blocks with no blobs).
+    fn retrieve_column_sidecars(
+        &self,
+        beacon_block_root: B256,
+    ) -> anyhow::Result<Vec<DataColumnSidecar>> {
+        let mut column_sidecars = Vec::new();
 
-        Ok(true)
+        for index in 0..NUMBER_OF_COLUMNS {
+            let column_identifier = ColumnIdentifier::new(beacon_block_root, index);
+            if let Some(sidecar) = self.db.column_sidecars_provider().get(column_identifier)? {
+                column_sidecars.push(sidecar);
+            }
+        }
+
+        Ok(column_sidecars)
     }
 
     pub fn compute_pulled_up_tip(&mut self, block_root: B256) -> anyhow::Result<()> {

@@ -58,20 +58,12 @@ pub async fn on_block(
     )?;
     ensure!(store.db.finalized_checkpoint_provider().get()?.root == finalized_checkpoint_block);
     if verify_blob_availability {
-        // Check if blob data is available
-        // If not, this block MAY be queued and subsequently considered when blob data becomes
-        // available *Note*: Extraneous or invalid Blobs (in addition to the
-        // expected/referenced valid blobs) received on the p2p network MUST NOT invalidate
+        // Check if data is available (Fulu: uses column sidecars instead of blobs)
+        // If not, this block MAY be queued and subsequently considered when data becomes
+        // available *Note*: Extraneous or invalid data (in addition to the
+        // expected/referenced valid data) received on the p2p network MUST NOT invalidate
         // a block that is otherwise valid and available
-        ensure!(
-            store
-                .is_data_available(
-                    &block.body.blob_kzg_commitments,
-                    execution_engine,
-                    block.tree_hash_root()
-                )
-                .await?
-        );
+        ensure!(store.is_data_available(block.tree_hash_root(), &block.body.blob_kzg_commitments)?);
     }
 
     // Check the block is valid and compute the post-state

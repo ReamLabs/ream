@@ -1,8 +1,7 @@
 use anyhow::anyhow;
 use ream_chain_beacon::beacon_chain::BeaconChain;
-use ream_consensus_beacon::data_column_sidecar::{DataColumnSidecar, NUMBER_OF_COLUMNS};
+use ream_consensus_beacon::data_column_sidecar::DataColumnSidecar;
 use ream_consensus_misc::misc::compute_start_slot_at_epoch;
-use ream_network_spec::networks::beacon_network_spec;
 use ream_polynomial_commitments::handlers::verify_cell_kzg_proof_batch;
 use ream_storage::{
     cache::CachedDB,
@@ -17,9 +16,10 @@ pub async fn validate_data_column_sidecar_full(
     subnet_id: u64,
     cached_db: &CachedDB,
 ) -> anyhow::Result<ValidationResult> {
-    let result = validate_data_column_sidecar(data_column_sidecar).await?;
-    if result != ValidationResult::Accept {
-        return Ok(result);
+    if !data_column_sidecar.verify() {
+        return Ok(ValidationResult::Reject(
+            "Data column sidecar failed basic verification".to_string(),
+        ));
     }
 
     if subnet_id != data_column_sidecar.compute_subnet() {
@@ -126,40 +126,6 @@ pub async fn validate_data_column_sidecar_full(
                 "Could not get proposer index: {err:?}"
             )));
         }
-    }
-
-    Ok(ValidationResult::Accept)
-}
-
-/// Verify if the data column sidecar is valid.
-async fn validate_data_column_sidecar(
-    data_column_sidecar: &DataColumnSidecar,
-) -> anyhow::Result<ValidationResult> {
-    if data_column_sidecar.index >= NUMBER_OF_COLUMNS {
-        return Ok(ValidationResult::Reject(
-            "Column index exceeds NUMBER_OF_COLUMNS".to_string(),
-        ));
-    }
-
-    if data_column_sidecar.kzg_commitments.is_empty() {
-        return Ok(ValidationResult::Reject(
-            "No KZG commitments in data column sidecar".to_string(),
-        ));
-    }
-
-    let max_blobs_per_block = beacon_network_spec().max_blobs_per_block_electra as usize;
-    if data_column_sidecar.kzg_commitments.len() > max_blobs_per_block {
-        return Ok(ValidationResult::Reject(
-            "Too many KZG commitments in data column sidecar".to_string(),
-        ));
-    }
-
-    if data_column_sidecar.column.len() != data_column_sidecar.kzg_commitments.len()
-        || data_column_sidecar.column.len() != data_column_sidecar.kzg_proofs.len()
-    {
-        return Ok(ValidationResult::Reject(
-            "Mismatch in lengths of column, KZG commitments, and KZG proofs".to_string(),
-        ));
     }
 
     Ok(ValidationResult::Accept)
