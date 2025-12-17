@@ -90,13 +90,13 @@ pub struct Attestation {
 }
 
 /// Generic data list wrapper
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct DataList<T> {
     pub data: Vec<T>,
 }
 
 /// Consensus state
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct State {
     pub config: StateConfig,
