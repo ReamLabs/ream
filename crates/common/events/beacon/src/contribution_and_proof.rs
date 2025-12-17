@@ -29,3 +29,17 @@ pub struct SignedContributionAndProof {
     pub message: ContributionAndProof,
     pub signature: BLSSignature,
 }
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+pub struct SyncCommitteeMessage {
+    pub slot: u64,
+    pub beacon_block_root: B256,
+    pub validator_index: u64,
+    pub signature: BLSSignature,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+pub struct SyncAggregatorSelectionData {
+    pub slot: u64,
+    pub sub_committee_index: u64,
+}
