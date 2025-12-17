@@ -86,7 +86,7 @@ pub enum ReamNetworkEvent {
     PeerDisconnected(PeerId),
     DisconnectPeer(PeerId),
     RequestMessage {
-        peer_id: PeerId, 
+        peer_id: PeerId,
         stream_id: u64,
         connection_id: ConnectionId,
         message: BeaconRequestMessage,
