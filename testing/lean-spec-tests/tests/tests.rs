@@ -42,7 +42,9 @@ async fn test_all_fork_choice_fixtures() {
         Ok(filter) => EnvFilter::builder().parse_lossy(filter),
         Err(_) => EnvFilter::new("info"),
     };
-    tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .try_init();
 
     let fixtures = find_json_files("fixtures/consensus/fork_choice");
 
