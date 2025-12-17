@@ -58,9 +58,9 @@ pub async fn validate_data_column_sidecar_full(
         ));
     }
 
-    // TODO [REJECT] The sidecar's block's parent (defined by block_header.parent_root) passes
-    // validation.
-
+    // The sidecar's block's parent (defined by block_header.parent_root) passes validation.
+    // Blocks are only added to block_provider after passing full validation (ST func)
+    // so existence in the store implies validation passed. If parent is not in store, we IGNORE.
     let Some(parent_block) = store.db.block_provider().get(header.parent_root)? else {
         return Ok(ValidationResult::Ignore(
             "Parent block not seen".to_string(),
