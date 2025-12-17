@@ -4,10 +4,11 @@ use alloy_primitives::{Address, B256, map::HashSet};
 use parking_lot::RwLock;
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
-    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
-    proposer_slashing::ProposerSlashing, sync_aggregate::SyncAggregate,
-    voluntary_exit::SignedVoluntaryExit,
+    bls_to_execution_change::SignedBLSToExecutionChange,
+    electra::beacon_state::BeaconState, proposer_slashing::ProposerSlashing,
+    sync_aggregate::SyncAggregate, voluntary_exit::SignedVoluntaryExit,
 };
+use ream_consensus_misc::deposit::Deposit;
 use tree_hash::TreeHash;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +39,7 @@ pub struct OperationPool {
     proposer_slashings: RwLock<HashSet<ProposerSlashing>>,
     attestations: RwLock<HashMap<AttestationKey, Vec<Attestation>>>,
     sync_aggregates: RwLock<HashMap<SyncAggregateKey, SyncAggregate>>,
+    deposits: RwLock<HashSet<Deposit>>,
 }
 
 impl OperationPool {
@@ -224,6 +226,14 @@ impl OperationPool {
 
         let mut map = self.sync_aggregates.write();
         map.insert(key, sync_aggregate);
+    }
+
+    pub fn get_all_deposits(&self) -> Vec<Deposit> {
+        self.deposits.read().iter().cloned().collect()
+    }
+
+    pub fn insert_deposit(&self, deposit: Deposit) {
+        self.deposits.write().insert(deposit);
     }
 }
 
