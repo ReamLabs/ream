@@ -37,10 +37,7 @@ pub async fn calculate_sync_status(
     operation_pool: &Arc<OperationPool>,
     execution_engine: &Option<ExecutionEngine>,
 ) -> Result<SyncStatus, ApiError> {
-    let store = Store {
-        db: db.clone(),
-        operation_pool: operation_pool.clone(),
-    };
+    let store = Store::new(db.clone(), operation_pool.clone(), None);
 
     // get head_slot
     let head = store.get_head().map_err(|err| {

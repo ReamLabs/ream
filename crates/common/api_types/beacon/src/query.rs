@@ -53,6 +53,13 @@ pub struct AttestationQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct SyncCommitteeContributionQuery {
+    pub slot: u64,
+    pub subcommittee_index: u64,
+    pub beacon_block_root: B256,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ConnectionStateQuery {
     pub state: Option<Vec<ConnectionState>>,
 }
