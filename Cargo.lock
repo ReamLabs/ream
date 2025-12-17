@@ -299,13 +299,20 @@ dependencies = [
 [[package]]
 name = "air"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=825b596584dee4511a89ec892251a06bd44dc72c#825b596584dee4511a89ec892251a06bd44dc72c"
 dependencies = [
  "multilinear-toolkit",
- "p3-air",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "tracing",
  "utils",
+]
+
+[[package]]
+name = "air"
+version = "0.3.0"
+source = "git+https://github.com/leanEthereum/multilinear-toolkit.git?branch=lean-vm-simple#e06cba2e214879c00c7fbc0e5b12908ddfcba588"
+dependencies = [
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
 ]
 
 [[package]]
@@ -433,9 +440,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-json-abi"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5513d5e6bd1cba6bdcf5373470f559f320c05c8c59493b6e98912fbe6733943f"
+checksum = "6bfca3dbbcb7498f0f60e67aff2ad6aff57032e22eb2fd03189854be11a22c03"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-type-parser",
@@ -458,9 +465,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-primitives"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "355bf68a433e0fd7f7d33d5a9fc2583fde70bf5c530f63b80845f8da5505cf28"
+checksum = "5c850e6ccbd34b8a463a1e934ffc8fc00e1efc5e5489f2ad82d7797949f3bd4e"
 dependencies = [
  "alloy-rlp",
  "bytes",
@@ -476,6 +483,7 @@ dependencies = [
  "paste",
  "proptest",
  "rand 0.9.2",
+ "rapidhash",
  "ruint",
  "rustc-hash",
  "serde",
@@ -539,9 +547,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-macro"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3ce480400051b5217f19d6e9a82d9010cdde20f1ae9c00d53591e4a1afbb312"
+checksum = "b2218e3aeb3ee665d117fdf188db0d5acfdc3f7b7502c827421cb78f26a2aec0"
 dependencies = [
  "alloy-sol-macro-expander",
  "alloy-sol-macro-input",
@@ -553,9 +561,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-macro-expander"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d792e205ed3b72f795a8044c52877d2e6b6e9b1d13f431478121d8d4eaa9028"
+checksum = "b231cb8cc48e66dd1c6e11a1402f3ac86c3667cbc13a6969a0ac030ba7bb8c88"
 dependencies = [
  "alloy-sol-macro-input",
  "const-hex",
@@ -571,9 +579,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-macro-input"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bd1247a8f90b465ef3f1207627547ec16940c35597875cdc09c49d58b19693c"
+checksum = "49a522d79929c1bf0152b07567a38f7eaed3ab149e53e7528afa78ff11994668"
 dependencies = [
  "const-hex",
  "dunce",
@@ -587,9 +595,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-type-parser"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "954d1b2533b9b2c7959652df3076954ecb1122a28cc740aa84e7b0a49f6ac0a9"
+checksum = "0475c459859c8d9428af6ff3736614655a57efda8cc435a3b8b4796fa5ac1dd0"
 dependencies = [
  "serde",
  "winnow",
@@ -597,9 +605,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-types"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70319350969a3af119da6fb3e9bddb1bce66c9ea933600cb297c8b1850ad2a3c"
+checksum = "35287d9d821d5f26011bcd8d9101340898f761c9933cf50fca689bb7ed62fdeb"
 dependencies = [
  "alloy-json-abi",
  "alloy-primitives",
@@ -1068,12 +1076,12 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 [[package]]
 name = "backend"
 version = "0.3.0"
-source = "git+https://github.com/leanEthereum/multilinear-toolkit.git#62766141561550c3540f9f644085fec53d721f16"
+source = "git+https://github.com/leanEthereum/multilinear-toolkit.git?branch=lean-vm-simple#e06cba2e214879c00c7fbc0e5b12908ddfcba588"
 dependencies = [
  "fiat-shamir",
  "itertools 0.14.0",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
  "rayon",
  "tracing",
@@ -1310,9 +1318,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.19.0"
+version = "3.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
+checksum = "5dd9dc738b7a8311c7ade152424974d8115f2cdad61e8dab8dac9f2362298510"
 
 [[package]]
 name = "byte-slice-cast"
@@ -1361,9 +1369,9 @@ dependencies = [
 
 [[package]]
 name = "camino"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "276a59bf2b2c967788139340c9f0c5b12d7fd6630315c15c217e559de85d2609"
+checksum = "e629a66d692cb9ff1a1c664e41771b3dcaf961985a9774c0eb0bd1b51cf60a48"
 dependencies = [
  "serde_core",
 ]
@@ -1579,11 +1587,11 @@ dependencies = [
 [[package]]
 name = "constraints-folder"
 version = "0.3.0"
-source = "git+https://github.com/leanEthereum/multilinear-toolkit.git#62766141561550c3540f9f644085fec53d721f16"
+source = "git+https://github.com/leanEthereum/multilinear-toolkit.git?branch=lean-vm-simple#e06cba2e214879c00c7fbc0e5b12908ddfcba588"
 dependencies = [
+ "air 0.3.0",
  "fiat-shamir",
- "p3-air",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
 ]
 
 [[package]]
@@ -2457,11 +2465,11 @@ checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 [[package]]
 name = "fiat-shamir"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/fiat-shamir.git#bcf23c766f2e930acf11e68777449483a55af077"
+source = "git+https://github.com/leanEthereum/fiat-shamir.git?branch=lean-vm-simple#9d4dc22f06cfa65f15bf5f1b07912a64c7feff0f"
 dependencies = [
  "p3-challenger",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "serde",
 ]
 
@@ -3540,7 +3548,7 @@ dependencies = [
 [[package]]
 name = "kzg"
 version = "0.1.0"
-source = "git+https://github.com/grandinetech/rust-kzg#b742bc111cccd04b429911d091519ee6af35ffbe"
+source = "git+https://github.com/grandinetech/rust-kzg#d47acbdf587753f466a5e6842395e03930ae1f96"
 dependencies = [
  "arbitrary",
  "dirs",
@@ -3565,15 +3573,14 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 [[package]]
 name = "lean-multisig"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=825b596584dee4511a89ec892251a06bd44dc72c#825b596584dee4511a89ec892251a06bd44dc72c"
 dependencies = [
  "clap",
+ "lean_vm",
  "multilinear-toolkit",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "poseidon_circuit",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rec_aggregation",
  "whir-p3",
- "xmss",
 ]
 
 [[package]]
@@ -3600,18 +3607,17 @@ dependencies = [
 [[package]]
 name = "lean_compiler"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=825b596584dee4511a89ec892251a06bd44dc72c#825b596584dee4511a89ec892251a06bd44dc72c"
 dependencies = [
- "air",
+ "air 0.1.0",
  "lean_vm",
  "lookup",
  "multilinear-toolkit",
- "p3-air",
  "p3-challenger",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "pest",
  "pest_derive",
  "rand 0.9.2",
@@ -3619,56 +3625,51 @@ dependencies = [
  "tracing",
  "utils",
  "whir-p3",
- "xmss",
 ]
 
 [[package]]
 name = "lean_prover"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=825b596584dee4511a89ec892251a06bd44dc72c#825b596584dee4511a89ec892251a06bd44dc72c"
 dependencies = [
- "air",
+ "air 0.1.0",
  "itertools 0.14.0",
  "lean_compiler",
  "lean_vm",
  "lookup",
  "multilinear-toolkit",
- "p3-air",
  "p3-challenger",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "pest",
  "pest_derive",
- "poseidon_circuit",
  "rand 0.9.2",
  "sub_protocols",
  "tracing",
  "utils",
  "whir-p3",
  "witness_generation",
- "xmss",
 ]
 
 [[package]]
 name = "lean_vm"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=825b596584dee4511a89ec892251a06bd44dc72c#825b596584dee4511a89ec892251a06bd44dc72c"
 dependencies = [
- "air",
+ "air 0.1.0",
  "colored",
  "derive_more",
  "itertools 0.14.0",
  "lookup",
  "multilinear-toolkit",
  "num_enum",
- "p3-air",
  "p3-challenger",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "pest",
  "pest_derive",
  "rand 0.9.2",
@@ -3677,17 +3678,15 @@ dependencies = [
  "tracing",
  "utils",
  "whir-p3",
- "xmss",
 ]
 
 [[package]]
 name = "leansig"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanSig.git?rev=f10dcbefac2502d356d93f686e8b4ecd8dc8840a#f10dcbefac2502d356d93f686e8b4ecd8dc8840a"
+source = "git+https://github.com/leanEthereum/leansig.git?branch=make-stuff-public#61088f848bb63cf86e39693f6717739e7b7dec7e"
 dependencies = [
  "dashmap",
  "ethereum_ssz",
- "ethereum_ssz_derive",
  "num-bigint",
  "num-traits",
  "p3-baby-bear 0.3.0 (git+https://github.com/Plonky3/Plonky3.git?rev=a33a312)",
@@ -4159,9 +4158,9 @@ dependencies = [
 
 [[package]]
 name = "libredox"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "416f7e718bdb06000964960ffa43b4335ad4012ae8b99060261aa4a8088d5ccb"
+checksum = "df15f6eac291ed1cf25865b1ee60399f57e7c227e7f51bdbd4c5270396a9ed50"
 dependencies = [
  "bitflags 2.10.0",
  "libc",
@@ -4226,12 +4225,12 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 [[package]]
 name = "lookup"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=825b596584dee4511a89ec892251a06bd44dc72c#825b596584dee4511a89ec892251a06bd44dc72c"
 dependencies = [
  "multilinear-toolkit",
  "p3-challenger",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
  "tracing",
  "utils",
@@ -4402,15 +4401,17 @@ dependencies = [
 [[package]]
 name = "multilinear-toolkit"
 version = "0.3.0"
-source = "git+https://github.com/leanEthereum/multilinear-toolkit.git#62766141561550c3540f9f644085fec53d721f16"
+source = "git+https://github.com/leanEthereum/multilinear-toolkit.git?branch=lean-vm-simple#e06cba2e214879c00c7fbc0e5b12908ddfcba588"
 dependencies = [
+ "air 0.3.0",
  "backend",
  "constraints-folder",
  "fiat-shamir",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rayon",
  "sumcheck",
+ "tracing",
 ]
 
 [[package]]
@@ -4738,24 +4739,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "p3-air"
-version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
-dependencies = [
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
-]
-
-[[package]]
 name = "p3-baby-bear"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-mds 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-monty-31 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-mds 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-monty-31 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
 ]
 
@@ -4775,39 +4767,39 @@ dependencies = [
 [[package]]
 name = "p3-challenger"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "tracing",
 ]
 
 [[package]]
 name = "p3-commit"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
  "itertools 0.14.0",
  "p3-challenger",
- "p3-dft 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-dft 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "serde",
 ]
 
 [[package]]
 name = "p3-dft"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
  "itertools 0.14.0",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "tracing",
 ]
 
@@ -4828,12 +4820,12 @@ dependencies = [
 [[package]]
 name = "p3-field"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
  "itertools 0.14.0",
  "num-bigint",
- "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "paste",
  "rand 0.9.2",
  "serde",
@@ -4858,26 +4850,26 @@ dependencies = [
 [[package]]
 name = "p3-interpolation"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
 ]
 
 [[package]]
 name = "p3-koala-bear"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
  "itertools 0.14.0",
  "num-bigint",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-monty-31 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-monty-31 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
  "serde",
 ]
@@ -4897,12 +4889,12 @@ dependencies = [
 [[package]]
 name = "p3-matrix"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
  "itertools 0.14.0",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
  "serde",
  "tracing",
@@ -4927,7 +4919,7 @@ dependencies = [
 [[package]]
 name = "p3-maybe-rayon"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
  "rayon",
 ]
@@ -4940,12 +4932,12 @@ source = "git+https://github.com/Plonky3/Plonky3.git?rev=a33a312#a33a31274a5e78b
 [[package]]
 name = "p3-mds"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
- "p3-dft 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-dft 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
 ]
 
@@ -4964,15 +4956,15 @@ dependencies = [
 [[package]]
 name = "p3-merkle-tree"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
  "itertools 0.14.0",
  "p3-commit",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
  "serde",
  "tracing",
@@ -4981,18 +4973,18 @@ dependencies = [
 [[package]]
 name = "p3-monty-31"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
  "itertools 0.14.0",
  "num-bigint",
- "p3-dft 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-mds 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-dft 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-mds 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "paste",
  "rand 0.9.2",
  "serde",
@@ -5026,12 +5018,12 @@ dependencies = [
 [[package]]
 name = "p3-poseidon2"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-mds 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-mds 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
 ]
 
@@ -5050,10 +5042,10 @@ dependencies = [
 [[package]]
 name = "p3-symmetric"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
  "itertools 0.14.0",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "serde",
 ]
 
@@ -5070,7 +5062,7 @@ dependencies = [
 [[package]]
 name = "p3-util"
 version = "0.3.0"
-source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig#1db9df28abd6db586eaa891af2416d94d1b026ae"
+source = "git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple#4897086b6f460b969dc0baad5c4dff91a4eb1d67"
 dependencies = [
  "rayon",
  "serde",
@@ -5314,22 +5306,6 @@ name = "portable-atomic"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
-
-[[package]]
-name = "poseidon_circuit"
-version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
-dependencies = [
- "multilinear-toolkit",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-monty-31 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "rand 0.9.2",
- "sub_protocols",
- "tracing",
- "utils",
- "whir-p3",
-]
 
 [[package]]
 name = "potential_utf"
@@ -5686,6 +5662,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
 dependencies = [
  "rand_core 0.9.3",
+]
+
+[[package]]
+name = "rapidhash"
+version = "4.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8e65c75143ce5d47c55b510297eeb1182f3c739b6043c537670e9fc18612dae"
+dependencies = [
+ "rustversion",
 ]
 
 [[package]]
@@ -6393,10 +6378,12 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "bincode",
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "lean-multisig",
  "leansig",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
  "serde",
  "serde_json",
@@ -6404,7 +6391,6 @@ dependencies = [
  "tracing",
  "tree_hash",
  "tree_hash_derive",
- "xmss",
 ]
 
 [[package]]
@@ -6605,21 +6591,22 @@ dependencies = [
 [[package]]
 name = "rec_aggregation"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=825b596584dee4511a89ec892251a06bd44dc72c#825b596584dee4511a89ec892251a06bd44dc72c"
 dependencies = [
- "air",
+ "air 0.1.0",
  "bincode",
+ "hex",
  "lean_compiler",
  "lean_prover",
  "lean_vm",
+ "leansig",
  "lookup",
  "multilinear-toolkit",
- "p3-air",
  "p3-challenger",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
  "serde",
  "serde_json",
@@ -6627,7 +6614,6 @@ dependencies = [
  "tracing",
  "utils",
  "whir-p3",
- "xmss",
 ]
 
 [[package]]
@@ -6731,9 +6717,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.25"
+version = "0.12.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6eff9328d40131d43bd911d42d79eb6a47312002a4daefc9e37f17e74a7701a"
+checksum = "3b4c14b2d9afca6a60277086b0cc6a6ae0b568f6f7916c943a8cdc79f8be240f"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -6893,7 +6879,7 @@ checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 [[package]]
 name = "rust-kzg-blst"
 version = "0.1.0"
-source = "git+https://github.com/grandinetech/rust-kzg#b742bc111cccd04b429911d091519ee6af35ffbe"
+source = "git+https://github.com/grandinetech/rust-kzg#d47acbdf587753f466a5e6842395e03930ae1f96"
 dependencies = [
  "arbitrary",
  "blst",
@@ -7558,12 +7544,12 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 [[package]]
 name = "sub_protocols"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=825b596584dee4511a89ec892251a06bd44dc72c#825b596584dee4511a89ec892251a06bd44dc72c"
 dependencies = [
  "derive_more",
  "lookup",
  "multilinear-toolkit",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "tracing",
  "utils",
  "whir-p3",
@@ -7578,14 +7564,14 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sumcheck"
 version = "0.3.0"
-source = "git+https://github.com/leanEthereum/multilinear-toolkit.git#62766141561550c3540f9f644085fec53d721f16"
+source = "git+https://github.com/leanEthereum/multilinear-toolkit.git?branch=lean-vm-simple#e06cba2e214879c00c7fbc0e5b12908ddfcba588"
 dependencies = [
+ "air 0.3.0",
  "backend",
  "constraints-folder",
  "fiat-shamir",
- "p3-air",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rayon",
 ]
 
@@ -7613,9 +7599,9 @@ dependencies = [
 
 [[package]]
 name = "syn-solidity"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff790eb176cc81bb8936aed0f7b9f14fc4670069a2d371b3e3b0ecce908b2cb3"
+checksum = "60ceeb7c95a4536de0c0e1649bd98d1a72a4bb9590b1f3e45a8a0bfdb7c188c0"
 dependencies = [
  "paste",
  "proc-macro2",
@@ -8040,6 +8026,18 @@ dependencies = [
 
 [[package]]
 name = "tracing-forest"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3298fe855716711a00474eceb89cc7dc254bbe67f6bc4afafdeec5f0c538771c"
+dependencies = [
+ "smallvec",
+ "thiserror 2.0.17",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "tracing-forest"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92bdb3c949c9e81b71f78ba782f956b896019d82cc2f31025d21e04adab4d695"
@@ -8277,17 +8275,16 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=825b596584dee4511a89ec892251a06bd44dc72c#825b596584dee4511a89ec892251a06bd44dc72c"
 dependencies = [
  "multilinear-toolkit",
- "p3-air",
  "p3-challenger",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "tracing",
- "tracing-forest",
+ "tracing-forest 0.3.0",
  "tracing-subscriber",
 ]
 
@@ -8477,27 +8474,27 @@ dependencies = [
 [[package]]
 name = "whir-p3"
 version = "0.1.0"
-source = "git+https://github.com/TomWambsgans/whir-p3?branch=lean-multisig#04fb1c1f2e3bbd14e6e4aee32621656eb3f3949f"
+source = "git+https://github.com/TomWambsgans/whir-p3?branch=lean-vm-simple#f74bc197415a597b1ca316a4ee207f43c8adee85"
 dependencies = [
  "itertools 0.14.0",
  "multilinear-toolkit",
- "p3-baby-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-baby-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "p3-challenger",
  "p3-commit",
- "p3-dft 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-dft 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-field 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "p3-interpolation",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-matrix 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-maybe-rayon 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "p3-merkle-tree",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "rand 0.9.2",
  "rayon",
  "thiserror 2.0.17",
  "tracing",
- "tracing-forest",
+ "tracing-forest 0.2.0",
  "tracing-subscriber",
 ]
 
@@ -8887,30 +8884,27 @@ checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
 [[package]]
 name = "witness_generation"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=825b596584dee4511a89ec892251a06bd44dc72c#825b596584dee4511a89ec892251a06bd44dc72c"
 dependencies = [
- "air",
+ "air 0.1.0",
  "derive_more",
  "lean_compiler",
  "lean_vm",
  "lookup",
  "multilinear-toolkit",
- "p3-air",
  "p3-challenger",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-monty-31 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
+ "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-monty-31 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-poseidon2 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-symmetric 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
+ "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-vm-simple)",
  "pest",
  "pest_derive",
- "poseidon_circuit",
  "rand 0.9.2",
  "sub_protocols",
  "tracing",
  "utils",
  "whir-p3",
- "xmss",
 ]
 
 [[package]]
@@ -8970,19 +8964,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7d8a75eaf6557bb84a65ace8609883db44a29951042ada9b393151532e41fcb"
 dependencies = [
  "xml-rs",
-]
-
-[[package]]
-name = "xmss"
-version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=55ce53ef201b1baff10112792efc83278e55fcd8#55ce53ef201b1baff10112792efc83278e55fcd8"
-dependencies = [
- "multilinear-toolkit",
- "p3-koala-bear 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "p3-util 0.3.0 (git+https://github.com/TomWambsgans/Plonky3.git?branch=lean-multisig)",
- "rand 0.9.2",
- "sha3",
- "utils",
 ]
 
 [[package]]

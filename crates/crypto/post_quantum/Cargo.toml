@@ -12,10 +12,12 @@ version.workspace = true
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
+bincode.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
 lean-multisig.workspace = true
 leansig.workspace = true
+p3-koala-bear = { git = "https://github.com/TomWambsgans/Plonky3.git", branch = "lean-vm-simple" }
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -23,7 +25,6 @@ thiserror.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
-xmss.workspace = true
 
 [lints]
 workspace = true
