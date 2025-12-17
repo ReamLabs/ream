@@ -29,7 +29,7 @@ macro_rules! impl_settings {
 
                 match output {
                     Ok(settings) => settings,
-                    Err(error) => panic!("failed to load kzg trusted setup: {error}"),
+                    Err(err) => panic!("failed to load kzg trusted setup: {err}"),
                 }
             })
         }

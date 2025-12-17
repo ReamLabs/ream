@@ -940,8 +940,11 @@ pub async fn post_contribution_and_proofs(
                 });
                 let _ = event_sender.send(event);
             }
-            Err(message) => {
-                failures.push(ContributionAndProofFailure { index, message });
+            Err(err) => {
+                failures.push(ContributionAndProofFailure {
+                    index,
+                    message: err,
+                });
             }
         }
     }

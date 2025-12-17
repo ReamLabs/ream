@@ -275,18 +275,18 @@ impl ValidatorService {
     // Runs at the start of every slot
     pub async fn on_slot(&mut self, slot: u64) {
         info!("Current Slot: {slot}");
-        if let Err(sync_error) = self.prepare_sync_infos(slot - 1).await {
-            warn!("Could not prepare the sync infos: {sync_error:?}");
-        } else if let Err(sync_error) = self.process_normal_sync_infos(slot - 1).await {
-            warn!("Could not process the normal sync infos: {sync_error:?}");
+        if let Err(err) = self.prepare_sync_infos(slot - 1).await {
+            warn!("Could not prepare the sync infos: {err:?}");
+        } else if let Err(err) = self.process_normal_sync_infos(slot - 1).await {
+            warn!("Could not process the normal sync infos: {err:?}");
         }
     }
 
     // Runs at 2 intervals into every slot: meant for aggregators
     pub async fn on_slot_aggregator(&mut self, slot: u64) {
         info!("Current Slot: {slot}");
-        if let Err(sync_error) = self.process_aggregator_sync_infos(slot - 1).await {
-            warn!("Could not process the aggregator sync infos: {sync_error:?}");
+        if let Err(err) = self.process_aggregator_sync_infos(slot - 1).await {
+            warn!("Could not process the aggregator sync infos: {err:?}");
         }
     }
 
@@ -488,8 +488,8 @@ impl ValidatorService {
                             validator_index,
                             signature,
                         })),
-                        Err(signing_error) => Some(Err(anyhow!(
-                            "Signing failed for validator {validator_index:?}: {signing_error:?}"
+                        Err(err) => Some(Err(anyhow!(
+                            "Signing failed for validator {validator_index:?}: {err:?}"
                         ))),
                     };
                 }

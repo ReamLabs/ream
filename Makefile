@@ -56,6 +56,17 @@ fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `ma
 		echo "    .map_err(|err| ... )"; \
 		exit 1; \
 	fi
+	@# ---- Err(err) naming check ----
+	@all_errs=$$(grep -RIn --include="*.rs" "Err(" . || true); \
+	violations_err=$$(echo "$$all_errs" | grep -E "Err\(\s*[a-z][a-zA-Z0-9_]*\s*\)" | grep -Ev "Err\(err\)" || true); \
+	if [ -n "$$violations_err" ]; then \
+		echo "Invalid Err variable naming found:"; \
+		echo "$$violations_err"; \
+		echo; \
+		echo "Only this form is allowed:"; \
+		echo "    Err(err)"; \
+		exit 1; \
+	fi
 
 .PHONY: clippy
 clippy: # Run `clippy` on the entire workspace.

@@ -411,13 +411,15 @@ pub async fn post_beacon_block(
     // 5. Integrate into state (after broadcast)
     let integration_success = match beacon_chain.process_block(signed_block.clone()).await {
         Ok(()) => true,
-        Err(e) => {
+        Err(err) => {
             // Check if block is already known - this is not an error
-            if e.to_string().contains("already known") || e.to_string().contains("ALREADY_KNOWN") {
-                warn!("Block already known, ignoring: {}", e);
+            if err.to_string().contains("already known")
+                || err.to_string().contains("ALREADY_KNOWN")
+            {
+                warn!("Block already known, ignoring: {}", err);
                 return Ok(HttpResponse::Ok().finish());
             }
-            error!("Failed to integrate block into state: {}", e);
+            error!("Failed to integrate block into state: {}", err);
             false
         }
     };
