@@ -63,10 +63,7 @@ pub async fn on_block(
         // available *Note*: Extraneous or invalid data (in addition to the
         // expected/referenced valid data) received on the p2p network MUST NOT invalidate
         // a block that is otherwise valid and available
-        ensure!(store.is_data_available(
-            block.tree_hash_root(),
-            &block.body.blob_kzg_commitments
-        )?);
+        ensure!(store.is_data_available(block.tree_hash_root(), &block.body.blob_kzg_commitments)?);
     }
 
     // Check the block is valid and compute the post-state
