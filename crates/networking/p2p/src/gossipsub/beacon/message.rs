@@ -12,7 +12,7 @@ use ream_light_client::{
 };
 use ream_network_spec::networks::beacon_network_spec;
 use ream_validator_beacon::{
-    aggregate_and_proof::AggregateAndProof, sync_committee::SyncCommitteeMessage,
+    aggregate_and_proof::SignedAggregateAndProof, sync_committee::SyncCommitteeMessage,
 };
 use ssz::Decode;
 
@@ -24,7 +24,7 @@ pub enum GossipsubMessage {
     BeaconBlock(Box<SignedBeaconBlock>),
     AttesterSlashing(Box<AttesterSlashing>),
     ProposerSlashing(Box<ProposerSlashing>),
-    AggregateAndProof(Box<AggregateAndProof>),
+    AggregateAndProof(Box<SignedAggregateAndProof>),
     BlobSidecar(Box<BlobSidecar>),
     DataColumnSidecar(Box<DataColumnSidecar>),
     BeaconAttestation((Box<SingleAttestation>, u64)),
@@ -60,7 +60,7 @@ impl GossipsubMessage {
                 )))
             }
             GossipTopicKind::AggregateAndProof => Ok(Self::AggregateAndProof(Box::new(
-                AggregateAndProof::from_ssz_bytes(data)?,
+                SignedAggregateAndProof::from_ssz_bytes(data)?,
             ))),
             GossipTopicKind::BeaconAttestation(subnet_id) => Ok(Self::BeaconAttestation((
                 Box::new(SingleAttestation::from_ssz_bytes(data)?),

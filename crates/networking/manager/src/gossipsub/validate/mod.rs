@@ -1,3 +1,4 @@
+pub mod aggregate_and_proof;
 pub mod attester_slashing;
 pub mod beacon_attestation;
 pub mod beacon_block;

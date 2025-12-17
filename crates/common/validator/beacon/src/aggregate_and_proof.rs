@@ -18,7 +18,7 @@ pub struct AggregateAndProof {
     pub selection_proof: BLSSignature,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedAggregateAndProof {
     pub message: AggregateAndProof,
     pub signature: BLSSignature,
