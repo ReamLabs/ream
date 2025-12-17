@@ -4,9 +4,9 @@ use alloy_primitives::{Address, B256, map::HashSet};
 use parking_lot::RwLock;
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
-    bls_to_execution_change::SignedBLSToExecutionChange,
-    electra::beacon_state::BeaconState, proposer_slashing::ProposerSlashing,
-    sync_aggregate::SyncAggregate, voluntary_exit::SignedVoluntaryExit,
+    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
+    proposer_slashing::ProposerSlashing, sync_aggregate::SyncAggregate,
+    voluntary_exit::SignedVoluntaryExit,
 };
 use ream_consensus_misc::deposit::Deposit;
 use tree_hash::TreeHash;
@@ -206,11 +206,7 @@ impl OperationPool {
     }
 
     pub fn get_all_sync_aggregates(&self) -> Vec<SyncAggregate> {
-        self.sync_aggregates
-            .read()
-            .iter()
-            .map(|(_, v)| v.clone())
-            .collect()
+        self.sync_aggregates.read().values().cloned().collect()
     }
 
     pub fn insert_sync_aggregate(
@@ -220,8 +216,8 @@ impl OperationPool {
         beacon_block_root: B256,
     ) {
         let key = SyncAggregateKey {
-            slot: slot,
-            beacon_block_root: beacon_block_root,
+            slot,
+            beacon_block_root,
         };
 
         let mut map = self.sync_aggregates.write();
