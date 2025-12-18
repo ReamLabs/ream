@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 use ream_consensus_lean::{
-    attestation::{Attestation, AttestationData, SignedAttestation},
-    block::{Block, BlockBody, BlockWithSignatures, SignedBlockWithAttestation},
+    attestation::{AttestationData, SignedAttestation},
+    block::{BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
     state::LeanState,
     validator::is_proposer,
@@ -18,13 +18,12 @@ use ream_metrics::{
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
-use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::{
     db::lean::LeanDB,
     tables::{field::REDBField, table::REDBTable},
 };
 use ream_sync::rwlock::{Reader, Writer};
-use ssz_types::{VariableList, typenum::U4096};
+use ssz_types::VariableList;
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
 
@@ -418,58 +417,15 @@ impl Store {
 
         let add_attestations_timer =
             start_timer(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
+        let (mut candidate_block, signatures, post_state) = head_state.build_block(
+            slot,
+            validator_index,
+            head_root,
+            None,
+            latest_known_attestation_provider.get_all_attestations()?,
+            block_provider.get_block_roots()?,
+        )?;
 
-        let mut attestations = VariableList::empty();
-        let mut signatures: Vec<Signature> = Vec::new();
-
-        let (mut candidate_block, post_state) = loop {
-            let candidate_block = Block {
-                slot,
-                proposer_index: validator_index,
-                parent_root: head_root,
-                state_root: B256::ZERO,
-                body: BlockBody {
-                    attestations: attestations.clone(),
-                },
-            };
-            let mut advanced_state = head_state.clone();
-            advanced_state.process_slots(slot)?;
-            advanced_state.process_block(&candidate_block)?;
-
-            let mut new_attestations: VariableList<Attestation, U4096> = VariableList::empty();
-            let mut new_signatures: Vec<Signature> = Vec::new();
-            for signed_attestation in latest_known_attestation_provider
-                .get_all_attestations()?
-                .values()
-            {
-                let data = &signed_attestation.message.data;
-                if !block_provider.contains_key(data.head.root) {
-                    continue;
-                }
-                if data.source != advanced_state.latest_justified {
-                    continue;
-                }
-                if !attestations.contains(&signed_attestation.message) {
-                    new_attestations
-                        .push(signed_attestation.message.clone())
-                        .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
-                    new_signatures.push(signed_attestation.signature);
-                }
-            }
-            if new_attestations.is_empty() {
-                break (candidate_block, advanced_state);
-            }
-
-            for attestation in new_attestations {
-                attestations
-                    .push(attestation)
-                    .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
-            }
-
-            for signature in new_signatures {
-                signatures.push(signature);
-            }
-        };
         stop_timer(add_attestations_timer);
 
         let compute_state_root_timer = start_timer(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);

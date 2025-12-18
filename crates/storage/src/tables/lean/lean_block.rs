@@ -115,4 +115,15 @@ impl LeanBlockTable {
         }
         Ok(children_map)
     }
+
+    pub fn get_block_roots(&self) -> Result<Vec<B256>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+        let mut block_roots = Vec::new();
+        for entry in table.iter()? {
+            let (key, _) = entry?;
+            block_roots.push(key.value());
+        }
+        Ok(block_roots)
+    }
 }

@@ -9,6 +9,7 @@ use ream_metrics::{
     STATE_TRANSITION_SLOTS_PROCESSED_TOTAL, STATE_TRANSITION_SLOTS_PROCESSING_TIME,
     STATE_TRANSITION_TIME, inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
 };
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -20,7 +21,7 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    attestation::Attestation,
+    attestation::{Attestation, SignedAttestation},
     block::{Block, BlockBody, BlockHeader},
     checkpoint::Checkpoint,
     config::Config,
@@ -219,6 +220,69 @@ impl LeanState {
         };
 
         Ok(())
+    }
+
+    pub fn build_block(
+        self,
+        slot: u64,
+        proposer_index: u64,
+        parent_root: B256,
+        attestations: Option<VariableList<Attestation, U4096>>,
+        available_signed_attestations: HashMap<u64, SignedAttestation>,
+        known_block_roots: Vec<B256>,
+    ) -> anyhow::Result<(Block, Vec<Signature>, LeanState)> {
+        let mut attestations: VariableList<Attestation, U4096> =
+            attestations.unwrap_or_else(VariableList::empty);
+        let mut signatures: Vec<Signature> = Vec::new();
+
+        let (mut candidate_block, signatures, post_state) = loop {
+            let candidate_block = Block {
+                slot,
+                proposer_index,
+                parent_root,
+                state_root: B256::ZERO,
+                body: BlockBody {
+                    attestations: attestations.clone(),
+                },
+            };
+            let mut advanced_state = self.clone();
+            advanced_state.process_slots(slot)?;
+            advanced_state.process_block(&candidate_block)?;
+
+            let mut new_attestations: VariableList<Attestation, U4096> = VariableList::empty();
+            let mut new_signatures: Vec<Signature> = Vec::new();
+            for signed_attestation in available_signed_attestations.values() {
+                let data = &signed_attestation.message.data;
+                if !known_block_roots.contains(&data.head.root) {
+                    continue;
+                }
+                if data.source != advanced_state.latest_justified {
+                    continue;
+                }
+                if !attestations.contains(&signed_attestation.message) {
+                    new_attestations
+                        .push(signed_attestation.message.clone())
+                        .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
+                    new_signatures.push(signed_attestation.signature);
+                }
+            }
+            if new_attestations.is_empty() {
+                break (candidate_block, signatures, advanced_state);
+            }
+
+            for attestation in new_attestations {
+                attestations
+                    .push(attestation)
+                    .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
+            }
+
+            for signature in new_signatures {
+                signatures.push(signature);
+            }
+        };
+
+        candidate_block.state_root = post_state.tree_hash_root();
+        Ok((candidate_block, signatures, post_state))
     }
 
     pub fn process_attestations(&mut self, attestations: &[Attestation]) -> anyhow::Result<()> {
