@@ -32,6 +32,7 @@ ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
 ream-execution-rpc-types.workspace = true
 ream-light-client.workspace = true
+ream-post-quantum-crypto.workspace = true
 
 [lints]
 workspace = true

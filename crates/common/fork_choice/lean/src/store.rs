@@ -395,14 +395,8 @@ impl Store {
     ) -> anyhow::Result<BlockWithSignatures> {
         let head_root = self.get_proposal_head(slot).await?;
         let initialize_block_timer = start_timer(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
-        let (state_provider, latest_known_attestation_provider, block_provider) = {
-            let db = self.store.lock().await;
-            (
-                db.state_provider(),
-                db.latest_known_attestations_provider(),
-                db.block_provider(),
-            )
-        };
+        let state_provider = self.store.lock().await.state_provider();
+
         let head_state = state_provider
             .get(head_root)?
             .ok_or(anyhow!("State not found for head root"))?;
@@ -417,14 +411,10 @@ impl Store {
 
         let add_attestations_timer =
             start_timer(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
-        let (mut candidate_block, signatures, post_state) = head_state.build_block(
-            slot,
-            validator_index,
-            head_root,
-            None,
-            latest_known_attestation_provider.get_all_attestations()?,
-            &block_provider.get_block_roots()?,
-        )?;
+        let (mut candidate_block, signatures, post_state) = {
+            let db = self.store.lock().await;
+            db.build_block(slot, validator_index, head_root, None)?
+        };
 
         stop_timer(add_attestations_timer);
 
