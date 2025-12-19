@@ -268,6 +268,20 @@ impl Store {
                     }
                 }
             }
+
+            // Prune old blobs based on the retention period
+            let current_slot = self.get_current_slot()?;
+            let min_retention_epochs = beacon_network_spec().min_epochs_for_blob_sidecars_requests;
+            match self.db.prune_old_blobs(current_slot, min_retention_epochs) {
+                Ok(pruned_count) => {
+                    if pruned_count > 0 {
+                        tracing::info!("Pruned {} old blobs", pruned_count);
+                    }
+                }
+                Err(err) => {
+                    tracing::error!("Failed to prune old blobs: {}", err);
+                }
+            }
         }
 
         Ok(())
