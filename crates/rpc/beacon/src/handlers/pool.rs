@@ -391,7 +391,7 @@ async fn get_head_state(beacon_chain: &BeaconChain) -> Result<BeaconState, ApiEr
         })
 }
 
-/// POST /eth/v2/beacon/pool/sync_committees
+/// POST /eth/v1/beacon/pool/sync_committees
 #[post("/beacon/pool/sync_committees")]
 pub async fn post_sync_committees(
     messages: Json<Vec<SyncCommitteeMessage>>,
