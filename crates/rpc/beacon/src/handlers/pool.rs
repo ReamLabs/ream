@@ -28,7 +28,7 @@ use ream_p2p::{
     network::beacon::channel::GossipMessage,
 };
 use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
-use ream_validator_beacon::attestation::compute_subnet_for_attestation;
+use ream_validator_beacon::{attestation::compute_subnet_for_attestation, sync_committee::SyncCommitteeMessage};
 use ssz::Encode;
 use ssz_types::{
     BitList, BitVector,
@@ -381,4 +381,13 @@ async fn get_head_state(beacon_chain: &BeaconChain) -> Result<BeaconState, ApiEr
         .ok_or_else(|| {
             ApiError::NotFound(format!("No beacon state found for head root: {head_root}"))
         })
+}
+
+/// POST /eth/v2/beacon/pool/sync_committees
+#[post("/beacon/pool/sync_committees")]
+pub async fn post_sync_committees(
+    messages: Json<Vec<SyncCommitteeMessage>>,
+    db: Data<BeaconDB>
+) -> Result<impl Responder, ApiError> {
+    
 }
