@@ -145,6 +145,28 @@ lazy_static::lazy_static! {
         &[],
         default_registry()
     ).expect("failed to create PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME histogram vec");
+
+    // Network Metrics
+    pub static ref LEAN_PEER_COUNT: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_connected_peers",
+        "Number of connected peers",
+        &[],
+        default_registry()
+    ).expect("failed to create LEAN_PEER_COUNT int gauge vec");
+
+    pub static ref LEAN_CONNECTION_EVENT_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_peer_connection_events_total",
+        "Number of connection events",
+        &[],
+        default_registry()
+    ).expect("failed to create LEAN_CONNECTION_EVENT_TOTAL int counter vec");
+
+    pub static ref LEAN_DISCONNECTION_EVENT_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_peer_disconnection_events_total",
+        "Number of disconnection events",
+        &[],
+        default_registry()
+    ).expect("failed to create LEAN_DISCONNECTION_EVENT_TOTAL int counter vec");
 }
 
 /// Set the value of a gauge metric

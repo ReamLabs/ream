@@ -24,6 +24,10 @@ use libp2p::{
 use libp2p_identity::{Keypair, PeerId, secp256k1};
 use ream_chain_lean::{messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest};
 use ream_executor::ReamExecutor;
+use ream_metrics::{
+    LEAN_CONNECTION_EVENT_TOTAL, LEAN_DISCONNECTION_EVENT_TOTAL, LEAN_PEER_COUNT,
+    inc_int_counter_vec, set_int_gauge_vec,
+};
 use ream_network_spec::networks::{Devnet, lean_network_spec};
 use ream_network_state_lean::{NetworkState, cached_peer::CachedPeer};
 use ream_peer::{ConnectionState, Direction};
@@ -225,6 +229,7 @@ impl LeanNetworkService {
 
     pub async fn start(&mut self, bootnodes: Bootnodes) -> anyhow::Result<()> {
         info!("LeanNetworkService started");
+        set_int_gauge_vec(&LEAN_PEER_COUNT, 0, &[]);
 
         self.connect_to_bootnodes(bootnodes.to_multiaddrs_lean())
             .await;
@@ -375,6 +380,12 @@ impl LeanNetworkService {
                     ConnectionState::Connected,
                     direction,
                 );
+                set_int_gauge_vec(
+                    &LEAN_PEER_COUNT,
+                    self.network_state.connected_peers() as i64,
+                    &[],
+                );
+                inc_int_counter_vec(&LEAN_CONNECTION_EVENT_TOTAL, &[]);
 
                 info!(
                     "Connected to peer: {peer_id:?} {:?}",
@@ -395,6 +406,12 @@ impl LeanNetworkService {
                     ConnectionState::Disconnected,
                     direction,
                 );
+                set_int_gauge_vec(
+                    &LEAN_PEER_COUNT,
+                    self.network_state.connected_peers() as i64,
+                    &[],
+                );
+                inc_int_counter_vec(&LEAN_DISCONNECTION_EVENT_TOTAL, &[]);
 
                 info!("Disconnected from peer: {peer_id:?}");
                 Some(ReamNetworkEvent::PeerDisconnected(peer_id))
