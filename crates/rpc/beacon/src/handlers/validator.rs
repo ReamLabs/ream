@@ -595,7 +595,7 @@ pub async fn post_aggregate_and_proofs_v2(
             ));
         }
 
-        let aggregator_selection_domain =
+        let aggregator_selection_domain = 
             state.get_domain(DOMAIN_SELECTION_PROOF, Some(compute_epoch_at_slot(slot)));
         let aggregator_selection_signing_root =
             compute_signing_root(attestation.data.slot, aggregator_selection_domain);

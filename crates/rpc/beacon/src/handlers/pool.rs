@@ -28,7 +28,9 @@ use ream_p2p::{
     network::beacon::channel::GossipMessage,
 };
 use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
-use ream_validator_beacon::{attestation::compute_subnet_for_attestation, sync_committee::SyncCommitteeMessage};
+use ream_validator_beacon::{
+    attestation::compute_subnet_for_attestation, sync_committee::SyncCommitteeMessage,
+};
 use ssz::Encode;
 use ssz_types::{
     BitList, BitVector,
@@ -387,7 +389,33 @@ async fn get_head_state(beacon_chain: &BeaconChain) -> Result<BeaconState, ApiEr
 #[post("/beacon/pool/sync_committees")]
 pub async fn post_sync_committees(
     messages: Json<Vec<SyncCommitteeMessage>>,
-    db: Data<BeaconDB>
+    db: Data<BeaconDB>,
 ) -> Result<impl Responder, ApiError> {
-    
+    for message in messages.into_inner() {
+        let state = get_state_from_id(ID::Slot(message.slot), &db).await?;
+
+        let validator = state
+            .validators
+            .get(message.validator_index as usize)
+            .ok_or(ApiError::ValidatorNotFound("Validator not found.".into()))?;
+
+        let validator_pub_key = &validator.public_key;
+
+        let current_sync_committee = state.current_sync_committee;
+
+        if !current_sync_committee
+            .public_keys
+            .iter()
+            .find(|&v| v == validator_pub_key)
+            .is_some()
+        {
+            return Err(ApiError::BadRequest(
+                "Validator is not a part of sync committee".into(),
+            ));
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "data": "success"
+    })))
 }
