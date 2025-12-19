@@ -410,10 +410,20 @@ pub async fn post_sync_committees(
 
         let epoch = compute_epoch_at_slot(slot);
 
-        if !is_assigned_to_sync_committee(&state, epoch, validator_index).is_ok() {
-            return Err(ApiError::BadRequest(
-                "Validator not assigned to sync committee".into(),
-            ));
+        let is_validator_assigned = is_assigned_to_sync_committee(&state, epoch, validator_index);
+        match is_validator_assigned {
+            Ok(res) => {
+                if !res {
+                    return Err(ApiError::BadRequest(
+                        "Validator not assigned to sync committee".into(),
+                    ));
+                }
+            }
+            Err(err) => {
+                return Err(ApiError::InternalError(format!(
+                    "Failed due to internal error: {err}"
+                )));
+            }
         }
 
         let validator_domain = state.get_domain(DOMAIN_SYNC_COMMITTEE, Some(epoch));
