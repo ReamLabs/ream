@@ -4,8 +4,7 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
-use alloy_primitives::{Address, B256, U256};
-use hashbrown::HashMap;
+use alloy_primitives::{Address, B256, U256, aliases::B32};
 use ream_api_types_beacon::{
     block::{FullBlockData, ProduceBlockData, ProduceBlockResponse},
     committee::BeaconCommitteeSubscription,
@@ -57,6 +56,10 @@ use ream_execution_rpc_types::{
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;
 use ream_operation_pool::OperationPool;
+use ream_p2p::{
+    gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
+    network::beacon::Network,
+};
 use ream_storage::{db::beacon::BeaconDB, tables::field::REDBField};
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof,
@@ -77,7 +80,7 @@ use ssz_types::{
     VariableList,
     typenum::{U1, U8, U16},
 };
-use tokio::sync::broadcast;
+use tokio::sync::{Mutex, broadcast};
 use tree_hash::TreeHash;
 
 use super::state::get_state_from_id;
@@ -676,20 +679,42 @@ pub async fn post_aggregate_and_proofs_v2(
     })))
 }
 
+#[derive(Debug, Clone)]
+pub enum SubscriptionAction {
+    Subscribe { subnet_id: u64, fork: B32 },
+}
+
+impl SubscriptionAction {
+    fn subnet_id(&self) -> u64 {
+        match self {
+            SubscriptionAction::Subscribe { subnet_id, .. } => *subnet_id,
+        }
+    }
+
+    fn fork(&self) -> B32 {
+        match self {
+            SubscriptionAction::Subscribe { fork, .. } => *fork,
+        }
+    }
+}
+
 #[post("/validator/beacon_committee_subscriptions")]
 pub async fn post_beacon_committee_subscriptions(
     db: Data<BeaconDB>,
     subscriptions: Json<Vec<BeaconCommitteeSubscription>>,
+    network: Data<Mutex<Network>>,
 ) -> Result<impl Responder, ApiError> {
-    let mut subnet_to_subscriptions: HashMap<u64, Vec<BeaconCommitteeSubscription>> =
-        HashMap::new();
+    let mut subnets: HashSet<(u64, B32)> = HashSet::new();
+
     for sub in subscriptions.into_inner() {
         let state = get_state_from_id(ID::Slot(sub.slot), &db).await?;
+
         if sub.committees_at_slot > MAX_COMMITTEES_PER_SLOT {
             return Err(ApiError::BadRequest(
                 "Committees at a slot should be less than the maximum committees per slot".into(),
             ));
         }
+
         if sub.committee_index >= sub.committees_at_slot {
             return Err(ApiError::BadRequest(
                 "Committee index cannot be more than the committees in a slot".into(),
@@ -698,27 +723,41 @@ pub async fn post_beacon_committee_subscriptions(
 
         let committee_members = state
             .get_beacon_committee(sub.slot, sub.committee_index)
-            .map_err(|err| {
-                ApiError::InternalError(format!("Failed due to internal error: {err}"))
-            })?;
+            .map_err(|err| ApiError::InternalError(format!("Failed to get committee: {err}")))?;
 
         if !committee_members.contains(&sub.validator_index) {
             return Err(ApiError::BadRequest(
-                "Validator not part of the committee".to_string(),
+                "Validator not part of the committee".into(),
             ));
         }
 
         let subnet_id =
             compute_subnet_for_attestation(sub.committees_at_slot, sub.slot, sub.committee_index);
 
-        subnet_to_subscriptions
-            .entry(subnet_id)
-            .or_default()
-            .push(sub);
+        let fork = state.fork.current_version;
+
+        subnets.insert((subnet_id, fork));
     }
 
-    // TODO
-    // add support for attestation subnet subscriptions for validators
+    let actions: Vec<SubscriptionAction> = subnets
+        .into_iter()
+        .map(|(subnet_id, fork)| SubscriptionAction::Subscribe { subnet_id, fork })
+        .collect();
+
+    let mut network = network.lock().await;
+
+    for action in actions {
+        let topic = GossipTopic {
+            fork: action.fork(),
+            kind: GossipTopicKind::BeaconAttestation(action.subnet_id()),
+        };
+
+        if !network.subscribe_to_topic(topic) {
+            return Err(ApiError::InternalError(
+                "Failed to subscribe to attestation subnet".to_string(),
+            ));
+        }
+    }
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "data": "success"

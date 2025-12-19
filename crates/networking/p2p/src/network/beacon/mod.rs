@@ -816,7 +816,7 @@ impl Network {
         }
     }
 
-    fn subscribe_to_topic(&mut self, topic: GossipTopic) -> bool {
+    pub fn subscribe_to_topic(&mut self, topic: GossipTopic) -> bool {
         self.subscribed_topics.lock().insert(topic);
 
         let topic: Topic = topic.into();
@@ -828,8 +828,7 @@ impl Network {
             .is_ok()
     }
 
-    #[allow(dead_code)]
-    fn unsubscribe_from_topic(&mut self, topic: GossipTopic) -> bool {
+    pub fn unsubscribe_from_topic(&mut self, topic: GossipTopic) -> bool {
         self.subscribed_topics.lock().remove(&topic);
 
         let topic: Topic = topic.into();
