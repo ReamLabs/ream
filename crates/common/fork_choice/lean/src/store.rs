@@ -423,7 +423,7 @@ impl Store {
             head_root,
             None,
             latest_known_attestation_provider.get_all_attestations()?,
-            block_provider.get_block_roots()?,
+            &block_provider.get_block_roots()?,
         )?;
 
         stop_timer(add_attestations_timer);

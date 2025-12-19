@@ -229,7 +229,7 @@ impl LeanState {
         parent_root: B256,
         attestations: Option<VariableList<Attestation, U4096>>,
         available_signed_attestations: HashMap<u64, SignedAttestation>,
-        known_block_roots: Vec<B256>,
+        known_block_roots: &[B256],
     ) -> anyhow::Result<(Block, Vec<Signature>, LeanState)> {
         let mut attestations: VariableList<Attestation, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
