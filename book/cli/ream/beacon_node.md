@@ -40,7 +40,7 @@ Options:
       --mev-relay-url <MEV_RELAY_URL>
           The URL of a service compatible with the MEV-boost API
       --blob-retention-epochs <BLOB_RETENTION_EPOCHS>
-          Number of epochs to retain blob sidecars. Defaults to network spec value (4096 epochs for mainnet, ~18 days). Minimum value is enforced by the network spec.
+          Number of epochs to retain blob sidecars. Defaults to network spec value (4096 epochs for mainnet, ~18 days)
   -h, --help
           Print help
 ```
