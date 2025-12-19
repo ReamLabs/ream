@@ -1,8 +1,9 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use anyhow::anyhow;
 use ream_consensus_beacon::electra::beacon_state::BeaconState;
-use redb::Database;
+use ream_consensus_misc::constants::beacon::SLOTS_PER_EPOCH;
+use redb::{Database, ReadableDatabase};
 
 use crate::tables::{
     beacon::{
@@ -161,5 +162,39 @@ impl BeaconDB {
             .ok_or_else(|| anyhow!("Unable to fetch latest state"))?;
 
         Ok(state)
+    }
+
+    /// Prune blobs older than the minimum retention period
+    pub fn prune_old_blobs(
+        &self,
+        current_slot: u64,
+        min_retention_epochs: u64,
+    ) -> anyhow::Result<usize> {
+        let min_retention_slots = min_retention_epochs * SLOTS_PER_EPOCH;
+        let min_slot_to_retain = current_slot.saturating_sub(min_retention_slots);
+
+        // Collect all block roots that should be retained
+        let mut blocks_to_retain = HashSet::new();
+
+        let read_txn = self.db.begin_read()?;
+        let slot_index_table = read_txn.open_table(
+            crate::tables::beacon::slot_index::BeaconSlotIndexTable::TABLE_DEFINITION,
+        )?;
+
+        // Iterate through all slots from min_slot_to_retain to current
+        for item in slot_index_table.range(min_slot_to_retain..)? {
+            let (_, block_root) = item?;
+            blocks_to_retain.insert(block_root.value());
+        }
+
+        drop(slot_index_table);
+        drop(read_txn);
+
+        // Prune blobs not in the retention set
+        let pruned_count = self
+            .blobs_and_proofs_provider()
+            .prune_old_blobs(&blocks_to_retain)?;
+
+        Ok(pruned_count)
     }
 }

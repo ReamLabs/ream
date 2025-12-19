@@ -1,6 +1,6 @@
 #[inline(always)]
 fn rotate(value: u32, shift: u32) -> u32 {
-    (value << shift) | (value >> (32 - shift))
+    value.rotate_left(shift)
 }
 
 /// Based on https://datatracker.ietf.org/doc/html/rfc7914#page-4

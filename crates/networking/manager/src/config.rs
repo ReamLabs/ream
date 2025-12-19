@@ -17,4 +17,5 @@ pub struct ManagerConfig {
     pub execution_jwt_secret: Option<PathBuf>,
     pub enable_builder: bool,
     pub mev_relay_url: Option<Url>,
+    pub blob_retention_epochs: Option<u64>,
 }

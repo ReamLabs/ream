@@ -83,6 +83,12 @@ pub struct BeaconNodeConfig {
         requires = "enable_builder"
     )]
     pub mev_relay_url: Option<Url>,
+
+    #[arg(
+        long,
+        help = "Number of epochs to retain blob sidecars. Defaults to network spec value (4096 epochs for mainnet, ~18 days)"
+    )]
+    pub blob_retention_epochs: Option<u64>,
 }
 
 impl From<BeaconNodeConfig> for ManagerConfig {
@@ -101,6 +107,7 @@ impl From<BeaconNodeConfig> for ManagerConfig {
             execution_jwt_secret: config.execution_jwt_secret,
             enable_builder: config.enable_builder,
             mev_relay_url: config.mev_relay_url,
+            blob_retention_epochs: config.blob_retention_epochs,
         }
     }
 }
