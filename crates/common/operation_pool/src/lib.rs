@@ -5,8 +5,10 @@ use parking_lot::RwLock;
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
-    proposer_slashing::ProposerSlashing, voluntary_exit::SignedVoluntaryExit,
+    proposer_slashing::ProposerSlashing, sync_aggregate::SyncAggregate,
+    voluntary_exit::SignedVoluntaryExit,
 };
+use ream_consensus_misc::deposit::Deposit;
 use tree_hash::TreeHash;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +24,12 @@ pub struct AttestationKey {
     committee_index: u64,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct SyncAggregateKey {
+    slot: u64,
+    beacon_block_root: B256,
+}
+
 #[derive(Debug, Default)]
 pub struct OperationPool {
     signed_voluntary_exits: RwLock<HashMap<u64, SignedVoluntaryExit>>,
@@ -30,6 +38,8 @@ pub struct OperationPool {
     attester_slashings: RwLock<HashSet<AttesterSlashing>>,
     proposer_slashings: RwLock<HashSet<ProposerSlashing>>,
     attestations: RwLock<HashMap<AttestationKey, Vec<Attestation>>>,
+    sync_aggregates: RwLock<HashMap<SyncAggregateKey, SyncAggregate>>,
+    deposits: RwLock<HashSet<Deposit>>,
 }
 
 impl OperationPool {
@@ -185,6 +195,41 @@ impl OperationPool {
         } else {
             map.insert(key, vec![attestation]);
         }
+    }
+
+    pub fn get_sync_aggregate(&self, slot: u64, beacon_block_root: B256) -> Option<SyncAggregate> {
+        let key = SyncAggregateKey {
+            slot,
+            beacon_block_root,
+        };
+        self.sync_aggregates.read().get(&key).cloned()
+    }
+
+    pub fn get_all_sync_aggregates(&self) -> Vec<SyncAggregate> {
+        self.sync_aggregates.read().values().cloned().collect()
+    }
+
+    pub fn insert_sync_aggregate(
+        &self,
+        sync_aggregate: SyncAggregate,
+        slot: u64,
+        beacon_block_root: B256,
+    ) {
+        let key = SyncAggregateKey {
+            slot,
+            beacon_block_root,
+        };
+
+        let mut map = self.sync_aggregates.write();
+        map.insert(key, sync_aggregate);
+    }
+
+    pub fn get_all_deposits(&self) -> Vec<Deposit> {
+        self.deposits.read().iter().cloned().collect()
+    }
+
+    pub fn insert_deposit(&self, deposit: Deposit) {
+        self.deposits.write().insert(deposit);
     }
 }
 

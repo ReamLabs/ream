@@ -1267,16 +1267,24 @@ pub async fn get_blocks_v3(
         .get_all_attester_slashings()
         .try_into()
         .unwrap_or_default();
-    // TODO: collect attestations from operation_pool
-    let attestations: VariableList<Attestation, U8> = VariableList::default();
-    // TODO: collect deposits from operation_pool
-    let deposits: VariableList<Deposit, U16> = VariableList::default();
+    let attestations: VariableList<Attestation, U8> = operation_pool
+        .get_all_attestations()
+        .try_into()
+        .unwrap_or_default();
+    let deposits: VariableList<Deposit, U16> = operation_pool
+        .get_all_deposits()
+        .try_into()
+        .unwrap_or_default();
     let voluntary_exits: VariableList<SignedVoluntaryExit, U16> = operation_pool
         .get_signed_voluntary_exits()
         .try_into()
         .unwrap_or_default();
-    // TODO: collect sync_aggregate from operation_pool
-    let sync_aggregate = SyncAggregate::default();
+    let sync_aggregate = operation_pool
+        .get_sync_aggregate(
+            slot.saturating_sub(1),
+            state.latest_block_header.tree_hash_root(),
+        )
+        .unwrap_or_default();
     let bls_to_execution_changes: VariableList<SignedBLSToExecutionChange, U16> = operation_pool
         .get_signed_bls_to_execution_changes()
         .try_into()
