@@ -11,4 +11,3 @@ pub struct SyncCommittee {
     #[serde(rename = "aggregate_pubkey")]
     pub aggregate_public_key: PublicKey,
 }
- 
