@@ -9,12 +9,17 @@ use ream_api_types_beacon::{
     responses::{DataResponse, DataVersionedResponse},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
+use ream_bls::traits::Verifiable;
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
     proposer_slashing::ProposerSlashing, single_attestation::SingleAttestation,
     voluntary_exit::SignedVoluntaryExit,
+};
+use ream_consensus_misc::{
+    constants::beacon::DOMAIN_SYNC_COMMITTEE,
+    misc::{compute_epoch_at_slot, compute_signing_root},
 };
 use ream_network_manager::{
     gossipsub::validate::{
@@ -28,7 +33,10 @@ use ream_p2p::{
     network::beacon::channel::GossipMessage,
 };
 use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
-use ream_validator_beacon::attestation::compute_subnet_for_attestation;
+use ream_validator_beacon::{
+    attestation::compute_subnet_for_attestation,
+    sync_committee::{SyncCommitteeMessage, is_assigned_to_sync_committee},
+};
 use ssz::Encode;
 use ssz_types::{
     BitList, BitVector,
@@ -381,4 +389,61 @@ async fn get_head_state(beacon_chain: &BeaconChain) -> Result<BeaconState, ApiEr
         .ok_or_else(|| {
             ApiError::NotFound(format!("No beacon state found for head root: {head_root}"))
         })
+}
+
+/// POST /eth/v1/beacon/pool/sync_committees
+#[post("/beacon/pool/sync_committees")]
+pub async fn post_sync_committees(
+    messages: Json<Vec<SyncCommitteeMessage>>,
+    db: Data<BeaconDB>,
+) -> Result<impl Responder, ApiError> {
+    for message in messages.into_inner() {
+        let slot = message.slot;
+        let state = get_state_from_id(ID::Slot(slot), &db).await?;
+
+        let validator_index = message.validator_index;
+
+        let validator = &state
+            .validators
+            .get(validator_index as usize)
+            .ok_or(ApiError::ValidatorNotFound("Validator not found.".into()))?;
+
+        let epoch = compute_epoch_at_slot(slot);
+
+        let is_validator_assigned = is_assigned_to_sync_committee(&state, epoch, validator_index);
+        match is_validator_assigned {
+            Ok(res) => {
+                if !res {
+                    return Err(ApiError::BadRequest(
+                        "Validator not assigned to sync committee".into(),
+                    ));
+                }
+            }
+            Err(err) => {
+                return Err(ApiError::InternalError(format!(
+                    "Failed due to internal error: {err}"
+                )));
+            }
+        }
+
+        let validator_domain = state.get_domain(DOMAIN_SYNC_COMMITTEE, Some(epoch));
+
+        let validator_signing_root = compute_signing_root(message.slot, validator_domain);
+
+        if !message
+            .signature
+            .verify(&validator.public_key, validator_signing_root.as_ref())
+            .map_err(|err| {
+                ApiError::InternalError(format!("Failed due to internal error: {err}"))
+            })?
+        {
+            return Err(ApiError::BadRequest(
+                "Sync committee message signature verification failed".into(),
+            ));
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "data": "success"
+    })))
 }
