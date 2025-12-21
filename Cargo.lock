@@ -6488,6 +6488,7 @@ dependencies = [
  "ream-consensus-misc",
  "ream-execution-rpc-types",
  "ream-light-client",
+ "ream-post-quantum-crypto",
  "redb",
  "snap",
  "ssz_types",

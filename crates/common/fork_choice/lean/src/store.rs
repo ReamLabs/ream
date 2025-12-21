@@ -389,13 +389,13 @@ impl Store {
         Ok(self.store.lock().await.head_provider().get()?)
     }
 
-    pub async fn produce_block_with_signatures(
+    pub async fn build_block(
         &self,
         slot: u64,
-        validator_index: u64,
-    ) -> anyhow::Result<BlockWithSignatures> {
-        let head_root = self.get_proposal_head(slot).await?;
-        let initialize_block_timer = start_timer(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
+        proposer_index: u64,
+        parent_root: B256,
+        attestations: Option<VariableList<Attestation, U4096>>,
+    ) -> anyhow::Result<(Block, Vec<Signature>, LeanState)> {
         let (state_provider, latest_known_attestation_provider, block_provider) = {
             let db = self.store.lock().await;
             (
@@ -404,29 +404,21 @@ impl Store {
                 db.block_provider(),
             )
         };
+        let available_signed_attestations =
+            latest_known_attestation_provider.get_all_attestations()?;
         let head_state = state_provider
-            .get(head_root)?
+            .get(parent_root)?
             .ok_or(anyhow!("State not found for head root"))?;
-        stop_timer(initialize_block_timer);
 
-        let num_validators = head_state.validators.len();
-
-        ensure!(
-            is_proposer(validator_index, slot, num_validators as u64),
-            "Validator {validator_index} is not the proposer for slot {slot}"
-        );
-
-        let add_attestations_timer =
-            start_timer(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
-
-        let mut attestations = VariableList::empty();
+        let mut attestations: VariableList<Attestation, U4096> =
+            attestations.unwrap_or_else(VariableList::empty);
         let mut signatures: Vec<Signature> = Vec::new();
 
-        let (mut candidate_block, post_state) = loop {
+        let (mut candidate_block, signatures, post_state) = loop {
             let candidate_block = Block {
                 slot,
-                proposer_index: validator_index,
-                parent_root: head_root,
+                proposer_index,
+                parent_root,
                 state_root: B256::ZERO,
                 body: BlockBody {
                     attestations: attestations.clone(),
@@ -438,10 +430,7 @@ impl Store {
 
             let mut new_attestations: VariableList<Attestation, U4096> = VariableList::empty();
             let mut new_signatures: Vec<Signature> = Vec::new();
-            for signed_attestation in latest_known_attestation_provider
-                .get_all_attestations()?
-                .values()
-            {
+            for signed_attestation in available_signed_attestations.values() {
                 let data = &signed_attestation.message.data;
                 if !block_provider.contains_key(data.head.root) {
                     continue;
@@ -457,7 +446,7 @@ impl Store {
                 }
             }
             if new_attestations.is_empty() {
-                break (candidate_block, advanced_state);
+                break (candidate_block, signatures, advanced_state);
             }
 
             for attestation in new_attestations {
@@ -470,6 +459,38 @@ impl Store {
                 signatures.push(signature);
             }
         };
+
+        candidate_block.state_root = post_state.tree_hash_root();
+        Ok((candidate_block, signatures, post_state))
+    }
+
+    pub async fn produce_block_with_signatures(
+        &self,
+        slot: u64,
+        validator_index: u64,
+    ) -> anyhow::Result<BlockWithSignatures> {
+        let head_root = self.get_proposal_head(slot).await?;
+        let initialize_block_timer = start_timer(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
+        let state_provider = self.store.lock().await.state_provider();
+
+        let head_state = state_provider
+            .get(head_root)?
+            .ok_or(anyhow!("State not found for head root"))?;
+        stop_timer(initialize_block_timer);
+
+        let num_validators = head_state.validators.len();
+
+        ensure!(
+            is_proposer(validator_index, slot, num_validators as u64),
+            "Validator {validator_index} is not the proposer for slot {slot}"
+        );
+
+        let add_attestations_timer =
+            start_timer(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
+        let (mut candidate_block, signatures, post_state) = self
+            .build_block(slot, validator_index, head_root, None)
+            .await?;
+
         stop_timer(add_attestations_timer);
 
         let compute_state_root_timer = start_timer(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
