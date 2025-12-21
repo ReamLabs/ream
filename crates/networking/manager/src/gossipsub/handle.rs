@@ -1,6 +1,9 @@
 use libp2p::gossipsub::Message;
 use ream_chain_beacon::beacon_chain::BeaconChain;
-use ream_consensus_beacon::{blob_sidecar::BlobIdentifier, data_column_sidecar::ColumnIdentifier};
+use ream_consensus_beacon::{
+    blob_sidecar::BlobIdentifier,
+    data_column_sidecar::{ColumnIdentifier, DATA_COLUMN_SIDECAR_SUBNET_COUNT},
+};
 use ream_consensus_misc::constants::beacon::genesis_validators_root;
 use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
 use ream_network_spec::networks::beacon_network_spec;
@@ -13,7 +16,9 @@ use ream_p2p::{
     network::beacon::channel::GossipMessage,
 };
 use ream_storage::{cache::CachedDB, tables::table::CustomTable};
-use ream_validator_beacon::blob_sidecars::compute_subnet_for_blob_sidecar;
+use ream_validator_beacon::{
+    blob_sidecars::compute_subnet_for_blob_sidecar, constants::SYNC_COMMITTEE_SUBNET_COUNT,
+};
 use ssz::Encode;
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
@@ -38,61 +43,77 @@ use crate::{
 
 pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
     let mut gossipsub_config = GossipsubConfig::default();
+    let fork_digest = beacon_network_spec().fork_digest(genesis_validators_root());
 
-    gossipsub_config.set_topics(vec![
+    let mut topics = vec![
         GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
+            fork: fork_digest,
             kind: GossipTopicKind::BeaconBlock,
         },
         GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
+            fork: fork_digest,
             kind: GossipTopicKind::AggregateAndProof,
         },
         GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
+            fork: fork_digest,
             kind: GossipTopicKind::VoluntaryExit,
         },
         GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
+            fork: fork_digest,
             kind: GossipTopicKind::ProposerSlashing,
         },
         GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
+            fork: fork_digest,
             kind: GossipTopicKind::AttesterSlashing,
         },
         GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
-            kind: GossipTopicKind::BeaconAttestation(0),
-        },
-        GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
-            kind: GossipTopicKind::SyncCommittee(0),
-        },
-        GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
+            fork: fork_digest,
             kind: GossipTopicKind::SyncCommitteeContributionAndProof,
         },
         GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
+            fork: fork_digest,
             kind: GossipTopicKind::BlsToExecutionChange,
         },
         GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
+            fork: fork_digest,
             kind: GossipTopicKind::LightClientFinalityUpdate,
         },
         GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
+            fork: fork_digest,
             kind: GossipTopicKind::LightClientOptimisticUpdate,
         },
-        GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
-            kind: GossipTopicKind::BlobSidecar(0),
-        },
-        GossipTopic {
-            fork: beacon_network_spec().fork_digest(genesis_validators_root()),
-            kind: GossipTopicKind::VoluntaryExit,
-        },
-    ]);
+    ];
+
+    // Subnets
+    for subnet_id in 0..beacon_network_spec().attestation_subnet_count {
+        topics.push(GossipTopic {
+            fork: fork_digest,
+            kind: GossipTopicKind::BeaconAttestation(subnet_id),
+        });
+    }
+
+    for subnet_id in 0..SYNC_COMMITTEE_SUBNET_COUNT {
+        topics.push(GossipTopic {
+            fork: fork_digest,
+            kind: GossipTopicKind::SyncCommittee(subnet_id),
+        });
+    }
+
+    for subnet_id in 0..beacon_network_spec().blob_sidecar_subnet_count_electra {
+        topics.push(GossipTopic {
+            fork: fork_digest,
+            kind: GossipTopicKind::BlobSidecar(subnet_id),
+        });
+    }
+
+    for subnet_id in 0..DATA_COLUMN_SIDECAR_SUBNET_COUNT {
+        topics.push(GossipTopic {
+            fork: fork_digest,
+            kind: GossipTopicKind::DataColumnSidecar(subnet_id),
+        });
+    }
+
+    gossipsub_config.set_topics(topics);
 
     gossipsub_config
 }

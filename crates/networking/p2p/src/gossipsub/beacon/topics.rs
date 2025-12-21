@@ -1,4 +1,3 @@
-use GossipTopicKind::*;
 use alloy_primitives::{
     aliases::B32,
     hex::{FromHex, ToHexExt},
@@ -118,46 +117,7 @@ impl From<GossipTopic> for String {
 
 impl From<GossipTopic> for TopicHash {
     fn from(val: GossipTopic) -> Self {
-        let kind_str = match &val.kind {
-            BeaconBlock => BEACON_BLOCK_TOPIC,
-            AggregateAndProof => BEACON_AGGREGATE_AND_PROOF_TOPIC,
-            VoluntaryExit => VOLUNTARY_EXIT_TOPIC,
-            ProposerSlashing => PROPOSER_SLASHING_TOPIC,
-            AttesterSlashing => ATTESTER_SLASHING_TOPIC,
-            SyncCommitteeContributionAndProof => SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF_TOPIC,
-            BlsToExecutionChange => BLS_TO_EXECUTION_CHANGE_TOPIC,
-            LightClientFinalityUpdate => LIGHT_CLIENT_FINALITY_UPDATE_TOPIC,
-            LightClientOptimisticUpdate => LIGHT_CLIENT_OPTIMISTIC_UPDATE_TOPIC,
-            BeaconAttestation(index) => {
-                return TopicHash::from_raw(format!(
-                    "/{TOPIC_PREFIX}/{}/{BEACON_ATTESTATION_PREFIX}{index}{ENCODING_POSTFIX}",
-                    val.fork.encode_hex(),
-                ));
-            }
-            SyncCommittee(index) => {
-                return TopicHash::from_raw(format!(
-                    "/{TOPIC_PREFIX}/{}/{SYNC_COMMITTEE_PREFIX_TOPIC}{index}{ENCODING_POSTFIX}",
-                    val.fork.encode_hex(),
-                ));
-            }
-            BlobSidecar(index) => {
-                return TopicHash::from_raw(format!(
-                    "/{TOPIC_PREFIX}/{}/{BLOB_SIDECAR_PREFIX_TOPIC}{index}{ENCODING_POSTFIX}",
-                    val.fork.encode_hex(),
-                ));
-            }
-            DataColumnSidecar(index) => {
-                return TopicHash::from_raw(format!(
-                    "/{TOPIC_PREFIX}/{}/{DATA_COLUMN_SIDECAR_PREFIX_TOPIC}{index}{ENCODING_POSTFIX}",
-                    val.fork.encode_hex(),
-                ));
-            }
-        };
-
-        TopicHash::from_raw(format!(
-            "/{TOPIC_PREFIX}/{}/{kind_str}{ENCODING_POSTFIX}",
-            val.fork.encode_hex(),
-        ))
+        TopicHash::from_raw(val.to_string())
     }
 }
 
@@ -191,8 +151,8 @@ impl std::fmt::Display for GossipTopicKind {
             GossipTopicKind::BeaconAttestation(subnet_id) => {
                 write!(f, "{BEACON_ATTESTATION_PREFIX}{subnet_id}")
             }
-            GossipTopicKind::SyncCommittee(sync_subnet_id) => {
-                write!(f, "{SYNC_COMMITTEE_PREFIX_TOPIC}{sync_subnet_id}")
+            GossipTopicKind::SyncCommittee(subnet_id) => {
+                write!(f, "{SYNC_COMMITTEE_PREFIX_TOPIC}{subnet_id}")
             }
             GossipTopicKind::SyncCommitteeContributionAndProof => {
                 write!(f, "{SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF_TOPIC}")
@@ -206,11 +166,11 @@ impl std::fmt::Display for GossipTopicKind {
             GossipTopicKind::LightClientOptimisticUpdate => {
                 write!(f, "{LIGHT_CLIENT_OPTIMISTIC_UPDATE_TOPIC}")
             }
-            GossipTopicKind::BlobSidecar(blob_index) => {
-                write!(f, "{BLOB_SIDECAR_PREFIX_TOPIC}{blob_index}")
+            GossipTopicKind::BlobSidecar(subnet_id) => {
+                write!(f, "{BLOB_SIDECAR_PREFIX_TOPIC}{subnet_id}")
             }
-            GossipTopicKind::DataColumnSidecar(column_index) => {
-                write!(f, "{DATA_COLUMN_SIDECAR_PREFIX_TOPIC}{column_index}")
+            GossipTopicKind::DataColumnSidecar(subnet_id) => {
+                write!(f, "{DATA_COLUMN_SIDECAR_PREFIX_TOPIC}{subnet_id}")
             }
         }
     }
