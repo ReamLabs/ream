@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 use ream_consensus_lean::{
-    attestation::{AttestationData, SignedAttestation},
-    block::{BlockWithSignatures, SignedBlockWithAttestation},
+    attestation::{Attestation, AttestationData, SignedAttestation},
+    block::{Block, BlockBody, BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
     state::LeanState,
     validator::is_proposer,
@@ -18,12 +18,13 @@ use ream_metrics::{
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::{
     db::lean::LeanDB,
     tables::{field::REDBField, table::REDBTable},
 };
 use ream_sync::rwlock::{Reader, Writer};
-use ssz_types::VariableList;
+use ssz_types::{VariableList, typenum::U4096};
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
 
@@ -388,6 +389,81 @@ impl Store {
         Ok(self.store.lock().await.head_provider().get()?)
     }
 
+    pub async fn build_block(
+        &self,
+        slot: u64,
+        proposer_index: u64,
+        parent_root: B256,
+        attestations: Option<VariableList<Attestation, U4096>>,
+    ) -> anyhow::Result<(Block, Vec<Signature>, LeanState)> {
+        let (state_provider, latest_known_attestation_provider, block_provider) = {
+            let db = self.store.lock().await;
+            (
+                db.state_provider(),
+                db.latest_known_attestations_provider(),
+                db.block_provider(),
+            )
+        };
+        let available_signed_attestations =
+            latest_known_attestation_provider.get_all_attestations()?;
+        let head_state = state_provider
+            .get(parent_root)?
+            .ok_or(anyhow!("State not found for head root"))?;
+
+        let mut attestations: VariableList<Attestation, U4096> =
+            attestations.unwrap_or_else(VariableList::empty);
+        let mut signatures: Vec<Signature> = Vec::new();
+
+        let (mut candidate_block, signatures, post_state) = loop {
+            let candidate_block = Block {
+                slot,
+                proposer_index,
+                parent_root,
+                state_root: B256::ZERO,
+                body: BlockBody {
+                    attestations: attestations.clone(),
+                },
+            };
+            let mut advanced_state = head_state.clone();
+            advanced_state.process_slots(slot)?;
+            advanced_state.process_block(&candidate_block)?;
+
+            let mut new_attestations: VariableList<Attestation, U4096> = VariableList::empty();
+            let mut new_signatures: Vec<Signature> = Vec::new();
+            for signed_attestation in available_signed_attestations.values() {
+                let data = &signed_attestation.message.data;
+                if !block_provider.contains_key(data.head.root) {
+                    continue;
+                }
+                if data.source != advanced_state.latest_justified {
+                    continue;
+                }
+                if !attestations.contains(&signed_attestation.message) {
+                    new_attestations
+                        .push(signed_attestation.message.clone())
+                        .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
+                    new_signatures.push(signed_attestation.signature);
+                }
+            }
+            if new_attestations.is_empty() {
+                break (candidate_block, signatures, advanced_state);
+            }
+
+            for attestation in new_attestations {
+                attestations
+                    .push(attestation)
+                    .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
+            }
+
+            for signature in new_signatures {
+                signatures.push(signature);
+            }
+        };
+
+        candidate_block.state_root = post_state.tree_hash_root();
+        Ok((candidate_block, signatures, post_state))
+    }
+
     pub async fn produce_block_with_signatures(
         &self,
         slot: u64,
@@ -411,10 +487,9 @@ impl Store {
 
         let add_attestations_timer =
             start_timer(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
-        let (mut candidate_block, signatures, post_state) = {
-            let db = self.store.lock().await;
-            db.build_block(slot, validator_index, head_root, None)?
-        };
+        let (mut candidate_block, signatures, post_state) = self
+            .build_block(slot, validator_index, head_root, None)
+            .await?;
 
         stop_timer(add_attestations_timer);
 
