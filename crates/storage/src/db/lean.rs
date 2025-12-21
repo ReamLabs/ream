@@ -2,28 +2,42 @@ use std::sync::Arc;
 
 use redb::Database;
 
-use crate::tables::lean::{
-    latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
-    latest_known_attestation::LatestKnownAttestationTable, lean_block::LeanBlockTable,
-    lean_head::LeanHeadField, lean_latest_new_attestations::LeanLatestNewAttestationsTable,
-    lean_safe_target::LeanSafeTargetField, lean_state::LeanStateTable, lean_time::LeanTimeField,
-    slot_index::LeanSlotIndexTable, state_root_index::LeanStateRootIndexTable,
+use crate::{
+    cache::CachedDB,
+    tables::lean::{
+        latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
+        latest_known_attestation::LatestKnownAttestationTable, lean_block::LeanBlockTable,
+        lean_head::LeanHeadField, lean_latest_new_attestations::LeanLatestNewAttestationsTable,
+        lean_safe_target::LeanSafeTargetField, lean_state::LeanStateTable,
+        lean_time::LeanTimeField, slot_index::LeanSlotIndexTable,
+        state_root_index::LeanStateRootIndexTable,
+    },
 };
 
 #[derive(Clone, Debug)]
 pub struct LeanDB {
     pub db: Arc<Database>,
+    pub(crate) cache: Option<Arc<CachedDB>>,
 }
 
 impl LeanDB {
+    /// Attach a cache to this LeanDB instance.
+    /// This enables in-memory caching of blocks and states for improved performance.
+    pub fn with_cache(mut self, cache: Arc<CachedDB>) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
     pub fn block_provider(&self) -> LeanBlockTable {
         LeanBlockTable {
             db: self.db.clone(),
+            cache: self.cache.clone(),
         }
     }
     pub fn state_provider(&self) -> LeanStateTable {
         LeanStateTable {
             db: self.db.clone(),
+            cache: self.cache.clone(),
         }
     }
 

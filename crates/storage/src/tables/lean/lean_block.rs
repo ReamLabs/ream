@@ -7,12 +7,14 @@ use tree_hash::TreeHash;
 
 use super::{slot_index::LeanSlotIndexTable, state_root_index::LeanStateRootIndexTable};
 use crate::{
+    cache::CachedDB,
     errors::StoreError,
     tables::{ssz_encoder::SSZEncoding, table::REDBTable},
 };
 
 pub struct LeanBlockTable {
     pub db: Arc<Database>,
+    pub cache: Option<Arc<CachedDB>>,
 }
 
 /// Table definition for the Lean Block table
@@ -38,6 +40,32 @@ impl REDBTable for LeanBlockTable {
         self.db.clone()
     }
 
+    fn get<'a>(
+        &self,
+        key: <Self::KeyTableDefinition as redb::Value>::SelfType<'a>,
+    ) -> Result<Option<Self::Value>, StoreError> {
+        // LruCache::get requires mutable access to update LRU order
+        if let Some(cache) = &self.cache
+            && let Ok(mut cache_lock) = cache.lean_block.lock()
+            && let Some(block) = cache_lock.get(&key)
+        {
+            return Ok(Some(block.clone()));
+        }
+
+        let read_txn = self.database().begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+        let result = table.get(key)?;
+        let block = result.map(|res| res.value());
+
+        if let (Some(cache), Some(block)) = (&self.cache, &block)
+            && let Ok(mut cache_lock) = cache.lean_block.lock()
+        {
+            cache_lock.put(key, block.clone());
+        }
+
+        Ok(block)
+    }
+
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
         // insert entry to slot_index table
         let block_root = value.message.block.tree_hash_root();
@@ -52,6 +80,12 @@ impl REDBTable for LeanBlockTable {
         };
         state_root_index_table.insert(value.message.block.state_root, block_root)?;
 
+        if let Some(cache) = &self.cache
+            && let Ok(mut cache_lock) = cache.lean_block.lock()
+        {
+            cache_lock.put(key, value.clone());
+        }
+
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
@@ -62,6 +96,12 @@ impl REDBTable for LeanBlockTable {
     }
 
     fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
+        if let Some(cache) = &self.cache
+            && let Ok(mut cache_lock) = cache.lean_block.lock()
+        {
+            cache_lock.pop(&key);
+        }
+
         let write_txn = self.db.begin_write()?;
         let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
         let value = table.remove(key)?.map(|v| v.value());

@@ -5,39 +5,52 @@ use ream_consensus_beacon::electra::beacon_state::BeaconState;
 use ream_consensus_misc::constants::beacon::SLOTS_PER_EPOCH;
 use redb::{Database, ReadableDatabase};
 
-use crate::tables::{
-    beacon::{
-        beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
-        blobs_and_proofs::BlobsAndProofsTable, block_timeliness::BlockTimelinessTable,
-        checkpoint_states::CheckpointStatesTable, column_sidecars::ColumnSidecarsTable,
-        equivocating_indices::EquivocatingIndicesField,
-        finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
-        justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
-        parent_root_index::ParentRootIndexMultimapTable,
-        proposer_boost_root::ProposerBoostRootField, slot_index::BeaconSlotIndexTable,
-        state_root_index::BeaconStateRootIndexTable, time::TimeField,
-        unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
-        unrealized_justifications::UnrealizedJustificationsTable,
-        unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
+use crate::{
+    cache::CachedDB,
+    tables::{
+        beacon::{
+            beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
+            blobs_and_proofs::BlobsAndProofsTable, block_timeliness::BlockTimelinessTable,
+            checkpoint_states::CheckpointStatesTable, column_sidecars::ColumnSidecarsTable,
+            equivocating_indices::EquivocatingIndicesField,
+            finalized_checkpoint::FinalizedCheckpointField, genesis_time::GenesisTimeField,
+            justified_checkpoint::JustifiedCheckpointField, latest_messages::LatestMessagesTable,
+            parent_root_index::ParentRootIndexMultimapTable,
+            proposer_boost_root::ProposerBoostRootField, slot_index::BeaconSlotIndexTable,
+            state_root_index::BeaconStateRootIndexTable, time::TimeField,
+            unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
+            unrealized_justifications::UnrealizedJustificationsTable,
+            unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
+        },
+        table::REDBTable,
     },
-    table::REDBTable,
 };
 
 #[derive(Clone, Debug)]
 pub struct BeaconDB {
     pub db: Arc<Database>,
     pub data_dir: PathBuf,
+    pub(crate) cache: Option<Arc<CachedDB>>,
 }
 
 impl BeaconDB {
+    /// Attach a cache to this BeaconDB instance.
+    /// This enables in-memory caching of blocks and states for improved performance.
+    pub fn with_cache(mut self, cache: Arc<CachedDB>) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
     pub fn block_provider(&self) -> BeaconBlockTable {
         BeaconBlockTable {
             db: self.db.clone(),
+            cache: self.cache.clone(),
         }
     }
     pub fn state_provider(&self) -> BeaconStateTable {
         BeaconStateTable {
             db: self.db.clone(),
+            cache: self.cache.clone(),
         }
     }
 

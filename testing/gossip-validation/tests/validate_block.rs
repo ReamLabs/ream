@@ -1,7 +1,7 @@
 #[allow(clippy::unwrap_used)]
 mod tests {
     const PATH_TO_TEST_DATA_FOLDER: &str = "./tests";
-    use std::{path::PathBuf, str::FromStr};
+    use std::{path::PathBuf, str::FromStr, sync::Arc};
 
     use alloy_primitives::B256;
     use anyhow::anyhow;
@@ -28,11 +28,15 @@ mod tests {
     const SEPOLIA_GENESIS_TIME: u64 = 1655733600;
     const CURRENT_TIME: u64 = 1752744600;
 
-    pub async fn db_setup() -> (BeaconChain, CachedDB, B256) {
+    pub async fn db_setup() -> (BeaconChain, Arc<CachedDB>, B256) {
         let temp_dir = TempDir::new("ream_gossip_test").unwrap();
         let temp_path = temp_dir.path().to_path_buf();
         let ream_db = ReamDB::new(temp_path).expect("unable to init Ream Database");
-        let mut db = ream_db.init_beacon_db().unwrap();
+        let cached_db = Arc::new(CachedDB::default());
+        let mut db = ream_db
+            .init_beacon_db()
+            .unwrap()
+            .with_cache(cached_db.clone());
 
         let ancestor_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
             "./assets/sepolia/blocks/slot_8084160.ssz_snappy",
@@ -72,7 +76,6 @@ mod tests {
         .await;
 
         let operation_pool = OperationPool::default();
-        let cached_db = CachedDB::default();
         let beacon_chain = BeaconChain::new(db, operation_pool.into(), None, None);
 
         (beacon_chain, cached_db, block_root)

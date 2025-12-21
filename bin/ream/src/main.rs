@@ -190,9 +190,11 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     set_lean_network_spec(Arc::new(network));
 
     // Initialize the lean database
+    let cache = Arc::new(ream_storage::cache::CachedDB::new());
     let lean_db = ream_db
         .init_lean_db()
-        .expect("unable to init Ream Lean Database");
+        .expect("unable to init Ream Lean Database")
+        .with_cache(cache);
 
     info!("ream lean database has been initialized");
 
@@ -320,9 +322,11 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
     set_beacon_network_spec(config.network.clone());
 
     // Initialize the beacon database
+    let cache = Arc::new(ream_storage::cache::CachedDB::new());
     let beacon_db = ream_db
         .init_beacon_db()
-        .expect("unable to init Ream Beacon Database");
+        .expect("unable to init Ream Beacon Database")
+        .with_cache(cache.clone());
 
     info!("ream beacon database has been initialized");
 
@@ -396,7 +400,6 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         execution_engine.clone(),
         Some(event_sender.clone()),
     ));
-    let cached_db = Arc::new(ream_storage::cache::CachedDB::new());
 
     // Create network manager
     let network_manager = NetworkManagerService::new(
@@ -405,7 +408,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         beacon_db.clone(),
         beacon_db.data_dir.clone(),
         beacon_chain.clone(),
-        cached_db.clone(),
+        cache.clone(),
     )
     .await
     .expect("Failed to create manager service");
@@ -428,7 +431,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
             event_sender,
             beacon_chain,
             p2p_sender,
-            cached_db,
+            cache,
         )
         .await
     });
