@@ -8,7 +8,7 @@ use tree_hash_derive::TreeHash;
 use crate::checkpoint::Checkpoint;
 
 /// Attestation content describing the validator's observed chain view.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Hash)]
 pub struct AttestationData {
     pub slot: u64,
     pub head: Checkpoint,
@@ -17,12 +17,14 @@ pub struct AttestationData {
 }
 
 /// Validator specific attestation wrapping shared attestation data.
+#[cfg(feature = "devnet1")]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Attestation {
     pub validator_id: u64,
     pub data: AttestationData,
 }
 
+#[cfg(feature = "devnet1")]
 impl Attestation {
     /// Return the attested slot.
     pub fn slot(&self) -> u64 {
@@ -42,6 +44,36 @@ impl Attestation {
     /// Return the attested source checkpoint.
     pub fn source(&self) -> Checkpoint {
         self.data.source
+    }
+}
+
+#[cfg(feature = "devnet2")]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+pub struct AggregatedAttestations {
+    pub validator_id: u64,
+    pub data: AttestationData,
+}
+
+#[cfg(feature = "devnet2")]
+impl AggregatedAttestation {
+    /// Return the attested slot.
+    pub fn slot(&self) -> u64 {
+        self.message.slot
+    }
+
+    /// Return the attested head checkpoint.
+    pub fn head(&self) -> Checkpoint {
+        self.message.head
+    }
+
+    /// Return the attested target checkpoint.
+    pub fn target(&self) -> Checkpoint {
+        self.message.target
+    }
+
+    /// Return the attested source checkpoint.
+    pub fn source(&self) -> Checkpoint {
+        self.message.source
     }
 }
 
@@ -76,7 +108,6 @@ pub struct SignedAggregatedAttestation {
 
 #[cfg(test)]
 mod tests {
-
     use alloy_primitives::hex;
     use ssz::{Decode, Encode};
 
@@ -86,6 +117,7 @@ mod tests {
     #[test]
     fn test_encode_decode_signed_attestation_roundtrip() -> anyhow::Result<()> {
         let signed_attestation = SignedAttestation {
+            #[cfg(feature = "devnet1")]
             message: Attestation {
                 validator_id: 0,
                 data: AttestationData {
@@ -95,6 +127,15 @@ mod tests {
                     source: Checkpoint::default(),
                 },
             },
+            #[cfg(feature = "devnet2")]
+            message: AttestationData {
+                slot: 1,
+                head: Checkpoint::default(),
+                target: Checkpoint::default(),
+                source: Checkpoint::default(),
+            },
+            #[cfg(feature = "devnet2")]
+            validator_id: 0,
             signature: Signature {
                 inner: FixedBytes::default(),
             },

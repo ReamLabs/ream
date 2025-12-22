@@ -1,7 +1,17 @@
 use anyhow::anyhow;
 use ream_chain_lean::{clock::create_lean_clock_interval, messages::LeanChainServiceMessage};
+#[cfg(feature = "devnet2")]
+use ream_consensus_lean::attestation::AggregatedAttestations;
+#[cfg(feature = "devnet1")]
+use ream_consensus_lean::attestation::Attestation;
+#[cfg(feature = "devnet2")]
+use ream_consensus_lean::attestation::AttestationData;
+#[cfg(feature = "devnet2")]
+use ream_consensus_lean::block::BlockSignatures;
+#[cfg(feature = "devnet2")]
+use ream_consensus_lean::checkpoint::Checkpoint;
 use ream_consensus_lean::{
-    attestation::{Attestation, SignedAttestation},
+    attestation::SignedAttestation,
     block::{BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
 };
 use ream_keystore::lean_keystore::ValidatorKeystore;
@@ -10,6 +20,8 @@ use ream_metrics::{
     stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
+#[cfg(feature = "devnet2")]
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, info};
 use tree_hash::TreeHash;
@@ -82,7 +94,10 @@ impl ValidatorService {
                                 .expect("Failed to send attestation to LeanChainService");
 
                             let attestation_data = rx.await.expect("Failed to receive attestation data from LeanChainService");
+                                #[cfg(feature = "devnet1")]
                                 let message = Attestation { validator_id: keystore.index, data: attestation_data };
+                                #[cfg(feature = "devnet2")]
+                                let message = AggregatedAttestations { validator_id: keystore.index, data: attestation_data };
 
                                 let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
                                 let signature = keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
@@ -94,7 +109,13 @@ impl ValidatorService {
                                         block: block.clone(),
                                         proposer_attestation: message,
                                     },
+                                    #[cfg(feature = "devnet1")]
                                     signature: signatures,
+                                    #[cfg(feature = "devnet2")]
+                                    signature: BlockSignatures {
+                                        attestation_signatures: signatures,
+                                        proposer_signature: Signature::blank(),
+                                    },
                                 };
 
                                 // Send block to the LeanChainService.
@@ -140,9 +161,17 @@ impl ValidatorService {
                             // TODO: Sign the attestation with the keystore.
                             let mut signed_attestations = vec![];
                             for (_, keystore) in self.keystores.iter().enumerate().filter(|(index, _)| *index as u64 != slot % lean_network_spec().num_validators) {
+                                #[cfg(feature = "devnet1")]
                                 let message = Attestation {
                                     validator_id: keystore.index,
                                     data: attestation_data.clone()
+                                };
+                                #[cfg(feature = "devnet2")]
+                                let message = AttestationData {
+                                    slot: 0,
+                                    head: Checkpoint::default(),
+                                    target: Checkpoint::default(),
+                                    source: Checkpoint::default(),
                                 };
                                 let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
                                 let signature =keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
@@ -150,6 +179,8 @@ impl ValidatorService {
                                     signed_attestations.push(SignedAttestation {
                                     signature,
                                     message,
+                                    #[cfg(feature = "devnet2")]
+                                    validator_id: keystore.index,
                                 });
                             }
 

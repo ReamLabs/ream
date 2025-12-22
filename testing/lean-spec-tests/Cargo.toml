@@ -11,6 +11,9 @@ version.workspace = true
 
 [features]
 lean-spec-tests = []
+default = ["devnet1"]
+devnet1 = []
+devnet2 = []
 
 [dependencies]
 alloy-primitives.workspace = true

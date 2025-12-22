@@ -298,14 +298,27 @@ impl LeanNetworkService {
                                     signed_attestation.as_ssz_bytes(),
                                 )
                             {
+                                #[cfg(feature = "devnet1")]
                                 warn!(
                                     slot = signed_attestation.message.slot(),
                                     error = ?err,
                                     "Publish attestation failed"
                                 );
+                                #[cfg(feature = "devnet2")]
+                                warn!(
+                                    slot = signed_attestation.message.slot,
+                                    error = ?err,
+                                    "Publish attestation failed"
+                                );
                             } else {
+                                #[cfg(feature = "devnet1")]
                                 info!(
                                     slot = signed_attestation.message.slot(),
+                                    "Broadcasted attestation"
+                                );
+                                #[cfg(feature = "devnet2")]
+                                info!(
+                                    slot = signed_attestation.message.slot,
                                     "Broadcasted attestation"
                                 );
                             }
@@ -449,7 +462,10 @@ impl LeanNetworkService {
                     }
                 }
                 Ok(LeanGossipsubMessage::Attestation(signed_attestation)) => {
+                    #[cfg(feature = "devnet1")]
                     let slot = signed_attestation.message.slot();
+                    #[cfg(feature = "devnet2")]
+                    let slot = signed_attestation.message.slot;
 
                     if let Err(err) = self.chain_message_sender.send(
                         LeanChainServiceMessage::ProcessAttestation {

@@ -14,6 +14,11 @@ version.workspace = true
 name = "ream"
 path = "src/main.rs"
 
+[features]
+default = ["devnet1"]
+devnet1 = []
+devnet2 = []
+
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true

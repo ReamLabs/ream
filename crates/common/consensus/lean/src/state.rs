@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(feature = "devnet2")]
+use std::collections::HashSet;
 
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
@@ -19,8 +21,11 @@ use tracing::info;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
+#[cfg(feature = "devnet2")]
+use crate::attestation::AggregatedAttestation;
+#[cfg(feature = "devnet1")]
+use crate::attestation::Attestation;
 use crate::{
-    attestation::Attestation,
     block::{Block, BlockBody, BlockHeader},
     checkpoint::Checkpoint,
     config::Config,
@@ -130,7 +135,21 @@ impl LeanState {
         let timer = start_timer(&STATE_TRANSITION_BLOCK_PROCESSING_TIME, &[]);
 
         self.process_block_header(block)?;
+        #[cfg(feature = "devnet1")]
         self.process_attestations(&block.body.attestations)?;
+
+        #[cfg(feature = "devnet2")]
+        {
+            let mut attestations_data = HashSet::new();
+            for aggregated_attestation in &block.body.attestations {
+                ensure!(
+                    attestations_data.insert(&aggregated_attestation.message),
+                    "Block contains duplicate AttestationData"
+                );
+            }
+
+            self.process_attestations(&block.body.attestations)?;
+        }
 
         stop_timer(timer);
         Ok(())
@@ -221,7 +240,11 @@ impl LeanState {
         Ok(())
     }
 
-    pub fn process_attestations(&mut self, attestations: &[Attestation]) -> anyhow::Result<()> {
+    pub fn process_attestations(
+        &mut self,
+        #[cfg(feature = "devnet1")] attestations: &[Attestation],
+        #[cfg(feature = "devnet2")] attestations: &[AggregatedAttestation],
+    ) -> anyhow::Result<()> {
         let timer = start_timer(&STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME, &[]);
 
         let mut justifications_map = HashMap::new();
@@ -263,12 +286,21 @@ impl LeanState {
                 .get(attestation.source().slot as usize)
                 .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
             {
+                #[cfg(feature = "devnet1")]
                 info!(
                     reason = "Source slot not justified",
                     source_slot = attestation.source().slot,
                     target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
                     attestation.validator_id,
+                );
+                #[cfg(feature = "devnet2")]
+                info!(
+                    reason = "Source slot not justified",
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
+                    "Skipping attestations by Validator {}",
+                    attestation.aggregation_bits,
                 );
                 continue;
             }
@@ -282,12 +314,21 @@ impl LeanState {
                 .get(attestation.target().slot as usize)
                 .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
             {
+                #[cfg(feature = "devnet1")]
                 info!(
                     reason = "Target slot already justified",
                     source_slot = attestation.source().slot,
                     target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
                     attestation.validator_id,
+                );
+                #[cfg(feature = "devnet2")]
+                info!(
+                    reason = "Target slot already justified",
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
+                    "Skipping attestations by Validator {}",
+                    attestation.aggregation_bits,
                 );
                 continue;
             }
@@ -298,12 +339,21 @@ impl LeanState {
                     .get(attestation.source().slot as usize)
                     .ok_or(anyhow!("Source slot not found in historical_block_hashes"))?
             {
+                #[cfg(feature = "devnet1")]
                 info!(
                     reason = "Source block not in historical block hashes",
                     source_slot = attestation.source().slot,
                     target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
                     attestation.validator_id,
+                );
+                #[cfg(feature = "devnet2")]
+                info!(
+                    reason = "Source block not in historical block hashes",
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
+                    "Skipping attestations by Validator {}",
+                    attestation.aggregation_bits,
                 );
                 continue;
             }
@@ -314,17 +364,27 @@ impl LeanState {
                     .get(attestation.target().slot as usize)
                     .ok_or(anyhow!("Target slot not found in historical_block_hashes"))?
             {
+                #[cfg(feature = "devnet1")]
                 info!(
                     reason = "Target block not in historical block hashes",
                     source_slot = attestation.source().slot,
                     target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
-                    attestation.validator_id,
+                    attestation.validator_id
+                );
+                #[cfg(feature = "devnet2")]
+                info!(
+                    reason = "Target block not in historical block hashes",
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
+                    "Skipping attestations by Validator {}",
+                    attestation.aggregation_bits
                 );
                 continue;
             }
 
             if attestation.target().slot <= attestation.source().slot {
+                #[cfg(feature = "devnet1")]
                 info!(
                     reason = "Target slot not greater than source slot",
                     source_slot = attestation.source().slot,
@@ -332,10 +392,19 @@ impl LeanState {
                     "Skipping attestations by Validator {}",
                     attestation.validator_id,
                 );
+                #[cfg(feature = "devnet2")]
+                info!(
+                    reason = "Target slot not greater than source slot",
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
+                    "Skipping attestations by Validator {}",
+                    attestation.aggregation_bits,
+                );
                 continue;
             }
 
             if !is_justifiable_slot(self.latest_finalized.slot, attestation.target().slot) {
+                #[cfg(feature = "devnet1")]
                 info!(
                     reason = "Target slot not justifiable",
                     source_slot = attestation.source().slot,
@@ -343,10 +412,19 @@ impl LeanState {
                     "Skipping attestations by Validator {}",
                     attestation.validator_id,
                 );
+                #[cfg(feature = "devnet2")]
+                info!(
+                    reason = "Target slot not justifiable",
+                    source_slot = attestation.source().slot,
+                    target_slot = attestation.target().slot,
+                    "Skipping attestations by Validator {}",
+                    attestation.aggregation_bits,
+                );
                 continue;
             }
 
             // Track attempts to justify new hashes
+
             let justifications = justifications_map
                 .entry(attestation.target().root)
                 .or_insert(
@@ -358,6 +436,7 @@ impl LeanState {
                     })?,
                 );
 
+            #[cfg(feature = "devnet1")]
             justifications
                 .set(attestation.validator_id as usize, true)
                 .map_err(|err| {
@@ -367,6 +446,17 @@ impl LeanState {
                         &attestation.target().root
                     )
                 })?;
+
+            #[cfg(feature = "devnet2")]
+            for (validator_id, signed) in attestation.aggregation_bits.iter().enumerate() {
+                if signed {
+                    if !justifications.get(validator_id).unwrap_or(false) {
+                        justifications.set(validator_id, true).map_err(|err| {
+                            anyhow!("Failed to set validator {validator_id}: {err:?}")
+                        })?;
+                    }
+                }
+            }
 
             let count = justifications.num_set_bits();
 
