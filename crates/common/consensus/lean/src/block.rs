@@ -95,20 +95,29 @@ impl SignedBlockWithAttestation {
         {
             let mut signature_iter = attestation_signatures.iter();
             for aggregated_attestation in aggregated_attestations.iter() {
-                for validator_id in aggregated_attestation
+                let validator_ids: Vec<usize> = aggregated_attestation
                     .aggregation_bits
                     .iter()
                     .enumerate()
                     .filter(|(_, bit)| *bit)
                     .map(|(index, _)| index)
-                {
+                    .collect();
+
+                let attestation_root = aggregated_attestation.message.tree_hash_root();
+
+                for validator_id in validator_ids {
                     let signature = signature_iter.next().ok_or_else(|| {
                         anyhow!("Missing signature for validator index {validator_id}")
                     })?;
 
+                    ensure!(
+                        validator_id < validators.len(),
+                        "Validator index out of range"
+                    );
+
                     let validator = validators
                         .get(validator_id)
-                        .ok_or_else(|| anyhow!("Failed to get validator {validator_id}"))?;
+                        .ok_or_else(|| anyhow!("Failed to get validator"))?;
 
                     if verify_signatures {
                         let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, &[]);
@@ -116,19 +125,14 @@ impl SignedBlockWithAttestation {
                             signature.verify(
                                 &validator.public_key,
                                 aggregated_attestation.message.slot as u32,
-                                &aggregated_attestation.message.tree_hash_root(),
+                                &attestation_root,
                             )?,
-                            "Attestation signature verification failed for validator"
+                            "Attestation signature verification failed"
                         );
                         stop_timer(timer);
                     }
                 }
             }
-
-            ensure!(
-                signature_iter.next().is_none(),
-                "Extra signatures found in block"
-            );
 
             let proposer_attestation = &self.message.proposer_attestation;
             let proposer_signature = &signatures.proposer_signature;

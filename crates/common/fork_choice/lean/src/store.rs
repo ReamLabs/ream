@@ -132,7 +132,6 @@ impl Store {
 
         for attestation in attestations {
             let attestation = attestation?;
-
             #[cfg(feature = "devnet1")]
             let mut current_root = attestation.message.data.head.root;
 

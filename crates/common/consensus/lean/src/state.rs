@@ -424,7 +424,6 @@ impl LeanState {
             }
 
             // Track attempts to justify new hashes
-
             let justifications = justifications_map
                 .entry(attestation.target().root)
                 .or_insert(
