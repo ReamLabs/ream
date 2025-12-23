@@ -12,6 +12,7 @@ pub mod fork_choice;
 pub mod genesis;
 pub mod helpers;
 pub mod historical_summary;
+pub mod matrix_entry;
 pub mod pending_consolidation;
 pub mod pending_deposit;
 pub mod pending_partial_withdrawal;
@@ -22,3 +23,4 @@ pub mod sync_aggregate;
 pub mod sync_committe_selection;
 pub mod sync_committee;
 pub mod voluntary_exit;
+
