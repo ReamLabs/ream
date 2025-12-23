@@ -20,7 +20,7 @@ pub fn get_custody_groups(node_id: NodeId, custody_group_count: u64) -> Result<V
     let mut current_id = node_id.raw();
 
     while custody_indices.len() < custody_group_count as usize {
-        let hash = Sha256::digest(&current_id);
+        let hash = Sha256::digest(current_id);
 
         let mut array = [0u8; 8];
         array.copy_from_slice(&hash[0..8]);
