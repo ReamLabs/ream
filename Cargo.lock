@@ -5992,6 +5992,7 @@ dependencies = [
  "alloy-rlp",
  "anyhow",
  "async-trait",
+ "discv5",
  "ethereum_hashing 0.7.0",
  "ethereum_serde_utils",
  "ethereum_ssz",

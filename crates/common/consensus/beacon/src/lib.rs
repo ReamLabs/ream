@@ -5,6 +5,7 @@ pub mod attester_slashing;
 pub mod beacon_committee_selection;
 pub mod blob_sidecar;
 pub mod bls_to_execution_change;
+pub mod custody_group;
 pub mod data_column_sidecar;
 pub mod electra;
 pub mod eth_1_block;
