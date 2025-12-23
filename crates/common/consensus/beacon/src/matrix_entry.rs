@@ -34,7 +34,7 @@ pub fn compute_matrix(blobs: Vec<Blob>, das_context: &DASContext) -> Result<Vec<
     Ok(matrix)
 }
 
-pub fn remove_matrix(
+pub fn recover_matrix(
     partial_matrix: Vec<MatrixEntry>,
     blob_count: u64,
     das_context: &DASContext,
