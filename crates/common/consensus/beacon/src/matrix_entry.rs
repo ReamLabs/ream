@@ -9,6 +9,7 @@ use crate::data_column_sidecar::Cell;
 #[derive(Debug, Clone)]
 pub struct MatrixEntry {
     cell: Cell,
+    #[allow(dead_code)]
     kzg_proof: KZGProof,
     column_index: u64,
     row_index: u64,
@@ -86,10 +87,10 @@ fn compute_cells_and_kzg_proofs(
     let arr: &[u8; 131072] = bytes
         .as_slice()
         .try_into()
-        .map_err(|err| anyhow!("Failed to convert blob inner to &[u8; 131072]: {}", err))?;
+        .map_err(|err| anyhow!("Failed to convert blob inner to &[u8; 131072]: {err}"))?;
     let (kzg_cells, kzg_proofs) = das_context
         .compute_cells_and_kzg_proofs(arr)
-        .map_err(|err| anyhow!("KZG error: {:?}", err))?;
+        .map_err(|err| anyhow!("KZG error: {err:?}"))?;
 
     let cells: Vec<Cell> = kzg_cells.into_iter().map(convert_cell).collect();
     let proofs: Vec<KZGProof> = kzg_proofs.into_iter().map(convert_kzg_proof).collect();
@@ -111,7 +112,7 @@ fn recover_cells_and_kzg_proofs(
             }
             let arr: [u8; 2048] = vec
                 .try_into()
-                .map_err(|err| anyhow!("Failed to convert Cell to [u8; 2048]: {:?}", err))?;
+                .map_err(|err| anyhow!("Failed to convert Cell to [u8; 2048]: {err:?}"))?;
             Ok(arr)
         })
         .collect();
@@ -120,7 +121,7 @@ fn recover_cells_and_kzg_proofs(
     let kzg_cells_refs: Vec<&[u8; 2048]> = kzg_cells.iter().collect();
     let (new_kzg_cells, new_kzg_proofs) = das_context
         .recover_cells_and_kzg_proofs(cell_indices, kzg_cells_refs)
-        .map_err(|err| anyhow!("KZG recovery error: {:?}", err))?;
+        .map_err(|err| anyhow!("KZG recovery error: {err:?}"))?;
 
     let cells: Vec<Cell> = new_kzg_cells.into_iter().map(convert_cell).collect();
     let proofs: Vec<KZGProof> = new_kzg_proofs.into_iter().map(convert_kzg_proof).collect();
@@ -129,11 +130,10 @@ fn recover_cells_and_kzg_proofs(
 }
 
 fn convert_cell(kzg_cell: KZGCell) -> Cell {
-    let array_ref: &[u8; 2048] = &*kzg_cell;
+    let array_ref: &[u8; 2048] = &kzg_cell;
     FixedVector::try_from(array_ref.to_vec()).expect("Cell conversion failed")
 }
 
 fn convert_kzg_proof(kzg_proof: Proof) -> KZGProof {
-    let proof_bytes: [u8; 48] = kzg_proof.into();
-    KZGProof::from(proof_bytes)
+    KZGProof::from(kzg_proof)
 }

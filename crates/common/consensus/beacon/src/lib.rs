@@ -23,4 +23,3 @@ pub mod sync_aggregate;
 pub mod sync_committe_selection;
 pub mod sync_committee;
 pub mod voluntary_exit;
-
