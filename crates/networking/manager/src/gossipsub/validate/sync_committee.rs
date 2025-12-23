@@ -7,7 +7,7 @@ use ream_consensus_misc::{
     misc::{compute_epoch_at_slot, compute_signing_root},
 };
 use ream_storage::{
-    cache::{CachedDB, SyncCommitteeKey},
+    cache::{BeaconCacheDB, SyncCommitteeKey},
     tables::table::REDBTable,
 };
 use ream_validator_beacon::sync_committee::{
@@ -20,7 +20,7 @@ pub async fn validate_sync_committee(
     message: &SyncCommitteeMessage,
     beacon_chain: &BeaconChain,
     subnet_id: u64,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> anyhow::Result<ValidationResult> {
     let store = beacon_chain.store.lock().await;
 

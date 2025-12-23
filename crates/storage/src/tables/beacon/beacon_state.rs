@@ -5,14 +5,14 @@ use ream_consensus_beacon::electra::beacon_state::BeaconState;
 use redb::{Database, ReadableDatabase, TableDefinition};
 
 use crate::{
-    cache::CachedDB,
+    cache::BeaconCacheDB,
     errors::StoreError,
     tables::{ssz_encoder::SSZEncoding, table::REDBTable},
 };
 
 pub struct BeaconStateTable {
     pub db: Arc<Database>,
-    pub cache: Option<Arc<CachedDB>>,
+    pub cache: Option<Arc<BeaconCacheDB>>,
 }
 
 /// Table definition for the Beacon State table
@@ -41,7 +41,7 @@ impl REDBTable for BeaconStateTable {
     ) -> Result<Option<Self::Value>, StoreError> {
         // LruCache::get requires mutable access to update LRU order
         if let Some(cache) = &self.cache
-            && let Ok(mut cache_lock) = cache.beacon_state.lock()
+            && let Ok(mut cache_lock) = cache.states.lock()
             && let Some(state) = cache_lock.get(&key)
         {
             return Ok(Some(state.clone()));
@@ -53,7 +53,7 @@ impl REDBTable for BeaconStateTable {
         let state = result.map(|res| res.value());
 
         if let (Some(cache), Some(state)) = (&self.cache, &state)
-            && let Ok(mut cache_lock) = cache.beacon_state.lock()
+            && let Ok(mut cache_lock) = cache.states.lock()
         {
             cache_lock.put(key, state.clone());
         }
@@ -67,7 +67,7 @@ impl REDBTable for BeaconStateTable {
         value: <Self::ValueTableDefinition as redb::Value>::SelfType<'a>,
     ) -> Result<(), StoreError> {
         if let Some(cache) = &self.cache
-            && let Ok(mut cache_lock) = cache.beacon_state.lock()
+            && let Ok(mut cache_lock) = cache.states.lock()
         {
             cache_lock.put(key, value.clone());
         }
@@ -87,7 +87,7 @@ impl REDBTable for BeaconStateTable {
         key: <Self::KeyTableDefinition as redb::Value>::SelfType<'a>,
     ) -> Result<Option<Self::Value>, StoreError> {
         if let Some(cache) = &self.cache
-            && let Ok(mut cache_lock) = cache.beacon_state.lock()
+            && let Ok(mut cache_lock) = cache.states.lock()
         {
             cache_lock.pop(&key);
         }

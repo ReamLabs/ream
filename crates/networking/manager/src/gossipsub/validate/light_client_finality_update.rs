@@ -4,13 +4,13 @@ use anyhow::Ok;
 use ream_consensus_misc::constants::beacon::SYNC_COMMITTEE_SIZE;
 use ream_light_client::finality_update::LightClientFinalityUpdate;
 use ream_network_spec::networks::{beacon_network_spec, lean_network_spec};
-use ream_storage::cache::CachedDB;
+use ream_storage::cache::BeaconCacheDB;
 
 use crate::gossipsub::validate::result::ValidationResult;
 
 pub async fn validate_light_client_finality_update(
     update: &LightClientFinalityUpdate,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> anyhow::Result<ValidationResult> {
     // [IGNORE] The finalized header is greater than that of all previously forwarded finality
     // updates or it matches the highest previously forwarded slot and also has a supermajority

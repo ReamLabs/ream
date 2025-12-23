@@ -1,6 +1,6 @@
 use std::{num::NonZeroUsize, sync::Mutex};
 
-use alloy_primitives::FixedBytes;
+use alloy_primitives::{B256, FixedBytes};
 use lru::LruCache;
 use ream_bls::{BLSSignature, PublicKey};
 use ream_consensus_beacon::{
@@ -53,9 +53,10 @@ pub struct AggregateAndProofKey {
     pub target_epoch: u64,
 }
 
-/// In-memory LRU cache.
+/// In-memory LRU cache for beacon node (gossip validation + beacon storage).
 #[derive(Debug)]
-pub struct CachedDB {
+pub struct BeaconCacheDB {
+    // Gossip validation caches
     pub seen_proposer_signature: RwLock<LruCache<AddressSlotIdentifier, BLSSignature>>,
     pub seen_bls_to_execution_signature:
         RwLock<LruCache<AddressSlotIdentifier, BLSToExecutionChange>>,
@@ -72,13 +73,12 @@ pub struct CachedDB {
     pub forwarded_optimistic_update_slot: RwLock<Option<u64>>,
     pub forwarded_light_client_finality_update: RwLock<Option<LightClientFinalityUpdate>>,
     pub seen_aggregate_and_proof: RwLock<LruCache<AggregateAndProofKey, ()>>,
-    pub beacon_block: Mutex<LruCache<FixedBytes<32>, SignedBeaconBlock>>,
-    pub beacon_state: Mutex<LruCache<FixedBytes<32>, BeaconState>>,
-    pub lean_block: Mutex<LruCache<FixedBytes<32>, SignedBlockWithAttestation>>,
-    pub lean_state: Mutex<LruCache<FixedBytes<32>, LeanState>>,
+    // Beacon storage caches
+    pub blocks: Mutex<LruCache<B256, SignedBeaconBlock>>,
+    pub states: Mutex<LruCache<B256, BeaconState>>,
 }
 
-impl CachedDB {
+impl BeaconCacheDB {
     pub fn new() -> Self {
         Self {
             seen_proposer_signature: LruCache::new(
@@ -132,23 +132,44 @@ impl CachedDB {
                 NonZeroUsize::new(LRU_CACHE_SIZE).expect("Invalid cache size"),
             )
             .into(),
-            beacon_block: Mutex::new(LruCache::new(
+            blocks: Mutex::new(LruCache::new(
                 NonZeroUsize::new(BLOCK_STATE_CACHE_SIZE).expect("Invalid cache size"),
             )),
-            beacon_state: Mutex::new(LruCache::new(
-                NonZeroUsize::new(BLOCK_STATE_CACHE_SIZE).expect("Invalid cache size"),
-            )),
-            lean_block: Mutex::new(LruCache::new(
-                NonZeroUsize::new(BLOCK_STATE_CACHE_SIZE).expect("Invalid cache size"),
-            )),
-            lean_state: Mutex::new(LruCache::new(
+            states: Mutex::new(LruCache::new(
                 NonZeroUsize::new(BLOCK_STATE_CACHE_SIZE).expect("Invalid cache size"),
             )),
         }
     }
 }
 
-impl Default for CachedDB {
+impl Default for BeaconCacheDB {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// In-memory LRU cache for lean node (lean storage only).
+#[derive(Debug)]
+pub struct LeanCacheDB {
+    // Lean storage caches
+    pub blocks: Mutex<LruCache<B256, SignedBlockWithAttestation>>,
+    pub states: Mutex<LruCache<B256, LeanState>>,
+}
+
+impl LeanCacheDB {
+    pub fn new() -> Self {
+        Self {
+            blocks: Mutex::new(LruCache::new(
+                NonZeroUsize::new(BLOCK_STATE_CACHE_SIZE).expect("Invalid cache size"),
+            )),
+            states: Mutex::new(LruCache::new(
+                NonZeroUsize::new(BLOCK_STATE_CACHE_SIZE).expect("Invalid cache size"),
+            )),
+        }
+    }
+}
+
+impl Default for LeanCacheDB {
     fn default() -> Self {
         Self::new()
     }

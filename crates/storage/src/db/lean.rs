@@ -3,7 +3,7 @@ use std::sync::Arc;
 use redb::Database;
 
 use crate::{
-    cache::CachedDB,
+    cache::LeanCacheDB,
     tables::lean::{
         latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
         latest_known_attestation::LatestKnownAttestationTable, lean_block::LeanBlockTable,
@@ -17,13 +17,13 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct LeanDB {
     pub db: Arc<Database>,
-    pub(crate) cache: Option<Arc<CachedDB>>,
+    pub(crate) cache: Option<Arc<LeanCacheDB>>,
 }
 
 impl LeanDB {
     /// Attach a cache to this LeanDB instance.
     /// This enables in-memory caching of blocks and states for improved performance.
-    pub fn with_cache(mut self, cache: Arc<CachedDB>) -> Self {
+    pub fn with_cache(mut self, cache: Arc<LeanCacheDB>) -> Self {
         self.cache = Some(cache);
         self
     }

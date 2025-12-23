@@ -7,14 +7,14 @@ use tree_hash::TreeHash;
 
 use super::{slot_index::LeanSlotIndexTable, state_root_index::LeanStateRootIndexTable};
 use crate::{
-    cache::CachedDB,
+    cache::LeanCacheDB,
     errors::StoreError,
     tables::{ssz_encoder::SSZEncoding, table::REDBTable},
 };
 
 pub struct LeanBlockTable {
     pub db: Arc<Database>,
-    pub cache: Option<Arc<CachedDB>>,
+    pub cache: Option<Arc<LeanCacheDB>>,
 }
 
 /// Table definition for the Lean Block table
@@ -46,7 +46,7 @@ impl REDBTable for LeanBlockTable {
     ) -> Result<Option<Self::Value>, StoreError> {
         // LruCache::get requires mutable access to update LRU order
         if let Some(cache) = &self.cache
-            && let Ok(mut cache_lock) = cache.lean_block.lock()
+            && let Ok(mut cache_lock) = cache.blocks.lock()
             && let Some(block) = cache_lock.get(&key)
         {
             return Ok(Some(block.clone()));
@@ -58,7 +58,7 @@ impl REDBTable for LeanBlockTable {
         let block = result.map(|res| res.value());
 
         if let (Some(cache), Some(block)) = (&self.cache, &block)
-            && let Ok(mut cache_lock) = cache.lean_block.lock()
+            && let Ok(mut cache_lock) = cache.blocks.lock()
         {
             cache_lock.put(key, block.clone());
         }
@@ -81,7 +81,7 @@ impl REDBTable for LeanBlockTable {
         state_root_index_table.insert(value.message.block.state_root, block_root)?;
 
         if let Some(cache) = &self.cache
-            && let Ok(mut cache_lock) = cache.lean_block.lock()
+            && let Ok(mut cache_lock) = cache.blocks.lock()
         {
             cache_lock.put(key, value.clone());
         }
@@ -97,7 +97,7 @@ impl REDBTable for LeanBlockTable {
 
     fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
         if let Some(cache) = &self.cache
-            && let Ok(mut cache_lock) = cache.lean_block.lock()
+            && let Ok(mut cache_lock) = cache.blocks.lock()
         {
             cache_lock.pop(&key);
         }

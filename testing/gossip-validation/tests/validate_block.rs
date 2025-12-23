@@ -17,7 +17,7 @@ mod tests {
     use ream_network_spec::networks::initialize_test_network_spec;
     use ream_operation_pool::OperationPool;
     use ream_storage::{
-        cache::{AddressSlotIdentifier, CachedDB},
+        cache::{AddressSlotIdentifier, BeaconCacheDB},
         db::{ReamDB, beacon::BeaconDB},
         tables::{field::REDBField, table::REDBTable},
     };
@@ -28,11 +28,11 @@ mod tests {
     const SEPOLIA_GENESIS_TIME: u64 = 1655733600;
     const CURRENT_TIME: u64 = 1752744600;
 
-    pub async fn db_setup() -> (BeaconChain, Arc<CachedDB>, B256) {
+    pub async fn db_setup() -> (BeaconChain, Arc<BeaconCacheDB>, B256) {
         let temp_dir = TempDir::new("ream_gossip_test").unwrap();
         let temp_path = temp_dir.path().to_path_buf();
         let ream_db = ReamDB::new(temp_path).expect("unable to init Ream Database");
-        let cached_db = Arc::new(CachedDB::default());
+        let cached_db = Arc::new(BeaconCacheDB::default());
         let mut db = ream_db
             .init_beacon_db()
             .unwrap()

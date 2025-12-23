@@ -5,7 +5,7 @@ use ream_consensus_beacon::{
 };
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
-    cache::{AddressValidaterIndexIdentifier, CachedDB},
+    cache::{AddressValidaterIndexIdentifier, BeaconCacheDB},
     tables::table::REDBTable,
 };
 
@@ -14,7 +14,7 @@ use super::result::ValidationResult;
 pub async fn validate_bls_to_execution_change(
     signed: &SignedBLSToExecutionChange,
     beacon_chain: &BeaconChain,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> anyhow::Result<ValidationResult> {
     let store = beacon_chain.store.lock().await;
 

@@ -7,7 +7,7 @@ use tree_hash::TreeHash;
 
 use super::parent_root_index::ParentRootIndexMultimapTable;
 use crate::{
-    cache::CachedDB,
+    cache::BeaconCacheDB,
     errors::StoreError,
     tables::{
         beacon::{slot_index::BeaconSlotIndexTable, state_root_index::BeaconStateRootIndexTable},
@@ -19,7 +19,7 @@ use crate::{
 
 pub struct BeaconBlockTable {
     pub db: Arc<Database>,
-    pub cache: Option<Arc<CachedDB>>,
+    pub cache: Option<Arc<BeaconCacheDB>>,
 }
 
 /// Table definition for the Beacon Block table
@@ -48,7 +48,7 @@ impl REDBTable for BeaconBlockTable {
     ) -> Result<Option<Self::Value>, StoreError> {
         // LruCache::get requires mutable access to update LRU order
         if let Some(cache) = &self.cache
-            && let Ok(mut cache_lock) = cache.beacon_block.lock()
+            && let Ok(mut cache_lock) = cache.blocks.lock()
             && let Some(block) = cache_lock.get(&key)
         {
             return Ok(Some(block.clone()));
@@ -60,7 +60,7 @@ impl REDBTable for BeaconBlockTable {
         let block = result.map(|res| res.value());
 
         if let (Some(cache), Some(block)) = (&self.cache, &block)
-            && let Ok(mut cache_lock) = cache.beacon_block.lock()
+            && let Ok(mut cache_lock) = cache.blocks.lock()
         {
             cache_lock.put(key, block.clone());
         }
@@ -88,7 +88,7 @@ impl REDBTable for BeaconBlockTable {
         parent_root_index_table.insert(value.message.parent_root, block_root)?;
 
         if let Some(cache) = &self.cache
-            && let Ok(mut cache_lock) = cache.beacon_block.lock()
+            && let Ok(mut cache_lock) = cache.blocks.lock()
         {
             cache_lock.put(key, value.clone());
         }
@@ -104,7 +104,7 @@ impl REDBTable for BeaconBlockTable {
 
     fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
         if let Some(cache) = &self.cache
-            && let Ok(mut cache_lock) = cache.beacon_block.lock()
+            && let Ok(mut cache_lock) = cache.blocks.lock()
         {
             cache_lock.pop(&key);
         }

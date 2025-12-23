@@ -35,7 +35,7 @@ use ream_p2p::{
     network::beacon::channel::GossipMessage,
 };
 use ream_storage::{
-    cache::{AddressSlotIdentifier, CachedDB},
+    cache::{AddressSlotIdentifier, BeaconCacheDB},
     db::beacon::BeaconDB,
     tables::{field::REDBField, table::REDBTable},
 };
@@ -345,7 +345,7 @@ async fn validate_block_for_broadcast(
     beacon_chain: &BeaconChain,
     block: &SignedBeaconBlock,
     validation_level: &BroadcastValidation,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> Result<(), String> {
     match validation_level {
         BroadcastValidation::Gossip => {
@@ -367,7 +367,7 @@ async fn validate_block_for_broadcast(
 async fn validate_gossip_level(
     beacon_chain: &BeaconChain,
     block: &SignedBeaconBlock,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> Result<(), String> {
     let store = beacon_chain.store.lock().await;
 
@@ -395,7 +395,7 @@ async fn validate_gossip_level(
         return Err("Invalid block signature".to_string());
     }
 
-    // Check for duplicate (using CachedDB)
+    // Check for duplicate (using BeaconCacheDB)
     let validator = parent_state
         .validators
         .get(block.message.proposer_index as usize)
@@ -419,7 +419,7 @@ async fn validate_gossip_level(
 async fn validate_consensus_level(
     beacon_chain: &BeaconChain,
     block: &SignedBeaconBlock,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> Result<(), String> {
     // First do gossip checks
     validate_gossip_level(beacon_chain, block, cached_db).await?;
@@ -567,7 +567,7 @@ pub async fn post_beacon_block(
     query: Query<BroadcastValidationQuery>,
     beacon_chain: Data<Arc<BeaconChain>>,
     p2p_sender: Data<Arc<P2PSender>>,
-    cached_db: Data<Arc<CachedDB>>,
+    cached_db: Data<Arc<BeaconCacheDB>>,
 ) -> Result<impl Responder, ApiError> {
     validate_consensus_version_header(&http_request)?;
 
@@ -598,7 +598,7 @@ pub async fn post_blinded_beacon_block(
     query: Query<BroadcastValidationQuery>,
     beacon_chain: Data<Arc<BeaconChain>>,
     p2p_sender: Data<Arc<P2PSender>>,
-    cached_db: Data<Arc<CachedDB>>,
+    cached_db: Data<Arc<BeaconCacheDB>>,
     builder_client: Option<Data<Arc<BuilderClient>>>,
 ) -> Result<impl Responder, ApiError> {
     validate_consensus_version_header(&http_request)?;

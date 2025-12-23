@@ -8,7 +8,7 @@ use ream_consensus_misc::{
 };
 use ream_events_beacon::contribution_and_proof::SignedContributionAndProof;
 use ream_storage::{
-    cache::{CacheSyncCommitteeContribution, CachedDB, SyncCommitteeKey},
+    cache::{BeaconCacheDB, CacheSyncCommitteeContribution, SyncCommitteeKey},
     tables::table::REDBTable,
 };
 use ream_validator_beacon::{
@@ -23,7 +23,7 @@ use super::result::ValidationResult;
 
 pub async fn validate_sync_committee_contribution_and_proof(
     beacon_chain: &BeaconChain,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
     signed_contribution_and_proof: &SignedContributionAndProof,
 ) -> anyhow::Result<ValidationResult> {
     let contribution_and_proof = &signed_contribution_and_proof.message;

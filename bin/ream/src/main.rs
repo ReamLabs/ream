@@ -66,6 +66,7 @@ use ream_post_quantum_crypto::leansig::{
 };
 use ream_rpc_common::config::RpcServerConfig;
 use ream_storage::{
+    cache::{BeaconCacheDB, LeanCacheDB},
     db::{ReamDB, reset_db},
     dir::setup_data_dir,
     tables::table::REDBTable,
@@ -190,7 +191,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     set_lean_network_spec(Arc::new(network));
 
     // Initialize the lean database
-    let cache = Arc::new(ream_storage::cache::CachedDB::new());
+    let cache = Arc::new(LeanCacheDB::new());
     let lean_db = ream_db
         .init_lean_db()
         .expect("unable to init Ream Lean Database")
@@ -322,7 +323,7 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
     set_beacon_network_spec(config.network.clone());
 
     // Initialize the beacon database
-    let cache = Arc::new(ream_storage::cache::CachedDB::new());
+    let cache = Arc::new(BeaconCacheDB::new());
     let beacon_db = ream_db
         .init_beacon_db()
         .expect("unable to init Ream Beacon Database")

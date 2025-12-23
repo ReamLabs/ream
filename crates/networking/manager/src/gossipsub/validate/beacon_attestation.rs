@@ -9,7 +9,7 @@ use ream_consensus_misc::{
     misc::{compute_epoch_at_slot, compute_signing_root},
 };
 use ream_storage::{
-    cache::{AtestationKey, CachedDB},
+    cache::{AtestationKey, BeaconCacheDB},
     tables::{field::REDBField, table::REDBTable},
 };
 use ream_validator_beacon::attestation::compute_subnet_for_attestation;
@@ -20,7 +20,7 @@ pub async fn validate_beacon_attestation(
     attestation: &SingleAttestation,
     beacon_chain: &BeaconChain,
     attestation_subnet_id: u64,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> anyhow::Result<ValidationResult> {
     let store = beacon_chain.store.lock().await;
 

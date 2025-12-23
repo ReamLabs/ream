@@ -7,7 +7,7 @@ use ream_network_manager::p2p_sender::P2PSender;
 use ream_operation_pool::OperationPool;
 use ream_p2p::network::beacon::network_state::NetworkState;
 use ream_rpc_common::{config::RpcServerConfig, server::RpcServerBuilder};
-use ream_storage::{cache::CachedDB, db::beacon::BeaconDB};
+use ream_storage::{cache::BeaconCacheDB, db::beacon::BeaconDB};
 use ream_validator_beacon::builder::builder_client::BuilderClient;
 use tokio::sync::broadcast;
 
@@ -25,7 +25,7 @@ pub async fn start(
     event_sender: broadcast::Sender<BeaconEvent>,
     beacon_chain: Arc<BeaconChain>,
     p2p_sender: Arc<P2PSender>,
-    cached_db: Arc<CachedDB>,
+    cached_db: Arc<BeaconCacheDB>,
 ) -> Result<()> {
     RpcServerBuilder::new(server_config.http_socket_address)
         .allow_origin(server_config.http_allow_origin)

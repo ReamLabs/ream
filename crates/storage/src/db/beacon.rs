@@ -6,7 +6,7 @@ use ream_consensus_misc::constants::beacon::SLOTS_PER_EPOCH;
 use redb::{Database, ReadableDatabase};
 
 use crate::{
-    cache::CachedDB,
+    cache::BeaconCacheDB,
     tables::{
         beacon::{
             beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
@@ -30,13 +30,13 @@ use crate::{
 pub struct BeaconDB {
     pub db: Arc<Database>,
     pub data_dir: PathBuf,
-    pub(crate) cache: Option<Arc<CachedDB>>,
+    pub(crate) cache: Option<Arc<BeaconCacheDB>>,
 }
 
 impl BeaconDB {
     /// Attach a cache to this BeaconDB instance.
     /// This enables in-memory caching of blocks and states for improved performance.
-    pub fn with_cache(mut self, cache: Arc<CachedDB>) -> Self {
+    pub fn with_cache(mut self, cache: Arc<BeaconCacheDB>) -> Self {
         self.cache = Some(cache);
         self
     }
