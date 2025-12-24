@@ -7,6 +7,7 @@ use ream_consensus_misc::{
 use ream_merkle::is_valid_merkle_branch;
 use ream_network_spec::networks::beacon_network_spec;
 use serde::{Deserialize, Serialize};
+use ssz::DecodeError;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, VariableList, typenum};
 use tree_hash::TreeHash;
@@ -19,7 +20,7 @@ pub const DATA_COLUMN_SIDECAR_SUBNET_COUNT: u64 = 128;
 
 pub type MaxBlobCommitmentsPerBlock = typenum::U6;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Encode, Decode, TreeHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Decode, Encode, TreeHash)]
 pub struct DataColumnSidecar {
     pub index: u64,
     pub column: VariableList<Cell, MaxBlobCommitmentsPerBlock>,
@@ -100,6 +101,55 @@ impl DataColumnSidecar {
 
         true
     }
+}
+
+pub fn get_column_data_sidecars(
+    signed_block_header: SignedBeaconBlockHeader,
+    kzg_commitments: VariableList<KZGCommitment, MaxBlobCommitmentsPerBlock>,
+    kzg_commitments_inclusion_proof: FixedVector<B256, typenum::U4>,
+    cells_and_kzg_proofs: Vec<(Vec<Cell>, Vec<KZGProof>)>,
+) -> Result<Vec<DataColumnSidecar>, DecodeError> {
+    if cells_and_kzg_proofs.len() != kzg_commitments.len() {
+        return Err(DecodeError::InvalidByteLength {
+            len: kzg_commitments.len(),
+            expected: cells_and_kzg_proofs.len(),
+        });
+    }
+
+    let mut sidecars: Vec<DataColumnSidecar> = Vec::new();
+    for column_index in 0..NUMBER_OF_COLUMNS {
+        let mut column_cells: Vec<Cell> = Vec::new();
+        let mut column_proofs: Vec<KZGProof> = Vec::new();
+        for (cells, proofs) in &cells_and_kzg_proofs {
+            if column_index as usize >= cells.len() || column_index as usize >= proofs.len() {
+                return Err(DecodeError::OffsetOutOfBounds(column_index as usize));
+            }
+            column_cells.push(cells[column_index as usize].clone());
+            column_proofs.push(proofs[column_index as usize]);
+        }
+        let column_len = column_cells.len();
+        let column_vl =
+            VariableList::try_from(column_cells).map_err(|_| DecodeError::InvalidByteLength {
+                len: column_len,
+                expected: NUMBER_OF_COLUMNS as usize,
+            })?;
+
+        let proofs_len = column_proofs.len();
+        let proofs_vl =
+            VariableList::try_from(column_proofs).map_err(|_| DecodeError::InvalidByteLength {
+                len: proofs_len,
+                expected: NUMBER_OF_COLUMNS as usize,
+            })?;
+        sidecars.push(DataColumnSidecar {
+            index: column_index,
+            column: column_vl,
+            kzg_commitments: kzg_commitments.clone(),
+            kzg_proofs: proofs_vl,
+            signed_block_header: signed_block_header.clone(),
+            kzg_commitments_inclusion_proof: kzg_commitments_inclusion_proof.clone(),
+        });
+    }
+    Ok(sidecars)
 }
 
 #[cfg(test)]
