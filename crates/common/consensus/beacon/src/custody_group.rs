@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::data_column_sidecar::NUMBER_OF_COLUMNS;
 
-pub fn get_custody_groups(node_id: NodeId, custody_group_count: u64) -> Result<Vec<u64>> {
+pub fn get_custody_group_indices(node_id: NodeId, custody_group_count: u64) -> Result<Vec<u64>> {
     if custody_group_count > NUM_CUSTODY_GROUPS {
         return Err(anyhow!(
             "Custody group count more than number of custody groups",
