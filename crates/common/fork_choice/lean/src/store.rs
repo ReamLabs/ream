@@ -2,8 +2,14 @@ use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
+#[cfg(feature = "devnet2")]
+use ream_consensus_lean::attestation::AggregatedAttestation;
+#[cfg(feature = "devnet2")]
+use ream_consensus_lean::attestation::AggregatedAttestations;
+#[cfg(feature = "devnet1")]
+use ream_consensus_lean::attestation::Attestation;
 use ream_consensus_lean::{
-    attestation::{Attestation, AttestationData, SignedAttestation},
+    attestation::{AttestationData, SignedAttestation},
     block::{Block, BlockBody, BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
     state::LeanState,
@@ -24,6 +30,8 @@ use ream_storage::{
     tables::{field::REDBField, table::REDBTable},
 };
 use ream_sync::rwlock::{Reader, Writer};
+#[cfg(feature = "devnet2")]
+use ssz_types::BitList;
 use ssz_types::{VariableList, typenum::U4096};
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
@@ -124,7 +132,11 @@ impl Store {
 
         for attestation in attestations {
             let attestation = attestation?;
+            #[cfg(feature = "devnet1")]
             let mut current_root = attestation.message.data.head.root;
+
+            #[cfg(feature = "devnet2")]
+            let mut current_root = attestation.message.head.root;
 
             while let Some(block) = block_provider.get(current_root)? {
                 let block = block.message.block;
@@ -394,7 +406,10 @@ impl Store {
         slot: u64,
         proposer_index: u64,
         parent_root: B256,
-        attestations: Option<VariableList<Attestation, U4096>>,
+        #[cfg(feature = "devnet1")] attestations: Option<VariableList<Attestation, U4096>>,
+        #[cfg(feature = "devnet2")] attestations: Option<
+            VariableList<AggregatedAttestations, U4096>,
+        >,
     ) -> anyhow::Result<(Block, Vec<Signature>, LeanState)> {
         let (state_provider, latest_known_attestation_provider, block_provider) = {
             let db = self.store.lock().await;
@@ -409,38 +424,101 @@ impl Store {
         let head_state = state_provider
             .get(parent_root)?
             .ok_or(anyhow!("State not found for head root"))?;
-
+        #[cfg(feature = "devnet1")]
         let mut attestations: VariableList<Attestation, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
+
+        #[cfg(feature = "devnet2")]
+        let mut attestations: VariableList<AggregatedAttestations, U4096> =
+            attestations.unwrap_or_else(VariableList::empty);
+
         let mut signatures: Vec<Signature> = Vec::new();
 
         let (mut candidate_block, signatures, post_state) = loop {
+            #[cfg(feature = "devnet2")]
+            let attestations_list: VariableList<AggregatedAttestation, U4096> = {
+                let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
+                for attestation in attestations.iter() {
+                    groups
+                        .entry(attestation.data.clone())
+                        .or_default()
+                        .push(attestation.validator_id);
+                }
+
+                VariableList::new(
+                    groups
+                        .into_iter()
+                        .map(|(message, ids)| {
+                            let mut bits = BitList::<U4096>::with_capacity(
+                                ids.iter().max().map_or(0, |&id| id as usize + 1),
+                            )
+                            .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+
+                            for id in ids {
+                                bits.set(id as usize, true)
+                                    .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+                            }
+                            Ok(AggregatedAttestation {
+                                aggregation_bits: bits,
+                                message,
+                            })
+                        })
+                        .collect::<anyhow::Result<Vec<_>>>()?,
+                )
+                .map_err(|err| anyhow!("Limit exceeded: {err:?}"))?
+            };
             let candidate_block = Block {
                 slot,
                 proposer_index,
                 parent_root,
                 state_root: B256::ZERO,
+                #[cfg(feature = "devnet1")]
                 body: BlockBody {
                     attestations: attestations.clone(),
+                },
+                #[cfg(feature = "devnet2")]
+                body: BlockBody {
+                    attestations: attestations_list.clone(),
                 },
             };
             let mut advanced_state = head_state.clone();
             advanced_state.process_slots(slot)?;
             advanced_state.process_block(&candidate_block)?;
-
+            #[cfg(feature = "devnet1")]
             let mut new_attestations: VariableList<Attestation, U4096> = VariableList::empty();
+            #[cfg(feature = "devnet2")]
+            let mut new_attestations: VariableList<AggregatedAttestations, U4096> =
+                VariableList::empty();
             let mut new_signatures: Vec<Signature> = Vec::new();
             for signed_attestation in available_signed_attestations.values() {
+                #[cfg(feature = "devnet1")]
                 let data = &signed_attestation.message.data;
+                #[cfg(feature = "devnet2")]
+                let data = &signed_attestation.message;
+                #[cfg(feature = "devnet2")]
+                let attestation = AggregatedAttestations {
+                    validator_id: signed_attestation.validator_id,
+                    data: data.clone(),
+                };
+
                 if !block_provider.contains_key(data.head.root) {
                     continue;
                 }
                 if data.source != advanced_state.latest_justified {
                     continue;
                 }
+                #[cfg(feature = "devnet1")]
                 if !attestations.contains(&signed_attestation.message) {
                     new_attestations
                         .push(signed_attestation.message.clone())
+                        .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
+                    new_signatures.push(signed_attestation.signature);
+                }
+
+                #[cfg(feature = "devnet2")]
+                if !attestations.contains(&attestation) {
+                    new_attestations
+                        .push(attestation)
                         .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
                     new_signatures.push(signed_attestation.signature);
                 }
@@ -520,6 +598,7 @@ impl Store {
             )
         };
         let block = &signed_block_with_attestation.message.block;
+        #[cfg(feature = "devnet1")]
         let signatures = &signed_block_with_attestation.signature;
         let proposer_attestation = &signed_block_with_attestation.message.proposer_attestation;
         let block_root = block.tree_hash_root();
@@ -562,6 +641,7 @@ impl Store {
         latest_finalized_provider.insert(latest_finalized)?;
         *self.network_state.finalized_checkpoint.write() = latest_finalized;
 
+        #[cfg(feature = "devnet1")]
         for (attestation, signature) in signed_block_with_attestation
             .message
             .block
@@ -580,14 +660,71 @@ impl Store {
             .await?;
         }
 
+        #[cfg(feature = "devnet2")]
+        {
+            let aggregated_attestations = &signed_block_with_attestation
+                .message
+                .block
+                .body
+                .attestations;
+            let attestation_signatures = &signed_block_with_attestation
+                .signature
+                .attestation_signatures;
+
+            ensure!(
+                aggregated_attestations.len() == attestation_signatures.len(),
+                "Attestation signature groups must match aggregated attestations"
+            );
+
+            for (aggregated_attestation, aggregated_signature) in aggregated_attestations
+                .into_iter()
+                .zip(attestation_signatures)
+            {
+                let validator_ids: Vec<u64> = aggregated_attestation
+                    .aggregation_bits
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, bit)| *bit)
+                    .map(|(index, _)| index as u64)
+                    .collect();
+
+                ensure!(
+                    validator_ids.len() == aggregated_signature.inner.len(),
+                    "Aggregated attestation signature count mismatch"
+                );
+
+                for (validator_id, signature) in
+                    validator_ids.into_iter().zip(attestation_signatures)
+                {
+                    self.on_attestation(
+                        SignedAttestation {
+                            validator_id,
+                            message: aggregated_attestation.message.clone(),
+                            signature: *signature,
+                        },
+                        true,
+                    )
+                    .await?;
+                }
+            }
+        }
+
         self.update_head().await?;
 
         self.on_attestation(
             SignedAttestation {
+                #[cfg(feature = "devnet1")]
                 message: proposer_attestation.clone(),
+                #[cfg(feature = "devnet1")]
                 signature: *signatures
                     .get(block.body.attestations.len())
                     .ok_or(anyhow!("Failed to get attestation"))?,
+                #[cfg(feature = "devnet2")]
+                message: proposer_attestation.data.clone(),
+                #[cfg(feature = "devnet2")]
+                signature: signed_block_with_attestation.signature.proposer_signature,
+                #[cfg(feature = "devnet2")]
+                validator_id: proposer_attestation.validator_id,
             },
             false,
         )
@@ -601,7 +738,10 @@ impl Store {
         &self,
         signed_attestation: &SignedAttestation,
     ) -> anyhow::Result<()> {
+        #[cfg(feature = "devnet1")]
         let data = &signed_attestation.message.data;
+        #[cfg(feature = "devnet2")]
+        let data = &signed_attestation.message;
         let block_provider = self.store.lock().await.block_provider();
 
         // Validate attestation targets exist in store
@@ -683,18 +823,32 @@ impl Store {
             }
         }
 
+        #[cfg(feature = "devnet1")]
         let validator_id = signed_attestation.message.validator_id;
+        #[cfg(feature = "devnet1")]
         let attestation_slot = signed_attestation.message.data.slot;
+
+        #[cfg(feature = "devnet2")]
+        let validator_id = signed_attestation.validator_id;
+        #[cfg(feature = "devnet2")]
+        let attestation_slot = signed_attestation.message.slot;
+
         if is_from_block {
             let latest_known = match latest_known_attestations_provider.get(validator_id)? {
+                #[cfg(feature = "devnet1")]
                 Some(latest_known) => latest_known.message.data.slot < attestation_slot,
+                #[cfg(feature = "devnet2")]
+                Some(latest_known) => latest_known.message.slot < attestation_slot,
                 None => true,
             };
             if latest_known {
                 latest_known_attestations_provider.insert(validator_id, signed_attestation)?;
             }
             let remove = match latest_new_attestations_provider.get(validator_id)? {
+                #[cfg(feature = "devnet1")]
                 Some(new_new) => new_new.message.data.slot <= attestation_slot,
+                #[cfg(feature = "devnet2")]
+                Some(new_new) => new_new.message.slot <= attestation_slot,
                 None => false,
             };
             if remove {
@@ -707,7 +861,10 @@ impl Store {
                 "Attestation from future slot {attestation_slot} <= {time_slots}",
             );
             let latest_new = match latest_new_attestations_provider.get(validator_id)? {
+                #[cfg(feature = "devnet1")]
                 Some(latest_new) => latest_new.message.data.slot < attestation_slot,
+                #[cfg(feature = "devnet2")]
+                Some(latest_new) => latest_new.message.slot < attestation_slot,
                 None => true,
             };
             if latest_new {
@@ -749,8 +906,15 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{B256, FixedBytes};
+    #[cfg(feature = "devnet1")]
+    use ream_consensus_lean::attestation::Attestation;
+    #[cfg(feature = "devnet2")]
     use ream_consensus_lean::{
-        attestation::{Attestation, AttestationData, SignedAttestation},
+        attestation::{AggregatedAttestation, AggregatedAttestations},
+        block::BlockSignatures,
+    };
+    use ream_consensus_lean::{
+        attestation::{AttestationData, SignedAttestation},
         block::{
             Block, BlockBody, BlockHeader, BlockWithAttestation, BlockWithSignatures,
             SignedBlockWithAttestation,
@@ -824,13 +988,25 @@ mod tests {
         signatures.push(Signature::blank()).unwrap();
         SignedBlockWithAttestation {
             message: BlockWithAttestation {
+                #[cfg(feature = "devnet1")]
                 proposer_attestation: Attestation {
+                    validator_id: block.proposer_index,
+                    data: attestation_data,
+                },
+                #[cfg(feature = "devnet2")]
+                proposer_attestation: AggregatedAttestations {
                     validator_id: block.proposer_index,
                     data: attestation_data,
                 },
                 block,
             },
+            #[cfg(feature = "devnet1")]
             signature: signatures,
+            #[cfg(feature = "devnet2")]
+            signature: BlockSignatures {
+                attestation_signatures: signatures,
+                proposer_signature: Signature::blank(),
+            },
         }
     }
 
@@ -900,6 +1076,7 @@ mod tests {
         let attestation_target = store.get_attestation_target().await.unwrap();
 
         let attestation_1 = SignedAttestation {
+            #[cfg(feature = "devnet1")]
             message: Attestation {
                 validator_id: 5,
                 data: AttestationData {
@@ -912,10 +1089,23 @@ mod tests {
                     source: attestation_target,
                 },
             },
+            #[cfg(feature = "devnet2")]
+            message: AttestationData {
+                slot: head_block.message.block.slot,
+                head: Checkpoint {
+                    root: head,
+                    slot: head_block.message.block.slot,
+                },
+                target: justified_checkpoint,
+                source: attestation_target,
+            },
             signature: Signature::blank(),
+            #[cfg(feature = "devnet2")]
+            validator_id: 5,
         };
 
         let attestation_2 = SignedAttestation {
+            #[cfg(feature = "devnet1")]
             message: Attestation {
                 validator_id: 6,
                 data: AttestationData {
@@ -928,7 +1118,19 @@ mod tests {
                     source: attestation_target,
                 },
             },
+            #[cfg(feature = "devnet2")]
+            message: AttestationData {
+                slot: head_block.message.block.slot,
+                head: Checkpoint {
+                    root: head,
+                    slot: head_block.message.block.slot,
+                },
+                target: justified_checkpoint,
+                source: attestation_target,
+            },
             signature: Signature::blank(),
+            #[cfg(feature = "devnet2")]
+            validator_id: 5,
         };
         latest_known_attestations
             .batch_insert([(5, attestation_1), (6, attestation_2)])
@@ -1001,6 +1203,7 @@ mod tests {
         let head_block = block_provider.get(head).unwrap().unwrap();
 
         let attestation = SignedAttestation {
+            #[cfg(feature = "devnet1")]
             message: Attestation {
                 validator_id: 7,
                 data: AttestationData {
@@ -1013,7 +1216,19 @@ mod tests {
                     source: store.get_attestation_target().await.unwrap(),
                 },
             },
+            #[cfg(feature = "devnet2")]
+            message: AttestationData {
+                slot: head_block.message.block.slot,
+                head: Checkpoint {
+                    root: head,
+                    slot: head_block.message.block.slot,
+                },
+                target: latest_justified_provider.get().unwrap(),
+                source: store.get_attestation_target().await.unwrap(),
+            },
             signature: Signature::blank(),
+            #[cfg(feature = "devnet2")]
+            validator_id: 7,
         };
         latest_known_attestations.insert(7, attestation).unwrap();
 
@@ -1058,7 +1273,14 @@ mod tests {
             .get()
             .unwrap();
 
+        #[cfg(feature = "devnet1")]
         let attestation = Attestation {
+            validator_id,
+            data: store.produce_attestation_data(slot).await.unwrap(),
+        };
+
+        #[cfg(feature = "devnet2")]
+        let attestation = AggregatedAttestations {
             validator_id,
             data: store.produce_attestation_data(slot).await.unwrap(),
         };
@@ -1075,7 +1297,14 @@ mod tests {
         let (store, _) = sample_store(10).await;
         let block_provider = store.store.lock().await.block_provider();
 
+        #[cfg(feature = "devnet1")]
         let attestation = Attestation {
+            validator_id: 8,
+            data: store.produce_attestation_data(slot).await.unwrap(),
+        };
+
+        #[cfg(feature = "devnet2")]
+        let attestation = AggregatedAttestations {
             validator_id: 8,
             data: store.produce_attestation_data(slot).await.unwrap(),
         };
@@ -1091,7 +1320,14 @@ mod tests {
     #[tokio::test]
     pub async fn test_produce_attestation_target_calculation() {
         let (store, _) = sample_store(10).await;
+        #[cfg(feature = "devnet1")]
         let attestation = Attestation {
+            validator_id: 9,
+            data: store.produce_attestation_data(3).await.unwrap(),
+        };
+
+        #[cfg(feature = "devnet2")]
+        let attestation = AggregatedAttestations {
             validator_id: 9,
             data: store.produce_attestation_data(3).await.unwrap(),
         };
@@ -1108,7 +1344,13 @@ mod tests {
 
         let mut attestations = Vec::new();
         for validator_id in 0..5 {
+            #[cfg(feature = "devnet1")]
             let attestation = Attestation {
+                validator_id,
+                data: store.produce_attestation_data(slot).await.unwrap(),
+            };
+            #[cfg(feature = "devnet2")]
+            let attestation = AggregatedAttestations {
                 validator_id,
                 data: store.produce_attestation_data(slot).await.unwrap(),
             };
@@ -1129,19 +1371,39 @@ mod tests {
     /// Test attestation production across sequential slots.
     #[tokio::test]
     pub async fn test_produce_attestation_sequential_slots() {
+        #[cfg(feature = "devnet1")]
         let validator_id = 3;
 
         let (store, _) = sample_store(10).await;
         let latest_justified_provider = store.store.lock().await.latest_justified_provider();
 
+        #[cfg(feature = "devnet2")]
+        let mut aggregation_bits = BitList::<U4096>::with_capacity(32).unwrap();
+        #[cfg(feature = "devnet2")]
+        aggregation_bits.set(0, true).unwrap();
+
+        #[cfg(feature = "devnet1")]
         let attestation_1 = Attestation {
             validator_id,
             data: store.produce_attestation_data(1).await.unwrap(),
         };
 
+        #[cfg(feature = "devnet1")]
         let attestation_2 = Attestation {
             validator_id,
             data: store.produce_attestation_data(2).await.unwrap(),
+        };
+
+        #[cfg(feature = "devnet2")]
+        let attestation_1 = AggregatedAttestation {
+            aggregation_bits: aggregation_bits.clone(),
+            message: store.produce_attestation_data(1).await.unwrap(),
+        };
+
+        #[cfg(feature = "devnet2")]
+        let attestation_2 = AggregatedAttestation {
+            aggregation_bits,
+            message: store.produce_attestation_data(2).await.unwrap(),
         };
 
         assert_ne!(attestation_1.slot(), attestation_2.slot());
@@ -1161,9 +1423,21 @@ mod tests {
             (db.latest_justified_provider(), db.block_provider())
         };
 
+        #[cfg(feature = "devnet2")]
+        let mut aggregation_bits = BitList::<U4096>::with_capacity(32).unwrap();
+        #[cfg(feature = "devnet2")]
+        aggregation_bits.set(0, true).unwrap();
+
+        #[cfg(feature = "devnet1")]
         let attestation = Attestation {
             validator_id: 2,
             data: store.produce_attestation_data(5).await.unwrap(),
+        };
+
+        #[cfg(feature = "devnet2")]
+        let attestation = AggregatedAttestation {
+            aggregation_bits,
+            message: store.produce_attestation_data(5).await.unwrap(),
         };
 
         assert_eq!(
@@ -1205,15 +1479,36 @@ mod tests {
 
         store.update_head().await.unwrap();
 
+        #[cfg(feature = "devnet1")]
         let attestation = Attestation {
             validator_id: 7,
             data: store.produce_attestation_data(2).await.unwrap(),
         };
 
+        #[cfg(feature = "devnet2")]
+        let mut aggregation_bits = BitList::<U4096>::with_capacity(32).unwrap();
+        #[cfg(feature = "devnet2")]
+        aggregation_bits.set(0, true).unwrap();
+
+        #[cfg(feature = "devnet2")]
+        let attestation = AggregatedAttestation {
+            aggregation_bits,
+            message: store.produce_attestation_data(2).await.unwrap(),
+        };
+
+        #[cfg(feature = "devnet1")]
         assert_eq!(attestation.validator_id, 7);
+        #[cfg(feature = "devnet2")]
+        assert_eq!(attestation.aggregation_bits, attestation.aggregation_bits);
         assert_eq!(attestation.slot(), 2);
+        #[cfg(feature = "devnet1")]
         assert_eq!(
             attestation.data.source,
+            latest_justified_provider.get().unwrap()
+        );
+        #[cfg(feature = "devnet2")]
+        assert_eq!(
+            attestation.message.source,
             latest_justified_provider.get().unwrap()
         );
     }
@@ -1248,7 +1543,14 @@ mod tests {
 
         let mut attestations = Vec::new();
         for i in 2..6 {
+            #[cfg(feature = "devnet1")]
             let attestation = Attestation {
+                validator_id: i,
+                data: store.produce_attestation_data(2).await.unwrap(),
+            };
+
+            #[cfg(feature = "devnet2")]
+            let attestation = AggregatedAttestations {
                 validator_id: i,
                 data: store.produce_attestation_data(2).await.unwrap(),
             };
@@ -1318,12 +1620,26 @@ mod tests {
             .await
             .unwrap();
 
+        #[cfg(feature = "devnet1")]
         let attestation = Attestation {
             validator_id: 9,
             data: store.produce_attestation_data(10).await.unwrap(),
         };
 
+        #[cfg(feature = "devnet2")]
+        let mut aggregation_bits = BitList::<U4096>::with_capacity(32).unwrap();
+        #[cfg(feature = "devnet2")]
+        aggregation_bits.set(0, true).unwrap();
+
+        #[cfg(feature = "devnet2")]
+        let attestation = AggregatedAttestation {
+            aggregation_bits,
+            message: store.produce_attestation_data(10).await.unwrap(),
+        };
+        #[cfg(feature = "devnet1")]
         assert_eq!(attestation.validator_id, 9);
+        #[cfg(feature = "devnet2")]
+        assert_eq!(attestation.aggregation_bits, attestation.aggregation_bits);
         assert_eq!(attestation.slot(), 10);
     }
 
@@ -1457,7 +1773,14 @@ mod tests {
         // shoudl fail
         assert!(!is_proposer(1000000, 1000000, 10));
 
+        #[cfg(feature = "devnet1")]
         let attestation = Attestation {
+            validator_id: 1000000,
+            data: store.produce_attestation_data(1).await.unwrap(),
+        };
+
+        #[cfg(feature = "devnet2")]
+        let attestation = AggregatedAttestations {
             validator_id: 1000000,
             data: store.produce_attestation_data(1).await.unwrap(),
         };
@@ -1596,6 +1919,7 @@ mod tests {
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
             let signed_attestation = SignedAttestation {
+                #[cfg(feature = "devnet1")]
                 message: Attestation {
                     validator_id: 5,
                     data: AttestationData {
@@ -1605,11 +1929,26 @@ mod tests {
                         source: justified_checkpoint,
                     },
                 },
+                #[cfg(feature = "devnet2")]
+                message: AttestationData {
+                    slot: 1,
+                    head: justified_checkpoint,
+                    target: test_checkpoint,
+                    source: justified_checkpoint,
+                },
+                #[cfg(feature = "devnet2")]
+                validator_id: 5,
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
+            #[cfg(feature = "devnet1")]
             db_table
                 .insert(signed_attestation.message.validator_id, signed_attestation)
+                .unwrap();
+
+            #[cfg(feature = "devnet2")]
+            db_table
+                .insert(signed_attestation.validator_id, signed_attestation)
                 .unwrap();
         };
 
@@ -1703,6 +2042,7 @@ mod tests {
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
             let signed_attestation = SignedAttestation {
+                #[cfg(feature = "devnet1")]
                 message: Attestation {
                     validator_id: 5,
                     data: AttestationData {
@@ -1712,11 +2052,26 @@ mod tests {
                         source: justified_checkpoint,
                     },
                 },
+                #[cfg(feature = "devnet2")]
+                message: AttestationData {
+                    slot: 1,
+                    head: justified_checkpoint,
+                    target: checkpoint,
+                    source: justified_checkpoint,
+                },
+                #[cfg(feature = "devnet2")]
+                validator_id: 5,
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
+            #[cfg(feature = "devnet1")]
             db_table
                 .insert(signed_attestation.message.validator_id, signed_attestation)
+                .unwrap();
+
+            #[cfg(feature = "devnet2")]
+            db_table
+                .insert(signed_attestation.validator_id, signed_attestation)
                 .unwrap();
         };
         let latest_new_attestations_provider =
@@ -1783,6 +2138,7 @@ mod tests {
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
             let signed_attestation = SignedAttestation {
+                #[cfg(feature = "devnet1")]
                 message: Attestation {
                     validator_id: i,
                     data: AttestationData {
@@ -1792,11 +2148,26 @@ mod tests {
                         source: justified_checkpoint,
                     },
                 },
+                #[cfg(feature = "devnet2")]
+                message: AttestationData {
+                    slot: i,
+                    head: justified_checkpoint,
+                    target: *checkpoint,
+                    source: justified_checkpoint,
+                },
+                #[cfg(feature = "devnet2")]
+                validator_id: i,
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
+            #[cfg(feature = "devnet1")]
             db_table
                 .insert(signed_attestation.message.validator_id, signed_attestation)
+                .unwrap();
+
+            #[cfg(feature = "devnet2")]
+            db_table
+                .insert(signed_attestation.validator_id, signed_attestation)
                 .unwrap();
         }
 
@@ -1829,6 +2200,7 @@ mod tests {
         assert!(new_attestations_length == 0);
         assert!(latest_known_attestations_length == 5);
 
+        #[cfg(feature = "devnet1")]
         for (i, checkpoint) in checkpoints.iter().enumerate().map(|(i, c)| (i as u64, c)) {
             let stored_checkpoint = latest_known_attestations_provider
                 .get(i)
@@ -1836,6 +2208,17 @@ mod tests {
                 .unwrap()
                 .message
                 .data
+                .target;
+            assert!(stored_checkpoint == *checkpoint);
+        }
+
+        #[cfg(feature = "devnet2")]
+        for (i, checkpoint) in checkpoints.iter().enumerate().map(|(i, c)| (i as u64, c)) {
+            let stored_checkpoint = latest_known_attestations_provider
+                .get(i)
+                .unwrap()
+                .unwrap()
+                .message
                 .target;
             assert!(stored_checkpoint == *checkpoint);
         }
@@ -1928,6 +2311,7 @@ mod tests {
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
             let signed_attestation = SignedAttestation {
+                #[cfg(feature = "devnet1")]
                 message: Attestation {
                     validator_id: 10,
                     data: AttestationData {
@@ -1937,11 +2321,26 @@ mod tests {
                         source: justified_checkpoint,
                     },
                 },
+                #[cfg(feature = "devnet2")]
+                message: AttestationData {
+                    slot: 10,
+                    head: justified_checkpoint,
+                    target: checkpoint,
+                    source: justified_checkpoint,
+                },
+                #[cfg(feature = "devnet2")]
+                validator_id: 10,
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
+            #[cfg(feature = "devnet1")]
             db_table
                 .insert(signed_attestation.message.validator_id, signed_attestation)
+                .unwrap();
+
+            #[cfg(feature = "devnet2")]
+            db_table
+                .insert(signed_attestation.validator_id, signed_attestation)
                 .unwrap();
         };
 
@@ -1958,6 +2357,7 @@ mod tests {
                 .count()
         };
 
+        #[cfg(feature = "devnet1")]
         let known_attestations_correct_checkpoint = {
             store
                 .store
@@ -1970,6 +2370,21 @@ mod tests {
                 .unwrap()
                 .message
                 .data
+                .target
+        };
+
+        #[cfg(feature = "devnet2")]
+        let known_attestations_correct_checkpoint = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_known_attestations_provider()
+                .get_all_attestations()
+                .unwrap()
+                .get(&10)
+                .unwrap()
+                .message
                 .target
         };
 

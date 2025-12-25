@@ -8,7 +8,13 @@ use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::{attestation::Attestation, state::LeanState};
+#[cfg(feature = "devnet2")]
+use crate::attestation::AggregatedAttestation;
+#[cfg(feature = "devnet2")]
+use crate::attestation::AggregatedAttestations;
+#[cfg(feature = "devnet1")]
+use crate::attestation::Attestation;
+use crate::state::LeanState;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct BlockSignatures {
@@ -34,18 +40,34 @@ impl SignedBlockWithAttestation {
     ) -> anyhow::Result<bool> {
         let block = &self.message.block;
         let signatures = &self.signature;
+        #[cfg(feature = "devnet1")]
         let mut all_attestations = block.body.attestations.to_vec();
+        #[cfg(feature = "devnet2")]
+        let aggregated_attestations = &block.body.attestations;
+        #[cfg(feature = "devnet2")]
+        let attestation_signatures = &signatures.attestation_signatures;
 
+        #[cfg(feature = "devnet1")]
         all_attestations.push(self.message.proposer_attestation.clone());
 
+        #[cfg(feature = "devnet1")]
         ensure!(
             signatures.len() == all_attestations.len(),
             "Number of signatures {} does not match number of attestations {}",
             signatures.len(),
             all_attestations.len(),
         );
+        #[cfg(feature = "devnet2")]
+        ensure!(
+            attestation_signatures.len() == aggregated_attestations.len(),
+            "Number of signatures {} does not match number of attestations {}",
+            attestation_signatures.len(),
+            aggregated_attestations.len(),
+        );
+
         let validators = &parent_state.validators;
 
+        #[cfg(feature = "devnet1")]
         for (attestation, signature) in all_attestations.iter().zip(signatures.iter()) {
             ensure!(
                 attestation.validator_id < validators.len() as u64,
@@ -69,6 +91,73 @@ impl SignedBlockWithAttestation {
             }
         }
 
+        #[cfg(feature = "devnet2")]
+        {
+            let mut signature_iter = attestation_signatures.iter();
+            for aggregated_attestation in aggregated_attestations.iter() {
+                let validator_ids: Vec<usize> = aggregated_attestation
+                    .aggregation_bits
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, bit)| *bit)
+                    .map(|(index, _)| index)
+                    .collect();
+
+                let attestation_root = aggregated_attestation.message.tree_hash_root();
+
+                for validator_id in validator_ids {
+                    let signature = signature_iter.next().ok_or_else(|| {
+                        anyhow!("Missing signature for validator index {validator_id}")
+                    })?;
+
+                    ensure!(
+                        validator_id < validators.len(),
+                        "Validator index out of range"
+                    );
+
+                    let validator = validators
+                        .get(validator_id)
+                        .ok_or_else(|| anyhow!("Failed to get validator"))?;
+
+                    if verify_signatures {
+                        let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, &[]);
+                        ensure!(
+                            signature.verify(
+                                &validator.public_key,
+                                aggregated_attestation.message.slot as u32,
+                                &attestation_root,
+                            )?,
+                            "Attestation signature verification failed"
+                        );
+                        stop_timer(timer);
+                    }
+                }
+            }
+
+            let proposer_attestation = &self.message.proposer_attestation;
+            let proposer_signature = &signatures.proposer_signature;
+
+            ensure!(
+                proposer_attestation.validator_id < validators.len() as u64,
+                "Proposer index out of range"
+            );
+
+            let proposer = validators
+                .get(proposer_attestation.validator_id as usize)
+                .ok_or_else(|| anyhow!("Failed to get proposer validator"))?;
+
+            if verify_signatures {
+                ensure!(
+                    proposer_signature.verify(
+                        &proposer.public_key,
+                        proposer_attestation.data.slot as u32,
+                        &proposer_attestation.data.tree_hash_root(),
+                    )?,
+                    "Failed to verify"
+                );
+            }
+        }
+
         Ok(true)
     }
 }
@@ -77,7 +166,10 @@ impl SignedBlockWithAttestation {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct BlockWithAttestation {
     pub block: Block,
+    #[cfg(feature = "devnet1")]
     pub proposer_attestation: Attestation,
+    #[cfg(feature = "devnet2")]
+    pub proposer_attestation: AggregatedAttestations,
 }
 
 /// Represents a block in the Lean chain.
@@ -117,10 +209,10 @@ impl From<Block> for BlockHeader {
 /// Represents the body of a block in the Lean chain.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BlockBody {
-    #[cfg(feature = "devnet2")]
-    pub attestations: VariableList<AggregatedAttestations, U4096>,
     #[cfg(feature = "devnet1")]
     pub attestations: VariableList<Attestation, U4096>,
+    #[cfg(feature = "devnet2")]
+    pub attestations: VariableList<AggregatedAttestation, U4096>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
@@ -151,6 +243,7 @@ mod tests {
                         attestations: Default::default(),
                     },
                 },
+                #[cfg(feature = "devnet1")]
                 proposer_attestation: Attestation {
                     validator_id: 0,
                     data: AttestationData {
@@ -160,8 +253,24 @@ mod tests {
                         source: Checkpoint::default(),
                     },
                 },
+                #[cfg(feature = "devnet2")]
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 0,
+                    data: AttestationData {
+                        slot: 0,
+                        head: Checkpoint::default(),
+                        target: Checkpoint::default(),
+                        source: Checkpoint::default(),
+                    },
+                },
             },
+            #[cfg(feature = "devnet1")]
             signature: VariableList::default(),
+            #[cfg(feature = "devnet2")]
+            signature: BlockSignatures {
+                attestation_signatures: VariableList::default(),
+                proposer_signature: Signature::blank(),
+            },
         };
 
         let encode = signed_block_with_attestation.as_ssz_bytes();

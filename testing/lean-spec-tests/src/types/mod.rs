@@ -5,8 +5,12 @@ use std::collections::HashMap;
 
 use alloy_primitives::{B256, hex};
 use anyhow::{anyhow, bail};
+#[cfg(feature = "devnet2")]
+use ream_consensus_lean::attestation::AggregatedAttestations as ReamAttestation;
+#[cfg(feature = "devnet1")]
+use ream_consensus_lean::attestation::Attestation as ReamAttestation;
 use ream_consensus_lean::{
-    attestation::{Attestation as ReamAttestation, AttestationData},
+    attestation::AttestationData,
     block::{Block as ReamBlock, BlockBody as ReamBlockBody, BlockHeader as ReamBlockHeader},
     checkpoint::Checkpoint as ReamCheckpoint,
     config::Config as ReamConfig,
@@ -14,7 +18,11 @@ use ream_consensus_lean::{
 };
 use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 use serde::Deserialize;
+#[cfg(feature = "devnet2")]
+use ssz_types::BitList;
 use ssz_types::VariableList;
+#[cfg(feature = "devnet2")]
+use ssz_types::typenum::U4096;
 
 /// A leanSpec test fixture file contains a map of test IDs to test cases
 pub type TestFixture<T> = HashMap<String, T>;
@@ -78,7 +86,16 @@ pub struct Block {
 /// Block body
 #[derive(Debug, Deserialize)]
 pub struct BlockBody {
+    #[cfg(feature = "devnet1")]
     pub attestations: DataList<Attestation>,
+    #[cfg(feature = "devnet2")]
+    pub attestations: DataList<AggregatedAttestationJSON>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AggregatedAttestationJSON {
+    pub aggregation_bits: String,
+    pub message: AttestationData,
 }
 
 /// Attestation
@@ -186,23 +203,44 @@ impl TryFrom<&Block> for ReamBlock {
     type Error = anyhow::Error;
 
     fn try_from(block: &Block) -> anyhow::Result<Self> {
-        let attestations: Vec<ReamAttestation> = block
-            .body
-            .attestations
-            .data
-            .iter()
-            .map(ReamAttestation::from)
-            .collect();
+        #[cfg(feature = "devnet1")]
+        let attestations = {
+            let list: Vec<ReamAttestation> = block
+                .body
+                .attestations
+                .data
+                .iter()
+                .map(ReamAttestation::from)
+                .collect();
+            VariableList::try_from(list)
+                .map_err(|err| anyhow!("Failed to create attestations VariableList: {err}"))?
+        };
+
+        #[cfg(feature = "devnet2")]
+        let attestations = {
+            let mut list = Vec::new();
+            for aggregated in &block.body.attestations.data {
+                let bytes = hex::decode(aggregated.aggregation_bits.trim_start_matches("0x"))
+                    .map_err(|err| anyhow!("Failed to decode hex: {err}"))?;
+
+                let aggregation_bits = BitList::<U4096>::from_bytes(bytes.into())
+                    .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+
+                list.push(ream_consensus_lean::attestation::AggregatedAttestation {
+                    aggregation_bits,
+                    message: aggregated.message.clone(),
+                });
+            }
+            VariableList::try_from(list)
+                .map_err(|err| anyhow!("Failed to create attestations VariableList: {err}"))?
+        };
 
         Ok(ReamBlock {
             slot: block.slot,
             proposer_index: block.proposer_index,
             parent_root: block.parent_root,
             state_root: block.state_root,
-            body: ReamBlockBody {
-                attestations: VariableList::try_from(attestations)
-                    .map_err(|err| anyhow!("Failed to create attestations VariableList: {err}"))?,
-            },
+            body: ReamBlockBody { attestations },
         })
     }
 }
