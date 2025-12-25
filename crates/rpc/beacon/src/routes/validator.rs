@@ -7,6 +7,7 @@ use crate::handlers::{
         get_aggregate_attestation, get_attestation_data, get_blocks_v3,
         post_aggregate_and_proofs_v2, post_beacon_committee_selections,
         post_beacon_committee_subscriptions, post_contribution_and_proofs, post_register_validator,
+        post_sync_committee_subscriptions,
     },
 };
 
@@ -18,6 +19,7 @@ pub fn register_validator_routes_v1(config: &mut ServiceConfig) {
     config.service(get_attestation_data);
     config.service(post_beacon_committee_selections);
     config.service(post_beacon_committee_subscriptions);
+    config.service(post_sync_committee_subscriptions);
     config.service(post_contribution_and_proofs);
     config.service(post_register_validator);
 }
