@@ -127,19 +127,18 @@ pub fn get_column_data_sidecars(
             column_cells.push(cells[column_index as usize].clone());
             column_proofs.push(proofs[column_index as usize]);
         }
-        let column_len = column_cells.len();
-        let column_vl =
-            VariableList::try_from(column_cells).map_err(|_| DecodeError::InvalidByteLength {
-                len: column_len,
-                expected: NUMBER_OF_COLUMNS as usize,
-            })?;
+        let column_vl = VariableList::try_from(column_cells).map_err(|err| {
+            DecodeError::BytesInvalid(format!(
+                "Creating column VariableList for index {column_index} failed: {err}",
+            ))
+        })?;
 
-        let proofs_len = column_proofs.len();
-        let proofs_vl =
-            VariableList::try_from(column_proofs).map_err(|_| DecodeError::InvalidByteLength {
-                len: proofs_len,
-                expected: NUMBER_OF_COLUMNS as usize,
-            })?;
+        let proofs_vl = VariableList::try_from(column_proofs).map_err(|err| {
+            DecodeError::BytesInvalid(format!(
+                "Creating proofs VariableList for index {column_index} failed: {err}",
+            ))
+        })?;
+
         sidecars.push(DataColumnSidecar {
             index: column_index,
             column: column_vl,
