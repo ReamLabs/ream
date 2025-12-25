@@ -6,7 +6,7 @@ use ream_consensus_misc::{
 };
 use ream_polynomial_commitments::handlers::verify_blob_kzg_proof_batch;
 use ream_storage::{
-    cache::CachedDB,
+    cache::BeaconCacheDB,
     tables::{field::REDBField, table::REDBTable},
 };
 use ream_validator_beacon::blob_sidecars::compute_subnet_for_blob_sidecar;
@@ -17,7 +17,7 @@ pub async fn validate_blob_sidecar(
     beacon_chain: &BeaconChain,
     blob_sidecar: &BlobSidecar,
     subnet_id: u64,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> anyhow::Result<ValidationResult> {
     // [REJECT] The sidecar's index is consistent with MAX_BLOBS_PER_BLOCK
     if blob_sidecar.index >= MAX_BLOBS_PER_BLOCK_ELECTRA {

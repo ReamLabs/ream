@@ -7,7 +7,7 @@ use ream_consensus_misc::{
 use ream_execution_engine::new_payload_request::NewPayloadRequest;
 use ream_execution_rpc_types::payload_status::PayloadStatus;
 use ream_storage::{
-    cache::{AddressSlotIdentifier, CachedDB},
+    cache::{AddressSlotIdentifier, BeaconCacheDB},
     tables::{field::REDBField, table::REDBTable},
 };
 
@@ -15,7 +15,7 @@ use super::result::ValidationResult;
 
 pub async fn validate_gossip_beacon_block(
     beacon_chain: &BeaconChain,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
     block: &SignedBeaconBlock,
 ) -> anyhow::Result<ValidationResult> {
     let latest_state = beacon_chain.store.lock().await.db.get_latest_state()?;
@@ -89,7 +89,7 @@ pub async fn validate_gossip_beacon_block(
 
 pub async fn validate_beacon_block(
     beacon_chain: &BeaconChain,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
     block: &SignedBeaconBlock,
     state: &BeaconState,
     is_parent: bool,

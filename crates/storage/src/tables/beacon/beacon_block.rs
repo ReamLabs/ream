@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus_beacon::electra::beacon_block::SignedBeaconBlock;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, TableDefinition};
 use tree_hash::TreeHash;
 
 use super::parent_root_index::ParentRootIndexMultimapTable;
 use crate::{
+    cache::BeaconCacheDB,
     errors::StoreError,
     tables::{
         beacon::{slot_index::BeaconSlotIndexTable, state_root_index::BeaconStateRootIndexTable},
@@ -18,6 +19,7 @@ use crate::{
 
 pub struct BeaconBlockTable {
     pub db: Arc<Database>,
+    pub cache: Option<Arc<BeaconCacheDB>>,
 }
 
 /// Table definition for the Beacon Block table
@@ -40,6 +42,32 @@ impl REDBTable for BeaconBlockTable {
         self.db.clone()
     }
 
+    fn get<'a>(
+        &self,
+        key: <Self::KeyTableDefinition as redb::Value>::SelfType<'a>,
+    ) -> Result<Option<Self::Value>, StoreError> {
+        // LruCache::get requires mutable access to update LRU order
+        if let Some(cache) = &self.cache
+            && let Ok(mut cache_lock) = cache.blocks.lock()
+            && let Some(block) = cache_lock.get(&key)
+        {
+            return Ok(Some(block.clone()));
+        }
+
+        let read_txn = self.database().begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+        let result = table.get(key)?;
+        let block = result.map(|res| res.value());
+
+        if let (Some(cache), Some(block)) = (&self.cache, &block)
+            && let Ok(mut cache_lock) = cache.blocks.lock()
+        {
+            cache_lock.put(key, block.clone());
+        }
+
+        Ok(block)
+    }
+
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
         // insert entry to slot_index table
         let block_root = value.message.tree_hash_root();
@@ -58,6 +86,13 @@ impl REDBTable for BeaconBlockTable {
             db: self.db.clone(),
         };
         parent_root_index_table.insert(value.message.parent_root, block_root)?;
+
+        if let Some(cache) = &self.cache
+            && let Ok(mut cache_lock) = cache.blocks.lock()
+        {
+            cache_lock.put(key, value.clone());
+        }
+
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
         let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
@@ -68,6 +103,12 @@ impl REDBTable for BeaconBlockTable {
     }
 
     fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
+        if let Some(cache) = &self.cache
+            && let Ok(mut cache_lock) = cache.blocks.lock()
+        {
+            cache_lock.pop(&key);
+        }
+
         let write_txn = self.db.begin_write()?;
         let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
         let value = table.remove(key)?.map(|v| v.value());

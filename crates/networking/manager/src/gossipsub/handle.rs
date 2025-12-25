@@ -15,7 +15,7 @@ use ream_p2p::{
     },
     network::beacon::channel::GossipMessage,
 };
-use ream_storage::{cache::CachedDB, tables::table::CustomTable};
+use ream_storage::{cache::BeaconCacheDB, tables::table::CustomTable};
 use ream_validator_beacon::{
     blob_sidecars::compute_subnet_for_blob_sidecar, constants::SYNC_COMMITTEE_SUBNET_COUNT,
 };
@@ -122,7 +122,7 @@ pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
 pub async fn handle_gossipsub_message(
     message: Message,
     beacon_chain: &BeaconChain,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
     p2p_sender: &P2PSender,
 ) {
     match GossipsubMessage::decode(&message.topic, &message.data) {

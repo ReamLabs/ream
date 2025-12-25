@@ -10,7 +10,7 @@ use ream_consensus_misc::{
 };
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
-    cache::{AggregateAndProofKey, CachedDB},
+    cache::{AggregateAndProofKey, BeaconCacheDB},
     tables::table::REDBTable,
 };
 use ream_validator_beacon::{
@@ -23,7 +23,7 @@ use super::result::ValidationResult;
 pub async fn validate_aggregate_and_proof(
     signed_aggregate_and_proof: &SignedAggregateAndProof,
     beacon_chain: &BeaconChain,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> anyhow::Result<ValidationResult> {
     let store = beacon_chain.store.lock().await;
 

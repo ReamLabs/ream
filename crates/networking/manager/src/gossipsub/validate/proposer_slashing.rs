@@ -3,14 +3,14 @@ use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     electra::beacon_state::BeaconState, proposer_slashing::ProposerSlashing,
 };
-use ream_storage::{cache::CachedDB, tables::table::REDBTable};
+use ream_storage::{cache::BeaconCacheDB, tables::table::REDBTable};
 
 use super::result::ValidationResult;
 
 pub async fn validate_proposer_slashing(
     proposer_slashing: &ProposerSlashing,
     beacon_chain: &BeaconChain,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> anyhow::Result<ValidationResult> {
     let proposer_index = proposer_slashing.signed_header_1.message.proposer_index;
 

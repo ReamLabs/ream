@@ -4,14 +4,14 @@ use anyhow::anyhow;
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_light_client::optimistic_update::LightClientOptimisticUpdate;
 use ream_network_spec::networks::{beacon_network_spec, lean_network_spec};
-use ream_storage::{cache::CachedDB, tables::table::REDBTable};
+use ream_storage::{cache::BeaconCacheDB, tables::table::REDBTable};
 
 use crate::gossipsub::validate::result::ValidationResult;
 
 pub async fn validate_light_client_optimistic_update(
     light_client_optimistic_update: &LightClientOptimisticUpdate,
     beacon_chain: &BeaconChain,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> anyhow::Result<ValidationResult> {
     let store = beacon_chain.store.lock().await;
     let head_root = store.get_head()?;

@@ -91,6 +91,7 @@ impl ReamDB {
         Ok(BeaconDB {
             db: self.db.clone(),
             data_dir: self.data_dir.clone(),
+            cache: None,
         })
     }
 
@@ -112,6 +113,7 @@ impl ReamDB {
 
         Ok(LeanDB {
             db: self.db.clone(),
+            cache: None,
         })
     }
 }

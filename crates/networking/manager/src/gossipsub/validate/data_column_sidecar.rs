@@ -4,7 +4,7 @@ use ream_consensus_beacon::data_column_sidecar::DataColumnSidecar;
 use ream_consensus_misc::misc::compute_start_slot_at_epoch;
 use ream_polynomial_commitments::handlers::verify_cell_kzg_proof_batch;
 use ream_storage::{
-    cache::CachedDB,
+    cache::BeaconCacheDB,
     tables::{field::REDBField, table::REDBTable},
 };
 
@@ -14,7 +14,7 @@ pub async fn validate_data_column_sidecar_full(
     data_column_sidecar: &DataColumnSidecar,
     beacon_chain: &BeaconChain,
     subnet_id: u64,
-    cached_db: &CachedDB,
+    cached_db: &BeaconCacheDB,
 ) -> anyhow::Result<ValidationResult> {
     if !data_column_sidecar.verify() {
         return Ok(ValidationResult::Reject(
