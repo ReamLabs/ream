@@ -194,9 +194,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         .expect("Failed to load validator registry");
 
     // Fill in which devnet we are running
-    let mut network = config.network;
-    network.devnet = config.devnet;
-    set_lean_network_spec(Arc::new(network));
+    set_lean_network_spec(Arc::new(config.network));
 
     // Initialize the lean database
     let cache = Arc::new(LeanCacheDB::new());

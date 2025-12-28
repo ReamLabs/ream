@@ -28,7 +28,6 @@ use ream_metrics::{
     LEAN_CONNECTION_EVENT_TOTAL, LEAN_DISCONNECTION_EVENT_TOTAL, LEAN_PEER_COUNT,
     inc_int_counter_vec, set_int_gauge_vec,
 };
-use ream_network_spec::networks::{Devnet, lean_network_spec};
 use ream_network_state_lean::{NetworkState, cached_peer::CachedPeer};
 use ream_peer::{ConnectionState, Direction};
 use ssz::Encode;
@@ -376,7 +375,7 @@ impl LeanNetworkService {
                     ConnectedPoint::Dialer { address, .. } => {
                         self.bootnode_retry_state.remove(&peer_id);
 
-                        if lean_network_spec().is_devnet_enabled(Devnet::Two) {
+                        if cfg!(feature = "devnet2") {
                             // send status request to the peer
                             let status_message = LeanRequestMessage::Status(self.our_status());
                             self.send_request(peer_id, status_message);
@@ -623,7 +622,7 @@ impl LeanNetworkService {
     }
 
     pub fn handle_status_response(&mut self, peer_id: PeerId, status: Status) {
-        if !lean_network_spec().is_devnet_enabled(Devnet::Two) {
+        if !cfg!(feature = "devnet2") {
             return;
         }
 
