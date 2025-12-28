@@ -9,6 +9,11 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+default = ["devnet1"]
+devnet1 = ["ream-consensus-lean/devnet1"]
+devnet2 = ["ream-consensus-lean/devnet2"]
+
 [dependencies]
 libp2p.workspace = true
 parking_lot.workspace = true
