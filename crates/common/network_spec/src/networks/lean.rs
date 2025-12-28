@@ -1,5 +1,4 @@
 use std::{
-    fmt::{self, Display},
     sync::{Arc, LazyLock, Once, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -46,22 +45,6 @@ pub fn lean_network_spec() -> Arc<LeanNetworkSpec> {
         .clone()
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
-pub enum Devnet {
-    #[default]
-    One,
-    Two,
-}
-
-impl Display for Devnet {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Devnet::One => write!(f, "One"),
-            Devnet::Two => write!(f, "Two"),
-        }
-    }
-}
-
 /// Use 3 as the default justification lookback slots if not specified.
 fn default_justification_lookback_slots() -> u64 {
     3
@@ -87,10 +70,6 @@ pub struct LeanNetworkSpec {
     #[serde(default = "default_seconds_per_slot")]
     pub seconds_per_slot: u64,
 
-    /// Skipped in YAML, defaults to Devnet::One
-    #[serde(skip)]
-    pub devnet: Devnet,
-
     /// Capture any extra fields we aren't interested in
     #[serde(flatten)]
     discarded_values: DiscardUnknown,
@@ -115,15 +94,7 @@ impl LeanNetworkSpec {
             seconds_per_slot: 4,
             num_validators: config.num_validators,
             validator_public_keys: config.validator_public_keys,
-            devnet: Devnet::One,
             discarded_values: DiscardUnknown,
-        }
-    }
-
-    pub fn is_devnet_enabled(&self, target: Devnet) -> bool {
-        match self.devnet {
-            Devnet::Two => true,
-            Devnet::One => matches!(target, Devnet::One),
         }
     }
 }
