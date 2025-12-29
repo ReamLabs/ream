@@ -8,12 +8,10 @@ use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-#[cfg(feature = "devnet2")]
-use crate::attestation::AggregatedAttestation;
-#[cfg(feature = "devnet2")]
-use crate::attestation::AggregatedAttestations;
 #[cfg(feature = "devnet1")]
 use crate::attestation::Attestation;
+#[cfg(feature = "devnet2")]
+use crate::attestation::{AggregatedAttestation, AggregatedAttestations};
 use crate::state::LeanState;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]

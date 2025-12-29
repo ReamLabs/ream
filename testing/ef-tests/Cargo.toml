@@ -10,6 +10,9 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
+default = ["devnet1"]
+devnet1 = ["ream-consensus-lean/devnet1"]
+devnet2 = ["ream-consensus-lean/devnet2"]
 ef-tests = []
 
 [dependencies]
@@ -30,6 +33,7 @@ tree_hash.workspace = true
 # ream dependencies
 ream-bls.workspace = true
 ream-consensus-beacon = { workspace = true, features = ["test_consensus"] }
+ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
 ream-execution-engine.workspace = true
 ream-execution-rpc-types.workspace = true

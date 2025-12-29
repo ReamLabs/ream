@@ -11,8 +11,16 @@ version.workspace = true
 
 [features]
 default = ["devnet1"]
-devnet1 = ["ream-consensus-lean/devnet1", "ream-fork-choice-lean/devnet1", "ream-network-state-lean/devnet1"]
-devnet2 = ["ream-consensus-lean/devnet2", "ream-fork-choice-lean/devnet2", "ream-network-state-lean/devnet2"]
+devnet1 = [
+    "ream-consensus-lean/devnet1",
+    "ream-fork-choice-lean/devnet1",
+    "ream-network-state-lean/devnet1",
+]
+devnet2 = [
+    "ream-consensus-lean/devnet2",
+    "ream-fork-choice-lean/devnet2",
+    "ream-network-state-lean/devnet2",
+]
 
 [dependencies]
 alloy-primitives.workspace = true
