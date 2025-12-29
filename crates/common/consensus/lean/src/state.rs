@@ -448,12 +448,10 @@ impl LeanState {
 
             #[cfg(feature = "devnet2")]
             for (validator_id, signed) in attestation.aggregation_bits.iter().enumerate() {
-                if signed {
-                    if !justifications.get(validator_id).unwrap_or(false) {
-                        justifications.set(validator_id, true).map_err(|err| {
-                            anyhow!("Failed to set validator {validator_id}: {err:?}")
-                        })?;
-                    }
+                if signed && !justifications.get(validator_id).unwrap_or(false) {
+                    justifications.set(validator_id, true).map_err(|err| {
+                        anyhow!("Failed to set validator {validator_id}: {err:?}")
+                    })?;
                 }
             }
 

@@ -40,8 +40,12 @@ install: # Build and install the Ream binary under `~/.cargo/bin`.
 ##@ Testing and Linting
 
 .PHONY: test
-test: # Run all tests.
+test: # Run all tests (defaults to devnet1).
 	cargo test --workspace -- --nocapture
+
+.PHONY: test-devnet2
+test-devnet2: # Run all tests for for Devnet 2.
+	cargo test --workspace --no-default-features --features "devnet2" -- --nocapture
 
 .PHONY: fmt
 fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `map_err` to be `err`
@@ -72,6 +76,10 @@ fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `ma
 clippy: # Run `clippy` on the entire workspace.
 	cargo clippy --all --all-targets --features "$(FEATURES)" --no-deps -- --deny warnings
 	cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings
+
+.PHONY: clippy-devnet2
+clippy-devnet2: # Run `clippy` for Devnet 2.
+	cargo clippy --workspace --all-targets --no-default-features --features "devnet2" --no-deps -- --deny warnings
 
 .PHONY: sort
 sort: # Run `cargo sort` on the entire workspace.
