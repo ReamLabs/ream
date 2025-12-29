@@ -2197,6 +2197,7 @@ dependencies = [
  "paste",
  "ream-bls",
  "ream-consensus-beacon",
+ "ream-consensus-lean",
  "ream-consensus-misc",
  "ream-execution-engine",
  "ream-execution-rpc-types",
