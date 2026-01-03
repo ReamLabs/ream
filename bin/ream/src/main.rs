@@ -711,18 +711,22 @@ pub async fn run_generate_private_key(config: GeneratePrivateKeyConfig) {
 // Countdown logs until the genesis timestamp reaches
 pub async fn countdown_for_genesis() {
     loop {
-        let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
-            Ok(now) => now.as_secs(),
-            // The chain is already past genesis, we don't need a countdown
-            Err(_) => break,
-        };
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::MAX)
+            .as_secs();
+        let genesis = lean_network_spec().genesis_time;
 
-        let remaining = lean_network_spec().genesis_time.saturating_sub(now);
-
-        if remaining == 0 {
-            info!("Genesis reached! Starting services...");
+        if now >= genesis {
+            // Only log the "Genesis reached" message if we are starting within 
+            // a small 2-second window of the actual event.
+            if now <= genesis + 2 {
+                info!("Genesis reached! Starting services...");
+            }
             break;
         }
+
+        let remaining = lean_network_spec().genesis_time.saturating_sub(now);
 
         // Format the remaining time for a cleaner log
         let minutes = (remaining % 3600) / 60;
