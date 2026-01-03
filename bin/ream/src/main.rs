@@ -96,6 +96,7 @@ use tokio::{
 };
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
+use tokio::time;
 
 pub const APP_NAME: &str = "ream";
 
@@ -315,6 +316,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let http_future = executor.spawn(async move {
         ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
     });
+
+    executor.spawn(async move { countdown_for_genesis().await; });
 
     tokio::select! {
         result = chain_future => {
@@ -701,6 +704,34 @@ pub async fn run_generate_private_key(config: GeneratePrivateKeyConfig) {
     );
 
     process::exit(0);
+}
+
+// Countdown logs until the genesis timestamp reaches
+pub async fn countdown_for_genesis() {
+    loop {
+        let now = SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("System time is before UNIX epoch")
+                      .as_secs();
+        let remaining = lean_network_spec().genesis_time - now;
+
+        if remaining <= 0 {
+            info!("Genesis reached! Starting services...");
+            break;
+        }
+
+        // Format the remaining time for a cleaner log
+        let minutes = (remaining % 3600) / 60;
+        let seconds = remaining % 60;
+
+        info!(
+            "Waiting for genesis in {:02}:{:02} seconds",
+            minutes, seconds
+        );
+
+        // Sleep for 1 second before ticking again
+        time::sleep(Duration::from_secs(1)).await;
+    }
 }
 
 #[cfg(test)]
