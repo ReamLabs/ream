@@ -90,13 +90,13 @@ use ream_validator_lean::{
     registry::load_validator_registry, service::ValidatorService as LeanValidatorService,
 };
 use ssz_types::VariableList;
+use tokio::time;
 use tokio::{
     sync::{broadcast, mpsc},
     time::Instant,
 };
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
-use tokio::time;
 
 pub const APP_NAME: &str = "ream";
 
@@ -317,7 +317,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
     });
 
-    executor.spawn(async move { countdown_for_genesis().await; });
+    executor.spawn(async move {
+        countdown_for_genesis().await;
+    });
 
     tokio::select! {
         result = chain_future => {
@@ -709,13 +711,15 @@ pub async fn run_generate_private_key(config: GeneratePrivateKeyConfig) {
 // Countdown logs until the genesis timestamp reaches
 pub async fn countdown_for_genesis() {
     loop {
-        let now = SystemTime::now()
-                      .duration_since(UNIX_EPOCH)
-                      .expect("System time is before UNIX epoch")
-                      .as_secs();
-        let remaining = lean_network_spec().genesis_time - now;
+        let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(now) => now.as_secs(),
+            // The chain is already past genesis, we don't need a countdown
+            Err(_) => break,
+        };
 
-        if remaining <= 0 {
+        let remaining = lean_network_spec().genesis_time.saturating_sub(now);
+
+        if remaining == 0 {
             info!("Genesis reached! Starting services...");
             break;
         }
