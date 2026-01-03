@@ -25,8 +25,8 @@ pub fn compute_matrix(blobs: Vec<Blob>, das_context: &DASContext) -> Result<Vec<
             matrix.push(MatrixEntry {
                 cell,
                 kzg_proof,
-                column_index: blob_index as u64,
-                row_index: cell_index as u64,
+                column_index: cell_index as u64,
+                row_index: blob_index as u64,
             });
         }
     }

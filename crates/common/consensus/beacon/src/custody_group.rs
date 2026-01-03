@@ -39,7 +39,7 @@ pub fn get_custody_group_indices(node_id: NodeId, custody_group_count: u64) -> R
             }
         }
     }
-
+    custody_indices.sort();
     Ok(custody_indices)
 }
 
@@ -50,12 +50,11 @@ pub fn compute_columns_for_custody_group(custody_group_index: u64) -> Result<Vec
         ));
     }
 
-    let columns_per_group = NUMBER_OF_COLUMNS.saturating_div(NUM_CUSTODY_GROUPS);
-
-    let mut column_indices: Vec<u64> = Vec::new();
-    for i in 0..columns_per_group {
-        column_indices
-            .push((NUM_CUSTODY_GROUPS.saturating_mul(i)).saturating_add(custody_group_index));
+    let mut column_indices = Vec::new();
+    for col in 0..NUMBER_OF_COLUMNS {
+        if col % NUM_CUSTODY_GROUPS == custody_group_index {
+            column_indices.push(col);
+        }
     }
 
     Ok(column_indices)
