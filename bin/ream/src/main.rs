@@ -90,9 +90,9 @@ use ream_validator_lean::{
     registry::load_validator_registry, service::ValidatorService as LeanValidatorService,
 };
 use ssz_types::VariableList;
-use tokio::time;
 use tokio::{
     sync::{broadcast, mpsc},
+    time,
     time::Instant,
 };
 use tracing::{error, info};
@@ -718,7 +718,7 @@ pub async fn countdown_for_genesis() {
         let genesis = lean_network_spec().genesis_time;
 
         if now >= genesis {
-            // Only log the "Genesis reached" message if we are starting within 
+            // Only log the "Genesis reached" message if we are starting within
             // a small 2-second window of the actual event.
             if now <= genesis + 2 {
                 info!("Genesis reached! Starting services...");
