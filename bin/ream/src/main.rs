@@ -92,6 +92,7 @@ use ream_validator_lean::{
 use ssz_types::VariableList;
 use tokio::{
     sync::{broadcast, mpsc},
+    time,
     time::Instant,
 };
 use tracing::{error, info};
@@ -314,6 +315,10 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let validator_future = executor.spawn(async move { validator_service.start().await });
     let http_future = executor.spawn(async move {
         ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
+    });
+
+    executor.spawn(async move {
+        countdown_for_genesis().await;
     });
 
     tokio::select! {
@@ -701,6 +706,40 @@ pub async fn run_generate_private_key(config: GeneratePrivateKeyConfig) {
     );
 
     process::exit(0);
+}
+
+// Countdown logs until the genesis timestamp reaches
+pub async fn countdown_for_genesis() {
+    loop {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::MAX)
+            .as_secs();
+        let genesis = lean_network_spec().genesis_time;
+
+        if now >= genesis {
+            // Only log the "Genesis reached" message if we are starting within
+            // a small 2-second window of the actual event.
+            if now <= genesis + 2 {
+                info!("Genesis reached! Starting services...");
+            }
+            break;
+        }
+
+        let remaining = lean_network_spec().genesis_time.saturating_sub(now);
+
+        // Format the remaining time for a cleaner log
+        let minutes = (remaining % 3600) / 60;
+        let seconds = remaining % 60;
+
+        info!(
+            "Waiting for genesis in {:02}:{:02} seconds",
+            minutes, seconds
+        );
+
+        // Sleep for 1 second before ticking again
+        time::sleep(Duration::from_secs(1)).await;
+    }
 }
 
 #[cfg(test)]
