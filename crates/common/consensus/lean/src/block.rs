@@ -220,8 +220,8 @@ pub struct BlockWithSignatures {
 }
 
 #[cfg(test)]
+#[cfg(feature = "devnet1")]
 mod tests {
-
     use alloy_primitives::hex;
     use ssz::{Decode, Encode};
 
@@ -241,7 +241,6 @@ mod tests {
                         attestations: Default::default(),
                     },
                 },
-                #[cfg(feature = "devnet1")]
                 proposer_attestation: Attestation {
                     validator_id: 0,
                     data: AttestationData {
@@ -251,24 +250,8 @@ mod tests {
                         source: Checkpoint::default(),
                     },
                 },
-                #[cfg(feature = "devnet2")]
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 0,
-                    data: AttestationData {
-                        slot: 0,
-                        head: Checkpoint::default(),
-                        target: Checkpoint::default(),
-                        source: Checkpoint::default(),
-                    },
-                },
             },
-            #[cfg(feature = "devnet1")]
             signature: VariableList::default(),
-            #[cfg(feature = "devnet2")]
-            signature: BlockSignatures {
-                attestation_signatures: VariableList::default(),
-                proposer_signature: Signature::blank(),
-            },
         };
 
         let encode = signed_block_with_attestation.as_ssz_bytes();

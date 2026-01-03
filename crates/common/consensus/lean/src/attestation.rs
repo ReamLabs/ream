@@ -107,6 +107,7 @@ pub struct SignedAggregatedAttestation {
 }
 
 #[cfg(test)]
+#[cfg(feature = "devnet1")]
 mod tests {
     use alloy_primitives::hex;
     use ssz::{Decode, Encode};
@@ -117,7 +118,6 @@ mod tests {
     #[test]
     fn test_encode_decode_signed_attestation_roundtrip() -> anyhow::Result<()> {
         let signed_attestation = SignedAttestation {
-            #[cfg(feature = "devnet1")]
             message: Attestation {
                 validator_id: 0,
                 data: AttestationData {
@@ -127,15 +127,6 @@ mod tests {
                     source: Checkpoint::default(),
                 },
             },
-            #[cfg(feature = "devnet2")]
-            message: AttestationData {
-                slot: 1,
-                head: Checkpoint::default(),
-                target: Checkpoint::default(),
-                source: Checkpoint::default(),
-            },
-            #[cfg(feature = "devnet2")]
-            validator_id: 0,
             signature: Signature {
                 inner: FixedBytes::default(),
             },

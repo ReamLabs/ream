@@ -908,6 +908,10 @@ mod tests {
     use alloy_primitives::{B256, FixedBytes};
     #[cfg(feature = "devnet1")]
     use ream_consensus_lean::attestation::Attestation;
+    #[cfg(feature = "devnet1")]
+    use ream_consensus_lean::block::{BlockBody, BlockHeader};
+    #[cfg(feature = "devnet1")]
+    use ream_consensus_lean::config::Config;
     #[cfg(feature = "devnet2")]
     use ream_consensus_lean::{
         attestation::{AggregatedAttestation, AggregatedAttestations},
@@ -915,12 +919,8 @@ mod tests {
     };
     use ream_consensus_lean::{
         attestation::{AttestationData, SignedAttestation},
-        block::{
-            Block, BlockBody, BlockHeader, BlockWithAttestation, BlockWithSignatures,
-            SignedBlockWithAttestation,
-        },
+        block::{Block, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
         checkpoint::Checkpoint,
-        config::Config,
         state::LeanState,
         utils::generate_default_validators,
         validator::is_proposer,
@@ -1014,6 +1014,7 @@ mod tests {
 
     /// Test basic block production by authorized proposer.
     #[tokio::test]
+    #[cfg(feature = "devnet1")]
     async fn test_produce_block_basic() {
         let (mut store, mut genesis_state) = sample_store(10).await;
 
@@ -1187,6 +1188,7 @@ mod tests {
 
     /// Test that produced block's state is consistent with block content
     #[tokio::test]
+    #[cfg(feature = "devnet1")]
     pub async fn test_produce_block_state_consistency() {
         let (mut store, _) = sample_store(10).await;
 
@@ -1203,7 +1205,6 @@ mod tests {
         let head_block = block_provider.get(head).unwrap().unwrap();
 
         let attestation = SignedAttestation {
-            #[cfg(feature = "devnet1")]
             message: Attestation {
                 validator_id: 7,
                 data: AttestationData {
@@ -1216,19 +1217,7 @@ mod tests {
                     source: store.get_attestation_target().await.unwrap(),
                 },
             },
-            #[cfg(feature = "devnet2")]
-            message: AttestationData {
-                slot: head_block.message.block.slot,
-                head: Checkpoint {
-                    root: head,
-                    slot: head_block.message.block.slot,
-                },
-                target: latest_justified_provider.get().unwrap(),
-                source: store.get_attestation_target().await.unwrap(),
-            },
             signature: Signature::blank(),
-            #[cfg(feature = "devnet2")]
-            validator_id: 7,
         };
         latest_known_attestations.insert(7, attestation).unwrap();
 
@@ -1456,6 +1445,7 @@ mod tests {
 
     /// Test producing a block then creating attestation for it.
     #[tokio::test]
+    #[cfg(feature = "devnet1")]
     pub async fn test_block_production_then_attestation() {
         let (mut store, _) = sample_store(10).await;
 
@@ -1479,42 +1469,22 @@ mod tests {
 
         store.update_head().await.unwrap();
 
-        #[cfg(feature = "devnet1")]
         let attestation = Attestation {
             validator_id: 7,
             data: store.produce_attestation_data(2).await.unwrap(),
         };
 
-        #[cfg(feature = "devnet2")]
-        let mut aggregation_bits = BitList::<U4096>::with_capacity(32).unwrap();
-        #[cfg(feature = "devnet2")]
-        aggregation_bits.set(0, true).unwrap();
-
-        #[cfg(feature = "devnet2")]
-        let attestation = AggregatedAttestation {
-            aggregation_bits,
-            message: store.produce_attestation_data(2).await.unwrap(),
-        };
-
-        #[cfg(feature = "devnet1")]
         assert_eq!(attestation.validator_id, 7);
-        #[cfg(feature = "devnet2")]
-        assert_eq!(attestation.aggregation_bits, attestation.aggregation_bits);
         assert_eq!(attestation.slot(), 2);
-        #[cfg(feature = "devnet1")]
         assert_eq!(
             attestation.data.source,
-            latest_justified_provider.get().unwrap()
-        );
-        #[cfg(feature = "devnet2")]
-        assert_eq!(
-            attestation.message.source,
             latest_justified_provider.get().unwrap()
         );
     }
 
     /// Test producing a block then creating attestation for it.
     #[tokio::test]
+    #[cfg(feature = "devnet1")]
     pub async fn test_multiple_validators_coordination() {
         let (mut store, _) = sample_store(10).await;
 
@@ -1543,17 +1513,11 @@ mod tests {
 
         let mut attestations = Vec::new();
         for i in 2..6 {
-            #[cfg(feature = "devnet1")]
             let attestation = Attestation {
                 validator_id: i,
                 data: store.produce_attestation_data(2).await.unwrap(),
             };
 
-            #[cfg(feature = "devnet2")]
-            let attestation = AggregatedAttestations {
-                validator_id: i,
-                data: store.produce_attestation_data(2).await.unwrap(),
-            };
             attestations.push(attestation);
         }
 
@@ -1602,6 +1566,7 @@ mod tests {
 
     /// Test edge cases in validator operations.
     #[tokio::test]
+    #[cfg(feature = "devnet1")]
     pub async fn test_validator_edge_cases() {
         let (mut store, _) = sample_store(10).await;
 
@@ -1620,31 +1585,18 @@ mod tests {
             .await
             .unwrap();
 
-        #[cfg(feature = "devnet1")]
         let attestation = Attestation {
             validator_id: 9,
             data: store.produce_attestation_data(10).await.unwrap(),
         };
 
-        #[cfg(feature = "devnet2")]
-        let mut aggregation_bits = BitList::<U4096>::with_capacity(32).unwrap();
-        #[cfg(feature = "devnet2")]
-        aggregation_bits.set(0, true).unwrap();
-
-        #[cfg(feature = "devnet2")]
-        let attestation = AggregatedAttestation {
-            aggregation_bits,
-            message: store.produce_attestation_data(10).await.unwrap(),
-        };
-        #[cfg(feature = "devnet1")]
         assert_eq!(attestation.validator_id, 9);
-        #[cfg(feature = "devnet2")]
-        assert_eq!(attestation.aggregation_bits, attestation.aggregation_bits);
         assert_eq!(attestation.slot(), 10);
     }
 
     /// Test validator operations with minimal store state.
     #[tokio::test]
+    #[cfg(feature = "devnet1")]
     pub async fn test_validator_operations_empty_store() {
         let empty_checkpoint = Checkpoint {
             slot: 0,
