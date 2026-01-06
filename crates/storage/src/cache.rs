@@ -12,7 +12,8 @@ use ream_consensus_misc::constants::beacon::SYNC_COMMITTEE_SIZE;
 use ream_light_client::finality_update::LightClientFinalityUpdate;
 use tokio::sync::RwLock;
 const LRU_CACHE_SIZE: usize = 64;
-const BLOCK_STATE_CACHE_SIZE: usize = 128;
+const BLOCK_CACHE_SIZE: usize = 128;
+const STATE_CACHE_SIZE: usize = 8;
 
 #[derive(Debug, Hash, PartialEq, Eq, Default, Clone)]
 pub struct AddressSlotIdentifier {
@@ -133,10 +134,10 @@ impl BeaconCacheDB {
             )
             .into(),
             blocks: Mutex::new(LruCache::new(
-                NonZeroUsize::new(BLOCK_STATE_CACHE_SIZE).expect("Invalid cache size"),
+                NonZeroUsize::new(BLOCK_CACHE_SIZE).expect("Invalid cache size"),
             )),
             states: Mutex::new(LruCache::new(
-                NonZeroUsize::new(BLOCK_STATE_CACHE_SIZE).expect("Invalid cache size"),
+                NonZeroUsize::new(STATE_CACHE_SIZE).expect("Invalid cache size"),
             )),
         }
     }
@@ -160,10 +161,10 @@ impl LeanCacheDB {
     pub fn new() -> Self {
         Self {
             blocks: Mutex::new(LruCache::new(
-                NonZeroUsize::new(BLOCK_STATE_CACHE_SIZE).expect("Invalid cache size"),
+                NonZeroUsize::new(BLOCK_CACHE_SIZE).expect("Invalid cache size"),
             )),
             states: Mutex::new(LruCache::new(
-                NonZeroUsize::new(BLOCK_STATE_CACHE_SIZE).expect("Invalid cache size"),
+                NonZeroUsize::new(STATE_CACHE_SIZE).expect("Invalid cache size"),
             )),
         }
     }

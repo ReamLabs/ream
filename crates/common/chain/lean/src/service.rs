@@ -116,7 +116,27 @@ impl LeanChainService {
                             self.store.write().await.accept_new_attestations().await.expect("Failed to accept new attestations");
                         }
                         _ => {
-                            // Other ticks (t=0, t=1/4): Do nothing.
+                            // Other ticks (t=0, t=1/4): Prune old data.
+                            let (head, block_provider, slot_index_provider, state_provider) = {
+                                let fork_choice = self.store.read().await;
+                                let store = fork_choice.store.lock().await;
+                                (store.head_provider().get()?, store.block_provider(), store.slot_index_provider(), store.state_provider())
+                            };
+                            let head_slot = block_provider.get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {head}"))?.message.block.slot;
+                            if head_slot > 128 {
+                                let block_root = slot_index_provider.get(head_slot - 128)?
+                                    .ok_or_else(|| anyhow!("Block root not found for slot: {}", head_slot - 128))?;
+                                info!(
+                                    slot = get_current_slot(),
+                                    tick = tick_count,
+                                    prune_slot = head_slot - 128,
+                                    prune_block_root = ?block_root,
+                                    "Pruning old lean state"
+                                );
+                                if let Err(err) = state_provider.remove(block_root) {
+                                    warn!("Failed to prune old lean state: {err:?}");
+                                }
+                            }
                         }
                     }
                     tick_count += 1;
