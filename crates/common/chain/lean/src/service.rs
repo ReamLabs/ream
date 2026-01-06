@@ -18,6 +18,8 @@ use crate::{
     p2p_request::LeanP2PRequest, slot::get_current_slot,
 };
 
+const STATE_RETENTION_SLOTS: u64 = 128;
+
 /// LeanChainService is responsible for updating the [LeanChain] state. `LeanChain` is updated when:
 /// 1. Every third (t=2/4) and fourth (t=3/4) ticks.
 /// 2. Receiving new blocks or attestations from the network.
@@ -123,13 +125,13 @@ impl LeanChainService {
                                 (store.head_provider().get()?, store.block_provider(), store.slot_index_provider(), store.state_provider())
                             };
                             let head_slot = block_provider.get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {head}"))?.message.block.slot;
-                            if head_slot > 128 {
-                                let block_root = slot_index_provider.get(head_slot - 128)?
-                                    .ok_or_else(|| anyhow!("Block root not found for slot: {}", head_slot - 128))?;
+                            if head_slot > STATE_RETENTION_SLOTS {
+                                let block_root = slot_index_provider.get(head_slot - STATE_RETENTION_SLOTS)?
+                                    .ok_or_else(|| anyhow!("Block root not found for slot: {}", head_slot - STATE_RETENTION_SLOTS))?;
                                 info!(
                                     slot = get_current_slot(),
                                     tick = tick_count,
-                                    prune_slot = head_slot - 128,
+                                    prune_slot = head_slot - STATE_RETENTION_SLOTS,
                                     prune_block_root = ?block_root,
                                     "Pruning old lean state"
                                 );
