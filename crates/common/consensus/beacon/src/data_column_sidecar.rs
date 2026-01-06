@@ -20,7 +20,7 @@ pub const DATA_COLUMN_SIDECAR_SUBNET_COUNT: u64 = 128;
 
 pub type MaxBlobCommitmentsPerBlock = typenum::U6;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Decode, Encode, TreeHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Encode, Decode, TreeHash)]
 pub struct DataColumnSidecar {
     pub index: u64,
     pub column: VariableList<Cell, MaxBlobCommitmentsPerBlock>,
@@ -116,10 +116,10 @@ pub fn get_column_data_sidecars(
         });
     }
 
-    let mut sidecars: Vec<DataColumnSidecar> = Vec::new();
+    let mut sidecars = Vec::new();
     for column_index in 0..NUMBER_OF_COLUMNS {
-        let mut column_cells: Vec<Cell> = Vec::new();
-        let mut column_proofs: Vec<KZGProof> = Vec::new();
+        let mut column_cells = Vec::new();
+        let mut column_proofs = Vec::new();
         for (cells, proofs) in &cells_and_kzg_proofs {
             if column_index as usize >= cells.len() || column_index as usize >= proofs.len() {
                 return Err(DecodeError::OffsetOutOfBounds(column_index as usize));
@@ -127,23 +127,20 @@ pub fn get_column_data_sidecars(
             column_cells.push(cells[column_index as usize].clone());
             column_proofs.push(proofs[column_index as usize]);
         }
-        let column_vl = VariableList::try_from(column_cells).map_err(|err| {
-            DecodeError::BytesInvalid(format!(
-                "Creating column VariableList for index {column_index} failed: {err}",
-            ))
-        })?;
-
-        let proofs_vl = VariableList::try_from(column_proofs).map_err(|err| {
-            DecodeError::BytesInvalid(format!(
-                "Creating proofs VariableList for index {column_index} failed: {err}",
-            ))
-        })?;
 
         sidecars.push(DataColumnSidecar {
             index: column_index,
-            column: column_vl,
+            column: VariableList::try_from(column_cells).map_err(|err| {
+                DecodeError::BytesInvalid(format!(
+                    "Creating column VariableList for index {column_index} failed: {err}",
+                ))
+            })?,
             kzg_commitments: kzg_commitments.clone(),
-            kzg_proofs: proofs_vl,
+            kzg_proofs: VariableList::try_from(column_proofs).map_err(|err| {
+                DecodeError::BytesInvalid(format!(
+                    "Creating proofs VariableList for index {column_index} failed: {err}",
+                ))
+            })?,
             signed_block_header: signed_block_header.clone(),
             kzg_commitments_inclusion_proof: kzg_commitments_inclusion_proof.clone(),
         });
