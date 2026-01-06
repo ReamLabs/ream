@@ -122,6 +122,9 @@ impl LeanChainService {
                             let (head, block_provider, slot_index_provider, state_provider) = {
                                 let fork_choice = self.store.read().await;
                                 let store = fork_choice.store.lock().await;
+                                if get_current_slot().is_multiple_of(15) {
+                                    store.report_storage_metrics(0)?;
+                                }
                                 (store.head_provider().get()?, store.block_provider(), store.slot_index_provider(), store.state_provider())
                             };
                             let head_slot = block_provider.get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {head}"))?.message.block.slot;
