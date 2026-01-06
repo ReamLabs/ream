@@ -19,7 +19,7 @@ pub struct LeanBlockTable {
 
 /// Table definition for the Lean Block table
 ///
-/// Key: block_id
+/// Key: block_root
 /// Value: [SignedBlockWithAttestation]
 impl REDBTable for LeanBlockTable {
     const TABLE_DEFINITION: TableDefinition<
