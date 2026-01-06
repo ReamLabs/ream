@@ -17,7 +17,7 @@ use libp2p::{
     Multiaddr, SwarmBuilder,
     connection_limits::{self, ConnectionLimits},
     core::ConnectedPoint,
-    gossipsub::{Event as GossipsubEvent, IdentTopic, MessageAuthenticity},
+    gossipsub::{Event as GossipsubEvent, IdentTopic, MessageAuthenticity, PublishError},
     identify,
     swarm::{Config, ConnectionId, NetworkBehaviour, Swarm, SwarmEvent},
 };
@@ -270,11 +270,21 @@ impl LeanNetworkService {
                                     signed_block.as_ssz_bytes(),
                                 )
                             {
-                                warn!(
-                                    slot = signed_block.message.block.slot,
-                                    error = ?err,
-                                    "Publish block failed"
-                                );
+                                match err {
+                                    PublishError::Duplicate => {
+                                        trace!(
+                                            slot = signed_block.message.block.slot,
+                                            "Block already published (duplicate)"
+                                        );
+                                    }
+                                    _ => {
+                                        warn!(
+                                            slot = signed_block.message.block.slot,
+                                            error = ?err,
+                                            "Publish block failed"
+                                        );
+                                    }
+                                }
                             } else {
                                 info!(
                                     slot = signed_block.message.block.slot,
