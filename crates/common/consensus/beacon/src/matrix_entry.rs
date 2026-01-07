@@ -1,4 +1,4 @@
-use anyhow::{Ok, Result, anyhow};
+use anyhow::{Ok, Result, anyhow, ensure};
 use ream_consensus_misc::polynomial_commitments::kzg_proof::KZGProof;
 use ream_execution_rpc_types::get_blobs::Blob;
 use rust_eth_kzg::{Cell as KZGCell, DASContext, KZGProof as Proof};
@@ -73,12 +73,11 @@ fn compute_cells_and_kzg_proofs(
     das_context: &DASContext,
 ) -> Result<(Vec<Cell>, Vec<KZGProof>)> {
     let blob_data: Vec<u8> = blob.inner.clone().into();
-    if blob_data.len() != 131072 {
-        return Err(anyhow!(
-            "Blob inner length {}, expected 131072",
-            blob_data.len()
-        ));
-    }
+    ensure!(
+        blob_data.len() == 131072,
+        "Blob inner length {}, expected 131072",
+        blob_data.len()
+    );
     let blob_bytes: &[u8; 131072] = blob_data
         .as_slice()
         .try_into()
@@ -102,9 +101,11 @@ fn recover_cells_and_kzg_proofs(
         .into_iter()
         .map(|cell_fixed_vector| {
             let cell_vec: Vec<u8> = cell_fixed_vector.into();
-            if cell_vec.len() != 2048 {
-                return Err(anyhow!("Cell length {}, expected 2048", cell_vec.len()));
-            }
+            ensure!(
+                cell_vec.len() == 2048,
+                "Cell length {}, expected 2048",
+                cell_vec.len()
+            );
             let cell_array: [u8; 2048] = cell_vec
                 .try_into()
                 .map_err(|err| anyhow!("Failed to convert Cell to [u8; 2048]: {err:?}"))?;

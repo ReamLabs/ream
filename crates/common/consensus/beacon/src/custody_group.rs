@@ -1,4 +1,4 @@
-use anyhow::{Ok, Result, bail};
+use anyhow::{Ok, Result, ensure};
 use discv5::enr::NodeId;
 use ream_consensus_misc::constants::beacon::NUM_CUSTODY_GROUPS;
 use sha2::{Digest, Sha256};
@@ -6,9 +6,10 @@ use sha2::{Digest, Sha256};
 use crate::data_column_sidecar::NUMBER_OF_COLUMNS;
 
 pub fn get_custody_group_indices(node_id: NodeId, custody_group_count: u64) -> Result<Vec<u64>> {
-    if custody_group_count > NUM_CUSTODY_GROUPS {
-        bail!("Custody group count more than number of custody groups",);
-    }
+    ensure!(
+        custody_group_count <= NUM_CUSTODY_GROUPS,
+        "Custody group count more than number of custody groups"
+    );
 
     if custody_group_count == NUM_CUSTODY_GROUPS {
         return Ok((0..NUM_CUSTODY_GROUPS).collect());
@@ -42,9 +43,10 @@ pub fn get_custody_group_indices(node_id: NodeId, custody_group_count: u64) -> R
 }
 
 pub fn compute_columns_for_custody_group(custody_group_index: u64) -> Result<Vec<u64>> {
-    if custody_group_index >= NUM_CUSTODY_GROUPS {
-        bail!("Custody group index is greater than total custody groups");
-    }
+    ensure!(
+        custody_group_index < NUM_CUSTODY_GROUPS,
+        "Custody group index is greater than total custody groups"
+    );
 
     let mut column_indices = Vec::new();
     for column in 0..NUMBER_OF_COLUMNS {
