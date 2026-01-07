@@ -1264,6 +1264,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "blstrs"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a8a8ed6fefbeef4a8c7b460e4110e12c5e22a5b7cf32621aae6ad650c4dcf29"
+dependencies = [
+ "blst",
+ "byte-slice-cast",
+ "ff",
+ "group",
+ "pairing",
+ "rand_core 0.6.4",
+ "serde",
+ "subtle",
+]
+
+[[package]]
 name = "borsh"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1646,6 +1662,53 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "crate_crypto_internal_eth_kzg_bls12_381"
+version = "0.5.4"
+source = "git+https://github.com/crate-crypto/rust-eth-kzg.git?tag=v0.5.4#ca7a9e4002c1328abf80ba66838daefaa825dd89"
+dependencies = [
+ "blst",
+ "blstrs",
+ "ff",
+ "group",
+ "pairing",
+ "subtle",
+]
+
+[[package]]
+name = "crate_crypto_internal_eth_kzg_erasure_codes"
+version = "0.5.4"
+source = "git+https://github.com/crate-crypto/rust-eth-kzg.git?tag=v0.5.4#ca7a9e4002c1328abf80ba66838daefaa825dd89"
+dependencies = [
+ "crate_crypto_internal_eth_kzg_bls12_381",
+ "crate_crypto_internal_eth_kzg_polynomial",
+]
+
+[[package]]
+name = "crate_crypto_internal_eth_kzg_maybe_rayon"
+version = "0.5.4"
+source = "git+https://github.com/crate-crypto/rust-eth-kzg.git?tag=v0.5.4#ca7a9e4002c1328abf80ba66838daefaa825dd89"
+
+[[package]]
+name = "crate_crypto_internal_eth_kzg_polynomial"
+version = "0.5.4"
+source = "git+https://github.com/crate-crypto/rust-eth-kzg.git?tag=v0.5.4#ca7a9e4002c1328abf80ba66838daefaa825dd89"
+dependencies = [
+ "crate_crypto_internal_eth_kzg_bls12_381",
+]
+
+[[package]]
+name = "crate_crypto_kzg_multi_open_fk20"
+version = "0.5.4"
+source = "git+https://github.com/crate-crypto/rust-eth-kzg.git?tag=v0.5.4#ca7a9e4002c1328abf80ba66838daefaa825dd89"
+dependencies = [
+ "crate_crypto_internal_eth_kzg_bls12_381",
+ "crate_crypto_internal_eth_kzg_maybe_rayon",
+ "crate_crypto_internal_eth_kzg_polynomial",
+ "hex",
+ "sha2",
 ]
 
 [[package]]
@@ -2780,7 +2843,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0f9ef7462f7c099f518d754361858f86d8a07af53ba9af0fe635bbccb151a63"
 dependencies = [
  "ff",
+ "rand 0.8.5",
  "rand_core 0.6.4",
+ "rand_xorshift 0.3.0",
  "subtle",
 ]
 
@@ -5455,7 +5520,7 @@ dependencies = [
  "num-traits",
  "rand 0.9.2",
  "rand_chacha 0.9.0",
- "rand_xorshift",
+ "rand_xorshift 0.4.0",
  "regex-syntax",
  "rusty-fork",
  "tempfile",
@@ -5655,6 +5720,15 @@ checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
 dependencies = [
  "getrandom 0.3.4",
  "serde",
+]
+
+[[package]]
+name = "rand_xorshift"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
+dependencies = [
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -5922,6 +5996,7 @@ dependencies = [
  "alloy-rlp",
  "anyhow",
  "async-trait",
+ "discv5",
  "ethereum_hashing 0.7.0",
  "ethereum_serde_utils",
  "ethereum_ssz",
@@ -5933,6 +6008,7 @@ dependencies = [
  "ream-execution-rpc-types",
  "ream-merkle",
  "ream-network-spec",
+ "rust_eth_kzg",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -6914,6 +6990,19 @@ dependencies = [
  "once_cell",
  "rand 0.8.5",
  "smallvec",
+]
+
+[[package]]
+name = "rust_eth_kzg"
+version = "0.5.4"
+source = "git+https://github.com/crate-crypto/rust-eth-kzg.git?tag=v0.5.4#ca7a9e4002c1328abf80ba66838daefaa825dd89"
+dependencies = [
+ "crate_crypto_internal_eth_kzg_bls12_381",
+ "crate_crypto_internal_eth_kzg_erasure_codes",
+ "crate_crypto_kzg_multi_open_fk20",
+ "hex",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

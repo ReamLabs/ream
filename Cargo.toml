@@ -120,6 +120,7 @@ redb = "3.1.0"
 reqwest = { version = "0.12.24", features = ["native-tls-vendored", "json"] }
 rstest = "0.26.1"
 rust-kzg-blst = { git = 'https://github.com/grandinetech/rust-kzg.git' }
+rust_eth_kzg = { git = "https://github.com/crate-crypto/rust-eth-kzg.git", tag = "v0.5.4" } 
 serde = { version = '1.0', features = ['derive', "rc"] }
 serde_json = "1.0.145"
 serde_yaml = "0.9"
