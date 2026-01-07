@@ -8,6 +8,7 @@ use ream_operation_pool::OperationPool;
 use ream_p2p::network::beacon::network_state::NetworkState;
 use ream_rpc_common::{config::RpcServerConfig, server::RpcServerBuilder};
 use ream_storage::{cache::BeaconCacheDB, db::beacon::BeaconDB};
+use ream_sync_committee_pool::SyncCommitteePool;
 use ream_validator_beacon::builder::builder_client::BuilderClient;
 use tokio::sync::broadcast;
 
@@ -20,6 +21,7 @@ pub async fn start(
     db: BeaconDB,
     network_state: Arc<NetworkState>,
     operation_pool: Arc<OperationPool>,
+    sync_committee_pool: Arc<SyncCommitteePool>,
     execution_engine: Option<ExecutionEngine>,
     builder_client: Option<Arc<BuilderClient>>,
     event_sender: broadcast::Sender<BeaconEvent>,
@@ -32,6 +34,7 @@ pub async fn start(
         .with_data(db)
         .with_data(network_state)
         .with_data(operation_pool)
+        .with_data(sync_committee_pool)
         .with_data(execution_engine)
         .with_data(builder_client)
         .with_data(event_sender)

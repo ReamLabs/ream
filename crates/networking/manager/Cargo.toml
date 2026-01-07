@@ -42,6 +42,7 @@ ream-operation-pool.workspace = true
 ream-p2p.workspace = true
 ream-polynomial-commitments.workspace = true
 ream-storage.workspace = true
+ream-sync-committee-pool.workspace = true
 ream-syncer.workspace = true
 ream-validator-beacon.workspace = true
 
