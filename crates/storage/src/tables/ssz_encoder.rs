@@ -38,7 +38,11 @@ where
     where
         Self: 'a,
     {
-        Self::SelfType::from_ssz_bytes(data).expect("Failed to decode SSZ bytes, data corruption?")
+        let decode = snap::raw::Decoder::new()
+            .decompress_vec(data)
+            .expect("Failed to decode");
+
+        T::from_ssz_bytes(&decode).expect("Failed to decode SSZ bytes, data corruption?")
     }
 
     fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>
@@ -46,7 +50,9 @@ where
         Self: 'a,
         Self: 'b,
     {
-        value.as_ssz_bytes()
+        snap::raw::Encoder::new()
+            .compress_vec(&value.as_ssz_bytes())
+            .expect("Failed to encode")
     }
 
     fn type_name() -> TypeName {
