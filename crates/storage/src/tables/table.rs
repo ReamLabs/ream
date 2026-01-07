@@ -10,8 +10,7 @@ where
     Self::Key: 'static,
     Self::Value: Debug + Encode + Decode + 'static,
     Self::KeyTableDefinition: redb::Key + 'static,
-    Self::ValueTableDefinition: redb::Value + Debug + 'static,
-    for<'a> Self::Value: From<<Self::ValueTableDefinition as redb::Value>::SelfType<'a>>,
+    Self::ValueTableDefinition: for<'a> redb::Value<SelfType<'a> = Self::Value> + Debug + 'static,
 {
     const TABLE_DEFINITION: TableDefinition<
         'static,
@@ -32,14 +31,13 @@ where
     ) -> Result<Option<Self::Value>, StoreError> {
         let read_txn = self.database().begin_read()?;
         let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
-        let result = table.get(key)?;
-        Ok(result.map(|res| Self::Value::from(res.value())))
+        Ok(table.get(key)?.map(|result| result.value()))
     }
 
     fn insert<'a>(
         &self,
         key: <Self::KeyTableDefinition as redb::Value>::SelfType<'a>,
-        value: <Self::ValueTableDefinition as redb::Value>::SelfType<'a>,
+        value: Self::Value,
     ) -> Result<(), StoreError> {
         let mut write_txn = self.database().begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
@@ -58,9 +56,7 @@ where
         let write_txn = self.database().begin_write()?;
         let value = {
             let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
-            table
-                .remove(key)?
-                .map(|value| Self::Value::from(value.value()))
+            table.remove(key)?.map(|value| value.value())
         };
         write_txn.commit()?;
         Ok(value)
