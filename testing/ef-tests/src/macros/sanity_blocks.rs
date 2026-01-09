@@ -24,7 +24,7 @@ macro_rules! test_sanity_blocks {
                     initialize_test_network_spec();
                     let base_path = std::env::current_dir()
                         .unwrap()
-                        .join(format!("mainnet/tests/mainnet/electra/{}/pyspec_tests", $path));
+                        .join(format!("mainnet/tests/mainnet/fulu/{}/pyspec_tests", $path));
 
                     let mock_engine = Some(MockExecutionEngine::new());
 

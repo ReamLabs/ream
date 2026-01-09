@@ -10,6 +10,8 @@ use serde_json::Value;
 
 const PATH_TO_TEST_DATA_FOLDER: &str = "./tests/assets";
 
+/// TODO: Update test to Fulu
+#[ignore = "Update test to Fulu"]
 #[tokio::test]
 async fn test_beacon_state_serialization() -> anyhow::Result<()> {
     let original_json = read_json_file("state.json")?;

@@ -98,7 +98,7 @@ macro_rules! test_fork_choice {
                 async fn test_fork_choice() -> anyhow::Result<()> {
                     initialize_test_network_spec();
                     let base_path = format!(
-                        "mainnet/tests/mainnet/electra/fork_choice/{}/pyspec_tests",
+                        "mainnet/tests/mainnet/fulu/fork_choice/{}/pyspec_tests",
                         stringify!($path)
                     );
 
