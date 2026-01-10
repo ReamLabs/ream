@@ -1,6 +1,6 @@
 TARGET = mainnet.tar.gz
 EXTRACT_DIR = mainnet
-LATEST_RELEASE_URL = https://api.github.com/repos/ethereum/consensus-spec-tests/releases
+LATEST_RELEASE_URL = https://api.github.com/repos/ethereum/consensus-specs/releases/latest
 
 .PHONY: all clean
 

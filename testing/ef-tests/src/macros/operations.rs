@@ -2,7 +2,7 @@
 macro_rules! test_operation_impl {
     ($operation_name:ident, $operation_object:ty, $input_name:literal, $compute_result:expr) => {{
         let base_path = format!(
-            "mainnet/tests/mainnet/electra/operations/{}/pyspec_tests",
+            "mainnet/tests/mainnet/fulu/operations/{}/pyspec_tests",
             stringify!($operation_name)
         );
         for entry in std::fs::read_dir(&base_path).unwrap() {

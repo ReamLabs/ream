@@ -23,7 +23,7 @@ macro_rules! test_merkle_proof_impl {
                 #[rstest]
                 fn test_merkle_proof() {
                     let base_path = format!(
-                        "mainnet/tests/mainnet/electra/{}/single_merkle_proof/{}",
+                        "mainnet/tests/mainnet/fulu/{}/single_merkle_proof/{}",
                         $path,
                         stringify!($struct_name)
                     );
