@@ -12,6 +12,7 @@ use tracing::info;
 use crate::{
     errors::StoreError,
     tables::{
+        banned_peers::BannedPeersTable,
         beacon::{
             beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
             blobs_and_proofs::BLOB_FOLDER_NAME, block_timeliness::BlockTimelinessTable,
@@ -84,6 +85,7 @@ impl ReamDB {
         write_txn.open_table(UnrealizedFinalizedCheckpointField::FIELD_DEFINITION)?;
         write_txn.open_table(UnrealizedJustificationsTable::TABLE_DEFINITION)?;
         write_txn.open_table(UnrealizedJustifiedCheckpointField::FIELD_DEFINITION)?;
+        write_txn.open_table(BannedPeersTable::TABLE_DEFINITION)?;
         write_txn.commit()?;
 
         fs::create_dir_all(self.data_dir.join(BLOB_FOLDER_NAME))?;
@@ -109,6 +111,7 @@ impl ReamDB {
         write_txn.open_table(LeanSafeTargetField::FIELD_DEFINITION)?;
         write_txn.open_table(LeanLatestNewAttestationsTable::TABLE_DEFINITION)?;
         write_txn.open_table(LatestKnownAttestationTable::TABLE_DEFINITION)?;
+        write_txn.open_table(BannedPeersTable::TABLE_DEFINITION)?;
         write_txn.commit()?;
 
         Ok(LeanDB {

@@ -1,3 +1,4 @@
+pub mod banned_peers;
 pub mod beacon;
 pub mod field;
 pub mod lean;

@@ -13,6 +13,7 @@ use ream_executor::ReamExecutor;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_p2p::{
     config::NetworkConfig,
+    gossipsub::common::scoring::manager::{BanReason, PeerScoreManager},
     network::beacon::{Network, ReamNetworkEvent, network_state::NetworkState},
 };
 use ream_storage::{cache::BeaconCacheDB, db::beacon::BeaconDB};
@@ -37,6 +38,7 @@ pub struct NetworkManagerService {
     pub ream_db: BeaconDB,
     pub cached_db: Arc<BeaconCacheDB>,
     pub sync_committee_pool: Arc<SyncCommitteePool>,
+    pub peer_score_manager: Arc<PeerScoreManager>,
 }
 
 /// The `NetworkManagerService` acts as the manager for all networking activities in Ream.
@@ -96,7 +98,23 @@ impl NetworkManagerService {
 
         let status = beacon_chain.build_status_request().await?;
 
-        let network = Network::init(executor.clone(), &network_config, status).await?;
+        // Initialize peer score manager and load banned peers from database
+        let banned_peers_table = ream_db.banned_peers_provider();
+        let peer_score_manager = Arc::new(PeerScoreManager::new(
+            std::time::Duration::from_secs(3600),
+            Some(Arc::new(banned_peers_table)),
+        ));
+        if let Err(err) = peer_score_manager.load_from_db() {
+            error!("Failed to load banned peers from database: {err}");
+        }
+
+        let network = Network::init(
+            executor.clone(),
+            &network_config,
+            status,
+            peer_score_manager.clone(),
+        )
+        .await?;
 
         let network_state = network.network_state();
 
@@ -120,6 +138,7 @@ impl NetworkManagerService {
             ream_db,
             cached_db,
             sync_committee_pool,
+            peer_score_manager,
         })
     }
 
@@ -136,10 +155,13 @@ impl NetworkManagerService {
             cached_db,
             network_state,
             block_range_syncer,
-            ..
+            sync_committee_pool: _,
+            peer_score_manager,
         } = self;
 
-        let mut interval = interval(Duration::from_secs(beacon_network_spec().seconds_per_slot));
+        let mut slot_interval =
+            interval(Duration::from_secs(beacon_network_spec().seconds_per_slot));
+        let mut cleanup_interval = interval(Duration::from_secs(300)); // Cleanup every 5 minutes
         let mut syncer_handle = block_range_syncer.start();
         loop {
             tokio::select! {
@@ -172,7 +194,7 @@ impl NetworkManagerService {
                         syncer_handle = block_range_syncer.start();
                     }
                 }
-                _ = interval.tick() => {
+                _ = slot_interval.tick() => {
                     let time = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .expect("correct time")
@@ -180,6 +202,12 @@ impl NetworkManagerService {
 
                     if let Err(err) =  beacon_chain.process_tick(time).await {
                         error!("Failed to process gossipsub tick: {err}");
+                    }
+                }
+                _ = cleanup_interval.tick() => {
+                    // Cleanup expired banned peers
+                    if let Err(err) = peer_score_manager.cleanup_expired_bans() {
+                        error!("Failed to cleanup expired bans: {err}");
                     }
                 }
                 Some(event) = manager_receiver.recv() => {
@@ -190,6 +218,17 @@ impl NetworkManagerService {
                         // Handles Req/Resp messages from other peers.
                         ReamNetworkEvent::RequestMessage { peer_id, stream_id, connection_id, message } =>
                             handle_req_resp_message(peer_id, stream_id, connection_id, message, &p2p_sender, &ream_db, network_state.clone()).await,
+                        // Handle peer banning from low scores
+                        ReamNetworkEvent::BanPeer { peer_id, score } => {
+                            if let Err(err) = peer_score_manager.ban_peer(
+                                peer_id,
+                                BanReason::LowScore(score),
+                            ) {
+                                error!("Failed to ban peer {peer_id}: {err}");
+                            }
+                            // The network layer will automatically disconnect banned peers
+                            // on their next connection attempt
+                        }
                         // Log and skip unrecognized requests.
                         unhandled_request => {
                             info!("Unhandled request: {unhandled_request:?}");
