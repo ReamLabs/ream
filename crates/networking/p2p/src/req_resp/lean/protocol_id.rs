@@ -7,7 +7,7 @@ pub enum LeanSupportedProtocol {
 impl LeanSupportedProtocol {
     pub fn message_name(&self) -> &str {
         match self {
-            LeanSupportedProtocol::BlocksByRootV1 => "lean_blocks_by_root",
+            LeanSupportedProtocol::BlocksByRootV1 => "blocks_by_root",
             LeanSupportedProtocol::StatusV1 => "status",
         }
     }
