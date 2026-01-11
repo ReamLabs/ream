@@ -73,7 +73,7 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::{
     BitVector, FixedVector, VariableList,
     serde_utils::{quoted_u64_fixed_vec, quoted_u64_var_list},
-    typenum::{U4, U2048, U8192, U65536, U262144, U16777216, U134217728},
+    typenum::{U4, U32, U64, U2048, U8192, U65536, U262144, U16777216, U134217728},
 };
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
@@ -217,6 +217,10 @@ pub struct BeaconState {
     pub pending_deposits: VariableList<PendingDeposit, U134217728>,
     pub pending_partial_withdrawals: VariableList<PendingPartialWithdrawal, U134217728>,
     pub pending_consolidations: VariableList<PendingConsolidation, U262144>,
+
+    // Fulu
+    #[serde(with = "quoted_u64_fixed_vec")]
+    pub proposer_lookahead: FixedVector<u64, U64>,
 }
 
 impl BeaconState {
@@ -386,6 +390,17 @@ impl BeaconState {
             Some(slot) => (compute_epoch_at_slot(slot), slot),
             None => (self.get_current_epoch(), self.slot),
         };
+
+        // Fulu: Use proposer_lookahead if possible
+        let start_slot = compute_start_slot_at_epoch(self.get_current_epoch());
+        if slot >= start_slot {
+            let index = (slot - start_slot) as usize;
+            if let Some(proposer_index) = self.proposer_lookahead.get(index) {
+                return Ok(*proposer_index);
+            }
+        }
+
+        // Fallback for slots outside lookahead (or before current epoch)
         let seed = B256::from(hash_fixed(
             &[
                 self.get_seed(epoch, DOMAIN_BEACON_PROPOSER).as_slice(),
@@ -395,6 +410,49 @@ impl BeaconState {
         ));
         let indices = self.get_active_validator_indices(epoch);
         self.compute_proposer_index(&indices, seed)
+    }
+
+    pub fn compute_proposer_indices(
+        &self,
+        epoch: u64,
+        seed: B256,
+        indices: &[u64],
+    ) -> anyhow::Result<FixedVector<u64, U32>> {
+        let start_slot = compute_start_slot_at_epoch(epoch);
+        let mut proposer_indices = Vec::with_capacity(SLOTS_PER_EPOCH as usize);
+        for i in 0..SLOTS_PER_EPOCH {
+            let slot = start_slot + i;
+            let seed_for_slot =
+                B256::from(hash_fixed(&[seed.as_slice(), &slot.to_le_bytes()].concat()));
+            proposer_indices.push(self.compute_proposer_index(indices, seed_for_slot)?);
+        }
+        FixedVector::new(proposer_indices)
+            .map_err(|err| anyhow!("Failed to create FixedVector: {err:?}"))
+    }
+
+    pub fn get_beacon_proposer_indices(&self, epoch: u64) -> anyhow::Result<FixedVector<u64, U32>> {
+        let indices = self.get_active_validator_indices(epoch);
+        let seed = self.get_seed(epoch, DOMAIN_BEACON_PROPOSER);
+        self.compute_proposer_indices(epoch, seed, &indices)
+    }
+
+    pub fn process_proposer_lookahead(&mut self) -> anyhow::Result<()> {
+        let len = self.proposer_lookahead.len();
+        let slots_per_epoch = SLOTS_PER_EPOCH as usize;
+
+        // Shift out proposers in the first epoch
+        let mut new_vec = Vec::with_capacity(len);
+        new_vec.extend_from_slice(&self.proposer_lookahead[slots_per_epoch..]);
+
+        // Fill in the last epoch with new proposer indices
+        let next_epoch = self.get_current_epoch() + MIN_SEED_LOOKAHEAD + 1;
+        let new_indices = self.get_beacon_proposer_indices(next_epoch)?;
+
+        new_vec.extend(new_indices.iter());
+
+        self.proposer_lookahead = FixedVector::new(new_vec)
+            .map_err(|err| anyhow!("Failed to update proposer_lookahead: {err:?}"))?;
+        Ok(())
     }
 
     /// Return the combined effective balance of the ``indices``.
@@ -2587,6 +2645,7 @@ impl BeaconState {
         self.process_historical_summaries_update()?;
         self.process_participation_flag_updates()?;
         self.process_sync_committee_updates()?;
+        self.process_proposer_lookahead()?;
 
         Ok(())
     }
@@ -2908,6 +2967,7 @@ impl BeaconState {
             self.pending_deposits.tree_hash_root(),
             self.pending_partial_withdrawals.tree_hash_root(),
             self.pending_consolidations.tree_hash_root(),
+            self.proposer_lookahead.tree_hash_root(),
         ]
     }
 
