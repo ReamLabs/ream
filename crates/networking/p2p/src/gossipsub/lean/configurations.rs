@@ -1,18 +1,23 @@
 use std::time::Duration;
 
-use libp2p::gossipsub::{Config, ConfigBuilder, MessageId, ValidationMode};
+use libp2p::gossipsub::{
+    Config, ConfigBuilder, MessageId, PeerScoreParams, PeerScoreThresholds, ValidationMode,
+};
 use ream_network_spec::networks::lean_network_spec;
 use sha2::{Digest, Sha256};
 
+use super::{scoring::params::build_peer_score_params, topics::LeanGossipTopic};
 use crate::{
-    constants::MESSAGE_DOMAIN_VALID_SNAPPY, gossipsub::lean::topics::LeanGossipTopic,
-    utils::max_message_size,
+    constants::MESSAGE_DOMAIN_VALID_SNAPPY,
+    gossipsub::common::scoring::build_peer_score_thresholds, utils::max_message_size,
 };
 
 #[derive(Debug, Clone)]
 pub struct LeanGossipsubConfig {
     pub config: Config,
     pub topics: Vec<LeanGossipTopic>,
+    pub peer_score_params: PeerScoreParams,
+    pub peer_score_thresholds: PeerScoreThresholds,
 }
 
 impl Default for LeanGossipsubConfig {
@@ -55,16 +60,25 @@ impl Default for LeanGossipsubConfig {
             .build()
             .expect("Failed to build gossipsub config");
 
+        // Initialize with empty topics - will be populated via set_topics()
+        let topics = vec![];
+        let peer_score_params = build_peer_score_params(&topics);
+        let peer_score_thresholds = build_peer_score_thresholds();
+
         Self {
             config,
-            topics: vec![],
+            topics,
+            peer_score_params,
+            peer_score_thresholds,
         }
     }
 }
 
 impl LeanGossipsubConfig {
     pub fn set_topics(&mut self, topics: Vec<LeanGossipTopic>) {
-        self.topics = topics;
+        self.topics = topics.clone();
+        // Rebuild scoring params with the new topics
+        self.peer_score_params = build_peer_score_params(&topics);
     }
 }
 

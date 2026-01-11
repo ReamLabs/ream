@@ -61,9 +61,12 @@ use ream_network_spec::networks::{
 };
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
-    gossipsub::lean::{
-        configurations::LeanGossipsubConfig,
-        topics::{LeanGossipTopic, LeanGossipTopicKind},
+    gossipsub::{
+        common::scoring::manager::PeerScoreManager,
+        lean::{
+            configurations::LeanGossipsubConfig,
+            topics::{LeanGossipTopic, LeanGossipTopicKind},
+        },
     },
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
@@ -258,7 +261,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                 },
             },
             genesis_state,
-            lean_db,
+            lean_db.clone(),
             None,
         )
         .expect("Could not get forkchoice store"),
@@ -280,6 +283,18 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         },
     ];
 
+    let peer_score_manager = {
+        let banned_peers_table = lean_db.banned_peers_provider();
+        let manager = Arc::new(PeerScoreManager::new(
+            std::time::Duration::from_secs(3600),
+            Some(Arc::new(banned_peers_table)),
+        ));
+        if let Err(err) = manager.load_from_db() {
+            eprintln!("Failed to load banned peers from database: {err}");
+        }
+        manager
+    };
+
     let mut network_service = LeanNetworkService::new(
         Arc::new(LeanNetworkConfig {
             gossipsub_config: LeanGossipsubConfig {
@@ -294,6 +309,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         chain_sender.clone(),
         outbound_p2p_receiver,
         network_state.clone(),
+        peer_score_manager,
+        lean_db,
     )
     .await
     .expect("Failed to create network service");

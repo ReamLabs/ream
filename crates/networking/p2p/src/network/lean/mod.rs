@@ -30,6 +30,7 @@ use ream_metrics::{
 };
 use ream_network_state_lean::{NetworkState, cached_peer::CachedPeer};
 use ream_peer::{ConnectionState, Direction};
+use ream_storage::db::lean::LeanDB;
 use ssz::Encode;
 use tokio::{
     sync::{
@@ -44,6 +45,7 @@ use crate::{
     bootnodes::Bootnodes,
     gossipsub::{
         GossipsubBehaviour,
+        common::scoring::manager::{BanReason, PeerScoreManager},
         lean::{
             configurations::LeanGossipsubConfig, message::LeanGossipsubMessage,
             topics::LeanGossipTopicKind,
@@ -106,6 +108,10 @@ pub struct LeanNetworkService {
     pub network_state: Arc<NetworkState>,
     check_canonical_futures: FuturesUnordered<oneshot::Receiver<(PeerId, bool)>>,
     pub multi_addr: Multiaddr,
+    peer_score_manager: Arc<PeerScoreManager>,
+    #[allow(dead_code)]
+    // Used for database persistence, may be used in future for other operations
+    lean_db: LeanDB,
 }
 
 impl LeanNetworkService {
@@ -115,6 +121,8 @@ impl LeanNetworkService {
         chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
         outbound_p2p_request: UnboundedReceiver<LeanP2PRequest>,
         network_state: Arc<NetworkState>,
+        peer_score_manager: Arc<PeerScoreManager>,
+        lean_db: LeanDB,
     ) -> anyhow::Result<Self> {
         let connection_limits = {
             let limits = ConnectionLimits::default()
@@ -148,12 +156,33 @@ impl LeanNetworkService {
         let gossipsub = {
             let snappy_transform =
                 SnappyTransform::new(network_config.gossipsub_config.config.max_transmit_size());
-            GossipsubBehaviour::new_with_transform(
+            let mut behaviour = GossipsubBehaviour::new_with_transform(
                 MessageAuthenticity::Anonymous,
                 network_config.gossipsub_config.config.clone(),
                 snappy_transform,
             )
-            .map_err(|err| anyhow!("Failed to create gossipsub behaviour: {err:?}"))?
+            .map_err(|err| anyhow!("Failed to create gossipsub behaviour: {err:?}"))?;
+
+            // Peer scoring is always enabled for lean network
+            behaviour
+                .with_peer_score(
+                    network_config.gossipsub_config.peer_score_params.clone(),
+                    network_config
+                        .gossipsub_config
+                        .peer_score_thresholds
+                        .clone(),
+                )
+                .map_err(|err| anyhow!("Failed to enable peer scoring: {err}"))?;
+            info!(
+                "Peer scoring enabled with {} topic configurations",
+                network_config
+                    .gossipsub_config
+                    .peer_score_params
+                    .topics
+                    .len()
+            );
+
+            behaviour
         };
 
         let identify = {
@@ -205,6 +234,8 @@ impl LeanNetworkService {
             network_state,
             check_canonical_futures: FuturesUnordered::new(),
             multi_addr: multi_addr.clone(),
+            peer_score_manager,
+            lean_db,
         };
 
         lean_network_service
@@ -381,6 +412,13 @@ impl LeanNetworkService {
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
+                // Check if peer is banned
+                if self.peer_score_manager.is_banned(&peer_id) {
+                    warn!("Banned peer {peer_id} attempted to connect, disconnecting");
+                    let _ = self.swarm.disconnect_peer_id(peer_id);
+                    return None;
+                }
+
                 let (address, direction) = match endpoint {
                     ConnectedPoint::Dialer { address, .. } => {
                         self.bootnode_retry_state.remove(&peer_id);
@@ -455,38 +493,60 @@ impl LeanNetworkService {
     }
 
     fn handle_gossipsub_event(&mut self, event: GossipsubEvent) -> Option<ReamNetworkEvent> {
-        if let GossipsubEvent::Message { message, .. } = event {
-            match LeanGossipsubMessage::decode(&message.topic, &message.data) {
-                Ok(LeanGossipsubMessage::Block(signed_block_with_attestation)) => {
-                    let slot = signed_block_with_attestation.message.block.slot;
+        match event {
+            GossipsubEvent::Message { message, .. } => {
+                match LeanGossipsubMessage::decode(&message.topic, &message.data) {
+                    Ok(LeanGossipsubMessage::Block(signed_block_with_attestation)) => {
+                        let slot = signed_block_with_attestation.message.block.slot;
 
-                    if let Err(err) =
-                        self.chain_message_sender
-                            .send(LeanChainServiceMessage::ProcessBlock {
-                                signed_block_with_attestation,
+                        if let Err(err) =
+                            self.chain_message_sender
+                                .send(LeanChainServiceMessage::ProcessBlock {
+                                    signed_block_with_attestation,
+                                    need_gossip: true,
+                                })
+                        {
+                            warn!("failed to send block for slot {slot} item to chain: {err:?}");
+                        }
+                    }
+                    Ok(LeanGossipsubMessage::Attestation(signed_attestation)) => {
+                        #[cfg(feature = "devnet1")]
+                        let slot = signed_attestation.message.slot();
+                        #[cfg(feature = "devnet2")]
+                        let slot = signed_attestation.message.slot;
+
+                        if let Err(err) = self.chain_message_sender.send(
+                            LeanChainServiceMessage::ProcessAttestation {
+                                signed_attestation,
                                 need_gossip: true,
-                            })
-                    {
-                        warn!("failed to send block for slot {slot} item to chain: {err:?}");
+                            },
+                        ) {
+                            warn!("failed to send attestation for slot {slot} to chain: {err:?}");
+                        }
                     }
+                    Err(err) => warn!("Failed to decode {:?} gossip topic: {err:?}", message.topic),
                 }
-                Ok(LeanGossipsubMessage::Attestation(signed_attestation)) => {
-                    #[cfg(feature = "devnet1")]
-                    let slot = signed_attestation.message.slot();
-                    #[cfg(feature = "devnet2")]
-                    let slot = signed_attestation.message.slot;
-
-                    if let Err(err) = self.chain_message_sender.send(
-                        LeanChainServiceMessage::ProcessAttestation {
-                            signed_attestation,
-                            need_gossip: true,
-                        },
-                    ) {
-                        warn!("failed to send attestation for slot {slot} to chain: {err:?}");
-                    }
-                }
-                Err(err) => warn!("Failed to decode {:?} gossip topic: {err:?}", message.topic),
             }
+            GossipsubEvent::GossipsubNotSupported { peer_id } => {
+                // Peer fell below graylist threshold - ban them
+                let score = self
+                    .swarm
+                    .behaviour()
+                    .gossipsub
+                    .peer_score(&peer_id)
+                    .unwrap_or(-16000.0);
+
+                warn!("Peer {peer_id} graylisted with score {score:.2}, banning");
+
+                // Ban the peer (persists to database if available)
+                let _ = self
+                    .peer_score_manager
+                    .ban_peer(peer_id, BanReason::LowScore(score));
+
+                // Disconnect the peer
+                let _ = self.swarm.disconnect_peer_id(peer_id);
+            }
+            _ => {}
         }
         None
     }
@@ -731,7 +791,7 @@ mod tests {
     use tracing_test::traced_test;
 
     use super::*;
-    use crate::bootnodes::Bootnodes;
+    use crate::{bootnodes::Bootnodes, gossipsub::common::scoring::manager::PeerScoreManager};
 
     pub async fn setup_lean_node(socket_port: u16) -> anyhow::Result<LeanNetworkService> {
         initialize_lean_test_network_spec();
@@ -746,12 +806,21 @@ mod tests {
         let (sender, _receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
         let (_outbound_request_sender_unused, outbound_request_receiver) =
             mpsc::unbounded_channel::<LeanP2PRequest>();
+        let peer_score_manager = Arc::new(PeerScoreManager::default());
+
+        // Create a temporary in-memory database for testing
+        let temp_dir = tempfile::tempdir()?;
+        let ream_db = ream_storage::db::ReamDB::new(temp_dir.path().to_path_buf())?;
+        let lean_db = ream_db.init_lean_db()?;
+
         let node = LeanNetworkService::new(
             config.clone(),
             executor,
             sender,
             outbound_request_receiver,
             Arc::new(NetworkState::new(Default::default(), Default::default())),
+            peer_score_manager,
+            lean_db,
         )
         .await?;
         Ok(node)
