@@ -44,7 +44,10 @@ use utils::read_meta_data_from_disk;
 use crate::{
     config::NetworkConfig,
     constants::{PING_INTERVAL_DURATION, TARGET_PEER_COUNT},
-    gossipsub::{GossipsubBehaviour, beacon::topics::GossipTopic, snappy::SnappyTransform},
+    gossipsub::{
+        GossipsubBehaviour, beacon::topics::GossipTopic,
+        common::scoring::manager::PeerScoreManager, snappy::SnappyTransform,
+    },
     network::misc::{Executor, build_transport, peer_id_from_enr},
     req_resp::{
         Chain, ReqResp, ReqRespMessage,
@@ -94,6 +97,10 @@ pub enum ReamNetworkEvent {
     GossipsubMessage {
         message: Message,
     },
+    BanPeer {
+        peer_id: PeerId,
+        score: f64,
+    },
 }
 
 pub struct Network {
@@ -104,6 +111,7 @@ pub struct Network {
     request_id: u64,
     network_state: Arc<NetworkState>,
     peers_to_ping: HashSetDelay<PeerId>,
+    peer_score_manager: Arc<PeerScoreManager>,
 }
 
 impl Network {
@@ -120,6 +128,7 @@ impl Network {
         executor: ReamExecutor,
         config: &NetworkConfig,
         status: Status,
+        peer_score_manager: Arc<PeerScoreManager>,
     ) -> anyhow::Result<Self> {
         let local_key = secp256k1::Keypair::generate();
 
@@ -139,12 +148,26 @@ impl Network {
         let gossipsub = {
             let snappy_transform =
                 SnappyTransform::new(config.gossipsub_config.config.max_transmit_size());
-            GossipsubBehaviour::new_with_transform(
+            let mut behaviour = GossipsubBehaviour::new_with_transform(
                 MessageAuthenticity::Anonymous,
                 config.gossipsub_config.config.clone(),
                 snappy_transform,
             )
-            .map_err(|err| anyhow!("Failed to create gossipsub behaviour: {err:?}"))?
+            .map_err(|err| anyhow!("Failed to create gossipsub behaviour: {err:?}"))?;
+
+            // Peer scoring is always enabled for Ethereum consensus
+            behaviour
+                .with_peer_score(
+                    config.gossipsub_config.peer_score_params.clone(),
+                    config.gossipsub_config.peer_score_thresholds.clone(),
+                )
+                .map_err(|err| anyhow!("Failed to enable peer scoring: {err}"))?;
+            info!(
+                "Peer scoring enabled with {} topic configurations",
+                config.gossipsub_config.peer_score_params.topics.len()
+            );
+
+            behaviour
         };
 
         let connection_limits = {
@@ -221,6 +244,7 @@ impl Network {
             request_id: 0,
             network_state,
             peers_to_ping: HashSetDelay::new(PING_INTERVAL_DURATION),
+            peer_score_manager,
         };
 
         network.start_network_worker(config).await?;
@@ -466,6 +490,13 @@ impl Network {
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
+                // Check if peer is banned
+                if self.peer_score_manager.is_banned(&peer_id) {
+                    warn!("Banned peer {peer_id} attempted to connect, disconnecting");
+                    let _ = self.swarm.disconnect_peer_id(peer_id);
+                    return None;
+                }
+
                 if let ConnectedPoint::Listener { send_back_addr, .. } = &endpoint {
                     self.network_state.upsert_peer(
                         peer_id,
@@ -812,6 +843,20 @@ impl Network {
                 trace!("Peer {peer_id} unsubscribed from topic: {topic:?}");
                 None
             }
+            GossipsubEvent::GossipsubNotSupported { peer_id } => {
+                // Peer fell below graylist threshold - ban them directly
+                let score = self
+                    .swarm
+                    .behaviour()
+                    .gossipsub
+                    .peer_score(&peer_id)
+                    .unwrap_or(-16000.0);
+
+                warn!("Peer {peer_id} graylisted with score {score:.2}, banning");
+
+                // Return ban event to be handled by manager service
+                Some(ReamNetworkEvent::BanPeer { peer_id, score })
+            }
             _ => None,
         }
     }
@@ -834,6 +879,41 @@ impl Network {
         let topic: Topic = topic.into();
 
         self.swarm.behaviour_mut().gossipsub.unsubscribe(&topic)
+    }
+
+    /// Get the peer score for a specific peer.
+    ///
+    /// Returns None if peer scoring is not enabled or the peer has no score.
+    pub fn get_peer_score(&self, peer_id: &PeerId) -> Option<f64> {
+        self.swarm.behaviour().gossipsub.peer_score(peer_id)
+    }
+
+    /// Get all peer scores.
+    ///
+    /// Returns a vector of (PeerId, score) tuples for all peers with scores.
+    pub fn get_all_peer_scores(&self) -> Vec<(PeerId, f64)> {
+        self.swarm
+            .behaviour()
+            .gossipsub
+            .all_peers()
+            .filter_map(|(peer_id, _)| {
+                self.swarm
+                    .behaviour()
+                    .gossipsub
+                    .peer_score(peer_id)
+                    .map(|score| (*peer_id, score))
+            })
+            .collect()
+    }
+
+    /// Check if a peer is currently banned.
+    pub fn is_peer_banned(&self, peer_id: &PeerId) -> bool {
+        self.peer_score_manager.is_banned(peer_id)
+    }
+
+    /// Get the count of currently banned peers.
+    pub fn banned_peer_count(&self) -> usize {
+        self.peer_score_manager.banned_count()
     }
 }
 
@@ -894,6 +974,8 @@ mod tests {
             data_dir: std::env::temp_dir().join("ream_network_test"),
         };
 
+        let peer_score_manager = Arc::new(PeerScoreManager::default());
+
         Network::init(
             executor,
             &config,
@@ -901,6 +983,7 @@ mod tests {
                 fork_digest: beacon_network_spec().fork_digest(genesis_validators_root()),
                 ..Default::default()
             },
+            peer_score_manager,
         )
         .await
     }

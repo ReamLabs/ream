@@ -70,5 +70,8 @@ ream-storage.workspace = true
 ream-sync.workspace = true
 ream-validator-beacon.workspace = true
 
+[dev-dependencies]
+tempfile = "3"
+
 [lints]
 workspace = true

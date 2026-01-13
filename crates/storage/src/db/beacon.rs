@@ -8,6 +8,7 @@ use redb::{Database, ReadableDatabase};
 use crate::{
     cache::BeaconCacheDB,
     tables::{
+        banned_peers::BannedPeersTable,
         beacon::{
             beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
             blobs_and_proofs::BlobsAndProofsTable, block_timeliness::BlockTimelinessTable,
@@ -39,6 +40,12 @@ impl BeaconDB {
     pub fn with_cache(mut self, cache: Arc<BeaconCacheDB>) -> Self {
         self.cache = Some(cache);
         self
+    }
+
+    pub fn banned_peers_provider(&self) -> BannedPeersTable {
+        BannedPeersTable {
+            db: self.db.clone(),
+        }
     }
 
     pub fn block_provider(&self) -> BeaconBlockTable {

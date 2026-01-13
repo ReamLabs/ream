@@ -6,6 +6,7 @@ use tracing::info;
 use crate::{
     cache::LeanCacheDB,
     tables::{
+        banned_peers::BannedPeersTable,
         field::REDBField,
         lean::{
             latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
@@ -182,5 +183,11 @@ impl LeanDB {
         info!("\n{}", report);
 
         Ok(())
+    }
+
+    pub fn banned_peers_provider(&self) -> BannedPeersTable {
+        BannedPeersTable {
+            db: self.db.clone(),
+        }
     }
 }
