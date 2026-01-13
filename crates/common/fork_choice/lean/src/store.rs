@@ -19,8 +19,8 @@ use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_metrics::{
     ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL, ATTESTATIONS_VALID_TOTAL,
     FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT,
-    LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME, inc_int_counter_vec,
-    set_int_gauge_vec, start_timer, stop_timer,
+    LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
+    inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -198,6 +198,7 @@ impl Store {
             latest_justified_provider,
             safe_target_provider,
             latest_new_attestations_provider,
+            block_provider,
         ) = {
             let db = self.store.lock().await;
             (
@@ -206,6 +207,7 @@ impl Store {
                 db.latest_justified_provider(),
                 db.safe_target_provider(),
                 db.latest_new_attestations_provider(),
+                db.block_provider(),
             )
         };
 
@@ -216,14 +218,24 @@ impl Store {
         let min_target_score = (head_state.validators.len() as u64 * 2).div_ceil(3);
         let latest_justified_root = latest_justified_provider.get()?.root;
 
-        safe_target_provider.insert(
-            self.compute_lmd_ghost_head(
+        let new_safe_target_root = self
+            .compute_lmd_ghost_head(
                 latest_new_attestations_provider.iter_values()?,
                 latest_justified_root,
                 min_target_score,
             )
-            .await?,
-        )?;
+            .await?;
+
+        safe_target_provider.insert(new_safe_target_root)?;
+
+        // Update safe target slot metric
+        if let Some(safe_target_block) = block_provider.get(new_safe_target_root)? {
+            set_int_gauge_vec(
+                &SAFE_TARGET_SLOT,
+                safe_target_block.message.block.slot as i64,
+                &[],
+            );
+        }
 
         Ok(())
     }

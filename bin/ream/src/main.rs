@@ -55,10 +55,12 @@ use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
 use ream_fork_choice_lean::{genesis as lean_genesis, store::Store};
 use ream_keystore::keystore::EncryptedKeystore;
+use ream_metrics::{NODE_INFO, NODE_START_TIME_SECONDS, set_int_gauge_vec};
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::{
     beacon_network_spec, lean_network_spec, set_beacon_network_spec, set_lean_network_spec,
 };
+use ream_node::version::REAM_VERSION;
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
     gossipsub::lean::{
@@ -190,6 +192,14 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             "Metrics started on {}:{}",
             config.metrics_address, config.metrics_port
         );
+
+        // Set node info metrics
+        set_int_gauge_vec(&NODE_INFO, 1, &["ream", REAM_VERSION]);
+        let start_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs() as i64;
+        set_int_gauge_vec(&NODE_START_TIME_SECONDS, start_time, &[]);
     }
 
     let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
