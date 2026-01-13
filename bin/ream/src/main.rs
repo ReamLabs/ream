@@ -749,19 +749,24 @@ pub async fn countdown_for_genesis() {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf, time::Duration};
+    use std::time::Duration;
+    #[cfg(feature = "devnet1")]
+    use std::{fs, path::PathBuf};
 
+    #[cfg(feature = "devnet1")]
     use alloy_primitives::hex;
     use clap::Parser;
+    #[cfg(feature = "devnet1")]
     use libp2p_identity::{Keypair, secp256k1};
-    use ream::cli::{Cli, Commands, verbosity::Verbosity};
+    #[cfg(feature = "devnet1")]
+    use ream::cli::verbosity::Verbosity;
+    use ream::cli::{Cli, Commands};
     use ream_executor::ReamExecutor;
-    use ream_storage::{
-        db::ReamDB,
-        dir::setup_data_dir,
-        tables::{field::REDBField, table::REDBTable},
-    };
+    #[cfg(feature = "devnet1")]
+    use ream_storage::tables::{field::REDBField, table::REDBTable};
+    use ream_storage::{db::ReamDB, dir::setup_data_dir};
     use tokio::time::{sleep, timeout};
+    #[cfg(feature = "devnet1")]
     use tracing::info;
 
     use crate::{APP_NAME, run_lean_node};
@@ -881,6 +886,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "devnet1")]
     fn generate_node_identity(path: &PathBuf) -> String {
         let secp256k1_key = secp256k1::Keypair::generate();
         if let Some(parent) = path.parent() {
@@ -907,6 +913,7 @@ mod tests {
         run_multi_node_finalization_test(topology, "mesh_2_2_2").await;
     }
 
+    #[cfg(feature = "devnet1")]
     async fn run_multi_node_finalization_test(topology: Vec<Vec<usize>>, test_name: &str) {
         if true {
             let _ = tracing_subscriber::fmt()
