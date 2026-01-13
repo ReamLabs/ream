@@ -10,6 +10,7 @@ target/
 testing/ef-tests/mainnet/*
 testing/lean-spec-tests/fixtures/
 testing/lean-spec-tests/fixtures/*
+bin/ream/assets/lean/test_multi**
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
