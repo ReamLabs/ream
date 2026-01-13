@@ -75,6 +75,7 @@ fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `ma
 .PHONY: clippy
 clippy: # Run `clippy` on the entire workspace.
 	cargo clippy --all --all-targets --features "$(FEATURES)" --no-deps -- --deny warnings
+	cargo clippy --all --all-targets --no-default-features --features "devnet2,$(FEATURES)" --no-deps -- --deny warnings
 	cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings
 
 .PHONY: clippy-devnet2
