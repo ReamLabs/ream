@@ -127,5 +127,8 @@ docker-build-push:
 	docker buildx build --file ./Dockerfile.cross . \
 		--platform linux/amd64,linux/arm64 \
 		--tag ghcr.io/reamlabs/ream:latest \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		--provenance=false \
 		--push
