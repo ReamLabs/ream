@@ -25,6 +25,9 @@ pub struct LeanNodeConfig {
     )]
     pub bootnodes: Bootnodes,
 
+    #[arg(long, help = "HTTP URL of a remote node to sync checkpoint state from")]
+    pub checkpoint_sync_url: Option<String>,
+
     #[arg(long, help = "The path to the validator registry")]
     pub validator_registry_path: PathBuf,
 
