@@ -9,3 +9,8 @@ pub mod lean_state;
 pub mod lean_time;
 pub mod slot_index;
 pub mod state_root_index;
+
+#[cfg(feature = "devnet2")]
+pub mod aggregated_payloads;
+#[cfg(feature = "devnet2")]
+pub mod gossip_signatures;

@@ -15,6 +15,8 @@ use ream_consensus_lean::{
 };
 use ream_fork_choice_lean::store::Store;
 use ream_network_spec::networks::LeanNetworkSpec;
+#[cfg(feature = "devnet2")]
+use ream_post_quantum_crypto::lean_multisig::aggregate::AggregateSignature;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::{
     db::ReamDB,
@@ -179,12 +181,24 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 drop(db);
 
-                // Create blank signatures for block body attestations + 1 for proposer attestation
-                let num_signatures = ream_block.body.attestations.len() + 1;
-                let signatures = VariableList::try_from(vec![Signature::blank(); num_signatures])
-                    .map_err(|err| {
-                    anyhow!("Failed to create signatures VariableList: {err}")
-                })?;
+                // Create blank signatures for block body attestations
+                #[cfg(feature = "devnet1")]
+                let signatures = {
+                    // devnet1: individual signatures for each attestation + 1 for proposer
+                    let num_signatures = ream_block.body.attestations.len() + 1;
+                    VariableList::try_from(vec![Signature::blank(); num_signatures])
+                        .map_err(|err| anyhow!("Failed to create signatures VariableList: {err}"))?
+                };
+                #[cfg(feature = "devnet2")]
+                let signatures = {
+                    // devnet2: one aggregated signature per aggregated attestation
+                    let num_signatures = ream_block.body.attestations.len();
+                    VariableList::try_from(vec![
+                        AggregateSignature::new(vec![], vec![]);
+                        num_signatures
+                    ])
+                    .map_err(|err| anyhow!("Failed to create signatures VariableList: {err}"))?
+                };
 
                 let result = store
                     .on_block(

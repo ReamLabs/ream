@@ -20,8 +20,6 @@ use ream_metrics::{
     stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
-#[cfg(feature = "devnet2")]
-use ream_post_quantum_crypto::leansig::signature::Signature;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{Level, debug, enabled, info};
 use tree_hash::TreeHash;
@@ -79,7 +77,10 @@ impl ValidatorService {
                                     .expect("Failed to send produce block to LeanChainService");
 
                                 // Wait for the block to be produced.
+                                #[cfg(feature = "devnet1")]
                                 let BlockWithSignatures { block, mut signatures } = rx.await.expect("Failed to receive block from LeanChainService");
+                                #[cfg(feature = "devnet2")]
+                                let BlockWithSignatures { block, signatures } = rx.await.expect("Failed to receive block from LeanChainService");
 
                                 info!(
                                     slot = block.slot,
@@ -100,10 +101,14 @@ impl ValidatorService {
                                 let message = AggregatedAttestations { validator_id: keystore.index, data: attestation_data };
 
                                 let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
-                                let signature = keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
+                                let proposer_signature = keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
                                 stop_timer(timer);
 
-                                signatures.push(signature).map_err(|err| anyhow!("Failed to push signature {err:?}"))?;
+                                #[cfg(feature = "devnet1")]
+                                {
+                                    signatures.push(proposer_signature).map_err(|err| anyhow!("Failed to push signature {err:?}"))?;
+                                }
+
                                 let signed_block_with_attestation = SignedBlockWithAttestation {
                                     message: BlockWithAttestation {
                                         block: block.clone(),
@@ -114,7 +119,7 @@ impl ValidatorService {
                                     #[cfg(feature = "devnet2")]
                                     signature: BlockSignatures {
                                         attestation_signatures: signatures,
-                                        proposer_signature: Signature::blank(),
+                                        proposer_signature,
                                     },
                                 };
 

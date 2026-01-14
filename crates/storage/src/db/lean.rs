@@ -3,6 +3,10 @@ use std::{fmt::Write, sync::Arc};
 use redb::{Database, ReadableDatabase, ReadableTableMetadata};
 use tracing::info;
 
+#[cfg(feature = "devnet2")]
+use crate::tables::lean::{
+    aggregated_payloads::AggregatedPayloadsTable, gossip_signatures::GossipSignaturesTable,
+};
 use crate::{
     cache::LeanCacheDB,
     tables::{
@@ -96,6 +100,20 @@ impl LeanDB {
 
     pub fn latest_new_attestations_provider(&self) -> LeanLatestNewAttestationsTable {
         LeanLatestNewAttestationsTable {
+            db: self.db.clone(),
+        }
+    }
+
+    #[cfg(feature = "devnet2")]
+    pub fn gossip_signatures_provider(&self) -> GossipSignaturesTable {
+        GossipSignaturesTable {
+            db: self.db.clone(),
+        }
+    }
+
+    #[cfg(feature = "devnet2")]
+    pub fn aggregated_payloads_provider(&self) -> AggregatedPayloadsTable {
+        AggregatedPayloadsTable {
             db: self.db.clone(),
         }
     }
