@@ -18,9 +18,9 @@ use ream_consensus_lean::{
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_metrics::{
     ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL, ATTESTATIONS_VALID_TOTAL,
-    FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT,
-    LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
-    inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
+    FINALIZATIONS_TOTAL, FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT,
+    JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME,
+    SAFE_TARGET_SLOT, inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -637,6 +637,7 @@ impl Store {
 
         let latest_finalized =
             if parent_state.latest_finalized.slot > latest_finalized_provider.get()?.slot {
+                inc_int_counter_vec(&FINALIZATIONS_TOTAL, &["success"]);
                 parent_state.latest_finalized
             } else {
                 latest_finalized_provider.get()?
