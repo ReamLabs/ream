@@ -103,6 +103,14 @@ use tracing_subscriber::EnvFilter;
 
 pub const APP_NAME: &str = "ream";
 
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// Entry point for the Ream client. Initializes logging, parses CLI arguments, and runs the
 /// appropriate node type (beacon node, validator node, or account manager) based on the command
 /// line arguments. Handles graceful shutdown on Ctrl-C.
@@ -323,29 +331,30 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     );
 
     // Start the services concurrently.
-    let chain_future = executor.spawn(async move { chain_service.start().await });
-    let network_future =
-        executor.spawn(async move { network_service.start(config.bootnodes).await });
-    let validator_future = executor.spawn(async move { validator_service.start().await });
-    let http_future = executor.spawn(async move {
+    let mut chain_task = AbortOnDrop(executor.spawn(async move { chain_service.start().await }));
+    let mut network_task =
+        AbortOnDrop(executor.spawn(async move { network_service.start(config.bootnodes).await }));
+    let mut validator_task =
+        AbortOnDrop(executor.spawn(async move { validator_service.start().await }));
+    let mut http_task = AbortOnDrop(executor.spawn(async move {
         ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
-    });
+    }));
 
     executor.spawn(async move {
         countdown_for_genesis().await;
     });
 
     tokio::select! {
-        result = chain_future => {
+        result = &mut chain_task.0 => {
             error!("Chain service has stopped unexpectedly: {result:?}");
         },
-        result = network_future => {
+        result = &mut network_task.0 => {
             error!("Network service has stopped unexpectedly: {result:?}");
         },
-        result = validator_future => {
+        result = &mut validator_task.0 => {
             error!("Validator service has stopped unexpectedly: {result:?}");
         },
-        result = http_future => {
+        result = &mut http_task.0 => {
             error!("RPC service has stopped unexpectedly: {result:?}");
         }
     }
@@ -462,11 +471,11 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
     let network_state = network_manager.network_state.clone();
     let p2p_sender = Arc::new(network_manager.p2p_sender.clone());
 
-    let network_future = executor.spawn(async move {
+    let mut network_task = AbortOnDrop(executor.spawn(async move {
         network_manager.start().await;
-    });
+    }));
 
-    let http_future = executor.spawn(async move {
+    let mut http_task = AbortOnDrop(executor.spawn(async move {
         ream_rpc_beacon::server::start(
             server_config,
             beacon_db,
@@ -481,13 +490,13 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
             cache,
         )
         .await
-    });
+    }));
 
     tokio::select! {
-        _ = http_future => {
+        _ = &mut http_task.0 => {
             info!("HTTP server stopped!");
         },
-        _ = network_future => {
+        _ = &mut network_task.0 => {
             info!("Network future completed!");
         },
     }
