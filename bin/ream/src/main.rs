@@ -34,7 +34,8 @@ use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_chain_lean::{
     messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest, service::LeanChainService,
 };
-use ream_checkpoint_sync::initialize_db_from_checkpoint;
+use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
+use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::attestation::AggregatedAttestations;
 #[cfg(feature = "devnet1")]
@@ -43,7 +44,7 @@ use ream_consensus_lean::attestation::Attestation;
 use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
     attestation::AttestationData,
-    block::{BlockWithAttestation, SignedBlockWithAttestation},
+    block::{Block, BlockBody, BlockWithAttestation, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
     validator::Validator,
 };
@@ -53,7 +54,7 @@ use ream_consensus_misc::{
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
-use ream_fork_choice_lean::{genesis as lean_genesis, store::Store};
+use ream_fork_choice_lean::{genesis::setup_genesis, store::Store};
 use ream_keystore::keystore::EncryptedKeystore;
 use ream_metrics::{NODE_INFO, NODE_START_TIME_SECONDS, set_int_gauge_vec};
 use ream_network_manager::service::NetworkManagerService;
@@ -100,6 +101,7 @@ use tokio::{
 };
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
+use tree_hash::TreeHash;
 
 pub const APP_NAME: &str = "ream";
 
@@ -232,42 +234,65 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
     let (outbound_p2p_sender, outbound_p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
-    // Initialize the lean chain with genesis block and state.
-    let validators = lean_network_spec()
-        .validator_public_keys
-        .iter()
-        .enumerate()
-        .map(|(index, public_key)| Validator {
-            public_key: PublicKey::new(*public_key),
-            index: index as u64,
-        })
-        .collect::<Vec<_>>();
-    let (genesis_block, genesis_state) =
-        lean_genesis::setup_genesis(lean_network_spec().genesis_time, validators);
+    let (anchor_block, anchor_state) = if let Some(url) = config.checkpoint_sync_url.clone() {
+        let state = LeanCheckpointClient::new()
+            .fetch_finalized_state(&url)
+            .await
+            .expect("Failed to fetch checkpoint state");
+
+        if !verify_checkpoint_state(&state) {
+            panic!("Downloaded checkpoint state failed to verify");
+        }
+
+        let block = Block {
+            slot: state.slot,
+            proposer_index: state.latest_block_header.proposer_index,
+            parent_root: state.latest_block_header.parent_root,
+            state_root: state.tree_hash_root(),
+            body: BlockBody {
+                attestations: Default::default(),
+            },
+        };
+
+        (block, state)
+    } else {
+        let validators = lean_network_spec()
+            .validator_public_keys
+            .iter()
+            .enumerate()
+            .map(|(index, public_key)| Validator {
+                public_key: PublicKey::new(*public_key),
+                index: index as u64,
+            })
+            .collect::<Vec<_>>();
+
+        setup_genesis(lean_network_spec().genesis_time, validators)
+    };
+
+    let attestation_data = AttestationData {
+        slot: anchor_state.slot,
+        head: Checkpoint {
+            root: anchor_state.latest_block_header.tree_hash_root(),
+            slot: anchor_state.slot,
+        },
+        target: anchor_state.latest_finalized,
+        source: anchor_state.latest_justified,
+    };
+
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
             SignedBlockWithAttestation {
                 message: BlockWithAttestation {
-                    block: genesis_block,
+                    block: anchor_block,
                     #[cfg(feature = "devnet1")]
                     proposer_attestation: Attestation {
                         validator_id: 0,
-                        data: AttestationData {
-                            slot: 0,
-                            head: Checkpoint::default(),
-                            target: Checkpoint::default(),
-                            source: Checkpoint::default(),
-                        },
+                        data: attestation_data,
                     },
                     #[cfg(feature = "devnet2")]
                     proposer_attestation: AggregatedAttestations {
                         validator_id: 0,
-                        data: AttestationData {
-                            slot: 0,
-                            head: Checkpoint::default(),
-                            target: Checkpoint::default(),
-                            source: Checkpoint::default(),
-                        },
+                        data: attestation_data,
                     },
                 },
                 #[cfg(feature = "devnet1")]
@@ -278,7 +303,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                     proposer_signature: Signature::blank(),
                 },
             },
-            genesis_state,
+            anchor_state,
             lean_db,
             None,
         )

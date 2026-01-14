@@ -24,6 +24,7 @@ devnet2 = [
 
 [dependencies]
 actix-web.workspace = true
+ethereum_ssz.workspace = true
 libp2p.workspace = true
 parking_lot.workspace = true
 tokio.workspace = true

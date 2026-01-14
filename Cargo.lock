@@ -5800,6 +5800,7 @@ dependencies = [
  "bip39",
  "clap",
  "discv5",
+ "ethereum_ssz",
  "hashbrown 0.16.1",
  "leansig",
  "libp2p-identity",
@@ -5811,7 +5812,8 @@ dependencies = [
  "ream-api-types-common",
  "ream-chain-beacon",
  "ream-chain-lean",
- "ream-checkpoint-sync",
+ "ream-checkpoint-sync-beacon",
+ "ream-checkpoint-sync-lean",
  "ream-consensus-beacon",
  "ream-consensus-lean",
  "ream-consensus-misc",
@@ -5844,6 +5846,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "tree_hash",
  "unicode-normalization",
  "url",
 ]
@@ -5967,7 +5970,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ream-checkpoint-sync"
+name = "ream-checkpoint-sync-beacon"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
@@ -5984,6 +5987,20 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "tracing",
+ "tree_hash",
+]
+
+[[package]]
+name = "ream-checkpoint-sync-lean"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_ssz",
+ "ream-consensus-lean",
+ "reqwest",
+ "tokio",
  "tracing",
  "tree_hash",
 ]
@@ -6539,6 +6556,7 @@ name = "ream-rpc-lean"
 version = "0.1.0"
 dependencies = [
  "actix-web",
+ "ethereum_ssz",
  "libp2p",
  "parking_lot",
  "ream-api-types-common",

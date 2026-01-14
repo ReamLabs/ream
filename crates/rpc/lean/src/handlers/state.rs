@@ -5,6 +5,7 @@ use actix_web::{
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_fork_choice_lean::store::LeanStoreReader;
 use ream_storage::tables::{field::REDBField, table::REDBTable};
+use ssz::Encode;
 
 // GET /lean/v0/states/{state_id}
 #[get("/states/{state_id}")]
@@ -71,4 +72,30 @@ pub async fn get_state(
             .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))?
             .ok_or_else(|| ApiError::NotFound("Lean state not found".to_string()))?,
     ))
+}
+
+#[get("/states/finalized")]
+pub async fn get_finalized_state_ssz(
+    lean_chain: Data<LeanStoreReader>,
+) -> Result<impl Responder, ApiError> {
+    let lean_chain = lean_chain.read().await;
+    let db = lean_chain.store.lock().await;
+
+    let block_root = db
+        .latest_finalized_provider()
+        .get()
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to get finalized provider: {err:?}"))
+        })?
+        .root;
+
+    let state = db
+        .state_provider()
+        .get(block_root)
+        .map_err(|err| ApiError::InternalError(format!("Database error: {err}")))?
+        .ok_or_else(|| ApiError::NotFound("Lean state not found".to_string()))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/octet-stream")
+        .body(state.as_ssz_bytes()))
 }
