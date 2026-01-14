@@ -290,14 +290,13 @@ impl Store {
 
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
-        let (latest_known_attestations, latest_justified_provider, head_provider, block_provider) = {
+        let (latest_known_attestations, latest_justified_provider, head_provider) = {
             let db = self.store.lock().await;
             (
                 db.latest_known_attestations_provider()
                     .get_all_attestations()?,
                 db.latest_justified_provider(),
                 db.head_provider(),
-                db.block_provider(),
             )
         };
 
@@ -310,11 +309,8 @@ impl Store {
             .await?;
 
         set_int_gauge_vec(&HEAD_SLOT, new_head_slot as i64, &[]);
-        let head_block = block_provider
-            .get(new_head)?
-            .ok_or(anyhow!("Failed to get head block"))?;
         *self.network_state.head_checkpoint.write() = Checkpoint {
-            root: head_block.message.block.tree_hash_root(),
+            root: new_head,
             slot: new_head_slot,
         };
         head_provider.insert(new_head)?;
