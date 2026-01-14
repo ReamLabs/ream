@@ -74,9 +74,8 @@ impl LeanChainService {
                             let head_state = state_provider
                                 .get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {head}"))?;
 
-                            // Update current slot metric
-                            let current_slot = get_current_slot();
-                            set_int_gauge_vec(&CURRENT_SLOT, current_slot as i64, &[]);
+                            // Update current slot with head_state.slot
+                            set_int_gauge_vec(&CURRENT_SLOT, head_state.slot as i64, &[]);
 
                             info!(
                                 "\n\
