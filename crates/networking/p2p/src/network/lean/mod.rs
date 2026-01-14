@@ -230,11 +230,14 @@ impl LeanNetworkService {
         info!("LeanNetworkService started");
         set_int_gauge_vec(&LEAN_PEER_COUNT, 0, &[]);
 
-        self.connect_to_bootnodes(bootnodes.to_multiaddrs_lean())
-            .await;
+        let bootnode_addresses = bootnodes.to_multiaddrs_lean();
+        let mut bootnode_redial_interval = tokio::time::interval(Duration::from_secs(20));
 
         loop {
             tokio::select! {
+                _ = bootnode_redial_interval.tick() => {
+                    self.connect_to_multinodes(bootnode_addresses.clone()).await;
+                }
                 Some(Ok((peer_id, (attempts, addresses)))) = self.bootnode_retry_state.next() => {
                     if matches!(self.network_state.peer_table.lock().get(&peer_id).map(|peer| peer.state), Some(ConnectionState::Connected)) {
                         continue;
@@ -596,7 +599,7 @@ impl LeanNetworkService {
         }
     }
 
-    async fn connect_to_bootnodes(&mut self, peers: Vec<Multiaddr>) {
+    async fn connect_to_multinodes(&mut self, peers: Vec<Multiaddr>) {
         trace!("Discovered peers: {peers:?}");
         for peer in peers {
             if let Some(Protocol::P2p(peer_id)) = peer
@@ -604,6 +607,13 @@ impl LeanNetworkService {
                 .find(|protocol| matches!(protocol, Protocol::P2p(_)))
                 && peer_id != self.local_peer_id()
             {
+                if let Some(cached_peer) = self.network_state.cached_peer(&peer_id)
+                    && matches!(cached_peer.state, ConnectionState::Connected)
+                {
+                    trace!("Already connected to peer {peer_id}, skipping dial.");
+                    continue;
+                }
+
                 match self.bootnode_retry_state.remove(&peer_id) {
                     Some((attempts, mut addresses)) => {
                         addresses.push(peer.clone());
