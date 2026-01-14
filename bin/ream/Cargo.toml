@@ -72,6 +72,7 @@ ream-executor.workspace = true
 ream-fork-choice-beacon.workspace = true
 ream-fork-choice-lean.workspace = true
 ream-keystore.workspace = true
+ream-metrics.workspace = true
 ream-network-manager.workspace = true
 ream-network-spec.workspace = true
 ream-node.workspace = true

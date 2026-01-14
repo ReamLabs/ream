@@ -1,7 +1,7 @@
 pub mod timer;
 
 use prometheus_exporter::prometheus::{
-    HistogramTimer, HistogramVec, IntCounterVec, IntGaugeVec, default_registry,
+    HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, IntGaugeVec, default_registry,
     register_histogram_vec_with_registry, register_int_counter_vec_with_registry,
     register_int_gauge_vec_with_registry,
 };
@@ -10,6 +10,21 @@ use crate::timer::DiscardOnDropHistogramTimer;
 
 // Provisioning each metrics
 lazy_static::lazy_static! {
+    // Node Info Metrics
+    pub static ref NODE_INFO: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_node_info",
+        "Node information (always 1)",
+        &["name", "version"],
+        default_registry()
+    ).expect("failed to create NODE_INFO int gauge vec");
+
+    pub static ref NODE_START_TIME_SECONDS: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_node_start_time_seconds",
+        "Start timestamp",
+        &[],
+        default_registry()
+    ).expect("failed to create NODE_START_TIME_SECONDS int gauge vec");
+
     pub static ref PROPOSE_BLOCK_TIME: HistogramVec = register_histogram_vec_with_registry!(
         "lean_propose_block_time",
         "Duration of the sections it takes to propose a new block",
@@ -23,6 +38,21 @@ lazy_static::lazy_static! {
         &[],
         default_registry()
     ).expect("failed to create HEAD_SLOT int gauge vec");
+
+    // Sync Metrics
+    pub static ref CURRENT_SLOT: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_current_slot",
+        "Current slot of the lean chain",
+        &[],
+        default_registry()
+    ).expect("failed to create CURRENT_SLOT int gauge vec");
+
+    pub static ref SAFE_TARGET_SLOT: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_safe_target_slot",
+        "Safe target slot",
+        &[],
+        default_registry()
+    ).expect("failed to create SAFE_TARGET_SLOT int gauge vec");
 
     pub static ref JUSTIFIED_SLOT: IntGaugeVec = register_int_gauge_vec_with_registry!(
         "lean_justified_slot",
@@ -88,6 +118,25 @@ lazy_static::lazy_static! {
         default_registry()
     ).expect("failed to create ATTESTATION_VALIDATION_TIME histogram vec");
 
+    pub static ref FORK_CHOICE_REORGS_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_fork_choice_reorgs_total",
+        "Total number of fork choice reorgs",
+        &[],
+        default_registry()
+    ).expect("failed to create FORK_CHOICE_REORGS_TOTAL int counter vec");
+
+    pub static ref FORK_CHOICE_REORG_DEPTH: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_fork_choice_reorg_depth",
+            "Depth of fork choice reorgs (in blocks)"
+        ).buckets(vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 20.0, 30.0, 50.0, 100.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create FORK_CHOICE_REORG_DEPTH histogram vec")
+    };
+
     // State Transition Metrics
     pub static ref STATE_TRANSITION_TIME: HistogramVec = register_histogram_vec_with_registry!(
         "lean_state_transition_time_seconds",
@@ -130,6 +179,14 @@ lazy_static::lazy_static! {
         &[],
         default_registry()
     ).expect("failed to create STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME histogram vec");
+
+    // Finalization Metrics
+    pub static ref FINALIZATIONS_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_finalizations_total",
+        "Total number of finalization attempts",
+        &["result"],
+        default_registry()
+    ).expect("failed to create FINALIZATIONS_TOTAL int counter vec");
 
     // PQ Signature Metrics
     pub static ref PQ_SIGNATURE_ATTESTATION_SIGNING_TIME: HistogramVec = register_histogram_vec_with_registry!(

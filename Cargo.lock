@@ -5822,6 +5822,7 @@ dependencies = [
  "ream-fork-choice-beacon",
  "ream-fork-choice-lean",
  "ream-keystore",
+ "ream-metrics",
  "ream-network-manager",
  "ream-network-spec",
  "ream-node",

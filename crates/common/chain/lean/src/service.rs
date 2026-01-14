@@ -6,6 +6,7 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlockWithAttestation},
 };
 use ream_fork_choice_lean::store::LeanStoreWriter;
+use ream_metrics::{CURRENT_SLOT, set_int_gauge_vec};
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 use ream_storage::tables::{field::REDBField, table::REDBTable};
@@ -72,6 +73,9 @@ impl LeanChainService {
                             };
                             let head_state = state_provider
                                 .get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {head}"))?;
+
+                            // Update current slot with head_state.slot
+                            set_int_gauge_vec(&CURRENT_SLOT, head_state.slot as i64, &[]);
 
                             info!(
                                 "\n\
