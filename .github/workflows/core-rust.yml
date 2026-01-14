@@ -117,7 +117,21 @@ jobs:
 
     - uses: Swatinem/rust-cache@v2
       with:
-        cache-on-failure: true    
+        cache-on-failure: true
 
     - name: Test consensus spec tests
       run: cd testing/ef-tests && make test
+
+  lean-spec-tests:
+    runs-on: ubuntu-latest
+    needs: [format, cargo-clippy]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true
+
+    - name: Test lean spec tests
+      run: cd testing/lean-spec-tests && make test
