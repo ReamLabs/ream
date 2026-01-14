@@ -793,8 +793,8 @@ mod tests {
 
     use crate::{APP_NAME, run_lean_node};
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn test_lean_node_runs_10_seconds_without_panicking() {
+    #[test]
+    fn test_lean_node_runs_10_seconds_without_panicking() {
         let cli = Cli::parse_from([
             "ream",
             "--ephemeral",
@@ -812,30 +812,33 @@ mod tests {
         let ream_dir = setup_data_dir(APP_NAME, None, true).unwrap();
         let db = ReamDB::new(ream_dir).unwrap();
         let executor = ReamExecutor::new().unwrap();
+        let executor_handle = executor.clone();
 
-        let handle = tokio::spawn(async move {
-            run_lean_node(*config, executor.clone(), db).await;
+        executor.runtime().block_on(async move {
+            let handle = tokio::spawn(async move {
+                run_lean_node(*config, executor_handle, db).await;
+            });
+
+            let result = timeout(Duration::from_secs(10), async {
+                sleep(Duration::from_secs(10)).await;
+                Ok::<_, ()>(())
+            })
+            .await;
+
+            match result {
+                Ok(Ok(())) => {}
+                Err(err) => panic!("lean_node panicked or exited early {err:?}"),
+                Ok(Err(err)) => panic!("internal error {err:?}"),
+            }
+
+            handle.abort();
         });
-
-        let result = timeout(Duration::from_secs(10), async {
-            sleep(Duration::from_secs(10)).await;
-            Ok::<_, ()>(())
-        })
-        .await;
-
-        match result {
-            Ok(Ok(())) => {}
-            Err(err) => panic!("lean_node panicked or exited early {err:?}"),
-            Ok(Err(err)) => panic!("internal error {err:?}"),
-        }
-
-        handle.abort();
     }
 
     /// TODO: Get finalization working for devnet2
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[test]
     #[cfg(feature = "devnet1")]
-    async fn test_lean_node_finalizes() {
+    fn test_lean_node_finalizes() {
         let cli = Cli::parse_from([
             "ream",
             "--ephemeral",
@@ -857,25 +860,28 @@ mod tests {
         let ream_dir = setup_data_dir(APP_NAME, None, true).unwrap();
         let db = ReamDB::new(ream_dir).unwrap();
         let executor = ReamExecutor::new().unwrap();
+        let executor_handle = executor.clone();
 
         let cloned_db = db.clone();
-        let handle = tokio::spawn(async move {
-            run_lean_node(*config, executor.clone(), cloned_db).await;
+        executor.runtime().block_on(async move {
+            let handle = tokio::spawn(async move {
+                run_lean_node(*config, executor_handle, cloned_db).await;
+            });
+
+            let result = timeout(Duration::from_secs(60), async {
+                sleep(Duration::from_secs(60)).await;
+                Ok::<_, ()>(())
+            })
+            .await;
+
+            match result {
+                Ok(Ok(())) => {}
+                Err(err) => panic!("lean_node panicked or exited early {err:?}"),
+                Ok(Err(err)) => panic!("internal error {err:?}"),
+            }
+
+            handle.abort();
         });
-
-        let result = timeout(Duration::from_secs(60), async {
-            sleep(Duration::from_secs(60)).await;
-            Ok::<_, ()>(())
-        })
-        .await;
-
-        match result {
-            Ok(Ok(())) => {}
-            Err(err) => panic!("lean_node panicked or exited early {err:?}"),
-            Ok(Err(err)) => panic!("internal error {err:?}"),
-        }
-
-        handle.abort();
 
         let lean_db = db.init_lean_db().unwrap();
         let head = lean_db.head_provider().get().unwrap();
@@ -920,23 +926,23 @@ mod tests {
         id_keypair.public().to_peer_id().to_string()
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    #[test]
     #[cfg(feature = "devnet1")]
     #[ignore = "I am not sure if this topology is supposed to work or not"]
-    async fn test_lean_node_finalizes_linear_1_2_1() {
+    fn test_lean_node_finalizes_linear_1_2_1() {
         let topology = vec![vec![], vec![0], vec![1]];
-        run_multi_node_finalization_test(topology, "linear_1_2_1").await;
+        run_multi_node_finalization_test(topology, "linear_1_2_1");
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    #[test]
     #[cfg(feature = "devnet1")]
-    async fn test_lean_node_finalizes_mesh_2_2_2() {
+    fn test_lean_node_finalizes_mesh_2_2_2() {
         let topology = vec![vec![], vec![0], vec![0, 1]];
-        run_multi_node_finalization_test(topology, "mesh_2_2_2").await;
+        run_multi_node_finalization_test(topology, "mesh_2_2_2");
     }
 
     #[cfg(feature = "devnet1")]
-    async fn run_multi_node_finalization_test(topology: Vec<Vec<usize>>, test_name: &str) {
+    fn run_multi_node_finalization_test(topology: Vec<Vec<usize>>, test_name: &str) {
         if true {
             let _ = tracing_subscriber::fmt()
                 .with_env_filter(Verbosity::Info.directive())
@@ -975,144 +981,146 @@ mod tests {
         let registry_path_str = registry_path.to_string_lossy().to_string();
 
         let executor = ReamExecutor::new().unwrap();
-        let mut node_handles = Vec::new();
-        let mut node_addresses: Vec<String> = Vec::new();
-        let mut db_instances = Vec::new();
+        executor.clone().runtime().block_on(async move {
+            let mut node_handles = Vec::new();
+            let mut node_addresses: Vec<String> = Vec::new();
+            let mut db_instances = Vec::new();
 
-        for (i, node_boot_config) in topology.iter().enumerate() {
-            let node_index = i + 1;
-            let node_id = format!("node{node_index}");
+            for (i, node_boot_config) in topology.iter().enumerate() {
+                let node_index = i + 1;
+                let node_id = format!("node{node_index}");
 
-            let data_dir_name = format!("{APP_NAME}_{test_name}_node_{node_index}");
-            let ream_dir = std::env::temp_dir().join(data_dir_name);
+                let data_dir_name = format!("{APP_NAME}_{test_name}_node_{node_index}");
+                let ream_dir = std::env::temp_dir().join(data_dir_name);
 
-            if ream_dir.exists() {
-                let _ = fs::remove_dir_all(&ream_dir);
-            }
-            fs::create_dir_all(&ream_dir).expect("Failed to create data dir");
+                if ream_dir.exists() {
+                    let _ = fs::remove_dir_all(&ream_dir);
+                }
+                fs::create_dir_all(&ream_dir).expect("Failed to create data dir");
 
-            let key_path = ream_dir.join("node_key");
-            let peer_id = generate_node_identity(&key_path);
+                let key_path = ream_dir.join("node_key");
+                let peer_id = generate_node_identity(&key_path);
 
-            let port_offset = (test_name.len() as u16) % 100;
-            let p2p_port = base_p2p_port + port_offset + (i as u16);
-            let http_port = base_http_port + port_offset + (i as u16);
+                let port_offset = (test_name.len() as u16) % 100;
+                let p2p_port = base_p2p_port + port_offset + (i as u16);
+                let http_port = base_http_port + port_offset + (i as u16);
 
-            let addr = format!("/ip4/127.0.0.1/udp/{p2p_port}/quic-v1/p2p/{peer_id}");
-            node_addresses.push(addr.clone());
+                let address = format!("/ip4/127.0.0.1/udp/{p2p_port}/quic-v1/p2p/{peer_id}");
+                node_addresses.push(address.clone());
 
-            if i == 0 {
-                info!("BOOTNODE ADDRESS: {}", addr);
-            }
+                if i == 0 {
+                    info!("BOOTNODE ADDRESS: {address}");
+                }
 
-            let db = ReamDB::new(ream_dir.clone()).unwrap();
-            db_instances.push(db.clone());
+                let db = ReamDB::new(ream_dir.clone()).unwrap();
+                db_instances.push(db.clone());
 
-            let mut bootnodes_arg: Vec<String> = Vec::new();
-            for &target_idx in node_boot_config {
-                if target_idx < node_addresses.len() {
-                    bootnodes_arg.push(node_addresses[target_idx].clone());
+                let mut bootnodes_arg: Vec<String> = Vec::new();
+                for &target_idx in node_boot_config {
+                    if target_idx < node_addresses.len() {
+                        bootnodes_arg.push(node_addresses[target_idx].clone());
+                    }
+                }
+
+                let mut args = vec![
+                    "ream".to_string(),
+                    "lean_node".to_string(),
+                    "--network".to_string(),
+                    "ephemery".to_string(),
+                    "--validator-registry-path".to_string(),
+                    registry_path_str.clone(),
+                    "--socket-port".to_string(),
+                    p2p_port.to_string(),
+                    "--socket-address".to_string(),
+                    "127.0.0.1".to_string(),
+                    "--http-port".to_string(),
+                    http_port.to_string(),
+                    "--node-id".to_string(),
+                    node_id.clone(),
+                    "--private-key-path".to_string(),
+                    key_path.to_string_lossy().to_string(),
+                ];
+
+                if !bootnodes_arg.is_empty() {
+                    args.push("--bootnodes".to_string());
+                    args.push(bootnodes_arg.join(","));
+                }
+
+                let cli = Cli::parse_from(args);
+                let Commands::LeanNode(config) = cli.command else {
+                    panic!("Expected lean_node command");
+                };
+
+                let node_executor = executor.clone();
+                let handle = tokio::spawn(async move {
+                    run_lean_node(*config, node_executor, db).await;
+                });
+                node_handles.push(handle);
+
+                if i == 0 {
+                    info!("Waiting 5s for Bootnode to initialize QUIC listener...");
+                    sleep(Duration::from_secs(5)).await;
                 }
             }
 
-            let mut args = vec![
-                "ream".to_string(),
-                "lean_node".to_string(),
-                "--network".to_string(),
-                "ephemery".to_string(),
-                "--validator-registry-path".to_string(),
-                registry_path_str.clone(),
-                "--socket-port".to_string(),
-                p2p_port.to_string(),
-                "--socket-address".to_string(),
-                "127.0.0.1".to_string(),
-                "--http-port".to_string(),
-                http_port.to_string(),
-                "--node-id".to_string(),
-                node_id.clone(),
-                "--private-key-path".to_string(),
-                key_path.to_string_lossy().to_string(),
-            ];
+            info!(
+                "All nodes started. Monitoring for {} seconds...",
+                test_duration_secs
+            );
 
-            if !bootnodes_arg.is_empty() {
-                args.push("--bootnodes".to_string());
-                args.push(bootnodes_arg.join(","));
-            }
+            let db_instances_monitor = db_instances.clone();
+            let monitor_handle = tokio::spawn(async move {
+                let start = std::time::Instant::now();
+                loop {
+                    if start.elapsed().as_secs() >= test_duration_secs {
+                        break;
+                    }
+                    sleep(Duration::from_secs(2)).await;
 
-            let cli = Cli::parse_from(args);
-            let Commands::LeanNode(config) = cli.command else {
-                panic!("Expected lean_node command");
-            };
-
-            let node_executor = executor.clone();
-            let handle = tokio::spawn(async move {
-                run_lean_node(*config, node_executor, db).await;
+                    let db = &db_instances_monitor[0];
+                    if let Ok(lean_db) = db.init_lean_db()
+                        && let Ok(head) = lean_db.head_provider().get()
+                        && let Ok(Some(state)) = lean_db.state_provider().get(head)
+                    {
+                        info!(
+                            "Node 1 Chain: Slot={} | Finalized={}",
+                            state.slot, state.latest_finalized.slot
+                        );
+                    }
+                }
             });
-            node_handles.push(handle);
 
-            if i == 0 {
-                info!("Waiting 5s for Bootnode to initialize QUIC listener...");
-                sleep(Duration::from_secs(5)).await;
+            let _ = timeout(Duration::from_secs(test_duration_secs + 5), monitor_handle).await;
+
+            let _ = fs::remove_file(&registry_path);
+            for handle in node_handles {
+                handle.abort();
             }
-        }
 
-        info!(
-            "All nodes started. Monitoring for {} seconds...",
-            test_duration_secs
-        );
+            let lean_db = db_instances[0].init_lean_db().unwrap();
+            let head = lean_db.head_provider().get().expect("Failed to get head");
+            let head_state = lean_db
+                .state_provider()
+                .get(head)
+                .unwrap()
+                .expect("Failed to get head state");
 
-        let db_instances_monitor = db_instances.clone();
-        let monitor_handle = tokio::spawn(async move {
-            let start = std::time::Instant::now();
-            loop {
-                if start.elapsed().as_secs() >= test_duration_secs {
-                    break;
-                }
-                sleep(Duration::from_secs(2)).await;
+            info!(
+                "FINAL: Node 1 Slot: {}, Finalized: {}",
+                head_state.slot, head_state.latest_finalized.slot
+            );
 
-                let db = &db_instances_monitor[0];
-                if let Ok(lean_db) = db.init_lean_db()
-                    && let Ok(head) = lean_db.head_provider().get()
-                    && let Ok(Some(state)) = lean_db.state_provider().get(head)
-                {
-                    info!(
-                        "Node 1 Chain: Slot={} | Finalized={}",
-                        state.slot, state.latest_finalized.slot
-                    );
-                }
-            }
+            let finalization_lag = 5;
+
+            assert!(
+                head_state.slot > finalization_lag,
+                "Chain did not advance enough. Current: {}, Request: {finalization_lag}",
+                head_state.slot,
+            );
+            assert!(
+                head_state.latest_finalized.slot > 0,
+                "NO FINALIZATION. Check P2P logs for 'Dial error' or 'Handshake failed'."
+            );
         });
-
-        let _ = timeout(Duration::from_secs(test_duration_secs + 5), monitor_handle).await;
-
-        let _ = fs::remove_file(&registry_path);
-        for handle in node_handles {
-            handle.abort();
-        }
-
-        let lean_db = db_instances[0].init_lean_db().unwrap();
-        let head = lean_db.head_provider().get().expect("Failed to get head");
-        let head_state = lean_db
-            .state_provider()
-            .get(head)
-            .unwrap()
-            .expect("Failed to get head state");
-
-        info!(
-            "FINAL: Node 1 Slot: {}, Finalized: {}",
-            head_state.slot, head_state.latest_finalized.slot
-        );
-
-        let finalization_lag = 5;
-
-        assert!(
-            head_state.slot > finalization_lag,
-            "Chain did not advance enough. Current: {}, Req: {finalization_lag}",
-            head_state.slot,
-        );
-        assert!(
-            head_state.latest_finalized.slot > 0,
-            "NO FINALIZATION. Check P2P logs for 'Dial error' or 'Handshake failed'."
-        );
     }
 }
