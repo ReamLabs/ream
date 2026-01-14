@@ -269,6 +269,16 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         setup_genesis(lean_network_spec().genesis_time, validators)
     };
 
+    let attestation_data = AttestationData {
+        slot: anchor_state.slot,
+        head: Checkpoint {
+            root: anchor_state.latest_block_header.tree_hash_root(),
+            slot: anchor_state.slot,
+        },
+        target: anchor_state.latest_finalized,
+        source: anchor_state.latest_justified,
+    };
+
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
             SignedBlockWithAttestation {
@@ -277,22 +287,12 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                     #[cfg(feature = "devnet1")]
                     proposer_attestation: Attestation {
                         validator_id: 0,
-                        data: AttestationData {
-                            slot: anchor_state.slot,
-                            head: Checkpoint::default(),
-                            target: Checkpoint::default(),
-                            source: Checkpoint::default(),
-                        },
+                        data: attestation_data,
                     },
                     #[cfg(feature = "devnet2")]
                     proposer_attestation: AggregatedAttestations {
                         validator_id: 0,
-                        data: AttestationData {
-                            slot: anchor_state.slot,
-                            head: Checkpoint::default(),
-                            target: Checkpoint::default(),
-                            source: Checkpoint::default(),
-                        },
+                        data: attestation_data,
                     },
                 },
                 #[cfg(feature = "devnet1")]

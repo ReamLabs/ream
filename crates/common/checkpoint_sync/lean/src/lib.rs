@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 use ream_consensus_lean::state::LeanState;
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, StatusCode, Url};
 use ssz::Decode;
 
 #[derive(Default)]
@@ -17,12 +17,12 @@ impl LeanCheckpointClient {
         }
     }
 
-    pub async fn fetch_finalized_state(&self, url: &str) -> Result<LeanState> {
-        let url = format!("{}/lean/v0/states/finalized", url.trim_end_matches('/'));
+    pub async fn fetch_finalized_state(&self, url: &Url) -> Result<LeanState> {
+        let url = url.join("/lean/v0/states/finalized")?;
 
         let response = self
             .http
-            .get(&url)
+            .get(url)
             .header("Accept", "application/octet-stream")
             .send()
             .await?;
