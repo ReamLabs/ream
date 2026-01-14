@@ -258,86 +258,28 @@ impl LeanNetworkService {
 
                 Some(item) = self.outbound_p2p_request.recv() => {
                     match item {
-                        LeanP2PRequest::GossipBlock(signed_block) => {
-                            if let Err(err) = self.swarm
-                                .behaviour_mut()
-                                .gossipsub
-                                .publish(
-                                    self.network_config
-                                        .gossipsub_config
-                                        .topics
-                                        .iter()
-                                        .find(|block_topic| matches!(block_topic.kind, LeanGossipTopicKind::Block))
-                                        .map(|block_topic| IdentTopic::from(block_topic.clone()))
-                                        .expect("LeanBlock topic configured"),
-                                    signed_block.as_ssz_bytes(),
-                                )
-                            {
-                                match err {
-                                    PublishError::Duplicate => {
-                                        trace!(
-                                            slot = signed_block.message.block.slot,
-                                            "Block already published (duplicate)"
-                                        );
-                                    }
-                                    _ => {
-                                        warn!(
-                                            slot = signed_block.message.block.slot,
-                                            error = ?err,
-                                            "Publish block failed"
-                                        );
-                                    }
-                                }
-                            } else {
-                                info!(
-                                    slot = signed_block.message.block.slot,
-                                    "Broadcasted block"
-                                );
-                            }
+                        LeanP2PRequest::GossipBlock(block) => {
+                            self.publish_gossip(
+                                |topic| matches!(topic, LeanGossipTopicKind::Block),
+                                block.as_ssz_bytes(),
+                                block.message.block.slot,
+                                "block"
+                            );
                         }
-                        LeanP2PRequest::GossipAttestation(signed_attestation) => {
-                            if let Err(err) = self.swarm
-                                .behaviour_mut()
-                                .gossipsub
-                                .publish(
-                                    self.network_config
-                                        .gossipsub_config
-                                        .topics
-                                        .iter()
-                                        .find(|attestation_topic| matches!(attestation_topic.kind, LeanGossipTopicKind::Attestation))
-                                        .map(|attestation_topic| IdentTopic::from(attestation_topic.clone()))
-                                        .expect("LeanAttestation topic configured"),
-                                    signed_attestation.as_ssz_bytes(),
-                                )
-                            {
-                                #[cfg(feature = "devnet1")]
-                                warn!(
-                                    slot = signed_attestation.message.slot(),
-                                    error = ?err,
-                                    "Publish attestation failed"
-                                );
-                                #[cfg(feature = "devnet2")]
-                                warn!(
-                                    slot = signed_attestation.message.slot,
-                                    error = ?err,
-                                    "Publish attestation failed"
-                                );
-                            } else {
-                                #[cfg(feature = "devnet1")]
-                                info!(
-                                    slot = signed_attestation.message.slot(),
-                                    "Broadcasted attestation"
-                                );
-                                #[cfg(feature = "devnet2")]
-                                info!(
-                                    slot = signed_attestation.message.slot,
-                                    "Broadcasted attestation"
-                                );
-                            }
+                        LeanP2PRequest::GossipAttestation(attestation) => {
+                            #[cfg(feature = "devnet1")]
+                            let slot = attestation.message.slot();
+                            #[cfg(feature = "devnet2")]
+                            let slot = attestation.message.slot;
+                            self.publish_gossip(
+                                |topic| matches!(topic, LeanGossipTopicKind::Attestation),
+                                attestation.as_ssz_bytes(),
+                                slot,
+                                "attestation"
+                            );
                         }
                     }
                 }
-
                 Some(event) = self.swarm.next() => {
                     if let Some(event) = self.parse_swarm_event(event).await {
                         info!("Swarm event: {event:?}");
@@ -367,6 +309,28 @@ impl LeanNetworkService {
                     }
                 }
             }
+        }
+    }
+
+    fn publish_gossip<F>(&mut self, topic_filter: F, data: Vec<u8>, slot: u64, name: &str)
+    where
+        F: Fn(&LeanGossipTopicKind) -> bool,
+    {
+        let topic = self
+            .network_config
+            .gossipsub_config
+            .topics
+            .iter()
+            .find(|topic| topic_filter(&topic.kind))
+            .map(|topic| IdentTopic::from(topic.clone()))
+            .unwrap_or_else(|| panic!("Lean{name} topic configured"));
+
+        match self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+            Ok(_) => info!(slot, "Broadcasted {name}"),
+            Err(PublishError::Duplicate) => {
+                trace!(slot, "{name} already published (duplicate)");
+            }
+            Err(err) => warn!(slot, ?err, "Publish {name} failed"),
         }
     }
 
