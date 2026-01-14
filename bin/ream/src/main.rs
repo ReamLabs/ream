@@ -195,11 +195,14 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         // Set node info metrics
         set_int_gauge_vec(&NODE_INFO, 1, &["ream", REAM_VERSION]);
-        let start_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_secs() as i64;
-        set_int_gauge_vec(&NODE_START_TIME_SECONDS, start_time, &[]);
+        set_int_gauge_vec(
+            &NODE_START_TIME_SECONDS,
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs() as i64,
+            &[],
+        );
     }
 
     let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
