@@ -30,4 +30,9 @@ jobs:
           docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64
           docker buildx create --use --name cross-builder
       - name: Build and push ream image
-        run: make docker-build-push 
+        run: |
+          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          make docker-build-push \
+            GIT_COMMIT="${{ github.sha }}" \
+            GIT_BRANCH="${{ github.ref_name }}" \
+            BUILD_DATE="$BUILD_DATE"

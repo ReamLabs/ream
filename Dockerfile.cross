@@ -7,6 +7,14 @@ LABEL org.opencontainers.image.source=https://github.com/reamlabs/ream
 LABEL org.opencontainers.image.description="Ream is a modular, open-source Ethereum Beam Chain client."
 LABEL org.opencontainers.image.licenses="MIT"
 
+ARG GIT_COMMIT
+ARG GIT_BRANCH
+ARG BUILD_DATE
+
+LABEL org.opencontainers.image.revision=$GIT_COMMIT
+LABEL org.opencontainers.image.created=$BUILD_DATE
+LABEL org.opencontainers.image.version=$GIT_BRANCH
+
 # Filled by docker buildx
 ARG TARGETARCH
 
