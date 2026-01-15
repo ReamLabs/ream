@@ -24,13 +24,13 @@ tokio.workspace = true
 ream-chain-beacon.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
+ream-execution-rpc-types.workspace = true
 ream-network-manager = { workspace = true, features = ["disable_ancestor_validation"] }
 ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
 ream-storage.workspace = true
 ream-sync-committee-pool.workspace = true
 ssz_types.workspace = true
-ream-execution-rpc-types.workspace = true
 
 [lints]
 workspace = true
