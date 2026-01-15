@@ -2824,6 +2824,7 @@ dependencies = [
  "ream-chain-beacon",
  "ream-consensus-beacon",
  "ream-consensus-misc",
+ "ream-execution-rpc-types",
  "ream-network-manager",
  "ream-network-spec",
  "ream-operation-pool",
@@ -2832,6 +2833,7 @@ dependencies = [
  "serde",
  "serde_json",
  "snap",
+ "ssz_types",
  "tempdir",
  "tokio",
 ]
