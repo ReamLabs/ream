@@ -18,9 +18,9 @@ use ream_consensus_lean::{
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_metrics::{
     ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL, ATTESTATIONS_VALID_TOTAL,
-    FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT,
-    LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME, inc_int_counter_vec,
-    set_int_gauge_vec, start_timer, stop_timer,
+    FINALIZATIONS_TOTAL, FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT,
+    JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME,
+    SAFE_TARGET_SLOT, inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -99,13 +99,13 @@ impl Store {
     }
 
     /// Use LMD GHOST to get the head, given a particular root (usually the
-    /// latest known justified block)
+    /// latest known justified block). Returns the head root and slot.
     async fn compute_lmd_ghost_head(
         &self,
         attestations: impl Iterator<Item = anyhow::Result<SignedAttestation>>,
         provided_root: B256,
         min_score: u64,
-    ) -> anyhow::Result<B256> {
+    ) -> anyhow::Result<(B256, u64)> {
         let mut root = provided_root;
 
         let (slot_index_table, block_provider) = {
@@ -157,25 +157,27 @@ impl Store {
         // Start at the root (latest justified hash or genesis) and repeatedly
         // choose the child with the most latest votes, tiebreaking by slot then hash
         let mut head = root;
+        let mut head_slot = start_slot;
 
         while let Some(children) = children_map.get(&head) {
-            head = *children
+            (head, head_slot) = children
                 .iter()
-                .max_by_key(|child_hash| {
-                    let vote_weight = weights.get(*child_hash).unwrap_or(&0);
+                .map(|child_hash| {
+                    let vote_weight = *weights.get(child_hash).unwrap_or(&0);
                     let slot = block_provider
-                        .get(**child_hash)
-                        .map(|maybe_block| match maybe_block {
-                            Some(block) => block.message.block.slot,
-                            None => 0,
-                        })
+                        .get(*child_hash)
+                        .ok()
+                        .flatten()
+                        .map(|block| block.message.block.slot)
                         .unwrap_or(0);
-                    (*vote_weight, slot, *(*child_hash))
+                    (*child_hash, slot, (vote_weight, slot, *child_hash))
                 })
+                .max_by_key(|(_, _, key)| *key)
+                .map(|(hash, slot, _)| (hash, slot))
                 .ok_or_else(|| anyhow!("No children found for current root: {head}"))?;
         }
 
-        Ok(head)
+        Ok((head, head_slot))
     }
 
     pub async fn get_block_id_by_slot(&self, slot: u64) -> anyhow::Result<B256> {
@@ -216,14 +218,18 @@ impl Store {
         let min_target_score = (head_state.validators.len() as u64 * 2).div_ceil(3);
         let latest_justified_root = latest_justified_provider.get()?.root;
 
-        safe_target_provider.insert(
-            self.compute_lmd_ghost_head(
+        let (new_safe_target_root, new_safe_target_slot) = self
+            .compute_lmd_ghost_head(
                 latest_new_attestations_provider.iter_values()?,
                 latest_justified_root,
                 min_target_score,
             )
-            .await?,
-        )?;
+            .await?;
+
+        safe_target_provider.insert(new_safe_target_root)?;
+
+        // Update safe target slot metric
+        set_int_gauge_vec(&SAFE_TARGET_SLOT, new_safe_target_slot as i64, &[]);
 
         Ok(())
     }
@@ -284,18 +290,17 @@ impl Store {
 
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
-        let (latest_known_attestations, latest_justified_provider, head_provider, block_provider) = {
+        let (latest_known_attestations, latest_justified_provider, head_provider) = {
             let db = self.store.lock().await;
             (
                 db.latest_known_attestations_provider()
                     .get_all_attestations()?,
                 db.latest_justified_provider(),
                 db.head_provider(),
-                db.block_provider(),
             )
         };
 
-        let new_head = self
+        let (new_head, new_head_slot) = self
             .compute_lmd_ghost_head(
                 latest_known_attestations.into_values().map(Ok),
                 latest_justified_provider.get()?.root,
@@ -303,22 +308,10 @@ impl Store {
             )
             .await?;
 
-        set_int_gauge_vec(
-            &HEAD_SLOT,
-            block_provider
-                .get(new_head)?
-                .ok_or(anyhow!("Failed to get head slot"))?
-                .message
-                .block
-                .slot as i64,
-            &[],
-        );
-        let head_block = block_provider
-            .get(new_head)?
-            .ok_or(anyhow!("Failed to get head block"))?;
+        set_int_gauge_vec(&HEAD_SLOT, new_head_slot as i64, &[]);
         *self.network_state.head_checkpoint.write() = Checkpoint {
-            root: head_block.message.block.tree_hash_root(),
-            slot: head_block.message.block.slot,
+            root: new_head,
+            slot: new_head_slot,
         };
         head_provider.insert(new_head)?;
 
@@ -625,6 +618,7 @@ impl Store {
 
         let latest_finalized =
             if parent_state.latest_finalized.slot > latest_finalized_provider.get()?.slot {
+                inc_int_counter_vec(&FINALIZATIONS_TOTAL, &["success"]);
                 parent_state.latest_finalized
             } else {
                 latest_finalized_provider.get()?

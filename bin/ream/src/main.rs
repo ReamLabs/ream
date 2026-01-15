@@ -34,7 +34,8 @@ use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_chain_lean::{
     messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest, service::LeanChainService,
 };
-use ream_checkpoint_sync::initialize_db_from_checkpoint;
+use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
+use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::attestation::AggregatedAttestations;
 #[cfg(feature = "devnet1")]
@@ -43,7 +44,7 @@ use ream_consensus_lean::attestation::Attestation;
 use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
     attestation::AttestationData,
-    block::{BlockWithAttestation, SignedBlockWithAttestation},
+    block::{Block, BlockBody, BlockWithAttestation, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
     validator::Validator,
 };
@@ -53,12 +54,14 @@ use ream_consensus_misc::{
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
-use ream_fork_choice_lean::{genesis as lean_genesis, store::Store};
+use ream_fork_choice_lean::{genesis::setup_genesis, store::Store};
 use ream_keystore::keystore::EncryptedKeystore;
+use ream_metrics::{NODE_INFO, NODE_START_TIME_SECONDS, set_int_gauge_vec};
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::{
     beacon_network_spec, lean_network_spec, set_beacon_network_spec, set_lean_network_spec,
 };
+use ream_node::version::REAM_VERSION;
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
     gossipsub::lean::{
@@ -98,8 +101,17 @@ use tokio::{
 };
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
+use tree_hash::TreeHash;
 
 pub const APP_NAME: &str = "ream";
+
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 
 /// Entry point for the Ream client. Initializes logging, parses CLI arguments, and runs the
 /// appropriate node type (beacon node, validator node, or account manager) based on the command
@@ -190,6 +202,17 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             "Metrics started on {}:{}",
             config.metrics_address, config.metrics_port
         );
+
+        // Set node info metrics
+        set_int_gauge_vec(&NODE_INFO, 1, &["ream", REAM_VERSION]);
+        set_int_gauge_vec(
+            &NODE_START_TIME_SECONDS,
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs() as i64,
+            &[],
+        );
     }
 
     let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
@@ -211,42 +234,65 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
     let (outbound_p2p_sender, outbound_p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
-    // Initialize the lean chain with genesis block and state.
-    let validators = lean_network_spec()
-        .validator_public_keys
-        .iter()
-        .enumerate()
-        .map(|(index, public_key)| Validator {
-            public_key: PublicKey::new(*public_key),
-            index: index as u64,
-        })
-        .collect::<Vec<_>>();
-    let (genesis_block, genesis_state) =
-        lean_genesis::setup_genesis(lean_network_spec().genesis_time, validators);
+    let (anchor_block, anchor_state) = if let Some(url) = config.checkpoint_sync_url.clone() {
+        let state = LeanCheckpointClient::new()
+            .fetch_finalized_state(&url)
+            .await
+            .expect("Failed to fetch checkpoint state");
+
+        if !verify_checkpoint_state(&state) {
+            panic!("Downloaded checkpoint state failed to verify");
+        }
+
+        let block = Block {
+            slot: state.slot,
+            proposer_index: state.latest_block_header.proposer_index,
+            parent_root: state.latest_block_header.parent_root,
+            state_root: state.tree_hash_root(),
+            body: BlockBody {
+                attestations: Default::default(),
+            },
+        };
+
+        (block, state)
+    } else {
+        let validators = lean_network_spec()
+            .validator_public_keys
+            .iter()
+            .enumerate()
+            .map(|(index, public_key)| Validator {
+                public_key: PublicKey::new(*public_key),
+                index: index as u64,
+            })
+            .collect::<Vec<_>>();
+
+        setup_genesis(lean_network_spec().genesis_time, validators)
+    };
+
+    let attestation_data = AttestationData {
+        slot: anchor_state.slot,
+        head: Checkpoint {
+            root: anchor_state.latest_block_header.tree_hash_root(),
+            slot: anchor_state.slot,
+        },
+        target: anchor_state.latest_finalized,
+        source: anchor_state.latest_justified,
+    };
+
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
             SignedBlockWithAttestation {
                 message: BlockWithAttestation {
-                    block: genesis_block,
+                    block: anchor_block,
                     #[cfg(feature = "devnet1")]
                     proposer_attestation: Attestation {
                         validator_id: 0,
-                        data: AttestationData {
-                            slot: 0,
-                            head: Checkpoint::default(),
-                            target: Checkpoint::default(),
-                            source: Checkpoint::default(),
-                        },
+                        data: attestation_data,
                     },
                     #[cfg(feature = "devnet2")]
                     proposer_attestation: AggregatedAttestations {
                         validator_id: 0,
-                        data: AttestationData {
-                            slot: 0,
-                            head: Checkpoint::default(),
-                            target: Checkpoint::default(),
-                            source: Checkpoint::default(),
-                        },
+                        data: attestation_data,
                     },
                 },
                 #[cfg(feature = "devnet1")]
@@ -257,7 +303,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                     proposer_signature: Signature::blank(),
                 },
             },
-            genesis_state,
+            anchor_state,
             lean_db,
             None,
         )
@@ -310,29 +356,30 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     );
 
     // Start the services concurrently.
-    let chain_future = executor.spawn(async move { chain_service.start().await });
-    let network_future =
-        executor.spawn(async move { network_service.start(config.bootnodes).await });
-    let validator_future = executor.spawn(async move { validator_service.start().await });
-    let http_future = executor.spawn(async move {
+    let mut chain_task = AbortOnDrop(executor.spawn(async move { chain_service.start().await }));
+    let mut network_task =
+        AbortOnDrop(executor.spawn(async move { network_service.start(config.bootnodes).await }));
+    let mut validator_task =
+        AbortOnDrop(executor.spawn(async move { validator_service.start().await }));
+    let mut http_task = AbortOnDrop(executor.spawn(async move {
         ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
-    });
+    }));
 
     executor.spawn(async move {
         countdown_for_genesis().await;
     });
 
     tokio::select! {
-        result = chain_future => {
+        result = &mut chain_task.0 => {
             error!("Chain service has stopped unexpectedly: {result:?}");
         },
-        result = network_future => {
+        result = &mut network_task.0 => {
             error!("Network service has stopped unexpectedly: {result:?}");
         },
-        result = validator_future => {
+        result = &mut validator_task.0 => {
             error!("Validator service has stopped unexpectedly: {result:?}");
         },
-        result = http_future => {
+        result = &mut http_task.0 => {
             error!("RPC service has stopped unexpectedly: {result:?}");
         }
     }
@@ -449,11 +496,11 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
     let network_state = network_manager.network_state.clone();
     let p2p_sender = Arc::new(network_manager.p2p_sender.clone());
 
-    let network_future = executor.spawn(async move {
+    let mut network_task = AbortOnDrop(executor.spawn(async move {
         network_manager.start().await;
-    });
+    }));
 
-    let http_future = executor.spawn(async move {
+    let mut http_task = AbortOnDrop(executor.spawn(async move {
         ream_rpc_beacon::server::start(
             server_config,
             beacon_db,
@@ -468,13 +515,13 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
             cache,
         )
         .await
-    });
+    }));
 
     tokio::select! {
-        _ = http_future => {
+        _ = &mut http_task.0 => {
             info!("HTTP server stopped!");
         },
-        _ = network_future => {
+        _ = &mut network_task.0 => {
             info!("Network future completed!");
         },
     }
@@ -750,19 +797,29 @@ pub async fn countdown_for_genesis() {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
+    #[cfg(feature = "devnet1")]
+    use std::{fs, path::PathBuf};
 
+    #[cfg(feature = "devnet1")]
+    use alloy_primitives::hex;
     use clap::Parser;
+    #[cfg(feature = "devnet1")]
+    use libp2p_identity::{Keypair, secp256k1};
+    #[cfg(feature = "devnet1")]
+    use ream::cli::verbosity::Verbosity;
     use ream::cli::{Cli, Commands};
     use ream_executor::ReamExecutor;
     #[cfg(feature = "devnet1")]
     use ream_storage::tables::{field::REDBField, table::REDBTable};
     use ream_storage::{db::ReamDB, dir::setup_data_dir};
     use tokio::time::{sleep, timeout};
+    #[cfg(feature = "devnet1")]
+    use tracing::info;
 
     use crate::{APP_NAME, run_lean_node};
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn test_lean_node_runs_10_seconds_without_panicking() {
+    #[test]
+    fn test_lean_node_runs_10_seconds_without_panicking() {
         let cli = Cli::parse_from([
             "ream",
             "--ephemeral",
@@ -780,30 +837,33 @@ mod tests {
         let ream_dir = setup_data_dir(APP_NAME, None, true).unwrap();
         let db = ReamDB::new(ream_dir).unwrap();
         let executor = ReamExecutor::new().unwrap();
+        let executor_handle = executor.clone();
 
-        let handle = tokio::spawn(async move {
-            run_lean_node(*config, executor.clone(), db).await;
+        executor.runtime().block_on(async move {
+            let handle = tokio::spawn(async move {
+                run_lean_node(*config, executor_handle, db).await;
+            });
+
+            let result = timeout(Duration::from_secs(10), async {
+                sleep(Duration::from_secs(10)).await;
+                Ok::<_, ()>(())
+            })
+            .await;
+
+            match result {
+                Ok(Ok(())) => {}
+                Err(err) => panic!("lean_node panicked or exited early {err:?}"),
+                Ok(Err(err)) => panic!("internal error {err:?}"),
+            }
+
+            handle.abort();
         });
-
-        let result = timeout(Duration::from_secs(10), async {
-            sleep(Duration::from_secs(10)).await;
-            Ok::<_, ()>(())
-        })
-        .await;
-
-        match result {
-            Ok(Ok(())) => {}
-            Err(err) => panic!("lean_node panicked or exited early {err:?}"),
-            Ok(Err(err)) => panic!("internal error {err:?}"),
-        }
-
-        handle.abort();
     }
 
     /// TODO: Get finalization working for devnet2
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[test]
     #[cfg(feature = "devnet1")]
-    async fn test_lean_node_finalizes() {
+    fn test_lean_node_finalizes() {
         let cli = Cli::parse_from([
             "ream",
             "--ephemeral",
@@ -825,25 +885,28 @@ mod tests {
         let ream_dir = setup_data_dir(APP_NAME, None, true).unwrap();
         let db = ReamDB::new(ream_dir).unwrap();
         let executor = ReamExecutor::new().unwrap();
+        let executor_handle = executor.clone();
 
         let cloned_db = db.clone();
-        let handle = tokio::spawn(async move {
-            run_lean_node(*config, executor.clone(), cloned_db).await;
+        executor.runtime().block_on(async move {
+            let handle = tokio::spawn(async move {
+                run_lean_node(*config, executor_handle, cloned_db).await;
+            });
+
+            let result = timeout(Duration::from_secs(60), async {
+                sleep(Duration::from_secs(60)).await;
+                Ok::<_, ()>(())
+            })
+            .await;
+
+            match result {
+                Ok(Ok(())) => {}
+                Err(err) => panic!("lean_node panicked or exited early {err:?}"),
+                Ok(Err(err)) => panic!("internal error {err:?}"),
+            }
+
+            handle.abort();
         });
-
-        let result = timeout(Duration::from_secs(60), async {
-            sleep(Duration::from_secs(60)).await;
-            Ok::<_, ()>(())
-        })
-        .await;
-
-        match result {
-            Ok(Ok(())) => {}
-            Err(err) => panic!("lean_node panicked or exited early {err:?}"),
-            Ok(Err(err)) => panic!("internal error {err:?}"),
-        }
-
-        handle.abort();
 
         let lean_db = db.init_lean_db().unwrap();
         let head = lean_db.head_provider().get().unwrap();
@@ -874,5 +937,215 @@ mod tests {
             head_state.latest_finalized.slot,
             head_state.slot
         );
+    }
+
+    #[cfg(feature = "devnet1")]
+    fn generate_node_identity(path: &PathBuf) -> String {
+        let secp256k1_key = secp256k1::Keypair::generate();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("Failed to create key dir");
+        }
+        fs::write(path, hex::encode(secp256k1_key.secret().to_bytes()))
+            .expect("Failed to write private key");
+        let id_keypair = Keypair::from(secp256k1_key);
+        id_keypair.public().to_peer_id().to_string()
+    }
+
+    #[test]
+    #[cfg(feature = "devnet1")]
+    #[ignore = "I am not sure if this topology is supposed to work or not"]
+    fn test_lean_node_finalizes_linear_1_2_1() {
+        let topology = vec![vec![], vec![0], vec![1]];
+        run_multi_node_finalization_test(topology, "linear_1_2_1");
+    }
+
+    #[test]
+    #[cfg(feature = "devnet1")]
+    fn test_lean_node_finalizes_mesh_2_2_2() {
+        let topology = vec![vec![], vec![0], vec![0, 1]];
+        run_multi_node_finalization_test(topology, "mesh_2_2_2");
+    }
+
+    #[cfg(feature = "devnet1")]
+    fn run_multi_node_finalization_test(topology: Vec<Vec<usize>>, test_name: &str) {
+        if true {
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(Verbosity::Info.directive())
+                .with_test_writer()
+                .try_init();
+        }
+
+        info!("Starting multi-node finalization test: {}", test_name);
+
+        let test_duration_secs = 60;
+        let base_p2p_port = 20600;
+        let base_http_port = 16652;
+        let num_nodes = topology.len();
+
+        let potential_paths = vec![
+            PathBuf::from("bin/ream/assets/lean"),
+            PathBuf::from("assets/lean"),
+            PathBuf::from("../assets/lean"),
+        ];
+
+        let assets_dir = potential_paths
+            .into_iter()
+            .find(|p| p.exists())
+            .expect("Could not find 'assets/lean' directory.")
+            .canonicalize()
+            .expect("Failed to canonicalize assets path");
+
+        let registry_path = assets_dir.join(format!("test_multi_node_registry_{test_name}.yaml"));
+
+        let mut validators_yaml = String::new();
+        for i in 0..num_nodes {
+            validators_yaml.push_str(&format!("node{}:\n  - {i}\n", i + 1));
+        }
+
+        fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
+        let registry_path_str = registry_path.to_string_lossy().to_string();
+
+        let executor = ReamExecutor::new().unwrap();
+        executor.clone().runtime().block_on(async move {
+            let mut node_handles = Vec::new();
+            let mut node_addresses: Vec<String> = Vec::new();
+            let mut db_instances = Vec::new();
+
+            for (i, node_boot_config) in topology.iter().enumerate() {
+                let node_index = i + 1;
+                let node_id = format!("node{node_index}");
+
+                let data_dir_name = format!("{APP_NAME}_{test_name}_node_{node_index}");
+                let ream_dir = std::env::temp_dir().join(data_dir_name);
+
+                if ream_dir.exists() {
+                    let _ = fs::remove_dir_all(&ream_dir);
+                }
+                fs::create_dir_all(&ream_dir).expect("Failed to create data dir");
+
+                let key_path = ream_dir.join("node_key");
+                let peer_id = generate_node_identity(&key_path);
+
+                let port_offset = (test_name.len() as u16) % 100;
+                let p2p_port = base_p2p_port + port_offset + (i as u16);
+                let http_port = base_http_port + port_offset + (i as u16);
+
+                let address = format!("/ip4/127.0.0.1/udp/{p2p_port}/quic-v1/p2p/{peer_id}");
+                node_addresses.push(address.clone());
+
+                if i == 0 {
+                    info!("BOOTNODE ADDRESS: {address}");
+                }
+
+                let db = ReamDB::new(ream_dir.clone()).unwrap();
+                db_instances.push(db.clone());
+
+                let mut bootnodes_arg: Vec<String> = Vec::new();
+                for &target_idx in node_boot_config {
+                    if target_idx < node_addresses.len() {
+                        bootnodes_arg.push(node_addresses[target_idx].clone());
+                    }
+                }
+
+                let mut args = vec![
+                    "ream".to_string(),
+                    "lean_node".to_string(),
+                    "--network".to_string(),
+                    "ephemery".to_string(),
+                    "--validator-registry-path".to_string(),
+                    registry_path_str.clone(),
+                    "--socket-port".to_string(),
+                    p2p_port.to_string(),
+                    "--socket-address".to_string(),
+                    "127.0.0.1".to_string(),
+                    "--http-port".to_string(),
+                    http_port.to_string(),
+                    "--node-id".to_string(),
+                    node_id.clone(),
+                    "--private-key-path".to_string(),
+                    key_path.to_string_lossy().to_string(),
+                ];
+
+                if !bootnodes_arg.is_empty() {
+                    args.push("--bootnodes".to_string());
+                    args.push(bootnodes_arg.join(","));
+                }
+
+                let cli = Cli::parse_from(args);
+                let Commands::LeanNode(config) = cli.command else {
+                    panic!("Expected lean_node command");
+                };
+
+                let node_executor = executor.clone();
+                let handle = tokio::spawn(async move {
+                    run_lean_node(*config, node_executor, db).await;
+                });
+                node_handles.push(handle);
+
+                if i == 0 {
+                    info!("Waiting 5s for Bootnode to initialize QUIC listener...");
+                    sleep(Duration::from_secs(5)).await;
+                }
+            }
+
+            info!(
+                "All nodes started. Monitoring for {} seconds...",
+                test_duration_secs
+            );
+
+            let db_instances_monitor = db_instances.clone();
+            let monitor_handle = tokio::spawn(async move {
+                let start = std::time::Instant::now();
+                loop {
+                    if start.elapsed().as_secs() >= test_duration_secs {
+                        break;
+                    }
+                    sleep(Duration::from_secs(2)).await;
+
+                    let db = &db_instances_monitor[0];
+                    if let Ok(lean_db) = db.init_lean_db()
+                        && let Ok(head) = lean_db.head_provider().get()
+                        && let Ok(Some(state)) = lean_db.state_provider().get(head)
+                    {
+                        info!(
+                            "Node 1 Chain: Slot={} | Finalized={}",
+                            state.slot, state.latest_finalized.slot
+                        );
+                    }
+                }
+            });
+
+            let _ = timeout(Duration::from_secs(test_duration_secs + 5), monitor_handle).await;
+
+            let _ = fs::remove_file(&registry_path);
+            for handle in node_handles {
+                handle.abort();
+            }
+
+            let lean_db = db_instances[0].init_lean_db().unwrap();
+            let head = lean_db.head_provider().get().expect("Failed to get head");
+            let head_state = lean_db
+                .state_provider()
+                .get(head)
+                .unwrap()
+                .expect("Failed to get head state");
+
+            info!(
+                "FINAL: Node 1 Slot: {}, Finalized: {}",
+                head_state.slot, head_state.latest_finalized.slot
+            );
+
+            let finalization_lag = 5;
+
+            assert!(
+                head_state.slot > finalization_lag,
+                "Chain did not advance enough. Current: {}, Request: {finalization_lag}",
+                head_state.slot,
+            );
+            assert!(
+                head_state.latest_finalized.slot > 0,
+                "NO FINALIZATION. Check P2P logs for 'Dial error' or 'Handshake failed'."
+            );
+        });
     }
 }

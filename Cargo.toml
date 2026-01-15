@@ -8,7 +8,8 @@ members = [
     "crates/common/api_types/lean",
     "crates/common/chain/beacon",
     "crates/common/chain/lean",
-    "crates/common/checkpoint_sync",
+    "crates/common/checkpoint_sync/beacon",
+    "crates/common/checkpoint_sync/lean",
     "crates/common/consensus/beacon",
     "crates/common/consensus/lean",
     "crates/common/consensus/misc",
@@ -149,6 +150,9 @@ ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default fea
 ream-chain-beacon = { path = "crates/common/chain/beacon" }
 ream-chain-lean = { path = "crates/common/chain/lean", features = ["devnet1"] }
 ream-checkpoint-sync = { path = "crates/common/checkpoint_sync" }
+ream-chain-lean = { path = "crates/common/chain/lean", default-features = false }
+ream-checkpoint-sync-beacon = { path = "crates/common/checkpoint_sync/beacon" }
+ream-checkpoint-sync-lean = { path = "crates/common/checkpoint_sync/lean" }
 ream-consensus-beacon = { path = "crates/common/consensus/beacon" }
 ream-consensus-lean = { path = "crates/common/consensus/lean", features = ["devnet1"] }
 ream-consensus-misc = { path = "crates/common/consensus/misc" }

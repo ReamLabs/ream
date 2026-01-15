@@ -13,6 +13,8 @@ Options:
           Provide a path to a YAML config file, or use 'ephemery' for the Ephemery network
       --bootnodes <BOOTNODES>
           Bootnodes configuration: Use 'default' for network defaults, 'none' to disable, '/path/to/nodes.yaml' for a YAML file with ENRs, or comma-delimited base64-encoded ENRs [default: default]
+      --checkpoint-sync-url <CHECKPOINT_SYNC_URL>
+          HTTP URL of a remote node to sync checkpoint state from
       --validator-registry-path <VALIDATOR_REGISTRY_PATH>
           The path to the validator registry
       --node-id <NODE_ID>

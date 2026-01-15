@@ -3,6 +3,7 @@ use std::{net::IpAddr, path::PathBuf};
 use clap::Parser;
 use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
+use url::Url;
 
 use crate::cli::constants::{
     DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_METRICS_ADDRESS,
@@ -24,6 +25,9 @@ pub struct LeanNodeConfig {
         help = "Bootnodes configuration: Use 'default' for network defaults, 'none' to disable, '/path/to/nodes.yaml' for a YAML file with ENRs, or comma-delimited base64-encoded ENRs"
     )]
     pub bootnodes: Bootnodes,
+
+    #[arg(long, help = "HTTP URL of a remote node to sync checkpoint state from")]
+    pub checkpoint_sync_url: Option<Url>,
 
     #[arg(long, help = "The path to the validator registry")]
     pub validator_registry_path: PathBuf,

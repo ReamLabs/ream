@@ -6,6 +6,7 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlockWithAttestation},
 };
 use ream_fork_choice_lean::store::LeanStoreWriter;
+use ream_metrics::{CURRENT_SLOT, set_int_gauge_vec};
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 use ream_storage::tables::{field::REDBField, table::REDBTable};
@@ -73,6 +74,9 @@ impl LeanChainService {
                             let head_state = state_provider
                                 .get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {head}"))?;
 
+                            // Update current slot with head_state.slot
+                            set_int_gauge_vec(&CURRENT_SLOT, head_state.slot as i64, &[]);
+
                             info!(
                                 "\n\
                             ============================================================\n\
@@ -117,32 +121,13 @@ impl LeanChainService {
                             );
                             self.store.write().await.accept_new_attestations().await.expect("Failed to accept new attestations");
                         }
-                        _ => {
+                        1 => {
                             // Other ticks (t=0, t=1/4): Prune old data.
-                            let (head, block_provider, slot_index_provider, state_provider) = {
-                                let fork_choice = self.store.read().await;
-                                let store = fork_choice.store.lock().await;
-                                if get_current_slot().is_multiple_of(15) {
-                                    store.report_storage_metrics(0)?;
-                                }
-                                (store.head_provider().get()?, store.block_provider(), store.slot_index_provider(), store.state_provider())
-                            };
-                            let head_slot = block_provider.get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {head}"))?.message.block.slot;
-                            if head_slot > STATE_RETENTION_SLOTS {
-                                let block_root = slot_index_provider.get(head_slot - STATE_RETENTION_SLOTS)?
-                                    .ok_or_else(|| anyhow!("Block root not found for slot: {}", head_slot - STATE_RETENTION_SLOTS))?;
-                                info!(
-                                    slot = get_current_slot(),
-                                    tick = tick_count,
-                                    prune_slot = head_slot - STATE_RETENTION_SLOTS,
-                                    prune_block_root = ?block_root,
-                                    "Pruning old lean state"
-                                );
-                                if let Err(err) = state_provider.remove(block_root) {
-                                    warn!("Failed to prune old lean state: {err:?}");
-                                }
+                            if let Err(err) = self.prune_old_state(tick_count).await {
+                                warn!("Pruning cycle failed (non-fatal): {err:?}");
                             }
                         }
+                        _ => unreachable!("Tick count modulo 4 should be in 0..=3"),
                     }
                     tick_count += 1;
                 }
@@ -227,7 +212,7 @@ impl LeanChainService {
                             }
 
                             if let Err(err) = self.handle_process_attestation(*signed_attestation.clone()).await {
-                                warn!("Failed to handle process block message: {err:?}");
+                                warn!("Failed to handle process attestation message: {err:?}");
                             }
 
                             if need_gossip && let Err(err) = self.outbound_gossip.send(LeanP2PRequest::GossipAttestation(signed_attestation)) {
@@ -260,6 +245,52 @@ impl LeanChainService {
                 }
             }
         }
+    }
+
+    async fn prune_old_state(&self, tick_count: u64) -> anyhow::Result<()> {
+        let (head, block_provider, slot_index_provider, state_provider) = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+
+            if get_current_slot().is_multiple_of(15)
+                && let Err(err) = store.report_storage_metrics(0)
+            {
+                warn!("Failed to report storage metrics: {err:?}");
+            }
+            (
+                store.head_provider().get()?,
+                store.block_provider(),
+                store.slot_index_provider(),
+                store.state_provider(),
+            )
+        };
+
+        let head_slot = block_provider
+            .get(head)?
+            .ok_or_else(|| anyhow!("State not found for head: {head}"))?
+            .message
+            .block
+            .slot;
+
+        if head_slot > STATE_RETENTION_SLOTS {
+            let prune_target_slot = head_slot - STATE_RETENTION_SLOTS;
+            let block_root = slot_index_provider
+                .get(prune_target_slot)?
+                .ok_or_else(|| anyhow!("Block root not found for slot: {prune_target_slot}"))?;
+
+            info!(
+                slot = get_current_slot(),
+                tick = tick_count,
+                prune_slot = prune_target_slot,
+                prune_block_root = ?block_root,
+                "Pruning old lean state"
+            );
+
+            if let Err(err) = state_provider.remove(block_root) {
+                warn!("Failed to prune old lean state: {err:?}");
+            }
+        }
+        Ok(())
     }
 
     async fn handle_produce_block(

@@ -39,6 +39,7 @@ anyhow.workspace = true
 bip39.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 discv5.workspace = true
+ethereum_ssz.workspace = true
 hashbrown.workspace = true
 leansig.workspace = true
 libp2p-identity.workspace = true
@@ -52,6 +53,7 @@ ssz_types.workspace = true
 tokio.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tree_hash.workspace = true
 unicode-normalization.workspace = true
 url.workspace = true
 
@@ -61,7 +63,8 @@ ream-api-types-beacon.workspace = true
 ream-api-types-common.workspace = true
 ream-chain-beacon.workspace = true
 ream-chain-lean.workspace = true
-ream-checkpoint-sync.workspace = true
+ream-checkpoint-sync-beacon.workspace = true
+ream-checkpoint-sync-lean.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
@@ -72,6 +75,7 @@ ream-executor.workspace = true
 ream-fork-choice-beacon.workspace = true
 ream-fork-choice-lean.workspace = true
 ream-keystore.workspace = true
+ream-metrics.workspace = true
 ream-network-manager.workspace = true
 ream-network-spec.workspace = true
 ream-node.workspace = true
