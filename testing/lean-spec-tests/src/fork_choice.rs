@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{anyhow, bail, ensure};
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::attestation::AggregatedAttestations;
-#[cfg(feature = "devnet1")]
+#[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
 use ream_consensus_lean::attestation::Attestation;
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::block::BlockSignatures;
@@ -89,7 +89,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     let mut store = Store::get_forkchoice_store(
         SignedBlockWithAttestation {
             message: BlockWithAttestation {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 proposer_attestation: Attestation {
                     validator_id: block.proposer_index,
                     data: AttestationData {
@@ -117,7 +117,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 },
                 block,
             },
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             signature: VariableList::empty(),
             #[cfg(feature = "devnet2")]
             signature: BlockSignatures {
@@ -190,7 +190,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     .on_block(
                         &SignedBlockWithAttestation {
                             message: BlockWithAttestation {
-                                #[cfg(feature = "devnet1")]
+                                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                                 proposer_attestation: Attestation {
                                     validator_id: ream_block.proposer_index,
                                     data: AttestationData {
@@ -224,7 +224,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                                 },
                                 block: ream_block,
                             },
-                            #[cfg(feature = "devnet1")]
+                            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                             signature: signatures,
                             #[cfg(feature = "devnet2")]
                             signature: BlockSignatures {
@@ -264,7 +264,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 );
 
                 let signed_attestation = SignedAttestation {
-                    #[cfg(feature = "devnet1")]
+                    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                     message: Attestation::from(attestation),
                     #[cfg(feature = "devnet2")]
                     message: AttestationData {
@@ -280,7 +280,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 // Add attestation to new attestations
                 let db = store.store.lock().await;
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 let result = db
                     .latest_new_attestations_provider()
                     .insert(signed_attestation.message.validator_id, signed_attestation);

@@ -6,7 +6,7 @@ use anyhow::{anyhow, ensure};
 use ream_consensus_lean::attestation::AggregatedAttestation;
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::attestation::AggregatedAttestations;
-#[cfg(feature = "devnet1")]
+#[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
 use ream_consensus_lean::attestation::Attestation;
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
@@ -132,7 +132,7 @@ impl Store {
 
         for attestation in attestations {
             let attestation = attestation?;
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             let mut current_root = attestation.message.data.head.root;
 
             #[cfg(feature = "devnet2")]
@@ -399,7 +399,9 @@ impl Store {
         slot: u64,
         proposer_index: u64,
         parent_root: B256,
-        #[cfg(feature = "devnet1")] attestations: Option<VariableList<Attestation, U4096>>,
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))] attestations: Option<
+            VariableList<Attestation, U4096>,
+        >,
         #[cfg(feature = "devnet2")] attestations: Option<
             VariableList<AggregatedAttestations, U4096>,
         >,
@@ -417,7 +419,7 @@ impl Store {
         let head_state = state_provider
             .get(parent_root)?
             .ok_or(anyhow!("State not found for head root"))?;
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let mut attestations: VariableList<Attestation, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
 
@@ -465,7 +467,7 @@ impl Store {
                 proposer_index,
                 parent_root,
                 state_root: B256::ZERO,
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 body: BlockBody {
                     attestations: attestations.clone(),
                 },
@@ -477,14 +479,14 @@ impl Store {
             let mut advanced_state = head_state.clone();
             advanced_state.process_slots(slot)?;
             advanced_state.process_block(&candidate_block)?;
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             let mut new_attestations: VariableList<Attestation, U4096> = VariableList::empty();
             #[cfg(feature = "devnet2")]
             let mut new_attestations: VariableList<AggregatedAttestations, U4096> =
                 VariableList::empty();
             let mut new_signatures: Vec<Signature> = Vec::new();
             for signed_attestation in available_signed_attestations.values() {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 let data = &signed_attestation.message.data;
                 #[cfg(feature = "devnet2")]
                 let data = &signed_attestation.message;
@@ -500,7 +502,7 @@ impl Store {
                 if data.source != advanced_state.latest_justified {
                     continue;
                 }
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 if !attestations.contains(&signed_attestation.message) {
                     new_attestations
                         .push(signed_attestation.message.clone())
@@ -591,7 +593,7 @@ impl Store {
             )
         };
         let block = &signed_block_with_attestation.message.block;
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let signatures = &signed_block_with_attestation.signature;
         let proposer_attestation = &signed_block_with_attestation.message.proposer_attestation;
         let block_root = block.tree_hash_root();
@@ -635,7 +637,7 @@ impl Store {
         latest_finalized_provider.insert(latest_finalized)?;
         *self.network_state.finalized_checkpoint.write() = latest_finalized;
 
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         for (attestation, signature) in signed_block_with_attestation
             .message
             .block
@@ -707,9 +709,9 @@ impl Store {
 
         self.on_attestation(
             SignedAttestation {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 message: proposer_attestation.clone(),
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 signature: *signatures
                     .get(block.body.attestations.len())
                     .ok_or(anyhow!("Failed to get attestation"))?,
@@ -732,7 +734,7 @@ impl Store {
         &self,
         signed_attestation: &SignedAttestation,
     ) -> anyhow::Result<()> {
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let data = &signed_attestation.message.data;
         #[cfg(feature = "devnet2")]
         let data = &signed_attestation.message;
@@ -817,9 +819,9 @@ impl Store {
             }
         }
 
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let validator_id = signed_attestation.message.validator_id;
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let attestation_slot = signed_attestation.message.data.slot;
 
         #[cfg(feature = "devnet2")]
@@ -829,7 +831,7 @@ impl Store {
 
         if is_from_block {
             let latest_known = match latest_known_attestations_provider.get(validator_id)? {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 Some(latest_known) => latest_known.message.data.slot < attestation_slot,
                 #[cfg(feature = "devnet2")]
                 Some(latest_known) => latest_known.message.slot < attestation_slot,
@@ -839,7 +841,7 @@ impl Store {
                 latest_known_attestations_provider.insert(validator_id, signed_attestation)?;
             }
             let remove = match latest_new_attestations_provider.get(validator_id)? {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 Some(new_new) => new_new.message.data.slot <= attestation_slot,
                 #[cfg(feature = "devnet2")]
                 Some(new_new) => new_new.message.slot <= attestation_slot,
@@ -855,7 +857,7 @@ impl Store {
                 "Attestation from future slot {attestation_slot} <= {time_slots}",
             );
             let latest_new = match latest_new_attestations_provider.get(validator_id)? {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 Some(latest_new) => latest_new.message.data.slot < attestation_slot,
                 #[cfg(feature = "devnet2")]
                 Some(latest_new) => latest_new.message.slot < attestation_slot,
@@ -900,11 +902,11 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{B256, FixedBytes};
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     use ream_consensus_lean::attestation::Attestation;
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     use ream_consensus_lean::block::{BlockBody, BlockHeader};
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     use ream_consensus_lean::config::Config;
     #[cfg(feature = "devnet2")]
     use ream_consensus_lean::{
@@ -982,7 +984,7 @@ mod tests {
         signatures.push(Signature::blank()).unwrap();
         SignedBlockWithAttestation {
             message: BlockWithAttestation {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 proposer_attestation: Attestation {
                     validator_id: block.proposer_index,
                     data: attestation_data,
@@ -994,7 +996,7 @@ mod tests {
                 },
                 block,
             },
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             signature: signatures,
             #[cfg(feature = "devnet2")]
             signature: BlockSignatures {
@@ -1008,7 +1010,7 @@ mod tests {
 
     /// Test basic block production by authorized proposer.
     #[tokio::test]
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     async fn test_produce_block_basic() {
         let (mut store, mut genesis_state) = sample_store(10).await;
 
@@ -1071,7 +1073,7 @@ mod tests {
         let attestation_target = store.get_attestation_target().await.unwrap();
 
         let attestation_1 = SignedAttestation {
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             message: Attestation {
                 validator_id: 5,
                 data: AttestationData {
@@ -1100,7 +1102,7 @@ mod tests {
         };
 
         let attestation_2 = SignedAttestation {
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             message: Attestation {
                 validator_id: 6,
                 data: AttestationData {
@@ -1182,7 +1184,7 @@ mod tests {
 
     /// Test that produced block's state is consistent with block content
     #[tokio::test]
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     pub async fn test_produce_block_state_consistency() {
         let (mut store, _) = sample_store(10).await;
 
@@ -1256,7 +1258,7 @@ mod tests {
             .get()
             .unwrap();
 
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let attestation = Attestation {
             validator_id,
             data: store.produce_attestation_data(slot).await.unwrap(),
@@ -1280,7 +1282,7 @@ mod tests {
         let (store, _) = sample_store(10).await;
         let block_provider = store.store.lock().await.block_provider();
 
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let attestation = Attestation {
             validator_id: 8,
             data: store.produce_attestation_data(slot).await.unwrap(),
@@ -1303,7 +1305,7 @@ mod tests {
     #[tokio::test]
     pub async fn test_produce_attestation_target_calculation() {
         let (store, _) = sample_store(10).await;
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let attestation = Attestation {
             validator_id: 9,
             data: store.produce_attestation_data(3).await.unwrap(),
@@ -1327,7 +1329,7 @@ mod tests {
 
         let mut attestations = Vec::new();
         for validator_id in 0..5 {
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             let attestation = Attestation {
                 validator_id,
                 data: store.produce_attestation_data(slot).await.unwrap(),
@@ -1354,7 +1356,7 @@ mod tests {
     /// Test attestation production across sequential slots.
     #[tokio::test]
     pub async fn test_produce_attestation_sequential_slots() {
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let validator_id = 3;
 
         let (store, _) = sample_store(10).await;
@@ -1365,13 +1367,13 @@ mod tests {
         #[cfg(feature = "devnet2")]
         aggregation_bits.set(0, true).unwrap();
 
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let attestation_1 = Attestation {
             validator_id,
             data: store.produce_attestation_data(1).await.unwrap(),
         };
 
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let attestation_2 = Attestation {
             validator_id,
             data: store.produce_attestation_data(2).await.unwrap(),
@@ -1411,7 +1413,7 @@ mod tests {
         #[cfg(feature = "devnet2")]
         aggregation_bits.set(0, true).unwrap();
 
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let attestation = Attestation {
             validator_id: 2,
             data: store.produce_attestation_data(5).await.unwrap(),
@@ -1439,7 +1441,7 @@ mod tests {
 
     /// Test producing a block then creating attestation for it.
     #[tokio::test]
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     pub async fn test_block_production_then_attestation() {
         let (mut store, _) = sample_store(10).await;
 
@@ -1478,7 +1480,7 @@ mod tests {
 
     /// Test producing a block then creating attestation for it.
     #[tokio::test]
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     pub async fn test_multiple_validators_coordination() {
         let (mut store, _) = sample_store(10).await;
 
@@ -1560,7 +1562,7 @@ mod tests {
 
     /// Test edge cases in validator operations.
     #[tokio::test]
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     pub async fn test_validator_edge_cases() {
         let (mut store, _) = sample_store(10).await;
 
@@ -1590,7 +1592,7 @@ mod tests {
 
     /// Test validator operations with minimal store state.
     #[tokio::test]
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     pub async fn test_validator_operations_empty_store() {
         let empty_checkpoint = Checkpoint {
             slot: 0,
@@ -1719,7 +1721,7 @@ mod tests {
         // shoudl fail
         assert!(!is_proposer(1000000, 1000000, 10));
 
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let attestation = Attestation {
             validator_id: 1000000,
             data: store.produce_attestation_data(1).await.unwrap(),
@@ -1865,7 +1867,7 @@ mod tests {
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
             let signed_attestation = SignedAttestation {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 message: Attestation {
                     validator_id: 5,
                     data: AttestationData {
@@ -1887,7 +1889,7 @@ mod tests {
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             db_table
                 .insert(signed_attestation.message.validator_id, signed_attestation)
                 .unwrap();
@@ -1988,7 +1990,7 @@ mod tests {
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
             let signed_attestation = SignedAttestation {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 message: Attestation {
                     validator_id: 5,
                     data: AttestationData {
@@ -2010,7 +2012,7 @@ mod tests {
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             db_table
                 .insert(signed_attestation.message.validator_id, signed_attestation)
                 .unwrap();
@@ -2084,7 +2086,7 @@ mod tests {
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
             let signed_attestation = SignedAttestation {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 message: Attestation {
                     validator_id: i,
                     data: AttestationData {
@@ -2106,7 +2108,7 @@ mod tests {
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             db_table
                 .insert(signed_attestation.message.validator_id, signed_attestation)
                 .unwrap();
@@ -2146,7 +2148,7 @@ mod tests {
         assert!(new_attestations_length == 0);
         assert!(latest_known_attestations_length == 5);
 
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         for (i, checkpoint) in checkpoints.iter().enumerate().map(|(i, c)| (i as u64, c)) {
             let stored_checkpoint = latest_known_attestations_provider
                 .get(i)
@@ -2257,7 +2259,7 @@ mod tests {
             let justified_provider = db.latest_justified_provider();
             let justified_checkpoint = justified_provider.get().unwrap();
             let signed_attestation = SignedAttestation {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 message: Attestation {
                     validator_id: 10,
                     data: AttestationData {
@@ -2279,7 +2281,7 @@ mod tests {
                 signature: Signature::blank(),
             };
             let db_table = db.latest_new_attestations_provider();
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             db_table
                 .insert(signed_attestation.message.validator_id, signed_attestation)
                 .unwrap();
@@ -2303,7 +2305,7 @@ mod tests {
                 .count()
         };
 
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let known_attestations_correct_checkpoint = {
             store
                 .store

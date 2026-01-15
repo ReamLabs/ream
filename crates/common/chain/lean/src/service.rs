@@ -173,7 +173,7 @@ impl LeanChainService {
                         }
                         LeanChainServiceMessage::ProcessAttestation { signed_attestation, need_gossip } => {
                             if enabled!(Level::DEBUG) {
-                                #[cfg(feature = "devnet1")]
+                                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                                 debug!(
                                     slot = signed_attestation.message.slot(),
                                     head = ?signed_attestation.message.head(),
@@ -192,7 +192,7 @@ impl LeanChainService {
                                     signed_attestation.validator_id,
                                 );
                             } else {
-                                #[cfg(feature = "devnet1")]
+                                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                                 info!(
                                     slot = signed_attestation.message.slot(),
                                     source_slot = signed_attestation.message.source().slot,

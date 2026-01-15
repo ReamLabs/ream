@@ -39,6 +39,7 @@ use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::attestation::AggregatedAttestations;
 #[cfg(feature = "devnet1")]
+#[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
 use ream_consensus_lean::attestation::Attestation;
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::block::BlockSignatures;
@@ -285,6 +286,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                 message: BlockWithAttestation {
                     block: anchor_block,
                     #[cfg(feature = "devnet1")]
+                    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                     proposer_attestation: Attestation {
                         validator_id: 0,
                         data: attestation_data,
@@ -296,6 +298,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                     },
                 },
                 #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 signature: VariableList::default(),
                 #[cfg(feature = "devnet2")]
                 signature: BlockSignatures {

@@ -23,7 +23,7 @@ use tree_hash_derive::TreeHash;
 
 #[cfg(feature = "devnet2")]
 use crate::attestation::AggregatedAttestation;
-#[cfg(feature = "devnet1")]
+#[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
 use crate::attestation::Attestation;
 use crate::{
     block::{Block, BlockBody, BlockHeader},
@@ -135,7 +135,7 @@ impl LeanState {
         let timer = start_timer(&STATE_TRANSITION_BLOCK_PROCESSING_TIME, &[]);
 
         self.process_block_header(block)?;
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         self.process_attestations(&block.body.attestations)?;
 
         #[cfg(feature = "devnet2")]
@@ -242,7 +242,7 @@ impl LeanState {
 
     pub fn process_attestations(
         &mut self,
-        #[cfg(feature = "devnet1")] attestations: &[Attestation],
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))] attestations: &[Attestation],
         #[cfg(feature = "devnet2")] attestations: &[AggregatedAttestation],
     ) -> anyhow::Result<()> {
         let timer = start_timer(&STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME, &[]);
@@ -286,7 +286,7 @@ impl LeanState {
                 .get(attestation.source().slot as usize)
                 .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
             {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 info!(
                     reason = "Source slot not justified",
                     source_slot = attestation.source().slot,
@@ -314,7 +314,7 @@ impl LeanState {
                 .get(attestation.target().slot as usize)
                 .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
             {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 info!(
                     reason = "Target slot already justified",
                     source_slot = attestation.source().slot,
@@ -339,7 +339,7 @@ impl LeanState {
                     .get(attestation.source().slot as usize)
                     .ok_or(anyhow!("Source slot not found in historical_block_hashes"))?
             {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 info!(
                     reason = "Source block not in historical block hashes",
                     source_slot = attestation.source().slot,
@@ -364,7 +364,7 @@ impl LeanState {
                     .get(attestation.target().slot as usize)
                     .ok_or(anyhow!("Target slot not found in historical_block_hashes"))?
             {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 info!(
                     reason = "Target block not in historical block hashes",
                     source_slot = attestation.source().slot,
@@ -384,7 +384,7 @@ impl LeanState {
             }
 
             if attestation.target().slot <= attestation.source().slot {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 info!(
                     reason = "Target slot not greater than source slot",
                     source_slot = attestation.source().slot,
@@ -404,7 +404,7 @@ impl LeanState {
             }
 
             if !is_justifiable_slot(self.latest_finalized.slot, attestation.target().slot) {
-                #[cfg(feature = "devnet1")]
+                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                 info!(
                     reason = "Target slot not justifiable",
                     source_slot = attestation.source().slot,
@@ -435,7 +435,7 @@ impl LeanState {
                     })?,
                 );
 
-            #[cfg(feature = "devnet1")]
+            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
             justifications
                 .set(attestation.validator_id as usize, true)
                 .map_err(|err| {

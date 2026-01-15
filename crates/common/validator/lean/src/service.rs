@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use ream_chain_lean::{clock::create_lean_clock_interval, messages::LeanChainServiceMessage};
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::attestation::AggregatedAttestations;
-#[cfg(feature = "devnet1")]
+#[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
 use ream_consensus_lean::attestation::Attestation;
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::attestation::AttestationData;
@@ -94,7 +94,7 @@ impl ValidatorService {
                                 .expect("Failed to send attestation to LeanChainService");
 
                             let attestation_data = rx.await.expect("Failed to receive attestation data from LeanChainService");
-                                #[cfg(feature = "devnet1")]
+                                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                                 let message = Attestation { validator_id: keystore.index, data: attestation_data };
                                 #[cfg(feature = "devnet2")]
                                 let message = AggregatedAttestations { validator_id: keystore.index, data: attestation_data };
@@ -109,7 +109,7 @@ impl ValidatorService {
                                         block: block.clone(),
                                         proposer_attestation: message,
                                     },
-                                    #[cfg(feature = "devnet1")]
+                                    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                                     signature: signatures,
                                     #[cfg(feature = "devnet2")]
                                     signature: BlockSignatures {
@@ -161,7 +161,7 @@ impl ValidatorService {
                             // TODO: Sign the attestation with the keystore.
                             let mut signed_attestations = vec![];
                             for (_, keystore) in self.keystores.iter().enumerate().filter(|(index, _)| *index as u64 != slot % lean_network_spec().num_validators) {
-                                #[cfg(feature = "devnet1")]
+                                #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                                 let message = Attestation {
                                     validator_id: keystore.index,
                                     data: attestation_data.clone()

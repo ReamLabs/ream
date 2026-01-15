@@ -7,7 +7,7 @@ use alloy_primitives::{B256, hex};
 use anyhow::{anyhow, bail};
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::attestation::AggregatedAttestations as ReamAttestation;
-#[cfg(feature = "devnet1")]
+#[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
 use ream_consensus_lean::attestation::Attestation as ReamAttestation;
 use ream_consensus_lean::{
     attestation::AttestationData,
@@ -86,7 +86,7 @@ pub struct Block {
 /// Block body
 #[derive(Debug, Deserialize)]
 pub struct BlockBody {
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     pub attestations: DataList<Attestation>,
     #[cfg(feature = "devnet2")]
     pub attestations: DataList<AggregatedAttestationJSON>,
@@ -203,7 +203,7 @@ impl TryFrom<&Block> for ReamBlock {
     type Error = anyhow::Error;
 
     fn try_from(block: &Block) -> anyhow::Result<Self> {
-        #[cfg(feature = "devnet1")]
+        #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
         let attestations = {
             let list: Vec<ReamAttestation> = block
                 .body

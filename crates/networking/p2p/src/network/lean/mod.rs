@@ -267,7 +267,7 @@ impl LeanNetworkService {
                             );
                         }
                         LeanP2PRequest::GossipAttestation(attestation) => {
-                            #[cfg(feature = "devnet1")]
+                            #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                             let slot = attestation.message.slot();
                             #[cfg(feature = "devnet2")]
                             let slot = attestation.message.slot;
@@ -438,7 +438,7 @@ impl LeanNetworkService {
                     }
                 }
                 Ok(LeanGossipsubMessage::Attestation(signed_attestation)) => {
-                    #[cfg(feature = "devnet1")]
+                    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
                     let slot = signed_attestation.message.slot();
                     #[cfg(feature = "devnet2")]
                     let slot = signed_attestation.message.slot;

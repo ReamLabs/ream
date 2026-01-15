@@ -1,8 +1,12 @@
+#[cfg(any(test, feature = "devnet2"))]
 use alloy_primitives::FixedBytes;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use ssz_types::{BitList, VariableList, typenum::U4096};
+#[cfg(feature = "devnet2")]
+use ssz_types::BitList;
+#[cfg(feature = "devnet2")]
+use ssz_types::{VariableList, typenum::U4096};
 use tree_hash_derive::TreeHash;
 
 use crate::checkpoint::Checkpoint;
@@ -17,14 +21,14 @@ pub struct AttestationData {
 }
 
 /// Validator specific attestation wrapping shared attestation data.
-#[cfg(feature = "devnet1")]
+#[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Attestation {
     pub validator_id: u64,
     pub data: AttestationData,
 }
 
-#[cfg(feature = "devnet1")]
+#[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
 impl Attestation {
     /// Return the attested slot.
     pub fn slot(&self) -> u64 {
@@ -84,13 +88,13 @@ pub struct SignedAttestation {
     pub validator_id: u64,
     #[cfg(feature = "devnet2")]
     pub message: AttestationData,
-    #[cfg(feature = "devnet1")]
+    #[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
     pub message: Attestation,
     /// signature over attestaion message only as it would be aggregated later in attestation
     pub signature: Signature,
 }
 
-/// Aggregated attestation consisting of participation bits and message.
+#[cfg(feature = "devnet2")]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct AggregatedAttestation {
     /// U4096 = VALIDATOR_REGISTRY_LIMIT
@@ -99,6 +103,7 @@ pub struct AggregatedAttestation {
 }
 
 /// Aggregated attestation bundled with aggregated signatures.
+#[cfg(feature = "devnet2")]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedAggregatedAttestation {
     pub message: AggregatedAttestation,
@@ -107,7 +112,7 @@ pub struct SignedAggregatedAttestation {
 }
 
 #[cfg(test)]
-#[cfg(feature = "devnet1")]
+#[cfg(all(feature = "devnet1", not(feature = "devnet2")))]
 mod tests {
     use alloy_primitives::hex;
     use ssz::{Decode, Encode};

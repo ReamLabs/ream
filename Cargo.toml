@@ -148,13 +148,13 @@ ream-api-types-common = { path = "crates/common/api_types/common" }
 ream-api-types-lean = { path = "crates/common/api_types/lean" }
 ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
 ream-chain-beacon = { path = "crates/common/chain/beacon" }
-ream-chain-lean = { path = "crates/common/chain/lean", features = ["devnet1"] }
+ream-chain-lean = { path = "crates/common/chain/lean" }
 ream-checkpoint-sync = { path = "crates/common/checkpoint_sync" }
 
 ream-checkpoint-sync-beacon = { path = "crates/common/checkpoint_sync/beacon" }
 ream-checkpoint-sync-lean = { path = "crates/common/checkpoint_sync/lean" }
 ream-consensus-beacon = { path = "crates/common/consensus/beacon" }
-ream-consensus-lean = { path = "crates/common/consensus/lean", features = ["devnet1"] }
+ream-consensus-lean = { path = "crates/common/consensus/lean" }
 ream-consensus-misc = { path = "crates/common/consensus/misc" }
 ream-discv5 = { path = "crates/networking/discv5" }
 ream-events-beacon = { path = "crates/common/events/beacon" }
@@ -162,29 +162,29 @@ ream-execution-engine = { path = "crates/common/execution/engine" }
 ream-execution-rpc-types = { path = "crates/common/execution/rpc_types" }
 ream-executor = { path = "crates/common/executor" }
 ream-fork-choice-beacon = { path = "crates/common/fork_choice/beacon" }
-ream-fork-choice-lean = { path = "crates/common/fork_choice/lean", features = ["devnet1"] }
+ream-fork-choice-lean = { path = "crates/common/fork_choice/lean" }
 ream-keystore = { path = "crates/crypto/keystore" }
 ream-light-client = { path = "crates/common/light_client" }
 ream-merkle = { path = "crates/crypto/merkle" }
 ream-metrics = { path = "crates/common/metrics" }
 ream-network-manager = { path = "crates/networking/manager" }
 ream-network-spec = { path = "crates/common/network_spec" }
-ream-network-state-lean = { path = "crates/networking/network_state/lean", features = ["devnet1"] }
+ream-network-state-lean = { path = "crates/networking/network_state/lean" }
 ream-node = { path = "crates/common/node" }
 ream-operation-pool = { path = "crates/common/operation_pool" }
-ream-p2p = { path = "crates/networking/p2p", features = ["devnet1"] }
+ream-p2p = { path = "crates/networking/p2p" }
 ream-peer = { path = "crates/networking/peer" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-post-quantum-crypto = { path = "crates/crypto/post_quantum" }
 ream-rpc-beacon = { path = "crates/rpc/beacon" }
 ream-rpc-common = { path = "crates/rpc/common" }
-ream-rpc-lean = { path = "crates/rpc/lean", features = ["devnet1"] }
+ream-rpc-lean = { path = "crates/rpc/lean" }
 ream-storage = { path = "crates/storage" }
 ream-sync = { path = "crates/common/sync" }
 ream-sync-committee-pool = { path = "crates/common/sync_committee_pool" }
 ream-syncer = { path = "crates/networking/syncer" }
 ream-validator-beacon = { path = "crates/common/validator/beacon" }
-ream-validator-lean = { path = "crates/common/validator/lean", features = ["devnet1"] }
+ream-validator-lean = { path = "crates/common/validator/lean" }
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git", rev = "c14a9ad96436e6b8b631faf49a3666e4558b71ae" }
