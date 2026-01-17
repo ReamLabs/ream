@@ -28,6 +28,8 @@ use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 #[cfg(feature = "devnet2")]
 use ream_post_quantum_crypto::lean_multisig::aggregate::AggregateSignature;
+#[cfg(feature = "devnet2")]
+use ream_post_quantum_crypto::lean_multisig::aggregate::aggregate_signatures;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::{
     db::lean::LeanDB,
@@ -482,8 +484,6 @@ impl Store {
         parent_root: B256,
         attestations: Option<VariableList<AggregatedAttestations, U4096>>,
     ) -> anyhow::Result<(Block, Vec<AggregateSignature>, LeanState)> {
-        use ream_post_quantum_crypto::lean_multisig::aggregate::aggregate_signatures;
-
         let (
             state_provider,
             latest_known_attestation_provider,
