@@ -29,7 +29,7 @@ use ream::{
 };
 use ream_account_manager::{message_types::MessageType, seed::derive_seed_with_user_input};
 use ream_api_types_beacon::id::ValidatorID;
-use ream_api_types_common::id::ID;
+use ream_api_types_common::{content_type::ContentType, id::ID};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_chain_lean::{
     messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest, service::LeanChainService,
@@ -85,7 +85,7 @@ use ream_storage::{
 use ream_sync::rwlock::Writer;
 use ream_sync_committee_pool::SyncCommitteePool;
 use ream_validator_beacon::{
-    beacon_api_client::{BeaconApiClient, http_client::ContentType},
+    beacon_api_client::BeaconApiClient,
     builder::builder_client::{BuilderClient, BuilderConfig},
     validator::ValidatorService,
     voluntary_exit::process_voluntary_exit,

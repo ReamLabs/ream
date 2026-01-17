@@ -1,26 +1,12 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
-use ream_api_types_beacon::responses::{ACCEPT_PRIORITY, JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE};
+use ream_api_types_beacon::responses::ACCEPT_PRIORITY;
+use ream_api_types_common::content_type::{ContentType, JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE};
 use reqwest::{
     Client, IntoUrl, Request, RequestBuilder, Response, Url,
     header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue},
 };
-
-#[derive(Debug, Clone)]
-pub enum ContentType {
-    Json,
-    Ssz,
-}
-
-impl ContentType {
-    pub fn to_header_value(&self) -> HeaderValue {
-        match self {
-            ContentType::Json => HeaderValue::from_static(JSON_CONTENT_TYPE),
-            ContentType::Ssz => HeaderValue::from_static(SSZ_CONTENT_TYPE),
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct ClientWithBaseUrl {
