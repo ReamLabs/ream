@@ -3,19 +3,47 @@ use std::sync::Arc;
 use ream_consensus_lean::attestation::SignatureKey;
 use ream_post_quantum_crypto::lean_multisig::aggregate::AggregateSignature;
 use redb::{Database, Durability, TableDefinition};
+use serde::{Deserialize, Serialize};
 use ssz::{Decode, Encode};
-use ssz_types::{VariableList, typenum::U4096};
+use ssz_derive::{Decode as SszDecode, Encode as SszEncode};
+use ssz_types::{BitList, VariableList, typenum::U4096};
 
 use crate::{
     errors::StoreError,
     tables::{ssz_encoder::SSZEncoding, table::REDBTable},
 };
 
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, SszEncode, SszDecode)]
+pub struct AggregatedSignatureProof {
+    pub participants: BitList<U4096>,
+    /// The aggregated signature proof
+    pub proof: AggregateSignature,
+}
+
+impl AggregatedSignatureProof {
+    pub fn new(participants: BitList<U4096>, proof: AggregateSignature) -> Self {
+        Self {
+            participants,
+            proof,
+        }
+    }
+
+    /// Get the validator IDs covered by this proof
+    pub fn to_validator_indices(&self) -> Vec<u64> {
+        self.participants
+            .iter()
+            .enumerate()
+            .filter(|(_, bit)| *bit)
+            .map(|(index, _)| index as u64)
+            .collect()
+    }
+}
+
 /// Wrapper for a list of aggregated signature proofs.
 /// Uses VariableList for SSZ compatibility.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AggregatedPayloadList {
-    pub proofs: VariableList<AggregateSignature, U4096>,
+    pub proofs: VariableList<AggregatedSignatureProof, U4096>,
 }
 
 impl Encode for AggregatedPayloadList {
@@ -51,7 +79,7 @@ impl AggregatedPayloadList {
         }
     }
 
-    pub fn push(&mut self, proof: AggregateSignature) -> Result<(), ssz_types::Error> {
+    pub fn push(&mut self, proof: AggregatedSignatureProof) -> Result<(), ssz_types::Error> {
         self.proofs.push(proof)
     }
 
@@ -63,8 +91,8 @@ impl AggregatedPayloadList {
         self.proofs.len()
     }
 
-    pub fn first(&self) -> Option<&AggregateSignature> {
-        self.proofs.first()
+    pub fn iter(&self) -> impl Iterator<Item = &AggregatedSignatureProof> {
+        self.proofs.iter()
     }
 }
 
@@ -111,7 +139,7 @@ impl AggregatedPayloadsTable {
     pub fn append_proof(
         &self,
         key: SignatureKey,
-        proof: AggregateSignature,
+        proof: AggregatedSignatureProof,
     ) -> Result<(), StoreError> {
         let mut list = self.get(key.clone())?.unwrap_or_default();
         list.push(proof)
