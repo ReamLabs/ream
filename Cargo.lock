@@ -6567,6 +6567,7 @@ dependencies = [
  "ream-peer",
  "ream-rpc-common",
  "ream-storage",
+ "serde_json",
  "tokio",
  "tracing",
 ]
