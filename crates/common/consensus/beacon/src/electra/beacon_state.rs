@@ -1652,7 +1652,7 @@ impl BeaconState {
         let proposer = self
             .validators
             .get(proposer_index as usize)
-            .ok_or_else(|| anyhow::anyhow!("Invalid proposer index"))?;
+            .ok_or_else(|| anyhow!("Invalid proposer index"))?;
 
         ensure!(
             proposer.is_slashable_validator(self.get_current_epoch()),
@@ -2511,7 +2511,7 @@ impl BeaconState {
             if validator.is_eligible_for_activation_queue() {
                 validator.activation_eligibility_epoch =
                     current_epoch.checked_add(1).ok_or_else(|| {
-                        anyhow::anyhow!("Epoch overflow when setting activation eligibility epoch")
+                        anyhow!("Epoch overflow when setting activation eligibility epoch")
                     })?;
             } else if validator.is_active_validator(current_epoch)
                 && validator.effective_balance <= EJECTION_BALANCE

@@ -2,12 +2,10 @@ use std::time::Duration;
 
 use libp2p::gossipsub::{Config, ConfigBuilder, MessageId, ValidationMode};
 use ream_network_spec::networks::lean_network_spec;
+use ream_req_resp::max_message_size;
 use sha2::{Digest, Sha256};
 
-use crate::{
-    constants::MESSAGE_DOMAIN_VALID_SNAPPY, gossipsub::lean::topics::LeanGossipTopic,
-    utils::max_message_size,
-};
+use crate::{constants::MESSAGE_DOMAIN_VALID_SNAPPY, gossipsub::lean::topics::LeanGossipTopic};
 
 #[derive(Debug, Clone)]
 pub struct LeanGossipsubConfig {

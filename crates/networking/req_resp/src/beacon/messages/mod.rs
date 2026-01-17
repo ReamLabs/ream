@@ -22,7 +22,7 @@ use ssz_derive::{Decode, Encode};
 use status::Status;
 
 use super::protocol_id::BeaconSupportedProtocol;
-use crate::req_resp::protocol_id::{ProtocolId, SupportedProtocol};
+use crate::protocol_id::{ProtocolId, SupportedProtocol};
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 #[ssz(enum_behaviour = "transparent")]

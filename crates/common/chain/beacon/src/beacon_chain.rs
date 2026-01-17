@@ -14,7 +14,7 @@ use ream_fork_choice_beacon::{
 };
 use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
-use ream_p2p::req_resp::beacon::messages::status::Status;
+use ream_req_resp::beacon::messages::status::Status;
 use ream_storage::{
     db::beacon::BeaconDB,
     tables::{field::REDBField, table::REDBTable},

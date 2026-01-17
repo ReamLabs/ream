@@ -32,23 +32,19 @@ use unsigned_varint::codec::Uvi;
 
 use super::{beacon::messages::BeaconRequestMessage, handler::RespMessage};
 use crate::{
-    req_resp::{
-        beacon::{
-            messages::{
-                BeaconResponseMessage, meta_data::GetMetaDataV3, ping::Ping, status::Status,
-            },
-            protocol_id::BeaconSupportedProtocol,
-        },
-        error::ReqRespError,
-        inbound_protocol::ResponseCode,
-        lean::{
-            messages::{LeanResponseMessage, status::Status as LeanStatus},
-            protocol_id::LeanSupportedProtocol,
-        },
-        messages::{RequestMessage, ResponseMessage},
-        protocol_id::{ProtocolId, SupportedProtocol},
+    beacon::{
+        messages::{BeaconResponseMessage, meta_data::GetMetaDataV3, ping::Ping, status::Status},
+        protocol_id::BeaconSupportedProtocol,
     },
-    utils::max_message_size,
+    error::ReqRespError,
+    inbound_protocol::ResponseCode,
+    lean::{
+        messages::{LeanResponseMessage, status::Status as LeanStatus},
+        protocol_id::LeanSupportedProtocol,
+    },
+    max_message_size,
+    messages::{RequestMessage, ResponseMessage},
+    protocol_id::{ProtocolId, SupportedProtocol},
 };
 
 #[derive(Debug, Clone)]
@@ -118,7 +114,7 @@ impl Encoder<RequestMessage> for OutboundSSZSnappyCodec {
         // The length-prefix is within the expected size bounds derived from the payload SSZ type or
         // MAX_PAYLOAD_SIZE, whichever is smaller.
         if bytes.len() > max_message_size() as usize {
-            return Err(ReqRespError::Anyhow(anyhow::anyhow!(
+            return Err(ReqRespError::Anyhow(anyhow!(
                 "Message size exceeds maximum: {} > {}",
                 bytes.len(),
                 max_message_size()
@@ -182,7 +178,7 @@ impl Decoder for OutboundSSZSnappyCodec {
         // The length-prefix is within the expected size bounds derived from the payload SSZ
         // type or MAX_PAYLOAD_SIZE, whichever is smaller.
         if length > max_message_size() as usize {
-            return Err(ReqRespError::Anyhow(anyhow::anyhow!(
+            return Err(ReqRespError::Anyhow(anyhow!(
                 "Message size exceeds maximum: {length} > {}",
                 max_message_size()
             )));

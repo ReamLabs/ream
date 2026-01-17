@@ -2,16 +2,12 @@ use std::sync::Arc;
 
 use libp2p::{PeerId, swarm::ConnectionId};
 use ream_consensus_beacon::{blob_sidecar::BlobIdentifier, data_column_sidecar::ColumnIdentifier};
-use ream_p2p::{
-    network::beacon::network_state::NetworkState,
-    req_resp::beacon::messages::{
-        BeaconRequestMessage, BeaconResponseMessage,
-        blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
-        blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
-        data_column_sidecars::{
-            DataColumnSidecarsByRangeV1Request, DataColumnSidecarsByRootV1Request,
-        },
-    },
+use ream_p2p::network::beacon::network_state::NetworkState;
+use ream_req_resp::beacon::messages::{
+    BeaconRequestMessage, BeaconResponseMessage,
+    blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
+    blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+    data_column_sidecars::{DataColumnSidecarsByRangeV1Request, DataColumnSidecarsByRootV1Request},
 };
 use ream_storage::{
     db::beacon::BeaconDB,

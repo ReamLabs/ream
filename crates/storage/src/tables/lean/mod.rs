@@ -1,16 +1,16 @@
+#[cfg(feature = "devnet2")]
+pub mod aggregated_payloads;
+pub mod block;
+#[cfg(feature = "devnet2")]
+pub mod gossip_signatures;
+pub mod head;
 pub mod latest_finalized;
 pub mod latest_justified;
 pub mod latest_known_attestation;
-pub mod lean_block;
-pub mod lean_head;
-pub mod lean_latest_new_attestations;
-pub mod lean_safe_target;
-pub mod lean_state;
-pub mod lean_time;
+pub mod latest_new_attestations;
+pub mod pending_blocks;
+pub mod safe_target;
 pub mod slot_index;
+pub mod state;
 pub mod state_root_index;
-
-#[cfg(feature = "devnet2")]
-pub mod aggregated_payloads;
-#[cfg(feature = "devnet2")]
-pub mod gossip_signatures;
+pub mod time;

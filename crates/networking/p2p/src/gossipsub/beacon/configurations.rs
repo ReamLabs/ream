@@ -3,10 +3,11 @@ use std::time::Duration;
 use libp2p::gossipsub::{Config, ConfigBuilder, MessageId, ValidationMode};
 use ream_consensus_misc::constants::beacon::SLOTS_PER_EPOCH;
 use ream_network_spec::networks::beacon_network_spec;
+use ream_req_resp::max_message_size;
 use sha2::{Digest, Sha256};
 
 use super::topics::GossipTopic;
-use crate::{constants::MESSAGE_DOMAIN_VALID_SNAPPY, utils::max_message_size};
+use crate::constants::MESSAGE_DOMAIN_VALID_SNAPPY;
 
 #[derive(Debug, Clone)]
 pub struct GossipsubConfig {

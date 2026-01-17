@@ -26,6 +26,7 @@ devnet2 = [
 alloy-primitives.workspace = true
 anyhow.workspace = true
 libp2p-identity.workspace = true
+libp2p-swarm.workspace = true
 serde.workspace = true
 ssz_types.workspace = true
 tokio.workspace = true
@@ -40,6 +41,7 @@ ream-metrics.workspace = true
 ream-network-spec.workspace = true
 ream-network-state-lean.workspace = true
 ream-post-quantum-crypto.workspace = true
+ream-req-resp.workspace = true
 ream-storage.workspace = true
 ream-sync.workspace = true
 

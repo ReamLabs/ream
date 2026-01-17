@@ -12,12 +12,13 @@ use crate::{
     tables::{
         field::REDBField,
         lean::{
-            latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
-            latest_known_attestation::LatestKnownAttestationTable, lean_block::LeanBlockTable,
-            lean_head::LeanHeadField, lean_latest_new_attestations::LeanLatestNewAttestationsTable,
-            lean_safe_target::LeanSafeTargetField, lean_state::LeanStateTable,
-            lean_time::LeanTimeField, slot_index::LeanSlotIndexTable,
-            state_root_index::LeanStateRootIndexTable,
+            block::LeanBlockTable, head::LeanHeadField, latest_finalized::LatestFinalizedField,
+            latest_justified::LatestJustifiedField,
+            latest_known_attestation::LatestKnownAttestationTable,
+            latest_new_attestations::LeanLatestNewAttestationsTable,
+            pending_blocks::LeanPendingBlocksTable, safe_target::LeanSafeTargetField,
+            slot_index::LeanSlotIndexTable, state::LeanStateTable,
+            state_root_index::LeanStateRootIndexTable, time::LeanTimeField,
         },
         table::REDBTable,
     },
@@ -43,6 +44,14 @@ impl LeanDB {
             cache: self.cache.clone(),
         }
     }
+
+    pub fn pending_blocks_provider(&self) -> LeanPendingBlocksTable {
+        LeanPendingBlocksTable {
+            db: self.db.clone(),
+            cache: self.cache.clone(),
+        }
+    }
+
     pub fn state_provider(&self) -> LeanStateTable {
         LeanStateTable {
             db: self.db.clone(),

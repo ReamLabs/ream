@@ -1,9 +1,8 @@
 use std::{fs, path::PathBuf};
 
 use anyhow::anyhow;
+use ream_req_resp::beacon::messages::meta_data::GetMetaDataV3;
 use ssz::Decode;
-
-use crate::req_resp::beacon::messages::meta_data::GetMetaDataV3;
 
 pub const META_DATA_FILE_NAME: &str = "meta_data.ssz";
 

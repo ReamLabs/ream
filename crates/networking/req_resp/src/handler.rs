@@ -15,6 +15,7 @@ use libp2p::{
         ConnectionHandler, ConnectionHandlerEvent, StreamUpgradeError, SubstreamProtocol,
         handler::{
             ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound,
+            OutboundUpgradeSend,
         },
     },
 };
@@ -26,7 +27,7 @@ use super::{
     inbound_protocol::{InboundFramed, InboundOutput, InboundReqRespProtocol},
     outbound_protocol::{OutboundFramed, OutboundReqRespProtocol},
 };
-use crate::req_resp::{
+use crate::{
     configurations::REQUEST_TIMEOUT,
     error::ReqRespError,
     inbound_protocol::ResponseCode,
@@ -197,7 +198,7 @@ impl ReqRespConnectionHandler {
 
     fn on_dial_upgrade_error(
         &mut self,
-        error: StreamUpgradeError<ReqRespError>,
+        error: StreamUpgradeError<<OutboundReqRespProtocol as OutboundUpgradeSend>::Error>,
         _info: OutboundOpenInfo,
     ) {
         trace!("REQRESP: Dial upgrade error: {:?}", error);

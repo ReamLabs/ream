@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use anyhow::anyhow;
 use asynchronous_codec::BytesMut;
 use futures::{
     FutureExt, StreamExt,
@@ -37,30 +38,28 @@ use super::{
     handler::RespMessage,
 };
 use crate::{
-    req_resp::{
-        Chain,
-        beacon::messages::{
-            blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
-            blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
-            data_column_sidecars::{
-                DataColumnSidecarsByRangeV1Request, DataColumnSidecarsByRootV1Request,
-            },
-            goodbye::Goodbye,
-            ping::Ping,
-            status::Status,
+    Chain,
+    beacon::messages::{
+        blob_sidecars::{BlobSidecarsByRangeV1Request, BlobSidecarsByRootV1Request},
+        blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+        data_column_sidecars::{
+            DataColumnSidecarsByRangeV1Request, DataColumnSidecarsByRootV1Request,
         },
-        error::ReqRespError,
-        lean::{
-            messages::{
-                LeanRequestMessage, blocks::BlocksByRootV1Request as LeanBlocksByRootV1Request,
-                status::Status as LeanStatus,
-            },
-            protocol_id::LeanSupportedProtocol,
-        },
-        messages::RequestMessage,
-        protocol_id::{ProtocolId, SupportedProtocol},
+        goodbye::Goodbye,
+        ping::Ping,
+        status::Status,
     },
-    utils::max_message_size,
+    error::ReqRespError,
+    lean::{
+        messages::{
+            LeanRequestMessage, blocks::BlocksByRootV1Request as LeanBlocksByRootV1Request,
+            status::Status as LeanStatus,
+        },
+        protocol_id::LeanSupportedProtocol,
+    },
+    max_message_size,
+    messages::RequestMessage,
+    protocol_id::{ProtocolId, SupportedProtocol},
 };
 
 #[derive(Debug, Clone)]
@@ -155,7 +154,7 @@ impl Encoder<RespMessage> for InboundSSZSnappyCodec {
         // The length-prefix is within the expected size bounds derived from the payload SSZ type or
         // MAX_PAYLOAD_SIZE, whichever is smaller.
         if bytes.len() > max_message_size() as usize {
-            return Err(ReqRespError::Anyhow(anyhow::anyhow!(
+            return Err(ReqRespError::Anyhow(anyhow!(
                 "Message size exceeds maximum: {} > {}",
                 bytes.len(),
                 max_message_size()

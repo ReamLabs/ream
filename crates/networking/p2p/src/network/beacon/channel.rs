@@ -3,15 +3,13 @@ use std::sync::Arc;
 use alloy_primitives::B256;
 use libp2p::{PeerId, swarm::ConnectionId};
 use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
+use ream_req_resp::{
+    beacon::messages::{BeaconResponseMessage, status::Status},
+    handler::RespMessage,
+};
 use tokio::sync::mpsc;
 
-use crate::{
-    gossipsub::beacon::topics::GossipTopic,
-    req_resp::{
-        beacon::messages::{BeaconResponseMessage, status::Status},
-        handler::RespMessage,
-    },
-};
+use crate::gossipsub::beacon::topics::GossipTopic;
 
 pub enum P2PCallbackResponse {
     ResponseMessage(Arc<BeaconResponseMessage>),

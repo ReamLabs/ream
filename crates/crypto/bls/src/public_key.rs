@@ -50,7 +50,7 @@ impl FromStr for PublicKey {
         let bytes = hex::decode(clean_str).map_err(BLSError::InvalidHexString)?;
 
         if bytes.len() != 48 {
-            return Err(BLSError::InvalidByteLength(anyhow::anyhow!(
+            return Err(BLSError::InvalidByteLength(anyhow!(
                 "Expected 48 bytes for PublicKey, got {} bytes",
                 bytes.len()
             )));

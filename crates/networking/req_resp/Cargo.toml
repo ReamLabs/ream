@@ -1,5 +1,5 @@
 [package]
-name = "ream-p2p"
+name = "ream-req-resp"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -8,19 +8,6 @@ readme.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
-
-[features]
-default = ["devnet1"]
-devnet1 = [
-    "ream-consensus-lean/devnet1",
-    "ream-chain-lean/devnet1",
-    "ream-network-state-lean/devnet1",
-]
-devnet2 = [
-    "ream-consensus-lean/devnet2",
-    "ream-chain-lean/devnet2",
-    "ream-network-state-lean/devnet2",
-]
 
 [dependencies]
 alloy-primitives.workspace = true
@@ -36,7 +23,6 @@ futures.workspace = true
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
 libp2p.workspace = true
 libp2p-identity.workspace = true
-libp2p-mplex.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
@@ -49,27 +35,15 @@ tokio-io-timeout = "1"
 tokio-util.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber.workspace = true
-tracing-test.workspace = true
 tree_hash.workspace = true
 unsigned-varint = { version = "0.8", features = ["codec"] }
 
 # ream dependencies
-ream-chain-lean.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
-ream-discv5.workspace = true
-ream-events-beacon.workspace = true
-ream-executor.workspace = true
-ream-light-client.workspace = true
 ream-metrics.workspace = true
 ream-network-spec.workspace = true
-ream-network-state-lean.workspace = true
-ream-peer.workspace = true
-ream-req-resp.workspace = true
-ream-storage.workspace = true
-ream-sync.workspace = true
-ream-validator-beacon.workspace = true
 
 [lints]
 workspace = true

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::BitVector;
 
-use crate::req_resp::configurations::{AttestationSubnetCount, SyncCommitteeSubnetCount};
+use crate::configurations::{AttestationSubnetCount, SyncCommitteeSubnetCount};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub struct GetMetaDataV2 {

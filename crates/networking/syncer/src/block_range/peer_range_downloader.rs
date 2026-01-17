@@ -6,10 +6,8 @@ use ream_consensus_beacon::{
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_executor::ReamExecutor;
-use ream_p2p::{
-    network::beacon::channel::{P2PCallbackResponse, P2PMessage, P2PRequest},
-    req_resp::beacon::messages::BeaconResponseMessage,
-};
+use ream_p2p::network::beacon::channel::{P2PCallbackResponse, P2PMessage, P2PRequest};
+use ream_req_resp::beacon::messages::BeaconResponseMessage;
 use ssz::Encode;
 use tokio::{
     sync::mpsc::{self, UnboundedSender},

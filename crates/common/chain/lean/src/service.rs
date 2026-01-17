@@ -1,50 +1,75 @@
-use std::sync::Arc;
+use std::{
+    collections::HashSet,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::anyhow;
+use libp2p_identity::PeerId;
+use libp2p_swarm::ConnectionId;
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{BlockWithSignatures, SignedBlockWithAttestation},
+    checkpoint::Checkpoint,
 };
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_metrics::{CURRENT_SLOT, set_int_gauge_vec};
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
+use ream_req_resp::lean::{
+    ReamNetworkEvent,
+    messages::{LeanRequestMessage, LeanResponseMessage},
+};
 use ream_storage::tables::{field::REDBField, table::REDBTable};
-use tokio::sync::{mpsc, oneshot};
-use tracing::{Level, debug, enabled, error, info, warn};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
+use tracing::{Instrument, Level, debug, enabled, error, info, trace, warn};
 use tree_hash::TreeHash;
 
 use crate::{
-    clock::create_lean_clock_interval, messages::LeanChainServiceMessage,
-    p2p_request::LeanP2PRequest, slot::get_current_slot,
+    clock::{create_lean_clock_interval, get_initial_tick_count},
+    messages::{LeanChainServiceMessage, ServiceResponse},
+    p2p_request::LeanP2PRequest,
+    slot::get_current_slot,
+    sync::{
+        SyncStatus,
+        forward_background_syncer::{ForwardBackgroundSyncer, ForwardSyncResults},
+        job::request::JobRequest,
+    },
 };
 
 const STATE_RETENTION_SLOTS: u64 = 128;
 
-/// LeanChainService is responsible for updating the [LeanChain] state. `LeanChain` is updated when:
-/// 1. Every third (t=2/4) and fourth (t=3/4) ticks.
-/// 2. Receiving new blocks or attestations from the network.
-///
-/// NOTE: This service will be the core service to implement `receive()` function.
+/// LeanChainService is responsible for updating the [LeanChain] state
 pub struct LeanChainService {
-    store: LeanStoreWriter,
+    store: Arc<LeanStoreWriter>,
     receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
-    outbound_gossip: mpsc::UnboundedSender<LeanP2PRequest>,
+    outbound_p2p: mpsc::UnboundedSender<LeanP2PRequest>,
     network_state: Arc<NetworkState>,
+    sync_status: SyncStatus,
+    peers_in_use: HashSet<PeerId>,
+    forward_syncer: Option<JoinHandle<anyhow::Result<ForwardSyncResults>>>,
+    checkpoints_to_queue: Vec<(Checkpoint, bool)>,
 }
 
 impl LeanChainService {
     pub async fn new(
         store: LeanStoreWriter,
         receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
-        outbound_gossip: mpsc::UnboundedSender<LeanP2PRequest>,
+        outbound_p2p: mpsc::UnboundedSender<LeanP2PRequest>,
     ) -> Self {
         let network_state = store.read().await.network_state.clone();
         LeanChainService {
             network_state,
-            store,
+            store: Arc::new(store),
             receiver,
-            outbound_gossip,
+            outbound_p2p,
+            sync_status: SyncStatus::Syncing { jobs: Vec::new() },
+            peers_in_use: HashSet::new(),
+            forward_syncer: None,
+            checkpoints_to_queue: Vec::new(),
         }
     }
 
@@ -54,7 +79,9 @@ impl LeanChainService {
             "LeanChainService started",
         );
 
-        let mut tick_count = 0u64;
+        let mut tick_count = get_initial_tick_count();
+
+        info!("LeanChainService starting at tick_count: {}", tick_count);
 
         let mut interval = create_lean_clock_interval()
             .map_err(|err| anyhow!("Expected Ream to be started before genesis time: {err:?}"))?;
@@ -62,88 +89,99 @@ impl LeanChainService {
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    self.store.write().await.tick_interval(tick_count % 4 == 1).await.expect("Failed to tick interval");
-                    match tick_count % 4 {
-                        0 => {
-                            // First tick (t=0/4): Log current head state, including its justification/finalization status.
-                            let (head, state_provider) = {
-                                let fork_choice = self.store.read().await;
-                                let store = fork_choice.store.lock().await;
-                                (store.head_provider().get()?, store.state_provider())
-                            };
-                            let head_state = state_provider
-                                .get(head)?.ok_or_else(|| anyhow!("Post state not found for head: {head}"))?;
 
-                            // Update current slot with head_state.slot
-                            set_int_gauge_vec(&CURRENT_SLOT, head_state.slot as i64, &[]);
-
-                            info!(
-                                "\n\
-                            ============================================================\n\
-                            REAM's CHAIN STATUS: Next Slot: {current_slot} | Head Slot: {head_slot}\n\
-                            ------------------------------------------------------------\n\
-                            Connected Peers:   {connected_peer_count}\n\
-                            ------------------------------------------------------------\n\
-                            Head Block Root:   {head_block_root}\n\
-                            Parent Block Root: {parent_block_root}\n\
-                            State Root:        {state_root}\n\
-                            ------------------------------------------------------------\n\
-                            Latest Justified:  Slot {justified_slot} | Root: {justified_root}\n\
-                            Latest Finalized:  Slot {finalized_slot} | Root: {finalized_root}\n\
-                            ============================================================",
-                                current_slot     = get_current_slot(),
-                                head_slot        = head_state.slot,
-                                connected_peer_count = self.network_state.connected_peers(),
-                                head_block_root   = head.to_string(),
-                                parent_block_root = head_state.latest_block_header.parent_root,
-                                state_root        = head_state.tree_hash_root(),
-                                justified_slot = head_state.latest_justified.slot,
-                                justified_root = head_state.latest_justified.root,
-                                finalized_slot = head_state.latest_finalized.slot,
-                                finalized_root = head_state.latest_finalized.root,
-                            );
-                        }
-                        2 => {
-                            // Third tick (t=2/4): Compute the safe target.
-                            info!(
-                                slot = get_current_slot(),
-                                tick = tick_count,
-                                "Computing safe target"
-                            );
-                            self.store.write().await.update_safe_target().await.expect("Failed to update safe target");
-                        }
-                        3 => {
-                            // Fourth tick (t=3/4): Accept new attestations.
-                            info!(
-                                slot = get_current_slot(),
-                                tick = tick_count,
-                                "Accepting new attestations"
-                            );
-                            self.store.write().await.accept_new_attestations().await.expect("Failed to accept new attestations");
-                        }
-                        1 => {
-                            // Other ticks (t=0, t=1/4): Prune old data.
-                            if let Err(err) = self.prune_old_state(tick_count).await {
-                                warn!("Pruning cycle failed (non-fatal): {err:?}");
-                            }
-                        }
-                        _ => unreachable!("Tick count modulo 4 should be in 0..=3"),
+                    self.sync_status = self.update_sync_status().await?;
+                    if self.sync_status == SyncStatus::Synced {
+                        self.store.write().await.tick_interval(tick_count % 4 == 1).await.expect("Failed to tick interval");
+                        self.step_head_sync(tick_count).await?;
+                    } else {
+                        self.step_backfill_sync().await?;
                     }
+
                     tick_count += 1;
+                }
+                forward_syncer = async {
+                    if let Some(handle) = self.forward_syncer.as_mut() {
+                        handle.await
+                    } else {
+                        std::future::pending().await
+                    }
+                }, if self.forward_syncer.is_some() => {
+                    let forward_syncer = match forward_syncer {
+                        Ok(forward_syncer) => forward_syncer,
+                        Err(err) => {
+                            error!("Forward background sync JoinHandle error: {err:?}");
+                            continue;
+                        },
+                    };
+                    self.forward_syncer = None;
+
+                    let forward_syncer = match forward_syncer {
+                        Ok(forward_syncer) => forward_syncer,
+                        Err(err) => {
+                            error!("Forward background sync failed: {err:?}");
+                            continue;
+                        },
+                    };
+
+                    match forward_syncer {
+                        ForwardSyncResults::Completed { starting_root, ending_root, blocks_synced, processing_time_seconds } => {
+                            info!(
+                                starting_root = ?starting_root,
+                                ending_root = ?ending_root,
+                                blocks_synced,
+                                processing_time_seconds,
+                                "Forward background sync completed",
+                            );
+                            // The ending root is the starting root of the processed queue, since
+                            // the sync walks backwards from there to the head.
+                            self.sync_status.remove_processed_queue(ending_root);
+                        }
+                        ForwardSyncResults::ChainIncomplete { prevous_queue, checkpoint_for_new_queue } => {
+                            warn!(
+                                starting_root = ?prevous_queue.starting_root,
+                                starting_slot = prevous_queue.starting_slot,
+                                "Forward background sync incomplete; re-queuing job",
+                            );
+                            self.checkpoints_to_queue.push((checkpoint_for_new_queue, true));
+                        }
+                    }
                 }
                 Some(message) = self.receiver.recv() => {
                     match message {
                         LeanChainServiceMessage::ProduceBlock { slot, sender } => {
+                            if let SyncStatus::Syncing { .. } = self.sync_status {
+                                warn!("Received ProduceBlock request while syncing. Ignoring.");
+                                if let Err(err) = sender.send(ServiceResponse::Syncing) {
+                                    warn!("Failed to send syncing response for ProduceBlock: {err:?}");
+                                }
+                                continue;
+                            }
+
+
                             if let Err(err) = self.handle_produce_block(slot, sender).await {
                                 error!("Failed to handle produce block message: {err:?}");
                             }
                         }
                         LeanChainServiceMessage::BuildAttestationData { slot, sender } => {
+                            if let SyncStatus::Syncing { .. } = self.sync_status {
+                                warn!("Received BuildAttestationData request while syncing. Ignoring.");
+                                if let Err(err) = sender.send(ServiceResponse::Syncing) {
+                                    warn!("Failed to send syncing response for BuildAttestationData: {err:?}");
+                                }
+                                continue;
+                            }
+
                             if let Err(err) = self.handle_build_attestation_data(slot, sender).await {
                                 error!("Failed to handle build attestation data message: {err:?}");
                             }
                         }
                         LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation, need_gossip } => {
+                            if self.sync_status != SyncStatus::Synced {
+                                trace!("Received ProcessBlock request while syncing. Ignoring.");
+                                continue;
+                            }
+
                             if enabled!(Level::DEBUG) {
                                 debug!(
                                     slot = signed_block_with_attestation.message.block.slot,
@@ -167,11 +205,16 @@ impl LeanChainService {
                                 warn!("Failed to handle process block message: {err:?}");
                             }
 
-                            if need_gossip && let Err(err) = self.outbound_gossip.send(LeanP2PRequest::GossipBlock(signed_block_with_attestation)) {
+                            if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipBlock(signed_block_with_attestation)) {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
                         LeanChainServiceMessage::ProcessAttestation { signed_attestation, need_gossip } => {
+                            if self.sync_status != SyncStatus::Synced {
+                                trace!("Received ProcessAttestation request while syncing. Ignoring.");
+                                continue;
+                            }
+
                             if enabled!(Level::DEBUG) {
                                 #[cfg(feature = "devnet1")]
                                 debug!(
@@ -215,7 +258,7 @@ impl LeanChainService {
                                 warn!("Failed to handle process attestation message: {err:?}");
                             }
 
-                            if need_gossip && let Err(err) = self.outbound_gossip.send(LeanP2PRequest::GossipAttestation(signed_attestation)) {
+                            if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipAttestation(signed_attestation)) {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
@@ -241,10 +284,439 @@ impl LeanChainService {
                                 warn!("Failed to send canonical checkpoint response: {err:?}");
                             }
                         }
+                        LeanChainServiceMessage::GetBlocksByRoot { roots, sender } => {
+                            let block_provider = {
+                                let fork_choice = self.store.read().await;
+                                let store = fork_choice.store.lock().await;
+                                store.block_provider()
+                            };
+                            let mut blocks = Vec::with_capacity(roots.len());
+
+                            for root in roots {
+                                match block_provider.get(root) {
+                                    Ok(Some(block)) => blocks.push(Arc::new(block)),
+                                    Ok(None) => {
+                                        debug!("Block not found for root: {root:?}");
+                                    }
+                                    Err(err) => {
+                                        warn!("LeanChainServiceMessage::GetBlocksByRoot: Failed to get block for root {root:?}: {err:?}");
+                                    }
+                                }
+                            }
+
+                            if let Err(err) = sender.send(blocks) {
+                                warn!("Failed to send blocks by root response: {err:?}");
+                            }
+                        }
+                        LeanChainServiceMessage::NetworkEvent(event) => {
+                            if let Err(err) = self.handle_network_event(event).await {
+                                warn!("Failed to handle network event: {err:?}");
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    async fn step_head_sync(&mut self, tick_count: u64) -> anyhow::Result<()> {
+        match tick_count % 4 {
+            0 => {
+                // First tick (t=0/4): Log current head state, including its
+                // justification/finalization status.
+                let (head, state_provider) = {
+                    let fork_choice = self.store.read().await;
+                    let store = fork_choice.store.lock().await;
+                    (store.head_provider().get()?, store.state_provider())
+                };
+                let head_state = state_provider
+                    .get(head)?
+                    .ok_or_else(|| anyhow!("Post state not found for head: {head}"))?;
+
+                set_int_gauge_vec(&CURRENT_SLOT, head_state.slot as i64, &[]);
+
+                info!(
+                    "\n\
+                            ============================================================\n\
+                            REAM's CHAIN STATUS: Next Slot: {current_slot} | Head Slot: {head_slot}\n\
+                            ------------------------------------------------------------\n\
+                            Connected Peers:   {connected_peer_count}\n\
+                            ------------------------------------------------------------\n\
+                            Head Block Root:   {head_block_root}\n\
+                            Parent Block Root: {parent_block_root}\n\
+                            State Root:        {state_root}\n\
+                            ------------------------------------------------------------\n\
+                            Latest Justified:  Slot {justified_slot} | Root: {justified_root}\n\
+                            Latest Finalized:  Slot {finalized_slot} | Root: {finalized_root}\n\
+                            ============================================================",
+                    current_slot = get_current_slot(),
+                    head_slot = head_state.slot,
+                    connected_peer_count = self.network_state.connected_peer_count(),
+                    head_block_root = head.to_string(),
+                    parent_block_root = head_state.latest_block_header.parent_root,
+                    state_root = head_state.tree_hash_root(),
+                    justified_slot = head_state.latest_justified.slot,
+                    justified_root = head_state.latest_justified.root,
+                    finalized_slot = head_state.latest_finalized.slot,
+                    finalized_root = head_state.latest_finalized.root,
+                );
+            }
+            2 => {
+                // Third tick (t=2/4): Compute the safe target.
+                info!(
+                    slot = get_current_slot(),
+                    tick = tick_count,
+                    "Computing safe target"
+                );
+                self.store
+                    .write()
+                    .await
+                    .update_safe_target()
+                    .await
+                    .expect("Failed to update safe target");
+            }
+            3 => {
+                // Fourth tick (t=3/4): Accept new attestations.
+                info!(
+                    slot = get_current_slot(),
+                    tick = tick_count,
+                    "Accepting new attestations"
+                );
+                self.store
+                    .write()
+                    .await
+                    .accept_new_attestations()
+                    .await
+                    .expect("Failed to accept new attestations");
+            }
+            1 => {
+                // Other ticks (t=0, t=1/4): Prune old data.
+                if let Err(err) = self.prune_old_state(tick_count).await {
+                    warn!("Pruning cycle failed (non-fatal): {err:?}");
+                }
+            }
+            _ => unreachable!("Tick count modulo 4 should be in 0..=3"),
+        }
+        Ok(())
+    }
+
+    async fn step_backfill_sync(&mut self) -> anyhow::Result<()> {
+        info!(
+            slot = get_current_slot(),
+            "Node is syncing; backfill sync step executed",
+        );
+
+        // If a queue has reached the stored head, execute that queue in a background thread,
+        // blocking any other threads from processing until it returns. The thread can
+        // return early and start a new queue if it finds that It can't walk back to the stored
+        // head.
+        if self.forward_syncer.is_none()
+            && let Some(earliest_complete_queue) = self.sync_status.get_ready_to_process_queue()
+        {
+            let store = self.store.clone();
+            let network_state = self.network_state.clone();
+            info!(
+                "Starting forward background syncer for completed job queue starting at root {:?} and slot {}",
+                earliest_complete_queue.starting_root, earliest_complete_queue.starting_slot
+            );
+            self.forward_syncer = Some(tokio::spawn(
+                async move {
+                    let mut forward_syncer =
+                        ForwardBackgroundSyncer::new(store, network_state, earliest_complete_queue);
+                    forward_syncer.start().await
+                }
+                .in_current_span(),
+            ));
+        }
+
+        // queue unqueued jobs
+        let unqueued_jobs = self.sync_status.unqueued_jobs();
+        for job in unqueued_jobs {
+            if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::RequestBlocksByRoot {
+                peer_id: job.peer_id,
+                roots: vec![job.root],
+            }) {
+                warn!(
+                    "Failed to send block request to peer {:?} for root {:?}: {err:?}",
+                    job.peer_id, job.root
+                );
+                continue;
+            }
+
+            self.sync_status.mark_job_as_requested(job.root);
+        }
+
+        // start new queue from peers status
+        let common_highest_checkpoint = match self.network_state.common_highest_checkpoint() {
+            Some(checkpoint) => checkpoint,
+            None => {
+                warn!("No common highest checkpoint found among connected peers.");
+                return Ok(());
+            }
+        };
+
+        self.checkpoints_to_queue
+            .push((common_highest_checkpoint, false));
+
+        while let Some((checkpoint, bypass_slot_check)) = self.checkpoints_to_queue.pop() {
+            let non_queued_peer_id = self
+                .network_state
+                .connected_peer_ids()
+                .iter()
+                .find(|peer_id| !self.peers_in_use.contains(peer_id))
+                .cloned();
+
+            let non_queued_peer_id = match non_queued_peer_id {
+                Some(id) => id,
+                None => {
+                    if self.network_state.connected_peer_count() == 0 {
+                        info!("No connected peers available to start new job queue.");
+                    } else {
+                        info!("All connected peers are currently in use for syncing.");
+                    }
+                    self.checkpoints_to_queue
+                        .push((checkpoint, bypass_slot_check));
+                    return Ok(());
+                }
+            };
+            let new_queue_added = self.sync_status.add_new_job_queue(
+                checkpoint,
+                JobRequest::new(non_queued_peer_id, checkpoint.root),
+                bypass_slot_check,
+            );
+            if new_queue_added {
+                self.peers_in_use.insert(non_queued_peer_id);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn update_sync_status(&self) -> anyhow::Result<SyncStatus> {
+        if self.forward_syncer.is_some() {
+            return Ok(self.sync_status.clone());
+        }
+
+        let (head, block_provider) = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            (store.head_provider().get()?, store.block_provider())
+        };
+        let current_head_slot = block_provider
+            .get(head)?
+            .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
+            .message
+            .block
+            .slot;
+
+        let tolerance = std::cmp::max(8, (lean_network_spec().num_validators * 2) / 3);
+        let highest_peer_head_slot = self
+            .network_state
+            .common_highest_checkpoint()
+            .map(|c| c.slot)
+            .unwrap_or(0);
+        let is_synced_by_time = get_current_slot() <= current_head_slot + tolerance;
+        let is_behind_peers = highest_peer_head_slot > current_head_slot + 2;
+
+        let sync_status = if is_behind_peers {
+            if self.sync_status == SyncStatus::Synced {
+                info!(
+                    slot = get_current_slot(),
+                    head_slot = current_head_slot,
+                    peer_head_slot = highest_peer_head_slot,
+                    "Node fell behind peers; switching to Syncing"
+                );
+                SyncStatus::Syncing { jobs: Vec::new() }
+            } else {
+                self.sync_status.clone()
+            }
+        } else if is_synced_by_time {
+            if self.sync_status != SyncStatus::Synced {
+                info!(
+                    slot = get_current_slot(),
+                    head_slot = current_head_slot,
+                    "Node has synced to the head"
+                );
+            }
+            SyncStatus::Synced
+        } else {
+            if self.sync_status != SyncStatus::Synced {
+                info!(
+                    slot = get_current_slot(),
+                    head_slot = current_head_slot,
+                    "Node is behind time but caught up to peers (stall detected); switching to Synced"
+                );
+            }
+            SyncStatus::Synced
+        };
+
+        if sync_status == SyncStatus::Synced {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|err| anyhow!("System time before epoch: {err:?}"))?
+                .as_secs();
+            self.store.write().await.on_tick(now, false).await?;
+        }
+
+        Ok(sync_status)
+    }
+
+    async fn handle_network_event(&mut self, event: ReamNetworkEvent) -> anyhow::Result<()> {
+        match event {
+            ReamNetworkEvent::RequestMessage {
+                peer_id,
+                stream_id,
+                connection_id,
+                message,
+            } => {
+                self.handle_request_network_event(peer_id, stream_id, connection_id, message)
+                    .await
+            }
+            ReamNetworkEvent::ResponseMessage { peer_id, message } => {
+                self.handle_response_network_event(peer_id, message).await
+            }
+        }
+    }
+
+    async fn handle_request_network_event(
+        &mut self,
+        peer_id: PeerId,
+        stream_id: u64,
+        connection_id: ConnectionId,
+        message: LeanRequestMessage,
+    ) -> anyhow::Result<()> {
+        match message {
+            LeanRequestMessage::BlocksByRoot(blocks_by_root_v1_request) => {
+                let block_provider = {
+                    let fork_choice = self.store.read().await;
+                    let store = fork_choice.store.lock().await;
+                    store.block_provider()
+                };
+                for root in blocks_by_root_v1_request.inner {
+                    match block_provider.get(root) {
+                        Ok(Some(block)) => {
+                            if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::Response {
+                                peer_id,
+                                stream_id,
+                                connection_id,
+                                message: LeanResponseMessage::BlocksByRoot(Arc::new(block)),
+                            }) {
+                                warn!("Failed to handle incoming lean request: {err:?}");
+                            }
+                        }
+                        Ok(None) => {
+                            debug!("Block not found for root: {root:?}");
+                        }
+                        Err(err) => {
+                            warn!("Failed to get block for root {root:?}: {err:?}");
+                        }
+                    }
+                }
+            }
+            _ => warn!(
+                "We handle these messages elsewhere, received unexpected LeanRequestMessage: {:?}",
+                message
+            ),
+        }
+        Ok(())
+    }
+
+    async fn handle_response_network_event(
+        &mut self,
+        peer_id: PeerId,
+        message: Arc<LeanResponseMessage>,
+    ) -> anyhow::Result<()> {
+        match &*message {
+            LeanResponseMessage::BlocksByRoot(signed_block_with_attestation) => {
+                let last_root = signed_block_with_attestation.message.block.tree_hash_root();
+                // if the parent root is present in pending blocks or is local head, we mark the
+                // queue as complete
+                let (head, pending_blocks_provider) = {
+                    let fork_choice = self.store.read().await;
+                    let store = fork_choice.store.lock().await;
+                    (
+                        store.head_provider().get()?,
+                        store.pending_blocks_provider(),
+                    )
+                };
+                // We have 3 scenarios where we can mark the job queue as complete
+                // 1. The parent root is the local head
+                // 2. The parent root is already present in the pending blocks (we have already
+                //    requested it)
+                // 3. The parent root is the starting root of any existing job queue
+                let parent_root_is_local_head =
+                    signed_block_with_attestation.message.block.parent_root == head;
+                let parent_root_in_pending_blocks = pending_blocks_provider
+                    .get(signed_block_with_attestation.message.block.parent_root)?
+                    .is_some();
+                let parent_root_is_start_of_any_queue =
+                    self.sync_status.is_root_start_of_any_queue(
+                        &signed_block_with_attestation.message.block.parent_root,
+                    );
+                if parent_root_is_local_head
+                    || parent_root_in_pending_blocks
+                    || parent_root_is_start_of_any_queue
+                {
+                    trace!(
+                        "Marking job queue as complete for block from peer {peer_id:?} with root {last_root:?}."
+                    );
+                    self.sync_status.mark_job_queue_as_complete(last_root);
+                    let pending_blocks_provider = {
+                        let fork_choice = self.store.read().await;
+                        let store = fork_choice.store.lock().await;
+                        store.pending_blocks_provider()
+                    };
+
+                    pending_blocks_provider
+                        .insert(last_root, signed_block_with_attestation.as_ref().clone())?;
+                    return Ok(());
+                }
+
+                // If the queue is not complete, we proceed to replace the job with the next job
+                let random_peer_id = match self.network_state.random_connected_peer() {
+                    Some(peer) => peer.peer_id,
+                    None => {
+                        warn!("No connected peers available to submit next job request.");
+                        return Ok(());
+                    }
+                };
+
+                let _ = match self.sync_status.replace_job_with_next_job(
+                    last_root,
+                    signed_block_with_attestation.message.block.slot,
+                    JobRequest::new(
+                        random_peer_id,
+                        signed_block_with_attestation.message.block.parent_root,
+                    ),
+                ) {
+                    Some(last_job_request) => last_job_request,
+                    None => {
+                        warn!(
+                            "Received unexpected block from peer {peer_id:?} with root {last_root:?}. No matching job found."
+                        );
+                        return Ok(());
+                    }
+                };
+
+                if random_peer_id != peer_id {
+                    self.peers_in_use.remove(&peer_id);
+                }
+
+                let pending_blocks_provider = {
+                    let fork_choice = self.store.read().await;
+                    let store = fork_choice.store.lock().await;
+                    store.pending_blocks_provider()
+                };
+
+                pending_blocks_provider
+                    .insert(last_root, signed_block_with_attestation.as_ref().clone())?;
+            }
+            _ => warn!(
+                "We handle these messages elsewhere, received unexpected LeanRequestMessage: {:?}",
+                message
+            ),
+        }
+        Ok(())
     }
 
     async fn prune_old_state(&self, tick_count: u64) -> anyhow::Result<()> {
@@ -296,7 +768,7 @@ impl LeanChainService {
     async fn handle_produce_block(
         &mut self,
         slot: u64,
-        response: oneshot::Sender<BlockWithSignatures>,
+        response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
         let block_with_signatures = self
             .store
@@ -305,9 +777,8 @@ impl LeanChainService {
             .produce_block_with_signatures(slot, slot % lean_network_spec().num_validators)
             .await?;
 
-        // Send the produced block back to the requester
         response
-            .send(block_with_signatures)
+            .send(ServiceResponse::Ok(block_with_signatures))
             .map_err(|err| anyhow!("Failed to send produced block: {err:?}"))?;
 
         Ok(())
@@ -316,7 +787,7 @@ impl LeanChainService {
     async fn handle_build_attestation_data(
         &mut self,
         slot: u64,
-        response: oneshot::Sender<AttestationData>,
+        response: oneshot::Sender<ServiceResponse<AttestationData>>,
     ) -> anyhow::Result<()> {
         let attestation_data = self
             .store
@@ -325,9 +796,8 @@ impl LeanChainService {
             .produce_attestation_data(slot)
             .await?;
 
-        // Send the built attestation data back to the requester
         response
-            .send(attestation_data)
+            .send(ServiceResponse::Ok(attestation_data))
             .map_err(|err| anyhow!("Failed to send built attestation data: {err:?}"))?;
 
         Ok(())
