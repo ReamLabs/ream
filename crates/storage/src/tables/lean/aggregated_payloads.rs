@@ -1,81 +1,14 @@
 use std::sync::Arc;
 
-use ream_consensus_lean::attestation::SignatureKey;
-use ream_post_quantum_crypto::lean_multisig::aggregate::AggregateSignature;
+use ream_consensus_lean::attestation::{AggregatedSignatureProof, SignatureKey};
 use redb::{Database, Durability, TableDefinition};
 use ssz::{Decode, Encode};
-use ssz_types::{BitList, VariableList, typenum::U4096};
+use ssz_types::{VariableList, typenum::U4096};
 
 use crate::{
     errors::StoreError,
     tables::{ssz_encoder::SSZEncoding, table::REDBTable},
 };
-
-/// Aggregated signature proof with participant tracking.
-/// Mirrors Python spec's AggregatedSignatureProof.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct AggregatedSignatureProof {
-    /// Which validators are covered by this proof
-    pub participants: BitList<U4096>,
-    /// The aggregated signature proof
-    pub proof: AggregateSignature,
-}
-
-impl Encode for AggregatedSignatureProof {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        // Variable-length container: encode each field with offset
-        let mut encoder = ssz::SszEncoder::container(buf, 2);
-        encoder.append(&self.participants);
-        encoder.append(&self.proof);
-        encoder.finalize();
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        // 2 offsets (4 bytes each) + variable data
-        8 + self.participants.ssz_bytes_len() + self.proof.ssz_bytes_len()
-    }
-}
-
-impl Decode for AggregatedSignatureProof {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
-        let mut builder = ssz::SszDecoderBuilder::new(bytes);
-        builder.register_type::<BitList<U4096>>()?;
-        builder.register_type::<AggregateSignature>()?;
-        let mut decoder = builder.build()?;
-
-        Ok(Self {
-            participants: decoder.decode_next()?,
-            proof: decoder.decode_next()?,
-        })
-    }
-}
-
-impl AggregatedSignatureProof {
-    pub fn new(participants: BitList<U4096>, proof: AggregateSignature) -> Self {
-        Self {
-            participants,
-            proof,
-        }
-    }
-
-    /// Get the validator IDs covered by this proof
-    pub fn to_validator_indices(&self) -> Vec<u64> {
-        self.participants
-            .iter()
-            .enumerate()
-            .filter(|(_, bit)| *bit)
-            .map(|(index, _)| index as u64)
-            .collect()
-    }
-}
 
 /// Wrapper for a list of aggregated signature proofs.
 /// Uses VariableList for SSZ compatibility.

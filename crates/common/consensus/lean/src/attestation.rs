@@ -1,6 +1,8 @@
 #[cfg(feature = "devnet2")]
 use alloy_primitives::B256;
 use alloy_primitives::FixedBytes;
+#[cfg(feature = "devnet2")]
+use ream_post_quantum_crypto::lean_multisig::aggregate::AggregateSignature;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -36,6 +38,33 @@ impl SignatureKey {
             validator_id,
             data_root,
         }
+    }
+}
+
+#[cfg(feature = "devnet2")]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+pub struct AggregatedSignatureProof {
+    pub participants: BitList<U4096>,
+    pub proof: AggregateSignature,
+}
+
+#[cfg(feature = "devnet2")]
+impl AggregatedSignatureProof {
+    pub fn new(participants: BitList<U4096>, proof: AggregateSignature) -> Self {
+        Self {
+            participants,
+            proof,
+        }
+    }
+
+    /// Get the validator IDs covered by this proof
+    pub fn to_validator_indices(&self) -> Vec<u64> {
+        self.participants
+            .iter()
+            .enumerate()
+            .filter(|(_, bit)| *bit)
+            .map(|(index, _)| index as u64)
+            .collect()
     }
 }
 

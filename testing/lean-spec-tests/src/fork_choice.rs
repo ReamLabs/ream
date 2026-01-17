@@ -3,6 +3,8 @@ use std::path::Path;
 use anyhow::{anyhow, bail, ensure};
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::attestation::AggregatedAttestations;
+#[cfg(feature = "devnet2")]
+use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet1")]
 use ream_consensus_lean::attestation::Attestation;
 #[cfg(feature = "devnet2")]
@@ -24,6 +26,8 @@ use ream_storage::{
     tables::{field::REDBField, table::REDBTable},
 };
 use ssz_types::VariableList;
+#[cfg(feature = "devnet2")]
+use ssz_types::{BitList, typenum::U4096};
 use tracing::{debug, info};
 use tree_hash::TreeHash;
 
@@ -191,12 +195,20 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 };
                 #[cfg(feature = "devnet2")]
                 let signatures = {
-                    // devnet2: one aggregated signature per aggregated attestation
+                    // devnet2: one aggregated signature proof per aggregated attestation
                     let num_signatures = ream_block.body.attestations.len();
-                    VariableList::try_from(vec![
-                        AggregateSignature::new(vec![], vec![]);
-                        num_signatures
-                    ])
+                    let empty_proof = || {
+                        AggregatedSignatureProof::new(
+                            BitList::<U4096>::with_capacity(0)
+                                .expect("Failed to create empty BitList"),
+                            AggregateSignature::new(vec![], vec![]),
+                        )
+                    };
+                    VariableList::try_from(
+                        (0..num_signatures)
+                            .map(|_| empty_proof())
+                            .collect::<Vec<_>>(),
+                    )
                     .map_err(|err| anyhow!("Failed to create signatures VariableList: {err}"))?
                 };
 

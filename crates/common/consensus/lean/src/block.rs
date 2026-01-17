@@ -2,9 +2,7 @@ use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 use ream_metrics::{PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, start_timer, stop_timer};
 #[cfg(feature = "devnet2")]
-use ream_post_quantum_crypto::lean_multisig::aggregate::{
-    AggregateSignature, verify_aggregate_signature,
-};
+use ream_post_quantum_crypto::lean_multisig::aggregate::verify_aggregate_signature;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -15,7 +13,7 @@ use tree_hash_derive::TreeHash;
 #[cfg(feature = "devnet1")]
 use crate::attestation::Attestation;
 #[cfg(feature = "devnet2")]
-use crate::attestation::{AggregatedAttestation, AggregatedAttestations};
+use crate::attestation::{AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof};
 use crate::state::LeanState;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
@@ -23,7 +21,7 @@ pub struct BlockSignatures {
     #[cfg(feature = "devnet1")]
     pub attestation_signatures: VariableList<Signature, U4096>,
     #[cfg(feature = "devnet2")]
-    pub attestation_signatures: VariableList<AggregateSignature, U4096>,
+    pub attestation_signatures: VariableList<AggregatedSignatureProof, U4096>,
     pub proposer_signature: Signature,
 }
 
@@ -136,7 +134,7 @@ impl SignedBlockWithAttestation {
                     verify_aggregate_signature(
                         &public_keys,
                         &attestation_root,
-                        aggregated_signature,
+                        &aggregated_signature.proof,
                         aggregated_attestation.message.slot as u32,
                     )
                     .map_err(|err| {
@@ -233,7 +231,7 @@ pub struct BlockWithSignatures {
     #[cfg(feature = "devnet1")]
     pub signatures: VariableList<Signature, U4096>,
     #[cfg(feature = "devnet2")]
-    pub signatures: VariableList<AggregateSignature, U4096>,
+    pub signatures: VariableList<AggregatedSignatureProof, U4096>,
 }
 
 #[cfg(test)]

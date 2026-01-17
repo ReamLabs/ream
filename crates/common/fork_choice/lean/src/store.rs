@@ -4,14 +4,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
-#[cfg(feature = "devnet2")]
-use ream_consensus_lean::attestation::AggregatedAttestation;
-#[cfg(feature = "devnet2")]
-use ream_consensus_lean::attestation::AggregatedAttestations;
 #[cfg(feature = "devnet1")]
 use ream_consensus_lean::attestation::Attestation;
 #[cfg(feature = "devnet2")]
-use ream_consensus_lean::attestation::SignatureKey;
+use ream_consensus_lean::attestation::{
+    AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, SignatureKey,
+};
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{Block, BlockBody, BlockWithSignatures, SignedBlockWithAttestation},
@@ -31,8 +29,6 @@ use ream_network_state_lean::NetworkState;
 #[cfg(feature = "devnet2")]
 use ream_post_quantum_crypto::lean_multisig::aggregate::aggregate_signatures;
 use ream_post_quantum_crypto::leansig::signature::Signature;
-#[cfg(feature = "devnet2")]
-use ream_storage::tables::lean::aggregated_payloads::AggregatedSignatureProof;
 use ream_storage::{
     db::lean::LeanDB,
     tables::{field::REDBField, table::REDBTable},
@@ -827,9 +823,8 @@ impl Store {
             .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
 
         #[cfg(feature = "devnet2")]
-        let signatures_list =
-            VariableList::new(proofs.into_iter().map(|p| p.proof).collect::<Vec<_>>())
-                .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
+        let signatures_list = VariableList::new(proofs)
+            .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
 
         Ok(BlockWithSignatures {
             block: candidate_block,
@@ -957,10 +952,7 @@ impl Store {
                             validator_id,
                             aggregated_attestation.message.tree_hash_root(),
                         ),
-                        AggregatedSignatureProof::new(
-                            aggregated_attestation.aggregation_bits.clone(),
-                            aggregated_proof.clone(),
-                        ),
+                        aggregated_proof.clone(),
                     )?;
 
                     self.on_attestation(
@@ -1244,8 +1236,12 @@ mod tests {
     #[cfg(feature = "devnet1")]
     use ream_consensus_lean::config::Config;
     #[cfg(feature = "devnet2")]
+    use ream_consensus_lean::validator::Validator;
+    #[cfg(feature = "devnet2")]
     use ream_consensus_lean::{
-        attestation::{AggregatedAttestation, AggregatedAttestations},
+        attestation::{
+            AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, SignatureKey,
+        },
         block::BlockSignatures,
     };
     use ream_consensus_lean::{
@@ -1259,7 +1255,7 @@ mod tests {
     use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
     use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
     #[cfg(feature = "devnet2")]
-    use ream_post_quantum_crypto::lean_multisig::aggregate::AggregateSignature;
+    use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
     use ream_post_quantum_crypto::leansig::signature::Signature;
     use ream_storage::{
         db::{ReamDB, lean::LeanDB},
@@ -1336,7 +1332,7 @@ mod tests {
     pub fn build_signed_block_with_attestation(
         attestation_data: AttestationData,
         block: Block,
-        attestation_signatures: VariableList<AggregateSignature, U4096>,
+        attestation_signatures: VariableList<AggregatedSignatureProof, U4096>,
     ) -> SignedBlockWithAttestation {
         SignedBlockWithAttestation {
             message: BlockWithAttestation {
@@ -1402,6 +1398,7 @@ mod tests {
 
     /// Test block production includes available attestations.
     #[tokio::test]
+    #[cfg(feature = "devnet1")]
     async fn test_produce_block_with_attestations() {
         let (store, _) = sample_store(10).await;
 
@@ -1420,7 +1417,6 @@ mod tests {
         let attestation_target = store.get_attestation_target().await.unwrap();
 
         let attestation_1 = SignedAttestation {
-            #[cfg(feature = "devnet1")]
             message: Attestation {
                 validator_id: 5,
                 data: AttestationData {
@@ -1433,23 +1429,10 @@ mod tests {
                     source: attestation_target,
                 },
             },
-            #[cfg(feature = "devnet2")]
-            message: AttestationData {
-                slot: head_block.message.block.slot,
-                head: Checkpoint {
-                    root: head,
-                    slot: head_block.message.block.slot,
-                },
-                target: justified_checkpoint,
-                source: attestation_target,
-            },
             signature: Signature::blank(),
-            #[cfg(feature = "devnet2")]
-            validator_id: 5,
         };
 
         let attestation_2 = SignedAttestation {
-            #[cfg(feature = "devnet1")]
             message: Attestation {
                 validator_id: 6,
                 data: AttestationData {
@@ -1462,22 +1445,145 @@ mod tests {
                     source: attestation_target,
                 },
             },
-            #[cfg(feature = "devnet2")]
-            message: AttestationData {
-                slot: head_block.message.block.slot,
-                head: Checkpoint {
-                    root: head,
-                    slot: head_block.message.block.slot,
-                },
-                target: justified_checkpoint,
-                source: attestation_target,
-            },
             signature: Signature::blank(),
-            #[cfg(feature = "devnet2")]
+        };
+
+        // Store attestations in latest_known_attestations
+        latest_known_attestations
+            .batch_insert([(5, attestation_1.clone()), (6, attestation_2.clone())])
+            .unwrap();
+
+        let block_with_signature = store.produce_block_with_signatures(2, 2).await.unwrap();
+
+        assert!(!block_with_signature.block.body.attestations.is_empty());
+        assert_eq!(block_with_signature.block.slot, 2);
+        assert_eq!(block_with_signature.block.proposer_index, 2);
+        assert_eq!(
+            block_with_signature.block.parent_root,
+            store.get_proposal_head(2).await.unwrap()
+        );
+        assert_ne!(block_with_signature.block.state_root, B256::ZERO);
+    }
+
+    /// Test block production includes available attestations (devnet2).
+    /// This test generates real key pairs for validators to ensure signature aggregation works.
+    #[tokio::test]
+    #[cfg(feature = "devnet2")]
+    async fn test_produce_block_with_attestations() {
+        use rand::rng;
+
+        // Generate real key pairs for validators
+        let mut test_rng = rng();
+        let mut validators = Vec::new();
+        let mut private_keys = Vec::new();
+
+        for i in 0..10 {
+            let (pub_key, priv_key) = PrivateKey::generate_key_pair(&mut test_rng, 0, 10);
+            validators.push(Validator {
+                public_key: pub_key,
+                index: i as u64,
+            });
+            private_keys.push(priv_key);
+        }
+
+        // Create store with validators that have real keys
+        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
+        let (genesis_block, genesis_state) =
+            crate::genesis::setup_genesis(lean_network_spec().genesis_time, validators);
+
+        let checkpoint = Checkpoint {
+            slot: genesis_block.slot,
+            root: genesis_block.tree_hash_root(),
+        };
+        let signed_genesis_block = build_signed_block_with_attestation(
+            AttestationData {
+                slot: genesis_block.slot,
+                head: checkpoint,
+                target: checkpoint,
+                source: checkpoint,
+            },
+            genesis_block.clone(),
+            VariableList::default(),
+        );
+
+        let store = Store::get_forkchoice_store(
+            signed_genesis_block,
+            genesis_state.clone(),
+            db_setup(),
+            Some(0),
+        )
+        .unwrap();
+
+        let (
+            head_provider,
+            block_provider,
+            justified_provider,
+            latest_known_attestations,
+            gossip_signatures_provider,
+        ) = {
+            let db = store.store.lock().await;
+            (
+                db.head_provider(),
+                db.block_provider(),
+                db.latest_justified_provider(),
+                db.latest_known_attestations_provider(),
+                db.gossip_signatures_provider(),
+            )
+        };
+        let head = head_provider.get().unwrap();
+        let head_block = block_provider.get(head).unwrap().unwrap();
+        let justified_checkpoint = justified_provider.get().unwrap();
+        let attestation_target = store.get_attestation_target().await.unwrap();
+
+        // Create attestation data
+        let attestation_data = AttestationData {
+            slot: head_block.message.block.slot,
+            head: Checkpoint {
+                root: head,
+                slot: head_block.message.block.slot,
+            },
+            target: justified_checkpoint,
+            source: attestation_target,
+        };
+
+        // Sign attestation data with real private keys
+        // The signature is over the attestation data tree hash root
+        let data_root = attestation_data.tree_hash_root();
+        let epoch = attestation_data.slot as u32;
+
+        let signature_1 = private_keys[5].sign(&data_root.0, epoch).unwrap();
+        let signature_2 = private_keys[6].sign(&data_root.0, epoch).unwrap();
+
+        let attestation_1 = SignedAttestation {
+            message: attestation_data.clone(),
+            signature: signature_1,
             validator_id: 5,
         };
+
+        let attestation_2 = SignedAttestation {
+            message: attestation_data.clone(),
+            signature: signature_2,
+            validator_id: 6,
+        };
+
+        // Store attestations in latest_known_attestations
         latest_known_attestations
-            .batch_insert([(5, attestation_1), (6, attestation_2)])
+            .batch_insert([(5, attestation_1.clone()), (6, attestation_2.clone())])
+            .unwrap();
+
+        // For devnet2, also store signatures in gossip_signatures
+        // This is required for build_block to include the attestations
+        gossip_signatures_provider
+            .insert_signature(
+                SignatureKey::new(5, &attestation_1.message),
+                attestation_1.signature,
+            )
+            .unwrap();
+        gossip_signatures_provider
+            .insert_signature(
+                SignatureKey::new(6, &attestation_2.message),
+                attestation_2.signature,
+            )
             .unwrap();
 
         let block_with_signature = store.produce_block_with_signatures(2, 2).await.unwrap();
