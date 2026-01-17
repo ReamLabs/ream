@@ -1,5 +1,7 @@
 use actix_web::{
-    HttpResponse, Responder, get,
+    HttpRequest, HttpResponse, Responder, get,
+    http::header,
+    mime,
     web::{Data, Path},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
@@ -10,9 +12,19 @@ use ssz::Encode;
 // GET /lean/v0/states/{state_id}
 #[get("/states/{state_id}")]
 pub async fn get_state(
+    req: HttpRequest,
     state_id: Path<ID>,
     lean_chain: Data<LeanStoreReader>,
 ) -> Result<impl Responder, ApiError> {
+    // Determine response format based on Accept header.
+    // Default to JSON if not specified.
+    let accept_mime = req
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or(mime::APPLICATION_JSON.as_ref());
+    let is_ssz = accept_mime.contains(mime::APPLICATION_OCTET_STREAM.as_ref());
+
     let lean_chain = lean_chain.read().await;
 
     let block_root = match state_id.into_inner() {
@@ -64,38 +76,20 @@ pub async fn get_state(
         }
     };
 
-    let provider = lean_chain.store.clone().lock().await.state_provider();
-
-    Ok(HttpResponse::Ok().json(
-        provider
-            .get(block_root?)
-            .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))?
-            .ok_or_else(|| ApiError::NotFound("Lean state not found".to_string()))?,
-    ))
-}
-
-#[get("/states/finalized")]
-pub async fn get_finalized_state_ssz(
-    lean_chain: Data<LeanStoreReader>,
-) -> Result<impl Responder, ApiError> {
-    let lean_chain = lean_chain.read().await;
     let db = lean_chain.store.lock().await;
-
-    let block_root = db
-        .latest_finalized_provider()
-        .get()
-        .map_err(|err| {
-            ApiError::InternalError(format!("Failed to get finalized provider: {err:?}"))
-        })?
-        .root;
-
     let state = db
         .state_provider()
-        .get(block_root)
-        .map_err(|err| ApiError::InternalError(format!("Database error: {err}")))?
+        .get(block_root?)
+        .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))?
         .ok_or_else(|| ApiError::NotFound("Lean state not found".to_string()))?;
 
+    if is_ssz {
+        return Ok(HttpResponse::Ok()
+            .content_type(mime::APPLICATION_OCTET_STREAM)
+            .body(state.as_ssz_bytes()));
+    }
+
     Ok(HttpResponse::Ok()
-        .content_type("application/octet-stream")
-        .body(state.as_ssz_bytes()))
+        .content_type(mime::APPLICATION_JSON)
+        .json(state))
 }
