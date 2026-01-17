@@ -518,7 +518,7 @@ impl Store {
                     .push(attestation.validator_id);
             }
 
-            let attestations_list: VariableList<AggregatedAttestation, U4096> = VariableList::new(
+            let attestations_list = VariableList::new(
                 groups
                     .into_iter()
                     .map(|(message, ids)| {
