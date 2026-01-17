@@ -2,9 +2,9 @@ name: Rust
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
   pull_request:
-    branches: [ "master" ]
+    branches: ["master"]
   merge_group:
 
 env:
@@ -15,109 +15,123 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install Rust nightly
-      run: rustup install nightly
+      - name: Install Rust nightly
+        run: rustup install nightly
 
-    - name: Install rustfmt for nightly
-      run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu rustfmt
+      - name: Install rustfmt for nightly
+        run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu rustfmt
 
-    - uses: Swatinem/rust-cache@v2
-      with:
-        cache-on-failure: true    
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
-    - name: Run rustfmt
-      run: cargo +nightly fmt -- --check
+      - name: Run rustfmt
+        run: cargo +nightly fmt -- --check
 
-    - name: Check `map_err` variable naming
-      run: make fmt
-      
+      - name: Check `map_err` variable naming
+        run: make fmt
+
   cargo-clippy:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: Swatinem/rust-cache@v2
-      with:
-        cache-on-failure: true        
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
-    - name: Run Clippy
-      run: |
-        cargo clippy --all --all-targets --no-deps -- --deny warnings # clippy for ream, default features
-        cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings # clippy for ream-bls, supranational feature
-        make clippy-devnet2
+      - name: Run Clippy
+        run: |
+          cargo clippy --all --all-targets --no-deps -- --deny warnings # clippy for ream, default features
+          cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings # clippy for ream-bls, supranational feature
+          make clippy-devnet2
 
   cargo-sort:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: Swatinem/rust-cache@v2
-      with:
-        cache-on-failure: true        
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
-    # Install this commit as there isn't a release yet which works for workspace's
-    - name: Install cargo sort
-      run: cargo install --git https://github.com/DevinR528/cargo-sort.git --rev 25a60ad860ce7cd0055abf4b69c18285cb07ab41 cargo-sort
+      # Install this commit as there isn't a release yet which works for workspace's
+      - name: Install cargo sort
+        run: cargo install --git https://github.com/DevinR528/cargo-sort.git --rev 25a60ad860ce7cd0055abf4b69c18285cb07ab41 cargo-sort
 
-    - name: Run cargo sort
-      run: cargo sort --grouped --check --workspace
+      - name: Run cargo sort
+        run: cargo sort --grouped --check --workspace
 
   build:
     runs-on: ubuntu-latest
     needs: [format, cargo-clippy]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: Swatinem/rust-cache@v2
-      with:
-        cache-on-failure: true    
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
-    - name: Build
-      run: cargo build --verbose
+      - name: Build
+        run: cargo build --verbose
 
   test:
     runs-on: ubuntu-latest
     needs: [format, cargo-clippy]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: Swatinem/rust-cache@v2
-      with:
-        cache-on-failure: true        
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
-    - name: Test
-      run: cargo test --release --workspace -- --nocapture
+      - name: Test
+        run: cargo test --release --workspace -- --nocapture
 
   test-devnet2:
     runs-on: ubuntu-latest
     needs: [format, cargo-clippy]
-    
+
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: Swatinem/rust-cache@v2
-      with:
-        cache-on-failure: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
-    - name: Test Devnet 2
-      run: make test-devnet2
+      - name: Test Devnet 2
+        run: make test-devnet2
 
   ef-tests:
     runs-on: ubuntu-latest
     needs: [format, cargo-clippy]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: Swatinem/rust-cache@v2
-      with:
-        cache-on-failure: true    
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
-    - name: Test consensus spec tests
-      run: cd testing/ef-tests && make test
+      - name: Test consensus spec tests
+        run: cd testing/ef-tests && make test
+
+  lean-spec-tests:
+    runs-on: ubuntu-latest
+    needs: [format, cargo-clippy]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Test lean spec tests
+        run: cd testing/lean-spec-tests && make test
