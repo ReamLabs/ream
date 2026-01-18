@@ -1,8 +1,13 @@
 use actix_web::{
-    HttpResponse, Responder, get,
+    HttpRequest, HttpResponse, Responder, get,
+    http::header,
     web::{Data, Path},
 };
-use ream_api_types_common::{error::ApiError, id::ID};
+use ream_api_types_common::{
+    content_type::{ContentType, JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE},
+    error::ApiError,
+    id::ID,
+};
 use ream_fork_choice_lean::store::LeanStoreReader;
 use ream_storage::tables::{field::REDBField, table::REDBTable};
 use ssz::Encode;
@@ -10,6 +15,7 @@ use ssz::Encode;
 // GET /lean/v0/states/{state_id}
 #[get("/states/{state_id}")]
 pub async fn get_state(
+    http_request: HttpRequest,
     state_id: Path<ID>,
     lean_chain: Data<LeanStoreReader>,
 ) -> Result<impl Responder, ApiError> {
@@ -64,38 +70,19 @@ pub async fn get_state(
         }
     };
 
-    let provider = lean_chain.store.clone().lock().await.state_provider();
-
-    Ok(HttpResponse::Ok().json(
-        provider
-            .get(block_root?)
-            .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))?
-            .ok_or_else(|| ApiError::NotFound("Lean state not found".to_string()))?,
-    ))
-}
-
-#[get("/states/finalized")]
-pub async fn get_finalized_state_ssz(
-    lean_chain: Data<LeanStoreReader>,
-) -> Result<impl Responder, ApiError> {
-    let lean_chain = lean_chain.read().await;
     let db = lean_chain.store.lock().await;
-
-    let block_root = db
-        .latest_finalized_provider()
-        .get()
-        .map_err(|err| {
-            ApiError::InternalError(format!("Failed to get finalized provider: {err:?}"))
-        })?
-        .root;
-
     let state = db
         .state_provider()
-        .get(block_root)
-        .map_err(|err| ApiError::InternalError(format!("Database error: {err}")))?
+        .get(block_root?)
+        .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))?
         .ok_or_else(|| ApiError::NotFound("Lean state not found".to_string()))?;
 
-    Ok(HttpResponse::Ok()
-        .content_type("application/octet-stream")
-        .body(state.as_ssz_bytes()))
+    match ContentType::from(http_request.headers().get(header::ACCEPT)) {
+        ContentType::Ssz => Ok(HttpResponse::Ok()
+            .content_type(SSZ_CONTENT_TYPE)
+            .body(state.as_ssz_bytes())),
+        ContentType::Json => Ok(HttpResponse::Ok()
+            .content_type(JSON_CONTENT_TYPE)
+            .json(state)),
+    }
 }

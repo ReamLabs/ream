@@ -3,6 +3,7 @@ use std::time::Duration;
 use alloy_primitives::B256;
 use anyhow::{Ok, anyhow};
 use ream_api_types_beacon::responses::{ETH_CONSENSUS_VERSION_HEADER, VERSION};
+use ream_api_types_common::content_type::ContentType;
 use ream_bls::PublicKey;
 use ream_consensus_beacon::electra::blinded_beacon_block::SignedBlindedBeaconBlock;
 use reqwest::StatusCode;
@@ -12,7 +13,7 @@ use super::{
     blobs::ExecutionPayloadAndBlobsBundle, builder_bid::SignedBuilderBid,
     validator_registration::SignedValidatorRegistrationV1,
 };
-use crate::beacon_api_client::http_client::{ClientWithBaseUrl, ContentType};
+use crate::beacon_api_client::http_client::ClientWithBaseUrl;
 
 #[derive(Debug, Clone)]
 pub struct BuilderConfig {

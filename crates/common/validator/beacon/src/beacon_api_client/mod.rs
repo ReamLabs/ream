@@ -6,7 +6,7 @@ use alloy_primitives::{B256, hex};
 use anyhow::anyhow;
 use eventsource_client::{Client, ClientBuilder, SSE};
 use futures::{Stream, StreamExt};
-use http_client::{ClientWithBaseUrl, ContentType};
+use http_client::ClientWithBaseUrl;
 use ream_api_types_beacon::{
     block::{BroadcastValidation, FullBlockData, ProduceBlockData, ProduceBlockResponse},
     committee::BeaconCommitteeSubscription,
@@ -21,7 +21,7 @@ use ream_api_types_beacon::{
     sync::SyncStatus,
     validator::{ValidatorData, ValidatorStatus},
 };
-use ream_api_types_common::id::ID;
+use ream_api_types_common::{content_type::ContentType, id::ID};
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     attestation::Attestation,

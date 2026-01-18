@@ -5870,6 +5870,7 @@ dependencies = [
  "ethereum_serde_utils",
  "ethereum_ssz",
  "ethereum_ssz_derive",
+ "ream-api-types-common",
  "ream-bls",
  "ream-consensus-beacon",
  "ream-consensus-misc",
@@ -5888,6 +5889,7 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "alloy-primitives",
+ "reqwest",
  "serde",
  "thiserror 2.0.17",
 ]
@@ -6567,6 +6569,7 @@ dependencies = [
  "ream-peer",
  "ream-rpc-common",
  "ream-storage",
+ "serde_json",
  "tokio",
  "tracing",
 ]

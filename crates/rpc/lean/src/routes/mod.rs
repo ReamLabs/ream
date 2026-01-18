@@ -2,6 +2,8 @@ pub mod lean;
 pub mod node;
 use actix_web::web::{ServiceConfig, scope};
 
+use crate::handlers::health::get_health;
+
 pub fn get_v0_routes(config: &mut ServiceConfig) {
     config.service(
         scope("/lean/v0")
@@ -11,5 +13,5 @@ pub fn get_v0_routes(config: &mut ServiceConfig) {
 }
 
 pub fn register_routers(config: &mut ServiceConfig) {
-    config.configure(get_v0_routes);
+    config.configure(get_v0_routes).service(get_health);
 }
