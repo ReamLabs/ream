@@ -1,10 +1,13 @@
 use actix_web::{
     HttpRequest, HttpResponse, Responder, get,
     http::header,
-    mime,
     web::{Data, Path},
 };
-use ream_api_types_common::{error::ApiError, id::ID};
+use ream_api_types_common::{
+    content_type::{ContentType, JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE},
+    error::ApiError,
+    id::ID,
+};
 use ream_fork_choice_lean::store::LeanStoreReader;
 use ream_storage::tables::{field::REDBField, table::REDBTable};
 use ssz::Encode;
@@ -12,18 +15,15 @@ use ssz::Encode;
 // GET /lean/v0/states/{state_id}
 #[get("/states/{state_id}")]
 pub async fn get_state(
-    req: HttpRequest,
+    http_request: HttpRequest,
     state_id: Path<ID>,
     lean_chain: Data<LeanStoreReader>,
 ) -> Result<impl Responder, ApiError> {
-    // Determine response format based on Accept header.
-    // Default to JSON if not specified.
-    let accept_mime = req
+    let content_type = http_request
         .headers()
         .get(header::ACCEPT)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or(mime::APPLICATION_JSON.as_ref());
-    let is_ssz = accept_mime.contains(mime::APPLICATION_OCTET_STREAM.as_ref());
+        .map(ContentType::from)
+        .unwrap_or(ContentType::Json);
 
     let lean_chain = lean_chain.read().await;
 
@@ -83,13 +83,12 @@ pub async fn get_state(
         .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))?
         .ok_or_else(|| ApiError::NotFound("Lean state not found".to_string()))?;
 
-    if is_ssz {
-        return Ok(HttpResponse::Ok()
-            .content_type(mime::APPLICATION_OCTET_STREAM)
-            .body(state.as_ssz_bytes()));
+    match content_type {
+        ContentType::Ssz => Ok(HttpResponse::Ok()
+            .content_type(SSZ_CONTENT_TYPE)
+            .body(state.as_ssz_bytes())),
+        ContentType::Json => Ok(HttpResponse::Ok()
+            .content_type(JSON_CONTENT_TYPE)
+            .json(state)),
     }
-
-    Ok(HttpResponse::Ok()
-        .content_type(mime::APPLICATION_JSON)
-        .json(state))
 }
