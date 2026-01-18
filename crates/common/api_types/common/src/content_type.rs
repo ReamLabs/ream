@@ -20,17 +20,11 @@ impl ContentType {
     }
 }
 
-impl From<&ActixHeaderValue> for ContentType {
-    fn from(header_value: &ActixHeaderValue) -> Self {
-        header_value
-            .to_str()
-            .map(|s| {
-                if s.contains(SSZ_CONTENT_TYPE) {
-                    ContentType::Ssz
-                } else {
-                    ContentType::Json
-                }
-            })
-            .unwrap_or(ContentType::Json)
+impl From<Option<&ActixHeaderValue>> for ContentType {
+    fn from(header_value: Option<&ActixHeaderValue>) -> Self {
+        match header_value.and_then(|h| h.to_str().ok()) {
+            Some(s) if s.split(';').any(|p| p.trim() == SSZ_CONTENT_TYPE) => ContentType::Ssz,
+            _ => ContentType::Json,
+        }
     }
 }
