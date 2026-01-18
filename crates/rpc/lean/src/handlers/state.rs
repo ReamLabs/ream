@@ -19,12 +19,6 @@ pub async fn get_state(
     state_id: Path<ID>,
     lean_chain: Data<LeanStoreReader>,
 ) -> Result<impl Responder, ApiError> {
-    let content_type = http_request
-        .headers()
-        .get(header::ACCEPT)
-        .map(ContentType::from)
-        .unwrap_or(ContentType::Json);
-
     let lean_chain = lean_chain.read().await;
 
     let block_root = match state_id.into_inner() {
@@ -83,7 +77,7 @@ pub async fn get_state(
         .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))?
         .ok_or_else(|| ApiError::NotFound("Lean state not found".to_string()))?;
 
-    match content_type {
+    match ContentType::from(http_request.headers().get(header::ACCEPT)) {
         ContentType::Ssz => Ok(HttpResponse::Ok()
             .content_type(SSZ_CONTENT_TYPE)
             .body(state.as_ssz_bytes())),
