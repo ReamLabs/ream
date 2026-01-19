@@ -29,7 +29,6 @@ use ream_network_state_lean::NetworkState;
 #[cfg(feature = "devnet2")]
 use ream_post_quantum_crypto::lean_multisig::aggregate::aggregate_signatures;
 #[cfg(feature = "devnet2")]
-use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 #[cfg(feature = "devnet2")]
 use ream_storage::tables::lean::{
@@ -506,17 +505,17 @@ impl Store {
                 .push(attestation.validator_id);
         }
 
-        let mut results: Vec<(AggregatedAttestation, AggregatedSignatureProof)> = Vec::new();
+        let mut results = Vec::new();
 
         for (data, validator_ids) in groups {
             let data_root = data.tree_hash_root();
 
             // Phase 1: Gossip Collection
             // Collect individual XMSS signatures from the gossip network
-            let mut gossip_signatures: Vec<Signature> = Vec::new();
-            let mut gossip_keys: Vec<PublicKey> = Vec::new();
-            let mut gossip_ids: Vec<u64> = Vec::new();
-            let mut remaining: HashSet<u64> = HashSet::new();
+            let mut gossip_signatures = Vec::new();
+            let mut gossip_keys = Vec::new();
+            let mut gossip_ids = Vec::new();
+            let mut remaining = HashSet::new();
 
             for &validator_id in &validator_ids {
                 if let Ok(Some(signature)) = gossip_signatures_provider
@@ -573,12 +572,18 @@ impl Store {
                     break;
                 }
 
-                let mut best_proof: Option<&AggregatedSignatureProof> = None;
-                let mut best_covered: HashSet<u64> = HashSet::new();
+                let mut best_proof = None;
+                let mut best_covered = HashSet::new();
 
                 for proof in &candidates {
-                    let covered: HashSet<u64> = proof.to_validator_indices().into_iter().collect();
-                    let overlap: HashSet<u64> = covered.intersection(&remaining).copied().collect();
+                    let covered = proof
+                        .to_validator_indices()
+                        .into_iter()
+                        .collect::<HashSet<u64>>();
+                    let overlap = covered
+                        .intersection(&remaining)
+                        .copied()
+                        .collect::<HashSet<u64>>();
                     if overlap.len() > best_covered.len() {
                         best_proof = Some(proof);
                         best_covered = overlap;
