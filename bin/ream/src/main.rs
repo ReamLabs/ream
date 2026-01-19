@@ -99,7 +99,7 @@ use tokio::{
     time,
     time::Instant,
 };
-use tracing::{error, info};
+use tracing::{Instrument, error, info};
 use tracing_subscriber::EnvFilter;
 use tree_hash::TreeHash;
 
@@ -356,14 +356,23 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     );
 
     // Start the services concurrently.
-    let mut chain_task = AbortOnDrop(executor.spawn(async move { chain_service.start().await }));
-    let mut network_task =
-        AbortOnDrop(executor.spawn(async move { network_service.start(config.bootnodes).await }));
-    let mut validator_task =
-        AbortOnDrop(executor.spawn(async move { validator_service.start().await }));
-    let mut http_task = AbortOnDrop(executor.spawn(async move {
-        ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
-    }));
+    let mut chain_task =
+        AbortOnDrop(executor.spawn(async move { chain_service.start().await }.in_current_span()));
+    let mut network_task = AbortOnDrop(
+        executor
+            .spawn(async move { network_service.start(config.bootnodes).await }.in_current_span()),
+    );
+    let mut validator_task = AbortOnDrop(
+        executor.spawn(async move { validator_service.start().await }.in_current_span()),
+    );
+    let mut http_task = AbortOnDrop(
+        executor.spawn(
+            async move {
+                ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
+            }
+            .in_current_span(),
+        ),
+    );
 
     executor.spawn(async move {
         countdown_for_genesis().await;
@@ -980,7 +989,7 @@ mod tests {
         let test_duration_secs = 60;
         let base_p2p_port = 20600;
         let base_http_port = 16652;
-        let num_nodes = topology.len();
+        let node_count = topology.len();
 
         let potential_paths = vec![
             PathBuf::from("bin/ream/assets/lean"),
@@ -988,17 +997,18 @@ mod tests {
             PathBuf::from("../assets/lean"),
         ];
 
-        let assets_dir = potential_paths
+        let assets_directory = potential_paths
             .into_iter()
             .find(|p| p.exists())
             .expect("Could not find 'assets/lean' directory.")
             .canonicalize()
             .expect("Failed to canonicalize assets path");
 
-        let registry_path = assets_dir.join(format!("test_multi_node_registry_{test_name}.yaml"));
+        let registry_path =
+            assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
 
         let mut validators_yaml = String::new();
-        for i in 0..num_nodes {
+        for i in 0..node_count {
             validators_yaml.push_str(&format!("node{}:\n  - {i}\n", i + 1));
         }
 
@@ -1015,8 +1025,8 @@ mod tests {
                 let node_index = i + 1;
                 let node_id = format!("node{node_index}");
 
-                let data_dir_name = format!("{APP_NAME}_{test_name}_node_{node_index}");
-                let ream_dir = std::env::temp_dir().join(data_dir_name);
+                let ream_dir =
+                    std::env::temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
 
                 if ream_dir.exists() {
                     let _ = fs::remove_dir_all(&ream_dir);
@@ -1040,14 +1050,14 @@ mod tests {
                 let db = ReamDB::new(ream_dir.clone()).unwrap();
                 db_instances.push(db.clone());
 
-                let mut bootnodes_arg: Vec<String> = Vec::new();
+                let mut bootnode_arguments: Vec<String> = Vec::new();
                 for &target_idx in node_boot_config {
                     if target_idx < node_addresses.len() {
-                        bootnodes_arg.push(node_addresses[target_idx].clone());
+                        bootnode_arguments.push(node_addresses[target_idx].clone());
                     }
                 }
 
-                let mut args = vec![
+                let mut arguments = vec![
                     "ream".to_string(),
                     "lean_node".to_string(),
                     "--network".to_string(),
@@ -1066,12 +1076,12 @@ mod tests {
                     key_path.to_string_lossy().to_string(),
                 ];
 
-                if !bootnodes_arg.is_empty() {
-                    args.push("--bootnodes".to_string());
-                    args.push(bootnodes_arg.join(","));
+                if !bootnode_arguments.is_empty() {
+                    arguments.push("--bootnodes".to_string());
+                    arguments.push(bootnode_arguments.join(","));
                 }
 
-                let cli = Cli::parse_from(args);
+                let cli = Cli::parse_from(arguments);
                 let Commands::LeanNode(config) = cli.command else {
                     panic!("Expected lean_node command");
                 };
@@ -1145,6 +1155,268 @@ mod tests {
             assert!(
                 head_state.latest_finalized.slot > 0,
                 "NO FINALIZATION. Check P2P logs for 'Dial error' or 'Handshake failed'."
+            );
+        });
+    }
+
+    #[test]
+    #[cfg(feature = "devnet1")]
+    fn test_lean_node_syncs_and_finalizes_late_joiner() {
+        // Topology: Node 3 connects to Node 1 and Node 2.
+        // Node 1 and 2 start immediately. Node 3 starts after 50s.
+        let topology = [vec![], vec![0], vec![0, 1]];
+        let test_name = "late_joiner_sync";
+
+        if true {
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(Verbosity::Info.directive())
+                .with_test_writer()
+                .try_init();
+        }
+
+        info!(
+            "Starting multi-node finalization test with late joiner: {}",
+            test_name
+        );
+
+        let test_duration_secs = 120;
+        let late_start_delay = 50;
+        let base_p2p_port = 21600;
+        let base_http_port = 17652;
+        let node_count = topology.len();
+
+        let potential_paths = vec![
+            PathBuf::from("bin/ream/assets/lean"),
+            PathBuf::from("assets/lean"),
+            PathBuf::from("../assets/lean"),
+        ];
+
+        let assets_directory = potential_paths
+            .into_iter()
+            .find(|p| p.exists())
+            .expect("Could not find 'assets/lean' directory.")
+            .canonicalize()
+            .expect("Failed to canonicalize assets path");
+
+        let registry_path =
+            assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
+
+        let mut validators_yaml = String::new();
+        for i in 0..node_count {
+            validators_yaml.push_str(&format!("node{}:\n  - {i}\n", i + 1));
+        }
+
+        fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
+        let registry_path_str = registry_path.to_string_lossy().to_string();
+
+        let executor = ReamExecutor::new().unwrap();
+        executor.clone().runtime().block_on(async move {
+            let mut node_handles = Vec::with_capacity(node_count);
+            for _ in 0..node_count {
+                node_handles.push(None);
+            }
+
+            let mut node_addresses: Vec<String> = Vec::new();
+            let mut db_instances = Vec::with_capacity(node_count);
+            for _ in 0..node_count {
+                db_instances.push(None);
+            }
+
+            let mut prepared_nodes = Vec::new();
+
+            for (i, _) in topology.iter().enumerate() {
+                let node_index = i + 1;
+
+                let ream_dir =
+                    std::env::temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
+
+                if ream_dir.exists() {
+                    let _ = fs::remove_dir_all(&ream_dir);
+                }
+                fs::create_dir_all(&ream_dir).expect("Failed to create data dir");
+
+                let key_path = ream_dir.join("node_key");
+                let peer_id = generate_node_identity(&key_path);
+
+                let port_offset = (test_name.len() as u16) % 100;
+                let p2p_port = base_p2p_port + port_offset + (i as u16);
+
+                let address = format!("/ip4/127.0.0.1/udp/{p2p_port}/quic-v1/p2p/{peer_id}");
+                node_addresses.push(address.clone());
+
+                let db = ReamDB::new(ream_dir.clone()).unwrap();
+                db_instances[i] = Some(db.clone());
+            }
+
+            for (i, node_boot_config) in topology.iter().enumerate() {
+                let node_index = i + 1;
+                let db = db_instances[i].clone().unwrap();
+                let key_path = std::env::temp_dir()
+                    .join(format!("{APP_NAME}_{test_name}_node_{node_index}"))
+                    .join("node_key");
+
+                let port_offset = (test_name.len() as u16) % 100;
+                let p2p_port = base_p2p_port + port_offset + (i as u16);
+                let http_port = base_http_port + port_offset + (i as u16);
+
+                let mut bootnode_arguments: Vec<String> = Vec::new();
+                for &target_idx in node_boot_config {
+                    if target_idx < node_addresses.len() {
+                        bootnode_arguments.push(node_addresses[target_idx].clone());
+                    }
+                }
+
+                let mut arguments = vec![
+                    "ream".to_string(),
+                    "lean_node".to_string(),
+                    "--network".to_string(),
+                    "ephemery".to_string(),
+                    "--validator-registry-path".to_string(),
+                    registry_path_str.clone(),
+                    "--socket-port".to_string(),
+                    p2p_port.to_string(),
+                    "--socket-address".to_string(),
+                    "127.0.0.1".to_string(),
+                    "--http-port".to_string(),
+                    http_port.to_string(),
+                    "--node-id".to_string(),
+                    format!("node{node_index}"),
+                    "--private-key-path".to_string(),
+                    key_path.to_string_lossy().to_string(),
+                ];
+
+                if !bootnode_arguments.is_empty() {
+                    arguments.push("--bootnodes".to_string());
+                    arguments.push(bootnode_arguments.join(","));
+                }
+
+                let cli = Cli::parse_from(arguments);
+                let Commands::LeanNode(config) = cli.command else {
+                    panic!("Expected lean_node command");
+                };
+
+                prepared_nodes.push((*config, db));
+            }
+
+            info!("Starting initial nodes (1 and 2)...");
+            for i in 0..2 {
+                use tracing::{Instrument, info_span};
+
+                let node = &prepared_nodes[i];
+                let config = node.0.clone();
+                let db = node.1.clone();
+                let node_executor = executor.clone();
+
+                let span = info_span!(
+                    "lean_node",
+                    node_id = %config.node_id
+                );
+
+                let handle = tokio::spawn(
+                    async move {
+                        run_lean_node(config, node_executor, db).await;
+                    }
+                    .instrument(span),
+                );
+
+                node_handles[i] = Some(handle);
+            }
+
+            sleep(Duration::from_secs(5)).await;
+
+            let start_time = std::time::Instant::now();
+            let mut node_3_started = false;
+
+            loop {
+                let elapsed = start_time.elapsed().as_secs();
+                if elapsed >= test_duration_secs {
+                    break;
+                }
+
+                if !node_3_started && elapsed >= late_start_delay {
+                    use tracing::{Instrument, info_span};
+
+                    info!("Starting Late Joiner Node 3...");
+
+                    let node = &prepared_nodes[2];
+                    let config = node.0.clone();
+                    let db = node.1.clone();
+                    let node_executor = executor.clone();
+
+                    let span = info_span!(
+                        "lean_node",
+                        node_id = %config.node_id
+                    );
+
+                    let handle = tokio::spawn(
+                        async move {
+                            run_lean_node(config, node_executor, db).await;
+                        }
+                        .instrument(span),
+                    );
+
+                    node_handles[2] = Some(handle);
+                    node_3_started = true;
+                }
+
+                sleep(Duration::from_secs(2)).await;
+
+                for (i, db_instance) in db_instances.iter().enumerate().take(node_count) {
+                    if let Some(db) = db_instance
+                        && let Ok(lean_db) = db.init_lean_db()
+                        && let Ok(head) = lean_db.head_provider().get()
+                        && let Ok(Some(state)) = lean_db.state_provider().get(head)
+                    {
+                        info!(
+                            "Node {} Chain: Slot={} | Finalized={}",
+                            i + 1,
+                            state.slot,
+                            state.latest_finalized.slot
+                        );
+                    }
+                }
+            }
+
+            let _ = fs::remove_file(&registry_path);
+            for handle in node_handles.into_iter().flatten() {
+                handle.abort();
+            }
+
+            let lean_db = db_instances[2].as_ref().unwrap().init_lean_db().unwrap();
+            let head = lean_db.head_provider().get().expect("Failed to get head");
+            let head_state = lean_db
+                .state_provider()
+                .get(head)
+                .unwrap()
+                .expect("Failed to get head state");
+
+            info!(
+                "FINAL: Node 3 Slot: {}, Finalized: {}",
+                head_state.slot, head_state.latest_finalized.slot
+            );
+
+            assert!(
+                head_state.latest_finalized.slot > 0,
+                "Node 3 failed to finalize. Finalized slot: {}",
+                head_state.latest_finalized.slot
+            );
+
+            let lean_db_1 = db_instances[0].as_ref().unwrap().init_lean_db().unwrap();
+            let head_state_1 = lean_db_1
+                .state_provider()
+                .get(lean_db_1.head_provider().get().unwrap())
+                .unwrap()
+                .unwrap();
+            info!(
+                "FINAL: Node 1 Slot: {}, Finalized: {}",
+                head_state_1.slot, head_state_1.latest_finalized.slot
+            );
+
+            assert!(
+                head_state.slot == head_state_1.slot,
+                "Node 3 is too far behind Node 1. Node 3: {}, Node 1: {}",
+                head_state.slot,
+                head_state_1.slot
             );
         });
     }

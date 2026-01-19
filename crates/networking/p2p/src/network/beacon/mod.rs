@@ -34,6 +34,20 @@ use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_peer::{ConnectionState, Direction};
+use ream_req_resp::{
+    Chain, ReqResp, ReqRespMessage,
+    beacon::messages::{
+        BeaconRequestMessage, BeaconResponseMessage,
+        blob_sidecars::BlobSidecarsByRootV1Request,
+        blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+        meta_data::GetMetaDataV3,
+        ping::Ping,
+        status::Status,
+    },
+    configurations::REQUEST_TIMEOUT,
+    handler::{ReqRespMessageError, ReqRespMessageReceived, RespMessage},
+    messages::{RequestMessage, ResponseMessage},
+};
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time::interval,
@@ -46,20 +60,6 @@ use crate::{
     constants::{PING_INTERVAL_DURATION, TARGET_PEER_COUNT},
     gossipsub::{GossipsubBehaviour, beacon::topics::GossipTopic, snappy::SnappyTransform},
     network::misc::{Executor, build_transport, peer_id_from_enr},
-    req_resp::{
-        Chain, ReqResp, ReqRespMessage,
-        beacon::messages::{
-            BeaconRequestMessage, BeaconResponseMessage,
-            blob_sidecars::BlobSidecarsByRootV1Request,
-            blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
-            meta_data::GetMetaDataV3,
-            ping::Ping,
-            status::Status,
-        },
-        configurations::REQUEST_TIMEOUT,
-        handler::{ReqRespMessageError, ReqRespMessageReceived, RespMessage},
-        messages::{RequestMessage, ResponseMessage},
-    },
 };
 
 #[derive(NetworkBehaviour)]

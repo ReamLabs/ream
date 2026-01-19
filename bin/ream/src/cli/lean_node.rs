@@ -10,7 +10,7 @@ use crate::cli::constants::{
     DEFAULT_METRICS_ENABLED, DEFAULT_METRICS_PORT, DEFAULT_SOCKET_ADDRESS, DEFAULT_SOCKET_PORT,
 };
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, Clone)]
 pub struct LeanNodeConfig {
     #[arg(
       long,

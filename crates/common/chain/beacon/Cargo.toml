@@ -25,7 +25,7 @@ ream-execution-engine.workspace = true
 ream-fork-choice-beacon.workspace = true
 ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
-ream-p2p.workspace = true
+ream-req-resp.workspace = true
 ream-storage.workspace = true
 ream-sync-committee-pool.workspace = true
 

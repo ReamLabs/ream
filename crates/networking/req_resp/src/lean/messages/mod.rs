@@ -7,7 +7,7 @@ use ream_consensus_lean::block::SignedBlockWithAttestation;
 use ssz_derive::{Decode, Encode};
 
 use super::protocol_id::LeanSupportedProtocol;
-use crate::req_resp::{
+use crate::{
     lean::messages::{blocks::BlocksByRootV1Request, status::Status},
     protocol_id::{ProtocolId, SupportedProtocol},
 };

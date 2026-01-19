@@ -3,8 +3,7 @@ use std::time::Instant;
 use discv5::Enr;
 use libp2p::{Multiaddr, PeerId};
 use ream_peer::{ConnectionState, Direction};
-
-use crate::req_resp::beacon::messages::{meta_data::GetMetaDataV3, status::Status};
+use ream_req_resp::beacon::messages::{meta_data::GetMetaDataV3, status::Status};
 
 #[derive(Clone, Debug)]
 pub struct CachedPeer {

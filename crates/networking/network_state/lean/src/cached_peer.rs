@@ -23,6 +23,10 @@ pub struct CachedPeer {
     #[serde(with = "instant_serde")]
     pub last_seen: Instant,
 
+    /// Last Status update
+
+    #[serde(with = "instant_serde::option")]
+    pub last_status_update: Option<Instant>,
     pub head_checkpoint: Option<Checkpoint>,
     pub finalized_checkpoint: Option<Checkpoint>,
 }
@@ -40,6 +44,7 @@ impl CachedPeer {
             state,
             direction,
             last_seen: Instant::now(),
+            last_status_update: None,
             head_checkpoint: None,
             finalized_checkpoint: None,
         }
@@ -72,7 +77,39 @@ mod instant_serde {
         let now = Instant::now();
         let instant = now
             .checked_sub(duration)
-            .ok_or_else(|| Error::custom("Errer checked_add"))?;
+            .ok_or_else(|| Error::custom("Error checked_sub"))?;
         Ok(instant)
+    }
+
+    pub mod option {
+        use super::{Deserialize, Deserializer, Duration, Error, Instant, Serializer};
+
+        pub fn serialize<S>(val: &Option<Instant>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            match val {
+                Some(instant) => super::serialize(instant, serializer),
+                None => serializer.serialize_none(),
+            }
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Instant>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let opt_duration: Option<Duration> = Option::deserialize(deserializer)?;
+
+            match opt_duration {
+                Some(duration) => {
+                    let now = Instant::now();
+                    let instant = now
+                        .checked_sub(duration)
+                        .ok_or_else(|| Error::custom("Error checked_sub"))?;
+                    Ok(Some(instant))
+                }
+                None => Ok(None),
+            }
+        }
     }
 }

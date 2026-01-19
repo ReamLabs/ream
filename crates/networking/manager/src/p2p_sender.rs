@@ -1,11 +1,9 @@
 use anyhow::anyhow;
 use libp2p::{PeerId, swarm::ConnectionId};
-use ream_p2p::{
-    network::beacon::channel::{GossipMessage, P2PMessage, P2PResponse},
-    req_resp::{
-        beacon::messages::BeaconResponseMessage, error::ReqRespError, handler::RespMessage,
-        messages::ResponseMessage,
-    },
+use ream_p2p::network::beacon::channel::{GossipMessage, P2PMessage, P2PResponse};
+use ream_req_resp::{
+    beacon::messages::BeaconResponseMessage, error::ReqRespError, handler::RespMessage,
+    messages::ResponseMessage,
 };
 use tokio::sync::mpsc;
 use tracing::warn;

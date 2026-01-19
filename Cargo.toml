@@ -38,6 +38,7 @@ members = [
     "crates/networking/network_state/lean",
     "crates/networking/p2p",
     "crates/networking/peer",
+    "crates/networking/req_resp",
     "crates/networking/syncer",
     "crates/rpc/beacon",
     "crates/rpc/common",
@@ -112,6 +113,7 @@ leansig = { git = "https://github.com/leanEthereum/leansig.git", branch = "make-
 libp2p = { version = "0.56", default-features = false, features = ["identify", "yamux", "noise", "dns", "serde", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
 libp2p-identity = "0.2.12"
 libp2p-mplex = "0.43.1"
+libp2p-swarm = "0.47"
 lru = "0.16.2"
 parking_lot = "0.12.5"
 prometheus_exporter = { git = "https://github.com/AlexanderThaller/prometheus_exporter", rev = "c49efe614486f998b20eb410ae0caf3e904cf540" }
@@ -174,6 +176,7 @@ ream-p2p = { path = "crates/networking/p2p", default-features = false }
 ream-peer = { path = "crates/networking/peer" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
 ream-post-quantum-crypto = { path = "crates/crypto/post_quantum" }
+ream-req-resp = { path = "crates/networking/req_resp" }
 ream-rpc-beacon = { path = "crates/rpc/beacon" }
 ream-rpc-common = { path = "crates/rpc/common" }
 ream-rpc-lean = { path = "crates/rpc/lean", default-features = false }

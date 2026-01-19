@@ -22,10 +22,8 @@ use ream_consensus_beacon::{
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_executor::ReamExecutor;
-use ream_p2p::{
-    network::beacon::{channel::P2PMessage, network_state::NetworkState},
-    req_resp::MAX_CONCURRENT_REQUESTS,
-};
+use ream_p2p::network::beacon::{channel::P2PMessage, network_state::NetworkState};
+use ream_req_resp::MAX_CONCURRENT_REQUESTS;
 use ream_storage::tables::table::CustomTable;
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::sleep};
 use tracing::{info, warn};

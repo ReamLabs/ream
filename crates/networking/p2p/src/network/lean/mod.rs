@@ -22,7 +22,10 @@ use libp2p::{
     swarm::{Config, ConnectionId, NetworkBehaviour, Swarm, SwarmEvent},
 };
 use libp2p_identity::{Keypair, PeerId, secp256k1};
-use ream_chain_lean::{messages::LeanChainServiceMessage, p2p_request::LeanP2PRequest};
+use ream_chain_lean::{
+    messages::{LeanChainServiceMessage, RequestResult},
+    p2p_request::LeanP2PRequest,
+};
 use ream_executor::ReamExecutor;
 use ream_metrics::{
     LEAN_CONNECTION_EVENT_TOTAL, LEAN_DISCONNECTION_EVENT_TOTAL, LEAN_PEER_COUNT,
@@ -30,13 +33,24 @@ use ream_metrics::{
 };
 use ream_network_state_lean::{NetworkState, cached_peer::CachedPeer};
 use ream_peer::{ConnectionState, Direction};
+use ream_req_resp::{
+    Chain, ReqResp, ReqRespMessage,
+    handler::{ReqRespMessageReceived, RespMessage},
+    lean::{
+        ReamNetworkEvent,
+        messages::{
+            LeanRequestMessage, LeanResponseMessage, blocks::BlocksByRootV1Request, status::Status,
+        },
+    },
+    messages::{RequestMessage, ResponseMessage},
+};
 use ssz::Encode;
 use tokio::{
     sync::{
         mpsc::{UnboundedReceiver, UnboundedSender},
         oneshot,
     },
-    time::Duration,
+    time::{Duration, interval},
 };
 use tracing::{info, trace, warn};
 
@@ -51,12 +65,6 @@ use crate::{
         snappy::SnappyTransform,
     },
     network::misc::Executor,
-    req_resp::{
-        Chain, ReqResp, ReqRespMessage,
-        handler::{ReqRespMessageReceived, RespMessage},
-        lean::messages::{LeanRequestMessage, LeanResponseMessage, status::Status},
-        messages::{RequestMessage, ResponseMessage},
-    },
 };
 
 const BOOTNODE_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -72,21 +80,6 @@ pub(crate) struct ReamBehaviour {
     pub gossipsub: GossipsubBehaviour,
 
     pub connection_limits: connection_limits::Behaviour,
-}
-
-#[derive(Debug)]
-pub enum ReamNetworkEvent {
-    PeerConnectedIncoming(PeerId),
-    PeerConnectedOutgoing(PeerId),
-    PeerDisconnected(PeerId),
-    Status(PeerId),
-    RequestMessage {
-        peer_id: PeerId,
-        stream_id: u64,
-        connection_id: ConnectionId,
-        message: LeanRequestMessage,
-    },
-    DisconnectPeer(PeerId),
 }
 
 pub struct LeanNetworkConfig {
@@ -231,7 +224,8 @@ impl LeanNetworkService {
         set_int_gauge_vec(&LEAN_PEER_COUNT, 0, &[]);
 
         let bootnode_addresses = bootnodes.to_multiaddrs_lean();
-        let mut bootnode_redial_interval = tokio::time::interval(Duration::from_secs(20));
+        let mut bootnode_redial_interval = interval(Duration::from_secs(20));
+        let mut status_interval = interval(Duration::from_secs(4));
 
         loop {
             tokio::select! {
@@ -255,7 +249,28 @@ impl LeanNetworkService {
 
                     self.bootnode_retry_state.insert(peer_id, (attempts + 1, addresses))
                 }
+                _ = status_interval.tick() => {
+                    let mut peers_to_ping = Vec::new();
 
+                    for cached_peer in self.network_state.peer_table.lock().values() {
+                        if matches!(cached_peer.state, ConnectionState::Connected) {
+                            let should_ping = if let Some(last_status_update) = cached_peer.last_status_update {
+                                last_status_update.elapsed() > Duration::from_secs(4)
+                            } else {
+                                true
+                            };
+
+                            if should_ping {
+                                peers_to_ping.push(cached_peer.peer_id);
+                            }
+                        }
+                    }
+
+                    let message = LeanRequestMessage::Status(self.our_status());
+                    for peer_id in peers_to_ping {
+                        self.send_request(peer_id, message.clone());
+                    }
+                }
                 Some(item) = self.outbound_p2p_request.recv() => {
                     match item {
                         LeanP2PRequest::GossipBlock(block) => {
@@ -278,11 +293,25 @@ impl LeanNetworkService {
                                 "attestation"
                             );
                         }
+                        LeanP2PRequest::RequestBlocksByRoot { peer_id, roots } => {
+                            let message = LeanRequestMessage::BlocksByRoot(BlocksByRootV1Request::new(roots));
+                            self.send_request(peer_id, message);
+                        }
+                        LeanP2PRequest::RequestStatus(peer_id) => {
+                            let message = LeanRequestMessage::Status(self.our_status());
+                            self.send_request(peer_id, message);
+                        }
+                        LeanP2PRequest::Response { peer_id, stream_id, connection_id, message } => {
+                            self.send_response(peer_id, connection_id, stream_id, message);
+                        }
                     }
                 }
                 Some(event) = self.swarm.next() => {
                     if let Some(event) = self.parse_swarm_event(event).await {
-                        info!("Swarm event: {event:?}");
+                        trace!("Swarm event: {event:?}");
+                        if let Err(err) = self.chain_message_sender.send(LeanChainServiceMessage::NetworkEvent(event)) {
+                            warn!("failed to send network event to chain: {err:?}");
+                        }
                     }
                 }
                 Some(result) = self.check_canonical_futures.next() => {
@@ -371,7 +400,7 @@ impl LeanNetworkService {
                 );
                 set_int_gauge_vec(
                     &LEAN_PEER_COUNT,
-                    self.network_state.connected_peers() as i64,
+                    self.network_state.connected_peer_count() as i64,
                     &[],
                 );
                 inc_int_counter_vec(&LEAN_CONNECTION_EVENT_TOTAL, &[]);
@@ -397,13 +426,13 @@ impl LeanNetworkService {
                 );
                 set_int_gauge_vec(
                     &LEAN_PEER_COUNT,
-                    self.network_state.connected_peers() as i64,
+                    self.network_state.connected_peer_count() as i64,
                     &[],
                 );
                 inc_int_counter_vec(&LEAN_DISCONNECTION_EVENT_TOTAL, &[]);
 
                 info!("Disconnected from peer: {peer_id:?}");
-                Some(ReamNetworkEvent::PeerDisconnected(peer_id))
+                None
             }
             SwarmEvent::IncomingConnection { local_addr, .. } => {
                 info!("Incoming connection from {local_addr:?}");
@@ -411,7 +440,7 @@ impl LeanNetworkService {
             }
             SwarmEvent::Dialing { peer_id, .. } => {
                 info!("Dialing {peer_id:?}");
-                Some(ReamNetworkEvent::PeerConnectedOutgoing(peer_id?))
+                None
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                 warn!("Failed to connect to {peer_id:?}: {error:?}");
@@ -502,7 +531,7 @@ impl LeanNetworkService {
                                 "Received Status request"
                             );
 
-                            self.handle_status_response(peer_id, status);
+                            self.handle_status_response(peer_id, &status);
 
                             let our_status = self.our_status();
                             self.send_response(
@@ -512,12 +541,8 @@ impl LeanNetworkService {
                                 LeanResponseMessage::Status(our_status),
                             );
 
-                            Some(ReamNetworkEvent::RequestMessage {
-                                peer_id,
-                                stream_id,
-                                connection_id,
-                                message: LeanRequestMessage::Status(status),
-                            })
+                            // We handle this internally, so no need to forward to chain
+                            None
                         }
                         _ => Some(ReamNetworkEvent::RequestMessage {
                             peer_id,
@@ -539,7 +564,7 @@ impl LeanNetworkService {
                 message,
             } => {
                 if let ResponseMessage::Lean(response_message) = *message {
-                    if let LeanResponseMessage::Status(status) = *response_message {
+                    if let LeanResponseMessage::Status(status) = &*response_message {
                         trace!(
                             ?peer_id,
                             ?request_id,
@@ -549,11 +574,16 @@ impl LeanNetworkService {
                         );
 
                         self.handle_status_response(peer_id, status);
+                        // We handle this internally, so no need to forward to chain
+                        return None;
                     }
+                    return Some(ReamNetworkEvent::ResponseMessage {
+                        peer_id,
+                        message: response_message,
+                    });
                 } else {
                     warn!(
-                        "Received unexpected Beacon response message: {:?} from peer: {:?}",
-                        message, peer_id
+                        "Received unexpected Beacon response message: {message:?} from peer: {peer_id:?}"
                     );
                 }
 
@@ -605,17 +635,20 @@ impl LeanNetworkService {
         }
     }
 
-    pub fn handle_status_response(&mut self, peer_id: PeerId, status: Status) {
-        if !cfg!(feature = "devnet2") {
-            return;
-        }
-
+    pub fn handle_status_response(&mut self, peer_id: PeerId, status: &Status) {
         info!(
             ?peer_id,
             head_slot = status.head.slot,
             finalized_slot = status.finalized.slot,
             "Received status response from peer"
         );
+
+        self.network_state
+            .update_peer_checkpoints(peer_id, status.head, status.finalized);
+
+        if !cfg!(feature = "devnet2") {
+            return;
+        }
 
         let (sender, receiver) = oneshot::channel();
         match self
@@ -691,15 +724,12 @@ impl LeanNetworkService {
     }
 }
 
-enum RequestResult<T> {
-    Success(T),
-    NotConnected,
-}
-
 #[cfg(test)]
 mod tests {
     use std::{net::Ipv4Addr, time::Duration};
 
+    use alloy_primitives::B256;
+    use ream_consensus_lean::checkpoint::Checkpoint;
     use ream_network_spec::networks::initialize_lean_test_network_spec;
     use tokio::sync::mpsc;
     use tracing_test::traced_test;
@@ -707,7 +737,13 @@ mod tests {
     use super::*;
     use crate::bootnodes::Bootnodes;
 
-    pub async fn setup_lean_node(socket_port: u16) -> anyhow::Result<LeanNetworkService> {
+    pub async fn setup_lean_node(
+        socket_port: u16,
+    ) -> anyhow::Result<(
+        LeanNetworkService,
+        UnboundedSender<LeanP2PRequest>,
+        UnboundedReceiver<LeanChainServiceMessage>,
+    )> {
         initialize_lean_test_network_spec();
 
         let executor = ReamExecutor::new().expect("Failed to create executor");
@@ -717,18 +753,21 @@ mod tests {
             socket_port,
             private_key_path: None,
         });
-        let (sender, _receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
-        let (_outbound_request_sender_unused, outbound_request_receiver) =
+
+        let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
+        let (outbound_request_sender, outbound_request_receiver) =
             mpsc::unbounded_channel::<LeanP2PRequest>();
+
         let node = LeanNetworkService::new(
             config.clone(),
             executor,
-            sender,
+            chain_sender,
             outbound_request_receiver,
             Arc::new(NetworkState::new(Default::default(), Default::default())),
         )
         .await?;
-        Ok(node)
+
+        Ok((node, outbound_request_sender, chain_receiver))
     }
 
     #[tokio::test]
@@ -737,8 +776,8 @@ mod tests {
         let socket_port1 = 9000;
         let socket_port2 = 9001;
 
-        let mut node_1 = setup_lean_node(socket_port1).await?;
-        let mut node_2 = setup_lean_node(socket_port2).await?;
+        let (mut node_1, _, _) = setup_lean_node(socket_port1).await?;
+        let (mut node_2, _, _) = setup_lean_node(socket_port2).await?;
 
         let peer_id_network_1 = node_1.local_peer_id();
         let peer_id_network_2 = node_2.local_peer_id();
@@ -777,6 +816,89 @@ mod tests {
 
         assert_eq!(peer_from_network_2.state, ConnectionState::Connected);
         assert_eq!(peer_from_network_2.direction, Direction::Outbound);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn test_request_status_and_response() -> anyhow::Result<()> {
+        let (mut node_1, p2p_sender_1, mut chain_receiver_1) = setup_lean_node(9002).await?;
+        let (mut node_2, _p2p_sender_2, _chain_receiver_2) = setup_lean_node(9003).await?;
+
+        let peer_id_2 = node_2.local_peer_id();
+        let node_1_addr = node_1.multi_addr.clone();
+
+        let expected_head = Checkpoint {
+            root: B256::repeat_byte(0xaa),
+            slot: 100,
+        };
+        let expected_finalized = Checkpoint {
+            root: B256::repeat_byte(0xbb),
+            slot: 50,
+        };
+
+        *node_2.network_state.head_checkpoint.write() = expected_head;
+        *node_2.network_state.finalized_checkpoint.write() = expected_finalized;
+
+        let network_state_1 = node_1.network_state.clone();
+
+        let node_1_handle = tokio::spawn(async move {
+            let bootnodes = Bootnodes::Default;
+            node_1.start(bootnodes).await.unwrap();
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let node_2_handle = tokio::spawn(async move {
+            let bootnodes = Bootnodes::Multiaddr(vec![node_1_addr]);
+            node_2.start(bootnodes).await.unwrap();
+        });
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        p2p_sender_1.send(LeanP2PRequest::RequestStatus(peer_id_2))?;
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let peer_2_state = network_state_1
+            .cached_peer(&peer_id_2)
+            .expect("Peer 2 should be in Node 1's peer table");
+
+        assert_eq!(
+            peer_2_state.head_checkpoint,
+            Some(expected_head),
+            "Head checkpoint should match"
+        );
+        assert_eq!(
+            peer_2_state.finalized_checkpoint,
+            Some(expected_finalized),
+            "Finalized checkpoint should match"
+        );
+
+        if cfg!(feature = "devnet2") {
+            let message = tokio::time::timeout(Duration::from_millis(100), chain_receiver_1.recv())
+                .await
+                .map_err(|err| anyhow!("Timeout waiting for chain message (devnet2): {err:?}"))?
+                .ok_or(anyhow!("Channel closed"))?;
+
+            if let LeanChainServiceMessage::CheckIfCanonicalCheckpoint {
+                peer_id,
+                checkpoint,
+                ..
+            } = message
+            {
+                assert_eq!(peer_id, peer_id_2);
+                assert_eq!(checkpoint, expected_finalized);
+            } else {
+                panic!("Unexpected message: {message:?}");
+            }
+        } else {
+            info!("Skipping CheckIfCanonicalCheckpoint assertion as devnet2 feature is disabled");
+        }
+
+        node_1_handle.abort();
+        node_2_handle.abort();
 
         Ok(())
     }

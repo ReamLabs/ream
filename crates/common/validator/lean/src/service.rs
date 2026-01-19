@@ -1,5 +1,8 @@
 use anyhow::anyhow;
-use ream_chain_lean::{clock::create_lean_clock_interval, messages::LeanChainServiceMessage};
+use ream_chain_lean::{
+    clock::{create_lean_clock_interval, get_initial_tick_count},
+    messages::{LeanChainServiceMessage, ServiceResponse},
+};
 #[cfg(feature = "devnet2")]
 use ream_consensus_lean::attestation::AggregatedAttestations;
 #[cfg(feature = "devnet1")]
@@ -21,7 +24,7 @@ use ream_metrics::{
 };
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{Level, debug, enabled, info};
+use tracing::{Level, debug, enabled, info, warn};
 use tree_hash::TreeHash;
 
 /// ValidatorService is responsible for managing validator operations
@@ -56,7 +59,9 @@ impl ValidatorService {
         );
         set_int_gauge_vec(&VALIDATORS_COUNT, self.keystores.len() as i64, &[]);
 
-        let mut tick_count = 0u64;
+        let mut tick_count = get_initial_tick_count();
+
+        info!("ValidatorService starting at tick_count: {tick_count}");
 
         let mut interval = create_lean_clock_interval()
             .map_err(|err| anyhow!("Expected Ream to be started before genesis time: {err:?}"))?;
@@ -77,10 +82,17 @@ impl ValidatorService {
                                     .expect("Failed to send produce block to LeanChainService");
 
                                 // Wait for the block to be produced.
-                                #[cfg(feature = "devnet1")]
-                                let BlockWithSignatures { block, mut signatures } = rx.await.expect("Failed to receive block from LeanChainService");
-                                #[cfg(feature = "devnet2")]
-                                let BlockWithSignatures { block, signatures } = rx.await.expect("Failed to receive block from LeanChainService");
+                                let BlockWithSignatures { block, #[cfg(feature = "devnet1")] mut signatures, #[cfg(feature = "devnet2")] signatures } = match rx.await {
+                                    Ok(ServiceResponse::Ok(block_with_signatures)) => block_with_signatures,
+                                    Ok(ServiceResponse::Syncing) => {
+                                        warn!("LeanChainService is syncing, cannot produce block for slot {slot}");
+                                        tick_count += 1;
+                                        continue;
+                                    }
+                                    Err(err) => {
+                                        return Err(anyhow!("Failed to receive block from LeanChainService: {err:?}"));
+                                    }
+                                };
 
                                 info!(
                                     slot = block.slot,
@@ -89,12 +101,22 @@ impl ValidatorService {
                                     keystore.index,
                                 );
 
-                            let (tx, rx) = oneshot::channel();
-                            self.chain_sender
-                                .send(LeanChainServiceMessage::BuildAttestationData { slot, sender: tx })
-                                .expect("Failed to send attestation to LeanChainService");
+                                let (tx, rx) = oneshot::channel();
+                                self.chain_sender
+                                    .send(LeanChainServiceMessage::BuildAttestationData { slot, sender: tx })
+                                    .expect("Failed to send attestation to LeanChainService");
 
-                            let attestation_data = rx.await.expect("Failed to receive attestation data from LeanChainService");
+                                let attestation_data = match rx.await {
+                                    Ok(ServiceResponse::Ok(data)) => data,
+                                    Ok(ServiceResponse::Syncing) => {
+                                        warn!("LeanChainService is syncing, cannot build attestation data for slot {slot}");
+                                        tick_count += 1;
+                                        continue;
+                                    }
+                                    Err(err) => {
+                                        return Err(anyhow!("Failed to receive attestation data from LeanChainService: {err:?}"));
+                                    }
+                                };
                                 #[cfg(feature = "devnet1")]
                                 let message = Attestation { validator_id: keystore.index, data: attestation_data };
                                 #[cfg(feature = "devnet2")]
@@ -143,7 +165,17 @@ impl ValidatorService {
                                 .send(LeanChainServiceMessage::BuildAttestationData { slot, sender: tx })
                                 .expect("Failed to send attestation to LeanChainService");
 
-                            let attestation_data = rx.await.expect("Failed to receive attestation data from LeanChainService");
+                            let attestation_data = match rx.await {
+                                Ok(ServiceResponse::Ok(data)) => data,
+                                Ok(ServiceResponse::Syncing) => {
+                                    warn!("LeanChainService is syncing, cannot build attestation data for slot {slot}");
+                                    tick_count += 1;
+                                    continue;
+                                }
+                                Err(err) => {
+                                    return Err(anyhow!("Failed to receive attestation data from LeanChainService: {err:?}"));
+                                }
+                            };
 
                             if enabled!(Level::DEBUG) {
                                 debug!(
