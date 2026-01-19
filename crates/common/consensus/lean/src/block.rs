@@ -1,6 +1,8 @@
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 use ream_metrics::{PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, start_timer, stop_timer};
+#[cfg(feature = "devnet2")]
+use ream_post_quantum_crypto::lean_multisig::aggregate::verify_aggregate_signature;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -11,12 +13,15 @@ use tree_hash_derive::TreeHash;
 #[cfg(feature = "devnet1")]
 use crate::attestation::Attestation;
 #[cfg(feature = "devnet2")]
-use crate::attestation::{AggregatedAttestation, AggregatedAttestations};
+use crate::attestation::{AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof};
 use crate::state::LeanState;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct BlockSignatures {
+    #[cfg(feature = "devnet1")]
     pub attestation_signatures: VariableList<Signature, U4096>,
+    #[cfg(feature = "devnet2")]
+    pub attestation_signatures: VariableList<AggregatedSignatureProof, U4096>,
     pub proposer_signature: Signature,
 }
 
@@ -91,8 +96,10 @@ impl SignedBlockWithAttestation {
 
         #[cfg(feature = "devnet2")]
         {
-            let mut signature_iter = attestation_signatures.iter();
-            for aggregated_attestation in aggregated_attestations.iter() {
+            for (aggregated_attestation, aggregated_signature) in aggregated_attestations
+                .iter()
+                .zip(attestation_signatures.iter())
+            {
                 let validator_ids: Vec<usize> = aggregated_attestation
                     .aggregation_bits
                     .iter()
@@ -103,32 +110,37 @@ impl SignedBlockWithAttestation {
 
                 let attestation_root = aggregated_attestation.message.tree_hash_root();
 
-                for validator_id in validator_ids {
-                    let signature = signature_iter.next().ok_or_else(|| {
-                        anyhow!("Missing signature for validator index {validator_id}")
-                    })?;
-
+                // Validate all validator indices are in range
+                for &validator_id in &validator_ids {
                     ensure!(
                         validator_id < validators.len(),
                         "Validator index out of range"
                     );
+                }
 
-                    let validator = validators
-                        .get(validator_id)
-                        .ok_or_else(|| anyhow!("Failed to get validator"))?;
+                // Collect public keys for all validators in this aggregation
+                let public_keys: Vec<_> = validator_ids
+                    .iter()
+                    .map(|&validator_id| {
+                        validators
+                            .get(validator_id)
+                            .map(|validator| validator.public_key)
+                            .ok_or_else(|| anyhow!("Failed to get validator {validator_id}"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
 
-                    if verify_signatures {
-                        let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, &[]);
-                        ensure!(
-                            signature.verify(
-                                &validator.public_key,
-                                aggregated_attestation.message.slot as u32,
-                                &attestation_root,
-                            )?,
-                            "Attestation signature verification failed"
-                        );
-                        stop_timer(timer);
-                    }
+                if verify_signatures {
+                    let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, &[]);
+                    verify_aggregate_signature(
+                        &public_keys,
+                        &attestation_root,
+                        &aggregated_signature.proof,
+                        aggregated_attestation.message.slot as u32,
+                    )
+                    .map_err(|err| {
+                        anyhow!("Attestation aggregated signature verification failed: {err}")
+                    })?;
+                    stop_timer(timer);
                 }
             }
 
@@ -151,7 +163,7 @@ impl SignedBlockWithAttestation {
                         proposer_attestation.data.slot as u32,
                         &proposer_attestation.data.tree_hash_root(),
                     )?,
-                    "Failed to verify"
+                    "Proposer signature verification failed"
                 );
             }
         }
@@ -213,10 +225,13 @@ pub struct BlockBody {
     pub attestations: VariableList<AggregatedAttestation, U4096>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct BlockWithSignatures {
     pub block: Block,
+    #[cfg(feature = "devnet1")]
     pub signatures: VariableList<Signature, U4096>,
+    #[cfg(feature = "devnet2")]
+    pub signatures: VariableList<AggregatedSignatureProof, U4096>,
 }
 
 #[cfg(test)]

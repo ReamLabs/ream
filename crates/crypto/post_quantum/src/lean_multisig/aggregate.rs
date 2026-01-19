@@ -10,7 +10,7 @@ use ssz_derive::{Decode, Encode};
 use crate::leansig::{public_key::PublicKey, signature::Signature};
 
 /// Aggregated signature for multiple leansig signatures
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct AggregateSignature {
     /// Serialized proof bytes
     pub proof_bytes: Vec<u8>,

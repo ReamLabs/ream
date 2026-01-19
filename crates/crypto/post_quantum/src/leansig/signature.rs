@@ -34,6 +34,20 @@ impl Signature {
         Self::new(Default::default())
     }
 
+    /// Create a mock signature for testing purposes.
+    pub fn mock() -> Self {
+        use rand::rng;
+
+        use crate::leansig::private_key::PrivateKey;
+
+        let mut rng = rng();
+        let (_, private_key) = PrivateKey::generate_key_pair(&mut rng, 0, 10);
+        let message = [0u8; 32];
+        private_key
+            .sign(&message, 0)
+            .expect("Mock signature generation failed")
+    }
+
     pub fn from_lean_sig(signature: LeanSigSignature) -> Result<Self, LeanSigError> {
         Ok(Self {
             inner: FixedBytes::try_from(signature.to_bytes().as_slice())?,

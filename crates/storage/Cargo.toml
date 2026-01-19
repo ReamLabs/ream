@@ -9,11 +9,17 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+default = []
+devnet1 = ["ream-consensus-lean/devnet1"]
+devnet2 = ["ream-consensus-lean/devnet2"]
+
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
 directories.workspace = true
 ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
 lru.workspace = true
 ream-bls.workspace = true
 redb.workspace = true

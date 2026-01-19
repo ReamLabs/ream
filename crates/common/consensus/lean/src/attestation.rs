@@ -1,11 +1,72 @@
+#[cfg(feature = "devnet2")]
+use alloy_primitives::B256;
 use alloy_primitives::FixedBytes;
+#[cfg(feature = "devnet2")]
+use ream_post_quantum_crypto::lean_multisig::aggregate::AggregateSignature;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{BitList, VariableList, typenum::U4096};
+#[cfg(feature = "devnet2")]
+use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::checkpoint::Checkpoint;
+
+/// Key for signature storage, combining validator ID and attestation data root.
+/// Used for both gossip_signatures and aggregated_payloads maps.
+#[cfg(feature = "devnet2")]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, PartialOrd, Ord,
+)]
+pub struct SignatureKey {
+    pub validator_id: u64,
+    pub data_root: B256,
+}
+
+#[cfg(feature = "devnet2")]
+impl SignatureKey {
+    pub fn new(validator_id: u64, attestation_data: &AttestationData) -> Self {
+        Self {
+            validator_id,
+            data_root: attestation_data.tree_hash_root(),
+        }
+    }
+
+    pub fn from_parts(validator_id: u64, data_root: B256) -> Self {
+        Self {
+            validator_id,
+            data_root,
+        }
+    }
+}
+
+#[cfg(feature = "devnet2")]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+pub struct AggregatedSignatureProof {
+    pub participants: BitList<U4096>,
+    pub proof: AggregateSignature,
+}
+
+#[cfg(feature = "devnet2")]
+impl AggregatedSignatureProof {
+    pub fn new(participants: BitList<U4096>, proof: AggregateSignature) -> Self {
+        Self {
+            participants,
+            proof,
+        }
+    }
+
+    /// Get the validator IDs covered by this proof
+    pub fn to_validator_indices(&self) -> Vec<u64> {
+        self.participants
+            .iter()
+            .enumerate()
+            .filter(|(_, bit)| *bit)
+            .map(|(index, _)| index as u64)
+            .collect()
+    }
+}
 
 /// Attestation content describing the validator's observed chain view.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Hash)]

@@ -83,19 +83,32 @@ pub struct Block {
     pub body: BlockBody,
 }
 
-/// Block body
+/// Block body - uses flexible attestation type that can parse both formats
 #[derive(Debug, Deserialize)]
 pub struct BlockBody {
-    #[cfg(feature = "devnet1")]
-    pub attestations: DataList<Attestation>,
-    #[cfg(feature = "devnet2")]
-    pub attestations: DataList<AggregatedAttestationJSON>,
+    pub attestations: DataList<BodyAttestationJSON>,
 }
 
+/// Wrapper for aggregation bits as a boolean array
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AggregationBitsJSON {
+    pub data: Vec<bool>,
+}
+
+/// Flexible attestation type that can parse either individual or aggregated format
+/// Used for body attestations which may be in either format depending on the fixture
 #[derive(Debug, Deserialize)]
-pub struct AggregatedAttestationJSON {
-    pub aggregation_bits: String,
-    pub message: AttestationData,
+#[serde(rename_all = "camelCase")]
+pub struct BodyAttestationJSON {
+    /// For individual attestations (devnet1 format)
+    #[serde(alias = "validatorId")]
+    pub validator_id: Option<u64>,
+    /// For aggregated attestations (devnet2 format)
+    pub aggregation_bits: Option<AggregationBitsJSON>,
+    /// Attestation data - can be "data" or "message" depending on format
+    #[serde(alias = "message")]
+    pub data: AttestationData,
 }
 
 /// Attestation
@@ -205,13 +218,28 @@ impl TryFrom<&Block> for ReamBlock {
     fn try_from(block: &Block) -> anyhow::Result<Self> {
         #[cfg(feature = "devnet1")]
         let attestations = {
-            let list: Vec<ReamAttestation> = block
-                .body
-                .attestations
-                .data
-                .iter()
-                .map(ReamAttestation::from)
-                .collect();
+            let mut list = Vec::new();
+            for aggregated_attestation in &block.body.attestations.data {
+                // For devnet1, we need individual attestations with validator_id
+                // If the fixture has aggregated attestations, expand them
+                if let Some(aggregation_bits) = &aggregated_attestation.aggregation_bits {
+                    // Expand aggregated attestation into individual attestations
+                    for (i, &bit) in aggregation_bits.data.iter().enumerate() {
+                        if bit {
+                            list.push(ReamAttestation {
+                                validator_id: i as u64,
+                                data: aggregated_attestation.data.clone(),
+                            });
+                        }
+                    }
+                } else if let Some(validator_id) = aggregated_attestation.validator_id {
+                    // Individual attestation format
+                    list.push(ReamAttestation {
+                        validator_id,
+                        data: aggregated_attestation.data.clone(),
+                    });
+                }
+            }
             VariableList::try_from(list)
                 .map_err(|err| anyhow!("Failed to create attestations VariableList: {err}"))?
         };
@@ -219,17 +247,36 @@ impl TryFrom<&Block> for ReamBlock {
         #[cfg(feature = "devnet2")]
         let attestations = {
             let mut list = Vec::new();
-            for aggregated in &block.body.attestations.data {
-                let bytes = hex::decode(aggregated.aggregation_bits.trim_start_matches("0x"))
-                    .map_err(|err| anyhow!("Failed to decode hex: {err}"))?;
+            for aggregated_attestation in &block.body.attestations.data {
+                // For devnet2, we need aggregated attestations with aggregation_bits
+                if let Some(aggregation_bits) = &aggregated_attestation.aggregation_bits {
+                    let bool_data = &aggregation_bits.data;
+                    let mut aggregation_bits = BitList::<U4096>::with_capacity(bool_data.len())
+                        .map_err(|err| anyhow!("Failed to create BitList: {err:?}"))?;
 
-                let aggregation_bits = BitList::<U4096>::from_bytes(bytes.into())
-                    .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+                    for (i, &bit) in bool_data.iter().enumerate() {
+                        aggregation_bits
+                            .set(i, bit)
+                            .map_err(|err| anyhow!("Failed to set bit at index {i}: {err:?}"))?;
+                    }
 
-                list.push(ream_consensus_lean::attestation::AggregatedAttestation {
-                    aggregation_bits,
-                    message: aggregated.message.clone(),
-                });
+                    list.push(ream_consensus_lean::attestation::AggregatedAttestation {
+                        aggregation_bits,
+                        message: aggregated_attestation.data.clone(),
+                    });
+                } else if let Some(validator_id) = aggregated_attestation.validator_id {
+                    let mut aggregation_bits =
+                        BitList::<U4096>::with_capacity(validator_id as usize + 1)
+                            .map_err(|err| anyhow!("Failed to create BitList: {err:?}"))?;
+                    aggregation_bits
+                        .set(validator_id as usize, true)
+                        .map_err(|err| anyhow!("Failed to set bit: {err:?}"))?;
+
+                    list.push(ream_consensus_lean::attestation::AggregatedAttestation {
+                        aggregation_bits,
+                        message: aggregated_attestation.data.clone(),
+                    });
+                }
             }
             VariableList::try_from(list)
                 .map_err(|err| anyhow!("Failed to create attestations VariableList: {err}"))?
