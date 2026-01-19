@@ -10,3 +10,12 @@ pub fn generate_default_validators(number_of_validators: usize) -> Vec<Validator
         })
         .collect()
 }
+
+#[cfg(feature = "devnet2")]
+pub fn justified_index_after(candidate_slot: u64, finalized_slot: u64) -> Option<u64> {
+    if candidate_slot <= finalized_slot {
+        return None;
+    }
+
+    Some(candidate_slot - finalized_slot - 1)
+}

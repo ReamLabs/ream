@@ -25,6 +25,8 @@ use tree_hash_derive::TreeHash;
 use crate::attestation::AggregatedAttestation;
 #[cfg(feature = "devnet1")]
 use crate::attestation::Attestation;
+#[cfg(feature = "devnet2")]
+use crate::utils::justified_index_after;
 use crate::{
     block::{Block, BlockBody, BlockHeader},
     checkpoint::Checkpoint,
@@ -199,19 +201,22 @@ impl LeanState {
                 anyhow!("Failed to add block.parent_root to historical_block_hashes: {err:?}")
             })?;
 
-        // genesis block is always justified
-        let length = self.justified_slots.len();
-        let mut new_bitlist = BitList::with_capacity(length + 1)
-            .map_err(|err| anyhow!("Failed to resize justified_slots BitList: {err:?}"))?;
-        new_bitlist
-            .set(length, self.latest_block_header.slot == 0)
-            .map_err(|err| {
-                anyhow!(
-                    "Failed to set justified slot for slot {}: {err:?}",
-                    self.latest_block_header.slot
-                )
-            })?;
-        self.justified_slots = new_bitlist.union(&self.justified_slots);
+        #[cfg(feature = "devnet1")]
+        {
+            // genesis block is always justified
+            let length = self.justified_slots.len();
+            let mut new_bitlist = BitList::with_capacity(length + 1)
+                .map_err(|err| anyhow!("Failed to resize justified_slots BitList: {err:?}"))?;
+            new_bitlist
+                .set(length, self.latest_block_header.slot == 0)
+                .map_err(|err| {
+                    anyhow!(
+                        "Failed to set justified slot for slot {}: {err:?}",
+                        self.latest_block_header.slot
+                    )
+                })?;
+            self.justified_slots = new_bitlist.union(&self.justified_slots);
+        }
 
         // if there were empty slots, push zero hash for those ancestors
         let num_empty_slots = block.slot - self.latest_block_header.slot - 1;
@@ -221,10 +226,40 @@ impl LeanState {
                     .push(B256::ZERO)
                     .map_err(|err| anyhow!("Failed to prefill historical_block_hashes: {err:?}"))?;
             }
-            let length = self.justified_slots.len();
-            let new_bitlist = BitList::with_capacity(length + num_empty_slots as usize)
-                .map_err(|err| anyhow!("Failed to resize justified_slots BitList: {err:?}"))?;
-            self.justified_slots = new_bitlist.union(&self.justified_slots);
+
+            #[cfg(feature = "devnet1")]
+            {
+                let length = self.justified_slots.len();
+                let new_bitlist = BitList::with_capacity(length + num_empty_slots as usize)
+                    .map_err(|err| anyhow!("Failed to resize justified_slots BitList: {err:?}"))?;
+                self.justified_slots = new_bitlist.union(&self.justified_slots);
+            }
+        }
+
+        #[cfg(feature = "devnet2")]
+        {
+            if let Some(target_index) =
+                justified_index_after(block.slot - 1, self.latest_finalized.slot)
+            {
+                let length = (target_index + 1) as usize;
+
+                if self.justified_slots.len() < length {
+                    let new_bitlist = BitList::with_capacity(length)
+                        .map_err(|err| anyhow!("Failed to extend BitList: {err:?}"))?;
+                    self.justified_slots = new_bitlist.union(&self.justified_slots);
+                }
+
+                if self.latest_block_header.slot == 0
+                    && let Some(parent_ids) = justified_index_after(
+                        self.latest_block_header.slot,
+                        self.latest_finalized.slot,
+                    )
+                {
+                    self.justified_slots
+                        .set(parent_ids as usize, true)
+                        .map_err(|err| anyhow!("Failed to set genesis bit: {err:?}"))?;
+                }
+            }
         }
 
         // Cache current block as the new latest block
@@ -276,16 +311,43 @@ impl LeanState {
             }
         }
 
+        #[cfg(feature = "devnet2")]
+        let mut root_to_slots = HashMap::new();
+        #[cfg(feature = "devnet2")]
+        {
+            let start_slot = self.latest_finalized.slot + 1;
+            for index in start_slot..(self.historical_block_hashes.len() as u64) {
+                if let Some(hash) = self.historical_block_hashes.get(index as usize) {
+                    root_to_slots.insert(*hash, index);
+                }
+            }
+        }
+
         for attestation in attestations {
             inc_int_counter_vec(&STATE_TRANSITION_ATTESTATIONS_PROCESSED_TOTAL, &[]);
-            // Ignore attestations whose source is not already justified,
-            // or whose target is not in the history, or whose target is not a
-            // valid justifiable slot
-            if !self
-                .justified_slots
-                .get(attestation.source().slot as usize)
-                .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
-            {
+            let is_source_justified = {
+                #[cfg(feature = "devnet1")]
+                {
+                    self.justified_slots
+                        .get(attestation.source().slot as usize)
+                        .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
+                }
+                #[cfg(feature = "devnet2")]
+                {
+                    match justified_index_after(
+                        attestation.source().slot,
+                        self.latest_finalized.slot,
+                    ) {
+                        Some(index) => self
+                            .justified_slots
+                            .get(index as usize)
+                            .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?,
+                        None => true,
+                    }
+                }
+            };
+
+            if !is_source_justified {
                 #[cfg(feature = "devnet1")]
                 info!(
                     reason = "Source slot not justified",
@@ -305,15 +367,33 @@ impl LeanState {
                 continue;
             }
 
-            // This condition is missing in 3sf mini but has been added here because
-            // we don't want to re-introduce the target again for remaining attestations if
-            // the slot is already justified and its tracking already cleared out
-            // from justifications map
-            if self
-                .justified_slots
-                .get(attestation.target().slot as usize)
-                .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
-            {
+            let is_target_already_justified = {
+                #[cfg(feature = "devnet1")]
+                {
+                    // This condition is missing in 3sf mini but has been added here because
+                    // we don't want to re-introduce the target again for remaining attestations if
+                    // the slot is already justified and its tracking already cleared out
+                    // from justifications map
+                    self.justified_slots
+                        .get(attestation.target().slot as usize)
+                        .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
+                }
+                #[cfg(feature = "devnet2")]
+                {
+                    match justified_index_after(
+                        attestation.target().slot,
+                        self.latest_finalized.slot,
+                    ) {
+                        Some(index) => self
+                            .justified_slots
+                            .get(index as usize)
+                            .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?,
+                        None => true,
+                    }
+                }
+            };
+
+            if is_target_already_justified {
                 #[cfg(feature = "devnet1")]
                 info!(
                     reason = "Target slot already justified",
@@ -464,6 +544,8 @@ impl LeanState {
             // justifying specially if the num_validators is low in testing scenarios
             if 3 * count >= (2 * self.validators.len()) {
                 self.latest_justified = attestation.target();
+
+                #[cfg(feature = "devnet1")]
                 self.justified_slots
                     .set(attestation.target().slot as usize, true)
                     .map_err(|err| {
@@ -472,6 +554,20 @@ impl LeanState {
                             attestation.target().slot
                         )
                     })?;
+
+                #[cfg(feature = "devnet2")]
+                if let Some(index) =
+                    justified_index_after(attestation.target().slot, self.latest_finalized.slot)
+                {
+                    self.justified_slots
+                        .set(index as usize, true)
+                        .map_err(|err| {
+                            anyhow!(
+                                "Failed to set justified slot for slot {}: {err:?}",
+                                attestation.target().slot
+                            )
+                        })?;
+                }
 
                 justifications_map.remove(&attestation.target().root);
 
@@ -489,6 +585,34 @@ impl LeanState {
                     .any(|slot| is_justifiable_slot(self.latest_finalized.slot, slot));
 
                 if is_target_next_valid_justifiable_slot {
+                    #[cfg(feature = "devnet2")]
+                    {
+                        let delta =
+                            (attestation.source().slot - self.latest_finalized.slot) as usize;
+                        if delta > 0 {
+                            let mut new_bitlist =
+                                BitList::with_capacity(self.justified_slots.len())
+                                    .map_err(|err| anyhow!("Failed to create BitList: {err:?}"))?;
+
+                            for index in delta..self.justified_slots.len() {
+                                if self.justified_slots.get(index).unwrap_or(false) {
+                                    new_bitlist
+                                        .set(index - delta, true)
+                                        .map_err(|err| anyhow!("Failed to set bit: {err:?}"))?;
+                                }
+                            }
+                            self.justified_slots = new_bitlist;
+
+                            justifications_map.retain(|root, _| {
+                                if let Some(&slot) = root_to_slots.get(root) {
+                                    slot > attestation.source().slot
+                                } else {
+                                    false
+                                }
+                            });
+                        }
+                    }
+
                     self.latest_finalized = attestation.source();
 
                     info!(
@@ -549,7 +673,226 @@ mod test {
     use ssz::{Decode, Encode};
 
     use super::*;
+    #[cfg(feature = "devnet2")]
+    use crate::attestation::{AggregatedAttestation, AttestationData};
     use crate::utils::generate_default_validators;
+
+    #[test]
+    #[cfg(feature = "devnet2")]
+    #[ignore = "Matches Python test; logic to be implemented in future PR"]
+    fn test_justified_slots_rebases_when_finalization_advances() -> anyhow::Result<()> {
+        let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(3)));
+
+        state.process_slots(1)?;
+        let block_1_parent_root = state.latest_block_header.tree_hash_root();
+        state.process_block(&Block {
+            slot: 1,
+            proposer_index: 0,
+            parent_root: block_1_parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        })?;
+
+        state.process_slots(2)?;
+        let block_2_parent_root = state.latest_block_header.tree_hash_root();
+        state.process_block(&Block {
+            slot: 2,
+            proposer_index: 1,
+            parent_root: block_2_parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::new(vec![AggregatedAttestation {
+                    aggregation_bits: {
+                        let mut bits = BitList::with_capacity(3).unwrap();
+                        bits.set(0, true).unwrap();
+                        bits.set(1, true).unwrap();
+                        bits
+                    },
+                    message: AttestationData {
+                        slot: 2,
+                        head: Checkpoint {
+                            slot: 1,
+                            root: block_2_parent_root,
+                        },
+                        source: Checkpoint {
+                            slot: 0,
+                            root: block_1_parent_root,
+                        },
+                        target: Checkpoint {
+                            slot: 1,
+                            root: block_2_parent_root,
+                        },
+                    },
+                }])
+                .map_err(|err| anyhow!("Failed to get aggregated attestation {err:?}"))?,
+            },
+        })?;
+
+        state.process_slots(3)?;
+        let block_3_parent_root = state.latest_block_header.tree_hash_root();
+        state.process_block(&Block {
+            slot: 3,
+            proposer_index: 2,
+            parent_root: block_3_parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::new(vec![AggregatedAttestation {
+                    aggregation_bits: {
+                        let mut bits = BitList::with_capacity(3).unwrap();
+                        bits.set(0, true).unwrap();
+                        bits.set(1, true).unwrap();
+                        bits
+                    },
+                    message: AttestationData {
+                        slot: 3,
+                        head: Checkpoint {
+                            slot: 2,
+                            root: block_3_parent_root,
+                        },
+                        source: Checkpoint {
+                            slot: 1,
+                            root: block_2_parent_root,
+                        },
+                        target: Checkpoint {
+                            slot: 2,
+                            root: block_3_parent_root,
+                        },
+                    },
+                }])
+                .map_err(|err| anyhow!("Failed to get aggregated attestation {err:?}"))?,
+            },
+        })?;
+
+        assert_eq!(state.latest_finalized.slot, 1);
+        assert_eq!(state.justified_slots.len(), 1);
+        assert!(state.justified_slots.get(0).unwrap());
+        assert_eq!(
+            justified_index_after(2, state.latest_finalized.slot),
+            Some(0)
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "devnet2")]
+    fn test_justified_slots_do_not_include_finalized_boundary() -> anyhow::Result<()> {
+        let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(4)));
+
+        state.process_slots(1)?;
+        state.process_block_header(&Block {
+            slot: 1,
+            proposer_index: 1,
+            parent_root: state.latest_block_header.tree_hash_root(),
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        })?;
+        assert_eq!(state.justified_slots.len(), 0);
+
+        state.process_slots(2)?;
+        state.process_block_header(&Block {
+            slot: 2,
+            proposer_index: 2,
+            parent_root: state.latest_block_header.tree_hash_root(),
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        })?;
+        assert_eq!(state.justified_slots.len(), 1);
+        assert!(!state.justified_slots.get(0).unwrap());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "devnet2")]
+    fn test_duplicate_roots_in_root_to_slots_mapping() -> anyhow::Result<()> {
+        let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(3)));
+
+        state.process_slots(1)?;
+        let root_0 = state.latest_block_header.tree_hash_root();
+        state.process_block(&Block {
+            slot: 1,
+            proposer_index: 1,
+            parent_root: root_0,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        })?;
+
+        state.process_slots(2)?;
+        let root_1 = state.latest_block_header.tree_hash_root();
+        state.latest_justified = Checkpoint {
+            slot: 1,
+            root: root_1,
+        };
+
+        if let Some(index) = justified_index_after(1, state.latest_finalized.slot) {
+            let required_len = (index + 1) as usize;
+            if state.justified_slots.len() < required_len {
+                state.justified_slots = BitList::with_capacity(required_len)
+                    .unwrap()
+                    .union(&state.justified_slots);
+            }
+            state.justified_slots.set(index as usize, true).unwrap();
+        }
+
+        for slot_index in 2..5 {
+            state.process_slots(slot_index + 1)?;
+            let parent = state.latest_block_header.tree_hash_root();
+            state.process_block(&Block {
+                slot: slot_index + 1,
+                proposer_index: (slot_index + 1) % 3,
+                parent_root: parent,
+                state_root: B256::ZERO,
+                body: BlockBody {
+                    attestations: VariableList::empty(),
+                },
+            })?;
+        }
+
+        let slot_3_root = *state.historical_block_hashes.get(3).unwrap();
+        state.historical_block_hashes[2] = B256::ZERO;
+        state.historical_block_hashes[4] = B256::ZERO;
+        state.justifications_roots.push(slot_3_root).unwrap();
+        state.justifications_validators = {
+            let mut bits = BitList::with_capacity(3).unwrap();
+            bits.set(0, true).unwrap();
+            bits
+        };
+
+        state.process_attestations(&[AggregatedAttestation {
+            aggregation_bits: {
+                let mut bits = BitList::with_capacity(3).unwrap();
+                bits.set(0, true).unwrap();
+                bits.set(1, true).unwrap();
+                bits
+            },
+            message: AttestationData {
+                slot: 5,
+                head: Checkpoint {
+                    slot: 2,
+                    root: B256::ZERO,
+                },
+                source: Checkpoint {
+                    slot: 1,
+                    root: root_1,
+                },
+                target: Checkpoint {
+                    slot: 2,
+                    root: B256::ZERO,
+                },
+            },
+        }])?;
+
+        assert_eq!(state.latest_finalized.slot, 1);
+        assert!(state.justifications_roots.contains(&slot_3_root));
+        Ok(())
+    }
 
     #[test]
     fn test_encode_decode_signed_block_with_attestation_roundtrip() -> anyhow::Result<()> {
@@ -675,9 +1018,17 @@ mod test {
             genesis_header_root
         );
 
-        // Slot 0 should be marked justified
-        assert_eq!(genesis_state.justified_slots.len(), 1);
-        assert!(genesis_state.justified_slots.get(0).unwrap_or(false));
+        #[cfg(feature = "devnet1")]
+        {
+            // Slot 0 should be marked justified
+            assert_eq!(genesis_state.justified_slots.len(), 1);
+            assert!(genesis_state.justified_slots.get(0).unwrap_or(false));
+        }
+
+        #[cfg(feature = "devnet2")]
+        {
+            assert_eq!(genesis_state.justified_slots.len(), 0);
+        }
 
         // Latest header now reflects the processed block's header content
         assert_eq!(genesis_state.latest_block_header.slot, block.slot);
