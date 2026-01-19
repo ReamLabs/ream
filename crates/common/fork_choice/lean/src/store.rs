@@ -28,7 +28,6 @@ use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 #[cfg(feature = "devnet2")]
 use ream_post_quantum_crypto::lean_multisig::aggregate::aggregate_signatures;
-#[cfg(feature = "devnet2")]
 use ream_post_quantum_crypto::leansig::signature::Signature;
 #[cfg(feature = "devnet2")]
 use ream_storage::tables::lean::{
