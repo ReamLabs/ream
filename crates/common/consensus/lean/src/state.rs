@@ -312,13 +312,13 @@ impl LeanState {
         }
 
         #[cfg(feature = "devnet2")]
-        let mut root_to_slot = HashMap::new();
+        let mut root_to_slots = HashMap::new();
         #[cfg(feature = "devnet2")]
         {
             let start_slot = self.latest_finalized.slot + 1;
             for index in start_slot..(self.historical_block_hashes.len() as u64) {
                 if let Some(hash) = self.historical_block_hashes.get(index as usize) {
-                    root_to_slot.insert(*hash, index);
+                    root_to_slots.insert(*hash, index);
                 }
             }
         }
@@ -604,7 +604,7 @@ impl LeanState {
                             self.justified_slots = new_bitlist;
 
                             justifications_map.retain(|root, _| {
-                                if let Some(&slot) = root_to_slot.get(root) {
+                                if let Some(&slot) = root_to_slots.get(root) {
                                     slot > attestation.source().slot
                                 } else {
                                     false
@@ -673,7 +673,226 @@ mod test {
     use ssz::{Decode, Encode};
 
     use super::*;
+    #[cfg(feature = "devnet2")]
+    use crate::attestation::{AggregatedAttestation, AttestationData};
     use crate::utils::generate_default_validators;
+
+    #[test]
+    #[cfg(feature = "devnet2")]
+    #[ignore = "Matches Python test; logic to be implemented in future PR"]
+    fn test_justified_slots_rebases_when_finalization_advances() -> anyhow::Result<()> {
+        let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(3)));
+
+        state.process_slots(1)?;
+        let block_1_parent_root = state.latest_block_header.tree_hash_root();
+        state.process_block(&Block {
+            slot: 1,
+            proposer_index: 0,
+            parent_root: block_1_parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        })?;
+
+        state.process_slots(2)?;
+        let block_2_parent_root = state.latest_block_header.tree_hash_root();
+        state.process_block(&Block {
+            slot: 2,
+            proposer_index: 1,
+            parent_root: block_2_parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::new(vec![AggregatedAttestation {
+                    aggregation_bits: {
+                        let mut bits = BitList::with_capacity(3).unwrap();
+                        bits.set(0, true).unwrap();
+                        bits.set(1, true).unwrap();
+                        bits
+                    },
+                    message: AttestationData {
+                        slot: 2,
+                        head: Checkpoint {
+                            slot: 1,
+                            root: block_2_parent_root,
+                        },
+                        source: Checkpoint {
+                            slot: 0,
+                            root: block_1_parent_root,
+                        },
+                        target: Checkpoint {
+                            slot: 1,
+                            root: block_2_parent_root,
+                        },
+                    },
+                }])
+                .map_err(|err| anyhow!("Failed to get aggregated attestation {err:?}"))?,
+            },
+        })?;
+
+        state.process_slots(3)?;
+        let block_3_parent_root = state.latest_block_header.tree_hash_root();
+        state.process_block(&Block {
+            slot: 3,
+            proposer_index: 2,
+            parent_root: block_3_parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::new(vec![AggregatedAttestation {
+                    aggregation_bits: {
+                        let mut bits = BitList::with_capacity(3).unwrap();
+                        bits.set(0, true).unwrap();
+                        bits.set(1, true).unwrap();
+                        bits
+                    },
+                    message: AttestationData {
+                        slot: 3,
+                        head: Checkpoint {
+                            slot: 2,
+                            root: block_3_parent_root,
+                        },
+                        source: Checkpoint {
+                            slot: 1,
+                            root: block_2_parent_root,
+                        },
+                        target: Checkpoint {
+                            slot: 2,
+                            root: block_3_parent_root,
+                        },
+                    },
+                }])
+                .map_err(|err| anyhow!("Failed to get aggregated attestation {err:?}"))?,
+            },
+        })?;
+
+        assert_eq!(state.latest_finalized.slot, 1);
+        assert_eq!(state.justified_slots.len(), 1);
+        assert!(state.justified_slots.get(0).unwrap());
+        assert_eq!(
+            justified_index_after(2, state.latest_finalized.slot),
+            Some(0)
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "devnet2")]
+    fn test_justified_slots_do_not_include_finalized_boundary() -> anyhow::Result<()> {
+        let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(4)));
+
+        state.process_slots(1)?;
+        state.process_block_header(&Block {
+            slot: 1,
+            proposer_index: 1,
+            parent_root: state.latest_block_header.tree_hash_root(),
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        })?;
+        assert_eq!(state.justified_slots.len(), 0);
+
+        state.process_slots(2)?;
+        state.process_block_header(&Block {
+            slot: 2,
+            proposer_index: 2,
+            parent_root: state.latest_block_header.tree_hash_root(),
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        })?;
+        assert_eq!(state.justified_slots.len(), 1);
+        assert!(!state.justified_slots.get(0).unwrap());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "devnet2")]
+    fn test_duplicate_roots_in_root_to_slots_mapping() -> anyhow::Result<()> {
+        let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(3)));
+
+        state.process_slots(1)?;
+        let root_0 = state.latest_block_header.tree_hash_root();
+        state.process_block(&Block {
+            slot: 1,
+            proposer_index: 1,
+            parent_root: root_0,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        })?;
+
+        state.process_slots(2)?;
+        let root_1 = state.latest_block_header.tree_hash_root();
+        state.latest_justified = Checkpoint {
+            slot: 1,
+            root: root_1,
+        };
+
+        if let Some(index) = justified_index_after(1, state.latest_finalized.slot) {
+            let required_len = (index + 1) as usize;
+            if state.justified_slots.len() < required_len {
+                state.justified_slots = BitList::with_capacity(required_len)
+                    .unwrap()
+                    .union(&state.justified_slots);
+            }
+            state.justified_slots.set(index as usize, true).unwrap();
+        }
+
+        for slot_index in 2..5 {
+            state.process_slots(slot_index + 1)?;
+            let parent = state.latest_block_header.tree_hash_root();
+            state.process_block(&Block {
+                slot: slot_index + 1,
+                proposer_index: (slot_index + 1) % 3,
+                parent_root: parent,
+                state_root: B256::ZERO,
+                body: BlockBody {
+                    attestations: VariableList::empty(),
+                },
+            })?;
+        }
+
+        let slot_3_root = *state.historical_block_hashes.get(3).unwrap();
+        state.historical_block_hashes[2] = B256::ZERO;
+        state.historical_block_hashes[4] = B256::ZERO;
+        state.justifications_roots.push(slot_3_root).unwrap();
+        state.justifications_validators = {
+            let mut bits = BitList::with_capacity(3).unwrap();
+            bits.set(0, true).unwrap();
+            bits
+        };
+
+        state.process_attestations(&[AggregatedAttestation {
+            aggregation_bits: {
+                let mut bits = BitList::with_capacity(3).unwrap();
+                bits.set(0, true).unwrap();
+                bits.set(1, true).unwrap();
+                bits
+            },
+            message: AttestationData {
+                slot: 5,
+                head: Checkpoint {
+                    slot: 2,
+                    root: B256::ZERO,
+                },
+                source: Checkpoint {
+                    slot: 1,
+                    root: root_1,
+                },
+                target: Checkpoint {
+                    slot: 2,
+                    root: B256::ZERO,
+                },
+            },
+        }])?;
+
+        assert_eq!(state.latest_finalized.slot, 1);
+        assert!(state.justifications_roots.contains(&slot_3_root));
+        Ok(())
+    }
 
     #[test]
     fn test_encode_decode_signed_block_with_attestation_roundtrip() -> anyhow::Result<()> {
@@ -799,9 +1018,17 @@ mod test {
             genesis_header_root
         );
 
-        // Slot 0 should be marked justified
-        assert_eq!(genesis_state.justified_slots.len(), 1);
-        assert!(genesis_state.justified_slots.get(0).unwrap_or(false));
+        #[cfg(feature = "devnet1")]
+        {
+            // Slot 0 should be marked justified
+            assert_eq!(genesis_state.justified_slots.len(), 1);
+            assert!(genesis_state.justified_slots.get(0).unwrap_or(false));
+        }
+
+        #[cfg(feature = "devnet2")]
+        {
+            assert_eq!(genesis_state.justified_slots.len(), 0);
+        }
 
         // Latest header now reflects the processed block's header content
         assert_eq!(genesis_state.latest_block_header.slot, block.slot);
