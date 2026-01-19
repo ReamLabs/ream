@@ -31,31 +31,6 @@ impl REDBTable for GossipSignaturesTable {
 }
 
 impl GossipSignaturesTable {
-    /// Get a signature by key.
-    pub fn get_signature(&self, key: &SignatureKey) -> Result<Option<Signature>, StoreError> {
-        self.get(key.clone())
-    }
-
-    /// Insert a signature.
-    pub fn insert_signature(
-        &self,
-        key: SignatureKey,
-        signature: Signature,
-    ) -> Result<(), StoreError> {
-        self.insert(key, signature)
-    }
-
-    /// Check if a signature exists for the given key.
-    pub fn contains(&self, key: &SignatureKey) -> bool {
-        matches!(self.get(key.clone()), Ok(Some(_)))
-    }
-
-    /// Remove a signature by key.
-    pub fn remove_signature(&self, key: &SignatureKey) -> Result<Option<Signature>, StoreError> {
-        self.remove(key.clone())
-    }
-
-    /// Clear all signatures (useful for pruning old data).
     pub fn clear(&self) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;

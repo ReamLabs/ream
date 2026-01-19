@@ -6584,6 +6584,7 @@ dependencies = [
  "anyhow",
  "directories",
  "ethereum_ssz",
+ "ethereum_ssz_derive",
  "lru 0.16.2",
  "ream-bls",
  "ream-consensus-beacon",

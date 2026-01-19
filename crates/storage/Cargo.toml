@@ -19,6 +19,7 @@ alloy-primitives.workspace = true
 anyhow.workspace = true
 directories.workspace = true
 ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
 lru.workspace = true
 ream-bls.workspace = true
 redb.workspace = true

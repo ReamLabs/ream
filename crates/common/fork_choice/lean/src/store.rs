@@ -28,7 +28,13 @@ use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 #[cfg(feature = "devnet2")]
 use ream_post_quantum_crypto::lean_multisig::aggregate::aggregate_signatures;
+#[cfg(feature = "devnet2")]
+use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 use ream_post_quantum_crypto::leansig::signature::Signature;
+#[cfg(feature = "devnet2")]
+use ream_storage::tables::lean::{
+    aggregated_payloads::AggregatedPayloadsTable, gossip_signatures::GossipSignaturesTable,
+};
 use ream_storage::{
     db::lean::LeanDB,
     tables::{field::REDBField, table::REDBTable},
@@ -489,10 +495,9 @@ impl Store {
         &self,
         head_state: &LeanState,
         attestations: &[AggregatedAttestations],
-        gossip_signatures_provider: &ream_storage::tables::lean::gossip_signatures::GossipSignaturesTable,
-        aggregated_payloads_provider: &ream_storage::tables::lean::aggregated_payloads::AggregatedPayloadsTable,
+        gossip_signatures_provider: &GossipSignaturesTable,
+        aggregated_payloads_provider: &AggregatedPayloadsTable,
     ) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<AggregatedSignatureProof>)> {
-        // Group individual attestations by data
         let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
         for attestation in attestations.iter() {
             groups
@@ -509,14 +514,13 @@ impl Store {
             // Phase 1: Gossip Collection
             // Collect individual XMSS signatures from the gossip network
             let mut gossip_signatures: Vec<Signature> = Vec::new();
-            let mut gossip_keys: Vec<ream_post_quantum_crypto::leansig::public_key::PublicKey> =
-                Vec::new();
+            let mut gossip_keys: Vec<PublicKey> = Vec::new();
             let mut gossip_ids: Vec<u64> = Vec::new();
             let mut remaining: HashSet<u64> = HashSet::new();
 
             for &validator_id in &validator_ids {
                 if let Ok(Some(signature)) = gossip_signatures_provider
-                    .get_signature(&SignatureKey::from_parts(validator_id, data_root))
+                    .get(SignatureKey::from_parts(validator_id, data_root))
                 {
                     gossip_signatures.push(signature);
                     if let Some(validator) = head_state.validators.get(validator_id as usize) {
@@ -558,19 +562,17 @@ impl Store {
 
             // Phase 2: Fallback to existing proofs using greedy set-cover
             while let Some(&target_id) = remaining.iter().next() {
-                // Get candidate proofs for the target validator
                 let candidates = match aggregated_payloads_provider
-                    .get_payloads(&SignatureKey::from_parts(target_id, data_root))
+                    .get(SignatureKey::from_parts(target_id, data_root))
                 {
                     Ok(Some(payloads)) => payloads.proofs.to_vec(),
-                    _ => break, // No proofs found, stop
+                    _ => break,
                 };
 
                 if candidates.is_empty() {
                     break;
                 }
 
-                // Find the proof covering the most remaining validators (greedy set-cover)
                 let mut best_proof: Option<&AggregatedSignatureProof> = None;
                 let mut best_covered: HashSet<u64> = HashSet::new();
 
@@ -583,7 +585,6 @@ impl Store {
                     }
                 }
 
-                // Guard: If the best proof has zero overlap, stop
                 if best_covered.is_empty() {
                     break;
                 }
@@ -642,9 +643,7 @@ impl Store {
         let mut attestations: VariableList<AggregatedAttestations, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
 
-        // Fixed-point attestation collection loop
         let post_state = loop {
-            // Group attestations by data for aggregation
             let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
             for attestation in attestations.iter() {
                 groups
@@ -688,7 +687,6 @@ impl Store {
             advanced_state.process_slots(slot)?;
             advanced_state.process_block(&candidate_block)?;
 
-            // Find new valid attestations matching post-state justification
             let mut new_attestations: VariableList<AggregatedAttestations, U4096> =
                 VariableList::empty();
 
@@ -718,18 +716,13 @@ impl Store {
                     continue;
                 }
 
-                // Check attestation eligibility:
-                // We can only include an attestation if we have some way to provide
-                // an aggregated proof for its group:
-                // - either a per validator XMSS signature from gossip, or
-                // - at least one aggregated proof learned from a block
                 if gossip_signatures_provider
-                    .get_signature(&signature_key)
+                    .get(signature_key.clone())
                     .ok()
                     .flatten()
                     .is_some()
                     || aggregated_payloads_provider
-                        .get_payloads(&signature_key)
+                        .get(signature_key.clone())
                         .ok()
                         .flatten()
                         .is_some()
@@ -740,12 +733,10 @@ impl Store {
                 }
             }
 
-            // Fixed point reached: no new attestations found
             if new_attestations.is_empty() {
                 break advanced_state;
             }
 
-            // Add new attestations and continue iteration
             for attestation in new_attestations {
                 attestations
                     .push(attestation)
@@ -753,7 +744,6 @@ impl Store {
             }
         };
 
-        // Compute the aggregated signatures for the attestations
         let attestations_vec: Vec<_> = attestations.to_vec();
         let (aggregated_attestations, aggregated_proofs) = self.compute_aggregated_signatures(
             &head_state,
@@ -762,7 +752,6 @@ impl Store {
             &aggregated_payloads_provider,
         )?;
 
-        // Build final block with aggregated attestations
         let attestations_list =
             VariableList::new(aggregated_attestations).map_err(|err| anyhow!("{err:?}"))?;
 
@@ -959,7 +948,6 @@ impl Store {
                         SignedAttestation {
                             validator_id,
                             message: aggregated_attestation.message.clone(),
-                            // Signature already verified at block level, use blank for fork choice
                             signature: Signature::blank(),
                         },
                         true,
@@ -987,7 +975,7 @@ impl Store {
         {
             // Store proposer signature in gossip_signatures for future block building
             let gossip_signatures_provider = self.store.lock().await.gossip_signatures_provider();
-            gossip_signatures_provider.insert_signature(
+            gossip_signatures_provider.insert(
                 SignatureKey::new(
                     proposer_attestation.validator_id,
                     &proposer_attestation.data,
@@ -1191,7 +1179,7 @@ impl Store {
 
         // Store signature for later lookup during block building
         gossip_signatures_provider
-            .insert_signature(SignatureKey::new(validator_id, attestation_data), signature)?;
+            .insert(SignatureKey::new(validator_id, attestation_data), signature)?;
 
         self.on_attestation(signed_attestation, false).await?;
 
@@ -1574,13 +1562,13 @@ mod tests {
         // For devnet2, also store signatures in gossip_signatures
         // This is required for build_block to include the attestations
         gossip_signatures_provider
-            .insert_signature(
+            .insert(
                 SignatureKey::new(5, &attestation_1.message),
                 attestation_1.signature,
             )
             .unwrap();
         gossip_signatures_provider
-            .insert_signature(
+            .insert(
                 SignatureKey::new(6, &attestation_2.message),
                 attestation_2.signature,
             )

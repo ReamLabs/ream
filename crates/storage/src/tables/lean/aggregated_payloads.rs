@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ream_consensus_lean::attestation::{AggregatedSignatureProof, SignatureKey};
 use redb::{Database, Durability, TableDefinition};
-use ssz::{Decode, Encode};
+use ssz_derive::{Decode, Encode};
 use ssz_types::{VariableList, typenum::U4096};
 
 use crate::{
@@ -12,35 +12,9 @@ use crate::{
 
 /// Wrapper for a list of aggregated signature proofs.
 /// Uses VariableList for SSZ compatibility.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
 pub struct AggregatedPayloadList {
     pub proofs: VariableList<AggregatedSignatureProof, U4096>,
-}
-
-impl Encode for AggregatedPayloadList {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        self.proofs.ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        self.proofs.ssz_bytes_len()
-    }
-}
-
-impl Decode for AggregatedPayloadList {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
-        Ok(Self {
-            proofs: VariableList::from_ssz_bytes(bytes)?,
-        })
-    }
 }
 
 impl AggregatedPayloadList {
@@ -98,14 +72,6 @@ impl REDBTable for AggregatedPayloadsTable {
 }
 
 impl AggregatedPayloadsTable {
-    /// Get payloads by key.
-    pub fn get_payloads(
-        &self,
-        key: &SignatureKey,
-    ) -> Result<Option<AggregatedPayloadList>, StoreError> {
-        self.get(key.clone())
-    }
-
     /// Append a proof to the list for the given key.
     pub fn append_proof(
         &self,
@@ -116,28 +82,6 @@ impl AggregatedPayloadsTable {
         list.push(proof)
             .map_err(|err| StoreError::DecodeError(format!("VariableList error: {err:?}")))?;
         self.insert(key, list)
-    }
-
-    /// Insert or replace the full payload list for a key.
-    pub fn insert_payloads(
-        &self,
-        key: SignatureKey,
-        payloads: AggregatedPayloadList,
-    ) -> Result<(), StoreError> {
-        self.insert(key, payloads)
-    }
-
-    /// Check if payloads exist for the given key.
-    pub fn contains(&self, key: &SignatureKey) -> bool {
-        matches!(self.get(key.clone()), Ok(Some(_)))
-    }
-
-    /// Remove payloads by key.
-    pub fn remove_payloads(
-        &self,
-        key: &SignatureKey,
-    ) -> Result<Option<AggregatedPayloadList>, StoreError> {
-        self.remove(key.clone())
     }
 
     /// Clear all payloads (useful for pruning old data).
