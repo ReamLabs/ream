@@ -506,7 +506,11 @@ impl Store {
 
         let mut results = Vec::new();
 
-        for (data, validator_ids) in groups {
+        // Sort groups by AttestationData hash for deterministic ordering
+        let mut sorted_groups: Vec<_> = groups.into_iter().collect();
+        sorted_groups.sort_by_key(|(data, _)| data.tree_hash_root());
+
+        for (data, validator_ids) in sorted_groups {
             let data_root = data.tree_hash_root();
 
             // Phase 1: Gossip Collection
@@ -684,7 +688,7 @@ impl Store {
                 parent_root,
                 state_root: B256::ZERO,
                 body: BlockBody {
-                    attestations: attestations_list.clone(),
+                    attestations: attestations_list,
                 },
             };
             let mut advanced_state = head_state.clone();
@@ -705,17 +709,14 @@ impl Store {
                     data: data.clone(),
                 };
 
-                // Skip if target block is unknown
                 if !block_provider.contains_key(data.head.root) {
                     continue;
                 }
 
-                // Skip if attestation source does not match post-state's latest justified
                 if data.source != advanced_state.latest_justified {
                     continue;
                 }
 
-                // Avoid adding duplicates
                 if attestations.contains(&attestation) {
                     continue;
                 }
@@ -759,17 +760,16 @@ impl Store {
         let attestations_list =
             VariableList::new(aggregated_attestations).map_err(|err| anyhow!("{err:?}"))?;
 
-        let mut final_block = Block {
+        let final_block = Block {
             slot,
             proposer_index,
             parent_root,
-            state_root: B256::ZERO,
+            state_root: post_state.tree_hash_root(),
             body: BlockBody {
                 attestations: attestations_list,
             },
         };
 
-        final_block.state_root = post_state.tree_hash_root();
         Ok((final_block, aggregated_proofs, post_state))
     }
 

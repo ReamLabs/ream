@@ -8,11 +8,7 @@ use ream_consensus_lean::attestation::AggregatedAttestations;
 #[cfg(feature = "devnet1")]
 use ream_consensus_lean::attestation::Attestation;
 #[cfg(feature = "devnet2")]
-use ream_consensus_lean::attestation::AttestationData;
-#[cfg(feature = "devnet2")]
 use ream_consensus_lean::block::BlockSignatures;
-#[cfg(feature = "devnet2")]
-use ream_consensus_lean::checkpoint::Checkpoint;
 use ream_consensus_lean::{
     attestation::SignedAttestation,
     block::{BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
@@ -207,16 +203,11 @@ impl ValidatorService {
                                     data: attestation_data.clone()
                                 };
                                 #[cfg(feature = "devnet2")]
-                                let message = AttestationData {
-                                    slot: 0,
-                                    head: Checkpoint::default(),
-                                    target: Checkpoint::default(),
-                                    source: Checkpoint::default(),
-                                };
+                                let message = attestation_data.clone();
                                 let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
-                                let signature =keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
+                                let signature = keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
                                 stop_timer(timer);
-                                    signed_attestations.push(SignedAttestation {
+                                signed_attestations.push(SignedAttestation {
                                     signature,
                                     message,
                                     #[cfg(feature = "devnet2")]
