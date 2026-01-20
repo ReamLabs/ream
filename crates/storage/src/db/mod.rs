@@ -9,6 +9,10 @@ use lean::LeanDB;
 use redb::{Builder, Database};
 use tracing::info;
 
+#[cfg(feature = "devnet2")]
+use crate::tables::lean::{
+    aggregated_payloads::AggregatedPayloadsTable, gossip_signatures::GossipSignaturesTable,
+};
 use crate::{
     errors::StoreError,
     tables::{
@@ -111,6 +115,11 @@ impl ReamDB {
         write_txn.open_table(LeanLatestNewAttestationsTable::TABLE_DEFINITION)?;
         write_txn.open_table(LatestKnownAttestationTable::TABLE_DEFINITION)?;
         write_txn.open_table(LeanPendingBlocksTable::TABLE_DEFINITION)?;
+        #[cfg(feature = "devnet2")]
+        {
+            write_txn.open_table(AggregatedPayloadsTable::TABLE_DEFINITION)?;
+            write_txn.open_table(GossipSignaturesTable::TABLE_DEFINITION)?;
+        }
         write_txn.commit()?;
 
         Ok(LeanDB {
