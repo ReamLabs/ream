@@ -118,12 +118,15 @@ impl ValidatorService {
                                     }
                                 };
                                 #[cfg(feature = "devnet1")]
-                                let message = Attestation { validator_id: keystore.index, data: attestation_data };
+                                let message = Attestation { validator_id: keystore.index, data: attestation_data.clone() };
                                 #[cfg(feature = "devnet2")]
-                                let message = AggregatedAttestations { validator_id: keystore.index, data: attestation_data };
+                                let message = AggregatedAttestations { validator_id: keystore.index, data: attestation_data.clone() };
 
                                 let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
+                                #[cfg(feature = "devnet1")]
                                 let proposer_signature = keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
+                                #[cfg(feature = "devnet2")]
+                                let proposer_signature = keystore.private_key.sign(&attestation_data.tree_hash_root(), slot as u32)?;
                                 stop_timer(timer);
 
                                 #[cfg(feature = "devnet1")]
