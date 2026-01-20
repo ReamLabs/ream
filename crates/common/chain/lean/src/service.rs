@@ -915,10 +915,18 @@ impl LeanChainService {
         &mut self,
         signed_attestation: SignedAttestation,
     ) -> anyhow::Result<()> {
+        #[cfg(feature = "devnet1")]
         self.store
             .write()
             .await
             .on_attestation(signed_attestation, false)
+            .await?;
+
+        #[cfg(feature = "devnet2")]
+        self.store
+            .write()
+            .await
+            .on_gossip_attestation(signed_attestation)
             .await?;
 
         Ok(())
