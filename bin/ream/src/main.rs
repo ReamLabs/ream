@@ -805,24 +805,19 @@ pub async fn countdown_for_genesis() {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-    #[cfg(feature = "devnet1")]
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, time::Duration};
 
-    #[cfg(feature = "devnet1")]
     use alloy_primitives::hex;
     use clap::Parser;
-    #[cfg(feature = "devnet1")]
     use libp2p_identity::{Keypair, secp256k1};
-    #[cfg(feature = "devnet1")]
-    use ream::cli::verbosity::Verbosity;
-    use ream::cli::{Cli, Commands};
+    use ream::cli::{Cli, Commands, verbosity::Verbosity};
     use ream_executor::ReamExecutor;
-    #[cfg(feature = "devnet1")]
-    use ream_storage::tables::{field::REDBField, table::REDBTable};
-    use ream_storage::{db::ReamDB, dir::setup_data_dir};
+    use ream_storage::{
+        db::ReamDB,
+        dir::setup_data_dir,
+        tables::{field::REDBField, table::REDBTable},
+    };
     use tokio::time::{sleep, timeout};
-    #[cfg(feature = "devnet1")]
     use tracing::info;
 
     use crate::{APP_NAME, run_lean_node};
@@ -869,9 +864,7 @@ mod tests {
         });
     }
 
-    /// TODO: Get finalization working for devnet2
     #[test]
-    #[cfg(feature = "devnet1")]
     fn test_lean_node_finalizes() {
         let cli = Cli::parse_from([
             "ream",
@@ -948,7 +941,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet1")]
     fn generate_node_identity(path: &PathBuf) -> String {
         let secp256k1_key = secp256k1::Keypair::generate();
         if let Some(parent) = path.parent() {
@@ -961,7 +953,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "devnet1")]
     #[ignore = "I am not sure if this topology is supposed to work or not"]
     fn test_lean_node_finalizes_linear_1_2_1() {
         let topology = vec![vec![], vec![0], vec![1]];
@@ -969,13 +960,11 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "devnet1")]
     fn test_lean_node_finalizes_mesh_2_2_2() {
         let topology = vec![vec![], vec![0], vec![0, 1]];
         run_multi_node_finalization_test(topology, "mesh_2_2_2");
     }
 
-    #[cfg(feature = "devnet1")]
     fn run_multi_node_finalization_test(topology: Vec<Vec<usize>>, test_name: &str) {
         if true {
             let _ = tracing_subscriber::fmt()
@@ -1160,7 +1149,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "devnet1")]
     fn test_lean_node_syncs_and_finalizes_late_joiner() {
         // Topology: Node 3 connects to Node 1 and Node 2.
         // Node 1 and 2 start immediately. Node 3 starts after 50s.
