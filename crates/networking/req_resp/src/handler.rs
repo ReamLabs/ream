@@ -67,7 +67,7 @@ impl RespMessage {
                 | ReqRespError::IoError(_) => Some(ResponseCode::ServerError),
                 ReqRespError::InvalidData(_) => Some(ResponseCode::InvalidRequest),
                 ReqRespError::Disconnected
-                | ReqRespError::StreamTimedOut
+                | ReqRespError::StreamTimedOut(_)
                 | ReqRespError::TokioTimedOut(_) => Some(ResponseCode::ResourceUnavailable),
             },
             RespMessage::EndOfStream => None,
@@ -93,6 +93,7 @@ enum InboundStreamState {
 struct InboundStream {
     state: Option<InboundStreamState>,
     response_queue: VecDeque<RespMessage>,
+    content_type: String,
 }
 
 enum OutboundStreamState {
@@ -106,6 +107,7 @@ enum OutboundStreamState {
 struct OutboundStream {
     state: Option<OutboundStreamState>,
     request_id: u64,
+    content_type: String,
 }
 
 #[derive(Debug)]
@@ -157,6 +159,12 @@ impl ReqRespConnectionHandler {
             InboundStream {
                 state: Some(InboundStreamState::Idle(inbound_framed)),
                 response_queue: VecDeque::new(),
+                content_type: message
+                    .supported_protocols()
+                    .iter()
+                    .map(|protocol| protocol.protocol_id.to_string())
+                    .collect::<Vec<String>>()
+                    .join(","),
             },
         );
 
@@ -185,6 +193,12 @@ impl ReqRespConnectionHandler {
         self.outbound_streams.insert(
             self.outbound_stream_id,
             OutboundStream {
+                content_type: message
+                    .supported_protocols()
+                    .iter()
+                    .map(|protocol| protocol.protocol_id.to_string())
+                    .collect::<Vec<String>>()
+                    .join(","),
                 state: Some(OutboundStreamState::PendingResponse {
                     stream: Box::new(outbound_output),
                     message,
@@ -279,11 +293,11 @@ impl ConnectionHandler for ReqRespConnectionHandler {
         while let Poll::Ready(Some(Ok(stream_id))) =
             self.inbound_stream_timeouts.poll_expired(context)
         {
-            if self.inbound_streams.get_mut(&stream_id).is_some() {
+            if let Some(inbound_stream) = self.inbound_streams.get(&stream_id) {
                 self.behaviour_events
                     .push(HandlerEvent::Err(ReqRespMessageError::Inbound {
                         stream_id,
-                        err: ReqRespError::StreamTimedOut,
+                        err: ReqRespError::StreamTimedOut(inbound_stream.content_type.clone()),
                     }));
             }
         }
@@ -291,13 +305,16 @@ impl ConnectionHandler for ReqRespConnectionHandler {
         while let Poll::Ready(Some(Ok(outbound_id))) =
             self.outbound_stream_timeouts.poll_expired(context)
         {
-            if let Some(OutboundStream { request_id, .. }) =
-                self.outbound_streams.remove(&outbound_id)
+            if let Some(OutboundStream {
+                request_id,
+                content_type,
+                ..
+            }) = self.outbound_streams.remove(&outbound_id)
             {
                 return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(HandlerEvent::Err(
                     ReqRespMessageError::Outbound {
                         request_id,
-                        err: ReqRespError::StreamTimedOut,
+                        err: ReqRespError::StreamTimedOut(content_type),
                     },
                 )));
             }

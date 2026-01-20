@@ -4,7 +4,6 @@ use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use libp2p::{Multiaddr, PeerId};
 use parking_lot::{Mutex, RwLock};
-use rand::seq::IteratorRandom;
 use ream_consensus_lean::checkpoint::Checkpoint;
 use ream_peer::{ConnectionState, Direction};
 
@@ -54,12 +53,12 @@ impl NetworkState {
             .count()
     }
 
-    pub fn connected_peer_ids(&self) -> Vec<PeerId> {
+    pub fn connected_peer_ids_with_scores(&self) -> Vec<(PeerId, u8)> {
         self.peer_table
             .lock()
             .values()
             .filter(|peer| matches!(peer.state, ConnectionState::Connected))
-            .map(|peer| peer.peer_id)
+            .map(|peer| (peer.peer_id, peer.peer_score))
             .collect()
     }
 
@@ -79,16 +78,6 @@ impl NetworkState {
             cached_peer.finalized_checkpoint = Some(finalized_checkpoint);
             cached_peer.last_status_update = Some(Instant::now());
         }
-    }
-
-    pub fn random_connected_peer(&self) -> Option<CachedPeer> {
-        let mut rng = rand::rng();
-        self.peer_table
-            .lock()
-            .values()
-            .filter(|peer| matches!(peer.state, ConnectionState::Connected))
-            .choose(&mut rng)
-            .cloned()
     }
 
     pub fn common_highest_checkpoint(&self) -> Option<Checkpoint> {
@@ -112,5 +101,17 @@ impl NetworkState {
         }
 
         common_checkpoint
+    }
+
+    pub fn successful_response_from_peer(&self, peer_id: PeerId) {
+        if let Some(cached_peer) = self.peer_table.lock().get_mut(&peer_id) {
+            cached_peer.peer_score = cached_peer.peer_score.saturating_add(10);
+        }
+    }
+
+    pub fn failed_response_from_peer(&self, peer_id: PeerId) {
+        if let Some(cached_peer) = self.peer_table.lock().get_mut(&peer_id) {
+            cached_peer.peer_score = cached_peer.peer_score.saturating_sub(20);
+        }
     }
 }

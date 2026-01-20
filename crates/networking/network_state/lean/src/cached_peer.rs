@@ -23,6 +23,8 @@ pub struct CachedPeer {
     #[serde(with = "instant_serde")]
     pub last_seen: Instant,
 
+    pub peer_score: u8,
+
     /// Last Status update
 
     #[serde(with = "instant_serde::option")]
@@ -47,6 +49,7 @@ impl CachedPeer {
             last_status_update: None,
             head_checkpoint: None,
             finalized_checkpoint: None,
+            peer_score: u8::MAX / 2,
         }
     }
 

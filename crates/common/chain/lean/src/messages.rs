@@ -7,7 +7,7 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
 };
-use ream_req_resp::lean::ReamNetworkEvent;
+use ream_req_resp::lean::NetworkEvent;
 use tokio::sync::oneshot;
 
 /// Represents the status of a peer's chain.
@@ -47,7 +47,7 @@ pub enum LeanChainServiceMessage {
         roots: Vec<B256>,
         sender: oneshot::Sender<Vec<Arc<SignedBlockWithAttestation>>>,
     },
-    NetworkEvent(ReamNetworkEvent),
+    NetworkEvent(NetworkEvent),
 }
 
 #[derive(Debug)]
