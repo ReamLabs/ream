@@ -1,12 +1,15 @@
 use std::{
     collections::HashSet,
+    pin::Pin,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::anyhow;
+use futures::stream::{FuturesUnordered, StreamExt};
 use libp2p_identity::PeerId;
 use libp2p_swarm::ConnectionId;
+use rand::seq::IndexedRandom;
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{BlockWithSignatures, SignedBlockWithAttestation},
@@ -17,7 +20,7 @@ use ream_metrics::{CURRENT_SLOT, set_int_gauge_vec};
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 use ream_req_resp::lean::{
-    ReamNetworkEvent,
+    NetworkEvent, ResponseCallback,
     messages::{LeanRequestMessage, LeanResponseMessage},
 };
 use ream_storage::tables::{field::REDBField, table::REDBTable};
@@ -31,16 +34,29 @@ use tree_hash::TreeHash;
 use crate::{
     clock::{create_lean_clock_interval, get_initial_tick_count},
     messages::{LeanChainServiceMessage, ServiceResponse},
-    p2p_request::LeanP2PRequest,
+    p2p_request::{LeanP2PRequest, P2PCallbackRequest},
     slot::get_current_slot,
     sync::{
         SyncStatus,
         forward_background_syncer::{ForwardBackgroundSyncer, ForwardSyncResults},
-        job::request::JobRequest,
+        job::{pending::PendingJobRequest, request::JobRequest},
     },
 };
 
 const STATE_RETENTION_SLOTS: u64 = 128;
+
+type CallbackFuture = Pin<
+    Box<
+        dyn Future<
+                Output = (
+                    Option<ResponseCallback>,
+                    tokio::sync::mpsc::Receiver<ResponseCallback>,
+                ),
+            > + Send
+            + Sync
+            + 'static,
+    >,
+>;
 
 /// LeanChainService is responsible for updating the [LeanChain] state
 pub struct LeanChainService {
@@ -50,8 +66,10 @@ pub struct LeanChainService {
     network_state: Arc<NetworkState>,
     sync_status: SyncStatus,
     peers_in_use: HashSet<PeerId>,
+    pending_job_requests: Vec<PendingJobRequest>,
     forward_syncer: Option<JoinHandle<anyhow::Result<ForwardSyncResults>>>,
     checkpoints_to_queue: Vec<(Checkpoint, bool)>,
+    pending_callbacks: FuturesUnordered<CallbackFuture>,
 }
 
 impl LeanChainService {
@@ -70,6 +88,8 @@ impl LeanChainService {
             peers_in_use: HashSet::new(),
             forward_syncer: None,
             checkpoints_to_queue: Vec::new(),
+            pending_callbacks: FuturesUnordered::new(),
+            pending_job_requests: Vec::new(),
         }
     }
 
@@ -144,6 +164,24 @@ impl LeanChainService {
                                 "Forward background sync incomplete; re-queuing job",
                             );
                             self.checkpoints_to_queue.push((checkpoint_for_new_queue, true));
+                        }
+                    }
+                }
+                Some((callback_response, rx)) = self.pending_callbacks.next() => {
+                    match callback_response {
+                        Some(ResponseCallback::ResponseMessage { peer_id, message, .. }) => {
+                            self.handle_callback_response_message(peer_id, message).await?;
+                            self.push_callback_receiver(rx);
+                        }
+                        Some(ResponseCallback::EndOfStream {peer_id,  request_id }) => {
+                            trace!("Received end of stream for request_id {request_id} from peer {peer_id:?}");
+                        }
+                        Some(ResponseCallback::NotConnected { peer_id }) => {
+                            warn!("Received NotConnected callback for peer {peer_id:?}");
+                            self.handle_failed_job_request(peer_id).await?;
+                        }
+                        None => {
+                            warn!("Callback channel closed unexpectedly");
                         }
                     }
                 }
@@ -432,9 +470,13 @@ impl LeanChainService {
         // queue unqueued jobs
         let unqueued_jobs = self.sync_status.unqueued_jobs();
         for job in unqueued_jobs {
-            if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::RequestBlocksByRoot {
+            let (callback, rx) = mpsc::channel(100);
+            if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::Request {
                 peer_id: job.peer_id,
-                roots: vec![job.root],
+                callback,
+                message: P2PCallbackRequest::BlocksByRoot {
+                    roots: vec![job.root],
+                },
             }) {
                 warn!(
                     "Failed to send block request to peer {:?} for root {:?}: {err:?}",
@@ -442,9 +484,12 @@ impl LeanChainService {
                 );
                 continue;
             }
+            self.push_callback_receiver(rx);
 
             self.sync_status.mark_job_as_requested(job.root);
         }
+
+        self.queue_pending_job_requests().await?;
 
         // start new queue from peers status
         let common_highest_checkpoint = match self.network_state.common_highest_checkpoint() {
@@ -455,18 +500,22 @@ impl LeanChainService {
             }
         };
 
+        if self
+            .sync_status
+            .slot_is_subset_of_any_queue(common_highest_checkpoint.slot)
+            || self
+                .checkpoints_to_queue
+                .iter()
+                .any(|(checkpoint, _)| checkpoint.slot == common_highest_checkpoint.slot)
+        {
+            return Ok(());
+        }
+
         self.checkpoints_to_queue
             .push((common_highest_checkpoint, false));
 
         while let Some((checkpoint, bypass_slot_check)) = self.checkpoints_to_queue.pop() {
-            let non_queued_peer_id = self
-                .network_state
-                .connected_peer_ids()
-                .iter()
-                .find(|peer_id| !self.peers_in_use.contains(peer_id))
-                .cloned();
-
-            let non_queued_peer_id = match non_queued_peer_id {
+            let non_queued_peer_id = match self.non_queued_peer_id().await {
                 Some(id) => id,
                 None => {
                     if self.network_state.connected_peer_count() == 0 {
@@ -490,6 +539,20 @@ impl LeanChainService {
         }
 
         Ok(())
+    }
+
+    async fn non_queued_peer_id(&self) -> Option<PeerId> {
+        let candidates: Vec<(PeerId, u8)> = self
+            .network_state
+            .connected_peer_ids_with_scores()
+            .into_iter()
+            .filter(|(peer_id, _)| !self.peers_in_use.contains(peer_id))
+            .collect();
+
+        candidates
+            .choose_weighted(&mut rand::rng(), |(_, score)| *score)
+            .ok()
+            .map(|(peer_id, _)| *peer_id)
     }
 
     async fn update_sync_status(&self) -> anyhow::Result<SyncStatus> {
@@ -561,9 +624,9 @@ impl LeanChainService {
         Ok(sync_status)
     }
 
-    async fn handle_network_event(&mut self, event: ReamNetworkEvent) -> anyhow::Result<()> {
+    async fn handle_network_event(&mut self, event: NetworkEvent) -> anyhow::Result<()> {
         match event {
-            ReamNetworkEvent::RequestMessage {
+            NetworkEvent::RequestMessage {
                 peer_id,
                 stream_id,
                 connection_id,
@@ -572,8 +635,10 @@ impl LeanChainService {
                 self.handle_request_network_event(peer_id, stream_id, connection_id, message)
                     .await
             }
-            ReamNetworkEvent::ResponseMessage { peer_id, message } => {
-                self.handle_response_network_event(peer_id, message).await
+            NetworkEvent::NetworkError { peer_id, error } => {
+                trace!("Network error from peer {peer_id:?}: {error:?}");
+                self.handle_failed_job_request(peer_id).await?;
+                Ok(())
             }
         }
     }
@@ -621,11 +686,21 @@ impl LeanChainService {
         Ok(())
     }
 
-    async fn handle_response_network_event(
+    async fn handle_failed_job_request(&mut self, peer_id: PeerId) -> anyhow::Result<()> {
+        self.network_state.failed_response_from_peer(peer_id);
+        self.peers_in_use.remove(&peer_id);
+        self.pending_job_requests
+            .push(PendingJobRequest::Reset { peer_id });
+        Ok(())
+    }
+
+    async fn handle_callback_response_message(
         &mut self,
         peer_id: PeerId,
         message: Arc<LeanResponseMessage>,
     ) -> anyhow::Result<()> {
+        self.network_state.successful_response_from_peer(peer_id);
+
         match &*message {
             LeanResponseMessage::BlocksByRoot(signed_block_with_attestation) => {
                 let last_root = signed_block_with_attestation.message.block.tree_hash_root();
@@ -639,6 +714,11 @@ impl LeanChainService {
                         store.pending_blocks_provider(),
                     )
                 };
+
+                pending_blocks_provider
+                    .insert(last_root, signed_block_with_attestation.as_ref().clone())?;
+                self.peers_in_use.remove(&peer_id);
+
                 // We have 3 scenarios where we can mark the job queue as complete
                 // 1. The parent root is the local head
                 // 2. The parent root is already present in the pending blocks (we have already
@@ -661,60 +741,75 @@ impl LeanChainService {
                         "Marking job queue as complete for block from peer {peer_id:?} with root {last_root:?}."
                     );
                     self.sync_status.mark_job_queue_as_complete(last_root);
-                    let pending_blocks_provider = {
-                        let fork_choice = self.store.read().await;
-                        let store = fork_choice.store.lock().await;
-                        store.pending_blocks_provider()
-                    };
 
-                    pending_blocks_provider
-                        .insert(last_root, signed_block_with_attestation.as_ref().clone())?;
                     return Ok(());
                 }
 
-                // If the queue is not complete, we proceed to replace the job with the next job
-                let random_peer_id = match self.network_state.random_connected_peer() {
-                    Some(peer) => peer.peer_id,
-                    None => {
-                        warn!("No connected peers available to submit next job request.");
-                        return Ok(());
-                    }
-                };
-
-                let _ = match self.sync_status.replace_job_with_next_job(
-                    last_root,
-                    signed_block_with_attestation.message.block.slot,
-                    JobRequest::new(
-                        random_peer_id,
+                self.pending_job_requests
+                    .push(PendingJobRequest::new_initial(
+                        last_root,
+                        signed_block_with_attestation.message.block.slot,
                         signed_block_with_attestation.message.block.parent_root,
-                    ),
-                ) {
-                    Some(last_job_request) => last_job_request,
-                    None => {
-                        warn!(
-                            "Received unexpected block from peer {peer_id:?} with root {last_root:?}. No matching job found."
-                        );
-                        return Ok(());
-                    }
-                };
+                    ));
 
-                if random_peer_id != peer_id {
-                    self.peers_in_use.remove(&peer_id);
-                }
-
-                let pending_blocks_provider = {
-                    let fork_choice = self.store.read().await;
-                    let store = fork_choice.store.lock().await;
-                    store.pending_blocks_provider()
-                };
-
-                pending_blocks_provider
-                    .insert(last_root, signed_block_with_attestation.as_ref().clone())?;
+                self.queue_pending_job_requests().await?;
             }
             _ => warn!(
                 "We handle these messages elsewhere, received unexpected LeanRequestMessage: {:?}",
                 message
             ),
+        }
+        Ok(())
+    }
+
+    async fn queue_pending_job_requests(&mut self) -> anyhow::Result<()> {
+        while let Some(pending_job_request) = self.pending_job_requests.pop() {
+            let non_queued_peer_id = match self.non_queued_peer_id().await {
+                Some(id) => id,
+                None => {
+                    info!(
+                        "No connected peers available to assign pending job request. {:?} || {:?}",
+                        self.sync_status, self.pending_job_requests
+                    );
+                    self.pending_job_requests.push(pending_job_request);
+                    return Ok(());
+                }
+            };
+            match pending_job_request {
+                PendingJobRequest::Reset { peer_id } => {
+                    if self
+                        .sync_status
+                        .reset_job_with_new_peer_id(peer_id, non_queued_peer_id)
+                        .is_none()
+                    {
+                        warn!(
+                            "Failed to reset pending job request for peer {peer_id:?} - no matching job found.",
+                        );
+                        continue;
+                    }
+                }
+                PendingJobRequest::Initial {
+                    root,
+                    slot,
+                    parent_root,
+                } => {
+                    if self
+                        .sync_status
+                        .replace_job_with_next_job(
+                            root,
+                            slot,
+                            JobRequest::new(non_queued_peer_id, parent_root),
+                        )
+                        .is_none()
+                    {
+                        warn!(
+                            "Failed to add initial pending job request for root {root:?} - job may already exist.",
+                        );
+                        continue;
+                    }
+                }
+            }
+            self.peers_in_use.insert(non_queued_peer_id);
         }
         Ok(())
     }
@@ -827,5 +922,15 @@ impl LeanChainService {
             .await?;
 
         Ok(())
+    }
+
+    fn push_callback_receiver(&mut self, rx: tokio::sync::mpsc::Receiver<ResponseCallback>) {
+        let future: CallbackFuture = Box::pin(async move {
+            let mut rx = rx;
+            let message = rx.recv().await;
+            (message, rx)
+        });
+
+        self.pending_callbacks.push(future);
     }
 }

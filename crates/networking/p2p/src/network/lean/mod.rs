@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     net::IpAddr,
     num::{NonZeroU8, NonZeroUsize},
@@ -24,7 +25,7 @@ use libp2p::{
 use libp2p_identity::{Keypair, PeerId, secp256k1};
 use ream_chain_lean::{
     messages::{LeanChainServiceMessage, RequestResult},
-    p2p_request::LeanP2PRequest,
+    p2p_request::{LeanP2PRequest, P2PCallbackRequest},
 };
 use ream_executor::ReamExecutor;
 use ream_metrics::{
@@ -37,7 +38,7 @@ use ream_req_resp::{
     Chain, ReqResp, ReqRespMessage,
     handler::{ReqRespMessageReceived, RespMessage},
     lean::{
-        ReamNetworkEvent,
+        NetworkEvent, ReamNetworkEvent, ResponseCallback,
         messages::{
             LeanRequestMessage, LeanResponseMessage, blocks::BlocksByRootV1Request, status::Status,
         },
@@ -47,12 +48,12 @@ use ream_req_resp::{
 use ssz::Encode;
 use tokio::{
     sync::{
-        mpsc::{UnboundedReceiver, UnboundedSender},
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
     time::{Duration, interval},
 };
-use tracing::{info, trace, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::{
     bootnodes::Bootnodes,
@@ -93,6 +94,7 @@ pub struct LeanNetworkService {
     network_config: Arc<LeanNetworkConfig>,
     swarm: Swarm<ReamBehaviour>,
     chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
+    chain_callback_requests: HashMap<u64, (PeerId, mpsc::Sender<ResponseCallback>)>,
     outbound_p2p_request: UnboundedReceiver<LeanP2PRequest>,
     bootnode_retry_state: HashMapDelay<PeerId, (u32, Vec<Multiaddr>)>,
     request_id: AtomicU64,
@@ -198,6 +200,7 @@ impl LeanNetworkService {
             network_state,
             check_canonical_futures: FuturesUnordered::new(),
             multi_addr: multi_addr.clone(),
+            chain_callback_requests: HashMap::new(),
         };
 
         lean_network_service
@@ -293,13 +296,25 @@ impl LeanNetworkService {
                                 "attestation"
                             );
                         }
-                        LeanP2PRequest::RequestBlocksByRoot { peer_id, roots } => {
-                            let message = LeanRequestMessage::BlocksByRoot(BlocksByRootV1Request::new(roots));
-                            self.send_request(peer_id, message);
-                        }
-                        LeanP2PRequest::RequestStatus(peer_id) => {
-                            let message = LeanRequestMessage::Status(self.our_status());
-                            self.send_request(peer_id, message);
+                        LeanP2PRequest::Request { peer_id, callback, message } => {
+                            let message = match message {
+                                P2PCallbackRequest::BlocksByRoot { roots } => {
+                                    LeanRequestMessage::BlocksByRoot(BlocksByRootV1Request::new(roots))
+                                }
+                                P2PCallbackRequest::Status => {
+                                    LeanRequestMessage::Status(self.our_status())
+                                }
+                            };
+                            match  self.send_request(peer_id, message) {
+                                RequestResult::Success(request_id) => {
+                                    self.chain_callback_requests.insert(request_id, (peer_id, callback));
+                                },
+                                RequestResult::NotConnected => {
+                                   if let Err(err) =  callback.send(ResponseCallback::NotConnected { peer_id }).await {
+                                        warn!("Failed to send not connected error to callback: {err:?}");
+                                   }
+                                },
+                            }
                         }
                         LeanP2PRequest::Response { peer_id, stream_id, connection_id, message } => {
                             self.send_response(peer_id, connection_id, stream_id, message);
@@ -309,8 +324,51 @@ impl LeanNetworkService {
                 Some(event) = self.swarm.next() => {
                     if let Some(event) = self.parse_swarm_event(event).await {
                         trace!("Swarm event: {event:?}");
-                        if let Err(err) = self.chain_message_sender.send(LeanChainServiceMessage::NetworkEvent(event)) {
-                            warn!("failed to send network event to chain: {err:?}");
+                        match event {
+                            ReamNetworkEvent::Event(network_event) => {
+                                if let Err(err) = self.chain_message_sender.send(LeanChainServiceMessage::NetworkEvent(network_event)) {
+                                    warn!("failed to send network event to chain: {err:?}");
+                                }
+                            },
+                            ReamNetworkEvent::ResponseCallback(response_callback) => {
+                                let request_id = match &response_callback {
+                                    ResponseCallback::ResponseMessage { request_id, .. } => *request_id,
+                                    ResponseCallback::EndOfStream { request_id, .. } => *request_id,
+                                    ResponseCallback::NotConnected { .. } => {
+                                        warn!("Received NotConnected response callback, which should not happen here.");
+                                        continue;
+                                    }
+                                };
+
+                                let callback_sender = match &response_callback {
+                                    ResponseCallback::EndOfStream { .. } => {
+                                        self.chain_callback_requests.remove(&request_id).map(|(_, sender)| sender)
+                                    },
+                                    _ => {
+                                        self.chain_callback_requests.get(&request_id).map(|(_, sender)| sender.clone())
+                                    }
+                                };
+
+                                if let Some(callback) = callback_sender {
+                                    match response_callback {
+                                        ResponseCallback::ResponseMessage { peer_id, request_id, message } => {
+                                            if let Err(err) = callback.send(ResponseCallback::ResponseMessage { peer_id, message, request_id }).await {
+                                                warn!("Failed to send response message to callback: {err:?}");
+                                            }
+                                        },
+                                        ResponseCallback::EndOfStream { peer_id, request_id } => {
+                                            if let Err(err) = callback.send(ResponseCallback::EndOfStream { peer_id, request_id }).await {
+                                                warn!("Failed to send end of stream to callback: {err:?}");
+                                            }
+                                        },
+                                        ResponseCallback::NotConnected { peer_id } => {
+                                            warn!("Received NotConnected response callback for peer {peer_id:?}, which should not happen here.");
+                                        }
+                                    }
+                                } else {
+                                    error!("No callback found for request_id: {request_id}");
+                                }
+                            },
                         }
                     }
                 }
@@ -514,7 +572,10 @@ impl LeanNetworkService {
                     ?connection_id,
                     "Failed to parse req/resp message from peer: {err:?}"
                 );
-                return None;
+                return Some(ReamNetworkEvent::Event(NetworkEvent::NetworkError {
+                    peer_id,
+                    error: err,
+                }));
             }
         };
 
@@ -544,12 +605,12 @@ impl LeanNetworkService {
                             // We handle this internally, so no need to forward to chain
                             None
                         }
-                        _ => Some(ReamNetworkEvent::RequestMessage {
+                        _ => Some(ReamNetworkEvent::Event(NetworkEvent::RequestMessage {
                             peer_id,
                             stream_id,
                             connection_id,
                             message,
-                        }),
+                        })),
                     }
                 } else {
                     warn!(
@@ -577,10 +638,13 @@ impl LeanNetworkService {
                         // We handle this internally, so no need to forward to chain
                         return None;
                     }
-                    return Some(ReamNetworkEvent::ResponseMessage {
-                        peer_id,
-                        message: response_message,
-                    });
+                    return Some(ReamNetworkEvent::ResponseCallback(
+                        ResponseCallback::ResponseMessage {
+                            peer_id,
+                            request_id,
+                            message: response_message,
+                        },
+                    ));
                 } else {
                     warn!(
                         "Received unexpected Beacon response message: {message:?} from peer: {peer_id:?}"
@@ -589,7 +653,12 @@ impl LeanNetworkService {
 
                 None
             }
-            ReqRespMessageReceived::EndOfStream { .. } => None,
+            ReqRespMessageReceived::EndOfStream { request_id } => Some(
+                ReamNetworkEvent::ResponseCallback(ResponseCallback::EndOfStream {
+                    peer_id,
+                    request_id,
+                }),
+            ),
         }
     }
 
@@ -857,7 +926,12 @@ mod tests {
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        p2p_sender_1.send(LeanP2PRequest::RequestStatus(peer_id_2))?;
+        let (callback, _) = mpsc::channel(5);
+        p2p_sender_1.send(LeanP2PRequest::Request {
+            peer_id: peer_id_2,
+            callback,
+            message: P2PCallbackRequest::Status,
+        })?;
 
         tokio::time::sleep(Duration::from_secs(1)).await;
 

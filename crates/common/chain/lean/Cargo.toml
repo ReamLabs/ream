@@ -25,8 +25,10 @@ devnet2 = [
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
+futures.workspace = true
 libp2p-identity.workspace = true
 libp2p-swarm.workspace = true
+rand.workspace = true
 serde.workspace = true
 ssz_types.workspace = true
 tokio.workspace = true

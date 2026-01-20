@@ -2,6 +2,7 @@ pub mod forward_background_syncer;
 pub mod job;
 
 use alloy_primitives::B256;
+use libp2p_identity::PeerId;
 use ream_consensus_lean::checkpoint::Checkpoint;
 
 use crate::sync::job::{queue::JobQueue, request::JobRequest};
@@ -90,6 +91,63 @@ impl SyncStatus {
                 true
             }
             SyncStatus::Synced => false,
+        }
+    }
+
+    pub fn slot_is_subset_of_any_queue(&self, slot: u64) -> bool {
+        if let SyncStatus::Syncing { jobs } = self {
+            for queue in jobs {
+                if slot <= queue.starting_slot {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn reset_or_initialize_next_job(
+        &mut self,
+        last_root: B256,
+        last_slot: u64,
+        new_job: JobRequest,
+    ) -> Option<JobRequest> {
+        match self {
+            SyncStatus::Syncing { jobs } => {
+                for queue in jobs.iter_mut() {
+                    if let Some(old_job) = queue.jobs.remove(&last_root) {
+                        queue.last_fetched_slot = last_slot;
+                        queue.jobs.insert(new_job.root, new_job);
+
+                        return Some(old_job);
+                    }
+                }
+                None
+            }
+            SyncStatus::Synced => None,
+        }
+    }
+
+    pub fn reset_job_with_new_peer_id(
+        &mut self,
+        old_peer_id: PeerId,
+        new_peer_id: PeerId,
+    ) -> Option<JobRequest> {
+        match self {
+            SyncStatus::Syncing { jobs } => {
+                for queue in jobs.iter_mut() {
+                    for job in queue.jobs.values_mut() {
+                        if job.peer_id == old_peer_id {
+                            let old_job = job.clone();
+                            job.peer_id = new_peer_id;
+                            job.has_been_requested = false;
+                            job.time_requested = None;
+                            return Some(old_job);
+                        }
+                    }
+                }
+                None
+            }
+            SyncStatus::Synced => None,
         }
     }
 
