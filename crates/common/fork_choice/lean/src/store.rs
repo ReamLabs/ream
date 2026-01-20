@@ -647,7 +647,7 @@ impl Store {
         let mut attestations: VariableList<AggregatedAttestations, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
 
-        let post_state = loop {
+        let _post_state = loop {
             let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
             for attestation in attestations.iter() {
                 groups
@@ -769,8 +769,13 @@ impl Store {
             },
         };
 
-        final_block.state_root = post_state.tree_hash_root();
-        Ok((final_block, aggregated_proofs, post_state))
+        // Recompute the post-state by processing the final block with aggregated attestations.
+        let mut final_post_state = head_state.clone();
+        final_post_state.process_slots(slot)?;
+        final_post_state.process_block(&final_block)?;
+
+        final_block.state_root = final_post_state.tree_hash_root();
+        Ok((final_block, aggregated_proofs, final_post_state))
     }
 
     pub async fn produce_block_with_signatures(
