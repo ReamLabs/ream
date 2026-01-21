@@ -506,11 +506,7 @@ impl Store {
 
         let mut results = Vec::new();
 
-        // Sort groups by AttestationData hash for deterministic ordering
-        let mut sorted_groups: Vec<_> = groups.into_iter().collect();
-        sorted_groups.sort_by_key(|(data, _)| data.tree_hash_root());
-
-        for (data, validator_ids) in sorted_groups {
+        for (data, validator_ids) in groups {
             let data_root = data.tree_hash_root();
 
             // Phase 1: Gossip Collection

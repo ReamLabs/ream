@@ -48,7 +48,7 @@ test-devnet1: # Run all tests for for Devnet 1.
 
 .PHONY: test-devnet2
 test-devnet2: # Run all tests for for Devnet 2.
-	cargo test --workspace --no-default-features --features "devnet2" -- --nocapture
+	cargo test --workspace --no-default-features --features "devnet2" -- --nocapture --test-threads=1
 
 .PHONY: fmt
 fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `map_err` to be `err`
