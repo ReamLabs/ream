@@ -156,6 +156,23 @@ impl LeanChainService {
                             // The ending root is the starting root of the processed queue, since
                             // the sync walks backwards from there to the head.
                             self.sync_status.remove_processed_queue(ending_root);
+
+                            // Process any cached gossip blocks whose parents are now available.
+                            match self.process_cached_blocks().await {
+                                Ok(count) if count > 0 => {
+                                    info!(
+                                        blocks_processed = count,
+                                        "Processed cached blocks after forward sync"
+                                    );
+                                }
+                                Ok(_) => {}
+                                Err(err) => {
+                                    warn!(
+                                        error = ?err,
+                                        "Failed to process cached blocks after forward sync"
+                                    );
+                                }
+                            }
                         }
                         ForwardSyncResults::ChainIncomplete { prevous_queue, checkpoint_for_new_queue } => {
                             warn!(
@@ -215,11 +232,6 @@ impl LeanChainService {
                             }
                         }
                         LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation, need_gossip } => {
-                            if self.sync_status != SyncStatus::Synced {
-                                trace!("Received ProcessBlock request while syncing. Ignoring.");
-                                continue;
-                            }
-
                             if enabled!(Level::DEBUG) {
                                 debug!(
                                     slot = signed_block_with_attestation.message.block.slot,
@@ -239,8 +251,21 @@ impl LeanChainService {
                                 );
                             }
 
-                            if let Err(err) = self.handle_process_block(&signed_block_with_attestation).await {
-                                warn!("Failed to handle process block message: {err:?}");
+                            // Try to process the block. If parent is missing, cache it for later.
+                            match self.handle_process_block_with_cache(&signed_block_with_attestation).await {
+                                Ok(processed) => {
+                                    if !processed {
+                                        trace!(
+                                            slot = signed_block_with_attestation.message.block.slot,
+                                            block_root = ?signed_block_with_attestation.message.block.tree_hash_root(),
+                                            parent_root = ?signed_block_with_attestation.message.block.parent_root,
+                                            "Block cached - parent not available"
+                                        );
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!("Failed to handle process block message: {err:?}");
+                                }
                             }
 
                             if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipBlock(signed_block_with_attestation)) {
@@ -909,6 +934,150 @@ impl LeanChainService {
             .await?;
 
         Ok(())
+    }
+
+    /// Try to process a block. If the parent is missing, cache it for later processing.
+    /// Returns Ok(true) if block was processed, Ok(false) if cached, Err on failure.
+    async fn handle_process_block_with_cache(
+        &mut self,
+        signed_block_with_attestation: &SignedBlockWithAttestation,
+    ) -> anyhow::Result<bool> {
+        let block = &signed_block_with_attestation.message.block;
+        let block_root = block.tree_hash_root();
+        let parent_root = block.parent_root;
+
+        // Check if parent state exists
+        let parent_exists = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            let state_provider = store.state_provider();
+            state_provider.get(parent_root)?.is_some()
+        };
+
+        if parent_exists {
+            // Parent exists, process the block normally
+            self.handle_process_block(signed_block_with_attestation)
+                .await?;
+            Ok(true)
+        } else {
+            // Parent missing, cache the block for later processing
+            let pending_blocks_provider = {
+                let fork_choice = self.store.read().await;
+                let store = fork_choice.store.lock().await;
+                store.pending_blocks_provider()
+            };
+            pending_blocks_provider.insert(block_root, signed_block_with_attestation.clone())?;
+
+            if self.sync_status == SyncStatus::Synced {
+                info!(
+                    block_root = ?block_root,
+                    parent_root = ?parent_root,
+                    slot = block.slot,
+                    "Gossip block has missing parent; switching to Syncing"
+                );
+                self.sync_status = SyncStatus::Syncing { jobs: Vec::new() };
+            }
+
+            if !self.sync_status.slot_is_subset_of_any_queue(block.slot) {
+                debug!(
+                    block_root = ?block_root,
+                    parent_root = ?parent_root,
+                    slot = block.slot,
+                    "Triggering sync for cached gossip block with missing parent"
+                );
+                self.checkpoints_to_queue.push((
+                    Checkpoint {
+                        root: block_root,
+                        slot: block.slot,
+                    },
+                    true,
+                ));
+            }
+
+            trace!(
+                block_root = ?block_root,
+                parent_root = ?parent_root,
+                slot = block.slot,
+                "Cached block with missing parent"
+            );
+            Ok(false)
+        }
+    }
+
+    async fn process_cached_blocks(&mut self) -> anyhow::Result<usize> {
+        let mut total_processed = 0;
+
+        loop {
+            let cached_blocks = {
+                let fork_choice = self.store.read().await;
+                let store = fork_choice.store.lock().await;
+                let pending_blocks = store.pending_blocks_provider();
+                pending_blocks.get_all()?
+            };
+
+            if cached_blocks.is_empty() {
+                break;
+            }
+
+            let mut sorted_blocks: Vec<_> = cached_blocks.into_iter().collect();
+            sorted_blocks.sort_by_key(|(_, block)| block.message.block.slot);
+
+            let mut processed_any = false;
+
+            for (block_root, block) in sorted_blocks {
+                let parent_root = block.message.block.parent_root;
+
+                let parent_exists = {
+                    let fork_choice = self.store.read().await;
+                    let store = fork_choice.store.lock().await;
+                    let state_provider = store.state_provider();
+                    state_provider.get(parent_root)?.is_some()
+                };
+
+                if parent_exists {
+                    match self.handle_process_block(&block).await {
+                        Ok(()) => {
+                            debug!(
+                                block_root = ?block_root,
+                                slot = block.message.block.slot,
+                                "Processed cached block after sync"
+                            );
+
+                            let pending_blocks = {
+                                let fork_choice = self.store.read().await;
+                                let store = fork_choice.store.lock().await;
+                                store.pending_blocks_provider()
+                            };
+                            pending_blocks.remove(block_root)?;
+
+                            total_processed += 1;
+                            processed_any = true;
+                        }
+                        Err(err) => {
+                            warn!(
+                                block_root = ?block_root,
+                                slot = block.message.block.slot,
+                                error = ?err,
+                                "Failed to process cached block"
+                            );
+
+                            let pending_blocks = {
+                                let fork_choice = self.store.read().await;
+                                let store = fork_choice.store.lock().await;
+                                store.pending_blocks_provider()
+                            };
+                            pending_blocks.remove(block_root)?;
+                        }
+                    }
+                }
+            }
+
+            if !processed_any {
+                break;
+            }
+        }
+
+        Ok(total_processed)
     }
 
     async fn handle_process_attestation(
