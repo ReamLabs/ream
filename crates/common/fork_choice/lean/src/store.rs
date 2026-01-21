@@ -774,15 +774,17 @@ impl Store {
         post_state.process_slots(slot)?;
         post_state.process_block(&candidate_final_block)?;
 
-        let final_block = Block {
-            slot,
-            proposer_index,
-            parent_root,
-            state_root: post_state.tree_hash_root(),
-            body: candidate_final_block.body,
-        };
-
-        Ok((final_block, aggregated_proofs, post_state))
+        Ok((
+            Block {
+                slot,
+                proposer_index,
+                parent_root,
+                state_root: post_state.tree_hash_root(),
+                body: candidate_final_block.body,
+            },
+            aggregated_proofs,
+            post_state,
+        ))
     }
 
     pub async fn produce_block_with_signatures(
