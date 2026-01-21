@@ -651,7 +651,7 @@ impl Store {
         let mut attestations: VariableList<AggregatedAttestations, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
 
-        let post_state = loop {
+        loop {
             let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
             for attestation in attestations.iter() {
                 groups
@@ -739,7 +739,7 @@ impl Store {
             }
 
             if new_attestations.is_empty() {
-                break advanced_state;
+                break;
             }
 
             for attestation in new_attestations {
@@ -747,7 +747,7 @@ impl Store {
                     .push(attestation)
                     .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
             }
-        };
+        }
 
         let attestations_vec: Vec<_> = attestations.to_vec();
         let (aggregated_attestations, aggregated_proofs) = self.compute_aggregated_signatures(
@@ -760,14 +760,26 @@ impl Store {
         let attestations_list =
             VariableList::new(aggregated_attestations).map_err(|err| anyhow!("{err:?}"))?;
 
+        let candidate_final_block = Block {
+            slot,
+            proposer_index,
+            parent_root,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: attestations_list,
+            },
+        };
+
+        let mut post_state = head_state.clone();
+        post_state.process_slots(slot)?;
+        post_state.process_block(&candidate_final_block)?;
+
         let final_block = Block {
             slot,
             proposer_index,
             parent_root,
             state_root: post_state.tree_hash_root(),
-            body: BlockBody {
-                attestations: attestations_list,
-            },
+            body: candidate_final_block.body,
         };
 
         Ok((final_block, aggregated_proofs, post_state))
