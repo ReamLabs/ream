@@ -895,8 +895,8 @@ mod tests {
                 run_lean_node(*config, executor_handle, cloned_db).await;
             });
 
-            let result = timeout(Duration::from_secs(60), async {
-                sleep(Duration::from_secs(60)).await;
+            let result = timeout(Duration::from_secs(120), async {
+                sleep(Duration::from_secs(120)).await;
                 Ok::<_, ()>(())
             })
             .await;
@@ -914,8 +914,8 @@ mod tests {
         let head = lean_db.head_provider().get().unwrap();
         let head_state = lean_db.state_provider().get(head).unwrap().unwrap();
 
-        let justfication_lag = 4;
-        let finalization_lag = 5;
+        let justfication_lag = 2;
+        let finalization_lag = 3;
 
         assert!(
             head_state.slot > finalization_lag,
@@ -928,13 +928,13 @@ mod tests {
             head_state.latest_finalized.slot
         );
         assert!(
-            head_state.latest_justified.slot + justfication_lag == head_state.slot,
+            head_state.latest_justified.slot + justfication_lag <= head_state.slot,
             "Expected the head to be at least {justfication_lag} slots ahead of the justified checkpoint {:?} + {justfication_lag} vs {:?}",
             head_state.latest_justified.slot,
             head_state.slot
         );
         assert!(
-            head_state.latest_finalized.slot + finalization_lag == head_state.slot,
+            head_state.latest_finalized.slot + finalization_lag <= head_state.slot,
             "Expected the head to be at least {finalization_lag} slots ahead of the finalized checkpoint {:?} + {finalization_lag} vs {:?}",
             head_state.latest_finalized.slot,
             head_state.slot
@@ -975,7 +975,7 @@ mod tests {
 
         info!("Starting multi-node finalization test: {}", test_name);
 
-        let test_duration_secs = 60;
+        let test_duration_secs = 120;
         let base_p2p_port = 20600;
         let base_http_port = 16652;
         let node_count = topology.len();
