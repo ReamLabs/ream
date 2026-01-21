@@ -3,6 +3,9 @@
 
 BIN_DIR = "dist/bin"
 
+# Tests that must run sequentially (space-separated, use full path for --exact matching)
+SEQUENTIAL_TESTS ?= tests::test_lean_node_finalizes tests::test_lean_node_syncs_and_finalizes_late_joiner 
+
 # Cargo features for builds.
 FEATURES ?=
 
@@ -48,7 +51,15 @@ test-devnet1: # Run all tests for for Devnet 1.
 
 .PHONY: test-devnet2
 test-devnet2: # Run all tests for for Devnet 2.
-	cargo test --workspace --no-default-features --features "devnet2" -- --nocapture --test-threads=1
+	@failed=0; \
+	echo "Running parallel tests (excluding sequential tests)..."; \
+	cargo test --workspace --no-default-features --features "devnet2" -- --nocapture --exact $(foreach t,$(SEQUENTIAL_TESTS),--skip $(t)) || failed=1; \
+	echo "Running sequential tests..."; \
+	for test in $(SEQUENTIAL_TESTS); do \
+		echo "Running $$test..."; \
+		cargo test --workspace --no-default-features --features "devnet2" -- --nocapture --exact $$test || failed=1; \
+	done; \
+	exit $$failed
 
 .PHONY: fmt
 fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `map_err` to be `err`

@@ -506,7 +506,8 @@ impl Store {
 
         let mut results = Vec::new();
 
-        for (data, validator_ids) in groups {
+        for (data, mut validator_ids) in groups {
+            validator_ids.sort();
             let data_root = data.tree_hash_root();
 
             // Phase 1: Gossip Collection
