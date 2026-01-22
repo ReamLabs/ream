@@ -126,10 +126,15 @@ clean-deps: # Run `cargo udeps` except `ef-tests` directory.
 pr: lint update-book-cli clean-deps test # Run all checks for a PR.
 
 build-%:
-	cross build --bin ream --target $* --features "$(FEATURES)" --profile "$(PROFILE)"
+	cross build --bin ream --target $* --features "$(FEATURES)" --profile "$(PROFILE)" $(EXTRA_FLAGS)
 
 .PHONY: docker-build-push
 docker-build-push:
+	$(MAKE) docker-build-push-default
+	$(MAKE) docker-build-push-devnet2
+
+.PHONY: docker-build-push-default
+docker-build-push-default:
 	$(MAKE) build-x86_64-unknown-linux-gnu
 	mkdir -p $(BIN_DIR)/amd64
 	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
@@ -141,6 +146,26 @@ docker-build-push:
 	docker buildx build --file ./Dockerfile.cross . \
 		--platform linux/amd64,linux/arm64 \
 		--tag ghcr.io/reamlabs/ream:latest \
+		--tag ghcr.io/reamlabs/ream:latest-devnet1 \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--provenance=false \
+		--push
+
+.PHONY: docker-build-push-devnet2
+docker-build-push-devnet2:
+	$(MAKE) build-x86_64-unknown-linux-gnu FEATURES="devnet2" EXTRA_FLAGS="--no-default-features"
+	mkdir -p $(BIN_DIR)/amd64
+	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
+
+	$(MAKE) build-aarch64-unknown-linux-gnu FEATURES="devnet2" EXTRA_FLAGS="--no-default-features"
+	mkdir -p $(BIN_DIR)/arm64
+	cp $(CARGO_TARGET_DIR)/aarch64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/arm64/ream
+
+	docker buildx build --file ./Dockerfile.cross . \
+		--platform linux/amd64,linux/arm64 \
+		--tag ghcr.io/reamlabs/ream:latest-devnet2 \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
