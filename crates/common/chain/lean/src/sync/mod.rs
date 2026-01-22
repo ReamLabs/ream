@@ -157,18 +157,21 @@ impl SyncStatus {
         last_slot: u64,
         new_job: JobRequest,
     ) -> Option<JobRequest> {
-        let jobs = match self {
-            SyncStatus::Syncing { jobs } => jobs,
-            SyncStatus::Synced => return None,
-        };
+        match self {
+            SyncStatus::Syncing { jobs } => {
+                for queue in jobs.iter_mut() {
+                    if queue.is_complete {
+                        continue;
+                    }
+                    if let Some(old_job) = queue.jobs.remove(&last_root) {
+                        queue.last_fetched_slot = last_slot;
+                        queue.jobs.insert(new_job.root, new_job);
 
-        for queue in jobs.iter_mut() {
-            if let Some(old_job) = queue.jobs.remove(&last_root) {
-                queue.last_fetched_slot = last_slot;
-                queue.jobs.insert(new_job.root, new_job);
-
-                return Some(old_job);
+                        return Some(old_job);
+                    }
+                }
             }
+            SyncStatus::Synced => return None,
         }
 
         None
