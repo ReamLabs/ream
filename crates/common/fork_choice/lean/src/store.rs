@@ -545,13 +545,6 @@ impl Store {
                         .map_err(|err| anyhow!("BitList error: {err:?}"))?;
                 }
 
-                let aggregate_signature = aggregate_signatures(
-                    &gossip_keys,
-                    &gossip_signatures,
-                    &data_root.0,
-                    data.slot as u32,
-                )?;
-
                 results.push((
                     AggregatedAttestation {
                         aggregation_bits: bits.clone(),
@@ -559,8 +552,16 @@ impl Store {
                     },
                     AggregatedSignatureProof::new(
                         bits,
-                        VariableList::new(aggregate_signature.as_ssz_bytes())
-                            .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+                        VariableList::new(
+                            aggregate_signatures(
+                                &gossip_keys,
+                                &gossip_signatures,
+                                &data_root.0,
+                                data.slot as u32,
+                            )?
+                            .as_ssz_bytes(),
+                        )
+                        .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
                     ),
                 ));
             }
