@@ -875,8 +875,10 @@ impl LeanChainService {
         response
             .send(ServiceResponse::Ok(block_with_signatures))
             .map_err(|err| {
-                let truncated = format!("{err:?}").chars().take(100).collect::<String>();
-                anyhow!("Failed to send produced block: {truncated}...")
+                anyhow!(
+                    "Failed to send produced block: {}...",
+                    format!("{err:?}").chars().take(100).collect::<String>()
+                )
             })?;
 
         Ok(())
