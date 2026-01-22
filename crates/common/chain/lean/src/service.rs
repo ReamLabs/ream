@@ -874,7 +874,12 @@ impl LeanChainService {
 
         response
             .send(ServiceResponse::Ok(block_with_signatures))
-            .map_err(|err| anyhow!("Failed to send produced block: {err:?}"))?;
+            .map_err(|err| {
+                anyhow!(
+                    "Failed to send produced block: {}...",
+                    format!("{err:?}").chars().take(100).collect::<String>()
+                )
+            })?;
 
         Ok(())
     }
