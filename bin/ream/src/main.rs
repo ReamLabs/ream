@@ -975,7 +975,7 @@ mod tests {
 
         info!("Starting multi-node finalization test: {}", test_name);
 
-        let test_duration_secs = 100;
+        let test_duration_secs = 70;
         let base_p2p_port = 20600;
         let base_http_port = 16652;
         let node_count = topology.len();
