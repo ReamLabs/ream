@@ -46,7 +46,10 @@ async fn test_all_fork_choice_fixtures() {
         .with_env_filter(env_filter)
         .try_init();
 
-    let fixtures = find_json_files("fixtures/consensus/fork_choice");
+    #[cfg(feature = "devnet1")]
+    let fixtures = find_json_files("fixtures/devnet1/fork_choice");
+    #[cfg(feature = "devnet2")]
+    let fixtures = find_json_files("fixtures/devnet2/fork_choice");
 
     if fixtures.is_empty() {
         info!(
@@ -107,7 +110,10 @@ fn test_all_state_transition_fixtures() {
         .with_env_filter(env_filter)
         .try_init();
 
-    let fixtures = find_json_files("fixtures/consensus/state_transition");
+    #[cfg(feature = "devnet1")]
+    let fixtures = find_json_files("fixtures/devnet1/state_transition");
+    #[cfg(feature = "devnet2")]
+    let fixtures = find_json_files("fixtures/devnet2/state_transition");
 
     if fixtures.is_empty() {
         info!(

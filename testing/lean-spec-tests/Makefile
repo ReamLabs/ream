@@ -1,7 +1,7 @@
 EXTRACT_DIR = fixtures
 REPO_URL = https://github.com/ReamLabs/lean-spec-tests.git
 
-.PHONY: all clean test
+.PHONY: all clean test test-devnet1 test-devnet2
 
 all: test
 
@@ -14,10 +14,17 @@ $(EXTRACT_DIR):
 		echo "Fixtures downloaded successfully."; \
 	fi
 
-test: $(EXTRACT_DIR)
-	@echo "Running lean-spec tests..."
-	@cargo test --release --features lean-spec-tests
-	@echo "Tests complete."
+test: test-devnet1 test-devnet2
+
+test-devnet1: $(EXTRACT_DIR)
+	@echo "Running lean-spec tests (devnet1)..."
+	@cargo test --release --features lean-spec-tests,devnet1 --no-default-features
+	@echo "Devnet1 tests complete."
+
+test-devnet2: $(EXTRACT_DIR)
+	@echo "Running lean-spec tests (devnet2)..."
+	@cargo test --release --features lean-spec-tests,devnet2 --no-default-features
+	@echo "Devnet2 tests complete."
 
 clean:
 	@echo "Cleaning up downloaded fixtures..."
