@@ -17,8 +17,6 @@ use ream_consensus_lean::{
 };
 use ream_fork_choice_lean::store::Store;
 use ream_network_spec::networks::LeanNetworkSpec;
-#[cfg(feature = "devnet2")]
-use ream_post_quantum_crypto::lean_multisig::aggregate::AggregateSignature;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::{
     db::ReamDB,
@@ -27,7 +25,10 @@ use ream_storage::{
 };
 use ssz_types::VariableList;
 #[cfg(feature = "devnet2")]
-use ssz_types::{BitList, typenum::U4096};
+use ssz_types::{
+    BitList,
+    typenum::{U4096, U1048576},
+};
 use tracing::{debug, info};
 use tree_hash::TreeHash;
 
@@ -201,7 +202,8 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                         AggregatedSignatureProof::new(
                             BitList::<U4096>::with_capacity(0)
                                 .expect("Failed to create empty BitList"),
-                            AggregateSignature::new(vec![], vec![]),
+                            VariableList::<u8, U1048576>::new(vec![])
+                                .expect("Failed to create empty proof_data"),
                         )
                     };
                     VariableList::try_from(

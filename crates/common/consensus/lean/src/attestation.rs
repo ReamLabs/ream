@@ -1,11 +1,11 @@
 #[cfg(feature = "devnet2")]
 use alloy_primitives::B256;
 use alloy_primitives::FixedBytes;
-#[cfg(feature = "devnet2")]
-use ream_post_quantum_crypto::lean_multisig::aggregate::AggregateSignature;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
+#[cfg(feature = "devnet2")]
+use ssz_types::typenum::U1048576;
 use ssz_types::{BitList, VariableList, typenum::U4096};
 #[cfg(feature = "devnet2")]
 use tree_hash::TreeHash;
@@ -45,15 +45,15 @@ impl SignatureKey {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct AggregatedSignatureProof {
     pub participants: BitList<U4096>,
-    pub proof: AggregateSignature,
+    pub proof_data: VariableList<u8, U1048576>,
 }
 
 #[cfg(feature = "devnet2")]
 impl AggregatedSignatureProof {
-    pub fn new(participants: BitList<U4096>, proof: AggregateSignature) -> Self {
+    pub fn new(participants: BitList<U4096>, proof_data: VariableList<u8, U1048576>) -> Self {
         Self {
             participants,
-            proof,
+            proof_data,
         }
     }
 

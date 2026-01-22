@@ -2,9 +2,13 @@ use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 use ream_metrics::{PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, start_timer, stop_timer};
 #[cfg(feature = "devnet2")]
-use ream_post_quantum_crypto::lean_multisig::aggregate::verify_aggregate_signature;
+use ream_post_quantum_crypto::lean_multisig::aggregate::{
+    AggregateSignature, verify_aggregate_signature,
+};
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "devnet2")]
+use ssz::Decode as SszDecode;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
@@ -131,10 +135,14 @@ impl SignedBlockWithAttestation {
 
                 if verify_signatures {
                     let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, &[]);
+
                     verify_aggregate_signature(
                         &public_keys,
                         &attestation_root,
-                        &aggregated_signature.proof,
+                        &AggregateSignature::from_ssz_bytes(
+                            aggregated_signature.proof_data.as_ref(),
+                        )
+                        .map_err(|err| anyhow!("Failed to decode AggregateSignature: {err:?}"))?,
                         aggregated_attestation.message.slot as u32,
                     )
                     .map_err(|err| {

@@ -126,6 +126,28 @@ pub fn verify_aggregate_signature(
     .map_err(|err| anyhow!("Failed to verify aggregated signatures: {err}"))
 }
 
+pub fn verify_aggregate_signature_bytes(
+    public_keys: &[PublicKey],
+    message: &[u8; 32],
+    proof_bytes: &[u8],
+    epoch: u32,
+) -> anyhow::Result<()> {
+    xmss_verify_aggregated_signatures(
+        &public_keys
+            .iter()
+            .map(|public_key| public_key.as_lean_sig())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| anyhow!("Failed to convert public keys: {err}"))?,
+        message,
+        &Devnet2XmssAggregateSignature {
+            proof_bytes: proof_bytes.to_vec(),
+            encoding_randomness: vec![],
+        },
+        epoch,
+    )
+    .map_err(|err| anyhow!("Failed to verify aggregated signatures: {err}"))
+}
+
 #[cfg(test)]
 mod tests {
     use rand::rng;
