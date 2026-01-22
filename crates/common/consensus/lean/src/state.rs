@@ -282,6 +282,12 @@ impl LeanState {
     ) -> anyhow::Result<()> {
         let timer = start_timer(&STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME, &[]);
 
+        #[cfg(feature = "devnet2")]
+        ensure!(
+            !self.justifications_roots.contains(&B256::ZERO),
+            "zero hash is not allowed in justifications roots"
+        );
+
         let mut justifications_map = HashMap::new();
 
         if !self.justifications_roots.is_empty() {
@@ -312,13 +318,13 @@ impl LeanState {
         }
 
         #[cfg(feature = "devnet2")]
-        let mut root_to_slots = HashMap::new();
+        let mut root_to_slot: HashMap<B256, u64> = HashMap::new();
         #[cfg(feature = "devnet2")]
         {
             let start_slot = self.latest_finalized.slot + 1;
             for index in start_slot..(self.historical_block_hashes.len() as u64) {
                 if let Some(hash) = self.historical_block_hashes.get(index as usize) {
-                    root_to_slots.insert(*hash, index);
+                    root_to_slot.insert(*hash, index);
                 }
             }
         }
@@ -346,6 +352,11 @@ impl LeanState {
                     }
                 }
             };
+
+            #[cfg(feature = "devnet2")]
+            if attestation.source().root == B256::ZERO || attestation.target().root == B256::ZERO {
+                continue;
+            }
 
             if !is_source_justified {
                 #[cfg(feature = "devnet1")]
@@ -590,6 +601,13 @@ impl LeanState {
                         let delta =
                             (attestation.source().slot - self.latest_finalized.slot) as usize;
                         if delta > 0 {
+                            ensure!(
+                                justifications_map
+                                    .keys()
+                                    .all(|root| root_to_slot.contains_key(root)),
+                                "Justification root missing from root_to_slot"
+                            );
+
                             let mut new_bitlist =
                                 BitList::with_capacity(self.justified_slots.len())
                                     .map_err(|err| anyhow!("Failed to create BitList: {err:?}"))?;
@@ -603,12 +621,9 @@ impl LeanState {
                             }
                             self.justified_slots = new_bitlist;
 
-                            justifications_map.retain(|root, _| {
-                                if let Some(&slot) = root_to_slots.get(root) {
-                                    slot > attestation.source().slot
-                                } else {
-                                    false
-                                }
+                            justifications_map.retain(|root, _| match root_to_slot.get(root) {
+                                Some(slots) => *slots > attestation.source().slot,
+                                None => false,
                             });
                         }
                     }
