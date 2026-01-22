@@ -824,7 +824,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "devnet2")]
-    fn test_duplicate_roots_in_root_to_slots_mapping() -> anyhow::Result<()> {
+    fn test_pruning_keeps_pending_justifications() -> anyhow::Result<()> {
         let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(3)));
 
         state.process_slots(1)?;
@@ -841,27 +841,49 @@ mod test {
 
         state.process_slots(2)?;
         let root_1 = state.latest_block_header.tree_hash_root();
-        state.latest_justified = Checkpoint {
-            slot: 1,
-            root: root_1,
+        let attestation_0_to_1 = AggregatedAttestation {
+            aggregation_bits: {
+                let mut bits = BitList::with_capacity(3).unwrap();
+                bits.set(0, true).unwrap();
+                bits.set(1, true).unwrap();
+                bits
+            },
+            message: AttestationData {
+                slot: 2,
+                head: Checkpoint {
+                    slot: 1,
+                    root: root_1,
+                },
+                source: Checkpoint {
+                    slot: 0,
+                    root: root_0,
+                },
+                target: Checkpoint {
+                    slot: 1,
+                    root: root_1,
+                },
+            },
         };
 
-        if let Some(index) = justified_index_after(1, state.latest_finalized.slot) {
-            let required_len = (index + 1) as usize;
-            if state.justified_slots.len() < required_len {
-                state.justified_slots = BitList::with_capacity(required_len)
-                    .unwrap()
-                    .union(&state.justified_slots);
-            }
-            state.justified_slots.set(index as usize, true).unwrap();
-        }
+        state.process_block(&Block {
+            slot: 2,
+            proposer_index: 2,
+            parent_root: root_1,
+            state_root: B256::ZERO,
+            body: BlockBody {
+                attestations: VariableList::new(vec![attestation_0_to_1]).unwrap(),
+            },
+        })?;
 
-        for slot_index in 2..5 {
-            state.process_slots(slot_index + 1)?;
+        assert_eq!(state.latest_finalized.slot, 0);
+        assert_eq!(state.latest_justified.slot, 1);
+
+        for slot in 3..=4 {
+            state.process_slots(slot)?;
             let parent = state.latest_block_header.tree_hash_root();
             state.process_block(&Block {
-                slot: slot_index + 1,
-                proposer_index: (slot_index + 1) % 3,
+                slot,
+                proposer_index: (slot % 3),
                 parent_root: parent,
                 state_root: B256::ZERO,
                 body: BlockBody {
@@ -870,9 +892,11 @@ mod test {
             })?;
         }
 
+        state.process_slots(5)?;
+        state.latest_block_header.parent_root = state.latest_block_header.tree_hash_root();
+        state.latest_block_header.slot = 5;
+
         let slot_3_root = *state.historical_block_hashes.get(3).unwrap();
-        state.historical_block_hashes[2] = B256::ZERO;
-        state.historical_block_hashes[4] = B256::ZERO;
         state.justifications_roots.push(slot_3_root).unwrap();
         state.justifications_validators = {
             let mut bits = BitList::with_capacity(3).unwrap();
@@ -891,20 +915,21 @@ mod test {
                 slot: 5,
                 head: Checkpoint {
                     slot: 2,
-                    root: B256::ZERO,
+                    root: *state.historical_block_hashes.get(2).unwrap(),
                 },
                 source: Checkpoint {
                     slot: 1,
-                    root: root_1,
+                    root: *state.historical_block_hashes.get(1).unwrap(),
                 },
                 target: Checkpoint {
                     slot: 2,
-                    root: B256::ZERO,
+                    root: *state.historical_block_hashes.get(2).unwrap(),
                 },
             },
         }])?;
 
         assert_eq!(state.latest_finalized.slot, 1);
+        assert_eq!(state.latest_justified.slot, 2);
         assert!(state.justifications_roots.contains(&slot_3_root));
         Ok(())
     }
