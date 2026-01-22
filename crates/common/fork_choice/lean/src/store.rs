@@ -506,7 +506,8 @@ impl Store {
 
         let mut results = Vec::new();
 
-        for (data, validator_ids) in groups {
+        for (data, mut validator_ids) in groups {
+            validator_ids.sort();
             let data_root = data.tree_hash_root();
 
             // Phase 1: Gossip Collection
@@ -647,7 +648,7 @@ impl Store {
         let mut attestations: VariableList<AggregatedAttestations, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
 
-        let post_state = loop {
+        loop {
             let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
             for attestation in attestations.iter() {
                 groups
@@ -684,7 +685,7 @@ impl Store {
                 parent_root,
                 state_root: B256::ZERO,
                 body: BlockBody {
-                    attestations: attestations_list.clone(),
+                    attestations: attestations_list,
                 },
             };
             let mut advanced_state = head_state.clone();
@@ -705,17 +706,14 @@ impl Store {
                     data: data.clone(),
                 };
 
-                // Skip if target block is unknown
                 if !block_provider.contains_key(data.head.root) {
                     continue;
                 }
 
-                // Skip if attestation source does not match post-state's latest justified
                 if data.source != advanced_state.latest_justified {
                     continue;
                 }
 
-                // Avoid adding duplicates
                 if attestations.contains(&attestation) {
                     continue;
                 }
@@ -738,7 +736,7 @@ impl Store {
             }
 
             if new_attestations.is_empty() {
-                break advanced_state;
+                break;
             }
 
             for attestation in new_attestations {
@@ -746,7 +744,7 @@ impl Store {
                     .push(attestation)
                     .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
             }
-        };
+        }
 
         let attestations_vec: Vec<_> = attestations.to_vec();
         let (aggregated_attestations, aggregated_proofs) = self.compute_aggregated_signatures(
@@ -759,7 +757,7 @@ impl Store {
         let attestations_list =
             VariableList::new(aggregated_attestations).map_err(|err| anyhow!("{err:?}"))?;
 
-        let mut final_block = Block {
+        let candidate_final_block = Block {
             slot,
             proposer_index,
             parent_root,
@@ -769,8 +767,21 @@ impl Store {
             },
         };
 
-        final_block.state_root = post_state.tree_hash_root();
-        Ok((final_block, aggregated_proofs, post_state))
+        let mut post_state = head_state.clone();
+        post_state.process_slots(slot)?;
+        post_state.process_block(&candidate_final_block)?;
+
+        Ok((
+            Block {
+                slot,
+                proposer_index,
+                parent_root,
+                state_root: post_state.tree_hash_root(),
+                body: candidate_final_block.body,
+            },
+            aggregated_proofs,
+            post_state,
+        ))
     }
 
     pub async fn produce_block_with_signatures(
