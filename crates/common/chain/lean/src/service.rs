@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     pin::Pin,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::anyhow;
@@ -106,19 +106,39 @@ impl LeanChainService {
         let mut interval = create_lean_clock_interval()
             .map_err(|err| anyhow!("Expected Ream to be started before genesis time: {err:?}"))?;
 
+        let mut sync_interval = tokio::time::interval(Duration::from_millis(50));
+        sync_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut genesis_passed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            >= lean_network_spec().genesis_time;
+
         loop {
+            if !genesis_passed
+                && SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+                    >= lean_network_spec().genesis_time
+            {
+                genesis_passed = true;
+            }
+
             tokio::select! {
                 _ = interval.tick() => {
-
-                    self.sync_status = self.update_sync_status().await?;
+                    if tick_count.is_multiple_of(4) {
+                        self.sync_status = self.update_sync_status().await?;
+                    }
                     if self.sync_status == SyncStatus::Synced {
                         self.store.write().await.tick_interval(tick_count % 4 == 1).await.expect("Failed to tick interval");
                         self.step_head_sync(tick_count).await?;
-                    } else {
-                        self.step_backfill_sync().await?;
                     }
 
                     tick_count += 1;
+                }
+                _ = sync_interval.tick(), if self.sync_status != SyncStatus::Synced && genesis_passed => {
+                    self.step_backfill_sync().await?;
                 }
                 forward_syncer = async {
                     if let Some(handle) = self.forward_syncer.as_mut() {
