@@ -134,15 +134,17 @@ impl SignedBlockWithAttestation {
                     .collect::<Result<Vec<_>, _>>()?;
 
                 if verify_signatures {
+                    let aggregate_signature = &AggregateSignature::from_ssz_bytes(
+                        aggregated_signature.proof_data.as_ref(),
+                    )
+                    .map_err(|err| anyhow!("Failed to decode AggregateSignature: {err:?}"))?;
+
                     let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, &[]);
 
                     verify_aggregate_signature(
                         &public_keys,
                         &attestation_root,
-                        &AggregateSignature::from_ssz_bytes(
-                            aggregated_signature.proof_data.as_ref(),
-                        )
-                        .map_err(|err| anyhow!("Failed to decode AggregateSignature: {err:?}"))?,
+                        aggregate_signature,
                         aggregated_attestation.message.slot as u32,
                     )
                     .map_err(|err| {
