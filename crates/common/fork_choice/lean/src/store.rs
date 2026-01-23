@@ -39,8 +39,6 @@ use ream_storage::{
 };
 use ream_sync::rwlock::{Reader, Writer};
 #[cfg(feature = "devnet2")]
-use ssz::Encode;
-#[cfg(feature = "devnet2")]
 use ssz_types::BitList;
 use ssz_types::{VariableList, typenum::U4096};
 use tokio::sync::Mutex;
@@ -552,15 +550,12 @@ impl Store {
                     },
                     AggregatedSignatureProof::new(
                         bits,
-                        VariableList::new(
-                            aggregate_signatures(
-                                &gossip_keys,
-                                &gossip_signatures,
-                                &data_root.0,
-                                data.slot as u32,
-                            )?
-                            .as_ssz_bytes(),
-                        )
+                        VariableList::new(aggregate_signatures(
+                            &gossip_keys,
+                            &gossip_signatures,
+                            &data_root.0,
+                            data.slot as u32,
+                        )?)
                         .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
                     ),
                 ));
