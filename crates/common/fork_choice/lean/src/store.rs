@@ -550,15 +550,12 @@ impl Store {
                     },
                     AggregatedSignatureProof::new(
                         bits,
-                        VariableList::new(
-                            // aggregate_signatures returns SSZ bytes directly
-                            aggregate_signatures(
-                                &gossip_keys,
-                                &gossip_signatures,
-                                &data_root.0,
-                                data.slot as u32,
-                            )?,
-                        )
+                        VariableList::new(aggregate_signatures(
+                            &gossip_keys,
+                            &gossip_signatures,
+                            &data_root.0,
+                            data.slot as u32,
+                        )?)
                         .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
                     ),
                 ));
