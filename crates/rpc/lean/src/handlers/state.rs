@@ -139,11 +139,12 @@ mod tests {
             },
         };
 
-        let temp_dir = TempDir::new("lean_test").unwrap();
-        let ream_db = ReamDB::new(temp_dir.into_path()).expect("unable to init Ream Database");
-        let lean_db = ream_db.init_lean_db().unwrap();
+        let temp_dir = TempDir::new("lean_test").expect("Failed to create temp dir");
+        let ream_db = ReamDB::new(temp_dir.into_path()).expect("Failed to init Ream Database");
+        let lean_db = ream_db.init_lean_db().expect("Failed to init lean db");
 
-        Store::get_forkchoice_store(signed_genesis_block, genesis_state, lean_db, Some(0)).unwrap()
+        Store::get_forkchoice_store(signed_genesis_block, genesis_state, lean_db, Some(0))
+            .expect("Failed to create forkchoice store")
     }
 
     #[tokio::test]
