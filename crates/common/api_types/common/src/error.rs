@@ -6,7 +6,7 @@ pub enum ApiError {
     #[error("Unauthorized")]
     Unauthorized,
 
-    #[error("Api Endpoint Not Found: {0}")]
+    #[error("Not Found: {0}")]
     NotFound(String),
 
     #[error("Bad Request: {0}")]
