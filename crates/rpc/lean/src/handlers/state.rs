@@ -151,12 +151,8 @@ mod tests {
         let store = sample_store(10).await;
         let (_writer, reader) = Writer::new(store);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(Data::new(reader))
-                .service(get_state),
-        )
-        .await;
+        let app =
+            test::init_service(App::new().app_data(Data::new(reader)).service(get_state)).await;
 
         let req = test::TestRequest::get()
             .uri("/states/finalized")
@@ -180,12 +176,8 @@ mod tests {
         let store = sample_store(10).await;
         let (_writer, reader) = Writer::new(store);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(Data::new(reader))
-                .service(get_state),
-        )
-        .await;
+        let app =
+            test::init_service(App::new().app_data(Data::new(reader)).service(get_state)).await;
 
         let req = test::TestRequest::get()
             .uri("/states/finalized")
@@ -194,13 +186,14 @@ mod tests {
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
-        assert!(resp
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("application/json"));
+        assert!(
+            resp.headers()
+                .get("content-type")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("application/json")
+        );
     }
 
     #[tokio::test]
@@ -208,12 +201,8 @@ mod tests {
         let store = sample_store(10).await;
         let (_writer, reader) = Writer::new(store);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(Data::new(reader))
-                .service(get_state),
-        )
-        .await;
+        let app =
+            test::init_service(App::new().app_data(Data::new(reader)).service(get_state)).await;
 
         let req = test::TestRequest::get()
             .uri("/states/finalized")

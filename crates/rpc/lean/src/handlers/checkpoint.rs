@@ -98,17 +98,17 @@ mod tests {
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
-        assert!(resp
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("application/json"));
+        assert!(
+            resp.headers()
+                .get("content-type")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("application/json")
+        );
 
         let body = test::read_body(resp).await;
-        let checkpoint: Checkpoint =
-            serde_json::from_slice(&body).expect("Failed to decode JSON");
+        let checkpoint: Checkpoint = serde_json::from_slice(&body).expect("Failed to decode JSON");
         assert_eq!(checkpoint.slot, 0);
     }
 }
