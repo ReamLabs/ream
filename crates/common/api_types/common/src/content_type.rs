@@ -23,8 +23,8 @@ impl ContentType {
 impl From<Option<&ActixHeaderValue>> for ContentType {
     fn from(header_value: Option<&ActixHeaderValue>) -> Self {
         match header_value.and_then(|h| h.to_str().ok()) {
-            Some(s) if s.split(';').any(|p| p.trim() == SSZ_CONTENT_TYPE) => ContentType::Ssz,
-            _ => ContentType::Json,
+            Some(s) if s.split(';').any(|p| p.trim() == JSON_CONTENT_TYPE) => ContentType::Json,
+            _ => ContentType::Ssz,
         }
     }
 }
