@@ -6637,7 +6637,6 @@ dependencies = [
  "ream-sync",
  "serde_json",
  "ssz_types",
- "tempdir",
  "tokio",
  "tracing",
  "tree_hash",

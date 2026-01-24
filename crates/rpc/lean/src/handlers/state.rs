@@ -104,7 +104,6 @@ mod tests {
     use ream_sync::rwlock::Writer;
     use ssz::Decode;
     use ssz_types::VariableList;
-    use tempdir::TempDir;
     use tree_hash::TreeHash;
 
     use super::get_state;
@@ -139,8 +138,8 @@ mod tests {
             },
         };
 
-        let temp_dir = TempDir::new("lean_test").expect("Failed to create temp dir");
-        let ream_db = ReamDB::new(temp_dir.into_path()).expect("Failed to init Ream Database");
+        let temp_path = std::env::temp_dir().join(format!("lean_test_{}", std::process::id()));
+        let ream_db = ReamDB::new(temp_path).expect("Failed to init Ream Database");
         let lean_db = ream_db.init_lean_db().expect("Failed to init lean db");
 
         Store::get_forkchoice_store(signed_genesis_block, genesis_state, lean_db, Some(0))
