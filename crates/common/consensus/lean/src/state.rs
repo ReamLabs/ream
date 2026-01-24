@@ -609,7 +609,7 @@ impl LeanState {
                             );
 
                             let mut new_bitlist =
-                                BitList::with_capacity(self.justified_slots.len())
+                                BitList::with_capacity(self.justified_slots.len() - delta)
                                     .map_err(|err| anyhow!("Failed to create BitList: {err:?}"))?;
 
                             for index in delta..self.justified_slots.len() {
