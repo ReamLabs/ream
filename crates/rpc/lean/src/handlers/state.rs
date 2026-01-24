@@ -197,7 +197,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_finalized_state_defaults_to_ssz() {
+    async fn test_get_finalized_state_defaults_to_json() {
         let store = sample_store(10).await;
         let (_writer, reader) = Writer::new(store);
 
@@ -210,9 +210,13 @@ mod tests {
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(
-            resp.headers().get("content-type").unwrap(),
-            "application/octet-stream"
+        assert!(
+            resp.headers()
+                .get("content-type")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("application/json")
         );
     }
 }
