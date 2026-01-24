@@ -72,7 +72,11 @@ mod tests {
             },
         };
 
-        let temp_path = std::env::temp_dir().join(format!("lean_test_{}", std::process::id()));
+        let temp_path = std::env::temp_dir().join(format!(
+            "lean_test_{}_{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
         std::fs::create_dir_all(&temp_path).expect("Failed to create temp directory");
         let ream_db = ReamDB::new(temp_path).expect("Failed to init Ream Database");
         let lean_db = ream_db.init_lean_db().expect("Failed to init lean db");
