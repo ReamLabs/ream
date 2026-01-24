@@ -6628,13 +6628,18 @@ dependencies = [
  "ream-api-types-lean",
  "ream-consensus-lean",
  "ream-fork-choice-lean",
+ "ream-network-spec",
  "ream-network-state-lean",
  "ream-peer",
+ "ream-post-quantum-crypto",
  "ream-rpc-common",
  "ream-storage",
+ "ream-sync",
  "serde_json",
+ "ssz_types",
  "tokio",
  "tracing",
+ "tree_hash",
 ]
 
 [[package]]

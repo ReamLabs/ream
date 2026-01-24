@@ -36,10 +36,15 @@ ream-api-types-common.workspace = true
 ream-api-types-lean.workspace = true
 ream-consensus-lean.workspace = true
 ream-fork-choice-lean.workspace = true
+ream-network-spec.workspace = true
 ream-network-state-lean.workspace = true
 ream-peer.workspace = true
+ream-post-quantum-crypto.workspace = true
 ream-rpc-common.workspace = true
 ream-storage.workspace = true
+ream-sync.workspace = true
+ssz_types.workspace = true
+tree_hash.workspace = true
 
 [lints]
 workspace = true
