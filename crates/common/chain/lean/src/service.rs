@@ -569,10 +569,13 @@ impl LeanChainService {
             .filter(|(peer_id, _)| !self.peers_in_use.contains(peer_id))
             .collect();
 
-        candidates
-            .choose_weighted(&mut rand::rng(), |(_, score)| *score)
-            .ok()
-            .map(|(peer_id, _)| *peer_id)
+        match candidates.choose_weighted(&mut rand::rng(), |(_, score)| f64::from(*score)) {
+            Ok((peer_id, _)) => Some(*peer_id),
+            Err(err) => {
+                warn!("Failed to choose weighted peer: {err}");
+                None
+            }
+        }
     }
 
     async fn update_sync_status(&self) -> anyhow::Result<SyncStatus> {
@@ -696,6 +699,13 @@ impl LeanChainService {
                             warn!("Failed to get block for root {root:?}: {err:?}");
                         }
                     }
+                }
+                if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::EndOfStream {
+                    peer_id,
+                    stream_id,
+                    connection_id,
+                }) {
+                    warn!("Failed to send end of stream: {err:?}");
                 }
             }
             _ => warn!(
