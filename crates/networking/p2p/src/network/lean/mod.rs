@@ -369,7 +369,13 @@ impl LeanNetworkService {
                                         }
                                     }
                                 } else {
-                                    error!("No callback found for request_id: {request_id}");
+                                    match response_callback {
+                                        ResponseCallback::EndOfStream { .. } => {
+                                        }
+                                        _ => {
+                                            error!("No callback found for request_id: {request_id}");
+                                        }
+                                    }
                                 }
                             },
                         }
