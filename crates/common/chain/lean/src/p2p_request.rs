@@ -20,6 +20,11 @@ pub enum LeanP2PRequest {
         connection_id: ConnectionId,
         message: LeanResponseMessage,
     },
+    EndOfStream {
+        peer_id: PeerId,
+        stream_id: u64,
+        connection_id: ConnectionId,
+    },
 }
 
 #[derive(Debug, Clone)]

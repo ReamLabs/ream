@@ -19,7 +19,7 @@ use libp2p::{
         },
     },
 };
-use tracing::{error, trace};
+use tracing::error;
 
 use super::{
     ConnectionRequest,
@@ -213,9 +213,13 @@ impl ReqRespConnectionHandler {
     fn on_dial_upgrade_error(
         &mut self,
         error: StreamUpgradeError<<OutboundReqRespProtocol as OutboundUpgradeSend>::Error>,
-        _info: OutboundOpenInfo,
+        info: OutboundOpenInfo,
     ) {
-        trace!("REQRESP: Dial upgrade error: {:?}", error);
+        self.behaviour_events
+            .push(HandlerEvent::Err(ReqRespMessageError::Outbound {
+                request_id: info.request_id,
+                err: ReqRespError::InvalidData(format!("Dial upgrade error: {error:?}")),
+            }));
     }
 
     fn request(&mut self, request_id: u64, message: RequestMessage) {

@@ -319,6 +319,9 @@ impl LeanNetworkService {
                         LeanP2PRequest::Response { peer_id, stream_id, connection_id, message } => {
                             self.send_response(peer_id, connection_id, stream_id, message);
                         }
+                        LeanP2PRequest::EndOfStream { peer_id, stream_id, connection_id } => {
+                            self.send_end_of_stream(peer_id, connection_id, stream_id);
+                        }
                     }
                 }
                 Some(event) = self.swarm.next() => {
@@ -366,7 +369,13 @@ impl LeanNetworkService {
                                         }
                                     }
                                 } else {
-                                    error!("No callback found for request_id: {request_id}");
+                                    match response_callback {
+                                        ResponseCallback::EndOfStream { .. } => {
+                                        }
+                                        _ => {
+                                            error!("No callback found for request_id: {request_id}");
+                                        }
+                                    }
                                 }
                             },
                         }
@@ -601,6 +610,7 @@ impl LeanNetworkService {
                                 stream_id,
                                 LeanResponseMessage::Status(our_status),
                             );
+                            self.send_end_of_stream(peer_id, connection_id, stream_id);
 
                             // We handle this internally, so no need to forward to chain
                             None
@@ -777,6 +787,15 @@ impl LeanNetworkService {
             connection_id,
             stream_id,
             RespMessage::Response(Box::new(ResponseMessage::Lean(message.into()))),
+        );
+    }
+
+    fn send_end_of_stream(&mut self, peer_id: PeerId, connection_id: ConnectionId, stream_id: u64) {
+        self.swarm.behaviour_mut().req_resp.send_response(
+            peer_id,
+            connection_id,
+            stream_id,
+            RespMessage::EndOfStream,
         );
     }
 
