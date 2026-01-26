@@ -18,7 +18,7 @@ Options:
       --key-manager-http-port <KEY_MANAGER_HTTP_PORT>
           Set HTTP Port of the key manager server [default: 8008]
       --network <NETWORK>
-          Choose mainnet, holesky, sepolia, hoodi, dev or provide a path to a YAML config file [default: mainnet]
+          Choose mainnet, sepolia, hoodi, dev or provide a path to a YAML config file [default: mainnet]
       --import-keystores <IMPORT_KEYSTORES>
           The directory for importing keystores
       --suggested-fee-recipient <SUGGESTED_FEE_RECIPIENT>

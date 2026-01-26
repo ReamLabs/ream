@@ -17,7 +17,7 @@ use crate::cli::constants::{
 pub struct BeaconNodeConfig {
     #[arg(
       long,
-      help = "Choose mainnet, holesky, sepolia, hoodi, dev or provide a path to a YAML config file",
+      help = "Choose mainnet, sepolia, hoodi, dev or provide a path to a YAML config file",
       default_value = DEFAULT_NETWORK,
       value_parser = beacon_network_parser
   )]

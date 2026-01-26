@@ -14,7 +14,7 @@ Options:
       --request-timeout <REQUEST_TIMEOUT>
           Set HTTP request timeout for beacon api calls [default: 60]
       --network <NETWORK>
-          Choose mainnet, holesky, sepolia, hoodi, dev or provide a path to a YAML config file [default: mainnet]
+          Choose mainnet, sepolia, hoodi, dev or provide a path to a YAML config file [default: mainnet]
       --import-keystores <IMPORT_KEYSTORES>
           The directory for importing keystores
       --password-file <PASSWORD_FILE>

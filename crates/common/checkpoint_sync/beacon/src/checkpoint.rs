@@ -10,10 +10,6 @@ pub fn get_checkpoint_sync_sources(checkpoint_sync_url: Option<Url>) -> Vec<Url>
             "../resources/checkpoint_sync_sources/mainnet.yaml"
         ))
         .expect("should deserialize checkpoint sync sources"),
-        Network::Holesky => serde_yaml::from_str(include_str!(
-            "../resources/checkpoint_sync_sources/holesky.yaml"
-        ))
-        .expect("should deserialize checkpoint sync sources"),
         Network::Sepolia => serde_yaml::from_str(include_str!(
             "../resources/checkpoint_sync_sources/sepolia.yaml"
         ))

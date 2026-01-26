@@ -67,10 +67,6 @@ impl Bootnodes {
                 serde_yaml::from_str(include_str!("../resources/bootnodes_mainnet.yaml"))
                     .expect("should deserialize bootnodes")
             }
-            Network::Holesky => {
-                serde_yaml::from_str(include_str!("../resources/bootnodes_holesky.yaml"))
-                    .expect("should deserialize bootnodes")
-            }
             Network::Sepolia => {
                 serde_yaml::from_str(include_str!("../resources/bootnodes_sepolia.yaml"))
                     .expect("should deserialize bootnodes")
