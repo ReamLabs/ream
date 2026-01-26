@@ -26,12 +26,12 @@ use crate::attestation::AggregatedAttestation;
 #[cfg(feature = "devnet1")]
 use crate::attestation::Attestation;
 #[cfg(feature = "devnet2")]
-use crate::utils::justified_index_after;
+use crate::slot::justified_index_after;
 use crate::{
     block::{Block, BlockBody, BlockHeader},
     checkpoint::Checkpoint,
     config::Config,
-    is_justifiable_slot,
+    slot::is_justifiable_after,
     validator::{Validator, is_proposer},
 };
 
@@ -491,7 +491,7 @@ impl LeanState {
                 continue;
             }
 
-            if !is_justifiable_slot(self.latest_finalized.slot, attestation.target().slot) {
+            if !is_justifiable_after(attestation.target().slot, self.latest_finalized.slot)? {
                 #[cfg(feature = "devnet1")]
                 info!(
                     reason = "Target slot not justifiable",
@@ -588,9 +588,10 @@ impl LeanState {
 
                 // Finalization: if the target is the next valid justifiable
                 // hash after the source
-                let is_target_next_valid_justifiable_slot = !((attestation.source().slot + 1)
-                    ..attestation.target().slot)
-                    .any(|slot| is_justifiable_slot(self.latest_finalized.slot, slot));
+                let is_target_next_valid_justifiable_slot =
+                    !((attestation.source().slot + 1)..attestation.target().slot).any(|slot| {
+                        is_justifiable_after(slot, self.latest_finalized.slot).unwrap_or(false)
+                    });
 
                 if is_target_next_valid_justifiable_slot {
                     #[cfg(feature = "devnet2")]

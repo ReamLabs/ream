@@ -14,6 +14,7 @@ use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{Block, BlockBody, BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
+    slot::is_justifiable_after,
     state::LeanState,
     validator::is_proposer,
 };
@@ -44,7 +45,6 @@ use ssz_types::{VariableList, typenum::U4096};
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
 
-use super::utils::is_justifiable_after;
 use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 
 pub type LeanStoreWriter = Writer<Store>;
