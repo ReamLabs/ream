@@ -31,7 +31,7 @@ use crate::{
     block::{Block, BlockBody, BlockHeader},
     checkpoint::Checkpoint,
     config::Config,
-    is_justifiable_slot,
+    is_justifiable_slot, log_skip_attestation,
     validator::{Validator, is_proposer},
 };
 
@@ -160,6 +160,26 @@ impl LeanState {
     /// Check if a validator is the proposer for the current slot.
     fn is_proposer(&self, validator_index: u64) -> bool {
         is_proposer(validator_index, self.slot, self.validators.len() as u64)
+    }
+
+    /// Check if a slot is justified
+    fn is_slot_justified(&self, slot: u64) -> anyhow::Result<bool> {
+        #[cfg(feature = "devnet1")]
+        {
+            self.justified_slots
+                .get(slot as usize)
+                .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))
+        }
+        #[cfg(feature = "devnet2")]
+        {
+            match justified_index_after(slot, self.latest_finalized.slot) {
+                Some(index) => self
+                    .justified_slots
+                    .get(index as usize)
+                    .map_err(|err| anyhow!("Failed to get justified slot: {err:?}")),
+                None => Ok(true),
+            }
+        }
     }
 
     /// Validate the block header and update header-linked state.
@@ -331,96 +351,19 @@ impl LeanState {
 
         for attestation in attestations {
             inc_int_counter_vec(&STATE_TRANSITION_ATTESTATIONS_PROCESSED_TOTAL, &[]);
-            let is_source_justified = {
-                #[cfg(feature = "devnet1")]
-                {
-                    self.justified_slots
-                        .get(attestation.source().slot as usize)
-                        .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
-                }
-                #[cfg(feature = "devnet2")]
-                {
-                    match justified_index_after(
-                        attestation.source().slot,
-                        self.latest_finalized.slot,
-                    ) {
-                        Some(index) => self
-                            .justified_slots
-                            .get(index as usize)
-                            .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?,
-                        None => true,
-                    }
-                }
-            };
+
+            if !self.is_slot_justified(attestation.source().slot)? {
+                log_skip_attestation!("Source slot not justified", attestation);
+                continue;
+            }
+
+            if self.is_slot_justified(attestation.target().slot)? {
+                log_skip_attestation!("Target slot already justified", attestation);
+                continue;
+            }
 
             #[cfg(feature = "devnet2")]
             if attestation.source().root == B256::ZERO || attestation.target().root == B256::ZERO {
-                continue;
-            }
-
-            if !is_source_justified {
-                #[cfg(feature = "devnet1")]
-                info!(
-                    reason = "Source slot not justified",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
-                #[cfg(feature = "devnet2")]
-                info!(
-                    reason = "Source slot not justified",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.aggregation_bits,
-                );
-                continue;
-            }
-
-            let is_target_already_justified = {
-                #[cfg(feature = "devnet1")]
-                {
-                    // This condition is missing in 3sf mini but has been added here because
-                    // we don't want to re-introduce the target again for remaining attestations if
-                    // the slot is already justified and its tracking already cleared out
-                    // from justifications map
-                    self.justified_slots
-                        .get(attestation.target().slot as usize)
-                        .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?
-                }
-                #[cfg(feature = "devnet2")]
-                {
-                    match justified_index_after(
-                        attestation.target().slot,
-                        self.latest_finalized.slot,
-                    ) {
-                        Some(index) => self
-                            .justified_slots
-                            .get(index as usize)
-                            .map_err(|err| anyhow!("Failed to get justified slot: {err:?}"))?,
-                        None => true,
-                    }
-                }
-            };
-
-            if is_target_already_justified {
-                #[cfg(feature = "devnet1")]
-                info!(
-                    reason = "Target slot already justified",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
-                #[cfg(feature = "devnet2")]
-                info!(
-                    reason = "Target slot already justified",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.aggregation_bits,
-                );
                 continue;
             }
 
@@ -430,22 +373,7 @@ impl LeanState {
                     .get(attestation.source().slot as usize)
                     .ok_or(anyhow!("Source slot not found in historical_block_hashes"))?
             {
-                #[cfg(feature = "devnet1")]
-                info!(
-                    reason = "Source block not in historical block hashes",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
-                #[cfg(feature = "devnet2")]
-                info!(
-                    reason = "Source block not in historical block hashes",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.aggregation_bits,
-                );
+                log_skip_attestation!("Source block not in historical block hashes", attestation);
                 continue;
             }
 
@@ -455,62 +383,17 @@ impl LeanState {
                     .get(attestation.target().slot as usize)
                     .ok_or(anyhow!("Target slot not found in historical_block_hashes"))?
             {
-                #[cfg(feature = "devnet1")]
-                info!(
-                    reason = "Target block not in historical block hashes",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id
-                );
-                #[cfg(feature = "devnet2")]
-                info!(
-                    reason = "Target block not in historical block hashes",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.aggregation_bits
-                );
+                log_skip_attestation!("Target block not in historical block hashes", attestation);
                 continue;
             }
 
             if attestation.target().slot <= attestation.source().slot {
-                #[cfg(feature = "devnet1")]
-                info!(
-                    reason = "Target slot not greater than source slot",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
-                #[cfg(feature = "devnet2")]
-                info!(
-                    reason = "Target slot not greater than source slot",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.aggregation_bits,
-                );
+                log_skip_attestation!("Target slot not greater than source slot", attestation);
                 continue;
             }
 
             if !is_justifiable_slot(self.latest_finalized.slot, attestation.target().slot) {
-                #[cfg(feature = "devnet1")]
-                info!(
-                    reason = "Target slot not justifiable",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.validator_id,
-                );
-                #[cfg(feature = "devnet2")]
-                info!(
-                    reason = "Target slot not justifiable",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.aggregation_bits,
-                );
+                log_skip_attestation!("Target slot not justifiable", attestation);
                 continue;
             }
 
