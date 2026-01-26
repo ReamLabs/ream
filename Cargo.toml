@@ -43,7 +43,6 @@ members = [
     "crates/rpc/beacon",
     "crates/rpc/common",
     "crates/rpc/lean",
-    "crates/runtime",
     "crates/storage",
     "testing/beacon-api",
     "testing/ef-tests",
