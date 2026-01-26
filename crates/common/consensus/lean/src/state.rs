@@ -36,9 +36,6 @@ use crate::{
 };
 
 /// Represents the state of the Lean chain.
-///
-/// See the [Lean specification](https://github.com/leanEthereum/leanSpec/blob/main/docs/client/containers.md#state)
-/// for detailed protocol information.
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct LeanState {
     pub config: Config,
