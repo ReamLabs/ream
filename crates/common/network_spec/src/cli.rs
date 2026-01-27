@@ -2,12 +2,11 @@ use std::{fs, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
-use crate::networks::{BeaconNetworkSpec, DEV, HOLESKY, HOODI, LeanNetworkSpec, MAINNET, SEPOLIA};
+use crate::networks::{BeaconNetworkSpec, DEV, HOODI, LeanNetworkSpec, MAINNET, SEPOLIA};
 
 pub fn beacon_network_parser(network_string: &str) -> Result<Arc<BeaconNetworkSpec>, String> {
     match network_string {
         "mainnet" => Ok(MAINNET.clone()),
-        "holesky" => Ok(HOLESKY.clone()),
         "sepolia" => Ok(SEPOLIA.clone()),
         "hoodi" => Ok(HOODI.clone()),
         "dev" => Ok(DEV.clone()),
