@@ -1,6 +1,9 @@
 use alloy_primitives::{B256, aliases::B32};
 use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
-use ream_consensus_misc::{constants::beacon::FAR_FUTURE_EPOCH, fork_data::ForkData};
+use ream_consensus_misc::{
+    constants::beacon::{ELECTRA_FORK_EPOCH, FAR_FUTURE_EPOCH},
+    fork_data::{ForkData, compute_fork_digest},
+};
 use ream_network_spec::networks::beacon_network_spec;
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
@@ -21,11 +24,12 @@ impl EnrForkId {
         let next_fork_version = current_fork_version;
         let next_fork_epoch = FAR_FUTURE_EPOCH;
 
-        let fork_digest = ForkData {
+        let fork_data = ForkData {
             current_version: current_fork_version,
             genesis_validators_root,
-        }
-        .compute_fork_digest();
+        };
+
+        let fork_digest = compute_fork_digest(fork_data, ELECTRA_FORK_EPOCH);
 
         Self {
             fork_digest,

@@ -18,7 +18,7 @@ use ream_consensus_beacon::{
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_consensus_lean::block::SignedBlockWithAttestation;
-use ream_consensus_misc::constants::beacon::genesis_validators_root;
+use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
 use ream_network_spec::networks::beacon_network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};
 use ssz::{Decode, Encode};
@@ -157,7 +157,8 @@ impl Decoder for OutboundSSZSnappyCodec {
         }
 
         if let Some(context_bytes) = self.context_bytes
-            && context_bytes != beacon_network_spec().fork_digest(genesis_validators_root())
+            && context_bytes
+                != beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root())
         {
             return Ok(Some(RespMessage::Error(ReqRespError::InvalidData(
                 "Invalid context bytes, we only support Electra".to_string(),

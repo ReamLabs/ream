@@ -2,6 +2,7 @@
 
 pub mod attestation_data;
 pub mod beacon_block_header;
+pub mod blob_parameters;
 pub mod checkpoint;
 pub mod consolidation_request;
 pub mod constants;

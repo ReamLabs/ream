@@ -6,7 +6,9 @@ use std::{
 
 use alloy_primitives::{Address, B256, U256, address, aliases::B32, b256, fixed_bytes};
 use ream_consensus_misc::{
-    constants::beacon::GENESIS_VALIDATORS_ROOT, fork::Fork, fork_data::ForkData,
+    constants::beacon::GENESIS_VALIDATORS_ROOT,
+    fork::Fork,
+    fork_data::{ForkData, compute_fork_digest},
     misc::checksummed_address,
 };
 use serde::Deserialize;
@@ -176,12 +178,12 @@ pub struct BeaconNetworkSpec {
 }
 
 impl BeaconNetworkSpec {
-    pub fn fork_digest(&self, genesis_validators_root: B256) -> B32 {
-        ForkData {
+    pub fn fork_digest(&self, epoch: u64, genesis_validators_root: B256) -> B32 {
+        let fork_data = ForkData {
             current_version: self.fulu_fork_version,
             genesis_validators_root,
-        }
-        .compute_fork_digest()
+        };
+        compute_fork_digest(fork_data, epoch)
     }
 
     pub fn fork_schedule(&self) -> ForkSchedule {

@@ -29,7 +29,7 @@ use libp2p_identity::{Keypair, PublicKey, secp256k1};
 use network_state::NetworkState;
 use parking_lot::{Mutex, RwLock};
 use peer::CachedPeer;
-use ream_consensus_misc::constants::beacon::genesis_validators_root;
+use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
 use ream_discv5::discovery::{Discovery, DiscoveryOutEvent, QueryType};
 use ream_executor::ReamExecutor;
 use ream_network_spec::networks::beacon_network_spec;
@@ -776,7 +776,8 @@ impl Network {
     fn handle_status_req_resp_event(&mut self, peer_id: PeerId, status: Status) {
         if self.network_state.peer_table.read().get(&peer_id).is_some() {
             // We only want to have peers on the same network as us
-            let fork_digest = beacon_network_spec().fork_digest(genesis_validators_root());
+            let fork_digest =
+                beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root());
             if status.fork_digest != fork_digest {
                 warn!(
                     "Peer {peer_id} is not on the same network as us, removing from peer table, fork_digest: {}, our fork_digest: {fork_digest}",
@@ -845,6 +846,7 @@ mod tests {
     use discv5::enr::CombinedKey;
     use k256::ecdsa::SigningKey;
     use libp2p_identity::{Keypair, PeerId};
+    use ream_consensus_misc::constants::beacon::FULU_FORK_EPOCH;
     use ream_discv5::{
         config::DiscoveryConfig,
         subnet::{AttestationSubnets, CustodyGroupCount, SyncCommitteeSubnets},
@@ -898,7 +900,8 @@ mod tests {
             executor,
             &config,
             Status {
-                fork_digest: beacon_network_spec().fork_digest(genesis_validators_root()),
+                fork_digest: beacon_network_spec()
+                    .fork_digest(FULU_FORK_EPOCH, genesis_validators_root()),
                 ..Default::default()
             },
         )

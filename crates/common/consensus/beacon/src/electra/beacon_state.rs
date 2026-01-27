@@ -17,6 +17,7 @@ use ream_bls::{
 use ream_consensus_misc::{
     attestation_data::AttestationData,
     beacon_block_header::{BeaconBlockHeader, SignedBeaconBlockHeader},
+    blob_parameters::get_blob_parameters,
     checkpoint::Checkpoint,
     consolidation_request::ConsolidationRequest,
     constants::beacon::{
@@ -30,12 +31,12 @@ use ream_consensus_misc::{
         FINALIZED_CHECKPOINT_INDEX, FULL_EXIT_REQUEST_AMOUNT, GENESIS_EPOCH, GENESIS_SLOT,
         HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT, HYSTERESIS_UPWARD_MULTIPLIER,
         INACTIVITY_PENALTY_QUOTIENT_BELLATRIX, INACTIVITY_SCORE_BIAS,
-        INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_BLOBS_PER_BLOCK_ELECTRA,
-        MAX_COMMITTEES_PER_SLOT, MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE_ELECTRA,
-        MAX_PENDING_DEPOSITS_PER_EPOCH, MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP,
-        MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT, MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT,
-        MAX_RANDOM_VALUE, MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD,
-        MIN_ACTIVATION_BALANCE, MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
+        INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_COMMITTEES_PER_SLOT,
+        MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE_ELECTRA, MAX_PENDING_DEPOSITS_PER_EPOCH,
+        MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP, MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT,
+        MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT, MAX_RANDOM_VALUE,
+        MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP, MAX_WITHDRAWALS_PER_PAYLOAD, MIN_ACTIVATION_BALANCE,
+        MIN_ATTESTATION_INCLUSION_DELAY, MIN_EPOCHS_TO_INACTIVITY_PENALTY,
         MIN_GENESIS_ACTIVE_VALIDATOR_COUNT, MIN_GENESIS_TIME, MIN_PER_EPOCH_CHURN_LIMIT,
         MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA, MIN_SEED_LOOKAHEAD,
         MIN_SLASHING_PENALTY_QUOTIENT_ELECTRA, MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
@@ -2698,7 +2699,10 @@ impl BeaconState {
         // Verify timestamp
         ensure!(payload.timestamp == self.compute_timestamp_at_slot(self.slot));
         // Verify commitments are under limit
-        ensure!(body.blob_kzg_commitments.len() <= MAX_BLOBS_PER_BLOCK_ELECTRA as usize);
+        ensure!(
+            body.blob_kzg_commitments.len()
+                <= get_blob_parameters(self.get_current_epoch()).max_blobs_per_block as usize
+        );
 
         // Verify the execution payload is valid
         let mut versioned_hashes = vec![];

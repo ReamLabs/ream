@@ -4,7 +4,7 @@ use ream_consensus_beacon::{
     blob_sidecar::BlobIdentifier,
     data_column_sidecar::{ColumnIdentifier, DATA_COLUMN_SIDECAR_SUBNET_COUNT},
 };
-use ream_consensus_misc::constants::beacon::genesis_validators_root;
+use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
 use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_p2p::{
@@ -43,7 +43,7 @@ use crate::{
 
 pub fn init_gossipsub_config_with_topics() -> GossipsubConfig {
     let mut gossipsub_config = GossipsubConfig::default();
-    let fork_digest = beacon_network_spec().fork_digest(genesis_validators_root());
+    let fork_digest = beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root());
 
     let mut topics = vec![
         GossipTopic {
