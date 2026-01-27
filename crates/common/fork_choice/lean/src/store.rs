@@ -14,6 +14,7 @@ use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{Block, BlockBody, BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
+    slot::is_justifiable_after,
     state::LeanState,
     validator::is_proposer,
 };
@@ -44,16 +45,12 @@ use ssz_types::{VariableList, typenum::U4096};
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
 
-use super::utils::is_justifiable_after;
 use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 
 pub type LeanStoreWriter = Writer<Store>;
 pub type LeanStoreReader = Reader<Store>;
 
 /// [Store] represents the state that the Lean node should maintain.
-///
-/// Most of the fields are based on the Python implementation of [`Staker`](https://github.com/ethereum/research/blob/d225a6775a9b184b5c1fd6c830cc58a375d9535f/3sf-mini/p2p.py#L15-L42),
-/// but doesn't include `validator_id` as a node should manage multiple validators.
 #[derive(Debug, Clone)]
 pub struct Store {
     pub store: Arc<Mutex<LeanDB>>,

@@ -19,9 +19,6 @@ fn genesis_block(state_root: B256) -> Block {
 }
 
 /// Setup the genesis block and state for the Lean chain.
-///
-/// See lean specification:
-/// <https://github.com/leanEthereum/leanSpec/blob/f869a7934fc4bccf0ba22159c64ecd398c543107/src/lean_spec/subspecs/containers/state/state.py#L65-L108>
 pub fn setup_genesis(genesis_time: u64, validators: Vec<Validator>) -> (Block, LeanState) {
     let genesis_state = LeanState::generate_genesis(genesis_time, Some(validators));
     let genesis_block = genesis_block(genesis_state.tree_hash_root());
