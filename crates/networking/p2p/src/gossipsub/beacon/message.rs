@@ -5,7 +5,7 @@ use ream_consensus_beacon::{
     electra::beacon_block::SignedBeaconBlock, proposer_slashing::ProposerSlashing,
     single_attestation::SingleAttestation, voluntary_exit::SignedVoluntaryExit,
 };
-use ream_consensus_misc::constants::beacon::genesis_validators_root;
+use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
 use ream_events_beacon::contribution_and_proof::SignedContributionAndProof;
 use ream_light_client::{
     finality_update::LightClientFinalityUpdate, optimistic_update::LightClientOptimisticUpdate,
@@ -40,7 +40,9 @@ impl GossipsubMessage {
     pub fn decode(topic: &TopicHash, data: &[u8]) -> Result<Self, GossipsubError> {
         let gossip_topic = GossipTopic::from_topic_hash(topic)?;
 
-        if gossip_topic.fork != beacon_network_spec().fork_digest(genesis_validators_root()) {
+        if gossip_topic.fork
+            != beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root())
+        {
             return Err(GossipsubError::InvalidTopic(format!(
                 "Invalid topic fork: {topic:?}"
             )));

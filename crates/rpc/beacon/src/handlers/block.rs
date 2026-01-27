@@ -26,7 +26,7 @@ use ream_consensus_beacon::{
     genesis::Genesis,
 };
 use ream_consensus_misc::constants::beacon::{
-    WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root,
+    FULU_FORK_EPOCH, WHISTLEBLOWER_REWARD_QUOTIENT, genesis_validators_root,
 };
 use ream_network_manager::p2p_sender::P2PSender;
 use ream_network_spec::networks::beacon_network_spec;
@@ -525,7 +525,7 @@ async fn publish_and_process_block(
     p2p_sender: Data<Arc<P2PSender>>,
 ) -> Result<HttpResponse, ApiError> {
     // Broadcast via P2P
-    let fork_digest = beacon_network_spec().fork_digest(genesis_validators_root());
+    let fork_digest = beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root());
     let topic = GossipTopic {
         fork: fork_digest,
         kind: GossipTopicKind::BeaconBlock,
