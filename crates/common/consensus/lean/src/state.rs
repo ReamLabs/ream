@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-#[cfg(feature = "devnet2")]
-use std::collections::HashSet;
 
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
@@ -142,13 +140,15 @@ impl LeanState {
 
         #[cfg(feature = "devnet2")]
         {
-            let mut attestations_data = HashSet::new();
-            for aggregated_attestation in &block.body.attestations {
-                ensure!(
-                    attestations_data.insert(&aggregated_attestation.message),
-                    "Block contains duplicate AttestationData"
-                );
-            }
+            ensure!(
+                block
+                    .body
+                    .attestations
+                    .iter()
+                    .map(|aggregated_attestation| &aggregated_attestation.message)
+                    .all_unique(),
+                "Block contains duplicate attestation messages"
+            );
 
             self.process_attestations(&block.body.attestations)?;
         }
