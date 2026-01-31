@@ -3,7 +3,6 @@ use ream_bls::BLSSignature;
 use ream_consensus_misc::{
     constants::beacon::{
         BLOB_KZG_COMMITMENTS_INDEX, BLOCK_BODY_MERKLE_DEPTH, EXECUTION_PAYLOAD_INDEX,
-        KZG_COMMITMENTS_MERKLE_DEPTH,
     },
     deposit::Deposit,
     eth_1_data::Eth1Data,
