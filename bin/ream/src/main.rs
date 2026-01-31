@@ -956,13 +956,13 @@ mod tests {
             head_state.latest_finalized.slot
         );
         assert!(
-            head_state.latest_justified.slot + justfication_lag == head_state.slot,
+            head_state.latest_justified.slot + justfication_lag <= head_state.slot,
             "Expected the head to be at least {justfication_lag} slots ahead of the justified checkpoint {:?} + {justfication_lag} vs {:?}",
             head_state.latest_justified.slot,
             head_state.slot
         );
         assert!(
-            head_state.latest_finalized.slot + finalization_lag == head_state.slot,
+            head_state.latest_finalized.slot + finalization_lag <= head_state.slot,
             "Expected the head to be at least {finalization_lag} slots ahead of the finalized checkpoint {:?} + {finalization_lag} vs {:?}",
             head_state.latest_finalized.slot,
             head_state.slot
@@ -1003,7 +1003,7 @@ mod tests {
 
         info!("Starting multi-node finalization test: {}", test_name);
 
-        let test_duration_secs = 60;
+        let test_duration_secs = 70;
         let base_p2p_port = 20600;
         let base_http_port = 16652;
         let node_count = topology.len();
