@@ -78,37 +78,8 @@ impl BeaconBlockBody {
         generate_proof(&tree, index, BLOCK_BODY_MERKLE_DEPTH)
     }
 
-    pub fn blob_kzg_commitment_inclusion_proof(&self, index: u64) -> anyhow::Result<Vec<B256>> {
-        // inclusion proof for blob_kzg_commitment in blob_kzg_commitments
-        let tree = merkle_tree(
-            self.blob_kzg_commitments
-                .iter()
-                .map(|commitment| commitment.tree_hash_root())
-                .collect::<Vec<_>>()
-                .as_slice(),
-            KZG_COMMITMENTS_MERKLE_DEPTH,
-        )?;
-        let kzg_commitment_to_kzg_commitments_proof =
-            generate_proof(&tree, index, KZG_COMMITMENTS_MERKLE_DEPTH)?;
-
-        // add branch for length of blob_kzg_commitments
-        let kzg_commitments_length_root = self
-            .blob_kzg_commitments
-            .len()
-            .to_le_bytes()
-            .tree_hash_root();
-
-        // inclusion proof for blob_kzg_commitments in beacon_block_body
-        let kzg_commitments_to_block_body_proof =
-            self.data_inclusion_proof(BLOB_KZG_COMMITMENTS_INDEX)?;
-
-        // merge proofs data
-        Ok([
-            kzg_commitment_to_kzg_commitments_proof,
-            vec![kzg_commitments_length_root],
-            kzg_commitments_to_block_body_proof,
-        ]
-        .concat())
+    pub fn blob_kzg_commitment_inclusion_proof(&self) -> anyhow::Result<Vec<B256>> {
+        self.data_inclusion_proof(BLOB_KZG_COMMITMENTS_INDEX)
     }
 
     pub fn execution_payload_inclusion_proof(&self) -> anyhow::Result<Vec<B256>> {
