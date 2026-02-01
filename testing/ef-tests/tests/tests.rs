@@ -211,8 +211,7 @@ test_merkle_proof!(
     "merkle_proof",
     BeaconBlockBody,
     "blob_kzg_commitment",
-    blob_kzg_commitment_inclusion_proof,
-    0
+    blob_kzg_commitment_inclusion_proof
 );
 
 // Testing random
