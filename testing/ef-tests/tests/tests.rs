@@ -2,8 +2,8 @@
 
 use ef_tests::{
     test_consensus_type, test_epoch_processing, test_fork_choice, test_merkle_proof,
-    test_merkle_proof_impl, test_operation, test_rewards, test_sanity_blocks, test_sanity_slots,
-    test_shuffling, utils,
+    test_merkle_proof_impl, test_operation, test_peerdas_kzg, test_rewards, test_sanity_blocks,
+    test_sanity_slots, test_shuffling, utils,
 };
 use ream_consensus_beacon::{
     attestation::Attestation,
@@ -220,3 +220,8 @@ test_sanity_blocks!(test_random, "random/random");
 
 // Testing finality
 test_sanity_blocks!(test_finality, "finality/finality");
+
+// Testing peerdas
+test_peerdas_kzg!(verify_cell_kzg_proof_batch);
+test_peerdas_kzg!(compute_cells_and_kzg_proofs);
+test_peerdas_kzg!(recover_cells_and_kzg_proofs);

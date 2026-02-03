@@ -19,10 +19,12 @@ ef-tests = []
 alloy-consensus.workspace = true
 alloy-primitives.workspace = true
 anyhow.workspace = true
+const-hex.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
 paste = "1.0.15"
 rstest.workspace = true
+rust_eth_kzg.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 snap.workspace = true
@@ -40,6 +42,7 @@ ream-execution-rpc-types.workspace = true
 ream-fork-choice-beacon.workspace = true
 ream-merkle.workspace = true
 ream-network-spec.workspace = true
+ream-polynomial-commitments.workspace = true
 ream-storage.workspace = true
 
 [lints]
