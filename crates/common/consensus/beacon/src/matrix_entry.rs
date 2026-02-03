@@ -68,7 +68,7 @@ pub fn recover_matrix(
     Ok(matrix)
 }
 
-fn compute_cells_and_kzg_proofs(
+pub fn compute_cells_and_kzg_proofs(
     blob: &Blob,
     das_context: &DASContext,
 ) -> Result<(Vec<Cell>, Vec<KZGProof>)> {
@@ -92,7 +92,7 @@ fn compute_cells_and_kzg_proofs(
     Ok((cells, proofs))
 }
 
-fn recover_cells_and_kzg_proofs(
+pub fn recover_cells_and_kzg_proofs(
     cell_indices: Vec<u64>,
     cells: Vec<Cell>,
     das_context: &DASContext,
