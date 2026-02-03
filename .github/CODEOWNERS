@@ -22,8 +22,8 @@ crates/common/polynomial_commitments/  @KolbyML @Kayden-ML @shariqnaiyer
 crates/common/sync/                    @KolbyML @Kayden-ML @shariqnaiyer
 crates/common/sync_committee_pool/     @KolbyML @Kayden-ML @shariqnaiyer
 crates/common/validator/               @KolbyML @shariqnaiyer @Patchoulis
-crates/crypto/                         @KolbyML @shariqnaiyer
+crates/crypto/                         @KolbyML @shariqnaiyer @Patchoulis
 crates/networking/                     @KolbyML @Kayden-ML @shariqnaiyer
 crates/rpc/                            @KolbyML @varun-doshi @Kayden-ML @shariqnaiyer
 crates/storage/                        @KolbyML @Kayden-ML
-testing/                               @KolbyML @Kayden-ML
+testing/                               @KolbyML @Kayden-ML @shariqnaiyer
