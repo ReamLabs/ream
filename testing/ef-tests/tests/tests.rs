@@ -27,7 +27,7 @@ use ream_consensus_beacon::{
 use ream_consensus_misc::{
     attestation_data::AttestationData, beacon_block_header::BeaconBlockHeader,
     checkpoint::Checkpoint, consolidation_request::ConsolidationRequest,
-    constants::beacon::KZG_COMMITMENTS_MERKLE_DEPTH, deposit::Deposit, deposit_data::DepositData,
+    constants::beacon::BLOB_KZG_COMMITMENTS_INDEX, deposit::Deposit, deposit_data::DepositData,
     deposit_request::DepositRequest, eth_1_data::Eth1Data, execution_requests::ExecutionRequests,
     fork::Fork, fork_data::ForkData, historical_batch::HistoricalBatch,
     indexed_attestation::IndexedAttestation, misc::compute_shuffled_index,
@@ -211,9 +211,9 @@ test_merkle_proof!(
 test_merkle_proof!(
     "merkle_proof",
     BeaconBlockBody,
-    "blob_kzg_commitment",
+    "blob_kzg_commitments",
     data_inclusion_proof,
-    KZG_COMMITMENTS_MERKLE_DEPTH
+    BLOB_KZG_COMMITMENTS_INDEX
 );
 
 // Testing random
