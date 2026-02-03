@@ -76,7 +76,7 @@ macro_rules! test_merkle_proof {
     ($path:literal, $struct_name:ty, $input_name:literal, $inclusion_proof_func:tt) => {
         test_merkle_proof_impl!($path, $struct_name, $input_name, $inclusion_proof_func, ());
     };
-    ($path:literal, $struct_name:ty, $input_name:literal, $inclusion_proof_func:tt, $index:literal) => {
+    ($path:literal, $struct_name:ty, $input_name:literal, $inclusion_proof_func:tt, $index:expr) => {
         test_merkle_proof_impl!(
             $path,
             $struct_name,
