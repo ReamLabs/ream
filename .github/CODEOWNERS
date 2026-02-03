@@ -5,15 +5,25 @@
 *                                      @KolbyML
 
 # Crate-specific ownership
-crates/common/chain/beacon/            @KolbyML @Kayden-ML
-crates/common/chain/lean/              @KolbyML @syjn99 @unnawut
-crates/common/checkpoint_sync/         @KolbyML @varun-doshi
-crates/common/consensus/beacon/        @KolbyML @Kayden-ML @varun-doshi
-crates/common/consensus/lean/          @KolbyML @syjn99 @unnawut
-crates/common/execution_engine/        @KolbyML @Kayden-ML
-crates/common/fork_choice/             @KolbyML @Kayden-ML
-crates/common/network_spec/            @KolbyML @Kayden-ML
-crates/common/polynomial_commitments/  @KolbyML @Kayden-ML
-crates/crypto/                         @KolbyML @syjn99
-crates/rpc/                            @KolbyML @varun-doshi
-testing/                               @KolbyML @Kayden-ML @syjn99
+crates/common/api_types/               @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/chain/                   @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/checkpoint_sync/         @KolbyML @varun-doshi @Kayden-ML
+crates/common/consensus/beacon/        @KolbyML @Kayden-ML @shariqnaiyer @varun-doshi
+crates/common/consensus/lean/          @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/events/                  @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/execution/               @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/fork_choice/             @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/light_client/            @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/metrics/                 @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/network_spec/            @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/node/                    @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/operation_pool/          @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/polynomial_commitments/  @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/sync/                    @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/sync_committee_pool/     @KolbyML @Kayden-ML @shariqnaiyer
+crates/common/validator/               @KolbyML @shariqnaiyer @Patchoulis
+crates/crypto/                         @KolbyML @shariqnaiyer
+crates/networking/                     @KolbyML @Kayden-ML @shariqnaiyer
+crates/rpc/                            @KolbyML @varun-doshi @Kayden-ML @shariqnaiyer
+crates/storage/                        @KolbyML @Kayden-ML
+testing/                               @KolbyML @Kayden-ML
