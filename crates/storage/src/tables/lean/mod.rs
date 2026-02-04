@@ -1,7 +1,5 @@
-#[cfg(feature = "devnet2")]
 pub mod aggregated_payloads;
 pub mod block;
-#[cfg(feature = "devnet2")]
 pub mod gossip_signatures;
 pub mod head;
 pub mod latest_finalized;

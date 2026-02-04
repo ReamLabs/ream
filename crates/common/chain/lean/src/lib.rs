@@ -1,10 +1,10 @@
-#[cfg(all(feature = "devnet1", feature = "devnet2"))]
+#[cfg(all(feature = "devnet2", feature = "devnet3"))]
 compile_error!(
-    "Features 'devnet1' and 'devnet2' are mutually exclusive. Use --no-default-features --features devnet2 to build for devnet2."
+    "Features 'devnet2' and 'devnet3' are mutually exclusive. Use --no-default-features --features devnet3 to build for devnet3."
 );
 
-#[cfg(not(any(feature = "devnet1", feature = "devnet2")))]
-compile_error!("Either 'devnet1' or 'devnet2' feature must be enabled.");
+#[cfg(not(any(feature = "devnet2", feature = "devnet3")))]
+compile_error!("Either 'devnet2' or 'devnet3' feature must be enabled.");
 
 pub mod clock;
 pub mod messages;

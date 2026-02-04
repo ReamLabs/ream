@@ -285,9 +285,6 @@ impl LeanNetworkService {
                             );
                         }
                         LeanP2PRequest::GossipAttestation(attestation) => {
-                            #[cfg(feature = "devnet1")]
-                            let slot = attestation.message.slot();
-                            #[cfg(feature = "devnet2")]
                             let slot = attestation.message.slot;
                             self.publish_gossip(
                                 |topic| matches!(topic, LeanGossipTopicKind::Attestation),
@@ -448,11 +445,10 @@ impl LeanNetworkService {
                     ConnectedPoint::Dialer { address, .. } => {
                         self.bootnode_retry_state.remove(&peer_id);
 
-                        if cfg!(feature = "devnet2") {
-                            // send status request to the peer
-                            let status_message = LeanRequestMessage::Status(self.our_status());
-                            self.send_request(peer_id, status_message);
-                        }
+                        // send status request to the peer
+                        let status_message = LeanRequestMessage::Status(self.our_status());
+                        self.send_request(peer_id, status_message);
+
                         (address, Direction::Outbound)
                     }
                     ConnectedPoint::Listener { send_back_addr, .. } => {
@@ -534,9 +530,6 @@ impl LeanNetworkService {
                     }
                 }
                 Ok(LeanGossipsubMessage::Attestation(signed_attestation)) => {
-                    #[cfg(feature = "devnet1")]
-                    let slot = signed_attestation.message.slot();
-                    #[cfg(feature = "devnet2")]
                     let slot = signed_attestation.message.slot;
 
                     if let Err(err) = self.chain_message_sender.send(
@@ -724,10 +717,6 @@ impl LeanNetworkService {
 
         self.network_state
             .update_peer_checkpoints(peer_id, status.head, status.finalized);
-
-        if !cfg!(feature = "devnet2") {
-            return;
-        }
 
         let (sender, receiver) = oneshot::channel();
         match self
@@ -969,25 +958,21 @@ mod tests {
             "Finalized checkpoint should match"
         );
 
-        if cfg!(feature = "devnet2") {
-            let message = tokio::time::timeout(Duration::from_millis(100), chain_receiver_1.recv())
-                .await
-                .map_err(|err| anyhow!("Timeout waiting for chain message (devnet2): {err:?}"))?
-                .ok_or(anyhow!("Channel closed"))?;
+        let message = tokio::time::timeout(Duration::from_millis(100), chain_receiver_1.recv())
+            .await
+            .map_err(|err| anyhow!("Timeout waiting for chain message: {err:?}"))?
+            .ok_or(anyhow!("Channel closed"))?;
 
-            if let LeanChainServiceMessage::CheckIfCanonicalCheckpoint {
-                peer_id,
-                checkpoint,
-                ..
-            } = message
-            {
-                assert_eq!(peer_id, peer_id_2);
-                assert_eq!(checkpoint, expected_finalized);
-            } else {
-                panic!("Unexpected message: {message:?}");
-            }
+        if let LeanChainServiceMessage::CheckIfCanonicalCheckpoint {
+            peer_id,
+            checkpoint,
+            ..
+        } = message
+        {
+            assert_eq!(peer_id, peer_id_2);
+            assert_eq!(checkpoint, expected_finalized);
         } else {
-            info!("Skipping CheckIfCanonicalCheckpoint assertion as devnet2 feature is disabled");
+            panic!("Unexpected message: {message:?}");
         }
 
         node_1_handle.abort();

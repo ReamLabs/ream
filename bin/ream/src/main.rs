@@ -36,15 +36,9 @@ use ream_chain_lean::{
 };
 use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
 use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
-#[cfg(feature = "devnet2")]
-use ream_consensus_lean::attestation::AggregatedAttestations;
-#[cfg(feature = "devnet1")]
-use ream_consensus_lean::attestation::Attestation;
-#[cfg(feature = "devnet2")]
-use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
-    attestation::AttestationData,
-    block::{Block, BlockBody, BlockWithAttestation, SignedBlockWithAttestation},
+    attestation::{AggregatedAttestations, AttestationData},
+    block::{Block, BlockBody, BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
     validator::Validator,
 };
@@ -70,10 +64,8 @@ use ream_p2p::{
     },
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
-#[cfg(feature = "devnet2")]
-use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_post_quantum_crypto::leansig::{
-    private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey,
+    private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey, signature::Signature,
 };
 use ream_rpc_common::config::RpcServerConfig;
 use ream_storage::{
@@ -284,20 +276,11 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             SignedBlockWithAttestation {
                 message: BlockWithAttestation {
                     block: anchor_block,
-                    #[cfg(feature = "devnet1")]
-                    proposer_attestation: Attestation {
-                        validator_id: 0,
-                        data: attestation_data,
-                    },
-                    #[cfg(feature = "devnet2")]
                     proposer_attestation: AggregatedAttestations {
                         validator_id: 0,
                         data: attestation_data,
                     },
                 },
-                #[cfg(feature = "devnet1")]
-                signature: VariableList::default(),
-                #[cfg(feature = "devnet2")]
                 signature: BlockSignatures {
                     attestation_signatures: VariableList::default(),
                     proposer_signature: Signature::blank(),

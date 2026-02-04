@@ -274,16 +274,6 @@ impl LeanChainService {
                             }
 
                             if enabled!(Level::DEBUG) {
-                                #[cfg(feature = "devnet1")]
-                                debug!(
-                                    slot = signed_attestation.message.slot(),
-                                    head = ?signed_attestation.message.head(),
-                                    source = ?signed_attestation.message.source(),
-                                    target = ?signed_attestation.message.target(),
-                                    "Processing attestation by Validator {}",
-                                    signed_attestation.message.validator_id,
-                                );
-                                #[cfg(feature = "devnet2")]
                                 debug!(
                                     slot = signed_attestation.message.slot,
                                     head = ?signed_attestation.message.head,
@@ -293,15 +283,6 @@ impl LeanChainService {
                                     signed_attestation.validator_id,
                                 );
                             } else {
-                                #[cfg(feature = "devnet1")]
-                                info!(
-                                    slot = signed_attestation.message.slot(),
-                                    source_slot = signed_attestation.message.source().slot,
-                                    target_slot = signed_attestation.message.target().slot,
-                                    "Processing attestation by Validator {}",
-                                    signed_attestation.message.validator_id,
-                                );
-                                #[cfg(feature = "devnet2")]
                                 debug!(
                                     slot = signed_attestation.message.slot,
                                     head = ?signed_attestation.message.head,
@@ -950,14 +931,6 @@ impl LeanChainService {
         &mut self,
         signed_attestation: SignedAttestation,
     ) -> anyhow::Result<()> {
-        #[cfg(feature = "devnet1")]
-        self.store
-            .write()
-            .await
-            .on_attestation(signed_attestation, false)
-            .await?;
-
-        #[cfg(feature = "devnet2")]
         self.store
             .write()
             .await

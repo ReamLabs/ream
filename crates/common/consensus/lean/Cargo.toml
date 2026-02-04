@@ -10,9 +10,9 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet1"]
-devnet1 = []
+default = ["devnet2"]
 devnet2 = []
+devnet3 = []
 
 [dependencies]
 alloy-primitives.workspace = true

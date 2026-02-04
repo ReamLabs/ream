@@ -87,7 +87,7 @@ pub async fn get_state(
     }
 }
 
-#[cfg(all(test, feature = "devnet2"))]
+#[cfg(test)]
 mod tests {
     use actix_web::{App, http::StatusCode, test, web::Data};
     use ream_consensus_lean::{

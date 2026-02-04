@@ -1,17 +1,11 @@
 use std::path::Path;
 
 use anyhow::{anyhow, bail, ensure};
-#[cfg(feature = "devnet2")]
-use ream_consensus_lean::attestation::AggregatedAttestations;
-#[cfg(feature = "devnet2")]
-use ream_consensus_lean::attestation::AggregatedSignatureProof;
-#[cfg(feature = "devnet1")]
-use ream_consensus_lean::attestation::Attestation;
-#[cfg(feature = "devnet2")]
-use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
-    attestation::{AttestationData, SignedAttestation},
-    block::{Block, BlockWithAttestation, SignedBlockWithAttestation},
+    attestation::{
+        AggregatedAttestations, AggregatedSignatureProof, AttestationData, SignedAttestation,
+    },
+    block::{Block, BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
     state::LeanState,
 };
@@ -23,10 +17,8 @@ use ream_storage::{
     dir::setup_data_dir,
     tables::{field::REDBField, table::REDBTable},
 };
-use ssz_types::VariableList;
-#[cfg(feature = "devnet2")]
 use ssz_types::{
-    BitList,
+    BitList, VariableList,
     typenum::{U4096, U1048576},
 };
 use tracing::{debug, info};
@@ -96,20 +88,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     let mut store = Store::get_forkchoice_store(
         SignedBlockWithAttestation {
             message: BlockWithAttestation {
-                #[cfg(feature = "devnet1")]
-                proposer_attestation: Attestation {
-                    validator_id: block.proposer_index,
-                    data: AttestationData {
-                        slot: block.slot,
-                        head: Checkpoint {
-                            root: block.tree_hash_root(),
-                            slot: block.slot,
-                        },
-                        target: state.latest_justified,
-                        source: state.latest_finalized,
-                    },
-                },
-                #[cfg(feature = "devnet2")]
                 proposer_attestation: AggregatedAttestations {
                     validator_id: block.proposer_index,
                     data: AttestationData {
@@ -124,9 +102,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 },
                 block,
             },
-            #[cfg(feature = "devnet1")]
-            signature: VariableList::empty(),
-            #[cfg(feature = "devnet2")]
             signature: BlockSignatures {
                 attestation_signatures: VariableList::empty(),
                 proposer_signature: Signature::blank(),
@@ -187,16 +162,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 drop(db);
 
                 // Create blank signatures for block body attestations
-                #[cfg(feature = "devnet1")]
                 let signatures = {
-                    // devnet1: individual signatures for each attestation + 1 for proposer
-                    let num_signatures = ream_block.body.attestations.len() + 1;
-                    VariableList::try_from(vec![Signature::blank(); num_signatures])
-                        .map_err(|err| anyhow!("Failed to create signatures VariableList: {err}"))?
-                };
-                #[cfg(feature = "devnet2")]
-                let signatures = {
-                    // devnet2: one aggregated signature proof per aggregated attestation
                     let num_signatures = ream_block.body.attestations.len();
                     let empty_proof = || {
                         AggregatedSignatureProof::new(
@@ -218,23 +184,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     .on_block(
                         &SignedBlockWithAttestation {
                             message: BlockWithAttestation {
-                                #[cfg(feature = "devnet1")]
-                                proposer_attestation: Attestation {
-                                    validator_id: ream_block.proposer_index,
-                                    data: AttestationData {
-                                        slot: ream_block.slot,
-                                        head: Checkpoint {
-                                            root: ream_block.tree_hash_root(),
-                                            slot: ream_block.slot,
-                                        },
-                                        target: Checkpoint {
-                                            root: ream_block.parent_root,
-                                            slot: parent_slot,
-                                        },
-                                        source: source_checkpoint,
-                                    },
-                                },
-                                #[cfg(feature = "devnet2")]
                                 proposer_attestation: AggregatedAttestations {
                                     validator_id: ream_block.proposer_index,
                                     data: AttestationData {
@@ -252,9 +201,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                                 },
                                 block: ream_block,
                             },
-                            #[cfg(feature = "devnet1")]
-                            signature: signatures,
-                            #[cfg(feature = "devnet2")]
                             signature: BlockSignatures {
                                 attestation_signatures: signatures,
                                 proposer_signature: Signature::blank(),
@@ -292,9 +238,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 );
 
                 let signed_attestation = SignedAttestation {
-                    #[cfg(feature = "devnet1")]
-                    message: Attestation::from(attestation),
-                    #[cfg(feature = "devnet2")]
                     message: AttestationData {
                         slot: 0,
                         head: Checkpoint::default(),
@@ -302,17 +245,11 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                         source: Checkpoint::default(),
                     },
                     signature: Signature::blank(),
-                    #[cfg(feature = "devnet2")]
                     validator_id: 0,
                 };
 
                 // Add attestation to new attestations
                 let db = store.store.lock().await;
-                #[cfg(feature = "devnet1")]
-                let result = db
-                    .latest_new_attestations_provider()
-                    .insert(signed_attestation.message.validator_id, signed_attestation);
-                #[cfg(feature = "devnet2")]
                 let result = db
                     .latest_new_attestations_provider()
                     .insert(signed_attestation.validator_id, signed_attestation);
