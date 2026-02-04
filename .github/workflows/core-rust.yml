@@ -94,7 +94,7 @@ jobs:
       - name: Test
         run: cargo test --release --workspace -- --nocapture
 
-  test-devnet2:
+  test-devnet3:
     runs-on: ubuntu-latest
     needs: [format, cargo-clippy]
 
@@ -105,8 +105,8 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Test Devnet 2
-        run: make test-devnet2
+      - name: Test Devnet 3
+        run: make test-devnet3
 
   ef-tests:
     runs-on: ubuntu-latest
