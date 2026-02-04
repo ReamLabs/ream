@@ -47,7 +47,7 @@ jobs:
         run: |
           cargo clippy --all --all-targets --no-deps -- --deny warnings # clippy for ream, default features
           cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings # clippy for ream-bls, supranational feature
-          make clippy-devnet2
+          make clippy-devnet3
 
   cargo-sort:
     runs-on: ubuntu-latest
