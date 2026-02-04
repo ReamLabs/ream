@@ -3,15 +3,11 @@ use ream_chain_lean::{
     clock::{create_lean_clock_interval, get_initial_tick_count},
     messages::{LeanChainServiceMessage, ServiceResponse},
 };
-#[cfg(feature = "devnet2")]
-use ream_consensus_lean::attestation::AggregatedAttestations;
-#[cfg(feature = "devnet1")]
-use ream_consensus_lean::attestation::Attestation;
-#[cfg(feature = "devnet2")]
-use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
-    attestation::SignedAttestation,
-    block::{BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation},
+    attestation::{AggregatedAttestations, SignedAttestation},
+    block::{
+        BlockSignatures, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation,
+    },
 };
 use ream_keystore::lean_keystore::ValidatorKeystore;
 use ream_metrics::{
@@ -78,7 +74,7 @@ impl ValidatorService {
                                     .expect("Failed to send produce block to LeanChainService");
 
                                 // Wait for the block to be produced.
-                                let BlockWithSignatures { block, #[cfg(feature = "devnet1")] mut signatures, #[cfg(feature = "devnet2")] signatures } = match rx.await {
+                                let BlockWithSignatures { block, signatures } = match rx.await {
                                     Ok(ServiceResponse::Ok(block_with_signatures)) => block_with_signatures,
                                     Ok(ServiceResponse::Syncing) => {
                                         warn!("LeanChainService is syncing, cannot produce block for slot {slot}");
@@ -113,31 +109,18 @@ impl ValidatorService {
                                         return Err(anyhow!("Failed to receive attestation data from LeanChainService: {err:?}"));
                                     }
                                 };
-                                #[cfg(feature = "devnet1")]
-                                let message = Attestation { validator_id: keystore.index, data: attestation_data.clone() };
-                                #[cfg(feature = "devnet2")]
                                 let message = AggregatedAttestations { validator_id: keystore.index, data: attestation_data.clone() };
 
                                 let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
-                                #[cfg(feature = "devnet1")]
-                                let proposer_signature = keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
-                                #[cfg(feature = "devnet2")]
                                 let proposer_signature = keystore.private_key.sign(&attestation_data.tree_hash_root(), slot as u32)?;
                                 stop_timer(timer);
 
-                                #[cfg(feature = "devnet1")]
-                                {
-                                    signatures.push(proposer_signature).map_err(|err| anyhow!("Failed to push signature {err:?}"))?;
-                                }
 
                                 let signed_block_with_attestation = SignedBlockWithAttestation {
                                     message: BlockWithAttestation {
                                         block: block.clone(),
                                         proposer_attestation: message,
                                     },
-                                    #[cfg(feature = "devnet1")]
-                                    signature: signatures,
-                                    #[cfg(feature = "devnet2")]
                                     signature: BlockSignatures {
                                         attestation_signatures: signatures,
                                         proposer_signature,
@@ -197,12 +180,6 @@ impl ValidatorService {
                             // TODO: Sign the attestation with the keystore.
                             let mut signed_attestations = vec![];
                             for (_, keystore) in self.keystores.iter().enumerate().filter(|(index, _)| *index as u64 != slot % lean_network_spec().num_validators) {
-                                #[cfg(feature = "devnet1")]
-                                let message = Attestation {
-                                    validator_id: keystore.index,
-                                    data: attestation_data.clone()
-                                };
-                                #[cfg(feature = "devnet2")]
                                 let message = attestation_data.clone();
                                 let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
                                 let signature = keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
@@ -210,7 +187,6 @@ impl ValidatorService {
                                 signed_attestations.push(SignedAttestation {
                                     signature,
                                     message,
-                                    #[cfg(feature = "devnet2")]
                                     validator_id: keystore.index,
                                 });
                             }

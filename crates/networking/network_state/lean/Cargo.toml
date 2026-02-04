@@ -10,9 +10,9 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet1"]
-devnet1 = ["ream-consensus-lean/devnet1"]
+default = ["devnet2"]
 devnet2 = ["ream-consensus-lean/devnet2"]
+devnet3 = ["ream-consensus-lean/devnet3"]
 
 [dependencies]
 libp2p.workspace = true
