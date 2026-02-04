@@ -5,6 +5,7 @@ use ream_node::version::{
 
 const REAM_CARGO_FEATURES: &str = env!("REAM_CARGO_FEATURES");
 
+#[allow(clippy::const_is_empty)]
 pub fn startup_message() -> String {
     let cargo_features = if REAM_CARGO_FEATURES.is_empty() {
         "none"

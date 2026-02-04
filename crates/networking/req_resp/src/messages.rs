@@ -22,6 +22,13 @@ impl RequestMessage {
             RequestMessage::Lean(request_message) => request_message.supported_protocols(),
         }
     }
+
+    pub fn max_response_chunks(&self) -> u64 {
+        match self {
+            RequestMessage::Beacon(request_message) => request_message.max_response_chunks(),
+            RequestMessage::Lean(request_message) => request_message.max_response_chunks(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
