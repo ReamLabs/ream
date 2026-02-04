@@ -10,8 +10,6 @@ use serde_json::Value;
 
 const PATH_TO_TEST_DATA_FOLDER: &str = "./tests/assets";
 
-/// TODO: Update test to Fulu
-#[ignore = "Update test to Fulu"]
 #[tokio::test]
 async fn test_beacon_state_serialization() -> anyhow::Result<()> {
     let original_json = read_json_file("state.json")?;
@@ -19,7 +17,7 @@ async fn test_beacon_state_serialization() -> anyhow::Result<()> {
     let beacon_state: BeaconVersionedResponse<BeaconState> =
         serde_json::from_value(original_json.clone())?;
 
-    assert_eq!(beacon_state.version, "electra");
+    assert_eq!(beacon_state.version, "fulu");
     assert_eq!(beacon_state.data.latest_block_header.slot, 1);
     assert_eq!(
         beacon_state.data.latest_block_header.parent_root,
