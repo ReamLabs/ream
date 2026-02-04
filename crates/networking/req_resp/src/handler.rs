@@ -108,6 +108,8 @@ struct OutboundStream {
     state: Option<OutboundStreamState>,
     request_id: u64,
     content_type: String,
+    max_response_chunks: u64,
+    response_chunks_received: u64,
 }
 
 #[derive(Debug)]
@@ -188,6 +190,8 @@ impl ReqRespConnectionHandler {
             message,
         } = info;
 
+        let max_response_chunks = message.max_response_chunks();
+
         self.outbound_stream_timeouts
             .insert(self.outbound_stream_id);
         self.outbound_streams.insert(
@@ -204,6 +208,8 @@ impl ReqRespConnectionHandler {
                     message,
                 }),
                 request_id,
+                max_response_chunks,
+                response_chunks_received: 0,
             },
         );
 
@@ -478,6 +484,23 @@ impl ConnectionHandler for ReqRespConnectionHandler {
                                     ));
                                 }
                             };
+
+                            let response_chunks_received = entry.get().response_chunks_received + 1;
+                            let max_response_chunks = entry.get().max_response_chunks;
+
+                            if response_chunks_received > max_response_chunks {
+                                entry.remove_entry();
+                                self.outbound_stream_timeouts.remove(&stream_id);
+                                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                                    HandlerEvent::Err(ReqRespMessageError::Outbound {
+                                        request_id,
+                                        err: ReqRespError::InvalidData(format!(
+                                            "Response chunk limit exceeded: received {response_chunks_received} chunks, max allowed is {max_response_chunks}"
+                                        )),
+                                    }),
+                                ));
+                            }
+                            entry.get_mut().response_chunks_received = response_chunks_received;
 
                             if matches!(
                                 response_message,

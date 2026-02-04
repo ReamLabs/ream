@@ -22,7 +22,13 @@ use ssz_derive::{Decode, Encode};
 use status::Status;
 
 use super::protocol_id::BeaconSupportedProtocol;
-use crate::protocol_id::{ProtocolId, SupportedProtocol};
+use crate::{
+    constants::{
+        MAX_BLOBS_PER_BLOCK, MAX_REQUEST_BLOB_SIDECARS, MAX_REQUEST_BLOCKS,
+        MAX_REQUEST_DATA_COLUMN_SIDECARS_PER_COLUMN,
+    },
+    protocol_id::{ProtocolId, SupportedProtocol},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 #[ssz(enum_behaviour = "transparent")]
@@ -89,6 +95,30 @@ impl BeaconRequestMessage {
                 vec![ProtocolId::new(SupportedProtocol::Beacon(
                     BeaconSupportedProtocol::DataColumnSidecarsByRootV1,
                 ))]
+            }
+        }
+    }
+
+    pub fn max_response_chunks(&self) -> u64 {
+        match self {
+            BeaconRequestMessage::MetaData(_)
+            | BeaconRequestMessage::Goodbye(_)
+            | BeaconRequestMessage::Status(_)
+            | BeaconRequestMessage::Ping(_) => 1,
+
+            BeaconRequestMessage::BeaconBlocksByRange(req) => req.count.min(MAX_REQUEST_BLOCKS),
+            BeaconRequestMessage::BeaconBlocksByRoot(req) => req.inner.len() as u64,
+            BeaconRequestMessage::BlobSidecarsByRange(req) => {
+                (req.count * MAX_BLOBS_PER_BLOCK).min(MAX_REQUEST_BLOB_SIDECARS)
+            }
+            BeaconRequestMessage::BlobSidecarsByRoot(req) => req.inner.len() as u64,
+            BeaconRequestMessage::DataColumnSidecarsByRange(req) => {
+                let num_columns = req.columns.len() as u64;
+                (req.count * num_columns)
+                    .min(MAX_REQUEST_DATA_COLUMN_SIDECARS_PER_COLUMN * num_columns)
+            }
+            BeaconRequestMessage::DataColumnSidecarsByRoot(req) => {
+                req.inner.iter().map(|id| id.columns.len() as u64).sum()
             }
         }
     }
