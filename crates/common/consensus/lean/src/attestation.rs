@@ -1,4 +1,4 @@
-use alloy_primitives::{B256, FixedBytes};
+use alloy_primitives::B256;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -37,7 +37,7 @@ impl SignatureKey {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct AggregatedSignatureProof {
     pub participants: BitList<U4096>,
     pub proof_data: VariableList<u8, U1048576>,
@@ -119,7 +119,6 @@ pub struct AggregatedAttestation {
 /// Aggregated attestation bundled with aggregated signatures.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedAggregatedAttestation {
-    pub message: AggregatedAttestation,
-    /// U4096 = VALIDATOR_REGISTRY_LIMIT
-    pub signature: VariableList<FixedBytes<4000>, U4096>,
+    pub data: AttestationData,
+    pub proof: AggregatedSignatureProof,
 }

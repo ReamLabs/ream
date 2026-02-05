@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ream_consensus_lean::attestation::SignatureKey;
 use ream_post_quantum_crypto::leansig::signature::Signature;
-use redb::{Database, Durability, TableDefinition};
+use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 
 use crate::{
     errors::StoreError,
@@ -31,6 +31,18 @@ impl REDBTable for GossipSignaturesTable {
 }
 
 impl GossipSignaturesTable {
+    pub fn get_keys(&self) -> Result<Vec<SignatureKey>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+        let mut keys = Vec::new();
+
+        for item in table.iter()? {
+            let (key, _) = item?;
+            keys.push(key.value());
+        }
+        Ok(keys)
+    }
+
     pub fn clear(&self) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
