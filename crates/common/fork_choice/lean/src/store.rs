@@ -1262,8 +1262,8 @@ impl Store {
         #[cfg(feature = "devnet3")]
         if let Some(current_id) = self.validator_id {
             let proposer_subnet =
-                self.compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT);
-            let current_subnet = self.compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
+                compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT);
+            let current_subnet = compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
 
             if proposer_subnet == current_subnet {
                 gossip_signatures_provider.insert(
@@ -1643,9 +1643,8 @@ impl Store {
                     .ok_or_else(|| anyhow!("Current validator ID must be set for aggregation"))?;
 
                 let current_validator_subnet =
-                    self.compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
-                let attester_subnet =
-                    self.compute_subnet_id(validator_id, ATTESTATION_COMMITTEE_COUNT);
+                    compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
+                let attester_subnet = compute_subnet_id(validator_id, ATTESTATION_COMMITTEE_COUNT);
 
                 if current_validator_subnet == attester_subnet {
                     gossip_signatures_provider
@@ -1658,10 +1657,6 @@ impl Store {
         }
 
         Ok(())
-    }
-
-    pub fn compute_subnet_id(&self, validator_id: u64, num_committees: u64) -> u64 {
-        validator_id % num_committees
     }
 
     pub async fn produce_attestation_data(&self, slot: u64) -> anyhow::Result<AttestationData> {
@@ -1690,6 +1685,10 @@ impl Store {
             source: latest_justified_provider.get()?,
         })
     }
+}
+
+pub fn compute_subnet_id(validator_id: u64, num_committees: u64) -> u64 {
+    validator_id % num_committees
 }
 
 #[cfg(test)]

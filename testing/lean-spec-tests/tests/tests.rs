@@ -1,9 +1,8 @@
 use std::{env, fs, path::PathBuf};
 
-use lean_spec_tests::{
-    fork_choice::{load_fork_choice_test, run_fork_choice_test},
-    state_transition::{load_state_transition_test, run_state_transition_test},
-};
+#[cfg(feature = "devnet2")]
+use lean_spec_tests::fork_choice::{load_fork_choice_test, run_fork_choice_test};
+use lean_spec_tests::state_transition::{load_state_transition_test, run_state_transition_test};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -36,6 +35,7 @@ fn find_json_files(dir: &str) -> Vec<PathBuf> {
 }
 
 #[tokio::test]
+#[cfg(feature = "devnet2")]
 async fn test_all_fork_choice_fixtures() {
     // Initialize tracing subscriber for test output
     let env_filter = match env::var(EnvFilter::DEFAULT_ENV) {
