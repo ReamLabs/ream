@@ -80,7 +80,10 @@ impl ForwardBackgroundSyncer {
             })?;
             let time = lean_network_spec().genesis_time
                 + (block.message.block.slot * lean_network_spec().seconds_per_slot);
+            #[cfg(feature = "devnet2")]
             self.store.write().await.on_tick(time, false).await?;
+            #[cfg(feature = "devnet3")]
+            self.store.write().await.on_tick(time, false, false).await?;
             self.store.write().await.on_block(&block, true).await?;
         }
 

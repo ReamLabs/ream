@@ -81,8 +81,15 @@ mod tests {
         let ream_db = ReamDB::new(temp_path).expect("Failed to init Ream Database");
         let lean_db = ream_db.init_lean_db().expect("Failed to init lean db");
 
-        Store::get_forkchoice_store(signed_genesis_block, genesis_state, lean_db, Some(0))
-            .expect("Failed to create forkchoice store")
+        Store::get_forkchoice_store(
+            signed_genesis_block,
+            genesis_state,
+            lean_db,
+            Some(0),
+            #[cfg(feature = "devnet3")]
+            None,
+        )
+        .expect("Failed to create forkchoice store")
     }
 
     #[tokio::test]

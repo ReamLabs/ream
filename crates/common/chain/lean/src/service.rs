@@ -131,7 +131,10 @@ impl LeanChainService {
                         self.sync_status = self.update_sync_status().await?;
                     }
                     if self.sync_status == SyncStatus::Synced {
+                        #[cfg(feature = "devnet2")]
                         self.store.write().await.tick_interval(tick_count % 4 == 1).await.expect("Failed to tick interval");
+                        #[cfg(feature = "devnet3")]
+                        self.store.write().await.tick_interval(tick_count % 4 == 1, false).await.expect("Failed to tick interval");
                         self.step_head_sync(tick_count).await?;
                     }
 
@@ -622,7 +625,10 @@ impl LeanChainService {
                 .duration_since(UNIX_EPOCH)
                 .map_err(|err| anyhow!("System time before epoch: {err:?}"))?
                 .as_secs();
+            #[cfg(feature = "devnet2")]
             self.store.write().await.on_tick(now, false).await?;
+            #[cfg(feature = "devnet3")]
+            self.store.write().await.on_tick(now, false, false).await?;
         }
 
         Ok(sync_status)
@@ -931,10 +937,18 @@ impl LeanChainService {
         &mut self,
         signed_attestation: SignedAttestation,
     ) -> anyhow::Result<()> {
+        #[cfg(feature = "devnet2")]
         self.store
             .write()
             .await
             .on_gossip_attestation(signed_attestation)
+            .await?;
+
+        #[cfg(feature = "devnet3")]
+        self.store
+            .write()
+            .await
+            .on_gossip_attestation(signed_attestation, false)
             .await?;
 
         Ok(())
