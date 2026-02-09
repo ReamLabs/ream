@@ -284,6 +284,7 @@ impl LeanNetworkService {
                                 "block"
                             );
                         }
+                        #[cfg(feature = "devnet2")]
                         LeanP2PRequest::GossipAttestation(attestation) => {
                             let slot = attestation.message.slot;
                             self.publish_gossip(
@@ -291,6 +292,26 @@ impl LeanNetworkService {
                                 attestation.as_ssz_bytes(),
                                 slot,
                                 "attestation"
+                            );
+                        }
+                        #[cfg(feature = "devnet3")]
+                        LeanP2PRequest::GossipAttestation { subnet_id, attestation } => {
+                            let slot = attestation.message.slot;
+                            self.publish_gossip_to_subnet(
+                                subnet_id,
+                                attestation.as_ssz_bytes(),
+                                slot,
+                                "attestation"
+                            );
+                        }
+                        #[cfg(feature = "devnet3")]
+                        LeanP2PRequest::GossipAggregatedAttestation(aggregated) => {
+                            let slot = aggregated.data.slot;
+                            self.publish_gossip(
+                                |topic| matches!(topic, LeanGossipTopicKind::AggregatedAttestation),
+                                aggregated.as_ssz_bytes(),
+                                slot,
+                                "aggregated_attestation"
                             );
                         }
                         LeanP2PRequest::Request { peer_id, callback, message } => {
@@ -427,6 +448,26 @@ impl LeanNetworkService {
         }
     }
 
+    #[cfg(feature = "devnet3")]
+    fn publish_gossip_to_subnet(&mut self, subnet_id: u64, data: Vec<u8>, slot: u64, name: &str) {
+        let topic = self
+            .network_config
+            .gossipsub_config
+            .topics
+            .iter()
+            .find(|topic| matches!(&topic.kind, LeanGossipTopicKind::AttestationSubnet(id) if *id == subnet_id))
+            .map(|topic| IdentTopic::from(topic.clone()))
+            .unwrap_or_else(|| panic!("Lean attestation subnet {subnet_id} topic not configured"));
+
+        match self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+            Ok(_) => info!(slot, subnet_id, "Broadcasted {name}"),
+            Err(PublishError::Duplicate) => {
+                trace!(slot, subnet_id, "{name} already published (duplicate)");
+            }
+            Err(err) => warn!(slot, subnet_id, ?err, "Publish {name} failed"),
+        }
+    }
+
     async fn parse_swarm_event(
         &mut self,
         event: SwarmEvent<ReamBehaviourEvent>,
@@ -529,6 +570,7 @@ impl LeanNetworkService {
                         warn!("failed to send block for slot {slot} item to chain: {err:?}");
                     }
                 }
+                #[cfg(feature = "devnet2")]
                 Ok(LeanGossipsubMessage::Attestation(signed_attestation)) => {
                     let slot = signed_attestation.message.slot;
 
@@ -539,6 +581,40 @@ impl LeanNetworkService {
                         },
                     ) {
                         warn!("failed to send attestation for slot {slot} to chain: {err:?}");
+                    }
+                }
+                #[cfg(feature = "devnet3")]
+                Ok(LeanGossipsubMessage::Attestation {
+                    subnet_id,
+                    attestation: signed_attestation,
+                }) => {
+                    let slot = signed_attestation.message.slot;
+
+                    if let Err(err) = self.chain_message_sender.send(
+                        LeanChainServiceMessage::ProcessAttestation {
+                            signed_attestation,
+                            subnet_id,
+                            need_gossip: true,
+                        },
+                    ) {
+                        warn!(
+                            "failed to send attestation for slot {slot} subnet {subnet_id} to chain: {err:?}"
+                        );
+                    }
+                }
+                #[cfg(feature = "devnet3")]
+                Ok(LeanGossipsubMessage::AggregatedAttestation(aggregated_attestation)) => {
+                    let slot = aggregated_attestation.data.slot;
+
+                    if let Err(err) = self.chain_message_sender.send(
+                        LeanChainServiceMessage::ProcessAggregatedAttestation {
+                            aggregated_attestation,
+                            need_gossip: true,
+                        },
+                    ) {
+                        warn!(
+                            "failed to send aggregated attestation for slot {slot} to chain: {err:?}"
+                        );
                     }
                 }
                 Err(err) => warn!("Failed to decode {:?} gossip topic: {err:?}", message.topic),

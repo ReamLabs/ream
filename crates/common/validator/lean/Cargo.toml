@@ -11,8 +11,16 @@ version.workspace = true
 
 [features]
 default = ["devnet2"]
-devnet2 = ["ream-consensus-lean/devnet2", "ream-chain-lean/devnet2"]
-devnet3 = ["ream-consensus-lean/devnet3", "ream-chain-lean/devnet3"]
+devnet2 = [
+    "ream-consensus-lean/devnet2",
+    "ream-chain-lean/devnet2",
+    "ream-fork-choice-lean/devnet2",
+]
+devnet3 = [
+    "ream-consensus-lean/devnet3",
+    "ream-chain-lean/devnet3",
+    "ream-fork-choice-lean/devnet3",
+]
 
 [dependencies]
 alloy-primitives.workspace = true
@@ -30,6 +38,7 @@ tree_hash.workspace = true
 ream-chain-lean.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
+ream-fork-choice-lean.workspace = true
 ream-keystore.workspace = true
 ream-metrics.workspace = true
 ream-network-spec.workspace = true

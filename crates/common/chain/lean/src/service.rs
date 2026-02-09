@@ -270,31 +270,21 @@ impl LeanChainService {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
+                        #[cfg(feature = "devnet2")]
                         LeanChainServiceMessage::ProcessAttestation { signed_attestation, need_gossip } => {
                             if self.sync_status != SyncStatus::Synced {
                                 trace!("Received ProcessAttestation request while syncing. Ignoring.");
                                 continue;
                             }
 
-                            if enabled!(Level::DEBUG) {
-                                debug!(
-                                    slot = signed_attestation.message.slot,
-                                    head = ?signed_attestation.message.head,
-                                    source = ?signed_attestation.message.source,
-                                    target = ?signed_attestation.message.target,
-                                    "Processing attestation by Validator {}",
-                                    signed_attestation.validator_id,
-                                );
-                            } else {
-                                debug!(
-                                    slot = signed_attestation.message.slot,
-                                    head = ?signed_attestation.message.head,
-                                    source = ?signed_attestation.message.source,
-                                    target = ?signed_attestation.message.target,
-                                    "Processing attestation by Validator {}",
-                                    signed_attestation.validator_id,
-                                );
-                            }
+                            debug!(
+                                slot = signed_attestation.message.slot,
+                                head = ?signed_attestation.message.head,
+                                source = ?signed_attestation.message.source,
+                                target = ?signed_attestation.message.target,
+                                "Processing attestation by Validator {}",
+                                signed_attestation.validator_id,
+                            );
 
                             if let Err(err) = self.handle_process_attestation(*signed_attestation.clone()).await {
                                 warn!("Failed to handle process attestation message: {err:?}");
@@ -302,6 +292,50 @@ impl LeanChainService {
 
                             if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipAttestation(signed_attestation)) {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
+                            }
+                        }
+                        #[cfg(feature = "devnet3")]
+                        LeanChainServiceMessage::ProcessAttestation { signed_attestation, subnet_id, need_gossip } => {
+                            if self.sync_status != SyncStatus::Synced {
+                                trace!("Received ProcessAttestation request while syncing. Ignoring.");
+                                continue;
+                            }
+
+                            debug!(
+                                slot = signed_attestation.message.slot,
+                                head = ?signed_attestation.message.head,
+                                source = ?signed_attestation.message.source,
+                                target = ?signed_attestation.message.target,
+                                subnet_id,
+                                "Processing attestation by Validator {}",
+                                signed_attestation.validator_id,
+                            );
+
+                            if let Err(err) = self.handle_process_attestation(*signed_attestation.clone()).await {
+                                warn!("Failed to handle process attestation message: {err:?}");
+                            }
+
+                            if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipAttestation { subnet_id, attestation: signed_attestation }) {
+                                warn!("Failed to send item to outbound gossip channel: {err:?}");
+                            }
+                        }
+                        #[cfg(feature = "devnet3")]
+                        LeanChainServiceMessage::ProcessAggregatedAttestation { aggregated_attestation, need_gossip } => {
+                            if self.sync_status != SyncStatus::Synced {
+                                trace!("Received ProcessAggregatedAttestation request while syncing. Ignoring.");
+                                continue;
+                            }
+
+                            let slot = aggregated_attestation.data.slot;
+
+                            debug!(slot, "Processing aggregated attestation");
+
+                            if let Err(err) = self.store.write().await.on_gossip_aggregated_attestation(*aggregated_attestation.clone()).await {
+                                warn!("Failed to handle process aggregated attestation message: {err:?}");
+                            }
+
+                            if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipAggregatedAttestation(aggregated_attestation)) {
+                                warn!("Failed to send aggregated attestation to outbound gossip channel: {err:?}");
                             }
                         }
                         LeanChainServiceMessage::CheckIfCanonicalCheckpoint { peer_id, checkpoint, sender } => {

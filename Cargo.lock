@@ -6770,6 +6770,7 @@ dependencies = [
  "ream-chain-lean",
  "ream-consensus-lean",
  "ream-consensus-misc",
+ "ream-fork-choice-lean",
  "ream-keystore",
  "ream-metrics",
  "ream-network-spec",

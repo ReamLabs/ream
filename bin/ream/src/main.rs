@@ -42,6 +42,8 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     validator::Validator,
 };
+#[cfg(feature = "devnet3")]
+use ream_consensus_misc::constants::lean::ATTESTATION_COMMITTEE_COUNT;
 use ream_consensus_misc::{
     constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
 };
@@ -299,17 +301,44 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     // Initialize the lean network service
 
-    let fork = "devnet0".to_string();
+    #[cfg(feature = "devnet2")]
+    let fork = "devnet2".to_string();
+    #[cfg(feature = "devnet3")]
+    let fork = "devnet3".to_string();
+
+    #[cfg(feature = "devnet2")]
     let topics: Vec<LeanGossipTopic> = vec![
         LeanGossipTopic {
             fork: fork.clone(),
             kind: LeanGossipTopicKind::Block,
         },
         LeanGossipTopic {
-            fork,
+            fork: fork.clone(),
             kind: LeanGossipTopicKind::Attestation,
         },
     ];
+
+    #[cfg(feature = "devnet3")]
+    let topics: Vec<LeanGossipTopic> = {
+        let mut topics = vec![
+            LeanGossipTopic {
+                fork: fork.clone(),
+                kind: LeanGossipTopicKind::Block,
+            },
+            LeanGossipTopic {
+                fork: fork.clone(),
+                kind: LeanGossipTopicKind::AggregatedAttestation,
+            },
+        ];
+        // Create attestation subnet topics for each committee
+        for subnet_id in 0..ATTESTATION_COMMITTEE_COUNT {
+            topics.push(LeanGossipTopic {
+                fork: fork.clone(),
+                kind: LeanGossipTopicKind::AttestationSubnet(subnet_id),
+            });
+        }
+        topics
+    };
 
     let mut network_service = LeanNetworkService::new(
         Arc::new(LeanNetworkConfig {
