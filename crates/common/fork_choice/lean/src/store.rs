@@ -1096,6 +1096,16 @@ impl Store {
         let signatures_list = VariableList::new(proofs)
             .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
 
+        #[cfg(feature = "devnet3")]
+        let latest_finalized_provider = self.store.lock().await.latest_finalized_provider();
+        #[cfg(feature = "devnet3")]
+        let finalized_advanced =
+            post_state.latest_finalized.slot > latest_finalized_provider.get()?.slot;
+        #[cfg(feature = "devnet3")]
+        if finalized_advanced {
+            self.prune_stale_attestation_data().await?;
+        }
+
         Ok(BlockWithSignatures {
             block: candidate_block,
             signatures: signatures_list,
@@ -1142,6 +1152,7 @@ impl Store {
                 latest_justified_provider.get()?
             };
 
+        #[cfg(feature = "devnet2")]
         let latest_finalized =
             if parent_state.latest_finalized.slot > latest_finalized_provider.get()?.slot {
                 inc_int_counter_vec(&FINALIZATIONS_TOTAL, &["success"]);
@@ -1149,6 +1160,17 @@ impl Store {
             } else {
                 latest_finalized_provider.get()?
             };
+
+        #[cfg(feature = "devnet3")]
+        let finalized_advanced =
+            parent_state.latest_finalized.slot > latest_finalized_provider.get()?.slot;
+        #[cfg(feature = "devnet3")]
+        let latest_finalized = if finalized_advanced {
+            inc_int_counter_vec(&FINALIZATIONS_TOTAL, &["success"]);
+            parent_state.latest_finalized
+        } else {
+            latest_finalized_provider.get()?
+        };
 
         set_int_gauge_vec(&JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
         set_int_gauge_vec(&FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
@@ -1316,6 +1338,11 @@ impl Store {
                 },
             })
             .await?;
+        }
+
+        #[cfg(feature = "devnet3")]
+        if finalized_advanced {
+            self.prune_stale_attestation_data().await?;
         }
 
         stop_timer(block_processing_timer);
@@ -1684,6 +1711,42 @@ impl Store {
             target: self.get_attestation_target().await?,
             source: latest_justified_provider.get()?,
         })
+    }
+
+    #[cfg(feature = "devnet3")]
+    pub async fn prune_stale_attestation_data(&mut self) -> anyhow::Result<()> {
+        let (latest_finalized_provider, gossip_signatures_provider) = {
+            let db = self.store.lock().await;
+            (
+                db.latest_finalized_provider(),
+                db.gossip_signatures_provider(),
+            )
+        };
+
+        let finalized_slot = latest_finalized_provider.get()?.slot;
+        let stale_roots: HashSet<B256> = self
+            .attestation_data_by_root
+            .iter()
+            .filter(|(_, data)| data.target.slot <= finalized_slot)
+            .map(|(root, _)| *root)
+            .collect();
+
+        if stale_roots.is_empty() {
+            return Ok(());
+        }
+
+        self.attestation_data_by_root
+            .retain(|root, _| !stale_roots.contains(root));
+
+        self.latest_new_aggregated_payloads
+            .retain(|key, _| !stale_roots.contains(&key.data_root));
+
+        self.latest_known_aggregated_payloads
+            .retain(|key, _| !stale_roots.contains(&key.data_root));
+
+        gossip_signatures_provider.retain(|key| !stale_roots.contains(&key.data_root))?;
+
+        Ok(())
     }
 }
 

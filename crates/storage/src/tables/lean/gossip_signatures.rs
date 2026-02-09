@@ -52,4 +52,18 @@ impl GossipSignaturesTable {
         write_txn.commit()?;
         Ok(())
     }
+
+    pub fn retain<F>(&self, mut f: F) -> Result<(), StoreError>
+    where
+        F: FnMut(&SignatureKey) -> bool,
+    {
+        let mut write_txn = self.db.begin_write()?;
+        write_txn.set_durability(Durability::Immediate)?;
+        {
+            let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
+            table.retain(|keys, _| f(&keys))?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
 }
