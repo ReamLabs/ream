@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use libp2p_identity::PeerId;
+#[cfg(feature = "devnet3")]
+use ream_consensus_lean::attestation::SignedAggregatedAttestation;
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{BlockWithSignatures, SignedBlockWithAttestation},
@@ -34,8 +36,20 @@ pub enum LeanChainServiceMessage {
         signed_block_with_attestation: Box<SignedBlockWithAttestation>,
         need_gossip: bool,
     },
+    #[cfg(feature = "devnet2")]
     ProcessAttestation {
         signed_attestation: Box<SignedAttestation>,
+        need_gossip: bool,
+    },
+    #[cfg(feature = "devnet3")]
+    ProcessAttestation {
+        signed_attestation: Box<SignedAttestation>,
+        subnet_id: u64,
+        need_gossip: bool,
+    },
+    #[cfg(feature = "devnet3")]
+    ProcessAggregatedAttestation {
+        aggregated_attestation: Box<SignedAggregatedAttestation>,
         need_gossip: bool,
     },
     CheckIfCanonicalCheckpoint {
