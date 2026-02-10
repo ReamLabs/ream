@@ -169,7 +169,10 @@ fn test_all_ssz_fixtures() {
         .with_env_filter(env_filter)
         .try_init();
 
-    let fixtures = find_json_files("fixtures/consensus/ssz/devnet");
+    #[cfg(feature = "devnet2")]
+    let fixtures = find_json_files("fixtures/devnet2/ssz/devnet");
+    #[cfg(feature = "devnet3")]
+    let fixtures = find_json_files("fixtures/devnet3/ssz/devnet");
 
     if fixtures.is_empty() {
         info!(

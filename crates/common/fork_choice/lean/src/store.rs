@@ -50,6 +50,7 @@ use ream_storage::{
     },
 };
 use ream_sync::rwlock::{Reader, Writer};
+use ssz::{Decode, Encode};
 use ssz_types::{BitList, VariableList, typenum::U4096};
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
@@ -1323,8 +1324,7 @@ impl Store {
             let signature_bytes = signed_block_with_attestation
                 .signature
                 .proposer_signature
-                .inner
-                .to_vec();
+                .as_ssz_bytes();
 
             let proof_data = signature_bytes.try_into().map_err(|err| {
                 anyhow!("Failed to convert proposer signature to VariableList {err:?}")
@@ -1505,7 +1505,8 @@ impl Store {
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
-            let sig = Signature::from(proof.proof_data.as_ref());
+            let sig = Signature::from_ssz_bytes(proof.proof_data.as_ref())
+                .map_err(|err| anyhow!("Failed to decode signature: {err:?}"))?;
 
             for pubkey in &public_keys {
                 let is_valid = sig.verify(pubkey, attestation_slot as u32, &data_root.0)?;
