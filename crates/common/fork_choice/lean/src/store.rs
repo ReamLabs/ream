@@ -1275,7 +1275,7 @@ impl Store {
                 proposer_attestation.validator_id,
                 &proposer_attestation.data,
             ),
-            signed_block_with_attestation.signature.proposer_signature,
+            signed_block_with_attestation.signature.proposer_signature.clone(),
         )?;
 
         #[cfg(feature = "devnet3")]
@@ -1293,7 +1293,7 @@ impl Store {
                         proposer_attestation.validator_id,
                         &proposer_attestation.data,
                     ),
-                    signed_block_with_attestation.signature.proposer_signature,
+                    signed_block_with_attestation.signature.proposer_signature.clone(),
                 )?;
             }
         }
@@ -1304,7 +1304,7 @@ impl Store {
                 SignedAttestation {
                     validator_id: proposer_attestation.validator_id,
                     message: proposer_attestation.data.clone(),
-                    signature: signed_block_with_attestation.signature.proposer_signature,
+                    signature: signed_block_with_attestation.signature.proposer_signature.clone(),
                 },
                 false,
             )
@@ -1624,7 +1624,7 @@ impl Store {
     ) -> anyhow::Result<()> {
         let validator_id = signed_attestation.validator_id;
         let attestation_data = &signed_attestation.message;
-        let signature = signed_attestation.signature;
+        let signature = signed_attestation.signature.clone();
 
         self.validate_attestation(&signed_attestation).await?;
 
