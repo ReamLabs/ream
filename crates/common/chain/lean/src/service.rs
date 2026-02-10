@@ -326,9 +326,7 @@ impl LeanChainService {
                                 continue;
                             }
 
-                            let slot = aggregated_attestation.data.slot;
-
-                            debug!(slot, "Processing aggregated attestation");
+                            debug!(aggregated_attestation.data.slot, "Processing aggregated attestation");
 
                             if let Err(err) = self.store.write().await.on_gossip_aggregated_attestation(*aggregated_attestation.clone()).await {
                                 warn!("Failed to handle process aggregated attestation message: {err:?}");
