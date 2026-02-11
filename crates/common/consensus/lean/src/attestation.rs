@@ -102,7 +102,7 @@ impl AggregatedAttestation {
 }
 
 /// Validator attestation bundled with its signature.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct SignedAttestation {
     pub validator_id: u64,
     pub message: AttestationData,

@@ -69,7 +69,6 @@ pub struct SSZTest {
     pub type_name: String,
     pub value: serde_json::Value,
     pub serialized: String,
-    pub root: B256,
 }
 
 // ============================================================================

@@ -1,7 +1,6 @@
 use leansig::{MESSAGE_LENGTH, signature::SignatureScheme};
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, DecodeError, Encode};
-use tree_hash::TreeHash;
 
 use crate::leansig::{LeanSigScheme, public_key::PublicKey};
 
@@ -55,28 +54,6 @@ impl Decode for Signature {
         Ok(Self {
             inner: LeanSigSignature::from_ssz_bytes(bytes)?,
         })
-    }
-}
-
-impl TreeHash for Signature {
-    fn tree_hash_type() -> tree_hash::TreeHashType {
-        // Signatures are variable-length containers
-        tree_hash::TreeHashType::Container
-    }
-
-    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
-        unreachable!("Signature is not a basic type")
-    }
-
-    fn tree_hash_packing_factor() -> usize {
-        unreachable!("Signature is not a basic type")
-    }
-
-    fn tree_hash_root(&self) -> tree_hash::Hash256 {
-        // Hash the SSZ encoding as the tree hash root
-        // This matches how variable-length containers are hashed
-        let bytes = self.inner.as_ssz_bytes();
-        tree_hash::merkle_root(&bytes, 0)
     }
 }
 
