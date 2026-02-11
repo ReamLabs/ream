@@ -22,10 +22,9 @@ use tree_hash::TreeHash;
 use crate::types::{
     TestFixture,
     ssz_test::{
-        AggregatedAttestationJSON, AttestationDataJSON, AttestationJSON, BlockBodyJSON,
-        BlockHeaderJSON, BlockJSON, BlockSignaturesJSON, BlockWithAttestationJSON, CheckpointJSON,
-        ConfigJSON, SSZTest, SignedAttestationJSON, SignedBlockWithAttestationJSON, StateJSON,
-        ValidatorJSON,
+        AggregatedAttestationJSON, AttestationJSON, BlockBodyJSON, BlockHeaderJSON, BlockJSON,
+        BlockSignaturesJSON, BlockWithAttestationJSON, ConfigJSON, SSZTest, SignedAttestationJSON,
+        SignedBlockWithAttestationJSON, StateJSON, ValidatorJSON,
     },
 };
 
@@ -54,67 +53,59 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<()> {
     debug!("  Network: {}", test.network);
     debug!("  Type: {}", test.type_name);
 
-    // Parse expected values
-    let expected_serialized = parse_hex_bytes(&test.serialized)?;
+    let expected_ssz = parse_hex_bytes(&test.serialized)?;
     let expected_root = test.root;
 
-    // Run the test based on type - using intermediate JSON types and converting to ream types
     match test.type_name.as_str() {
-        "Checkpoint" => {
-            run_test::<CheckpointJSON, Checkpoint>(&test.value, &expected_serialized, expected_root)
+        // Types that deserialize directly (snake_case in JSON)
+        "Checkpoint" => run_test_direct::<Checkpoint>(&test.value, &expected_ssz, expected_root),
+        "AttestationData" => {
+            run_test_direct::<AttestationData>(&test.value, &expected_ssz, expected_root)
         }
-        "AttestationData" => run_test::<AttestationDataJSON, AttestationData>(
-            &test.value,
-            &expected_serialized,
-            expected_root,
-        ),
+
+        // Types with JSON intermediate conversion
         "AggregatedAttestation" => run_test::<AggregatedAttestationJSON, AggregatedAttestation>(
             &test.value,
-            &expected_serialized,
+            &expected_ssz,
             expected_root,
         ),
         "Attestation" => run_test::<AttestationJSON, AggregatedAttestations>(
             &test.value,
-            &expected_serialized,
+            &expected_ssz,
             expected_root,
         ),
         "BlockBody" => {
-            run_test::<BlockBodyJSON, BlockBody>(&test.value, &expected_serialized, expected_root)
+            run_test::<BlockBodyJSON, BlockBody>(&test.value, &expected_ssz, expected_root)
         }
-        "BlockHeader" => run_test::<BlockHeaderJSON, BlockHeader>(
-            &test.value,
-            &expected_serialized,
-            expected_root,
-        ),
-        "Block" => run_test::<BlockJSON, Block>(&test.value, &expected_serialized, expected_root),
-        "Config" => {
-            run_test::<ConfigJSON, Config>(&test.value, &expected_serialized, expected_root)
+        "BlockHeader" => {
+            run_test::<BlockHeaderJSON, BlockHeader>(&test.value, &expected_ssz, expected_root)
         }
+        "Block" => run_test::<BlockJSON, Block>(&test.value, &expected_ssz, expected_root),
+        "Config" => run_test::<ConfigJSON, Config>(&test.value, &expected_ssz, expected_root),
         "Validator" => {
-            run_test::<ValidatorJSON, Validator>(&test.value, &expected_serialized, expected_root)
+            run_test::<ValidatorJSON, Validator>(&test.value, &expected_ssz, expected_root)
         }
-        "State" => {
-            run_test::<StateJSON, LeanState>(&test.value, &expected_serialized, expected_root)
-        }
-        // Types without proper TreeHash implementation - only test SSZ serialization
+        "State" => run_test::<StateJSON, LeanState>(&test.value, &expected_ssz, expected_root),
+
+        // Types without TreeHash - SSZ only
         "SignedAttestation" => run_test_ssz_only::<SignedAttestationJSON, SignedAttestation>(
             &test.value,
-            &expected_serialized,
+            &expected_ssz,
         ),
-        "BlockSignatures" => run_test_ssz_only::<BlockSignaturesJSON, BlockSignatures>(
-            &test.value,
-            &expected_serialized,
-        ),
+        "BlockSignatures" => {
+            run_test_ssz_only::<BlockSignaturesJSON, BlockSignatures>(&test.value, &expected_ssz)
+        }
         "BlockWithAttestation" => {
             run_test_ssz_only::<BlockWithAttestationJSON, BlockWithAttestation>(
                 &test.value,
-                &expected_serialized,
+                &expected_ssz,
             )
         }
         "SignedBlockWithAttestation" => run_test_ssz_only::<
             SignedBlockWithAttestationJSON,
             SignedBlockWithAttestation,
-        >(&test.value, &expected_serialized),
+        >(&test.value, &expected_ssz),
+
         _ => {
             warn!("Unknown type: {}, skipping", test.type_name);
             Ok(())
@@ -122,73 +113,67 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<()> {
     }
 }
 
-/// Run a test by deserializing JSON into intermediate type, converting to ream type,
-/// then verifying SSZ serialization and tree hash root.
+/// Run test with JSON intermediate type conversion
 fn run_test<J, T>(
     value: &serde_json::Value,
-    expected_serialized: &[u8],
+    expected_ssz: &[u8],
     expected_root: B256,
 ) -> anyhow::Result<()>
 where
     J: serde::de::DeserializeOwned,
     T: for<'a> TryFrom<&'a J, Error = anyhow::Error> + Encode + TreeHash,
 {
-    // Deserialize into intermediate JSON type
     let json_value: J = serde_json::from_value(value.clone())
-        .map_err(|err| anyhow!("Failed to deserialize JSON value: {err}"))?;
-
-    // Convert to ream type
+        .map_err(|err| anyhow!("Failed to deserialize JSON: {err}"))?;
     let typed_value: T = (&json_value).try_into()?;
-
-    // SSZ serialize
-    let serialized = typed_value.as_ssz_bytes();
-    if serialized != expected_serialized {
-        bail!(
-            "SSZ serialization mismatch:\n  expected: 0x{}\n  got:      0x{}",
-            hex::encode(expected_serialized),
-            hex::encode(&serialized)
-        );
-    }
-
-    // Compute tree hash root
-    let root = typed_value.tree_hash_root();
-    if root != expected_root {
-        bail!("Tree hash root mismatch:\n  expected: {expected_root}\n  got:      {root}");
-    }
-
-    Ok(())
+    verify_ssz(&typed_value, expected_ssz)?;
+    verify_root(&typed_value, expected_root)
 }
 
-/// Run a test for types without TreeHash - only verify SSZ serialization.
-fn run_test_ssz_only<J, T>(
+/// Run test for types that deserialize directly
+fn run_test_direct<T: serde::de::DeserializeOwned + Encode + TreeHash>(
     value: &serde_json::Value,
-    expected_serialized: &[u8],
-) -> anyhow::Result<()>
+    expected_ssz: &[u8],
+    expected_root: B256,
+) -> anyhow::Result<()> {
+    let typed_value: T = serde_json::from_value(value.clone())
+        .map_err(|err| anyhow!("Failed to deserialize JSON: {err}"))?;
+    verify_ssz(&typed_value, expected_ssz)?;
+    verify_root(&typed_value, expected_root)
+}
+
+/// Run test for types without TreeHash (SSZ only)
+fn run_test_ssz_only<J, T>(value: &serde_json::Value, expected_ssz: &[u8]) -> anyhow::Result<()>
 where
     J: serde::de::DeserializeOwned,
     T: for<'a> TryFrom<&'a J, Error = anyhow::Error> + Encode,
 {
-    // Deserialize into intermediate JSON type
     let json_value: J = serde_json::from_value(value.clone())
-        .map_err(|err| anyhow!("Failed to deserialize JSON value: {err}"))?;
-
-    // Convert to ream type
+        .map_err(|err| anyhow!("Failed to deserialize JSON: {err}"))?;
     let typed_value: T = (&json_value).try_into()?;
+    verify_ssz(&typed_value, expected_ssz)
+}
 
-    // SSZ serialize
-    let serialized = typed_value.as_ssz_bytes();
-    if serialized != expected_serialized {
+fn verify_ssz<T: Encode>(value: &T, expected: &[u8]) -> anyhow::Result<()> {
+    let actual = value.as_ssz_bytes();
+    if actual != expected {
         bail!(
-            "SSZ serialization mismatch:\n  expected: 0x{}\n  got:      0x{}",
-            hex::encode(expected_serialized),
-            hex::encode(&serialized)
+            "SSZ mismatch:\n  expected: 0x{}\n  got:      0x{}",
+            hex::encode(expected),
+            hex::encode(&actual)
         );
     }
-
     Ok(())
 }
 
-/// Parse a hex string (with 0x prefix) into bytes
+fn verify_root<T: TreeHash>(value: &T, expected: B256) -> anyhow::Result<()> {
+    let actual = value.tree_hash_root();
+    if actual != expected {
+        bail!("TreeHash mismatch:\n  expected: {expected}\n  got:      {actual}");
+    }
+    Ok(())
+}
+
 fn parse_hex_bytes(hex_str: &str) -> anyhow::Result<Vec<u8>> {
     let hex_str = hex_str.strip_prefix("0x").unwrap_or(hex_str);
     hex::decode(hex_str).map_err(|err| anyhow!("Failed to parse hex: {err}"))
@@ -200,10 +185,13 @@ mod tests {
 
     #[test]
     fn test_parse_hex_bytes() {
-        let bytes = parse_hex_bytes("0xdeadbeef").unwrap();
-        assert_eq!(bytes, vec![0xde, 0xad, 0xbe, 0xef]);
-
-        let bytes = parse_hex_bytes("deadbeef").unwrap();
-        assert_eq!(bytes, vec![0xde, 0xad, 0xbe, 0xef]);
+        assert_eq!(
+            parse_hex_bytes("0xdeadbeef").unwrap(),
+            vec![0xde, 0xad, 0xbe, 0xef]
+        );
+        assert_eq!(
+            parse_hex_bytes("deadbeef").unwrap(),
+            vec![0xde, 0xad, 0xbe, 0xef]
+        );
     }
 }
