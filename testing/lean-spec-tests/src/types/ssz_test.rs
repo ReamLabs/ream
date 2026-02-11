@@ -76,7 +76,7 @@ pub struct SSZTest {
 // ============================================================================
 
 /// Creates a passthrough JSON wrapper that deserializes directly to the inner type.
-macro_rules! passthrough_wrapper {
+macro_rules! passthrough_conversion {
     ($name:ident, $inner:ty) => {
         #[derive(Debug, Deserialize, Clone)]
         #[serde(transparent)]
@@ -91,7 +91,7 @@ macro_rules! passthrough_wrapper {
     };
 }
 
-/// Creates a TryFrom impl where all fields are copied directly (for Copy types).
+/// Creates a TryFrom impl where all fields are copied directly.
 macro_rules! simple_conversion {
     ($json:ident => $target:ty { $($field:ident),+ }) => {
         impl TryFrom<&$json> for $target {
@@ -133,8 +133,8 @@ pub struct AggregationBitsJSON {
     pub data: Vec<bool>,
 }
 
-passthrough_wrapper!(CheckpointJSON, ReamCheckpoint);
-passthrough_wrapper!(AttestationDataJSON, ReamAttestationData);
+passthrough_conversion!(CheckpointJSON, ReamCheckpoint);
+passthrough_conversion!(AttestationDataJSON, ReamAttestationData);
 
 // ============================================================================
 // Config
