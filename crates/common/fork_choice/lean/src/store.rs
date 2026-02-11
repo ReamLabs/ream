@@ -50,6 +50,7 @@ use ream_storage::{
     },
 };
 use ream_sync::rwlock::{Reader, Writer};
+#[cfg(feature = "devnet3")]
 use ssz::{Decode, Encode};
 use ssz_types::{BitList, VariableList, typenum::U4096};
 use tokio::sync::Mutex;

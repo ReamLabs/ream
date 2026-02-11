@@ -2,8 +2,10 @@ use std::{env, fs, path::PathBuf};
 
 #[cfg(feature = "devnet2")]
 use lean_spec_tests::fork_choice::{load_fork_choice_test, run_fork_choice_test};
-use lean_spec_tests::ssz_test::{load_ssz_test, run_ssz_test};
-use lean_spec_tests::state_transition::{load_state_transition_test, run_state_transition_test};
+use lean_spec_tests::{
+    ssz_test::{load_ssz_test, run_ssz_test},
+    state_transition::{load_state_transition_test, run_state_transition_test},
+};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 

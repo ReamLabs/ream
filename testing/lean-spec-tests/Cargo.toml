@@ -18,9 +18,9 @@ devnet3 = ["ream-consensus-lean/devnet3", "ream-fork-choice-lean/devnet3"]
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
-ssz = { package = "ethereum_ssz", version = "0.10" }
 serde.workspace = true
 serde_json.workspace = true
+ssz = { package = "ethereum_ssz", version = "0.10" }
 ssz_types.workspace = true
 tokio.workspace = true
 tracing.workspace = true
