@@ -63,46 +63,6 @@ impl TryFrom<&ConfigJSON> for ReamConfig {
     }
 }
 
-/// Checkpoint - already snake_case in JSON, but define for consistency
-#[derive(Debug, Deserialize, Clone)]
-pub struct CheckpointJSON {
-    pub root: B256,
-    pub slot: u64,
-}
-
-impl TryFrom<&CheckpointJSON> for ReamCheckpoint {
-    type Error = anyhow::Error;
-
-    fn try_from(cp: &CheckpointJSON) -> anyhow::Result<Self> {
-        Ok(ReamCheckpoint {
-            root: cp.root,
-            slot: cp.slot,
-        })
-    }
-}
-
-/// AttestationData - already snake_case in JSON
-#[derive(Debug, Deserialize, Clone)]
-pub struct AttestationDataJSON {
-    pub slot: u64,
-    pub head: CheckpointJSON,
-    pub target: CheckpointJSON,
-    pub source: CheckpointJSON,
-}
-
-impl TryFrom<&AttestationDataJSON> for ReamAttestationData {
-    type Error = anyhow::Error;
-
-    fn try_from(data: &AttestationDataJSON) -> anyhow::Result<Self> {
-        Ok(ReamAttestationData {
-            slot: data.slot,
-            head: (&data.head).try_into()?,
-            target: (&data.target).try_into()?,
-            source: (&data.source).try_into()?,
-        })
-    }
-}
-
 /// BlockHeader with camelCase fields
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -174,7 +134,7 @@ pub struct AggregationBitsJSON {
 #[serde(rename_all = "camelCase")]
 pub struct AggregatedAttestationJSON {
     pub aggregation_bits: AggregationBitsJSON,
-    pub data: AttestationDataJSON,
+    pub data: ReamAttestationData,
 }
 
 impl TryFrom<&AggregatedAttestationJSON> for ReamAggregatedAttestation {
@@ -193,7 +153,7 @@ impl TryFrom<&AggregatedAttestationJSON> for ReamAggregatedAttestation {
 
         Ok(ReamAggregatedAttestation {
             aggregation_bits,
-            message: (&att.data).try_into()?,
+            message: att.data.clone(),
         })
     }
 }
@@ -203,7 +163,7 @@ impl TryFrom<&AggregatedAttestationJSON> for ReamAggregatedAttestation {
 #[serde(rename_all = "camelCase")]
 pub struct AttestationJSON {
     pub validator_id: u64,
-    pub data: AttestationDataJSON,
+    pub data: ReamAttestationData,
 }
 
 impl TryFrom<&AttestationJSON> for ReamAggregatedAttestations {
@@ -212,7 +172,7 @@ impl TryFrom<&AttestationJSON> for ReamAggregatedAttestations {
     fn try_from(att: &AttestationJSON) -> anyhow::Result<Self> {
         Ok(ReamAggregatedAttestations {
             validator_id: att.validator_id,
-            data: (&att.data).try_into()?,
+            data: att.data.clone(),
         })
     }
 }
@@ -271,8 +231,8 @@ pub struct StateJSON {
     pub config: ConfigJSON,
     pub slot: u64,
     pub latest_block_header: BlockHeaderJSON,
-    pub latest_justified: CheckpointJSON,
-    pub latest_finalized: CheckpointJSON,
+    pub latest_justified: ReamCheckpoint,
+    pub latest_finalized: ReamCheckpoint,
     pub historical_block_hashes: DataListJSON<B256>,
     pub justified_slots: DataListJSON<bool>,
     pub validators: DataListJSON<ValidatorJSON>,
@@ -320,8 +280,8 @@ impl TryFrom<&StateJSON> for ReamState {
             config: (&state.config).try_into()?,
             slot: state.slot,
             latest_block_header: (&state.latest_block_header).try_into()?,
-            latest_justified: (&state.latest_justified).try_into()?,
-            latest_finalized: (&state.latest_finalized).try_into()?,
+            latest_justified: state.latest_justified,
+            latest_finalized: state.latest_finalized,
             historical_block_hashes: VariableList::try_from(
                 state.historical_block_hashes.data.clone(),
             )
@@ -347,7 +307,7 @@ impl TryFrom<&StateJSON> for ReamState {
 #[serde(rename_all = "camelCase")]
 pub struct SignedAttestationJSON {
     pub validator_id: u64,
-    pub message: AttestationDataJSON,
+    pub message: ReamAttestationData,
     pub signature: String,
 }
 
@@ -364,7 +324,7 @@ impl TryFrom<&SignedAttestationJSON> for ReamSignedAttestation {
 
         Ok(ReamSignedAttestation {
             validator_id: att.validator_id,
-            message: (&att.message).try_into()?,
+            message: att.message.clone(),
             signature,
         })
     }
