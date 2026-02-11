@@ -119,6 +119,21 @@ macro_rules! nested_conversion {
     };
 }
 
+/// Creates a TryFrom impl with custom conversion expression per field.
+macro_rules! custom_conversion {
+    ($json:ident as $val:ident => $target:ty { $($field:ident: $conv:expr),+ $(,)? }) => {
+        impl TryFrom<&$json> for $target {
+            type Error = anyhow::Error;
+            #[allow(clippy::redundant_closure_call)]
+            fn try_from($val: &$json) -> anyhow::Result<Self> {
+                Ok(Self {
+                    $($field: $conv),+
+                })
+            }
+        }
+    };
+}
+
 // ============================================================================
 // Common JSON wrapper types
 // ============================================================================
@@ -174,19 +189,16 @@ pub struct ValidatorJSON {
     pub index: u64,
 }
 
-impl TryFrom<&ValidatorJSON> for ReamValidator {
-    type Error = anyhow::Error;
-    fn try_from(validator: &ValidatorJSON) -> anyhow::Result<Self> {
-        let bytes = decode_hex(&validator.pubkey)?;
+custom_conversion!(ValidatorJSON as value => ReamValidator {
+    public_key: {
+        let bytes = decode_hex(&value.pubkey)?;
         if bytes.len() != 52 {
             return Err(anyhow!("Expected 52-byte pubkey, got {}", bytes.len()));
         }
-        Ok(ReamValidator {
-            public_key: PublicKey::from(&bytes[..]),
-            index: validator.index,
-        })
-    }
-}
+        PublicKey::from(&bytes[..])
+    },
+    index: value.index,
+});
 
 // ============================================================================
 // Attestations
@@ -199,15 +211,10 @@ pub struct AggregatedAttestationJSON {
     pub data: ReamAttestationData,
 }
 
-impl TryFrom<&AggregatedAttestationJSON> for ReamAggregatedAttestation {
-    type Error = anyhow::Error;
-    fn try_from(attestation: &AggregatedAttestationJSON) -> anyhow::Result<Self> {
-        Ok(ReamAggregatedAttestation {
-            aggregation_bits: bools_to_bitlist(&attestation.aggregation_bits.data)?,
-            message: attestation.data.clone(),
-        })
-    }
-}
+custom_conversion!(AggregatedAttestationJSON as value => ReamAggregatedAttestation {
+    aggregation_bits: bools_to_bitlist(&value.aggregation_bits.data)?,
+    message: value.data.clone(),
+});
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -216,15 +223,10 @@ pub struct AttestationJSON {
     pub data: ReamAttestationData,
 }
 
-impl TryFrom<&AttestationJSON> for ReamAggregatedAttestations {
-    type Error = anyhow::Error;
-    fn try_from(attestation: &AttestationJSON) -> anyhow::Result<Self> {
-        Ok(ReamAggregatedAttestations {
-            validator_id: attestation.validator_id,
-            data: attestation.data.clone(),
-        })
-    }
-}
+custom_conversion!(AttestationJSON as value => ReamAggregatedAttestations {
+    validator_id: value.validator_id,
+    data: value.data.clone(),
+});
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -234,16 +236,11 @@ pub struct SignedAttestationJSON {
     pub signature: String,
 }
 
-impl TryFrom<&SignedAttestationJSON> for ReamSignedAttestation {
-    type Error = anyhow::Error;
-    fn try_from(attestation: &SignedAttestationJSON) -> anyhow::Result<Self> {
-        Ok(ReamSignedAttestation {
-            validator_id: attestation.validator_id,
-            message: attestation.message.clone(),
-            signature: decode_signature(&attestation.signature)?,
-        })
-    }
-}
+custom_conversion!(SignedAttestationJSON as value => ReamSignedAttestation {
+    validator_id: value.validator_id,
+    message: value.message.clone(),
+    signature: decode_signature(&value.signature)?,
+});
 
 // ============================================================================
 // Block
@@ -254,21 +251,13 @@ pub struct BlockBodyJSON {
     pub attestations: DataListJSON<AggregatedAttestationJSON>,
 }
 
-impl TryFrom<&BlockBodyJSON> for ReamBlockBody {
-    type Error = anyhow::Error;
-    fn try_from(body: &BlockBodyJSON) -> anyhow::Result<Self> {
-        let attestations: Vec<_> = body
-            .attestations
-            .data
-            .iter()
+custom_conversion!(BlockBodyJSON as value => ReamBlockBody {
+    attestations: VariableList::try_from(
+        value.attestations.data.iter()
             .map(TryInto::try_into)
-            .collect::<Result<_, _>>()?;
-        Ok(ReamBlockBody {
-            attestations: VariableList::try_from(attestations)
-                .map_err(|error| anyhow!("{error}"))?,
-        })
-    }
-}
+            .collect::<Result<Vec<_>, _>>()?
+    ).map_err(|error| anyhow!("{error}"))?,
+});
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -280,18 +269,13 @@ pub struct BlockJSON {
     pub body: BlockBodyJSON,
 }
 
-impl TryFrom<&BlockJSON> for ReamBlock {
-    type Error = anyhow::Error;
-    fn try_from(block: &BlockJSON) -> anyhow::Result<Self> {
-        Ok(ReamBlock {
-            slot: block.slot,
-            proposer_index: block.proposer_index,
-            parent_root: block.parent_root,
-            state_root: block.state_root,
-            body: (&block.body).try_into()?,
-        })
-    }
-}
+custom_conversion!(BlockJSON as value => ReamBlock {
+    slot: value.slot,
+    proposer_index: value.proposer_index,
+    parent_root: value.parent_root,
+    state_root: value.state_root,
+    body: (&value.body).try_into()?,
+});
 
 // ============================================================================
 // State
@@ -312,35 +296,24 @@ pub struct StateJSON {
     pub justifications_validators: DataListJSON<bool>,
 }
 
-impl TryFrom<&StateJSON> for ReamState {
-    type Error = anyhow::Error;
-    fn try_from(state: &StateJSON) -> anyhow::Result<Self> {
-        let validators: Vec<_> = state
-            .validators
-            .data
-            .iter()
+custom_conversion!(StateJSON as value => ReamState {
+    config: (&value.config).try_into()?,
+    slot: value.slot,
+    latest_block_header: (&value.latest_block_header).try_into()?,
+    latest_justified: value.latest_justified,
+    latest_finalized: value.latest_finalized,
+    historical_block_hashes: VariableList::try_from(value.historical_block_hashes.data.clone())
+        .map_err(|error| anyhow!("{error}"))?,
+    justified_slots: bools_to_bitlist::<U262144>(&value.justified_slots.data)?,
+    validators: VariableList::try_from(
+        value.validators.data.iter()
             .map(TryInto::try_into)
-            .collect::<Result<_, _>>()?;
-        Ok(ReamState {
-            config: (&state.config).try_into()?,
-            slot: state.slot,
-            latest_block_header: (&state.latest_block_header).try_into()?,
-            latest_justified: state.latest_justified,
-            latest_finalized: state.latest_finalized,
-            historical_block_hashes: VariableList::try_from(
-                state.historical_block_hashes.data.clone(),
-            )
-            .map_err(|error| anyhow!("{error}"))?,
-            justified_slots: bools_to_bitlist::<U262144>(&state.justified_slots.data)?,
-            validators: VariableList::try_from(validators).map_err(|error| anyhow!("{error}"))?,
-            justifications_roots: VariableList::try_from(state.justifications_roots.data.clone())
-                .map_err(|error| anyhow!("{error}"))?,
-            justifications_validators: bools_to_bitlist::<U1073741824>(
-                &state.justifications_validators.data,
-            )?,
-        })
-    }
-}
+            .collect::<Result<Vec<_>, _>>()?
+    ).map_err(|error| anyhow!("{error}"))?,
+    justifications_roots: VariableList::try_from(value.justifications_roots.data.clone())
+        .map_err(|error| anyhow!("{error}"))?,
+    justifications_validators: bools_to_bitlist::<U1073741824>(&value.justifications_validators.data)?,
+});
 
 // ============================================================================
 // Signature-related types
@@ -358,16 +331,11 @@ pub struct AggregatedSignatureProofJSON {
     pub proof_data: ProofDataJSON,
 }
 
-impl TryFrom<&AggregatedSignatureProofJSON> for ReamAggregatedSignatureProof {
-    type Error = anyhow::Error;
-    fn try_from(proof: &AggregatedSignatureProofJSON) -> anyhow::Result<Self> {
-        Ok(ReamAggregatedSignatureProof {
-            participants: bools_to_bitlist(&proof.participants.data)?,
-            proof_data: VariableList::<u8, U1048576>::try_from(decode_hex(&proof.proof_data.data)?)
-                .map_err(|error| anyhow!("{error}"))?,
-        })
-    }
-}
+custom_conversion!(AggregatedSignatureProofJSON as value => ReamAggregatedSignatureProof {
+    participants: bools_to_bitlist(&value.participants.data)?,
+    proof_data: VariableList::<u8, U1048576>::try_from(decode_hex(&value.proof_data.data)?)
+        .map_err(|error| anyhow!("{error}"))?,
+});
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -376,22 +344,14 @@ pub struct BlockSignaturesJSON {
     pub proposer_signature: String,
 }
 
-impl TryFrom<&BlockSignaturesJSON> for ReamBlockSignatures {
-    type Error = anyhow::Error;
-    fn try_from(signatures: &BlockSignaturesJSON) -> anyhow::Result<Self> {
-        let attestation_signatures: Vec<_> = signatures
-            .attestation_signatures
-            .data
-            .iter()
+custom_conversion!(BlockSignaturesJSON as value => ReamBlockSignatures {
+    attestation_signatures: VariableList::try_from(
+        value.attestation_signatures.data.iter()
             .map(TryInto::try_into)
-            .collect::<Result<_, _>>()?;
-        Ok(ReamBlockSignatures {
-            attestation_signatures: VariableList::try_from(attestation_signatures)
-                .map_err(|error| anyhow!("{error}"))?,
-            proposer_signature: decode_signature(&signatures.proposer_signature)?,
-        })
-    }
-}
+            .collect::<Result<Vec<_>, _>>()?
+    ).map_err(|error| anyhow!("{error}"))?,
+    proposer_signature: decode_signature(&value.proposer_signature)?,
+});
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
