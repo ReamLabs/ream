@@ -39,20 +39,20 @@ use ssz_types::{
 
 fn decode_hex(hex: &str) -> anyhow::Result<Vec<u8>> {
     alloy_primitives::hex::decode(hex.trim_start_matches("0x"))
-        .map_err(|error| anyhow!("hex decode failed: {error}"))
+        .map_err(|err| anyhow!("hex decode failed: {err}"))
 }
 
 fn decode_signature(hex: &str) -> anyhow::Result<Signature> {
     Signature::from_ssz_bytes(&decode_hex(hex)?)
-        .map_err(|error| anyhow!("signature decode failed: {error:?}"))
+        .map_err(|err| anyhow!("signature decode failed: {err:?}"))
 }
 
 fn bools_to_bitlist<N: ssz_types::typenum::Unsigned>(bools: &[bool]) -> anyhow::Result<BitList<N>> {
     let mut bits = BitList::<N>::with_capacity(bools.len())
-        .map_err(|error| anyhow!("BitList creation failed: {error:?}"))?;
+        .map_err(|err| anyhow!("BitList creation failed: {err:?}"))?;
     for (index, &bit) in bools.iter().enumerate() {
         bits.set(index, bit)
-            .map_err(|error| anyhow!("BitList set failed: {error:?}"))?;
+            .map_err(|err| anyhow!("BitList set failed: {err:?}"))?;
     }
     Ok(bits)
 }
@@ -256,7 +256,7 @@ custom_conversion!(BlockBodyJSON as value => ReamBlockBody {
         value.attestations.data.iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<_>, _>>()?
-    ).map_err(|error| anyhow!("{error}"))?,
+    ).map_err(|err| anyhow!("{err}"))?,
 });
 
 #[derive(Debug, Deserialize, Clone)]
@@ -303,15 +303,15 @@ custom_conversion!(StateJSON as value => ReamState {
     latest_justified: value.latest_justified,
     latest_finalized: value.latest_finalized,
     historical_block_hashes: VariableList::try_from(value.historical_block_hashes.data.clone())
-        .map_err(|error| anyhow!("{error}"))?,
+        .map_err(|err| anyhow!("{err}"))?,
     justified_slots: bools_to_bitlist::<U262144>(&value.justified_slots.data)?,
     validators: VariableList::try_from(
         value.validators.data.iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<_>, _>>()?
-    ).map_err(|error| anyhow!("{error}"))?,
+    ).map_err(|err| anyhow!("{err}"))?,
     justifications_roots: VariableList::try_from(value.justifications_roots.data.clone())
-        .map_err(|error| anyhow!("{error}"))?,
+        .map_err(|err| anyhow!("{err}"))?,
     justifications_validators: bools_to_bitlist::<U1073741824>(&value.justifications_validators.data)?,
 });
 
@@ -334,7 +334,7 @@ pub struct AggregatedSignatureProofJSON {
 custom_conversion!(AggregatedSignatureProofJSON as value => ReamAggregatedSignatureProof {
     participants: bools_to_bitlist(&value.participants.data)?,
     proof_data: VariableList::<u8, U1048576>::try_from(decode_hex(&value.proof_data.data)?)
-        .map_err(|error| anyhow!("{error}"))?,
+        .map_err(|err| anyhow!("{err}"))?,
 });
 
 #[derive(Debug, Deserialize, Clone)]
@@ -349,7 +349,7 @@ custom_conversion!(BlockSignaturesJSON as value => ReamBlockSignatures {
         value.attestation_signatures.data.iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<_>, _>>()?
-    ).map_err(|error| anyhow!("{error}"))?,
+    ).map_err(|err| anyhow!("{err}"))?,
     proposer_signature: decode_signature(&value.proposer_signature)?,
 });
 
