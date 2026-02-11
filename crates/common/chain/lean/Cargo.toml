@@ -13,11 +13,13 @@ version.workspace = true
 default = ["devnet2"]
 devnet2 = [
     "ream-consensus-lean/devnet2",
+    "ream-consensus-misc/devnet2",
     "ream-fork-choice-lean/devnet2",
     "ream-network-state-lean/devnet2",
 ]
 devnet3 = [
     "ream-consensus-lean/devnet3",
+    "ream-consensus-misc/devnet3",
     "ream-fork-choice-lean/devnet3",
     "ream-network-state-lean/devnet3",
 ]

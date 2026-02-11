@@ -9,6 +9,10 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+devnet2 = []
+devnet3 = []
+
 [dependencies]
 alloy-primitives.workspace = true
 alloy-rlp.workspace = true
