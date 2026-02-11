@@ -72,6 +72,54 @@ pub struct SSZTest {
 }
 
 // ============================================================================
+// Macros
+// ============================================================================
+
+/// Creates a passthrough JSON wrapper that deserializes directly to the inner type.
+macro_rules! passthrough_wrapper {
+    ($name:ident, $inner:ty) => {
+        #[derive(Debug, Deserialize, Clone)]
+        #[serde(transparent)]
+        pub struct $name(pub $inner);
+
+        impl TryFrom<&$name> for $inner {
+            type Error = anyhow::Error;
+            fn try_from(value: &$name) -> anyhow::Result<Self> {
+                Ok(value.0.clone())
+            }
+        }
+    };
+}
+
+/// Creates a TryFrom impl where all fields are copied directly (for Copy types).
+macro_rules! simple_conversion {
+    ($json:ident => $target:ty { $($field:ident),+ }) => {
+        impl TryFrom<&$json> for $target {
+            type Error = anyhow::Error;
+            fn try_from(value: &$json) -> anyhow::Result<Self> {
+                Ok(Self {
+                    $($field: value.$field),+
+                })
+            }
+        }
+    };
+}
+
+/// Creates a TryFrom impl where all fields are converted via try_into().
+macro_rules! nested_conversion {
+    ($json:ident => $target:ty { $($field:ident),+ }) => {
+        impl TryFrom<&$json> for $target {
+            type Error = anyhow::Error;
+            fn try_from(value: &$json) -> anyhow::Result<Self> {
+                Ok(Self {
+                    $($field: (&value.$field).try_into()?),+
+                })
+            }
+        }
+    };
+}
+
+// ============================================================================
 // Common JSON wrapper types
 // ============================================================================
 
@@ -85,6 +133,9 @@ pub struct AggregationBitsJSON {
     pub data: Vec<bool>,
 }
 
+passthrough_wrapper!(CheckpointJSON, ReamCheckpoint);
+passthrough_wrapper!(AttestationDataJSON, ReamAttestationData);
+
 // ============================================================================
 // Config
 // ============================================================================
@@ -95,29 +146,7 @@ pub struct ConfigJSON {
     pub genesis_time: u64,
 }
 
-impl TryFrom<&ConfigJSON> for ReamConfig {
-    type Error = anyhow::Error;
-    fn try_from(config: &ConfigJSON) -> anyhow::Result<Self> {
-        Ok(ReamConfig {
-            genesis_time: config.genesis_time,
-        })
-    }
-}
-
-// ============================================================================
-// Checkpoint
-// ============================================================================
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(transparent)]
-pub struct CheckpointJSON(pub ReamCheckpoint);
-
-impl TryFrom<&CheckpointJSON> for ReamCheckpoint {
-    type Error = anyhow::Error;
-    fn try_from(value: &CheckpointJSON) -> anyhow::Result<Self> {
-        Ok(value.0.clone())
-    }
-}
+simple_conversion!(ConfigJSON => ReamConfig { genesis_time });
 
 // ============================================================================
 // BlockHeader
@@ -133,18 +162,7 @@ pub struct BlockHeaderJSON {
     pub body_root: B256,
 }
 
-impl TryFrom<&BlockHeaderJSON> for ReamBlockHeader {
-    type Error = anyhow::Error;
-    fn try_from(header: &BlockHeaderJSON) -> anyhow::Result<Self> {
-        Ok(ReamBlockHeader {
-            slot: header.slot,
-            proposer_index: header.proposer_index,
-            parent_root: header.parent_root,
-            state_root: header.state_root,
-            body_root: header.body_root,
-        })
-    }
-}
+simple_conversion!(BlockHeaderJSON => ReamBlockHeader { slot, proposer_index, parent_root, state_root, body_root });
 
 // ============================================================================
 // Validator
@@ -205,17 +223,6 @@ impl TryFrom<&AttestationJSON> for ReamAggregatedAttestations {
             validator_id: attestation.validator_id,
             data: attestation.data.clone(),
         })
-    }
-}
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(transparent)]
-pub struct AttestationDataJSON(pub ReamAttestationData);
-
-impl TryFrom<&AttestationDataJSON> for ReamAttestationData {
-    type Error = anyhow::Error;
-    fn try_from(value: &AttestationDataJSON) -> anyhow::Result<Self> {
-        Ok(value.0.clone())
     }
 }
 
@@ -393,15 +400,7 @@ pub struct BlockWithAttestationJSON {
     pub proposer_attestation: AttestationJSON,
 }
 
-impl TryFrom<&BlockWithAttestationJSON> for ReamBlockWithAttestation {
-    type Error = anyhow::Error;
-    fn try_from(block_with_attestation: &BlockWithAttestationJSON) -> anyhow::Result<Self> {
-        Ok(ReamBlockWithAttestation {
-            block: (&block_with_attestation.block).try_into()?,
-            proposer_attestation: (&block_with_attestation.proposer_attestation).try_into()?,
-        })
-    }
-}
+nested_conversion!(BlockWithAttestationJSON => ReamBlockWithAttestation { block, proposer_attestation });
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -410,12 +409,4 @@ pub struct SignedBlockWithAttestationJSON {
     pub signature: BlockSignaturesJSON,
 }
 
-impl TryFrom<&SignedBlockWithAttestationJSON> for ReamSignedBlockWithAttestation {
-    type Error = anyhow::Error;
-    fn try_from(signed_block: &SignedBlockWithAttestationJSON) -> anyhow::Result<Self> {
-        Ok(ReamSignedBlockWithAttestation {
-            message: (&signed_block.message).try_into()?,
-            signature: (&signed_block.signature).try_into()?,
-        })
-    }
-}
+nested_conversion!(SignedBlockWithAttestationJSON => ReamSignedBlockWithAttestation { message, signature });
