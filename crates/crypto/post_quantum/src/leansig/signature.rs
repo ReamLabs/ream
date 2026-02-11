@@ -1,13 +1,8 @@
-use std::sync::LazyLock;
-
 use leansig::{MESSAGE_LENGTH, signature::SignatureScheme};
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, DecodeError, Encode};
 
 use crate::leansig::{LeanSigScheme, public_key::PublicKey};
-
-/// Cached blank signature to avoid expensive key generation on every call.
-static BLANK_SIGNATURE: LazyLock<Signature> = LazyLock::new(Signature::mock);
 
 /// The inner leansig signature type with built-in SSZ support.
 pub type LeanSigSignature = <LeanSigScheme as SignatureScheme>::Signature;
@@ -69,10 +64,18 @@ impl Signature {
 
     /// Create a blank/placeholder signature.
     ///
-    /// This returns a cached signature to avoid expensive key generation on every call.
+    /// This decodes from minimal valid SSZ bytes, avoiding expensive key generation.
     /// Only use in contexts where the signature won't be validated.
     pub fn blank() -> Self {
-        BLANK_SIGNATURE.clone()
+        // 40 bytes: offset_path(4) + rho(28 zeros) + offset_hashes(4) + path(4)
+        const BYTES: [u8; 40] = [
+            36, 0, 0, 0, // offset_path = 36
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // rho (28 zeros)
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            40, 0, 0, 0, // offset_hashes = 40
+            4, 0, 0, 0, // path: empty HashTreeOpening
+        ];
+        Self::from_ssz_bytes(&BYTES).expect("blank signature bytes are valid")
     }
 
     /// Create a mock signature for testing purposes.
