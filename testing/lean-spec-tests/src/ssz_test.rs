@@ -81,12 +81,10 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<()> {
         "BlockWithAttestation" => {
             run_test::<BlockWithAttestationJSON, BlockWithAttestation>(&test.value, &expected_ssz)
         }
-        "SignedBlockWithAttestation" => {
-            run_test::<SignedBlockWithAttestationJSON, SignedBlockWithAttestation>(
-                &test.value,
-                &expected_ssz,
-            )
-        }
+        "SignedBlockWithAttestation" => run_test::<
+            SignedBlockWithAttestationJSON,
+            SignedBlockWithAttestation,
+        >(&test.value, &expected_ssz),
 
         _ => {
             warn!("Unknown type: {}, skipping", test.type_name);
