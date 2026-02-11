@@ -1757,6 +1757,8 @@ pub fn compute_subnet_id(validator_id: u64, num_committees: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{B256, FixedBytes};
+    #[cfg(feature = "devnet3")]
+    use anyhow::ensure;
     use ream_consensus_lean::{
         attestation::{
             AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
@@ -1846,6 +1848,391 @@ mod tests {
                 proposer_signature: Signature::blank(),
             },
         }
+    }
+
+    #[cfg(feature = "devnet3")]
+    fn _make_attestation_data(slot: u64, target_slot: u64) -> AttestationData {
+        let mut root = B256::ZERO;
+        root[24..32].copy_from_slice(&target_slot.to_be_bytes());
+
+        AttestationData {
+            slot,
+            head: Checkpoint {
+                root,
+                slot: target_slot,
+            },
+            target: Checkpoint {
+                root,
+                slot: target_slot,
+            },
+            source: Checkpoint {
+                root: B256::ZERO,
+                slot: 0,
+            },
+        }
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_prunes_entries_with_target_at_finalized() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        let attestation_data = _make_attestation_data(5, 5);
+        let data_root = attestation_data.tree_hash_root();
+        let sig_key = SignatureKey::new(1, &attestation_data);
+
+        {
+            store
+                .attestation_data_by_root
+                .insert(data_root, attestation_data);
+            let db = store.store.lock().await;
+            db.latest_finalized_provider()
+                .insert(Checkpoint {
+                    root: B256::repeat_byte(0xff),
+                    slot: 5,
+                })
+                .unwrap();
+            db.gossip_signatures_provider()
+                .insert(sig_key.clone(), Signature::blank())
+                .unwrap();
+        }
+
+        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        {
+            let db = store.store.lock().await;
+            ensure!(
+                db.gossip_signatures_provider()
+                    .get(sig_key.clone())
+                    .unwrap()
+                    .is_some()
+            );
+        }
+
+        store.prune_stale_attestation_data().await?;
+
+        ensure!(!store.attestation_data_by_root.contains_key(&data_root));
+        let db = store.store.lock().await;
+        ensure!(
+            db.gossip_signatures_provider()
+                .get(sig_key)
+                .unwrap()
+                .is_none()
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_prunes_entries_with_target_before_finalized() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        let attestation_data = _make_attestation_data(3, 3);
+        let data_root = attestation_data.tree_hash_root();
+        let sig_key = SignatureKey::new(1, &attestation_data);
+
+        {
+            store
+                .attestation_data_by_root
+                .insert(data_root, attestation_data);
+            let db = store.store.lock().await;
+            db.latest_finalized_provider()
+                .insert(Checkpoint {
+                    root: B256::repeat_byte(0xff),
+                    slot: 5,
+                })
+                .unwrap();
+            db.gossip_signatures_provider()
+                .insert(sig_key.clone(), Signature::blank())
+                .unwrap();
+        }
+
+        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        store.prune_stale_attestation_data().await?;
+
+        ensure!(!store.attestation_data_by_root.contains_key(&data_root));
+        let db = store.store.lock().await;
+        ensure!(
+            db.gossip_signatures_provider()
+                .get(sig_key)
+                .unwrap()
+                .is_none()
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_keeps_entries_with_target_after_finalized() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        let attestation_data = _make_attestation_data(10, 10);
+        let data_root = attestation_data.tree_hash_root();
+        let sig_key = SignatureKey::new(1, &attestation_data);
+
+        {
+            store
+                .attestation_data_by_root
+                .insert(data_root, attestation_data.clone());
+            let db = store.store.lock().await;
+            db.latest_finalized_provider()
+                .insert(Checkpoint {
+                    root: B256::repeat_byte(0xff),
+                    slot: 5,
+                })
+                .unwrap();
+            db.gossip_signatures_provider()
+                .insert(sig_key.clone(), Signature::blank())
+                .unwrap();
+        }
+
+        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        store.prune_stale_attestation_data().await?;
+
+        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(store.attestation_data_by_root.get(&data_root).unwrap() == &attestation_data);
+        let db = store.store.lock().await;
+        ensure!(
+            db.gossip_signatures_provider()
+                .get(sig_key)
+                .unwrap()
+                .is_some()
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_prunes_related_structures_together() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+
+        let stale_attestation = _make_attestation_data(3, 3);
+        let stale_root = stale_attestation.tree_hash_root();
+        let stale_key = SignatureKey::new(1, &stale_attestation);
+
+        let fresh_attestation = _make_attestation_data(10, 10);
+        let fresh_root = fresh_attestation.tree_hash_root();
+        let fresh_key = SignatureKey::new(2, &fresh_attestation);
+
+        let mock_proof = AggregatedSignatureProof::new(
+            ssz_types::BitList::with_capacity(4096).unwrap(),
+            ssz_types::VariableList::empty(),
+        );
+
+        {
+            store
+                .attestation_data_by_root
+                .insert(stale_root, stale_attestation);
+            store
+                .attestation_data_by_root
+                .insert(fresh_root, fresh_attestation);
+
+            store
+                .latest_new_aggregated_payloads
+                .insert(stale_key.clone(), vec![mock_proof.clone()]);
+            store
+                .latest_new_aggregated_payloads
+                .insert(fresh_key.clone(), vec![mock_proof.clone()]);
+
+            store
+                .latest_known_aggregated_payloads
+                .insert(stale_key.clone(), vec![mock_proof.clone()]);
+            store
+                .latest_known_aggregated_payloads
+                .insert(fresh_key.clone(), vec![mock_proof]);
+
+            let db = store.store.lock().await;
+            db.latest_finalized_provider()
+                .insert(Checkpoint {
+                    root: B256::ZERO,
+                    slot: 5,
+                })
+                .unwrap();
+            db.gossip_signatures_provider()
+                .insert(stale_key.clone(), Signature::blank())
+                .unwrap();
+            db.gossip_signatures_provider()
+                .insert(fresh_key.clone(), Signature::blank())
+                .unwrap();
+        }
+
+        ensure!(store.attestation_data_by_root.contains_key(&stale_root));
+        ensure!(
+            store
+                .latest_new_aggregated_payloads
+                .contains_key(&stale_key)
+        );
+        ensure!(
+            store
+                .latest_known_aggregated_payloads
+                .contains_key(&stale_key)
+        );
+
+        store.prune_stale_attestation_data().await?;
+
+        ensure!(!store.attestation_data_by_root.contains_key(&stale_root));
+        ensure!(
+            !store
+                .latest_new_aggregated_payloads
+                .contains_key(&stale_key)
+        );
+        ensure!(
+            !store
+                .latest_known_aggregated_payloads
+                .contains_key(&stale_key)
+        );
+
+        ensure!(store.attestation_data_by_root.contains_key(&fresh_root));
+        ensure!(
+            store
+                .latest_new_aggregated_payloads
+                .contains_key(&fresh_key)
+        );
+
+        let db = store.store.lock().await;
+        ensure!(
+            db.gossip_signatures_provider()
+                .get(stale_key)
+                .unwrap()
+                .is_none()
+        );
+        ensure!(
+            db.gossip_signatures_provider()
+                .get(fresh_key)
+                .unwrap()
+                .is_some()
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_returns_self_when_nothing_to_prune() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        let fresh_attestation = _make_attestation_data(10, 10);
+        let data_root = fresh_attestation.tree_hash_root();
+
+        {
+            store
+                .attestation_data_by_root
+                .insert(data_root, fresh_attestation);
+            let db = store.store.lock().await;
+            db.latest_finalized_provider()
+                .insert(Checkpoint {
+                    root: B256::ZERO,
+                    slot: 5,
+                })
+                .unwrap();
+        }
+
+        let initial_len = store.attestation_data_by_root.len();
+        store.prune_stale_attestation_data().await?;
+
+        ensure!(store.attestation_data_by_root.len() == initial_len);
+        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_handles_empty_attestation_data() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        ensure!(
+            store.attestation_data_by_root.is_empty(),
+            "Store should start empty"
+        );
+
+        store.prune_stale_attestation_data().await?;
+
+        ensure!(
+            store.attestation_data_by_root.is_empty(),
+            "Store should remain empty"
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_prunes_multiple_validators_same_data_root() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        let stale_data = _make_attestation_data(3, 3);
+        let data_root = stale_data.tree_hash_root();
+        let sig_key_1 = SignatureKey::new(1, &stale_data);
+        let sig_key_2 = SignatureKey::new(2, &stale_data);
+
+        {
+            store.attestation_data_by_root.insert(data_root, stale_data);
+            let db = store.store.lock().await;
+            db.latest_finalized_provider()
+                .insert(Checkpoint {
+                    root: B256::ZERO,
+                    slot: 5,
+                })
+                .unwrap();
+
+            let gossip = db.gossip_signatures_provider();
+            gossip
+                .insert(sig_key_1.clone(), Signature::blank())
+                .unwrap();
+            gossip
+                .insert(sig_key_2.clone(), Signature::blank())
+                .unwrap();
+        }
+
+        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        store.prune_stale_attestation_data().await?;
+
+        ensure!(!store.attestation_data_by_root.contains_key(&data_root));
+        let db = store.store.lock().await;
+        ensure!(
+            db.gossip_signatures_provider()
+                .get(sig_key_1)
+                .unwrap()
+                .is_none()
+        );
+        ensure!(
+            db.gossip_signatures_provider()
+                .get(sig_key_2)
+                .unwrap()
+                .is_none()
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_mixed_stale_and_fresh_entries() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        let mut roots = vec![];
+
+        {
+            let db = store.store.lock().await;
+            db.latest_finalized_provider()
+                .insert(Checkpoint {
+                    root: B256::ZERO,
+                    slot: 5,
+                })
+                .unwrap();
+            let gossip = db.gossip_signatures_provider();
+
+            for i in 1..=10 {
+                let data = _make_attestation_data(i, i);
+                let root = data.tree_hash_root();
+                let key = SignatureKey::new(i, &data);
+
+                store.attestation_data_by_root.insert(root, data);
+                gossip.insert(key, Signature::blank()).unwrap();
+                roots.push(root);
+            }
+        }
+
+        store.prune_stale_attestation_data().await?;
+
+        for (i, root) in roots.iter().enumerate() {
+            let slot = (i + 1) as u64;
+            if slot <= 5 {
+                ensure!(!store.attestation_data_by_root.contains_key(root));
+            } else {
+                ensure!(store.attestation_data_by_root.contains_key(root));
+            }
+        }
+        Ok(())
     }
 
     // BLOCK PRODUCTION TESTS
