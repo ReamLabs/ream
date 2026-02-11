@@ -10,8 +10,7 @@ use ream_consensus_lean::{
         AggregatedAttestation as ReamAggregatedAttestation,
         AggregatedAttestations as ReamAggregatedAttestations,
         AggregatedSignatureProof as ReamAggregatedSignatureProof,
-        AttestationData as ReamAttestationData,
-        SignedAttestation as ReamSignedAttestation,
+        AttestationData as ReamAttestationData, SignedAttestation as ReamSignedAttestation,
     },
     block::{
         Block as ReamBlock, BlockBody as ReamBlockBody, BlockHeader as ReamBlockHeader,
@@ -26,7 +25,10 @@ use ream_consensus_lean::{
 use ream_post_quantum_crypto::leansig::{public_key::PublicKey, signature::Signature};
 use serde::Deserialize;
 use ssz::Decode;
-use ssz_types::{BitList, VariableList, typenum::{U4096, U1048576}};
+use ssz_types::{
+    BitList, VariableList,
+    typenum::{U4096, U1048576},
+};
 
 /// SSZ test case from leanSpec fixtures
 #[derive(Debug, Deserialize)]
@@ -305,12 +307,13 @@ impl TryFrom<&StateJSON> for ReamState {
         // Convert justifications_validators to BitList
         let justifications_len = state.justifications_validators.data.len();
         let mut justifications_validators =
-            BitList::<U1073741824>::with_capacity(justifications_len)
-                .map_err(|err| anyhow!("Failed to create justifications_validators BitList: {err:?}"))?;
+            BitList::<U1073741824>::with_capacity(justifications_len).map_err(|err| {
+                anyhow!("Failed to create justifications_validators BitList: {err:?}")
+            })?;
         for (i, &bit) in state.justifications_validators.data.iter().enumerate() {
-            justifications_validators
-                .set(i, bit)
-                .map_err(|err| anyhow!("Failed to set justifications_validators bit at {i}: {err:?}"))?;
+            justifications_validators.set(i, bit).map_err(|err| {
+                anyhow!("Failed to set justifications_validators bit at {i}: {err:?}")
+            })?;
         }
 
         Ok(ReamState {
@@ -319,13 +322,17 @@ impl TryFrom<&StateJSON> for ReamState {
             latest_block_header: (&state.latest_block_header).try_into()?,
             latest_justified: (&state.latest_justified).try_into()?,
             latest_finalized: (&state.latest_finalized).try_into()?,
-            historical_block_hashes: VariableList::try_from(state.historical_block_hashes.data.clone())
-                .map_err(|err| anyhow!("Failed to create historical_block_hashes: {err}"))?,
+            historical_block_hashes: VariableList::try_from(
+                state.historical_block_hashes.data.clone(),
+            )
+            .map_err(|err| anyhow!("Failed to create historical_block_hashes: {err}"))?,
             justified_slots,
             validators: VariableList::try_from(validators)
                 .map_err(|err| anyhow!("Failed to create validators: {err}"))?,
             justifications_roots: VariableList::try_from(state.justifications_roots.data.clone())
-                .map_err(|err| anyhow!("Failed to create justifications_roots: {err}"))?,
+                .map_err(|err| {
+                anyhow!("Failed to create justifications_roots: {err}")
+            })?,
             justifications_validators,
         })
     }
