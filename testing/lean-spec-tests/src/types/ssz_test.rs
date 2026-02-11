@@ -1,7 +1,6 @@
-//! SSZ test types with proper serde attributes for leanSpec JSON format.
+//! Intermediate JSON types for leanSpec SSZ test fixtures.
 //!
-//! These intermediate types handle the camelCase JSON format from leanSpec fixtures
-//! and provide conversions to the actual ream-consensus-lean types.
+//! These types handle camelCase JSON and convert to ream-consensus-lean types.
 
 use alloy_primitives::B256;
 use anyhow::anyhow;
@@ -27,10 +26,37 @@ use serde::Deserialize;
 use ssz::Decode;
 use ssz_types::{
     BitList, VariableList,
-    typenum::{U4096, U1048576},
+    typenum::{U262144, U1048576, U1073741824},
 };
 
-/// SSZ test case from leanSpec fixtures
+// ============================================================================
+// Helpers
+// ============================================================================
+
+fn decode_hex(hex: &str) -> anyhow::Result<Vec<u8>> {
+    alloy_primitives::hex::decode(hex.trim_start_matches("0x"))
+        .map_err(|error| anyhow!("hex decode failed: {error}"))
+}
+
+fn decode_signature(hex: &str) -> anyhow::Result<Signature> {
+    Signature::from_ssz_bytes(&decode_hex(hex)?)
+        .map_err(|error| anyhow!("signature decode failed: {error:?}"))
+}
+
+fn bools_to_bitlist<N: ssz_types::typenum::Unsigned>(bools: &[bool]) -> anyhow::Result<BitList<N>> {
+    let mut bits = BitList::<N>::with_capacity(bools.len())
+        .map_err(|error| anyhow!("BitList creation failed: {error:?}"))?;
+    for (index, &bit) in bools.iter().enumerate() {
+        bits.set(index, bit)
+            .map_err(|error| anyhow!("BitList set failed: {error:?}"))?;
+    }
+    Ok(bits)
+}
+
+// ============================================================================
+// Test case structure
+// ============================================================================
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SSZTest {
@@ -43,10 +69,28 @@ pub struct SSZTest {
 }
 
 // ============================================================================
-// Intermediate types for JSON deserialization (camelCase)
+// JSON wrapper types
 // ============================================================================
 
-/// Config with camelCase fields
+#[derive(Debug, Deserialize, Clone)]
+pub struct DataListJSON<T> {
+    pub data: Vec<T>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AggregationBitsJSON {
+    pub data: Vec<bool>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ProofDataJSON {
+    pub data: String,
+}
+
+// ============================================================================
+// Config
+// ============================================================================
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigJSON {
@@ -55,7 +99,6 @@ pub struct ConfigJSON {
 
 impl TryFrom<&ConfigJSON> for ReamConfig {
     type Error = anyhow::Error;
-
     fn try_from(config: &ConfigJSON) -> anyhow::Result<Self> {
         Ok(ReamConfig {
             genesis_time: config.genesis_time,
@@ -63,7 +106,10 @@ impl TryFrom<&ConfigJSON> for ReamConfig {
     }
 }
 
-/// BlockHeader with camelCase fields
+// ============================================================================
+// BlockHeader
+// ============================================================================
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockHeaderJSON {
@@ -76,7 +122,6 @@ pub struct BlockHeaderJSON {
 
 impl TryFrom<&BlockHeaderJSON> for ReamBlockHeader {
     type Error = anyhow::Error;
-
     fn try_from(header: &BlockHeaderJSON) -> anyhow::Result<Self> {
         Ok(ReamBlockHeader {
             slot: header.slot,
@@ -88,7 +133,10 @@ impl TryFrom<&BlockHeaderJSON> for ReamBlockHeader {
     }
 }
 
-/// Validator with camelCase fields
+// ============================================================================
+// Validator
+// ============================================================================
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct ValidatorJSON {
     pub pubkey: String,
@@ -97,39 +145,22 @@ pub struct ValidatorJSON {
 
 impl TryFrom<&ValidatorJSON> for ReamValidator {
     type Error = anyhow::Error;
-
     fn try_from(validator: &ValidatorJSON) -> anyhow::Result<Self> {
-        let pubkey_hex = validator.pubkey.trim_start_matches("0x");
-        let pubkey_bytes = alloy_primitives::hex::decode(pubkey_hex)
-            .map_err(|err| anyhow!("Failed to decode validator pubkey hex: {err}"))?;
-
-        if pubkey_bytes.len() != 52 {
-            return Err(anyhow!(
-                "Expected 52-byte pubkey, got {} bytes",
-                pubkey_bytes.len()
-            ));
+        let bytes = decode_hex(&validator.pubkey)?;
+        if bytes.len() != 52 {
+            return Err(anyhow!("Expected 52-byte pubkey, got {}", bytes.len()));
         }
-
         Ok(ReamValidator {
-            public_key: PublicKey::from(&pubkey_bytes[..]),
+            public_key: PublicKey::from(&bytes[..]),
             index: validator.index,
         })
     }
 }
 
-/// Wrapper for data lists in JSON format
-#[derive(Debug, Deserialize, Clone)]
-pub struct DataListJSON<T> {
-    pub data: Vec<T>,
-}
+// ============================================================================
+// Attestations
+// ============================================================================
 
-/// AggregationBits wrapper
-#[derive(Debug, Deserialize, Clone)]
-pub struct AggregationBitsJSON {
-    pub data: Vec<bool>,
-}
-
-/// AggregatedAttestation with camelCase fields
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AggregatedAttestationJSON {
@@ -139,26 +170,14 @@ pub struct AggregatedAttestationJSON {
 
 impl TryFrom<&AggregatedAttestationJSON> for ReamAggregatedAttestation {
     type Error = anyhow::Error;
-
-    fn try_from(att: &AggregatedAttestationJSON) -> anyhow::Result<Self> {
-        let bool_data = &att.aggregation_bits.data;
-        let mut aggregation_bits = BitList::<U4096>::with_capacity(bool_data.len())
-            .map_err(|err| anyhow!("Failed to create BitList: {err:?}"))?;
-
-        for (i, &bit) in bool_data.iter().enumerate() {
-            aggregation_bits
-                .set(i, bit)
-                .map_err(|err| anyhow!("Failed to set bit at index {i}: {err:?}"))?;
-        }
-
+    fn try_from(attestation: &AggregatedAttestationJSON) -> anyhow::Result<Self> {
         Ok(ReamAggregatedAttestation {
-            aggregation_bits,
-            message: att.data.clone(),
+            aggregation_bits: bools_to_bitlist(&attestation.aggregation_bits.data)?,
+            message: attestation.data.clone(),
         })
     }
 }
 
-/// Attestation (individual) with camelCase fields - maps to AggregatedAttestations in Rust
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AttestationJSON {
@@ -168,16 +187,37 @@ pub struct AttestationJSON {
 
 impl TryFrom<&AttestationJSON> for ReamAggregatedAttestations {
     type Error = anyhow::Error;
-
-    fn try_from(att: &AttestationJSON) -> anyhow::Result<Self> {
+    fn try_from(attestation: &AttestationJSON) -> anyhow::Result<Self> {
         Ok(ReamAggregatedAttestations {
-            validator_id: att.validator_id,
-            data: att.data.clone(),
+            validator_id: attestation.validator_id,
+            data: attestation.data.clone(),
         })
     }
 }
 
-/// BlockBody with attestations in {data: [...]} format
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedAttestationJSON {
+    pub validator_id: u64,
+    pub message: ReamAttestationData,
+    pub signature: String,
+}
+
+impl TryFrom<&SignedAttestationJSON> for ReamSignedAttestation {
+    type Error = anyhow::Error;
+    fn try_from(attestation: &SignedAttestationJSON) -> anyhow::Result<Self> {
+        Ok(ReamSignedAttestation {
+            validator_id: attestation.validator_id,
+            message: attestation.message.clone(),
+            signature: decode_signature(&attestation.signature)?,
+        })
+    }
+}
+
+// ============================================================================
+// Block
+// ============================================================================
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct BlockBodyJSON {
     pub attestations: DataListJSON<AggregatedAttestationJSON>,
@@ -185,21 +225,20 @@ pub struct BlockBodyJSON {
 
 impl TryFrom<&BlockBodyJSON> for ReamBlockBody {
     type Error = anyhow::Error;
-
     fn try_from(body: &BlockBodyJSON) -> anyhow::Result<Self> {
-        let mut attestations = Vec::new();
-        for att in &body.attestations.data {
-            attestations.push(ReamAggregatedAttestation::try_from(att)?);
-        }
-
+        let attestations: Vec<_> = body
+            .attestations
+            .data
+            .iter()
+            .map(TryInto::try_into)
+            .collect::<Result<_, _>>()?;
         Ok(ReamBlockBody {
             attestations: VariableList::try_from(attestations)
-                .map_err(|err| anyhow!("Failed to create attestations VariableList: {err}"))?,
+                .map_err(|error| anyhow!("{error}"))?,
         })
     }
 }
 
-/// Block with camelCase fields
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockJSON {
@@ -212,19 +251,21 @@ pub struct BlockJSON {
 
 impl TryFrom<&BlockJSON> for ReamBlock {
     type Error = anyhow::Error;
-
     fn try_from(block: &BlockJSON) -> anyhow::Result<Self> {
         Ok(ReamBlock {
             slot: block.slot,
             proposer_index: block.proposer_index,
             parent_root: block.parent_root,
             state_root: block.state_root,
-            body: ReamBlockBody::try_from(&block.body)?,
+            body: (&block.body).try_into()?,
         })
     }
 }
 
-/// State with camelCase fields
+// ============================================================================
+// State
+// ============================================================================
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StateJSON {
@@ -242,40 +283,13 @@ pub struct StateJSON {
 
 impl TryFrom<&StateJSON> for ReamState {
     type Error = anyhow::Error;
-
     fn try_from(state: &StateJSON) -> anyhow::Result<Self> {
-        use ssz_types::typenum::{U262144, U1073741824};
-
-        // Convert validators
-        let validators: Vec<ReamValidator> = state
+        let validators: Vec<_> = state
             .validators
             .data
             .iter()
-            .map(ReamValidator::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Convert justified_slots to BitList
-        let justified_slots_len = state.justified_slots.data.len();
-        let mut justified_slots = BitList::<U262144>::with_capacity(justified_slots_len)
-            .map_err(|err| anyhow!("Failed to create justified_slots BitList: {err:?}"))?;
-        for (i, &bit) in state.justified_slots.data.iter().enumerate() {
-            justified_slots
-                .set(i, bit)
-                .map_err(|err| anyhow!("Failed to set justified_slots bit at {i}: {err:?}"))?;
-        }
-
-        // Convert justifications_validators to BitList
-        let justifications_len = state.justifications_validators.data.len();
-        let mut justifications_validators =
-            BitList::<U1073741824>::with_capacity(justifications_len).map_err(|err| {
-                anyhow!("Failed to create justifications_validators BitList: {err:?}")
-            })?;
-        for (i, &bit) in state.justifications_validators.data.iter().enumerate() {
-            justifications_validators.set(i, bit).map_err(|err| {
-                anyhow!("Failed to set justifications_validators bit at {i}: {err:?}")
-            })?;
-        }
-
+            .map(TryInto::try_into)
+            .collect::<Result<_, _>>()?;
         Ok(ReamState {
             config: (&state.config).try_into()?,
             slot: state.slot,
@@ -285,15 +299,14 @@ impl TryFrom<&StateJSON> for ReamState {
             historical_block_hashes: VariableList::try_from(
                 state.historical_block_hashes.data.clone(),
             )
-            .map_err(|err| anyhow!("Failed to create historical_block_hashes: {err}"))?,
-            justified_slots,
-            validators: VariableList::try_from(validators)
-                .map_err(|err| anyhow!("Failed to create validators: {err}"))?,
+            .map_err(|error| anyhow!("{error}"))?,
+            justified_slots: bools_to_bitlist::<U262144>(&state.justified_slots.data)?,
+            validators: VariableList::try_from(validators).map_err(|error| anyhow!("{error}"))?,
             justifications_roots: VariableList::try_from(state.justifications_roots.data.clone())
-                .map_err(|err| {
-                anyhow!("Failed to create justifications_roots: {err}")
-            })?,
-            justifications_validators,
+                .map_err(|error| anyhow!("{error}"))?,
+            justifications_validators: bools_to_bitlist::<U1073741824>(
+                &state.justifications_validators.data,
+            )?,
         })
     }
 }
@@ -302,41 +315,6 @@ impl TryFrom<&StateJSON> for ReamState {
 // Signature-related types
 // ============================================================================
 
-/// SignedAttestation with camelCase fields
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SignedAttestationJSON {
-    pub validator_id: u64,
-    pub message: ReamAttestationData,
-    pub signature: String,
-}
-
-impl TryFrom<&SignedAttestationJSON> for ReamSignedAttestation {
-    type Error = anyhow::Error;
-
-    fn try_from(att: &SignedAttestationJSON) -> anyhow::Result<Self> {
-        let sig_hex = att.signature.trim_start_matches("0x");
-        let sig_bytes = alloy_primitives::hex::decode(sig_hex)
-            .map_err(|err| anyhow!("Failed to decode signature hex: {err}"))?;
-
-        let signature = Signature::from_ssz_bytes(&sig_bytes)
-            .map_err(|err| anyhow!("Failed to decode signature from SSZ: {err:?}"))?;
-
-        Ok(ReamSignedAttestation {
-            validator_id: att.validator_id,
-            message: att.message.clone(),
-            signature,
-        })
-    }
-}
-
-/// Wrapper for proof_data in JSON format (nested { data: "0x..." })
-#[derive(Debug, Deserialize, Clone)]
-pub struct ProofDataJSON {
-    pub data: String,
-}
-
-/// AggregatedSignatureProof with camelCase fields
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AggregatedSignatureProofJSON {
@@ -346,31 +324,15 @@ pub struct AggregatedSignatureProofJSON {
 
 impl TryFrom<&AggregatedSignatureProofJSON> for ReamAggregatedSignatureProof {
     type Error = anyhow::Error;
-
     fn try_from(proof: &AggregatedSignatureProofJSON) -> anyhow::Result<Self> {
-        let bool_data = &proof.participants.data;
-        let mut participants = BitList::<U4096>::with_capacity(bool_data.len())
-            .map_err(|err| anyhow!("Failed to create BitList: {err:?}"))?;
-
-        for (i, &bit) in bool_data.iter().enumerate() {
-            participants
-                .set(i, bit)
-                .map_err(|err| anyhow!("Failed to set bit at index {i}: {err:?}"))?;
-        }
-
-        let proof_hex = proof.proof_data.data.trim_start_matches("0x");
-        let proof_bytes = alloy_primitives::hex::decode(proof_hex)
-            .map_err(|err| anyhow!("Failed to decode proof_data hex: {err}"))?;
-
         Ok(ReamAggregatedSignatureProof {
-            participants,
-            proof_data: VariableList::<u8, U1048576>::try_from(proof_bytes)
-                .map_err(|err| anyhow!("Failed to create proof_data: {err}"))?,
+            participants: bools_to_bitlist(&proof.participants.data)?,
+            proof_data: VariableList::<u8, U1048576>::try_from(decode_hex(&proof.proof_data.data)?)
+                .map_err(|error| anyhow!("{error}"))?,
         })
     }
 }
 
-/// BlockSignatures with camelCase fields
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockSignaturesJSON {
@@ -380,29 +342,21 @@ pub struct BlockSignaturesJSON {
 
 impl TryFrom<&BlockSignaturesJSON> for ReamBlockSignatures {
     type Error = anyhow::Error;
-
-    fn try_from(sigs: &BlockSignaturesJSON) -> anyhow::Result<Self> {
-        let mut attestation_signatures = Vec::new();
-        for proof in &sigs.attestation_signatures.data {
-            attestation_signatures.push(ReamAggregatedSignatureProof::try_from(proof)?);
-        }
-
-        let sig_hex = sigs.proposer_signature.trim_start_matches("0x");
-        let sig_bytes = alloy_primitives::hex::decode(sig_hex)
-            .map_err(|err| anyhow!("Failed to decode proposer_signature hex: {err}"))?;
-
-        let proposer_signature = Signature::from_ssz_bytes(&sig_bytes)
-            .map_err(|err| anyhow!("Failed to decode proposer_signature from SSZ: {err:?}"))?;
-
+    fn try_from(signatures: &BlockSignaturesJSON) -> anyhow::Result<Self> {
+        let attestation_signatures: Vec<_> = signatures
+            .attestation_signatures
+            .data
+            .iter()
+            .map(TryInto::try_into)
+            .collect::<Result<_, _>>()?;
         Ok(ReamBlockSignatures {
             attestation_signatures: VariableList::try_from(attestation_signatures)
-                .map_err(|err| anyhow!("Failed to create attestation_signatures: {err}"))?,
-            proposer_signature,
+                .map_err(|error| anyhow!("{error}"))?,
+            proposer_signature: decode_signature(&signatures.proposer_signature)?,
         })
     }
 }
 
-/// BlockWithAttestation with camelCase fields
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockWithAttestationJSON {
@@ -412,16 +366,14 @@ pub struct BlockWithAttestationJSON {
 
 impl TryFrom<&BlockWithAttestationJSON> for ReamBlockWithAttestation {
     type Error = anyhow::Error;
-
-    fn try_from(bwa: &BlockWithAttestationJSON) -> anyhow::Result<Self> {
+    fn try_from(block_with_attestation: &BlockWithAttestationJSON) -> anyhow::Result<Self> {
         Ok(ReamBlockWithAttestation {
-            block: (&bwa.block).try_into()?,
-            proposer_attestation: (&bwa.proposer_attestation).try_into()?,
+            block: (&block_with_attestation.block).try_into()?,
+            proposer_attestation: (&block_with_attestation.proposer_attestation).try_into()?,
         })
     }
 }
 
-/// SignedBlockWithAttestation with camelCase fields
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedBlockWithAttestationJSON {
@@ -431,11 +383,10 @@ pub struct SignedBlockWithAttestationJSON {
 
 impl TryFrom<&SignedBlockWithAttestationJSON> for ReamSignedBlockWithAttestation {
     type Error = anyhow::Error;
-
-    fn try_from(sbwa: &SignedBlockWithAttestationJSON) -> anyhow::Result<Self> {
+    fn try_from(signed_block: &SignedBlockWithAttestationJSON) -> anyhow::Result<Self> {
         Ok(ReamSignedBlockWithAttestation {
-            message: (&sbwa.message).try_into()?,
-            signature: (&sbwa.signature).try_into()?,
+            message: (&signed_block.message).try_into()?,
+            signature: (&signed_block.signature).try_into()?,
         })
     }
 }

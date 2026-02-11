@@ -188,7 +188,6 @@ fn test_all_ssz_fixtures() {
     let mut total_tests = 0;
     let mut passed = 0;
     let mut failed = 0;
-    let mut skipped = 0;
 
     for fixture_path in fixtures {
         debug!("\n=== Loading fixture: {:?} ===", fixture_path.file_name());
@@ -200,7 +199,6 @@ fn test_all_ssz_fixtures() {
                     info!("Starting test: {}", test_name);
                     match run_ssz_test(test_name, test) {
                         Ok(_) => {
-                            // Check if the test was skipped (logs contain "Skipping")
                             passed += 1;
                             info!("PASSED: {}", test_name);
                         }
@@ -221,7 +219,6 @@ fn test_all_ssz_fixtures() {
     info!("\n=== SSZ Test Summary ===");
     info!("Total tests: {total_tests}");
     info!("Passed: {passed}");
-    info!("Skipped: {skipped}");
     info!("Failed: {failed}");
 
     assert_eq!(failed, 0, "Some SSZ tests failed");
