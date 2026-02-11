@@ -105,6 +105,21 @@ impl TryFrom<&ConfigJSON> for ReamConfig {
 }
 
 // ============================================================================
+// Checkpoint
+// ============================================================================
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(transparent)]
+pub struct CheckpointJSON(pub ReamCheckpoint);
+
+impl TryFrom<&CheckpointJSON> for ReamCheckpoint {
+    type Error = anyhow::Error;
+    fn try_from(value: &CheckpointJSON) -> anyhow::Result<Self> {
+        Ok(value.0.clone())
+    }
+}
+
+// ============================================================================
 // BlockHeader
 // ============================================================================
 
@@ -190,6 +205,17 @@ impl TryFrom<&AttestationJSON> for ReamAggregatedAttestations {
             validator_id: attestation.validator_id,
             data: attestation.data.clone(),
         })
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(transparent)]
+pub struct AttestationDataJSON(pub ReamAttestationData);
+
+impl TryFrom<&AttestationDataJSON> for ReamAttestationData {
+    type Error = anyhow::Error;
+    fn try_from(value: &AttestationDataJSON) -> anyhow::Result<Self> {
+        Ok(value.0.clone())
     }
 }
 

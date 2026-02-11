@@ -21,9 +21,10 @@ use tracing::{debug, info, warn};
 use crate::types::{
     TestFixture,
     ssz_test::{
-        AggregatedAttestationJSON, AttestationJSON, BlockBodyJSON, BlockHeaderJSON, BlockJSON,
-        BlockSignaturesJSON, BlockWithAttestationJSON, ConfigJSON, SSZTest, SignedAttestationJSON,
-        SignedBlockWithAttestationJSON, StateJSON, ValidatorJSON,
+        AggregatedAttestationJSON, AttestationDataJSON, AttestationJSON, BlockBodyJSON,
+        BlockHeaderJSON, BlockJSON, BlockSignaturesJSON, BlockWithAttestationJSON, CheckpointJSON,
+        ConfigJSON, SSZTest, SignedAttestationJSON, SignedBlockWithAttestationJSON, StateJSON,
+        ValidatorJSON,
     },
 };
 
@@ -55,11 +56,10 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<()> {
     let expected_ssz = parse_hex_bytes(&test.serialized)?;
 
     match test.type_name.as_str() {
-        // Types that deserialize directly (snake_case in JSON)
-        "Checkpoint" => run_test_direct::<Checkpoint>(&test.value, &expected_ssz),
-        "AttestationData" => run_test_direct::<AttestationData>(&test.value, &expected_ssz),
-
-        // Types with JSON intermediate conversion
+        "Checkpoint" => run_test::<CheckpointJSON, Checkpoint>(&test.value, &expected_ssz),
+        "AttestationData" => {
+            run_test::<AttestationDataJSON, AttestationData>(&test.value, &expected_ssz)
+        }
         "AggregatedAttestation" => {
             run_test::<AggregatedAttestationJSON, AggregatedAttestation>(&test.value, &expected_ssz)
         }
@@ -95,8 +95,7 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<()> {
     }
 }
 
-/// Run SSZ test with JSON intermediate type conversion.
-/// J is the JSON intermediate type, T is the target type.
+/// Run SSZ test. J is the JSON type, T is the target type.
 fn run_test<J, T>(value: &serde_json::Value, expected_ssz: &[u8]) -> anyhow::Result<()>
 where
     J: serde::de::DeserializeOwned,
@@ -105,16 +104,6 @@ where
     let json_value: J = serde_json::from_value(value.clone())
         .map_err(|err| anyhow!("Failed to deserialize JSON: {err}"))?;
     let typed_value: T = (&json_value).try_into()?;
-    verify_ssz(&typed_value, expected_ssz)
-}
-
-/// Run SSZ test for types that deserialize directly (no JSON intermediate type needed).
-fn run_test_direct<T>(value: &serde_json::Value, expected_ssz: &[u8]) -> anyhow::Result<()>
-where
-    T: serde::de::DeserializeOwned + Encode,
-{
-    let typed_value: T = serde_json::from_value(value.clone())
-        .map_err(|err| anyhow!("Failed to deserialize JSON: {err}"))?;
     verify_ssz(&typed_value, expected_ssz)
 }
 
@@ -133,21 +122,4 @@ fn verify_ssz<T: Encode>(value: &T, expected: &[u8]) -> anyhow::Result<()> {
 fn parse_hex_bytes(hex_str: &str) -> anyhow::Result<Vec<u8>> {
     let hex_str = hex_str.strip_prefix("0x").unwrap_or(hex_str);
     hex::decode(hex_str).map_err(|err| anyhow!("Failed to parse hex: {err}"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_hex_bytes() {
-        assert_eq!(
-            parse_hex_bytes("0xdeadbeef").unwrap(),
-            vec![0xde, 0xad, 0xbe, 0xef]
-        );
-        assert_eq!(
-            parse_hex_bytes("deadbeef").unwrap(),
-            vec![0xde, 0xad, 0xbe, 0xef]
-        );
-    }
 }
