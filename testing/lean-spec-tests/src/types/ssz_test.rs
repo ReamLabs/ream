@@ -1,6 +1,10 @@
 //! Intermediate JSON types for leanSpec SSZ test fixtures.
 //!
 //! These types handle camelCase JSON and convert to ream-consensus-lean types.
+//!
+//! These intermediate conversions are needed because the test vectors define the
+//! expected deserialized keys & values as JSON and in camelCase while Rust and our
+//! codebase uses snake_case.
 
 use alloy_primitives::B256;
 use anyhow::anyhow;
@@ -69,7 +73,7 @@ pub struct SSZTest {
 }
 
 // ============================================================================
-// JSON wrapper types
+// Common JSON wrapper types
 // ============================================================================
 
 #[derive(Debug, Deserialize, Clone)]
@@ -80,11 +84,6 @@ pub struct DataListJSON<T> {
 #[derive(Debug, Deserialize, Clone)]
 pub struct AggregationBitsJSON {
     pub data: Vec<bool>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct ProofDataJSON {
-    pub data: String,
 }
 
 // ============================================================================
@@ -314,6 +313,11 @@ impl TryFrom<&StateJSON> for ReamState {
 // ============================================================================
 // Signature-related types
 // ============================================================================
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ProofDataJSON {
+    pub data: String,
+}
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
