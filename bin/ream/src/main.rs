@@ -300,11 +300,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let network_state = lean_chain_reader.read().await.network_state.clone();
 
     // Initialize the lean network service
-
-    #[cfg(feature = "devnet2")]
-    let fork = "devnet2".to_string();
-    #[cfg(feature = "devnet3")]
-    let fork = "devnet3".to_string();
+    let fork = "devnet0".to_string();
 
     #[cfg(feature = "devnet2")]
     let topics: Vec<LeanGossipTopic> = vec![
