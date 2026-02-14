@@ -18,7 +18,7 @@ pub type Cell = FixedVector<u8, typenum::U2048>;
 pub const NUMBER_OF_COLUMNS: u64 = 128;
 pub const DATA_COLUMN_SIDECAR_SUBNET_COUNT: u64 = 128;
 
-pub type MaxBlobCommitmentsPerBlock = typenum::U6;
+pub type MaxBlobCommitmentsPerBlock = typenum::U4096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Encode, Decode, TreeHash)]
 pub struct DataColumnSidecar {
