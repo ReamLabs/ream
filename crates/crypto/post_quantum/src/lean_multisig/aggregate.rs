@@ -40,9 +40,8 @@ pub fn aggregate_signatures(
             .map_err(|err| anyhow!("Failed to convert public keys: {err}"))?,
         &signatures
             .iter()
-            .map(|signature| signature.as_lean_sig())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| anyhow!("Failed to convert signatures: {err}"))?,
+            .map(|signature| signature.as_lean_sig().clone())
+            .collect::<Vec<_>>(),
         message,
         epoch,
     )

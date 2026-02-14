@@ -76,7 +76,7 @@ impl PrivateKey {
         let signature = <LeanSigScheme as SignatureScheme>::sign(&self.inner, epoch, message)
             .map_err(LeanSigError::SigningFailed)?;
 
-        Signature::from_lean_sig(signature)
+        Ok(Signature::from_lean_sig(signature))
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, LeanSigError> {

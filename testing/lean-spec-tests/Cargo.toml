@@ -20,6 +20,7 @@ alloy-primitives.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+ssz = { package = "ethereum_ssz", version = "0.10" }
 ssz_types.workspace = true
 tokio.workspace = true
 tracing.workspace = true
