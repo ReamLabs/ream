@@ -7,6 +7,8 @@ use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 #[cfg(feature = "devnet3")]
 use ream_consensus_lean::attestation::SignedAggregatedAttestation;
+#[cfg(feature = "devnet3")]
+use ream_consensus_lean::block::{BlockSignatures, BlockWithAttestation};
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
@@ -1043,11 +1045,13 @@ impl Store {
     ) -> anyhow::Result<BlockWithSignatures> {
         let head_root = self.get_proposal_head(slot).await?;
         let initialize_block_timer = start_timer(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
-        let state_provider = self.store.lock().await.state_provider();
 
-        let head_state = state_provider
-            .get(head_root)?
-            .ok_or(anyhow!("State not found for head root"))?;
+        let head_state = {
+            let db = self.store.lock().await;
+            db.state_provider()
+                .get(head_root)?
+                .ok_or(anyhow!("State not found for head root"))?
+        };
         stop_timer(initialize_block_timer);
 
         let num_validators = head_state.validators.len();
@@ -1079,7 +1083,7 @@ impl Store {
             .collect();
 
         #[cfg(feature = "devnet3")]
-        let attestation_list = VariableList::new(attestation_vector)
+        let attestation_list = VariableList::new(attestation_vector.clone())
             .map_err(|err| anyhow!("Failed to create VariableList: {err:?}"))?;
 
         #[cfg(feature = "devnet3")]
@@ -1097,13 +1101,56 @@ impl Store {
             .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
 
         #[cfg(feature = "devnet3")]
-        let latest_finalized_provider = self.store.lock().await.latest_finalized_provider();
-        #[cfg(feature = "devnet3")]
-        let finalized_advanced =
-            post_state.latest_finalized.slot > latest_finalized_provider.get()?.slot;
+        let finalized_advanced = {
+            let db = self.store.lock().await;
+            post_state.latest_finalized.slot > db.latest_finalized_provider().get()?.slot
+        };
+
         #[cfg(feature = "devnet3")]
         if finalized_advanced {
             self.prune_stale_attestation_data().await?;
+        }
+
+        #[cfg(feature = "devnet3")]
+        let block_root = candidate_block.tree_hash_root();
+        #[cfg(feature = "devnet3")]
+        {
+            let db = self.store.lock().await;
+            let signed_block = SignedBlockWithAttestation {
+                message: BlockWithAttestation {
+                    block: candidate_block.clone(),
+                    proposer_attestation: AggregatedAttestations {
+                        validator_id: validator_index,
+                        data: AttestationData {
+                            slot,
+                            head: Checkpoint {
+                                root: head_root,
+                                slot: head_state.slot,
+                            },
+                            target: post_state.latest_justified,
+                            source: post_state.latest_finalized,
+                        },
+                    },
+                },
+                signature: BlockSignatures {
+                    attestation_signatures: signatures_list.clone(),
+                    proposer_signature: Signature::blank(),
+                },
+            };
+
+            db.block_provider().insert(block_root, signed_block)?;
+
+            db.state_provider().insert(block_root, post_state.clone())?;
+
+            if post_state.latest_justified.slot > db.latest_justified_provider().get()?.slot {
+                db.latest_justified_provider()
+                    .insert(post_state.latest_justified)?;
+            }
+
+            if post_state.latest_finalized.slot > db.latest_finalized_provider().get()?.slot {
+                db.latest_finalized_provider()
+                    .insert(post_state.latest_finalized)?;
+            }
         }
 
         Ok(BlockWithSignatures {
@@ -1354,7 +1401,11 @@ impl Store {
         signed_attestation: &SignedAttestation,
     ) -> anyhow::Result<()> {
         let data = &signed_attestation.message;
-        let block_provider = self.store.lock().await.block_provider();
+
+        let (block_provider, time_provider) = {
+            let db = self.store.lock().await;
+            (db.block_provider(), db.time_provider())
+        };
 
         // Validate attestation targets exist in store
         ensure!(
@@ -1376,15 +1427,23 @@ impl Store {
             data.source.slot <= data.target.slot,
             "Source checkpoint slot must not exceed target"
         );
+        #[cfg(feature = "devnet3")]
+        ensure!(
+            data.head.slot >= data.target.slot,
+            "Head checkpoint must not be older than target"
+        );
 
-        // Validate slot relationships
         let source_block = block_provider
             .get(data.source.root)?
             .ok_or(anyhow!("Failed to get source block"))?;
-
         let target_block = block_provider
             .get(data.target.root)?
             .ok_or(anyhow!("Failed to get target block"))?;
+        #[cfg(feature = "devnet3")]
+        let head_block = block_provider
+            .get(data.head.root)?
+            .ok_or(anyhow!("Failed to get head block"))?;
+
         ensure!(
             source_block.message.block.slot == data.source.slot,
             "Source checkpoint slot mismatch"
@@ -1395,8 +1454,13 @@ impl Store {
             "Target checkpoint slot mismatch"
         );
 
-        let current_slot =
-            self.store.lock().await.time_provider().get()? / lean_network_spec().seconds_per_slot;
+        #[cfg(feature = "devnet3")]
+        ensure!(
+            head_block.message.block.slot == data.head.slot,
+            "Head checkpoint slot mismatch"
+        );
+
+        let current_slot = time_provider.get()? / lean_network_spec().seconds_per_slot;
         ensure!(
             data.slot <= current_slot + 1,
             "Attestation too far in future expected slot: {} <= {}",
@@ -1759,6 +1823,8 @@ mod tests {
     use alloy_primitives::{B256, FixedBytes};
     #[cfg(feature = "devnet3")]
     use anyhow::ensure;
+    #[cfg(feature = "devnet2")]
+    use ream_consensus_lean::validator::Validator;
     use ream_consensus_lean::{
         attestation::{
             AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
@@ -1771,11 +1837,13 @@ mod tests {
         checkpoint::Checkpoint,
         state::LeanState,
         utils::generate_default_validators,
-        validator::{Validator, is_proposer},
+        validator::is_proposer,
     };
     use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
     use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
-    use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, signature::Signature};
+    #[cfg(feature = "devnet2")]
+    use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
+    use ream_post_quantum_crypto::leansig::signature::Signature;
     use ream_storage::{
         db::{ReamDB, lean::LeanDB},
         tables::{field::REDBField, table::REDBTable},
@@ -1848,6 +1916,188 @@ mod tests {
                 proposer_signature: Signature::blank(),
             },
         }
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_head_checkpoint_slot_mismatch_rejected() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        let slot_1 = 1;
+        let block_sigs = store.produce_block_with_signatures(slot_1, 1).await?;
+        let block_root = block_sigs.block.tree_hash_root();
+        let genesis_checkpoint = {
+            let db = store.store.lock().await;
+            db.latest_justified_provider().get()?
+        };
+
+        let attestation = SignedAttestation {
+            validator_id: 0,
+            signature: Signature::blank(),
+            message: AttestationData {
+                slot: slot_1,
+                head: Checkpoint {
+                    root: block_root,
+                    slot: 999,
+                },
+                target: Checkpoint {
+                    root: block_root,
+                    slot: slot_1,
+                },
+                source: genesis_checkpoint,
+            },
+        };
+
+        let result = store.validate_attestation(&attestation).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Head checkpoint slot mismatch")
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_head_slot_less_than_source_rejected() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        let block_1_sigs = store.produce_block_with_signatures(1, 1).await?;
+        let block_1_root = block_1_sigs.block.tree_hash_root();
+        let block_2_sigs = store.produce_block_with_signatures(2, 2).await?;
+        let block_2_root = block_2_sigs.block.tree_hash_root();
+        let genesis_root = {
+            let db = store.store.lock().await;
+            db.latest_justified_provider().get()?.root
+        };
+
+        let attestation = SignedAttestation {
+            validator_id: 0,
+            signature: Signature::blank(),
+            message: AttestationData {
+                slot: 2,
+                head: Checkpoint {
+                    root: genesis_root,
+                    slot: 0,
+                },
+                target: Checkpoint {
+                    root: block_2_root,
+                    slot: 2,
+                },
+                source: Checkpoint {
+                    root: block_1_root,
+                    slot: 1,
+                },
+            },
+        };
+
+        let result = store.validate_attestation(&attestation).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Head checkpoint must not be older than target")
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_head_slot_less_than_target_rejected() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        let block_1_sigs = store.produce_block_with_signatures(1, 1).await?;
+        let block_1_root = block_1_sigs.block.tree_hash_root();
+        let block_2_sigs = store.produce_block_with_signatures(2, 2).await?;
+        let block_2_root = block_2_sigs.block.tree_hash_root();
+        let genesis_checkpoint = {
+            let db = store.store.lock().await;
+            db.latest_justified_provider().get()?
+        };
+
+        let attestation = SignedAttestation {
+            validator_id: 0,
+            signature: Signature::blank(),
+            message: AttestationData {
+                slot: 2,
+                head: Checkpoint {
+                    root: block_1_root,
+                    slot: 1,
+                },
+                target: Checkpoint {
+                    root: block_2_root,
+                    slot: 2,
+                },
+                source: genesis_checkpoint,
+            },
+        };
+
+        let result = store.validate_attestation(&attestation).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Head checkpoint must not be older than target")
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_valid_attestation_with_correct_head_passes() -> anyhow::Result<()> {
+        let (mut store, _) = sample_store(10).await;
+        let slot_1 = 1;
+        let block_sigs = store.produce_block_with_signatures(slot_1, 1).await?;
+        let block_root = block_sigs.block.tree_hash_root();
+        let genesis_checkpoint = {
+            let db = store.store.lock().await;
+            db.latest_justified_provider().get()?
+        };
+
+        let attestation = SignedAttestation {
+            validator_id: 0,
+            signature: Signature::blank(),
+            message: AttestationData {
+                slot: slot_1,
+                head: Checkpoint {
+                    root: block_root,
+                    slot: slot_1,
+                },
+                target: Checkpoint {
+                    root: block_root,
+                    slot: slot_1,
+                },
+                source: genesis_checkpoint,
+            },
+        };
+
+        store.validate_attestation(&attestation).await?;
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    async fn test_head_equal_to_source_and_target_passes() -> anyhow::Result<()> {
+        let (store, _) = sample_store(10).await;
+        let genesis_checkpoint = {
+            let db = store.store.lock().await;
+            db.latest_justified_provider().get()?
+        };
+
+        let attestation = SignedAttestation {
+            validator_id: 0,
+            signature: Signature::blank(),
+            message: AttestationData {
+                slot: 0,
+                head: genesis_checkpoint,
+                target: genesis_checkpoint,
+                source: genesis_checkpoint,
+            },
+        };
+
+        store.validate_attestation(&attestation).await?;
+        Ok(())
     }
 
     #[cfg(feature = "devnet3")]
@@ -2247,6 +2497,7 @@ mod tests {
 
     /// Test block production includes available attestations
     /// This test generates real key pairs for validators to ensure signature aggregation works.
+    #[cfg(feature = "devnet2")]
     #[tokio::test]
     async fn test_produce_block_with_attestations() {
         use rand::rng;
@@ -2290,8 +2541,6 @@ mod tests {
             genesis_state.clone(),
             db_setup(),
             Some(0),
-            #[cfg(feature = "devnet3")]
-            None,
         )
         .unwrap();
 
@@ -2380,6 +2629,7 @@ mod tests {
     }
 
     /// Test producing blocks in sequential slots.
+    #[cfg(feature = "devnet2")]
     #[tokio::test]
     pub async fn test_produce_block_sequential_slots() {
         let (mut store, mut genesis_state) = sample_store(10).await;
@@ -3141,13 +3391,10 @@ mod tests {
     }
 
     // Test that get_proposal_head processes pending attestations.
+    #[cfg(feature = "devnet2")]
     #[tokio::test]
     pub async fn test_get_proposal_head_processes_attestations() {
-        #[cfg(feature = "devnet2")]
         let (store, _) = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
 
         let root = {
             let mut root_vec = [0u8; 32];
