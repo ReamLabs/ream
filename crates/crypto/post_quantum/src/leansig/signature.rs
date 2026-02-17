@@ -1,15 +1,25 @@
 use leansig::{signature::SignatureScheme, MESSAGE_LENGTH};
 use serde::{Deserialize, Serialize};
-use ssz::{Decode, DecodeError, Encode};
+use ssz::{Decode, Encode};
+use ssz_derive::{Decode, Encode};
 
 use crate::leansig::{public_key::PublicKey, LeanSigScheme};
 
 /// The inner leansig signature type with built-in SSZ support.
 pub type LeanSigSignature = <LeanSigScheme as SignatureScheme>::Signature;
 
+const BLANK_SIGNATURE_SSZ_BYTES: [u8; 40] = [
+    36, 0, 0, 0, // offset_path = 36
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // rho (28 zeros)
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+    40, 0, 0, 0, // offset_hashes = 40
+    4, 0, 0, 0, // path: empty HashTreeOpening
+];
+
 /// Wrapper around leansig's signature type.
 /// Uses leansig's built-in SSZ encoding for interoperability with other clients.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Encode, Decode)]
+#[ssz(struct_behaviour = "transparent")]
 pub struct Signature {
     pub inner: LeanSigSignature,
 }
@@ -31,51 +41,13 @@ impl PartialEq for Signature {
 
 impl Eq for Signature {}
 
-impl Encode for Signature {
-    fn is_ssz_fixed_len() -> bool {
-        <LeanSigSignature as Encode>::is_ssz_fixed_len()
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        self.inner.ssz_bytes_len()
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        self.inner.ssz_append(buf)
-    }
-}
-
-impl Decode for Signature {
-    fn is_ssz_fixed_len() -> bool {
-        <LeanSigSignature as Decode>::is_ssz_fixed_len()
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        Ok(Self {
-            inner: LeanSigSignature::from_ssz_bytes(bytes)?,
-        })
-    }
-}
-
 impl Signature {
-    pub fn new(inner: LeanSigSignature) -> Self {
-        Self { inner }
-    }
-
     /// Create a blank/placeholder signature.
     ///
     /// This decodes from minimal valid SSZ bytes, avoiding expensive key generation.
     /// Only use in contexts where the signature won't be validated.
     pub fn blank() -> Self {
-        // 40 bytes: offset_path(4) + rho(28 zeros) + offset_hashes(4) + path(4)
-        const BYTES: [u8; 40] = [
-            36, 0, 0, 0, // offset_path = 36
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // rho (28 zeros)
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-            40, 0, 0, 0, // offset_hashes = 40
-            4, 0, 0, 0, // path: empty HashTreeOpening
-        ];
-        Self::from_ssz_bytes(&BYTES).expect("blank signature bytes are valid")
+        Self::from_ssz_bytes(&BLANK_SIGNATURE_SSZ_BYTES).expect("blank signature bytes are valid")
     }
 
     /// Create a mock signature for testing purposes.
