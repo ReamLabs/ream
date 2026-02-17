@@ -564,7 +564,7 @@ impl LeanNetworkService {
                         self.chain_message_sender
                             .send(LeanChainServiceMessage::ProcessBlock {
                                 signed_block_with_attestation,
-                                need_gossip: true,
+                                need_gossip: false,
                             })
                     {
                         warn!("failed to send block for slot {slot} item to chain: {err:?}");
@@ -577,7 +577,7 @@ impl LeanNetworkService {
                     if let Err(err) = self.chain_message_sender.send(
                         LeanChainServiceMessage::ProcessAttestation {
                             signed_attestation,
-                            need_gossip: true,
+                            need_gossip: false,
                         },
                     ) {
                         warn!("failed to send attestation for slot {slot} to chain: {err:?}");
@@ -594,7 +594,7 @@ impl LeanNetworkService {
                         LeanChainServiceMessage::ProcessAttestation {
                             signed_attestation,
                             subnet_id,
-                            need_gossip: true,
+                            need_gossip: false,
                         },
                     ) {
                         warn!(
@@ -609,7 +609,7 @@ impl LeanNetworkService {
                     if let Err(err) = self.chain_message_sender.send(
                         LeanChainServiceMessage::ProcessAggregatedAttestation {
                             aggregated_attestation,
-                            need_gossip: true,
+                            need_gossip: false,
                         },
                     ) {
                         warn!(
