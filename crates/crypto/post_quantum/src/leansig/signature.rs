@@ -1,8 +1,8 @@
-use leansig::{MESSAGE_LENGTH, signature::SignatureScheme};
+use leansig::{signature::SignatureScheme, MESSAGE_LENGTH};
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, DecodeError, Encode};
 
-use crate::leansig::{LeanSigScheme, public_key::PublicKey};
+use crate::leansig::{public_key::PublicKey, LeanSigScheme};
 
 /// The inner leansig signature type with built-in SSZ support.
 pub type LeanSigSignature = <LeanSigScheme as SignatureScheme>::Signature;
@@ -120,10 +120,19 @@ impl Signature {
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::FixedBytes;
+    use leansig::serialization::Serializable;
     use rand::rng;
     use ssz::{Decode, Encode};
 
     use crate::leansig::{private_key::PrivateKey, signature::Signature};
+
+    const LEGACY_SIGNATURE_SIZE: usize = 3112;
+
+    #[derive(ssz_derive::Encode)]
+    struct LegacySignature {
+        inner: FixedBytes<LEGACY_SIGNATURE_SIZE>,
+    }
 
     #[test]
     fn test_serialization_roundtrip() {
@@ -151,5 +160,26 @@ mod tests {
 
         // verify roundtrip
         assert_eq!(signature, signature_decoded);
+    }
+
+    #[test]
+    fn test_ssz_bytes_match_legacy_signature_wrapper() {
+        let mut rng = rng();
+        let activation_epoch = 0;
+        let num_active_epochs = 10;
+
+        let (_, private_key) =
+            PrivateKey::generate_key_pair(&mut rng, activation_epoch, num_active_epochs);
+
+        let epoch = 5;
+        let message = [0u8; 32];
+        let signature = private_key.sign(&message, epoch).unwrap();
+
+        let legacy_signature = LegacySignature {
+            inner: FixedBytes::try_from(signature.as_lean_sig().to_bytes().as_slice())
+                .expect("legacy signature bytes should match fixed size"),
+        };
+
+        assert_eq!(legacy_signature.as_ssz_bytes(), signature.as_ssz_bytes());
     }
 }
