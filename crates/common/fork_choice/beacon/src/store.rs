@@ -6,7 +6,6 @@ use hashbrown::HashMap;
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     attestation::Attestation,
-    blob_sidecar::BlobIdentifier,
     data_column_sidecar::{ColumnIdentifier, DataColumnSidecar, NUMBER_OF_COLUMNS},
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
@@ -19,13 +18,10 @@ use ream_consensus_misc::{
     checkpoint::Checkpoint,
     constants::beacon::{GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
-    polynomial_commitments::kzg_commitment::KZGCommitment,
 };
 use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
-use ream_polynomial_commitments::handlers::{
-    verify_blob_kzg_proof_batch, verify_data_column_sidecar_kzg_proofs,
-};
+use ream_polynomial_commitments::handlers::verify_data_column_sidecar_kzg_proofs;
 use ream_storage::{
     db::beacon::BeaconDB,
     tables::{
@@ -737,8 +733,7 @@ impl Store {
     /// For Deneb: https://ethereum.github.io/consensus-specs/specs/deneb/fork-choice/#is_data_available
     pub fn is_data_available(
         &self,
-        beacon_block_root: B256,
-        blob_kzg_commitments: &[KZGCommitment],
+        beacon_block_root: B256
     ) -> anyhow::Result<bool> {
         // `retrieve_column_sidecars` is implementation and context dependent, replacing
         // `retrieve_blobs_and_proofs`. For the given block root, it returns all column
@@ -747,57 +742,16 @@ impl Store {
         // `MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS` epochs.
         let column_sidecars = self.retrieve_column_sidecars(beacon_block_root)?;
 
-        if !column_sidecars.is_empty() {
-            // Fulu column sidecars validation
-            for column_sidecar in column_sidecars {
-                if !column_sidecar.verify() {
-                    return Ok(false);
-                }
-                if !verify_data_column_sidecar_kzg_proofs(&column_sidecar)? {
-                    return Ok(false);
-                }
+        // Fulu column sidecars validation
+        for column_sidecar in column_sidecars {
+            if !column_sidecar.verify() {
+                return Ok(false);
             }
-            Ok(true)
-        } else {
-            // Fallback to Deneb blobs validation
-            if blob_kzg_commitments.is_empty() {
-                return Ok(true);
-            }
-
-            self.is_blob_data_available(beacon_block_root, blob_kzg_commitments)
-        }
-    }
-
-    /// Check if blob data is available for a Deneb block.
-    ///
-    /// Spec: https://ethereum.github.io/consensus-specs/specs/deneb/fork-choice/#is_data_available
-    fn is_blob_data_available(
-        &self,
-        beacon_block_root: B256,
-        blob_kzg_commitments: &[KZGCommitment],
-    ) -> anyhow::Result<bool> {
-        let mut blobs = Vec::with_capacity(blob_kzg_commitments.len());
-        let mut proofs = Vec::with_capacity(blob_kzg_commitments.len());
-
-        // Retrieve all blobs and proofs
-        for index in 0..blob_kzg_commitments.len() {
-            let blob_id = BlobIdentifier::new(beacon_block_root, index as u64);
-            if let Some(blob_and_proof) = self.db.blobs_and_proofs_provider().get(blob_id)? {
-                blobs.push(blob_and_proof.blob);
-                proofs.push(blob_and_proof.proof);
-            } else {
-                // Data not available
+            if !verify_data_column_sidecar_kzg_proofs(&column_sidecar)? {
                 return Ok(false);
             }
         }
-
-        // Verify the number of blobs matches
-        if blobs.len() != blob_kzg_commitments.len() {
-            return Ok(false);
-        }
-
-        // Verify blob KZG proofs
-        verify_blob_kzg_proof_batch(&blobs, blob_kzg_commitments, &proofs)
+        Ok(true)
     }
 
     /// Retrieve column sidecars for a block.

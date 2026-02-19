@@ -13,6 +13,7 @@ use crate::{
     errors::StoreError,
     tables::{
         beacon::{
+            column_sidecars::COLUMN_FOLDER_NAME,
             beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
             blobs_and_proofs::BLOB_FOLDER_NAME, block_timeliness::BlockTimelinessTable,
             checkpoint_states::CheckpointStatesTable,
@@ -89,6 +90,7 @@ impl ReamDB {
         write_txn.commit()?;
 
         fs::create_dir_all(self.data_dir.join(BLOB_FOLDER_NAME))?;
+        fs::create_dir_all(self.data_dir.join(COLUMN_FOLDER_NAME))?;
 
         Ok(BeaconDB {
             db: self.db.clone(),

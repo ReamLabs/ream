@@ -1,8 +1,7 @@
 use alloy_primitives::{B256, map::HashSet};
 use anyhow::{anyhow, ensure};
 use ream_consensus_beacon::{
-    attestation::Attestation, attester_slashing::AttesterSlashing,
-    electra::beacon_block::SignedBeaconBlock, predicates::is_slashable_attestation_data,
+    attestation::Attestation, attester_slashing::AttesterSlashing, electra::beacon_block::SignedBeaconBlock, predicates::is_slashable_attestation_data
 };
 use ream_consensus_misc::{
     constants::beacon::INTERVALS_PER_SLOT, misc::compute_start_slot_at_epoch,
@@ -47,9 +46,11 @@ pub async fn on_block(
 
     // Check that block is later than the finalized epoch slot (optimization to reduce calls to
     // get_ancestor)
-    let finalized_slot =
-        compute_start_slot_at_epoch(store.db.finalized_checkpoint_provider().get()?.epoch);
-    ensure!(block.slot > finalized_slot);
+    let finalized_slot = compute_start_slot_at_epoch(store.db.finalized_checkpoint_provider().get()?.epoch);
+    ensure!(block.slot > finalized_slot, "Block slot must be greater than finalized slot: block.slot = {}, finalized_slot = {}",
+        block.slot,
+        finalized_slot
+    );
 
     // Check block is a descendant of the finalized block at the checkpoint finalized slot
     let finalized_checkpoint_block = store.get_checkpoint_block(
@@ -63,7 +64,7 @@ pub async fn on_block(
         // available *Note*: Extraneous or invalid data (in addition to the
         // expected/referenced valid data) received on the p2p network MUST NOT invalidate
         // a block that is otherwise valid and available
-        ensure!(store.is_data_available(block.tree_hash_root(), &block.body.blob_kzg_commitments)?);
+        ensure!(store.is_data_available(block.tree_hash_root()).unwrap_or(false));
     }
 
     // Check the block is valid and compute the post-state
