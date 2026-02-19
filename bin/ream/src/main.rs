@@ -292,7 +292,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             lean_db,
             None,
             #[cfg(feature = "devnet3")]
-            None,
+            keystores.first().map(|keystore| keystore.index),
         )
         .expect("Could not get forkchoice store"),
     );
