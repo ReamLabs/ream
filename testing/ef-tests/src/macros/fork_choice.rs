@@ -152,6 +152,8 @@ macro_rules! test_fork_choice {
                                             panic!("cannot find test asset (block_{blocks:?}.ssz_snappy)")
                                         });
 
+                                    let verify_blob_availability = blocks.columns.is_some();
+
                                     if let Some(columns) = blocks.columns {
                                         for (index, column) in columns.into_iter().enumerate() {
                                             let column_path = case_dir.join(format!("{}.ssz_snappy", column));
@@ -160,7 +162,7 @@ macro_rules! test_fork_choice {
                                         }
                                     }
 
-                                    assert_eq!(on_block(&mut store, &block, &mock_engine, true).await.is_ok(), blocks.valid.unwrap_or(true), "Unexpected result on on_block");
+                                    assert_eq!(on_block(&mut store, &block, &mock_engine, verify_blob_availability).await.is_ok(), blocks.valid.unwrap_or(true), "Unexpected result on on_block");
                                 }
                                 ForkChoiceStep::Attestation(attestations) => {
                                     let attestation_path =
