@@ -152,11 +152,8 @@ macro_rules! test_fork_choice {
                                             panic!("cannot find test asset (block_{blocks:?}.ssz_snappy)")
                                         });
 
-<<<<<<< HEAD
                                     let verify_blob_availability = blocks.columns.is_some();
 
-=======
->>>>>>> 510fbdc (fix: updated the fork choice test harness to use columns and avoid blobs and proofs as noted in the spec)
                                     if let Some(columns) = blocks.columns {
                                         for (index, column) in columns.into_iter().enumerate() {
                                             let column_path = case_dir.join(format!("{}.ssz_snappy", column));
