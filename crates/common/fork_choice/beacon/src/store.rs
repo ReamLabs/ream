@@ -731,7 +731,14 @@ impl Store {
     ///
     /// For Fulu: https://ethereum.github.io/consensus-specs/specs/fulu/fork-choice/#modified-is_data_available
     /// For Deneb: https://ethereum.github.io/consensus-specs/specs/deneb/fork-choice/#is_data_available
+<<<<<<< HEAD
     pub fn is_data_available(&self, beacon_block_root: B256) -> anyhow::Result<bool> {
+=======
+    pub fn is_data_available(
+        &self,
+        beacon_block_root: B256
+    ) -> anyhow::Result<bool> {
+>>>>>>> 510fbdc (fix: updated the fork choice test harness to use columns and avoid blobs and proofs as noted in the spec)
         // `retrieve_column_sidecars` is implementation and context dependent, replacing
         // `retrieve_blobs_and_proofs`. For the given block root, it returns all column
         // sidecars to sample, or raises an exception if they are not available.

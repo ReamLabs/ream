@@ -13,6 +13,7 @@ use crate::{
     errors::StoreError,
     tables::{
         beacon::{
+            column_sidecars::COLUMN_FOLDER_NAME,
             beacon_block::BeaconBlockTable, beacon_state::BeaconStateTable,
             blobs_and_proofs::BLOB_FOLDER_NAME, block_timeliness::BlockTimelinessTable,
             checkpoint_states::CheckpointStatesTable, column_sidecars::COLUMN_FOLDER_NAME,
