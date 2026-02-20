@@ -429,7 +429,8 @@ impl Store {
         is_aggregator: bool,
     ) -> anyhow::Result<()> {
         let time_delta_ms = (time - lean_network_spec().genesis_time) * 1000;
-        let tick_interval_time = time_delta_ms / lean_network_spec().seconds_per_slot * 1000 / 5;
+        let tick_interval_time =
+            time_delta_ms * INTERVALS_PER_SLOT / (lean_network_spec().seconds_per_slot * 1000);
 
         let time_provider = self.store.lock().await.time_provider();
         while time_provider.get()? < tick_interval_time {

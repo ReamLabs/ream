@@ -11,6 +11,7 @@ use ream_consensus_lean::{
 };
 #[cfg(feature = "devnet3")]
 use ream_consensus_misc::constants::lean::ATTESTATION_COMMITTEE_COUNT;
+use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 #[cfg(feature = "devnet3")]
 use ream_fork_choice_lean::store::compute_subnet_id;
 use ream_keystore::lean_keystore::ValidatorKeystore;
@@ -65,8 +66,8 @@ impl ValidatorService {
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    let slot = tick_count / 4;
-                    match tick_count % 4 {
+                    let slot = tick_count / INTERVALS_PER_SLOT;
+                    match tick_count % INTERVALS_PER_SLOT {
                         0 => {
                             // First tick (t=0): Propose a block.
                             if slot > 0 && let Some(keystore) = self.is_proposer(slot) {

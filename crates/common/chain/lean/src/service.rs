@@ -15,6 +15,7 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
 };
+use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_metrics::{CURRENT_SLOT, set_int_gauge_vec};
 use ream_network_spec::networks::lean_network_spec;
@@ -127,14 +128,18 @@ impl LeanChainService {
 
             tokio::select! {
                 _ = interval.tick() => {
-                    if tick_count.is_multiple_of(4) {
+                    if tick_count.is_multiple_of(INTERVALS_PER_SLOT) {
                         self.sync_status = self.update_sync_status().await?;
                     }
                     if self.sync_status == SyncStatus::Synced {
                         #[cfg(feature = "devnet2")]
                         self.store.write().await.tick_interval(tick_count % 4 == 1).await.expect("Failed to tick interval");
                         #[cfg(feature = "devnet3")]
-                        self.store.write().await.tick_interval(tick_count % 4 == 1, false).await.expect("Failed to tick interval");
+                        {
+                            // TODO: update is_aggregator logic from devnet config
+                            let is_aggregator = true;
+                            self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), is_aggregator).await.expect("Failed to tick interval");
+                        }
                         self.step_head_sync(tick_count).await?;
                     }
 
@@ -394,9 +399,10 @@ impl LeanChainService {
     }
 
     async fn step_head_sync(&mut self, tick_count: u64) -> anyhow::Result<()> {
-        match tick_count % 4 {
+        let interval = tick_count % INTERVALS_PER_SLOT;
+        match interval {
             0 => {
-                // First tick (t=0/4): Log current head state, including its
+                // First tick: Log current head state, including its
                 // justification/finalization status.
                 let (head, state_provider) = {
                     let fork_choice = self.store.read().await;
@@ -435,8 +441,15 @@ impl LeanChainService {
                     finalized_root = head_state.latest_finalized.root,
                 );
             }
+            1 => {
+                // Second tick: Prune old data.
+                if let Err(err) = self.prune_old_state(tick_count).await {
+                    warn!("Pruning cycle failed (non-fatal): {err:?}");
+                }
+            }
+            #[cfg(feature = "devnet2")]
             2 => {
-                // Third tick (t=2/4): Compute the safe target.
+                // Third tick (devnet2): Compute the safe target.
                 info!(
                     slot = get_current_slot(),
                     tick = tick_count,
@@ -449,8 +462,9 @@ impl LeanChainService {
                     .await
                     .expect("Failed to update safe target");
             }
+            #[cfg(feature = "devnet2")]
             3 => {
-                // Fourth tick (t=3/4): Accept new attestations.
+                // Fourth tick (devnet2): Accept new attestations.
                 info!(
                     slot = get_current_slot(),
                     tick = tick_count,
@@ -463,13 +477,39 @@ impl LeanChainService {
                     .await
                     .expect("Failed to accept new attestations");
             }
-            1 => {
-                // Other ticks (t=0, t=1/4): Prune old data.
-                if let Err(err) = self.prune_old_state(tick_count).await {
-                    warn!("Pruning cycle failed (non-fatal): {err:?}");
-                }
+            #[cfg(feature = "devnet3")]
+            3 => {
+                // Fourth tick (devnet3): Compute the safe target.
+                info!(
+                    slot = get_current_slot(),
+                    tick = tick_count,
+                    "Computing safe target"
+                );
+                self.store
+                    .write()
+                    .await
+                    .update_safe_target()
+                    .await
+                    .expect("Failed to update safe target");
             }
-            _ => unreachable!("Tick count modulo 4 should be in 0..=3"),
+            #[cfg(feature = "devnet3")]
+            4 => {
+                // Fifth tick (devnet3): Accept new attestations.
+                info!(
+                    slot = get_current_slot(),
+                    tick = tick_count,
+                    "Accepting new attestations"
+                );
+                self.store
+                    .write()
+                    .await
+                    .accept_new_attestations()
+                    .await
+                    .expect("Failed to accept new attestations");
+            }
+            _ => {
+                // Other ticks: Do nothing.
+            }
         }
         Ok(())
     }
@@ -660,7 +700,7 @@ impl LeanChainService {
             #[cfg(feature = "devnet2")]
             self.store.write().await.on_tick(now, false).await?;
             #[cfg(feature = "devnet3")]
-            self.store.write().await.on_tick(now, false, false).await?;
+            self.store.write().await.on_tick(now, false, true).await?;
         }
 
         Ok(sync_status)
@@ -980,7 +1020,7 @@ impl LeanChainService {
         self.store
             .write()
             .await
-            .on_gossip_attestation(signed_attestation, false)
+            .on_gossip_attestation(signed_attestation, true)
             .await?;
 
         Ok(())
