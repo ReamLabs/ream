@@ -1307,18 +1307,17 @@ impl Store {
         let proposer_validator_id = proposer_attestation.validator_id;
 
         #[cfg(feature = "devnet3")]
-        if let Some(current_id) = self.validator_id {
-            if compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT)
+        if let Some(current_id) = self.validator_id
+            && compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT)
                 == compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT)
-            {
-                gossip_signatures_provider.insert(
-                    SignatureKey::new(
-                        proposer_attestation.validator_id,
-                        &proposer_attestation.data,
-                    ),
-                    signed_block_with_attestation.signature.proposer_signature,
-                )?;
-            }
+        {
+            gossip_signatures_provider.insert(
+                SignatureKey::new(
+                    proposer_attestation.validator_id,
+                    &proposer_attestation.data,
+                ),
+                signed_block_with_attestation.signature.proposer_signature,
+            )?;
         }
 
         #[cfg(feature = "devnet2")]
