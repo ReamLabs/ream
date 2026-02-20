@@ -136,7 +136,7 @@ impl LeanChainService {
                         self.store.write().await.tick_interval(tick_count % INTERVALS_PER_SLOT == 0).await.expect("Failed to tick interval");
                         #[cfg(feature = "devnet3")]
                         {
-                            // TODO: update is_aggregator logic from 
+                            // TODO: update is_aggregator logic from
                             let is_aggregator = true;
                             self.store.write().await.tick_interval(tick_count % INTERVALS_PER_SLOT == 0, is_aggregator).await.expect("Failed to tick interval");
                         }
