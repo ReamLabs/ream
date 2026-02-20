@@ -1,6 +1,6 @@
 pub const ATTESTATION_COMMITTEE_COUNT: u64 = 1;
 
-#[cfg(all(feature = "devnet2", not(feature = "devnet3")))]
+#[cfg(feature = "devnet2")]
 pub const INTERVALS_PER_SLOT: u64 = 4;
 #[cfg(feature = "devnet3")]
 pub const INTERVALS_PER_SLOT: u64 = 5;

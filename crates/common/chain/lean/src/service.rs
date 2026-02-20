@@ -133,7 +133,7 @@ impl LeanChainService {
                     }
                     if self.sync_status == SyncStatus::Synced {
                         #[cfg(feature = "devnet2")]
-                        self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT)).await.expect("Failed to tick interval");
+                        self.store.write().await.tick_interval(tick_count % 4 == 1).await.expect("Failed to tick interval");
                         #[cfg(feature = "devnet3")]
                         {
                             // TODO: update is_aggregator logic from devnet config
