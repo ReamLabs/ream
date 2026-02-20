@@ -28,32 +28,36 @@ pub async fn on_block(
     verify_blob_availability: bool,
 ) -> anyhow::Result<()> {
     let block = &signed_block.message;
+    let parent_root = block.parent_root;
+    let block_slot = block.slot;
+    let block_root = block.tree_hash_root();
 
     // Parent block must be known
     ensure!(
-        store.db.state_provider().get(block.parent_root)?.is_some(),
-        "Missing parent block state for parent_root: {:x}",
-        block.parent_root
+        store.db.state_provider().get(parent_root)?.is_some(),
+        "Missing parent block state for parent_root: {parent_root:x}",
     );
 
     // Blocks cannot be in the future. If they are, their consideration must be delayed until they
     // are in the past.
+    let current_slot = store.get_current_slot()?;
     ensure!(
-        store.get_current_slot()? >= block.slot,
-        "Block slot is ahead of current slot: block.slot = {}, store.get_current_slot() = {}",
-        block.slot,
-        store.get_current_slot()?
+        current_slot >= block_slot,
+        "Block slot is ahead of current slot: block.slot = {block_slot}, store.get_current_slot() = {current_slot}",
     );
 
     // Check that block is later than the finalized epoch slot (optimization to reduce calls to
     // get_ancestor)
     let finalized_slot =
         compute_start_slot_at_epoch(store.db.finalized_checkpoint_provider().get()?.epoch);
-    ensure!(block.slot > finalized_slot);
+    ensure!(
+        block_slot > finalized_slot,
+        "Block slot must be greater than finalized slot: block.slot = {block_slot}, finalized_slot = {finalized_slot}",
+    );
 
     // Check block is a descendant of the finalized block at the checkpoint finalized slot
     let finalized_checkpoint_block = store.get_checkpoint_block(
-        block.parent_root,
+        parent_root,
         store.db.finalized_checkpoint_provider().get()?.epoch,
     )?;
     ensure!(store.db.finalized_checkpoint_provider().get()?.root == finalized_checkpoint_block);
@@ -63,7 +67,10 @@ pub async fn on_block(
         // available *Note*: Extraneous or invalid data (in addition to the
         // expected/referenced valid data) received on the p2p network MUST NOT invalidate
         // a block that is otherwise valid and available
-        ensure!(store.is_data_available(block.tree_hash_root(), &block.body.blob_kzg_commitments)?);
+        ensure!(
+            store.is_data_available(block_root)?,
+            "Data not available for block root: {block_root:x}",
+        );
     }
 
     // Check the block is valid and compute the post-state
@@ -71,10 +78,9 @@ pub async fn on_block(
     let mut state = store
         .db
         .state_provider()
-        .get(block.parent_root)?
+        .get(parent_root)?
         .ok_or_else(|| anyhow!("beacon state not found"))?
         .clone();
-    let block_root = block.tree_hash_root();
     state
         .state_transition(signed_block, true, execution_engine)
         .await?;

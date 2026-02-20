@@ -9,6 +9,7 @@ macro_rules! test_fork_choice {
                 use alloy_primitives::{hex, map::HashMap, B256, hex::FromHex};
                 use ream_bls::BLSSignature;
                 use ream_consensus_beacon::{
+                    data_column_sidecar::{ColumnIdentifier, DataColumnSidecar},
                     attestation::Attestation, attester_slashing::AttesterSlashing, blob_sidecar::BlobIdentifier, electra::{beacon_block::{BeaconBlock, SignedBeaconBlock}, beacon_state::BeaconState},
                 };
                 use ream_consensus_misc::{checkpoint::Checkpoint, polynomial_commitments::kzg_proof::KZGProof};
@@ -67,8 +68,7 @@ macro_rules! test_fork_choice {
                 #[derive(Debug, Deserialize)]
                 pub struct Block {
                     pub block: String,
-                    pub blobs: Option<String>,
-                    pub proofs: Option<Vec<String>>,
+                    pub columns: Option<Vec<String>>,
                     pub valid: Option<bool>,
                 }
 
@@ -152,20 +152,17 @@ macro_rules! test_fork_choice {
                                             panic!("cannot find test asset (block_{blocks:?}.ssz_snappy)")
                                         });
 
-                                    if let (Some(blobs), Some(proof)) = (blocks.blobs, blocks.proofs) {
-                                        let blobs_path = case_dir.join(format!("{}.ssz_snappy", blobs));
-                                        let blobs: VariableList<Blob, U4096> = utils::read_ssz_snappy(&blobs_path).expect("Could not read blob file.");
-                                        let proof: Vec<KZGProof> = proof
-                                            .into_iter()
-                                            .map(|proof| KZGProof::from_hex(proof).expect("could not get KZGProof"))
-                                            .collect();
-                                        let blobs_and_proofs = blobs.into_iter().zip(proof.into_iter()).map(|(blob, proof)| BlobAndProofV1 { blob, proof  } ).collect::<Vec<_>>();
-                                        for (index, blob_and_proof) in blobs_and_proofs.into_iter().enumerate() {
-                                            store.db.blobs_and_proofs_provider().insert(BlobIdentifier::new(block.message.tree_hash_root(), index as u64), blob_and_proof)?;
+                                    let verify_blob_availability = blocks.columns.is_some();
+
+                                    if let Some(columns) = blocks.columns {
+                                        for (index, column) in columns.into_iter().enumerate() {
+                                            let column_path = case_dir.join(format!("{}.ssz_snappy", column));
+                                            let column: DataColumnSidecar = utils::read_ssz_snappy(&column_path).expect("Could not read column file.");
+                                            store.db.column_sidecars_provider().insert(ColumnIdentifier::new(block.message.tree_hash_root(), index as u64), column)?;
                                         }
                                     }
 
-                                    assert_eq!(on_block(&mut store, &block, &mock_engine, true).await.is_ok(), blocks.valid.unwrap_or(true), "Unexpected result on on_block");
+                                    assert_eq!(on_block(&mut store, &block, &mock_engine, verify_blob_availability).await.is_ok(), blocks.valid.unwrap_or(true), "Unexpected result on on_block");
                                 }
                                 ForkChoiceStep::Attestation(attestations) => {
                                     let attestation_path =

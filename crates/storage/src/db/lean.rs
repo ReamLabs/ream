@@ -173,7 +173,7 @@ impl LeanDB {
             return Ok(());
         }
 
-        table_metrics.sort_by(|a, b| b.1.cmp(&a.1));
+        table_metrics.sort_by_key(|b| std::cmp::Reverse(b.1));
         let mut report = String::with_capacity(512);
         let total_mb = total_bytes as f64 / (1024.0 * 1024.0);
         if total_mb >= 1024.0 {
