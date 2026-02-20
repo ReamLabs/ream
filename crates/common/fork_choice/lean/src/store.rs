@@ -1308,11 +1308,9 @@ impl Store {
 
         #[cfg(feature = "devnet3")]
         if let Some(current_id) = self.validator_id {
-            let proposer_subnet =
-                compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT);
-            let current_subnet = compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
-
-            if proposer_subnet == current_subnet {
+            if compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT)
+                == compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT)
+            {
                 gossip_signatures_provider.insert(
                     SignatureKey::new(
                         proposer_attestation.validator_id,
