@@ -1374,7 +1374,7 @@ impl Store {
     ) -> anyhow::Result<()> {
         let data = &signed_attestation.message;
 
-        let (block_provider, _time_provider) = {
+        let (block_provider, time_provider) = {
             let db = self.store.lock().await;
             (db.block_provider(), db.time_provider())
         };
@@ -1432,7 +1432,7 @@ impl Store {
             "Head checkpoint slot mismatch"
         );
 
-        let current_slot = self.store.lock().await.time_provider().get()? / INTERVALS_PER_SLOT;
+        let current_slot = time_provider.get()? / INTERVALS_PER_SLOT;
         ensure!(
             data.slot <= current_slot + 1,
             "Attestation too far in future expected slot: {} <= {}",
