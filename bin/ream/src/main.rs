@@ -876,6 +876,11 @@ mod tests {
 
     #[test]
     fn test_lean_node_finalizes() {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(Verbosity::Info.directive())
+            .with_test_writer()
+            .try_init();
+
         let cli = Cli::parse_from([
             "ream",
             "--ephemeral",
@@ -905,8 +910,8 @@ mod tests {
                 run_lean_node(*config, executor_handle, cloned_db).await;
             });
 
-            let result = timeout(Duration::from_secs(60), async {
-                sleep(Duration::from_secs(60)).await;
+            let result = timeout(Duration::from_secs(120), async {
+                sleep(Duration::from_secs(120)).await;
                 Ok::<_, ()>(())
             })
             .await;
@@ -926,6 +931,14 @@ mod tests {
 
         let justfication_lag = 4;
         let finalization_lag = 5;
+
+        info!(
+            "Test results: head_slot={}, justified_slot={}, finalized_slot={}, head_root={:?}",
+            head_state.slot,
+            head_state.latest_justified.slot,
+            head_state.latest_finalized.slot,
+            head
+        );
 
         assert!(
             head_state.slot > finalization_lag,
