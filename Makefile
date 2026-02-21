@@ -48,7 +48,7 @@ test-devnet2: # Run all tests for for Devnet 2.
 
 .PHONY: test-devnet3
 test-devnet3: # Run all tests for for Devnet 3.
-	cargo test --workspace --no-default-features --features "devnet3" -- --nocapture
+	cargo test --workspace --no-default-features --features "devnet3" -- --nocapture --test-threads=1
 
 
 .PHONY: fmt
