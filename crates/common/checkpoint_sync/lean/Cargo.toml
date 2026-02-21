@@ -9,6 +9,19 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+default = ["devnet1"]
+devnet1 = [
+	"ream-consensus-lean/devnet1",
+	"ream-fork-choice-lean/devnet1",
+	"ream-rpc-lean/devnet1",
+]
+devnet2 = [
+	"ream-consensus-lean/devnet2",
+	"ream-fork-choice-lean/devnet2",
+	"ream-rpc-lean/devnet2",
+]
+
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
@@ -20,6 +33,19 @@ tree_hash.workspace = true
 
 # ream dependencies
 ream-consensus-lean.workspace = true
+
+[dev-dependencies]
+actix-web.workspace = true
+ssz_types.workspace = true
+tokio.workspace = true
+
+# ream dependencies (tests)
+ream-fork-choice-lean.workspace = true
+ream-network-spec.workspace = true
+ream-post-quantum-crypto.workspace = true
+ream-rpc-lean.workspace = true
+ream-storage.workspace = true
+ream-sync.workspace = true
 
 [lints]
 workspace = true
