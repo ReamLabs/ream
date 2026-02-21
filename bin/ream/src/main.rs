@@ -1501,8 +1501,7 @@ mod tests {
         let network_yaml = format!(
             "GENESIS_TIME: {genesis_time}\nNUM_VALIDATORS: 2\nGENESIS_VALIDATORS:\n- 0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65ec589c858b9c7980b276ebe550056b23f0bdc3b5a\n- 0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e377237595d9a27887421b5233d09a50832db2f303d\n"
         );
-        fs::write(&network_config_path, network_yaml)
-            .expect("Failed to write temp network config");
+        fs::write(&network_config_path, network_yaml).expect("Failed to write temp network config");
         let network_config_path_string = network_config_path.to_string_lossy().to_string();
 
         let mut node_addresses = Vec::with_capacity(node_count);
@@ -1697,10 +1696,9 @@ mod tests {
             let slot_tolerance = 2;
             assert!(
                 node_2_state.slot + slot_tolerance >= node_1_state.slot,
-                "Current-branch node is too far behind known-good node. Current: {}, known-good: {}, tolerance: {}",
-                node_2_state.slot,
-                node_1_state.slot,
-                slot_tolerance,
+                "Current-branch node is too far behind known-good node. Current: {current_slot}, known-good: {known_good_slot}, tolerance: {slot_tolerance}",
+                current_slot = node_2_state.slot,
+                known_good_slot = node_1_state.slot,
             );
         });
     }
