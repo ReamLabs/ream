@@ -5923,11 +5923,19 @@ dependencies = [
 name = "ream-checkpoint-sync-lean"
 version = "0.1.0"
 dependencies = [
+ "actix-web",
  "alloy-primitives",
  "anyhow",
  "ethereum_ssz",
  "ream-consensus-lean",
+ "ream-fork-choice-lean",
+ "ream-network-spec",
+ "ream-post-quantum-crypto",
+ "ream-rpc-lean",
+ "ream-storage",
+ "ream-sync",
  "reqwest",
+ "ssz_types",
  "tokio",
  "tracing",
  "tree_hash",
