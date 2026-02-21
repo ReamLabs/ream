@@ -120,7 +120,7 @@ prometheus_exporter = { git = "https://github.com/AlexanderThaller/prometheus_ex
 rand = "0.9"
 rand_chacha = "0.9"
 redb = "3.1.0"
-reqwest = { version = "0.12.24", features = ["native-tls-vendored", "json"] }
+reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls", "json"] }
 rstest = "0.26.1"
 rust-kzg-blst = { git = 'https://github.com/grandinetech/rust-kzg.git' }
 rust_eth_kzg = { git = "https://github.com/crate-crypto/rust-eth-kzg.git", tag = "v0.5.4" } 
