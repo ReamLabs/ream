@@ -1,4 +1,4 @@
-name: lean-interop
+name: pr-vs-known-commit
 
 on:
   pull_request:
@@ -9,8 +9,8 @@ env:
   KNOWN_GOOD_REF: a292a17b2e5ea1f1091cb2f7a5e55af83820d54e
 
 jobs:
-  interop-devnet2:
-    name: interop-devnet2
+  devnet2-known-good-vs-current-pr:
+    name: devnet2 known-good vs current pr
     runs-on: ubuntu-latest
 
     steps:
@@ -45,7 +45,7 @@ jobs:
           chmod +x "${KNOWN_GOOD_BIN}"
           echo "known_good_bin=${KNOWN_GOOD_BIN}" >> "${GITHUB_OUTPUT}"
 
-      - name: Run 2-node sync/finalization interop test
+      - name: Run 2-node sync/finalization test (known-good vs current PR)
         env:
           REAM_RUN_INTEROP_TESTS: "1"
           REAM_KNOWN_GOOD_BIN: ${{ steps.known_good.outputs.known_good_bin }}
@@ -58,8 +58,8 @@ jobs:
             test_lean_node_syncs_and_finalizes_two_nodes \
             -- --nocapture --test-threads=1
 
-  interop-devnet3:
-    name: interop-devnet3
+  devnet3-known-good-vs-current-pr:
+    name: devnet3 known-good vs current pr
     runs-on: ubuntu-latest
 
     steps:
@@ -94,7 +94,7 @@ jobs:
           chmod +x "${KNOWN_GOOD_BIN}"
           echo "known_good_bin=${KNOWN_GOOD_BIN}" >> "${GITHUB_OUTPUT}"
 
-      - name: Run 2-node sync/finalization interop test
+      - name: Run 2-node sync/finalization test (known-good vs current PR)
         env:
           REAM_RUN_INTEROP_TESTS: "1"
           REAM_KNOWN_GOOD_BIN: ${{ steps.known_good.outputs.known_good_bin }}
