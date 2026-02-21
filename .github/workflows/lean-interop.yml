@@ -1,0 +1,110 @@
+name: pr-vs-known-commit
+
+on:
+  pull_request:
+    branches: ["master"]
+
+env:
+  CARGO_TERM_COLOR: always
+  KNOWN_GOOD_REF: a292a17b2e5ea1f1091cb2f7a5e55af83820d54e
+
+jobs:
+  devnet2-known-good-vs-current-pr:
+    name: devnet2 known-good vs current pr
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build known-good binary from pinned commit
+        id: known_good
+        run: |
+          set -euo pipefail
+
+          KNOWN_GOOD_WORKTREE="${RUNNER_TEMP}/ream-known-good-devnet2"
+          KNOWN_GOOD_TARGET_DIR="${GITHUB_WORKSPACE}/target/known-good-devnet2"
+          KNOWN_GOOD_BIN="${RUNNER_TEMP}/known-good-ream-devnet2"
+
+          git worktree add --detach "${KNOWN_GOOD_WORKTREE}" "${KNOWN_GOOD_REF}"
+          trap 'git worktree remove --force "${KNOWN_GOOD_WORKTREE}" || true' EXIT
+
+          (
+            cd "${KNOWN_GOOD_WORKTREE}"
+            CARGO_TARGET_DIR="${KNOWN_GOOD_TARGET_DIR}" cargo build --release --package ream --bin ream
+          )
+
+          cp "${KNOWN_GOOD_TARGET_DIR}/release/ream" "${KNOWN_GOOD_BIN}"
+          chmod +x "${KNOWN_GOOD_BIN}"
+          echo "known_good_bin=${KNOWN_GOOD_BIN}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run 2-node sync/finalization test (known-good vs current PR)
+        env:
+          REAM_RUN_INTEROP_TESTS: "1"
+          REAM_KNOWN_GOOD_BIN: ${{ steps.known_good.outputs.known_good_bin }}
+        run: |
+          set -euo pipefail
+
+          cargo test \
+            --package ream \
+            --bin ream \
+            test_lean_node_syncs_and_finalizes_two_nodes \
+            -- --nocapture --test-threads=1
+
+  devnet3-known-good-vs-current-pr:
+    name: devnet3 known-good vs current pr
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build known-good binary from pinned commit
+        id: known_good
+        run: |
+          set -euo pipefail
+
+          KNOWN_GOOD_WORKTREE="${RUNNER_TEMP}/ream-known-good-devnet3"
+          KNOWN_GOOD_TARGET_DIR="${GITHUB_WORKSPACE}/target/known-good-devnet3"
+          KNOWN_GOOD_BIN="${RUNNER_TEMP}/known-good-ream-devnet3"
+
+          git worktree add --detach "${KNOWN_GOOD_WORKTREE}" "${KNOWN_GOOD_REF}"
+          trap 'git worktree remove --force "${KNOWN_GOOD_WORKTREE}" || true' EXIT
+
+          (
+            cd "${KNOWN_GOOD_WORKTREE}"
+            CARGO_TARGET_DIR="${KNOWN_GOOD_TARGET_DIR}" cargo build --release --package ream --bin ream --no-default-features --features devnet3
+          )
+
+          cp "${KNOWN_GOOD_TARGET_DIR}/release/ream" "${KNOWN_GOOD_BIN}"
+          chmod +x "${KNOWN_GOOD_BIN}"
+          echo "known_good_bin=${KNOWN_GOOD_BIN}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run 2-node sync/finalization test (known-good vs current PR)
+        env:
+          REAM_RUN_INTEROP_TESTS: "1"
+          REAM_KNOWN_GOOD_BIN: ${{ steps.known_good.outputs.known_good_bin }}
+        run: |
+          set -euo pipefail
+
+          cargo test \
+            --package ream \
+            --bin ream \
+            test_lean_node_syncs_and_finalizes_two_nodes \
+            --no-default-features \
+            --features devnet3 \
+            -- --nocapture --test-threads=1

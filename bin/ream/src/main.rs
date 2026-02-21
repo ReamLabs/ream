@@ -815,7 +815,12 @@ pub async fn countdown_for_genesis() {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf, time::Duration};
+    use std::{
+        fs,
+        path::PathBuf,
+        process::{Command, Stdio},
+        time::Duration,
+    };
 
     use alloy_primitives::hex;
     use clap::Parser;
@@ -1025,7 +1030,7 @@ mod tests {
         }
 
         fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
-        let registry_path_str = registry_path.to_string_lossy().to_string();
+        let registry_path_string = registry_path.to_string_lossy().to_string();
 
         let executor = ReamExecutor::new().unwrap();
         executor.clone().runtime().block_on(async move {
@@ -1075,7 +1080,7 @@ mod tests {
                     "--network".to_string(),
                     "ephemery".to_string(),
                     "--validator-registry-path".to_string(),
-                    registry_path_str.clone(),
+                    registry_path_string.clone(),
                     "--socket-port".to_string(),
                     p2p_port.to_string(),
                     "--socket-address".to_string(),
@@ -1218,7 +1223,7 @@ mod tests {
         }
 
         fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
-        let registry_path_str = registry_path.to_string_lossy().to_string();
+        let registry_path_string = registry_path.to_string_lossy().to_string();
 
         let executor = ReamExecutor::new().unwrap();
         executor.clone().runtime().block_on(async move {
@@ -1283,7 +1288,7 @@ mod tests {
                     "--network".to_string(),
                     "ephemery".to_string(),
                     "--validator-registry-path".to_string(),
-                    registry_path_str.clone(),
+                    registry_path_string.clone(),
                     "--socket-port".to_string(),
                     p2p_port.to_string(),
                     "--socket-address".to_string(),
@@ -1428,6 +1433,272 @@ mod tests {
                 "Node 3 is too far behind Node 1. Node 3: {}, Node 1: {}",
                 head_state.slot,
                 head_state_1.slot
+            );
+        });
+    }
+
+    #[test]
+    fn test_lean_node_syncs_and_finalizes_two_nodes() {
+        if std::env::var("REAM_RUN_INTEROP_TESTS").unwrap_or_default() != "1" {
+            info!("Skipping interop test: set REAM_RUN_INTEROP_TESTS=1 to enable");
+            return;
+        }
+
+        let known_good_bin = std::env::var("REAM_KNOWN_GOOD_BIN")
+            .expect("Missing REAM_KNOWN_GOOD_BIN: set path to known-good `ream` binary");
+        assert!(
+            PathBuf::from(&known_good_bin).exists(),
+            "REAM_KNOWN_GOOD_BIN path does not exist: {known_good_bin}"
+        );
+
+        if true {
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(Verbosity::Info.directive())
+                .with_test_writer()
+                .try_init();
+        }
+
+        let topology = [vec![], vec![0]];
+        let test_name = "two_nodes_sync_from_genesis";
+
+        let test_duration_secs = 90;
+        let base_p2p_port = 22600;
+        let base_http_port = 18652;
+        let node_count = topology.len();
+
+        let potential_paths = vec![
+            PathBuf::from("bin/ream/assets/lean"),
+            PathBuf::from("assets/lean"),
+            PathBuf::from("../assets/lean"),
+        ];
+
+        let assets_directory = potential_paths
+            .into_iter()
+            .find(|p| p.exists())
+            .expect("Could not find 'assets/lean' directory.")
+            .canonicalize()
+            .expect("Failed to canonicalize assets path");
+
+        let registry_path =
+            assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
+        let unique_suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time is before UNIX epoch")
+            .as_nanos();
+        let network_config_path = std::env::temp_dir().join(format!(
+            "{APP_NAME}_{test_name}_{unique_suffix}_network.yaml"
+        ));
+
+        let validators_yaml = "node1:\n  - 0\nnode2:\n  - 1\n";
+        fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
+        let registry_path_string = registry_path.to_string_lossy().to_string();
+
+        let genesis_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time is before UNIX epoch")
+            .as_secs()
+            + 10;
+        let network_yaml = format!(
+            "GENESIS_TIME: {genesis_time}\nNUM_VALIDATORS: 2\nGENESIS_VALIDATORS:\n- 0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65ec589c858b9c7980b276ebe550056b23f0bdc3b5a\n- 0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e377237595d9a27887421b5233d09a50832db2f303d\n"
+        );
+        fs::write(&network_config_path, network_yaml).expect("Failed to write temp network config");
+        let network_config_path_string = network_config_path.to_string_lossy().to_string();
+
+        let mut node_addresses = Vec::with_capacity(node_count);
+        let mut node_data_directories = Vec::with_capacity(node_count);
+
+        for (i, _) in topology.iter().enumerate() {
+            let node_index = i + 1;
+
+            let ream_data_directory =
+                std::env::temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
+
+            if ream_data_directory.exists() {
+                let _ = fs::remove_dir_all(&ream_data_directory);
+            }
+            fs::create_dir_all(&ream_data_directory).expect("Failed to create data dir");
+
+            let key_path = ream_data_directory.join("node_key");
+            let peer_id = generate_node_identity(&key_path);
+
+            let port_offset = (test_name.len() as u16) % 100;
+            let p2p_port = base_p2p_port + port_offset + (i as u16);
+
+            let address = format!("/ip4/127.0.0.1/udp/{p2p_port}/quic-v1/p2p/{peer_id}");
+            node_addresses.push(address);
+
+            node_data_directories.push(ream_data_directory);
+        }
+
+        let mut node_2_configuration_and_database = None;
+        let mut process_arguments = Vec::with_capacity(node_count);
+
+        for (i, node_boot_config) in topology.iter().enumerate() {
+            let node_index = i + 1;
+            let key_path = node_data_directories[i].join("node_key");
+
+            let port_offset = (test_name.len() as u16) % 100;
+            let p2p_port = base_p2p_port + port_offset + (i as u16);
+            let http_port = base_http_port + port_offset + (i as u16);
+
+            let mut bootnode_arguments = Vec::new();
+            for &target_idx in node_boot_config {
+                if target_idx < node_addresses.len() {
+                    bootnode_arguments.push(node_addresses[target_idx].clone());
+                }
+            }
+
+            let mut cli_arguments = vec![
+                "ream".to_string(),
+                "lean_node".to_string(),
+                "--network".to_string(),
+                network_config_path_string.clone(),
+                "--validator-registry-path".to_string(),
+                registry_path_string.clone(),
+                "--socket-port".to_string(),
+                p2p_port.to_string(),
+                "--socket-address".to_string(),
+                "127.0.0.1".to_string(),
+                "--http-port".to_string(),
+                http_port.to_string(),
+                "--node-id".to_string(),
+                format!("node{node_index}"),
+                "--private-key-path".to_string(),
+                key_path.to_string_lossy().to_string(),
+            ];
+
+            if !bootnode_arguments.is_empty() {
+                cli_arguments.push("--bootnodes".to_string());
+                cli_arguments.push(bootnode_arguments.join(","));
+            }
+
+            let cli = Cli::parse_from(cli_arguments.clone());
+            let Commands::LeanNode(config) = cli.command else {
+                panic!("Expected lean_node command");
+            };
+            if i == 1 {
+                let ream_database = ReamDB::new(node_data_directories[i].clone()).unwrap();
+                node_2_configuration_and_database = Some((*config, ream_database));
+            }
+
+            let mut node_process_args = vec![
+                "--data-dir".to_string(),
+                node_data_directories[i].to_string_lossy().to_string(),
+            ];
+            node_process_args.extend(cli_arguments.into_iter().skip(1));
+            process_arguments.push(node_process_args);
+        }
+
+        let (node_2_configuration, node_2_ream_database) =
+            node_2_configuration_and_database.expect("Missing node 2 configuration");
+
+        let executor = ReamExecutor::new().unwrap();
+        executor.clone().runtime().block_on(async move {
+            info!("Starting Node 1 from known-good binary: {known_good_bin}");
+            let mut known_good_child = Command::new(&known_good_bin)
+                .args(&process_arguments[0])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("Failed to start known-good node process");
+
+            use tracing::{Instrument, info_span};
+
+            info!("Starting Node 2 from current branch code...");
+            let node_2_executor = executor.clone();
+            let node_2_ream_database_for_task = node_2_ream_database.clone();
+            let node_2_span = info_span!(
+                "lean_node",
+                node_id = %node_2_configuration.node_id
+            );
+            let node_2_handle = tokio::spawn(
+                async move {
+                    run_lean_node(
+                        node_2_configuration,
+                        node_2_executor,
+                        node_2_ream_database_for_task,
+                    )
+                    .await;
+                }
+                .instrument(node_2_span),
+            );
+
+            let start_time = std::time::Instant::now();
+
+            loop {
+                let elapsed = start_time.elapsed().as_secs();
+                if elapsed >= test_duration_secs {
+                    break;
+                }
+
+                if let Some(status) = known_good_child
+                    .try_wait()
+                    .expect("Failed to poll known-good node process")
+                {
+                    panic!("Known-good node exited early with status: {status}");
+                }
+
+                sleep(Duration::from_secs(2)).await;
+
+                if let Ok(lean_database) = node_2_ream_database.init_lean_db()
+                    && let Ok(head) = lean_database.head_provider().get()
+                    && let Ok(Some(state)) = lean_database.state_provider().get(head)
+                {
+                    info!(
+                        "Node 2 Chain: Slot={} | Finalized={}",
+                        state.slot,
+                        state.latest_finalized.slot
+                    );
+                }
+            }
+
+            let _ = fs::remove_file(&registry_path);
+            let _ = fs::remove_file(&network_config_path);
+            node_2_handle.abort();
+
+            let _ = known_good_child.kill();
+            let _ = known_good_child.wait();
+
+            let node_1_database = ReamDB::new(node_data_directories[0].clone())
+                .unwrap()
+                .init_lean_db()
+                .unwrap();
+            let node_1_state = node_1_database
+                .state_provider()
+                .get(node_1_database.head_provider().get().unwrap())
+                .unwrap()
+                .unwrap();
+
+            let node_2_database = node_2_ream_database.init_lean_db().unwrap();
+            let node_2_state = node_2_database
+                .state_provider()
+                .get(node_2_database.head_provider().get().unwrap())
+                .unwrap()
+                .unwrap();
+
+            info!(
+                "FINAL: Node 1 Slot: {}, Finalized: {} | Node 2 Slot: {}, Finalized: {}",
+                node_1_state.slot,
+                node_1_state.latest_finalized.slot,
+                node_2_state.slot,
+                node_2_state.latest_finalized.slot
+            );
+
+            assert!(
+                node_1_state.latest_finalized.slot > 0,
+                "Known-good node failed to finalize"
+            );
+            assert!(
+                node_2_state.latest_finalized.slot > 0,
+                "Current-branch node failed to finalize after syncing"
+            );
+
+            let slot_tolerance = 2;
+            assert!(
+                node_2_state.slot + slot_tolerance >= node_1_state.slot,
+                "Current-branch node is too far behind known-good node. Current: {current_slot}, known-good: {known_good_slot}, tolerance: {slot_tolerance}",
+                current_slot = node_2_state.slot,
+                known_good_slot = node_1_state.slot,
             );
         });
     }
