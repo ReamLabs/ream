@@ -1792,51 +1792,22 @@ pub fn compute_subnet_id(validator_id: u64, num_committees: u64) -> u64 {
     validator_id % num_committees
 }
 
-#[cfg(test)]
-mod tests {
-    use alloy_primitives::{B256, FixedBytes};
-    #[cfg(feature = "devnet3")]
-    use anyhow::ensure;
-    #[cfg(feature = "devnet2")]
-    use ream_consensus_lean::validator::Validator;
+pub mod test_utils {
     use ream_consensus_lean::{
-        attestation::{
-            AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
-            AttestationData, SignatureKey, SignedAttestation,
-        },
-        block::{
-            Block, BlockSignatures, BlockWithAttestation, BlockWithSignatures,
-            SignedBlockWithAttestation,
-        },
+        attestation::{AggregatedAttestations, AttestationData},
+        block::{BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
         checkpoint::Checkpoint,
-        state::LeanState,
         utils::generate_default_validators,
-        validator::is_proposer,
     };
-    use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
     use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
-    #[cfg(feature = "devnet2")]
-    use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
     use ream_post_quantum_crypto::leansig::signature::Signature;
-    use ream_storage::{
-        db::{ReamDB, lean::LeanDB},
-        tables::{field::REDBField, table::REDBTable},
-    };
-    use ssz_types::{BitList, VariableList, typenum::U4096};
-    use tempdir::TempDir;
+    use ream_storage::db::ReamDB;
+    use ssz_types::VariableList;
     use tree_hash::TreeHash;
 
-    use super::Store;
-    use crate::genesis::setup_genesis;
+    use crate::{genesis::setup_genesis, store::Store};
 
-    pub fn db_setup() -> LeanDB {
-        let temp_dir = TempDir::new("lean_test").unwrap();
-        let temp_path = temp_dir.path().to_path_buf();
-        let ream_db = ReamDB::new(temp_path).expect("unable to init Ream Database");
-        ream_db.init_lean_db().unwrap()
-    }
-
-    pub async fn sample_store(no_of_validators: usize) -> (Store, LeanState) {
+    pub async fn sample_store(no_of_validators: usize) -> Store {
         set_lean_network_spec(LeanNetworkSpec::ephemery().into());
         let (genesis_block, genesis_state) = setup_genesis(
             lean_network_spec().genesis_time,
@@ -1847,31 +1818,96 @@ mod tests {
             slot: genesis_block.slot,
             root: genesis_block.tree_hash_root(),
         };
-        let signed_genesis_block = build_signed_block_with_attestation(
-            AttestationData {
-                slot: genesis_block.slot,
-                head: checkpoint,
-                target: checkpoint,
-                source: checkpoint,
+        let signed_genesis_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: genesis_block.proposer_index,
+                    data: AttestationData {
+                        slot: genesis_block.slot,
+                        head: checkpoint,
+                        target: checkpoint,
+                        source: checkpoint,
+                    },
+                },
+                block: genesis_block,
             },
-            genesis_block.clone(),
-            VariableList::default(),
-        );
+            signature: BlockSignatures {
+                attestation_signatures: VariableList::default(),
+                proposer_signature: Signature::blank(),
+            },
+        };
 
-        (
-            Store::get_forkchoice_store(
-                signed_genesis_block,
-                genesis_state.clone(),
-                db_setup(),
-                Some(0),
-                #[cfg(feature = "devnet3")]
-                None,
-            )
-            .unwrap(),
+        let temp_path = std::env::temp_dir().join(format!(
+            "lean_test_{}_{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&temp_path).expect("Failed to create temp directory");
+        let ream_db = ReamDB::new(temp_path).expect("Failed to init Ream Database");
+        let lean_db = ream_db.init_lean_db().expect("Failed to init lean db");
+
+        Store::get_forkchoice_store(
+            signed_genesis_block,
             genesis_state,
+            lean_db,
+            Some(0),
+            #[cfg(feature = "devnet3")]
+            None,
         )
+        .expect("Failed to create forkchoice store")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::{B256, FixedBytes};
+    #[cfg(feature = "devnet3")]
+    use anyhow::ensure;
+    #[cfg(feature = "devnet2")]
+    use ream_consensus_lean::block::{
+        Block, BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation,
+    };
+    #[cfg(feature = "devnet2")]
+    use ream_consensus_lean::validator::Validator;
+    use ream_consensus_lean::{
+        attestation::{
+            AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
+            AttestationData, SignatureKey, SignedAttestation,
+        },
+        block::BlockWithSignatures,
+        checkpoint::Checkpoint,
+        validator::is_proposer,
+    };
+    use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
+    use ream_network_spec::networks::lean_network_spec;
+    #[cfg(feature = "devnet2")]
+    use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
+    #[cfg(feature = "devnet2")]
+    use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
+    use ream_post_quantum_crypto::leansig::signature::Signature;
+    #[cfg(feature = "devnet2")]
+    use ream_storage::db::{ReamDB, lean::LeanDB};
+    use ream_storage::tables::{field::REDBField, table::REDBTable};
+    #[cfg(feature = "devnet2")]
+    use ssz_types::VariableList;
+    use ssz_types::{BitList, typenum::U4096};
+    #[cfg(feature = "devnet2")]
+    use tempdir::TempDir;
+    use tree_hash::TreeHash;
+
+    #[cfg(feature = "devnet2")]
+    use super::Store;
+    use super::test_utils::sample_store;
+
+    #[cfg(feature = "devnet2")]
+    pub fn db_setup() -> LeanDB {
+        let temp_dir = TempDir::new("lean_test").unwrap();
+        let temp_path = temp_dir.path().to_path_buf();
+        let ream_db = ReamDB::new(temp_path).expect("unable to init Ream Database");
+        ream_db.init_lean_db().unwrap()
     }
 
+    #[cfg(feature = "devnet2")]
     pub fn build_signed_block_with_attestation(
         attestation_data: AttestationData,
         block: Block,
@@ -1896,7 +1932,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_head_checkpoint_slot_mismatch_rejected() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let slot_1 = 1;
         let block_sigs = store.produce_block_with_signatures(slot_1, 1).await?;
         let block_root = block_sigs.block.tree_hash_root();
@@ -1937,7 +1973,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_head_slot_less_than_source_rejected() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let block_1_sigs = store.produce_block_with_signatures(1, 1).await?;
         let block_1_root = block_1_sigs.block.tree_hash_root();
         let block_2_sigs = store.produce_block_with_signatures(2, 2).await?;
@@ -1982,7 +2018,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_head_slot_less_than_target_rejected() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let block_1_sigs = store.produce_block_with_signatures(1, 1).await?;
         let block_1_root = block_1_sigs.block.tree_hash_root();
         let block_2_sigs = store.produce_block_with_signatures(2, 2).await?;
@@ -2024,7 +2060,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_valid_attestation_with_correct_head_passes() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let slot_1 = 1;
         let block_sigs = store.produce_block_with_signatures(slot_1, 1).await?;
         let block_root = block_sigs.block.tree_hash_root();
@@ -2057,7 +2093,7 @@ mod tests {
     #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_head_equal_to_source_and_target_passes() -> anyhow::Result<()> {
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
         let genesis_checkpoint = {
             let db = store.store.lock().await;
             db.latest_justified_provider().get()?
@@ -2103,7 +2139,7 @@ mod tests {
     #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_prunes_entries_with_target_at_finalized() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let attestation_data = _make_attestation_data(5, 5);
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::new(1, &attestation_data);
@@ -2151,7 +2187,7 @@ mod tests {
     #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_prunes_entries_with_target_before_finalized() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let attestation_data = _make_attestation_data(3, 3);
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::new(1, &attestation_data);
@@ -2189,7 +2225,7 @@ mod tests {
     #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_keeps_entries_with_target_after_finalized() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let attestation_data = _make_attestation_data(10, 10);
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::new(1, &attestation_data);
@@ -2228,7 +2264,7 @@ mod tests {
     #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_prunes_related_structures_together() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
 
         let stale_attestation = _make_attestation_data(3, 3);
         let stale_root = stale_attestation.tree_hash_root();
@@ -2332,7 +2368,7 @@ mod tests {
     #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_returns_self_when_nothing_to_prune() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let fresh_attestation = _make_attestation_data(10, 10);
         let data_root = fresh_attestation.tree_hash_root();
 
@@ -2360,7 +2396,7 @@ mod tests {
     #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_handles_empty_attestation_data() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         ensure!(
             store.attestation_data_by_root.is_empty(),
             "Store should start empty"
@@ -2378,7 +2414,7 @@ mod tests {
     #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_prunes_multiple_validators_same_data_root() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let stale_data = _make_attestation_data(3, 3);
         let data_root = stale_data.tree_hash_root();
         let sig_key_1 = SignatureKey::new(1, &stale_data);
@@ -2426,7 +2462,7 @@ mod tests {
     #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_mixed_stale_and_fresh_entries() -> anyhow::Result<()> {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let mut roots = vec![];
 
         {
@@ -2468,7 +2504,7 @@ mod tests {
     /// Test block production fails for unauthorized proposer.
     #[tokio::test]
     async fn test_produce_block_unauthorized_proposer() {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let block_with_signature = store.produce_block_with_signatures(1, 2).await;
         assert!(block_with_signature.is_err());
     }
@@ -2610,10 +2646,8 @@ mod tests {
     #[cfg(feature = "devnet2")]
     #[tokio::test]
     pub async fn test_produce_block_sequential_slots() {
-        let (mut store, mut genesis_state) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let block_provider = store.store.lock().await.block_provider();
-
-        genesis_state.process_slots(1).unwrap();
         let genesis_hash = store.store.lock().await.head_provider().get().unwrap();
 
         let BlockWithSignatures { block, .. } =
@@ -2632,7 +2666,7 @@ mod tests {
     /// Test block production with no available attestations.
     #[tokio::test]
     pub async fn test_produce_block_empty_attestations() {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let head = store.get_proposal_head(3).await.unwrap();
 
         let BlockWithSignatures { block, .. } =
@@ -2652,7 +2686,7 @@ mod tests {
         let slot = 1;
         let validator_id = 5;
 
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
         let latest_justified_checkpoint = store
             .store
             .lock()
@@ -2675,9 +2709,9 @@ mod tests {
     pub async fn test_produce_attestation_head_reference() {
         let slot = 2;
         #[cfg(feature = "devnet2")]
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
         #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let block_provider = store.store.lock().await.block_provider();
         let attestation = AggregatedAttestations {
             validator_id: 8,
@@ -2694,7 +2728,7 @@ mod tests {
     /// Test that attestation calculates target correctly.
     #[tokio::test]
     pub async fn test_produce_attestation_target_calculation() {
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
         let attestation = AggregatedAttestations {
             validator_id: 9,
             data: store.produce_attestation_data(3).await.unwrap(),
@@ -2708,7 +2742,7 @@ mod tests {
     #[tokio::test]
     pub async fn test_produce_attestation_different_validators() {
         let slot = 4;
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         let mut attestations = Vec::new();
         for validator_id in 0..5 {
@@ -2733,7 +2767,7 @@ mod tests {
     /// Test attestation production across sequential slots.
     #[tokio::test]
     pub async fn test_produce_attestation_sequential_slots() {
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
         let latest_justified_provider = store.store.lock().await.latest_justified_provider();
 
         let mut aggregation_bits = BitList::<U4096>::with_capacity(32).unwrap();
@@ -2760,7 +2794,7 @@ mod tests {
     /// Test that attestation source uses current justified checkpoint.
     #[tokio::test]
     pub async fn test_produce_attestation_justification_consistency() {
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
         let (latest_justified_provider, block_provider) = {
             let db = store.store.lock().await;
             (db.latest_justified_provider(), db.block_provider())
@@ -2791,7 +2825,7 @@ mod tests {
     /// Test error when wrong validator tries to produce block.
     #[tokio::test]
     pub async fn test_produce_block_wrong_proposer() {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
 
         let block = store.produce_block_with_signatures(5, 3).await;
         assert!(block.is_err());
@@ -2804,7 +2838,7 @@ mod tests {
     /// Test error when parent state is missing.
     #[tokio::test]
     pub async fn test_produce_block_missing_parent_state() {
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         store
             .store
             .lock()
@@ -2830,7 +2864,7 @@ mod tests {
     /// Test validator operations with invalid parameters.
     #[tokio::test]
     pub async fn test_validator_operations_invalid_parameters() {
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         // shoudl fail
         assert!(!is_proposer(1000000, 1000000, 10));
@@ -2848,14 +2882,14 @@ mod tests {
     #[tokio::test]
     pub async fn test_on_tick_basic() {
         #[cfg(feature = "devnet2")]
-        let (store, state) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, state) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
-        let target_time = state.config.genesis_time + 200;
+        let target_time = lean_network_spec().genesis_time + 200;
 
         #[cfg(feature = "devnet2")]
         store.on_tick(target_time, true).await.unwrap();
@@ -2872,14 +2906,14 @@ mod tests {
     #[tokio::test]
     pub async fn test_on_tick_no_proposal() {
         #[cfg(feature = "devnet2")]
-        let (store, state) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, state) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
-        let target_time = state.config.genesis_time + 100;
+        let target_time = lean_network_spec().genesis_time + 100;
 
         #[cfg(feature = "devnet2")]
         store.on_tick(target_time, true).await.unwrap();
@@ -2896,14 +2930,14 @@ mod tests {
     #[tokio::test]
     pub async fn test_on_tick_already_current() {
         #[cfg(feature = "devnet2")]
-        let (store, state) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, state) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
-        let current_target = state.config.genesis_time + initial_time;
+        let current_target = lean_network_spec().genesis_time + initial_time;
 
         #[cfg(feature = "devnet2")]
         store.on_tick(current_target, false).await.unwrap();
@@ -2920,14 +2954,14 @@ mod tests {
     #[tokio::test]
     pub async fn test_on_tick_small_increment() {
         #[cfg(feature = "devnet2")]
-        let (store, state) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, state) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
-        let target_time = state.config.genesis_time + initial_time + 1;
+        let target_time = lean_network_spec().genesis_time + initial_time + 1;
 
         #[cfg(feature = "devnet2")]
         store.on_tick(target_time, false).await.unwrap();
@@ -2946,10 +2980,10 @@ mod tests {
     #[tokio::test]
     pub async fn test_tick_interval_basic() {
         #[cfg(feature = "devnet2")]
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
@@ -2969,10 +3003,10 @@ mod tests {
     #[tokio::test]
     pub async fn test_tick_interval_with_proposal() {
         #[cfg(feature = "devnet2")]
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
@@ -2992,10 +3026,10 @@ mod tests {
     #[tokio::test]
     pub async fn test_tick_interval_sequence() {
         #[cfg(feature = "devnet2")]
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
@@ -3019,10 +3053,10 @@ mod tests {
     #[tokio::test]
     pub async fn test_tick_interval_actions_by_phase() {
         #[cfg(feature = "devnet2")]
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
 
         let mut root = [0u8; 32];
         root[..4].copy_from_slice(b"test");
@@ -3074,9 +3108,9 @@ mod tests {
     // Test conversion from slot to time.
     #[tokio::test]
     pub async fn test_slot_to_time_conversion() {
-        let (_, state) = sample_store(10).await;
+        let _ = sample_store(10).await;
 
-        let genesis_time = state.config.genesis_time;
+        let genesis_time = lean_network_spec().genesis_time;
 
         let slot_0_time = genesis_time;
         assert!(slot_0_time == genesis_time);
@@ -3091,9 +3125,9 @@ mod tests {
     // Test conversion from time to slot.
     #[tokio::test]
     pub async fn test_time_to_slot_conversion() {
-        let (_, state) = sample_store(10).await;
+        let _ = sample_store(10).await;
 
-        let genesis_time = state.config.genesis_time;
+        let genesis_time = lean_network_spec().genesis_time;
 
         let time_at_genesis = genesis_time;
         let slot_0 = (time_at_genesis - genesis_time) / lean_network_spec().seconds_per_slot;
@@ -3134,10 +3168,10 @@ mod tests {
     #[tokio::test]
     pub async fn test_accept_new_attestations_basic() {
         #[cfg(feature = "devnet2")]
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
 
         let mut root = [0u8; 32];
         root[..4].copy_from_slice(b"test");
@@ -3208,10 +3242,10 @@ mod tests {
     #[tokio::test]
     pub async fn test_accept_new_attestations_multiple() {
         #[cfg(feature = "devnet2")]
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
 
         let mut checkpoints: Vec<Checkpoint> = Vec::new();
         for i in 0..5 {
@@ -3293,10 +3327,10 @@ mod tests {
     #[tokio::test]
     pub async fn test_accept_new_attestations_empty() {
         #[cfg(feature = "devnet2")]
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
 
         let latest_known_attestations_provider = {
             store
@@ -3340,10 +3374,10 @@ mod tests {
     #[tokio::test]
     pub async fn test_get_proposal_head_basic() {
         #[cfg(feature = "devnet2")]
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
 
         let head = store.get_proposal_head(0).await.unwrap();
 
@@ -3356,10 +3390,10 @@ mod tests {
     #[tokio::test]
     pub async fn test_get_proposal_head_advances_time() {
         #[cfg(feature = "devnet2")]
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         #[cfg(feature = "devnet3")]
-        let (mut store, _) = sample_store(10).await;
+        let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
@@ -3375,7 +3409,7 @@ mod tests {
     #[cfg(feature = "devnet2")]
     #[tokio::test]
     pub async fn test_get_proposal_head_processes_attestations() {
-        let (store, _) = sample_store(10).await;
+        let store = sample_store(10).await;
 
         let root = {
             let mut root_vec = [0u8; 32];
