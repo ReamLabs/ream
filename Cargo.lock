@@ -6171,6 +6171,7 @@ dependencies = [
  "ream-post-quantum-crypto",
  "ream-storage",
  "ream-sync",
+ "ream-test-utils",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -6541,6 +6542,7 @@ dependencies = [
  "ream-rpc-common",
  "ream-storage",
  "ream-sync",
+ "ream-test-utils",
  "serde_json",
  "ssz_types",
  "tokio",
@@ -6625,6 +6627,19 @@ dependencies = [
  "ream-storage",
  "tokio",
  "tracing",
+ "tree_hash",
+]
+
+[[package]]
+name = "ream-test-utils"
+version = "0.1.0"
+dependencies = [
+ "ream-consensus-lean",
+ "ream-fork-choice-lean",
+ "ream-network-spec",
+ "ream-post-quantum-crypto",
+ "ream-storage",
+ "ssz_types",
  "tree_hash",
 ]
 
