@@ -1792,72 +1792,6 @@ pub fn compute_subnet_id(validator_id: u64, num_committees: u64) -> u64 {
     validator_id % num_committees
 }
 
-pub mod test_utils {
-    use ream_consensus_lean::{
-        attestation::{AggregatedAttestations, AttestationData},
-        block::{BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
-        checkpoint::Checkpoint,
-        utils::generate_default_validators,
-    };
-    use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
-    use ream_post_quantum_crypto::leansig::signature::Signature;
-    use ream_storage::db::ReamDB;
-    use ssz_types::VariableList;
-    use tree_hash::TreeHash;
-
-    use crate::{genesis::setup_genesis, store::Store};
-
-    pub async fn sample_store(no_of_validators: usize) -> Store {
-        set_lean_network_spec(LeanNetworkSpec::ephemery().into());
-        let (genesis_block, genesis_state) = setup_genesis(
-            lean_network_spec().genesis_time,
-            generate_default_validators(no_of_validators),
-        );
-
-        let checkpoint = Checkpoint {
-            slot: genesis_block.slot,
-            root: genesis_block.tree_hash_root(),
-        };
-        let signed_genesis_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: genesis_block.proposer_index,
-                    data: AttestationData {
-                        slot: genesis_block.slot,
-                        head: checkpoint,
-                        target: checkpoint,
-                        source: checkpoint,
-                    },
-                },
-                block: genesis_block,
-            },
-            signature: BlockSignatures {
-                attestation_signatures: VariableList::default(),
-                proposer_signature: Signature::blank(),
-            },
-        };
-
-        let temp_path = std::env::temp_dir().join(format!(
-            "lean_test_{}_{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        std::fs::create_dir_all(&temp_path).expect("Failed to create temp directory");
-        let ream_db = ReamDB::new(temp_path).expect("Failed to init Ream Database");
-        let lean_db = ream_db.init_lean_db().expect("Failed to init lean db");
-
-        Store::get_forkchoice_store(
-            signed_genesis_block,
-            genesis_state,
-            lean_db,
-            Some(0),
-            #[cfg(feature = "devnet3")]
-            None,
-        )
-        .expect("Failed to create forkchoice store")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{B256, FixedBytes};
@@ -1897,7 +1831,7 @@ mod tests {
 
     #[cfg(feature = "devnet2")]
     use super::Store;
-    use super::test_utils::sample_store;
+    use crate::utils::sample_store;
 
     #[cfg(feature = "devnet2")]
     pub fn db_setup() -> LeanDB {
