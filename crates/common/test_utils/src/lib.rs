@@ -4,13 +4,12 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     utils::generate_default_validators,
 };
+use ream_fork_choice_lean::{genesis::setup_genesis, store::Store};
 use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::db::ReamDB;
 use ssz_types::VariableList;
 use tree_hash::TreeHash;
-
-use crate::{genesis::setup_genesis, store::Store};
 
 pub async fn sample_store(no_of_validators: usize) -> Store {
     set_lean_network_spec(LeanNetworkSpec::ephemery().into());

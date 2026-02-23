@@ -91,8 +91,8 @@ pub async fn get_state(
 mod tests {
     use actix_web::{App, http::StatusCode, test, web::Data};
     use ream_consensus_lean::state::LeanState;
-    use ream_fork_choice_lean::utils::sample_store;
     use ream_sync::rwlock::Writer;
+    use ream_test_utils::sample_store;
     use ssz::Decode;
 
     use super::get_state;

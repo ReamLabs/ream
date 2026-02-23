@@ -1,5 +1,5 @@
 [package]
-name = "ream-rpc-lean"
+name = "ream-test-utils"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -14,40 +14,24 @@ default = ["devnet2"]
 devnet2 = [
     "ream-consensus-lean/devnet2",
     "ream-fork-choice-lean/devnet2",
-    "ream-network-state-lean/devnet2",
+    "ream-storage/devnet2",
 ]
 devnet3 = [
     "ream-consensus-lean/devnet3",
     "ream-fork-choice-lean/devnet3",
-    "ream-network-state-lean/devnet3",
+    "ream-storage/devnet3",
 ]
 
 [dependencies]
-actix-web.workspace = true
-ethereum_ssz.workspace = true
-libp2p.workspace = true
-parking_lot.workspace = true
-serde_json.workspace = true
-tokio.workspace = true
-tracing.workspace = true
-
-#ream-dependencies
-ream-api-types-common.workspace = true
-ream-api-types-lean.workspace = true
-ream-consensus-lean.workspace = true
-ream-fork-choice-lean.workspace = true
-ream-network-spec.workspace = true
-ream-network-state-lean.workspace = true
-ream-peer.workspace = true
-ream-post-quantum-crypto.workspace = true
-ream-rpc-common.workspace = true
-ream-storage.workspace = true
-ream-sync.workspace = true
 ssz_types.workspace = true
 tree_hash.workspace = true
 
-[dev-dependencies]
-ream-test-utils.workspace = true
+# ream dependencies
+ream-consensus-lean.workspace = true
+ream-fork-choice-lean.workspace = true
+ream-network-spec.workspace = true
+ream-post-quantum-crypto.workspace = true
+ream-storage.workspace = true
 
 [lints]
 workspace = true
