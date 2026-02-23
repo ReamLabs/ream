@@ -61,6 +61,7 @@ ream-sync.workspace = true
 
 [dev-dependencies]
 rand.workspace = true
+ream-test-utils.workspace = true
 
 [lints]
 workspace = true

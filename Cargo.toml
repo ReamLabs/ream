@@ -49,6 +49,7 @@ members = [
     "testing/ef-tests",
     "testing/gossip-validation",
     "testing/lean-spec-tests",
+    "testing/test_utils",
 ]
 resolver = "2"
 exclude = ["book/cli"]
@@ -184,6 +185,7 @@ ream-storage = { path = "crates/storage" }
 ream-sync = { path = "crates/common/sync" }
 ream-sync-committee-pool = { path = "crates/common/sync_committee_pool" }
 ream-syncer = { path = "crates/networking/syncer" }
+ream-test-utils = { path = "testing/test_utils", default-features = false }
 ream-validator-beacon = { path = "crates/common/validator/beacon" }
 ream-validator-lean = { path = "crates/common/validator/lean", default-features = false }
 
