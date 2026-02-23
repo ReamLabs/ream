@@ -27,7 +27,6 @@ members = [
     "crates/common/polynomial_commitments",
     "crates/common/sync",
     "crates/common/sync_committee_pool",
-    "testing/test_utils",
     "crates/common/validator/beacon",
     "crates/common/validator/lean",
     "crates/crypto/bls",
@@ -50,6 +49,7 @@ members = [
     "testing/ef-tests",
     "testing/gossip-validation",
     "testing/lean-spec-tests",
+    "testing/test_utils",
 ]
 resolver = "2"
 exclude = ["book/cli"]
