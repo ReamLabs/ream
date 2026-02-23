@@ -28,7 +28,7 @@ mod tests {
     use actix_web::{App, http::StatusCode, test, web::Data};
     use ream_consensus_lean::checkpoint::Checkpoint;
     use ream_sync::rwlock::Writer;
-    use ream_test_utils::sample_store;
+    use ream_test_utils::store::sample_store;
 
     use super::get_justified_checkpoint;
 

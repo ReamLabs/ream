@@ -1822,7 +1822,7 @@ mod tests {
     #[cfg(feature = "devnet2")]
     use ream_storage::db::{ReamDB, lean::LeanDB};
     use ream_storage::tables::{field::REDBField, table::REDBTable};
-    use ream_test_utils::sample_store;
+    use ream_test_utils::store::sample_store;
     #[cfg(feature = "devnet2")]
     use ssz_types::VariableList;
     use ssz_types::{BitList, typenum::U4096};
