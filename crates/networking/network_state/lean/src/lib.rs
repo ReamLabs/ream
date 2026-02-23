@@ -82,8 +82,6 @@ impl NetworkState {
 
     pub fn common_highest_checkpoint(&self) -> Option<Checkpoint> {
         let peer_table = self.peer_table.lock();
-        let mut common_checkpoint: Option<Checkpoint> = None;
-
         let mut checkpoint_tally: HashMap<Checkpoint, usize> = HashMap::new();
         for peer in peer_table.values() {
             if let (ConnectionState::Connected, Some(head_checkpoint)) =
@@ -92,15 +90,11 @@ impl NetworkState {
                 *checkpoint_tally.entry(*head_checkpoint).or_insert(0) += 1;
             }
         }
-        let mut highest_tally = 0;
-        for (checkpoint, tally) in checkpoint_tally {
-            if tally > highest_tally {
-                highest_tally = tally;
-                common_checkpoint = Some(checkpoint);
-            }
-        }
 
-        common_checkpoint
+        checkpoint_tally
+            .into_iter()
+            .max_by_key(|(checkpoint, tally)| (*tally, checkpoint.slot))
+            .map(|(checkpoint, _)| checkpoint)
     }
 
     pub fn successful_response_from_peer(&self, peer_id: PeerId) {
