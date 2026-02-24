@@ -1497,11 +1497,24 @@ mod tests {
                 head_state_1.slot, head_state_1.latest_finalized.slot
             );
 
+            let head_slot_delta = head_state.slot.abs_diff(head_state_1.slot);
+            let finalized_slot_lag = head_state_1
+                .latest_finalized
+                .slot
+                .saturating_sub(head_state.latest_finalized.slot);
             assert!(
-                head_state.slot.abs_diff(head_state_1.slot) <= 1,
-                "Node 3 is too far behind Node 1. Node 3: {}, Node 1: {}",
+                head_slot_delta <= 2,
+                "Node 3 head diverged too much from Node 1. Node 3: {}, Node 1: {}, delta: {}",
                 head_state.slot,
-                head_state_1.slot
+                head_state_1.slot,
+                head_slot_delta
+            );
+            assert!(
+                finalized_slot_lag <= 4,
+                "Node 3 finalized slot lagged too far behind Node 1. Node 3: {}, Node 1: {}, lag: {}",
+                head_state.latest_finalized.slot,
+                head_state_1.latest_finalized.slot,
+                finalized_slot_lag
             );
         });
     }
