@@ -27,7 +27,12 @@ pub async fn get_justified_checkpoint(
 mod tests {
     use std::net::TcpListener;
 
-    use actix_web::{App, HttpServer, http::StatusCode, test, web::{Data, scope}};
+    use actix_web::{
+        App, HttpServer,
+        http::StatusCode,
+        test,
+        web::{Data, scope},
+    };
     use ream_consensus_lean::checkpoint::Checkpoint;
     use ream_sync::rwlock::Writer;
     use ream_test_utils::store::sample_store;
@@ -76,8 +81,8 @@ mod tests {
         let reader_clone = reader.clone();
         let server = HttpServer::new(move || {
             App::new()
-            .app_data(Data::new(reader_clone.clone()))
-            .service(scope("/lean/v0").service(get_justified_checkpoint))
+                .app_data(Data::new(reader_clone.clone()))
+                .service(scope("/lean/v0").service(get_justified_checkpoint))
         })
         .listen(listener)
         .expect("Failed to attach listener")
