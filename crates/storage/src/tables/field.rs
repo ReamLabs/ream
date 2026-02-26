@@ -48,7 +48,7 @@ where
             let mut table = write_txn.open_table(Self::FIELD_DEFINITION)?;
             table
                 .remove(Self::KEY)?
-                .map(|v| Self::Value::from(v.value()))
+                .map(|value| Self::Value::from(value.value()))
         };
         write_txn.commit()?;
         Ok(value)

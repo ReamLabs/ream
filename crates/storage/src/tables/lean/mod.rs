@@ -15,3 +15,4 @@ pub mod slot_index;
 pub mod state;
 pub mod state_root_index;
 pub mod time;
+pub mod validator_id;

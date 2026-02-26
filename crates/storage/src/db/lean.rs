@@ -19,6 +19,7 @@ use crate::{
             pending_blocks::LeanPendingBlocksTable, safe_target::LeanSafeTargetField,
             slot_index::LeanSlotIndexTable, state::LeanStateTable,
             state_root_index::LeanStateRootIndexTable, time::LeanTimeField,
+            validator_id::LeanValidatorIdField,
         },
         table::REDBTable,
     },
@@ -141,6 +142,12 @@ impl LeanDB {
         &self,
     ) -> LeanLatestKnownAggregatedPayloadsTable {
         LeanLatestKnownAggregatedPayloadsTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn validator_id_provider(&self) -> LeanValidatorIdField {
+        LeanValidatorIdField {
             db: self.db.clone(),
         }
     }

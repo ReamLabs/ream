@@ -66,8 +66,6 @@ pub type LeanStoreReader = Reader<Store>;
 pub struct Store {
     pub store: Arc<Mutex<LeanDB>>,
     pub network_state: Arc<NetworkState>,
-    #[cfg(feature = "devnet3")]
-    pub validator_id: Option<u64>,
 }
 
 impl Store {
@@ -133,6 +131,10 @@ impl Store {
         db.safe_target_provider()
             .insert(anchor_root)
             .expect("Failed to insert genesis block hash");
+        #[cfg(feature = "devnet3")]
+        db.validator_id_provider()
+            .insert(validator_id)
+            .expect("Failed to insert validator id");
 
         Ok(Store {
             store: Arc::new(Mutex::new(db)),
@@ -143,8 +145,6 @@ impl Store {
                 justified_checkpoint,
                 finalized_checkpoint,
             )),
-            #[cfg(feature = "devnet3")]
-            validator_id,
         })
     }
 
@@ -1194,24 +1194,37 @@ impl Store {
     ) -> anyhow::Result<()> {
         let block_processing_timer = start_timer(&FORK_CHOICE_BLOCK_PROCESSING_TIME, &[]);
 
-        let (state_provider, block_provider, latest_justified_provider, latest_finalized_provider) = {
+        let (
+            state_provider,
+            block_provider,
+            latest_justified_provider,
+            latest_finalized_provider,
+            gossip_signatures_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.state_provider(),
                 db.block_provider(),
                 db.latest_justified_provider(),
                 db.latest_finalized_provider(),
+                db.gossip_signatures_provider(),
             )
         };
+
         #[cfg(feature = "devnet3")]
-        let attestation_data_by_root_provider =
-            self.store.lock().await.attestation_data_by_root_provider();
-        #[cfg(feature = "devnet3")]
-        let latest_known_aggregated_payloads_provider = self
-            .store
-            .lock()
-            .await
-            .latest_known_aggregated_payloads_provider();
+        let (
+            validator_id_provider,
+            attestation_data_by_root_provider,
+            latest_known_aggregated_payloads_provider,
+        ) = {
+            let db = self.store.lock().await;
+            (
+                db.validator_id_provider(),
+                db.attestation_data_by_root_provider(),
+                db.latest_known_aggregated_payloads_provider(),
+            )
+        };
+
         let block = &signed_block_with_attestation.message.block;
         let proposer_attestation = &signed_block_with_attestation.message.proposer_attestation;
         let block_root = block.tree_hash_root();
@@ -1356,7 +1369,6 @@ impl Store {
 
         self.update_head().await?;
 
-        let gossip_signatures_provider = self.store.lock().await.gossip_signatures_provider();
         #[cfg(feature = "devnet2")]
         gossip_signatures_provider.insert(
             SignatureKey::new(
@@ -1370,7 +1382,7 @@ impl Store {
         let proposer_validator_id = proposer_attestation.validator_id;
 
         #[cfg(feature = "devnet3")]
-        if let Some(current_id) = self.validator_id
+        if let Ok(Some(current_id)) = validator_id_provider.get()
             && compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT)
                 == compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT)
         {
@@ -1405,7 +1417,7 @@ impl Store {
                 proposer_attestation.data.clone(),
             )?;
 
-            if let Some(current_id) = self.validator_id {
+            if let Ok(Some(current_id)) = validator_id_provider.get() {
                 let proposer_subnet =
                     compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT);
                 let current_subnet = compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
@@ -1756,8 +1768,13 @@ impl Store {
         let attestation_data = &signed_attestation.message;
         let signature = signed_attestation.signature;
         #[cfg(feature = "devnet3")]
-        let attestation_data_by_root_provider =
-            self.store.lock().await.attestation_data_by_root_provider();
+        let (attestation_data_by_root_provider, validator_id_provider) = {
+            let db = self.store.lock().await;
+            (
+                db.attestation_data_by_root_provider(),
+                db.validator_id_provider(),
+            )
+        };
 
         self.validate_attestation(&signed_attestation).await?;
 
@@ -1797,7 +1814,7 @@ impl Store {
 
         #[cfg(feature = "devnet3")]
         {
-            if is_aggregator && let Some(current_id) = self.validator_id {
+            if is_aggregator && let Ok(Some(current_id)) = validator_id_provider.get() {
                 let current_validator_subnet =
                     compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
                 let attester_subnet = compute_subnet_id(validator_id, ATTESTATION_COMMITTEE_COUNT);

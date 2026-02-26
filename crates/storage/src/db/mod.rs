@@ -39,6 +39,7 @@ use crate::{
             pending_blocks::LeanPendingBlocksTable, safe_target::LeanSafeTargetField,
             slot_index::LeanSlotIndexTable, state::LeanStateTable,
             state_root_index::LeanStateRootIndexTable, time::LeanTimeField,
+            validator_id::LeanValidatorIdField,
         },
         table::REDBTable,
     },
@@ -121,6 +122,7 @@ impl ReamDB {
         write_txn.open_table(LeanAttestationDataByRootTable::TABLE_DEFINITION)?;
         write_txn.open_table(LeanLatestNewAggregatedPayloadsTable::TABLE_DEFINITION)?;
         write_txn.open_table(LeanLatestKnownAggregatedPayloadsTable::TABLE_DEFINITION)?;
+        write_txn.open_table(LeanValidatorIdField::FIELD_DEFINITION)?;
         write_txn.commit()?;
 
         Ok(LeanDB {
