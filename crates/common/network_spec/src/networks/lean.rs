@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, LazyLock, Once, OnceLock},
+    sync::{Arc, LazyLock, RwLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -7,26 +7,22 @@ use alloy_primitives::FixedBytes;
 use serde::{Deserialize, Deserializer};
 use tracing::warn;
 
-static HAS_NETWORK_SPEC_BEEN_INITIALIZED: Once = Once::new();
-
 /// Static specification of the Lean Chain network.
-pub static LEAN_NETWORK_SPEC: OnceLock<Arc<LeanNetworkSpec>> = OnceLock::new();
+/// Uses RwLock to allow resetting in tests while maintaining thread-safety.
+static LEAN_NETWORK_SPEC: RwLock<Option<Arc<LeanNetworkSpec>>> = RwLock::new(None);
 
 /// SHOULD be called only once at the start of the application to initialize static
 /// [LeanNetworkSpec].
 ///
 /// The static `LeanNetworkSpec` can be accessed using [lean_network_spec].
 pub fn set_lean_network_spec(network_spec: Arc<LeanNetworkSpec>) {
-    if HAS_NETWORK_SPEC_BEEN_INITIALIZED.is_completed() {
-        warn!(
-            "LeanNetworkSpec has already been initialized. Subsequent calls to set_lean_network_spec will be ignored. If this is production code, this is likely a bug."
-        );
+    let mut spec = LEAN_NETWORK_SPEC
+        .write()
+        .expect("LEAN_NETWORK_SPEC RwLock poisoned");
+    if spec.is_some() {
+        warn!("LeanNetworkSpec has already been initialized. Overwriting with new spec.");
     }
-    HAS_NETWORK_SPEC_BEEN_INITIALIZED.call_once(|| {
-        LEAN_NETWORK_SPEC
-            .set(network_spec)
-            .expect("LeanNetworkSpec should be set only once at the start of the application");
-    });
+    *spec = Some(network_spec);
 }
 
 pub fn initialize_lean_test_network_spec() {
@@ -40,7 +36,9 @@ pub fn initialize_lean_test_network_spec() {
 /// Panics if [set_lean_network_spec] wasn't called before this function.
 pub fn lean_network_spec() -> Arc<LeanNetworkSpec> {
     LEAN_NETWORK_SPEC
-        .get()
+        .read()
+        .expect("LEAN_NETWORK_SPEC RwLock poisoned")
+        .as_ref()
         .expect("LeanNetworkSpec wasn't set")
         .clone()
 }
