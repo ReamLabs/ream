@@ -244,9 +244,7 @@ impl LeanChainService {
                         }
                         LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation, need_gossip } => {
                             if self.sync_status != SyncStatus::Synced {
-                                if let Err(err) = self.handle_gossip_block_during_sync(&signed_block_with_attestation).await {
-                                    warn!("Failed to handle gossip block during sync: {err:?}");
-                                }
+                                trace!("Received ProcessBlock request while syncing. Ignoring.");
                                 continue;
                             }
 
@@ -782,80 +780,6 @@ impl LeanChainService {
         self.peers_in_use.remove(&peer_id);
         self.pending_job_requests
             .push(PendingJobRequest::Reset { peer_id });
-        Ok(())
-    }
-
-    async fn handle_gossip_block_during_sync(
-        &mut self,
-        signed_block_with_attestation: &SignedBlockWithAttestation,
-    ) -> anyhow::Result<()> {
-        let block_root = signed_block_with_attestation.message.block.tree_hash_root();
-        let block_slot = signed_block_with_attestation.message.block.slot;
-        let parent_root = signed_block_with_attestation.message.block.parent_root;
-
-        trace!(
-            slot = block_slot,
-            block_root = ?block_root,
-            parent_root = ?parent_root,
-            "Received gossip block during sync, adding to pending blocks"
-        );
-
-        let (head, pending_blocks_provider) = {
-            let fork_choice = self.store.read().await;
-            let store = fork_choice.store.lock().await;
-            (
-                store.head_provider().get()?,
-                store.pending_blocks_provider(),
-            )
-        };
-
-        if pending_blocks_provider.get(block_root)?.is_some() {
-            trace!(
-                block_root = ?block_root,
-                "Block already in pending blocks, skipping"
-            );
-            return Ok(());
-        }
-
-        pending_blocks_provider.insert(block_root, signed_block_with_attestation.clone())?;
-
-        let parent_root_is_local_head = parent_root == head;
-        let parent_root_in_pending_blocks = pending_blocks_provider.get(parent_root)?.is_some();
-        let parent_root_is_start_of_any_queue =
-            self.sync_status.is_root_start_of_any_queue(&parent_root);
-
-        if parent_root_is_local_head
-            || parent_root_in_pending_blocks
-            || parent_root_is_start_of_any_queue
-        {
-            self.sync_status.mark_job_queue_as_complete(block_root);
-            trace!(
-                block_root = ?block_root,
-                "Parent available, marked queue as complete"
-            );
-            return Ok(());
-        }
-
-        if !self.sync_status.slot_is_subset_of_any_queue(block_slot)
-            && !self
-                .checkpoints_to_queue
-                .iter()
-                .any(|(cp, _)| cp.root == block_root)
-        {
-            self.checkpoints_to_queue.push((
-                Checkpoint {
-                    root: block_root,
-                    slot: block_slot,
-                },
-                true,
-            ));
-            trace!(
-                block_root = ?block_root,
-                slot = block_slot,
-                "Added gossip block to sync queue"
-            );
-        }
-
         Ok(())
     }
 
