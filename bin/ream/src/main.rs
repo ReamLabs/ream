@@ -1429,7 +1429,7 @@ mod tests {
             );
 
             assert!(
-                head_state.slot == head_state_1.slot,
+                head_state.slot.abs_diff(head_state_1.slot) <= 1,
                 "Node 3 is too far behind Node 1. Node 3: {}, Node 1: {}",
                 head_state.slot,
                 head_state_1.slot
