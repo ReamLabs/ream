@@ -1,6 +1,9 @@
 name: Flaky Test Detection
 
-on: workflow_dispatch
+on:
+  push:
+    branches:
+      - fix/shariqnaiyer/fresh-start
 
 env:
   CARGO_TERM_COLOR: always
