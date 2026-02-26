@@ -59,7 +59,7 @@ impl SignedBeaconBlock {
             kzg_commitment_inclusion_proof: self
                 .message
                 .body
-                .blob_kzg_commitment_inclusion_proof()?
+                .blob_kzg_commitment_inclusion_proof(index)?
                 .try_into().map_err(|err| anyhow!("Failed to convert blob_kzg_commitment_inclusion_proof to FixedVector: {err:?}"))?,
         })
     }
