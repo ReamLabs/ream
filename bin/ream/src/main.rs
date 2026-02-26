@@ -964,14 +964,17 @@ mod tests {
             }
 
             handle.abort();
+
+            // Wait for any in-flight database writes to complete before reading state
+            sleep(Duration::from_secs(2)).await;
         });
 
         let lean_db = db.init_lean_db().unwrap();
         let head = lean_db.head_provider().get().unwrap();
         let head_state = lean_db.state_provider().get(head).unwrap().unwrap();
 
-        let justfication_lag = 4;
-        let finalization_lag = 5;
+        let justfication_lag = 2;
+        let finalization_lag = 2;
 
         info!(
             "Test results: head_slot={}, justified_slot={}, finalized_slot={}, head_root={:?}",
@@ -1190,6 +1193,9 @@ mod tests {
             for handle in node_handles {
                 handle.abort();
             }
+
+            // Wait for any in-flight database writes to complete before reading state
+            sleep(Duration::from_secs(2)).await;
 
             let lean_db = db_instances[0].init_lean_db().unwrap();
             let head = lean_db.head_provider().get().expect("Failed to get head");
@@ -1445,6 +1451,9 @@ mod tests {
                 handle.abort();
             }
 
+            // Wait for any in-flight database writes to complete before reading state
+            sleep(Duration::from_secs(2)).await;
+
             let lean_db = db_instances[2].as_ref().unwrap().init_lean_db().unwrap();
             let head = lean_db.head_provider().get().expect("Failed to get head");
             let head_state = lean_db
@@ -1691,6 +1700,9 @@ mod tests {
 
             let _ = known_good_child.kill();
             let _ = known_good_child.wait();
+
+            // Wait for any in-flight database writes to complete before reading state
+            sleep(Duration::from_secs(2)).await;
 
             let node_1_database = ReamDB::new(node_data_directories[0].clone())
                 .unwrap()
