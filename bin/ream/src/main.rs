@@ -1217,6 +1217,26 @@ mod tests {
         let registry_path =
             assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
 
+        // Create a fresh network config with genesis_time in the future
+        let unique_suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time is before UNIX epoch")
+            .as_nanos();
+        let network_config_path = std::env::temp_dir().join(format!(
+            "{APP_NAME}_{test_name}_{unique_suffix}_network.yaml"
+        ));
+
+        let genesis_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time is before UNIX epoch")
+            .as_secs()
+            + 10;
+        let network_yaml = format!(
+            "GENESIS_TIME: {genesis_time}\nNUM_VALIDATORS: 3\nGENESIS_VALIDATORS:\n- 0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65ec589c858b9c7980b276ebe550056b23f0bdc3b5a\n- 0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e377237595d9a27887421b5233d09a50832db2f303d\n- 0xd4355005bc37f76f390dcd2bcc51677d8c6ab44e0cc64913fb84ad459789a31105bd9a69afd2690ffd737d22ec6e3b31d47a642f\n"
+        );
+        fs::write(&network_config_path, network_yaml).expect("Failed to write temp network config");
+        let network_config_path_string = network_config_path.to_string_lossy().to_string();
+
         let mut validators_yaml = String::new();
         for i in 0..node_count {
             validators_yaml.push_str(&format!("node{}:\n  - {i}\n", i + 1));
@@ -1286,7 +1306,7 @@ mod tests {
                     "ream".to_string(),
                     "lean_node".to_string(),
                     "--network".to_string(),
-                    "ephemery".to_string(),
+                    network_config_path_string.clone(),
                     "--validator-registry-path".to_string(),
                     registry_path_string.clone(),
                     "--socket-port".to_string(),
@@ -1394,6 +1414,7 @@ mod tests {
             }
 
             let _ = fs::remove_file(&registry_path);
+            let _ = fs::remove_file(&network_config_path);
             for handle in node_handles.into_iter().flatten() {
                 handle.abort();
             }
