@@ -91,5 +91,8 @@ ream-sync-committee-pool.workspace = true
 ream-validator-beacon.workspace = true
 ream-validator-lean.workspace = true
 
+[dev-dependencies]
+serial_test = "3.4.0"
+
 [lints]
 workspace = true

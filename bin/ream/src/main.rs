@@ -832,6 +832,7 @@ mod tests {
         dir::setup_data_dir,
         tables::{field::REDBField, table::REDBTable},
     };
+    use serial_test::serial;
     use tokio::time::{sleep, timeout};
     use tracing::info;
 
@@ -871,6 +872,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_lean_node_runs_10_seconds_without_panicking() {
         let cli = Cli::parse_from([
             "ream",
@@ -913,6 +915,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_lean_node_finalizes() {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(Verbosity::Info.directive())
@@ -1014,6 +1017,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[ignore = "I am not sure if this topology is supposed to work or not"]
     fn test_lean_node_finalizes_linear_1_2_1() {
         let topology = vec![vec![], vec![0], vec![1]];
@@ -1021,6 +1025,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_lean_node_finalizes_mesh_2_2_2() {
         let topology = vec![vec![], vec![0], vec![0, 1]];
         run_multi_node_finalization_test(topology, "mesh_2_2_2");
@@ -1214,6 +1219,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_lean_node_syncs_and_finalizes_late_joiner() {
         // Topology: Node 3 connects to Node 1 and Node 2.
         // Node 1 and 2 start immediately. Node 3 starts after 50s.
@@ -1479,6 +1485,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_lean_node_syncs_and_finalizes_two_nodes() {
         if std::env::var("REAM_RUN_INTEROP_TESTS").unwrap_or_default() != "1" {
             info!("Skipping interop test: set REAM_RUN_INTEROP_TESTS=1 to enable");
