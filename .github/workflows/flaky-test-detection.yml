@@ -1,0 +1,60 @@
+name: Flaky Test Detection
+
+on: workflow_dispatch
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        run_number: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
+                     21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+                     41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,
+                     61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,
+                     81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Run test
+        id: test
+        continue-on-error: true
+        run: make test-devnet3
+
+      - name: Record result
+        if: always()
+        run: echo "${{ steps.test.outcome }}" > result.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-${{ matrix.run_number }}
+          path: result.txt
+
+  summarize:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: results
+
+      - name: Count failures
+        run: |
+          total=0; failures=0
+          for f in results/*/result.txt; do
+            ((total++))
+            grep -q "failure" "$f" && ((failures++))
+          done
+          echo "## Results: $failures / $total failed" >> $GITHUB_STEP_SUMMARY
+          echo "Failure rate: $(echo "scale=2; $failures*100/$total" | bc)%" >> $GITHUB_STEP_SUMMARY
