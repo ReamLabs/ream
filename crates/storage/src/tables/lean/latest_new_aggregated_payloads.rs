@@ -109,4 +109,10 @@ impl LeanLatestNewAggregatedPayloadsTable {
         write_txn.commit()?;
         Ok(result)
     }
+
+    pub fn contains_key(&self, key: &SignatureKey) -> bool {
+        self.get(key.clone())
+            .map(|option| option.is_some())
+            .unwrap_or(false)
+    }
 }

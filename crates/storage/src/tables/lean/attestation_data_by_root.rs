@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus_lean::attestation::AttestationData;
-use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
+use redb::{
+    Database, Durability, ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition,
+};
 
 use crate::{
     errors::StoreError,
@@ -72,12 +74,32 @@ impl LeanAttestationDataByRootTable {
 
             table.retain(|key, value| {
                 let key_ref: &B256 = &key;
-                let val_ref: &AttestationData = &value;
+                let value_ref: &AttestationData = &value;
 
-                f(key_ref, val_ref)
+                f(key_ref, value_ref)
             })?;
         }
         write_txn.commit()?;
         Ok(())
+    }
+
+    pub fn contains_key(&self, key: &B256) -> bool {
+        self.get(*key)
+            .map(|option| option.is_some())
+            .unwrap_or(false)
+    }
+
+    pub fn len(&self) -> usize {
+        let Ok(read_txn) = self.db.begin_read() else {
+            return 0;
+        };
+        let Ok(table) = read_txn.open_table(Self::TABLE_DEFINITION) else {
+            return 0;
+        };
+        table.len().unwrap_or(0) as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }

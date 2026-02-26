@@ -2175,11 +2175,11 @@ mod tests {
         let attestation_data = _make_attestation_data(5, 5);
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::new(1, &attestation_data);
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
 
         {
-            store
-                .attestation_data_by_root
-                .insert(data_root, attestation_data);
+            attestation_data_by_root_provider.insert(data_root, attestation_data)?;
             let db = store.store.lock().await;
             db.latest_finalized_provider()
                 .insert(Checkpoint {
@@ -2192,7 +2192,7 @@ mod tests {
                 .unwrap();
         }
 
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         {
             let db = store.store.lock().await;
             ensure!(
@@ -2205,7 +2205,7 @@ mod tests {
 
         store.prune_stale_attestation_data().await?;
 
-        ensure!(!store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
         let db = store.store.lock().await;
         ensure!(
             db.gossip_signatures_provider()
@@ -2223,11 +2223,11 @@ mod tests {
         let attestation_data = _make_attestation_data(3, 3);
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::new(1, &attestation_data);
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
 
         {
-            store
-                .attestation_data_by_root
-                .insert(data_root, attestation_data);
+            attestation_data_by_root_provider.insert(data_root, attestation_data)?;
             let db = store.store.lock().await;
             db.latest_finalized_provider()
                 .insert(Checkpoint {
@@ -2240,10 +2240,10 @@ mod tests {
                 .unwrap();
         }
 
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         store.prune_stale_attestation_data().await?;
 
-        ensure!(!store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
         let db = store.store.lock().await;
         ensure!(
             db.gossip_signatures_provider()
@@ -2261,11 +2261,11 @@ mod tests {
         let attestation_data = _make_attestation_data(10, 10);
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::new(1, &attestation_data);
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
 
         {
-            store
-                .attestation_data_by_root
-                .insert(data_root, attestation_data.clone());
+            attestation_data_by_root_provider.insert(data_root, attestation_data.clone())?;
             let db = store.store.lock().await;
             db.latest_finalized_provider()
                 .insert(Checkpoint {
@@ -2278,11 +2278,11 @@ mod tests {
                 .unwrap();
         }
 
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         store.prune_stale_attestation_data().await?;
 
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
-        ensure!(store.attestation_data_by_root.get(&data_root).unwrap() == &attestation_data);
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.get(data_root)?.unwrap() == attestation_data);
         let db = store.store.lock().await;
         ensure!(
             db.gossip_signatures_provider()
@@ -2310,28 +2310,33 @@ mod tests {
             ssz_types::BitList::with_capacity(4096).unwrap(),
             ssz_types::VariableList::empty(),
         );
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
+        let latest_new_aggregated_payloads_provider = store
+            .store
+            .lock()
+            .await
+            .latest_new_aggregated_payloads_provider();
+        let latest_known_aggregated_payloads_provider = store
+            .store
+            .lock()
+            .await
+            .latest_known_aggregated_payloads_provider();
 
         {
-            store
-                .attestation_data_by_root
-                .insert(stale_root, stale_attestation);
-            store
-                .attestation_data_by_root
-                .insert(fresh_root, fresh_attestation);
+            attestation_data_by_root_provider.insert(stale_root, stale_attestation)?;
+            attestation_data_by_root_provider.insert(fresh_root, fresh_attestation)?;
 
-            store
-                .latest_new_aggregated_payloads
-                .insert(stale_key.clone(), vec![mock_proof.clone()]);
-            store
-                .latest_new_aggregated_payloads
-                .insert(fresh_key.clone(), vec![mock_proof.clone()]);
+            latest_new_aggregated_payloads_provider
+                .insert(stale_key.clone(), vec![mock_proof.clone()])?;
+            latest_new_aggregated_payloads_provider
+                .insert(fresh_key.clone(), vec![mock_proof.clone()])?;
 
-            store
-                .latest_known_aggregated_payloads
-                .insert(stale_key.clone(), vec![mock_proof.clone()]);
-            store
-                .latest_known_aggregated_payloads
-                .insert(fresh_key.clone(), vec![mock_proof]);
+            latest_known_aggregated_payloads_provider
+                .insert(stale_key.clone(), vec![mock_proof.clone()])?;
+
+            latest_known_aggregated_payloads_provider
+                .insert(fresh_key.clone(), vec![mock_proof])?;
 
             let db = store.store.lock().await;
             db.latest_finalized_provider()
@@ -2348,38 +2353,18 @@ mod tests {
                 .unwrap();
         }
 
-        ensure!(store.attestation_data_by_root.contains_key(&stale_root));
-        ensure!(
-            store
-                .latest_new_aggregated_payloads
-                .contains_key(&stale_key)
-        );
-        ensure!(
-            store
-                .latest_known_aggregated_payloads
-                .contains_key(&stale_key)
-        );
+        ensure!(attestation_data_by_root_provider.contains_key(&stale_root));
+        ensure!(latest_new_aggregated_payloads_provider.contains_key(&stale_key));
+        ensure!(latest_known_aggregated_payloads_provider.contains_key(&stale_key));
 
         store.prune_stale_attestation_data().await?;
 
-        ensure!(!store.attestation_data_by_root.contains_key(&stale_root));
-        ensure!(
-            !store
-                .latest_new_aggregated_payloads
-                .contains_key(&stale_key)
-        );
-        ensure!(
-            !store
-                .latest_known_aggregated_payloads
-                .contains_key(&stale_key)
-        );
+        ensure!(!attestation_data_by_root_provider.contains_key(&stale_root));
+        ensure!(!latest_new_aggregated_payloads_provider.contains_key(&stale_key));
+        ensure!(!latest_known_aggregated_payloads_provider.contains_key(&stale_key));
 
-        ensure!(store.attestation_data_by_root.contains_key(&fresh_root));
-        ensure!(
-            store
-                .latest_new_aggregated_payloads
-                .contains_key(&fresh_key)
-        );
+        ensure!(attestation_data_by_root_provider.contains_key(&fresh_root));
+        ensure!(latest_new_aggregated_payloads_provider.contains_key(&fresh_key));
 
         let db = store.store.lock().await;
         ensure!(
@@ -2403,11 +2388,11 @@ mod tests {
         let mut store = sample_store(10).await;
         let fresh_attestation = _make_attestation_data(10, 10);
         let data_root = fresh_attestation.tree_hash_root();
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
 
         {
-            store
-                .attestation_data_by_root
-                .insert(data_root, fresh_attestation);
+            attestation_data_by_root_provider.insert(data_root, fresh_attestation)?;
             let db = store.store.lock().await;
             db.latest_finalized_provider()
                 .insert(Checkpoint {
@@ -2417,11 +2402,11 @@ mod tests {
                 .unwrap();
         }
 
-        let initial_len = store.attestation_data_by_root.len();
+        let initial_len = attestation_data_by_root_provider.len();
         store.prune_stale_attestation_data().await?;
 
-        ensure!(store.attestation_data_by_root.len() == initial_len);
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.len() == initial_len);
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         Ok(())
     }
 
@@ -2429,15 +2414,18 @@ mod tests {
     #[tokio::test]
     async fn test_handles_empty_attestation_data() -> anyhow::Result<()> {
         let mut store = sample_store(10).await;
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
+
         ensure!(
-            store.attestation_data_by_root.is_empty(),
+            attestation_data_by_root_provider.is_empty(),
             "Store should start empty"
         );
 
         store.prune_stale_attestation_data().await?;
 
         ensure!(
-            store.attestation_data_by_root.is_empty(),
+            attestation_data_by_root_provider.is_empty(),
             "Store should remain empty"
         );
         Ok(())
@@ -2451,9 +2439,11 @@ mod tests {
         let data_root = stale_data.tree_hash_root();
         let sig_key_1 = SignatureKey::new(1, &stale_data);
         let sig_key_2 = SignatureKey::new(2, &stale_data);
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
 
         {
-            store.attestation_data_by_root.insert(data_root, stale_data);
+            attestation_data_by_root_provider.insert(data_root, stale_data)?;
             let db = store.store.lock().await;
             db.latest_finalized_provider()
                 .insert(Checkpoint {
@@ -2471,10 +2461,10 @@ mod tests {
                 .unwrap();
         }
 
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         store.prune_stale_attestation_data().await?;
 
-        ensure!(!store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
         let db = store.store.lock().await;
         ensure!(
             db.gossip_signatures_provider()
@@ -2512,7 +2502,7 @@ mod tests {
                 let root = data.tree_hash_root();
                 let key = SignatureKey::new(i, &data);
 
-                store.attestation_data_by_root.insert(root, data);
+                db.attestation_data_by_root_provider().insert(root, data)?;
                 gossip.insert(key, Signature::blank()).unwrap();
                 roots.push(root);
             }
@@ -2522,10 +2512,12 @@ mod tests {
 
         for (i, root) in roots.iter().enumerate() {
             let slot = (i + 1) as u64;
+            let attestation_data_by_root_provider =
+                store.store.lock().await.attestation_data_by_root_provider();
             if slot <= 5 {
-                ensure!(!store.attestation_data_by_root.contains_key(root));
+                ensure!(!attestation_data_by_root_provider.contains_key(root));
             } else {
-                ensure!(store.attestation_data_by_root.contains_key(root));
+                ensure!(attestation_data_by_root_provider.contains_key(root));
             }
         }
         Ok(())
