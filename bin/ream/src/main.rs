@@ -1142,8 +1142,11 @@ mod tests {
                     node_id.clone(),
                     "--private-key-path".to_string(),
                     key_path.to_string_lossy().to_string(),
-                    "--is-aggregator".to_string(),
                 ];
+
+                if i == 0 {
+                    arguments.push("--is-aggregator".to_string());
+                }
 
                 if !bootnode_arguments.is_empty() {
                     arguments.push("--bootnodes".to_string());
@@ -1358,8 +1361,11 @@ mod tests {
                     format!("node{node_index}"),
                     "--private-key-path".to_string(),
                     key_path.to_string_lossy().to_string(),
-                    "--is-aggregator".to_string(),
                 ];
+
+                if i == 0 {
+                    arguments.push("--is-aggregator".to_string());
+                }
 
                 if !bootnode_arguments.is_empty() {
                     arguments.push("--bootnodes".to_string());
@@ -1614,8 +1620,11 @@ mod tests {
                 format!("node{node_index}"),
                 "--private-key-path".to_string(),
                 key_path.to_string_lossy().to_string(),
-                "--is-aggregator".to_string(),
             ];
+
+            if i == 0 {
+                cli_arguments.push("--is-aggregator".to_string());
+            }
 
             if !bootnode_arguments.is_empty() {
                 cli_arguments.push("--bootnodes".to_string());
