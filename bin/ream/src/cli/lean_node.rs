@@ -69,4 +69,11 @@ pub struct LeanNodeConfig {
 
     #[arg(long, help = "Set metrics port", default_value_t = DEFAULT_METRICS_PORT)]
     pub metrics_port: u16,
+
+    #[arg(
+        long,
+        help = "Set node as aggregator for committee signature aggregation",
+        default_value_t = false
+    )]
+    pub is_aggregator: bool,
 }

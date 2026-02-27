@@ -15,8 +15,6 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
 };
-#[cfg(feature = "devnet3")]
-use ream_consensus_misc::constants::lean::ATTESTATION_COMMITTEE_COUNT;
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_metrics::{CURRENT_SLOT, set_int_gauge_vec};
@@ -73,6 +71,8 @@ pub struct LeanChainService {
     forward_syncer: Option<JoinHandle<anyhow::Result<ForwardSyncResults>>>,
     checkpoints_to_queue: Vec<(Checkpoint, bool)>,
     pending_callbacks: FuturesUnordered<CallbackFuture>,
+    #[cfg(feature = "devnet3")]
+    is_aggregator: bool,
 }
 
 impl LeanChainService {
@@ -80,6 +80,7 @@ impl LeanChainService {
         store: LeanStoreWriter,
         receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
         outbound_p2p: mpsc::UnboundedSender<LeanP2PRequest>,
+        #[cfg(feature = "devnet3")] is_aggregator: bool,
     ) -> Self {
         let network_state = store.read().await.network_state.clone();
         LeanChainService {
@@ -93,6 +94,8 @@ impl LeanChainService {
             checkpoints_to_queue: Vec::new(),
             pending_callbacks: FuturesUnordered::new(),
             pending_job_requests: Vec::new(),
+            #[cfg(feature = "devnet3")]
+            is_aggregator,
         }
     }
 
@@ -137,11 +140,7 @@ impl LeanChainService {
                         #[cfg(feature = "devnet2")]
                         self.store.write().await.tick_interval(tick_count % INTERVALS_PER_SLOT == 1).await.expect("Failed to tick interval");
                         #[cfg(feature = "devnet3")]
-                        {
-                            let is_aggregator = self.store.read().await.validator_id
-                                .is_some_and(|id| id < ATTESTATION_COMMITTEE_COUNT);
-                            self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), is_aggregator).await.expect("Failed to tick interval");
-                        }
+                        self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), self.is_aggregator).await.expect("Failed to tick interval");
                         self.step_head_sync(tick_count).await?;
                     }
 
@@ -1022,7 +1021,7 @@ impl LeanChainService {
         self.store
             .write()
             .await
-            .on_gossip_attestation(signed_attestation, true)
+            .on_gossip_attestation(signed_attestation, self.is_aggregator)
             .await?;
 
         Ok(())

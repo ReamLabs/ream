@@ -37,6 +37,8 @@ Options:
           Set metrics address [default: 127.0.0.1]
       --metrics-port <METRICS_PORT>
           Set metrics port [default: 8080]
+      --is-aggregator
+          Enable aggregator mode for committee signature aggregation
   -h, --help
           Print help
 ```
