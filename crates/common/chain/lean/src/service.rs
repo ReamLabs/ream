@@ -138,7 +138,6 @@ impl LeanChainService {
                         self.store.write().await.tick_interval(tick_count % INTERVALS_PER_SLOT == 1).await.expect("Failed to tick interval");
                         #[cfg(feature = "devnet3")]
                         {
-                            // A node is an aggregator if it controls a validator with index < ATTESTATION_COMMITTEE_COUNT
                             let is_aggregator = self.store.read().await.validator_id
                                 .is_some_and(|id| id < ATTESTATION_COMMITTEE_COUNT);
                             self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), is_aggregator).await.expect("Failed to tick interval");

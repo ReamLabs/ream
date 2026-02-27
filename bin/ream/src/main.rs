@@ -965,7 +965,6 @@ mod tests {
 
             handle.abort();
 
-            // Wait for any in-flight database writes to complete before reading state
             sleep(Duration::from_secs(2)).await;
         });
 
@@ -1194,7 +1193,6 @@ mod tests {
                 handle.abort();
             }
 
-            // Wait for any in-flight database writes to complete before reading state
             sleep(Duration::from_secs(2)).await;
 
             let lean_db = db_instances[0].init_lean_db().unwrap();
@@ -1451,7 +1449,6 @@ mod tests {
                 handle.abort();
             }
 
-            // Wait for any in-flight database writes to complete before reading state
             sleep(Duration::from_secs(2)).await;
 
             let lean_db = db_instances[2].as_ref().unwrap().init_lean_db().unwrap();
@@ -1701,7 +1698,6 @@ mod tests {
             let _ = known_good_child.kill();
             let _ = known_good_child.wait();
 
-            // Wait for any in-flight database writes to complete before reading state
             sleep(Duration::from_secs(2)).await;
 
             let node_1_database = ReamDB::new(node_data_directories[0].clone())
