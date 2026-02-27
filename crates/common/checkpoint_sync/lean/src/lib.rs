@@ -3,8 +3,7 @@ use ream_consensus_lean::state::LeanState;
 use reqwest::{Client, StatusCode, Url};
 use ssz::Decode;
 use tracing::warn;
-
-const VALIDATOR_REGISTRY_LIMIT: u64 = 4096;
+use ream_consensus_misc::constants::lean::VALIDATOR_REGISTRY_LIMIT;
 
 #[derive(Default)]
 pub struct LeanCheckpointClient {
