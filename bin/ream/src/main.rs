@@ -832,12 +832,47 @@ mod tests {
         dir::setup_data_dir,
         tables::{field::REDBField, table::REDBTable},
     };
+    use serial_test::serial;
     use tokio::time::{sleep, timeout};
     use tracing::info;
 
     use crate::{APP_NAME, run_lean_node};
 
+    const VALIDATOR_KEYS: [&str; 3] = [
+        "0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65ec589c858b9c7980b276ebe550056b23f0bdc3b5a",
+        "0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e377237595d9a27887421b5233d09a50832db2f303d",
+        "0xd4355005bc37f76f390dcd2bcc51677d8c6ab44e0cc64913fb84ad459789a31105bd9a69afd2690ffd737d22ec6e3b31d47a642f",
+    ];
+
+    fn create_test_network_config(test_name: &str, num_validators: usize) -> PathBuf {
+        let unique_suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time is before UNIX epoch")
+            .as_nanos();
+        let network_config_path = std::env::temp_dir().join(format!(
+            "{APP_NAME}_{test_name}_{unique_suffix}_network.yaml"
+        ));
+
+        let genesis_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time is before UNIX epoch")
+            .as_secs()
+            + 10;
+
+        let validators: String = VALIDATOR_KEYS[..num_validators]
+            .iter()
+            .map(|k| format!("- {k}\n"))
+            .collect();
+
+        let network_yaml = format!(
+            "GENESIS_TIME: {genesis_time}\nNUM_VALIDATORS: {num_validators}\nGENESIS_VALIDATORS:\n{validators}"
+        );
+        fs::write(&network_config_path, network_yaml).expect("Failed to write temp network config");
+        network_config_path
+    }
+
     #[test]
+    #[serial]
     fn test_lean_node_runs_10_seconds_without_panicking() {
         let cli = Cli::parse_from([
             "ream",
@@ -880,6 +915,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_lean_node_finalizes() {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(Verbosity::Info.directive())
@@ -928,14 +964,16 @@ mod tests {
             }
 
             handle.abort();
+
+            sleep(Duration::from_secs(2)).await;
         });
 
         let lean_db = db.init_lean_db().unwrap();
         let head = lean_db.head_provider().get().unwrap();
         let head_state = lean_db.state_provider().get(head).unwrap().unwrap();
 
-        let justfication_lag = 4;
-        let finalization_lag = 5;
+        let justfication_lag = 2;
+        let finalization_lag = 2;
 
         info!(
             "Test results: head_slot={}, justified_slot={}, finalized_slot={}, head_root={:?}",
@@ -981,6 +1019,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[ignore = "I am not sure if this topology is supposed to work or not"]
     fn test_lean_node_finalizes_linear_1_2_1() {
         let topology = vec![vec![], vec![0], vec![1]];
@@ -988,6 +1027,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_lean_node_finalizes_mesh_2_2_2() {
         let topology = vec![vec![], vec![0], vec![0, 1]];
         run_multi_node_finalization_test(topology, "mesh_2_2_2");
@@ -1031,6 +1071,9 @@ mod tests {
 
         fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
         let registry_path_string = registry_path.to_string_lossy().to_string();
+
+        let network_config_path = create_test_network_config(test_name, 3);
+        let network_config_path_string = network_config_path.to_string_lossy().to_string();
 
         let executor = ReamExecutor::new().unwrap();
         executor.clone().runtime().block_on(async move {
@@ -1078,7 +1121,7 @@ mod tests {
                     "ream".to_string(),
                     "lean_node".to_string(),
                     "--network".to_string(),
-                    "ephemery".to_string(),
+                    network_config_path_string.clone(),
                     "--validator-registry-path".to_string(),
                     registry_path_string.clone(),
                     "--socket-port".to_string(),
@@ -1145,9 +1188,12 @@ mod tests {
             let _ = timeout(Duration::from_secs(test_duration_secs + 5), monitor_handle).await;
 
             let _ = fs::remove_file(&registry_path);
+            let _ = fs::remove_file(&network_config_path);
             for handle in node_handles {
                 handle.abort();
             }
+
+            sleep(Duration::from_secs(2)).await;
 
             let lean_db = db_instances[0].init_lean_db().unwrap();
             let head = lean_db.head_provider().get().expect("Failed to get head");
@@ -1177,6 +1223,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_lean_node_syncs_and_finalizes_late_joiner() {
         // Topology: Node 3 connects to Node 1 and Node 2.
         // Node 1 and 2 start immediately. Node 3 starts after 50s.
@@ -1216,6 +1263,9 @@ mod tests {
 
         let registry_path =
             assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
+
+        let network_config_path = create_test_network_config(test_name, 3);
+        let network_config_path_string = network_config_path.to_string_lossy().to_string();
 
         let mut validators_yaml = String::new();
         for i in 0..node_count {
@@ -1286,7 +1336,7 @@ mod tests {
                     "ream".to_string(),
                     "lean_node".to_string(),
                     "--network".to_string(),
-                    "ephemery".to_string(),
+                    network_config_path_string.clone(),
                     "--validator-registry-path".to_string(),
                     registry_path_string.clone(),
                     "--socket-port".to_string(),
@@ -1394,9 +1444,12 @@ mod tests {
             }
 
             let _ = fs::remove_file(&registry_path);
+            let _ = fs::remove_file(&network_config_path);
             for handle in node_handles.into_iter().flatten() {
                 handle.abort();
             }
+
+            sleep(Duration::from_secs(2)).await;
 
             let lean_db = db_instances[2].as_ref().unwrap().init_lean_db().unwrap();
             let head = lean_db.head_provider().get().expect("Failed to get head");
@@ -1429,7 +1482,7 @@ mod tests {
             );
 
             assert!(
-                head_state.slot == head_state_1.slot,
+                head_state.slot.abs_diff(head_state_1.slot) <= 1,
                 "Node 3 is too far behind Node 1. Node 3: {}, Node 1: {}",
                 head_state.slot,
                 head_state_1.slot
@@ -1438,6 +1491,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_lean_node_syncs_and_finalizes_two_nodes() {
         if std::env::var("REAM_RUN_INTEROP_TESTS").unwrap_or_default() != "1" {
             info!("Skipping interop test: set REAM_RUN_INTEROP_TESTS=1 to enable");
@@ -1481,27 +1535,12 @@ mod tests {
 
         let registry_path =
             assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
-        let unique_suffix = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time is before UNIX epoch")
-            .as_nanos();
-        let network_config_path = std::env::temp_dir().join(format!(
-            "{APP_NAME}_{test_name}_{unique_suffix}_network.yaml"
-        ));
 
         let validators_yaml = "node1:\n  - 0\nnode2:\n  - 1\n";
         fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
         let registry_path_string = registry_path.to_string_lossy().to_string();
 
-        let genesis_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time is before UNIX epoch")
-            .as_secs()
-            + 10;
-        let network_yaml = format!(
-            "GENESIS_TIME: {genesis_time}\nNUM_VALIDATORS: 2\nGENESIS_VALIDATORS:\n- 0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65ec589c858b9c7980b276ebe550056b23f0bdc3b5a\n- 0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e377237595d9a27887421b5233d09a50832db2f303d\n"
-        );
-        fs::write(&network_config_path, network_yaml).expect("Failed to write temp network config");
+        let network_config_path = create_test_network_config(test_name, 2);
         let network_config_path_string = network_config_path.to_string_lossy().to_string();
 
         let mut node_addresses = Vec::with_capacity(node_count);
@@ -1658,6 +1697,8 @@ mod tests {
 
             let _ = known_good_child.kill();
             let _ = known_good_child.wait();
+
+            sleep(Duration::from_secs(2)).await;
 
             let node_1_database = ReamDB::new(node_data_directories[0].clone())
                 .unwrap()

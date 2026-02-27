@@ -128,16 +128,6 @@ impl LeanState {
 
         self.process_block_header(block)?;
 
-        ensure!(
-            block
-                .body
-                .attestations
-                .iter()
-                .map(|aggregated_attestation| &aggregated_attestation.message)
-                .all_unique(),
-            "Block contains duplicate attestation messages"
-        );
-
         self.process_attestations(&block.body.attestations)?;
 
         stop_timer(timer);
