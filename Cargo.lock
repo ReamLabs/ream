@@ -5927,6 +5927,7 @@ dependencies = [
  "anyhow",
  "ethereum_ssz",
  "ream-consensus-lean",
+ "ream-consensus-misc",
  "reqwest",
  "tokio",
  "tracing",

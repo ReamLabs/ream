@@ -1,9 +1,9 @@
 use anyhow::{Result, anyhow};
 use ream_consensus_lean::state::LeanState;
+use ream_consensus_misc::constants::lean::VALIDATOR_REGISTRY_LIMIT;
 use reqwest::{Client, StatusCode, Url};
 use ssz::Decode;
 use tracing::warn;
-use ream_consensus_misc::constants::lean::VALIDATOR_REGISTRY_LIMIT;
 
 #[derive(Default)]
 pub struct LeanCheckpointClient {
