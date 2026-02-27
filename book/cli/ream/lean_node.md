@@ -38,7 +38,7 @@ Options:
       --metrics-port <METRICS_PORT>
           Set metrics port [default: 8080]
       --is-aggregator
-          Enable aggregator mode for committee signature aggregation
+          Set node as aggregator for committee signature aggregation
   -h, --help
           Print help
 ```
