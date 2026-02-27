@@ -33,11 +33,16 @@ mod tests {
         test,
         web::{Data, scope},
     };
-    use ream_consensus_lean::checkpoint::Checkpoint;
+    use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
+    use ream_consensus_lean::{checkpoint::Checkpoint, utils::generate_default_validators};
+    use ream_fork_choice_lean::genesis::setup_genesis;
+    use ream_network_spec::networks::lean_network_spec;
     use ream_sync::rwlock::Writer;
     use ream_test_utils::store::sample_store;
+    use url::Url;
 
     use super::get_justified_checkpoint;
+    use crate::handlers::state::get_state;
 
     #[tokio::test]
     async fn test_get_justified_checkpoint_returns_json() {
@@ -76,13 +81,13 @@ mod tests {
         let store = sample_store(10).await;
         let (_writer, reader) = Writer::new(store);
 
-        let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind to local port");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind address");
+        let addr = listener.local_addr().expect("Failed to get local addr");
 
-        let reader_clone = reader.clone();
         let server = HttpServer::new(move || {
             App::new()
-                .app_data(Data::new(reader_clone.clone()))
-                .service(scope("/lean/v0").service(get_justified_checkpoint))
+                .app_data(Data::new(reader.clone()))
+                .service(scope("/lean/v0").service(get_state))
         })
         .listen(listener)
         .expect("Failed to attach listener")
@@ -91,6 +96,23 @@ mod tests {
         let server_handle = server.handle();
         tokio::spawn(server);
 
+        let client = LeanCheckpointClient::new();
+        let base_url = Url::parse(&format!("http://{addr}")).expect("Failed to parse base URL");
+
+        let state = client
+            .fetch_finalized_state(&base_url)
+            .await
+            .expect("Client failed to fetch finalized state");
+
+        assert_eq!(state.slot, 0);
+        assert!(verify_checkpoint_state(&state));
+
+        let (_, genesis_state) = setup_genesis(
+            lean_network_spec().genesis_time,
+            generate_default_validators(10),
+        );
+
+        assert_eq!(state, genesis_state);
         server_handle.stop(true).await;
     }
 }

@@ -6533,6 +6533,7 @@ dependencies = [
  "parking_lot",
  "ream-api-types-common",
  "ream-api-types-lean",
+ "ream-checkpoint-sync-lean",
  "ream-consensus-lean",
  "ream-fork-choice-lean",
  "ream-network-spec",
@@ -6548,6 +6549,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tree_hash",
+ "url",
 ]
 
 [[package]]
