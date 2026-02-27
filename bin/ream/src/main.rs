@@ -1622,7 +1622,7 @@ mod tests {
                 key_path.to_string_lossy().to_string(),
             ];
 
-            if i == 0 {
+            if i == 1 {
                 cli_arguments.push("--is-aggregator".to_string());
             }
 
