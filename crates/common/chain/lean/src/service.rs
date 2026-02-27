@@ -187,11 +187,6 @@ impl LeanChainService {
                             // The ending root is the starting root of the processed queue, since
                             // the sync walks backwards from there to the head.
                             self.sync_status.remove_processed_queue(ending_root);
-
-                            // Process any cached gossip blocks that now have known parents
-                            if let Err(err) = self.process_cached_gossip_blocks().await {
-                                warn!("Failed to process cached gossip blocks: {err:?}");
-                            }
                         }
                         ForwardSyncResults::ChainIncomplete { prevous_queue, checkpoint_for_new_queue } => {
                             warn!(
@@ -251,15 +246,16 @@ impl LeanChainService {
                             }
                         }
                         LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation, need_gossip } => {
-                            let block_root = signed_block_with_attestation.message.block.tree_hash_root();
-                            let parent_root = signed_block_with_attestation.message.block.parent_root;
-                            let slot = signed_block_with_attestation.message.block.slot;
+                            if self.sync_status != SyncStatus::Synced {
+                                trace!("Received ProcessBlock request while syncing. Ignoring.");
+                                continue;
+                            }
 
                             if enabled!(Level::DEBUG) {
                                 debug!(
-                                    slot = slot,
-                                    block_root = ?block_root,
-                                    parent_root = ?parent_root,
+                                    slot = signed_block_with_attestation.message.block.slot,
+                                    block_root = ?signed_block_with_attestation.message.block.tree_hash_root(),
+                                    parent_root = ?signed_block_with_attestation.message.block.parent_root,
                                     state_root = ?signed_block_with_attestation.message.block.state_root,
                                     attestations_length = signed_block_with_attestation.message.block.body.attestations.len(),
                                     "Processing block built by Validator {}",
@@ -267,58 +263,11 @@ impl LeanChainService {
                                 );
                             } else {
                                 info!(
-                                    slot = slot,
-                                    block_root = ?block_root,
+                                    slot = signed_block_with_attestation.message.block.slot,
+                                    block_root = ?signed_block_with_attestation.message.block.tree_hash_root(),
                                     "Processing block built by Validator {}",
                                     signed_block_with_attestation.message.block.proposer_index,
                                 );
-                            }
-
-                            // While syncing, cache gossip blocks instead of dropping them.
-                            // If parent is known, process immediately. If not, cache for later.
-                            if self.sync_status != SyncStatus::Synced {
-                                let (head, block_provider, pending_blocks_provider) = {
-                                    let fork_choice = self.store.read().await;
-                                    let store = fork_choice.store.lock().await;
-                                    (
-                                        store.head_provider().get()?,
-                                        store.block_provider(),
-                                        store.pending_blocks_provider(),
-                                    )
-                                };
-
-                                // Check if parent is in the store (already processed)
-                                let parent_in_store = block_provider.get(parent_root)?.is_some();
-                                let parent_is_head = parent_root == head;
-
-                                if parent_in_store || parent_is_head {
-                                    // Parent is known, process the block immediately
-                                    debug!(
-                                        slot = slot,
-                                        block_root = ?block_root,
-                                        "Parent known while syncing, processing gossip block immediately"
-                                    );
-                                    if let Err(err) = self.handle_process_block(&signed_block_with_attestation).await {
-                                        warn!("Failed to handle process block message: {err:?}");
-                                    }
-                                } else {
-                                    // Parent unknown, cache the block for later processing
-                                    debug!(
-                                        slot = slot,
-                                        block_root = ?block_root,
-                                        parent_root = ?parent_root,
-                                        "Caching gossip block while syncing (parent unknown)"
-                                    );
-                                    if let Err(err) = pending_blocks_provider.insert(block_root, signed_block_with_attestation.as_ref().clone()) {
-                                        warn!("Failed to cache gossip block: {err:?}");
-                                    }
-                                }
-
-                                // Still propagate the block via gossip if needed
-                                if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipBlock(signed_block_with_attestation)) {
-                                    warn!("Failed to send item to outbound gossip channel: {err:?}");
-                                }
-                                continue;
                             }
 
                             if let Err(err) = self.handle_process_block(&signed_block_with_attestation).await {
@@ -1088,71 +1037,5 @@ impl LeanChainService {
         });
 
         self.pending_callbacks.push(future);
-    }
-
-    /// Process any cached gossip blocks whose parents are now in the store.
-    /// This is called after forward sync completes to handle blocks that arrived
-    /// via gossip while the node was syncing.
-    async fn process_cached_gossip_blocks(&mut self) -> anyhow::Result<usize> {
-        let mut total_processed = 0;
-        let mut made_progress = true;
-
-        // Keep iterating until no more blocks can be processed
-        while made_progress {
-            made_progress = false;
-
-            let (head, block_provider, pending_blocks_provider) = {
-                let fork_choice = self.store.read().await;
-                let store = fork_choice.store.lock().await;
-                (
-                    store.head_provider().get()?,
-                    store.block_provider(),
-                    store.pending_blocks_provider(),
-                )
-            };
-
-            // Get all pending blocks and find ones whose parent is now known
-            let pending_roots = pending_blocks_provider.keys()?;
-
-            for root in pending_roots {
-                let block = match pending_blocks_provider.get(root)? {
-                    Some(b) => b,
-                    None => continue,
-                };
-
-                let parent_root = block.message.block.parent_root;
-
-                // Check if parent is now in the store
-                let parent_in_store = block_provider.get(parent_root)?.is_some();
-                let parent_is_head = parent_root == head;
-
-                if parent_in_store || parent_is_head {
-                    info!(
-                        slot = block.message.block.slot,
-                        block_root = ?root,
-                        parent_root = ?parent_root,
-                        "Processing cached gossip block (parent now available)"
-                    );
-
-                    // Process the block
-                    if let Err(err) = self.handle_process_block(&block).await {
-                        warn!("Failed to process cached gossip block: {err:?}");
-                        // Remove failed block to avoid infinite loop
-                        let _ = pending_blocks_provider.remove(root);
-                    } else {
-                        // Successfully processed, remove from pending
-                        let _ = pending_blocks_provider.remove(root);
-                        total_processed += 1;
-                        made_progress = true;
-                    }
-                }
-            }
-        }
-
-        if total_processed > 0 {
-            info!(total_processed, "Finished processing cached gossip blocks");
-        }
-
-        Ok(total_processed)
     }
 }

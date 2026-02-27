@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use ream_consensus_lean::block::SignedBlockWithAttestation;
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
+use redb::{Database, TableDefinition};
 
 use crate::{
     cache::LeanCacheDB,
@@ -41,17 +41,5 @@ impl REDBTable for LeanPendingBlocksTable {
 impl LeanPendingBlocksTable {
     pub fn contains_key(&self, key: B256) -> bool {
         matches!(self.get(key), Ok(Some(_)))
-    }
-
-    /// Returns all keys (block roots) currently in the pending blocks table.
-    pub fn keys(&self) -> Result<Vec<B256>, crate::errors::StoreError> {
-        let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
-        let mut keys = Vec::new();
-        for entry in table.iter()? {
-            let (key, _) = entry?;
-            keys.push(key.value());
-        }
-        Ok(keys)
     }
 }
