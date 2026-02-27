@@ -1,7 +1,9 @@
 use anyhow::{Result, anyhow};
 use ream_consensus_lean::state::LeanState;
+use ream_consensus_misc::constants::lean::VALIDATOR_REGISTRY_LIMIT;
 use reqwest::{Client, StatusCode, Url};
 use ssz::Decode;
+use tracing::warn;
 
 #[derive(Default)]
 pub struct LeanCheckpointClient {
@@ -41,11 +43,17 @@ impl LeanCheckpointClient {
 }
 
 pub fn verify_checkpoint_state(state: &LeanState) -> bool {
-    if state.slot == 0 {
+    if state.validators.is_empty() {
+        warn!("Invalid state: no validators in registry");
         return false;
     }
 
-    if state.validators.is_empty() {
+    let validator_count = state.validators.len() as u64;
+    if state.validators.len() > VALIDATOR_REGISTRY_LIMIT as usize {
+        warn!(
+            "Invalid state: validator count {} exceeds registry limit {}",
+            validator_count, VALIDATOR_REGISTRY_LIMIT,
+        );
         return false;
     }
 

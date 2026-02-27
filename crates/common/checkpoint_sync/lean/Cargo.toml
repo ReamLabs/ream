@@ -20,6 +20,7 @@ tree_hash.workspace = true
 
 # ream dependencies
 ream-consensus-lean.workspace = true
+ream-consensus-misc.workspace = true
 
 [lints]
 workspace = true
