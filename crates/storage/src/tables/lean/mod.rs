@@ -1,10 +1,13 @@
 pub mod aggregated_payloads;
+pub mod attestation_data_by_root;
 pub mod block;
 pub mod gossip_signatures;
 pub mod head;
 pub mod latest_finalized;
 pub mod latest_justified;
+pub mod latest_known_aggregated_payloads;
 pub mod latest_known_attestation;
+pub mod latest_new_aggregated_payloads;
 pub mod latest_new_attestations;
 pub mod pending_blocks;
 pub mod safe_target;
@@ -12,3 +15,4 @@ pub mod slot_index;
 pub mod state;
 pub mod state_root_index;
 pub mod time;
+pub mod validator_id;
