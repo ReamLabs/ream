@@ -1,0 +1,82 @@
+name: Lean API Spec Test
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  api-conformance:
+    name: leanSpec API Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout ream
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build ream
+        run: cargo build --release --package ream --bin ream
+
+      - name: Checkout leanSpec
+        uses: actions/checkout@v4
+        with:
+          repository: leanEthereum/leanSpec
+          path: leanSpec
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install leanSpec dependencies
+        working-directory: leanSpec
+        run: uv sync
+
+      - name: Start ream in background
+        run: |
+          ./target/release/ream --ephemeral lean_node \
+            --network ephemery \
+            --validator-registry-path ./bin/ream/assets/lean/validators.yaml \
+            --bootnodes none \
+            &
+          echo $! > /tmp/ream.pid
+
+      - name: Wait for ream to be ready
+        run: |
+          echo "Waiting for ream API to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:5052/lean/v0/health | grep -q "healthy"; then
+              echo "ream is ready!"
+              exit 0
+            fi
+            echo "Attempt $i: ream not ready yet, waiting..."
+            sleep 2
+          done
+          echo "ream failed to start within 60 seconds"
+          exit 1
+
+      - name: Run leanSpec API tests
+        working-directory: leanSpec
+        run: uv run apitest http://localhost:5052
+
+      - name: Stop ream
+        if: always()
+        run: |
+          if [ -f /tmp/ream.pid ]; then
+            kill $(cat /tmp/ream.pid) 2>/dev/null || true
+          fi
