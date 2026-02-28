@@ -56,7 +56,7 @@ jobs:
             --package ream \
             --bin ream \
             test_lean_node_syncs_and_finalizes_two_nodes \
-            -- --nocapture --test-threads=1
+            -- --nocapture
 
   devnet3-known-good-vs-current-pr:
     name: devnet3 known-good vs current pr
@@ -107,4 +107,4 @@ jobs:
             test_lean_node_syncs_and_finalizes_two_nodes \
             --no-default-features \
             --features devnet3 \
-            -- --nocapture --test-threads=1
+            -- --nocapture
