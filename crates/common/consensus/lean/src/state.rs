@@ -526,7 +526,6 @@ mod test {
     };
 
     #[test]
-    #[ignore = "Matches Python test; logic to be implemented in future PR"]
     fn test_justified_slots_rebases_when_finalization_advances() -> anyhow::Result<()> {
         let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(3)));
 
@@ -534,7 +533,7 @@ mod test {
         let block_1_parent_root = state.latest_block_header.tree_hash_root();
         state.process_block(&Block {
             slot: 1,
-            proposer_index: 0,
+            proposer_index: 1,
             parent_root: block_1_parent_root,
             state_root: B256::ZERO,
             body: BlockBody {
@@ -546,7 +545,7 @@ mod test {
         let block_2_parent_root = state.latest_block_header.tree_hash_root();
         state.process_block(&Block {
             slot: 2,
-            proposer_index: 1,
+            proposer_index: 2,
             parent_root: block_2_parent_root,
             state_root: B256::ZERO,
             body: BlockBody {
@@ -581,7 +580,7 @@ mod test {
         let block_3_parent_root = state.latest_block_header.tree_hash_root();
         state.process_block(&Block {
             slot: 3,
-            proposer_index: 2,
+            proposer_index: 0,
             parent_root: block_3_parent_root,
             state_root: B256::ZERO,
             body: BlockBody {
