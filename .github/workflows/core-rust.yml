@@ -80,114 +80,19 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-  discover-serial-tests:
-    runs-on: ubuntu-latest
+  test-default:
+    name: test default
     needs: [format, cargo-clippy]
-    outputs:
-      tests: ${{ steps.discover.outputs.tests }}
-      has_tests: ${{ steps.discover.outputs.has_tests }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - id: discover
-        name: Discover serial tests
-        run: |
-          set -euo pipefail
-
-          mapfile -t serial_tests < <(.github/scripts/serial-tests.sh)
-          if [ "${#serial_tests[@]}" -eq 0 ]; then
-            echo 'tests=["__no_serial_tests__"]' >> "$GITHUB_OUTPUT"
-            echo "has_tests=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          tests_json="$(printf '%s\n' "${serial_tests[@]}" | jq -R . | jq -s -c .)"
-          echo "tests=${tests_json}" >> "$GITHUB_OUTPUT"
-          echo "has_tests=true" >> "$GITHUB_OUTPUT"
-
-  test:
-    runs-on: ubuntu-latest
-    needs: [format, cargo-clippy]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-
-      - name: Test
-        run: |
-          set -euo pipefail
-
-          mapfile -t serial_tests < <(.github/scripts/serial-tests.sh)
-          skip_args=()
-          for test_name in "${serial_tests[@]}"; do
-            skip_args+=(--skip "$test_name")
-          done
-
-          cargo test --release --workspace -- --nocapture "${skip_args[@]}"
-
-  test-serial:
-    name: test serial (${{ matrix.network }} / ${{ matrix.test_name }})
-    if: ${{ needs.discover-serial-tests.outputs.has_tests == 'true' }}
-    runs-on: ubuntu-latest
-    needs: [format, cargo-clippy, discover-serial-tests]
-    strategy:
-      fail-fast: false
-      matrix:
-        network: [default, devnet3]
-        test_name: ${{ fromJson(needs.discover-serial-tests.outputs.tests) }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-
-      - name: Test Serial
-        run: |
-          if [ "${{ matrix.network }}" = "default" ]; then
-            cargo test \
-              --release \
-              --package ream \
-              --bin ream \
-              ${{ matrix.test_name }} \
-              -- --nocapture
-          else
-            cargo test \
-              --package ream \
-              --bin ream \
-              ${{ matrix.test_name }} \
-              --no-default-features \
-              --features devnet3 \
-              -- --nocapture
-          fi
+    uses: ./.github/workflows/tests-matrix.yml
+    with:
+      network: default
 
   test-devnet3:
-    runs-on: ubuntu-latest
+    name: test devnet3
     needs: [format, cargo-clippy]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-
-      - name: Test Devnet 3
-        run: |
-          set -euo pipefail
-
-          mapfile -t serial_tests < <(.github/scripts/serial-tests.sh)
-          skip_args=()
-          for test_name in "${serial_tests[@]}"; do
-            skip_args+=(--skip "$test_name")
-          done
-
-          cargo test --workspace --no-default-features --features devnet3 -- --nocapture "${skip_args[@]}"
+    uses: ./.github/workflows/tests-matrix.yml
+    with:
+      network: devnet3
 
   ef-tests:
     runs-on: ubuntu-latest
