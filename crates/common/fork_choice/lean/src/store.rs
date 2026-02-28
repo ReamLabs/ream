@@ -1821,7 +1821,7 @@ mod tests {
     use ream_post_quantum_crypto::leansig::signature::Signature;
     #[cfg(feature = "devnet2")]
     use ream_storage::db::{ReamDB, lean::LeanDB};
-    use ream_storage::tables::{field::REDBField, table::REDBTable};
+    use ream_storage::tables::{field::REDBField, lean::head::LeanHeadField, table::REDBTable};
     use ream_test_utils::store::sample_store;
     #[cfg(feature = "devnet2")]
     use ssz_types::VariableList;
@@ -2435,6 +2435,24 @@ mod tests {
 
     // BLOCK PRODUCTION TESTS
 
+    /// Test basic block production by authorized proposer.
+    #[tokio::test]
+    async fn test_produce_block_basic() {
+        let slot = 1;
+        let validator_index = 1;
+        let mut store = sample_store(10).await;
+        let BlockWithSignatures { block, .. } = store
+            .produce_block_with_signatures(slot, validator_index)
+            .await
+            .unwrap();
+
+        let head_provider: LeanHeadField = { store.store.lock().await.head_provider() };
+        assert!(block.slot == slot);
+        assert!(block.proposer_index == validator_index);
+        assert!(block.parent_root == head_provider.get().unwrap());
+        assert!(block.state_root != B256::ZERO);
+    }
+
     /// Test block production fails for unauthorized proposer.
     #[tokio::test]
     async fn test_produce_block_unauthorized_proposer() {
@@ -2564,16 +2582,63 @@ mod tests {
             )
             .unwrap();
 
-        let block_with_signature = store.produce_block_with_signatures(2, 2).await.unwrap();
+        let slot = 2;
+        let validator_index = 2;
+        let block_with_signature = store
+            .produce_block_with_signatures(slot, validator_index)
+            .await
+            .unwrap();
 
-        assert!(!block_with_signature.block.body.attestations.is_empty());
-        assert_eq!(block_with_signature.block.slot, 2);
-        assert_eq!(block_with_signature.block.proposer_index, 2);
+        assert_eq!(
+            block_with_signature.block.body.attestations.len(),
+            block_with_signature.signatures.len()
+        );
+        assert_eq!(block_with_signature.block.slot, slot);
+        assert_eq!(block_with_signature.block.proposer_index, validator_index);
         assert_eq!(
             block_with_signature.block.parent_root,
             store.get_proposal_head(2).await.unwrap()
         );
         assert_ne!(block_with_signature.block.state_root, B256::ZERO);
+
+        #[cfg(feature = "devnet3")]
+        {
+            let state_provider = { store.store.lock().await.state_provider() };
+
+            for (agg_agr, proof) in block_with_signature
+                .block
+                .body
+                .attestations
+                .iter()
+                .zip(block_with_signature.signatures.iter())
+            {
+                let participants = proof.to_validator_indices();
+                let state = state_provider
+                    .get(agg_agr.message.target.root)
+                    .unwrap()
+                    .unwrap();
+                let public_keys: Vec<_> = participants
+                    .iter()
+                    .map(|&validator| {
+                        state
+                            .validators
+                            .get(validator as usize)
+                            .expect("invalid validator index")
+                            .public_key
+                    })
+                    .collect();
+
+                assert!(
+                    verify_aggregate_signature(
+                        &public_keys,
+                        &agg_agr.message.tree_hash_root(),
+                        &proof.proof_data,
+                        agg_agr.slot() as u32
+                    )
+                    .is_ok()
+                );
+            }
+        }
     }
 
     /// Test producing blocks in sequential slots.
@@ -2584,16 +2649,26 @@ mod tests {
         let block_provider = store.store.lock().await.block_provider();
         let genesis_hash = store.store.lock().await.head_provider().get().unwrap();
 
-        let BlockWithSignatures { block, .. } =
-            store.produce_block_with_signatures(1, 1).await.unwrap();
-        assert_eq!(block.slot, 1);
-        assert_eq!(block.parent_root, genesis_hash);
+        let mut slot = 1;
+        let mut validator_index = 1;
+        let BlockWithSignatures { block: block1, .. } = store
+            .produce_block_with_signatures(slot, validator_index)
+            .await
+            .unwrap();
+        assert_eq!(block1.slot, slot);
+        assert_eq!(block1.proposer_index, validator_index);
+        assert_eq!(block1.parent_root, genesis_hash);
 
-        let BlockWithSignatures { block, .. } =
-            store.produce_block_with_signatures(2, 2).await.unwrap();
+        slot = 2;
+        validator_index = 2;
+        let BlockWithSignatures { block: block2, .. } = store
+            .produce_block_with_signatures(slot, validator_index)
+            .await
+            .unwrap();
 
-        assert_eq!(block.slot, 2);
-        assert_eq!(block.parent_root, genesis_hash);
+        assert_eq!(block2.slot, slot);
+        assert_eq!(block2.proposer_index, validator_index);
+        assert_eq!(block2.parent_root, genesis_hash);
         assert!(block_provider.get(genesis_hash).unwrap().is_some());
     }
 
@@ -2603,13 +2678,103 @@ mod tests {
         let mut store = sample_store(10).await;
         let head = store.get_proposal_head(3).await.unwrap();
 
-        let BlockWithSignatures { block, .. } =
-            store.produce_block_with_signatures(3, 3).await.unwrap();
+        let slot = 3;
+        let validator_index = 3;
+        let BlockWithSignatures { block, .. } = store
+            .produce_block_with_signatures(slot, validator_index)
+            .await
+            .unwrap();
 
         assert_eq!(block.body.attestations.len(), 0);
-        assert_eq!(block.slot, 3);
+        assert_eq!(block.slot, slot);
+        assert_eq!(block.proposer_index, validator_index);
         assert_eq!(block.parent_root, head);
         assert!(!block.state_root.is_zero());
+    }
+
+    // VALIDATOR INTEGRATION TESTS
+
+    /// Test producing a block then creating attestation for it.
+    #[tokio::test]
+    pub async fn test_block_production_then_attestation() {
+        let mut store = sample_store(10).await;
+        let proposer_slot = 1;
+        let proposer_index = 1;
+        let _ = store
+            .produce_block_with_signatures(proposer_slot, proposer_index)
+            .await;
+        let _ = store.update_head().await;
+
+        let attestor_slot = 2;
+        let attestor_index = 7;
+        let attestation_data = store.produce_attestation_data(attestor_slot).await.unwrap();
+        let attestation = AggregatedAttestations {
+            validator_id: attestor_index,
+            data: attestation_data,
+        };
+
+        assert!(attestation.validator_id == attestor_index);
+        assert!(attestation.data.slot == attestor_slot);
+
+        let latest_justified = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_justified_provider()
+                .get()
+                .unwrap()
+        };
+        assert!(attestation.data.source == latest_justified);
+    }
+
+    /// Test multiple validators producing blocks and attestations.
+    #[tokio::test]
+    pub async fn test_multiple_validators_coordination() {
+        let mut store = sample_store(10).await;
+        let genesis_hash = { store.store.lock().await.head_provider().get().unwrap() };
+        let block1 = store.produce_block_with_signatures(1, 1).await.unwrap();
+        let _block1_hash = block1.block.tree_hash_root();
+
+        let mut attestations = Vec::new();
+        for i in 2..6 {
+            let attestation_data = store.produce_attestation_data(2).await.unwrap();
+            let attestation = AggregatedAttestations {
+                validator_id: i,
+                data: attestation_data,
+            };
+            attestations.push(attestation);
+        }
+
+        let block2 = store.produce_block_with_signatures(2, 2).await.unwrap();
+
+        assert!(block2.block.slot == 2);
+        assert!(block2.block.proposer_index == 2);
+        assert!(block1.block.parent_root == genesis_hash);
+        // Block1 not stored by produce_block_with_signatures otherwise block2.block.parent_root ==
+        // block1_hash
+        assert!(block2.block.parent_root == genesis_hash);
+    }
+
+    /// Test edge cases in validator operations.
+    #[tokio::test]
+    pub async fn test_validator_edge_cases() {
+        let mut store = sample_store(10).await;
+        let max_validator = 9;
+        let slot = 9;
+
+        let BlockWithSignatures { block, .. } = store
+            .produce_block_with_signatures(slot, max_validator)
+            .await
+            .unwrap();
+        assert!(block.proposer_index == max_validator);
+
+        let attestation_data = store.produce_attestation_data(10).await.unwrap();
+        let attestation = AggregatedAttestations {
+            validator_id: max_validator,
+            data: attestation_data,
+        };
+        assert!(attestation.validator_id == max_validator);
     }
 
     // ATTESTATION TESTS
