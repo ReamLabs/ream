@@ -354,8 +354,14 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     .await
     .expect("Failed to create network service");
 
-    let chain_service =
-        LeanChainService::new(lean_chain_writer, chain_receiver, outbound_p2p_sender).await;
+    let chain_service = LeanChainService::new(
+        lean_chain_writer,
+        chain_receiver,
+        outbound_p2p_sender,
+        #[cfg(feature = "devnet3")]
+        config.is_aggregator,
+    )
+    .await;
 
     let validator_service = LeanValidatorService::new(keystores, chain_sender).await;
 
@@ -882,6 +888,7 @@ mod tests {
             "ephemery",
             "--validator-registry-path",
             "./assets/lean/validators.yaml",
+            "--is-aggregator",
         ]);
 
         let Commands::LeanNode(config) = cli.command else {
@@ -934,6 +941,7 @@ mod tests {
             "9001",
             "--http-port",
             "5053",
+            "--is-aggregator",
         ]);
 
         let Commands::LeanNode(config) = cli.command else {
@@ -1135,6 +1143,10 @@ mod tests {
                     "--private-key-path".to_string(),
                     key_path.to_string_lossy().to_string(),
                 ];
+
+                if i == 0 {
+                    arguments.push("--is-aggregator".to_string());
+                }
 
                 if !bootnode_arguments.is_empty() {
                     arguments.push("--bootnodes".to_string());
@@ -1350,6 +1362,10 @@ mod tests {
                     "--private-key-path".to_string(),
                     key_path.to_string_lossy().to_string(),
                 ];
+
+                if i == 0 {
+                    arguments.push("--is-aggregator".to_string());
+                }
 
                 if !bootnode_arguments.is_empty() {
                     arguments.push("--bootnodes".to_string());
@@ -1605,6 +1621,10 @@ mod tests {
                 "--private-key-path".to_string(),
                 key_path.to_string_lossy().to_string(),
             ];
+
+            if i == 1 {
+                cli_arguments.push("--is-aggregator".to_string());
+            }
 
             if !bootnode_arguments.is_empty() {
                 cli_arguments.push("--bootnodes".to_string());
