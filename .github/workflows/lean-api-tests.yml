@@ -1,4 +1,4 @@
-name: Lean API Spec Test
+name: leanSpec
 
 on:
   push:
@@ -11,7 +11,7 @@ env:
 
 jobs:
   api-conformance:
-    name: leanSpec API Tests
+    name: api-spec-tests
     runs-on: ubuntu-latest
 
     steps:
