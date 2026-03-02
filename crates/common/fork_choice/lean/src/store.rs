@@ -2997,7 +2997,7 @@ mod tests {
             .message
             .block;
 
-        assert!(time == INTERVALS_PER_SLOT * genesis_block.slot);
+        assert!(time == lean_network_spec().seconds_per_slot * genesis_block.slot);
     }
 
     // ON TICK TESTS
