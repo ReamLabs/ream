@@ -8,14 +8,18 @@ use crate::{
     tables::{
         field::REDBField,
         lean::{
-            aggregated_payloads::AggregatedPayloadsTable, block::LeanBlockTable,
+            aggregated_payloads::AggregatedPayloadsTable,
+            attestation_data_by_root::LeanAttestationDataByRootTable, block::LeanBlockTable,
             gossip_signatures::GossipSignaturesTable, head::LeanHeadField,
             latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
+            latest_known_aggregated_payloads::LeanLatestKnownAggregatedPayloadsTable,
             latest_known_attestation::LatestKnownAttestationTable,
+            latest_new_aggregated_payloads::LeanLatestNewAggregatedPayloadsTable,
             latest_new_attestations::LeanLatestNewAttestationsTable,
             pending_blocks::LeanPendingBlocksTable, safe_target::LeanSafeTargetField,
             slot_index::LeanSlotIndexTable, state::LeanStateTable,
             state_root_index::LeanStateRootIndexTable, time::LeanTimeField,
+            validator_id::LeanValidatorIdField,
         },
         table::REDBTable,
     },
@@ -118,6 +122,32 @@ impl LeanDB {
 
     pub fn aggregated_payloads_provider(&self) -> AggregatedPayloadsTable {
         AggregatedPayloadsTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn attestation_data_by_root_provider(&self) -> LeanAttestationDataByRootTable {
+        LeanAttestationDataByRootTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn latest_new_aggregated_payloads_provider(&self) -> LeanLatestNewAggregatedPayloadsTable {
+        LeanLatestNewAggregatedPayloadsTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn latest_known_aggregated_payloads_provider(
+        &self,
+    ) -> LeanLatestKnownAggregatedPayloadsTable {
+        LeanLatestKnownAggregatedPayloadsTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn validator_id_provider(&self) -> LeanValidatorIdField {
+        LeanValidatorIdField {
             db: self.db.clone(),
         }
     }

@@ -6,7 +6,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  KNOWN_GOOD_REF: a292a17b2e5ea1f1091cb2f7a5e55af83820d54e
+  KNOWN_GOOD_REF: 6f8c567bd33baf6ee0e76dd5bfc4407f7650be7f
 
 jobs:
   devnet2-known-good-vs-current-pr:
@@ -56,7 +56,7 @@ jobs:
             --package ream \
             --bin ream \
             test_lean_node_syncs_and_finalizes_two_nodes \
-            -- --nocapture --test-threads=1
+            -- --nocapture
 
   devnet3-known-good-vs-current-pr:
     name: devnet3 known-good vs current pr
@@ -107,4 +107,4 @@ jobs:
             test_lean_node_syncs_and_finalizes_two_nodes \
             --no-default-features \
             --features devnet3 \
-            -- --nocapture --test-threads=1
+            -- --nocapture

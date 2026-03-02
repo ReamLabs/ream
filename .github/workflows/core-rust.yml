@@ -80,33 +80,19 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-  test:
-    runs-on: ubuntu-latest
+  test-default:
+    name: test default
     needs: [format, cargo-clippy]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-
-      - name: Test
-        run: cargo test --release --workspace -- --nocapture
+    uses: ./.github/workflows/tests-matrix.yml
+    with:
+      network: default
 
   test-devnet3:
-    runs-on: ubuntu-latest
+    name: test devnet3
     needs: [format, cargo-clippy]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-
-      - name: Test Devnet 3
-        run: make test-devnet3
+    uses: ./.github/workflows/tests-matrix.yml
+    with:
+      network: devnet3
 
   ef-tests:
     runs-on: ubuntu-latest

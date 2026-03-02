@@ -28,14 +28,18 @@ use crate::{
         },
         field::REDBField,
         lean::{
-            aggregated_payloads::AggregatedPayloadsTable, block::LeanBlockTable,
+            aggregated_payloads::AggregatedPayloadsTable,
+            attestation_data_by_root::LeanAttestationDataByRootTable, block::LeanBlockTable,
             gossip_signatures::GossipSignaturesTable, head::LeanHeadField,
             latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
+            latest_known_aggregated_payloads::LeanLatestKnownAggregatedPayloadsTable,
             latest_known_attestation::LatestKnownAttestationTable,
+            latest_new_aggregated_payloads::LeanLatestNewAggregatedPayloadsTable,
             latest_new_attestations::LeanLatestNewAttestationsTable,
             pending_blocks::LeanPendingBlocksTable, safe_target::LeanSafeTargetField,
             slot_index::LeanSlotIndexTable, state::LeanStateTable,
             state_root_index::LeanStateRootIndexTable, time::LeanTimeField,
+            validator_id::LeanValidatorIdField,
         },
         table::REDBTable,
     },
@@ -115,6 +119,10 @@ impl ReamDB {
         write_txn.open_table(LeanPendingBlocksTable::TABLE_DEFINITION)?;
         write_txn.open_table(AggregatedPayloadsTable::TABLE_DEFINITION)?;
         write_txn.open_table(GossipSignaturesTable::TABLE_DEFINITION)?;
+        write_txn.open_table(LeanAttestationDataByRootTable::TABLE_DEFINITION)?;
+        write_txn.open_table(LeanLatestNewAggregatedPayloadsTable::TABLE_DEFINITION)?;
+        write_txn.open_table(LeanLatestKnownAggregatedPayloadsTable::TABLE_DEFINITION)?;
+        write_txn.open_table(LeanValidatorIdField::FIELD_DEFINITION)?;
         write_txn.commit()?;
 
         Ok(LeanDB {

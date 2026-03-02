@@ -66,14 +66,6 @@ pub type LeanStoreReader = Reader<Store>;
 pub struct Store {
     pub store: Arc<Mutex<LeanDB>>,
     pub network_state: Arc<NetworkState>,
-    #[cfg(feature = "devnet3")]
-    pub validator_id: Option<u64>,
-    #[cfg(feature = "devnet3")]
-    pub attestation_data_by_root: HashMap<B256, AttestationData>,
-    #[cfg(feature = "devnet3")]
-    pub latest_new_aggregated_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>>,
-    #[cfg(feature = "devnet3")]
-    pub latest_known_aggregated_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>>,
 }
 
 impl Store {
@@ -139,6 +131,10 @@ impl Store {
         db.safe_target_provider()
             .insert(anchor_root)
             .expect("Failed to insert genesis block hash");
+        #[cfg(feature = "devnet3")]
+        db.validator_id_provider()
+            .insert(validator_id)
+            .expect("Failed to insert validator id");
 
         Ok(Store {
             store: Arc::new(Mutex::new(db)),
@@ -149,14 +145,6 @@ impl Store {
                 justified_checkpoint,
                 finalized_checkpoint,
             )),
-            #[cfg(feature = "devnet3")]
-            validator_id,
-            #[cfg(feature = "devnet3")]
-            attestation_data_by_root: HashMap::new(),
-            #[cfg(feature = "devnet3")]
-            latest_new_aggregated_payloads: HashMap::new(),
-            #[cfg(feature = "devnet3")]
-            latest_known_aggregated_payloads: HashMap::new(),
         })
     }
 
@@ -271,13 +259,22 @@ impl Store {
         };
 
         #[cfg(feature = "devnet3")]
-        let (head_provider, state_provider, latest_justified_provider, safe_target_provider) = {
+        let (
+            head_provider,
+            state_provider,
+            latest_justified_provider,
+            safe_target_provider,
+            latest_new_aggregated_payloads_provider,
+            latest_known_aggregated_payloads_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.head_provider(),
                 db.state_provider(),
                 db.latest_justified_provider(),
                 db.safe_target_provider(),
+                db.latest_new_aggregated_payloads_provider(),
+                db.latest_known_aggregated_payloads_provider(),
             )
         };
 
@@ -290,15 +287,23 @@ impl Store {
 
         #[cfg(feature = "devnet3")]
         let attestations = {
-            let mut all_payloads = self.latest_known_aggregated_payloads.clone();
-            for (signature_key, proofs) in &self.latest_new_aggregated_payloads {
-                all_payloads
-                    .entry(signature_key.clone())
-                    .or_default()
-                    .extend(proofs.iter().cloned());
+            let mut all_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>> =
+                latest_known_aggregated_payloads_provider
+                    .iter()?
+                    .into_iter()
+                    .collect();
+
+            for (signature_key, proofs) in latest_new_aggregated_payloads_provider.iter()? {
+                let mut existing_proofs = all_payloads
+                    .get(&signature_key)
+                    .cloned()
+                    .unwrap_or_default();
+
+                existing_proofs.extend(proofs);
+                all_payloads.insert(signature_key, existing_proofs);
             }
             self.extract_attestations_from_aggregated_payloads(&all_payloads)
-                .await
+                .await?
         };
 
         let (new_safe_target_root, new_safe_target_slot) = self
@@ -348,15 +353,26 @@ impl Store {
 
     #[cfg(feature = "devnet3")]
     pub async fn accept_new_attestations(&mut self) -> anyhow::Result<()> {
-        let mut merged_aggregated_payloads = (self.latest_known_aggregated_payloads).clone();
-        for (sig_key, mut proofs) in self.latest_new_aggregated_payloads.drain() {
-            merged_aggregated_payloads
-                .entry(sig_key)
-                .or_default()
-                .append(&mut proofs);
-        }
+        let latest_new_aggregated_payloads_provider = self
+            .store
+            .lock()
+            .await
+            .latest_new_aggregated_payloads_provider();
+        let latest_known_aggregated_payloads_provider = self
+            .store
+            .lock()
+            .await
+            .latest_known_aggregated_payloads_provider();
 
-        self.latest_known_aggregated_payloads = merged_aggregated_payloads;
+        for (signature_key, mut new_proofs) in latest_new_aggregated_payloads_provider.drain()? {
+            let mut existing_proofs = latest_known_aggregated_payloads_provider
+                .get(signature_key.clone())?
+                .unwrap_or_default();
+
+            existing_proofs.append(&mut new_proofs);
+
+            latest_known_aggregated_payloads_provider.insert(signature_key, existing_proofs)?;
+        }
 
         self.update_head().await?;
 
@@ -466,20 +482,32 @@ impl Store {
             let db = self.store.lock().await;
             (db.latest_justified_provider(), db.head_provider())
         };
+        #[cfg(feature = "devnet3")]
+        let latest_known_aggregated_payloads_provider = self
+            .store
+            .lock()
+            .await
+            .latest_known_aggregated_payloads_provider();
 
         #[cfg(feature = "devnet3")]
-        let attestations = self
-            .extract_attestations_from_aggregated_payloads(&self.latest_known_aggregated_payloads)
-            .await;
+        let attestations = {
+            let entries = latest_known_aggregated_payloads_provider.iter()?;
+
+            let all_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>> =
+                entries.into_iter().collect();
+
+            self.extract_attestations_from_aggregated_payloads(&all_payloads)
+                .await?
+        };
 
         let (new_head, new_head_slot) = self
             .compute_lmd_ghost_head(
                 #[cfg(feature = "devnet2")]
                 latest_known_attestations?.into_values().map(Ok),
                 #[cfg(feature = "devnet3")]
-                attestations.into_iter().map(|(vid, data)| {
+                attestations.into_iter().map(|(validator, data)| {
                     Ok(SignedAttestation {
-                        validator_id: vid,
+                        validator_id: validator,
                         message: data,
                         signature: Signature::blank(),
                     })
@@ -803,12 +831,17 @@ impl Store {
     }
 
     #[cfg(feature = "devnet3")]
-    fn select_aggregated_proofs(
+    async fn select_aggregated_proofs(
         &self,
         attestations: &[AggregatedAttestations],
     ) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<AggregatedSignatureProof>)> {
         let mut results = Vec::new();
         let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
+        let latest_known_aggregated_payloads_provider = self
+            .store
+            .lock()
+            .await
+            .latest_known_aggregated_payloads_provider();
 
         for attestation in attestations {
             groups
@@ -827,9 +860,8 @@ impl Store {
                     .next()
                     .expect("Failed to get target_id");
 
-                let candidates = match self
-                    .latest_known_aggregated_payloads
-                    .get(&SignatureKey::from_parts(target_id, data_root))
+                let candidates = match latest_known_aggregated_payloads_provider
+                    .get(SignatureKey::from_parts(target_id, data_root))?
                 {
                     Some(proofs) => proofs.clone(),
                     None => {
@@ -900,6 +932,13 @@ impl Store {
                 db.aggregated_payloads_provider(),
             )
         };
+        #[cfg(feature = "devnet3")]
+        let latest_known_aggregated_payloads_provider = self
+            .store
+            .lock()
+            .await
+            .latest_known_aggregated_payloads_provider();
+
         let available_signed_attestations =
             latest_known_attestation_provider.get_all_attestations()?;
         let head_state = state_provider
@@ -991,9 +1030,8 @@ impl Store {
                         .is_some();
 
                 #[cfg(feature = "devnet3")]
-                let has_proof = self
-                    .latest_known_aggregated_payloads
-                    .contains_key(&signature_key);
+                let has_proof =
+                    latest_known_aggregated_payloads_provider.contains_key(&signature_key);
 
                 if has_proof {
                     new_attestations
@@ -1025,7 +1063,7 @@ impl Store {
 
         #[cfg(feature = "devnet3")]
         let (aggregated_attestations, aggregated_proofs) =
-            self.select_aggregated_proofs(&attestations_vec)?;
+            self.select_aggregated_proofs(&attestations_vec).await?;
 
         let attestations_list =
             VariableList::new(aggregated_attestations).map_err(|err| anyhow!("{err:?}"))?;
@@ -1088,15 +1126,28 @@ impl Store {
             .await?;
 
         #[cfg(feature = "devnet3")]
-        let attestation_data_map = self
-            .extract_attestations_from_aggregated_payloads(&self.latest_known_aggregated_payloads)
-            .await;
+        let latest_known_aggregated_payloads_provider = self
+            .store
+            .lock()
+            .await
+            .latest_known_aggregated_payloads_provider();
+
+        #[cfg(feature = "devnet3")]
+        let attestation_data_map = {
+            let entries = latest_known_aggregated_payloads_provider.iter()?;
+
+            let all_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>> =
+                entries.into_iter().collect();
+
+            self.extract_attestations_from_aggregated_payloads(&all_payloads)
+                .await?
+        };
 
         #[cfg(feature = "devnet3")]
         let attestation_vector: Vec<AggregatedAttestations> = attestation_data_map
             .into_iter()
-            .map(|(vid, data)| AggregatedAttestations {
-                validator_id: vid,
+            .map(|(validator, data)| AggregatedAttestations {
+                validator_id: validator,
                 data,
             })
             .collect();
@@ -1143,15 +1194,37 @@ impl Store {
     ) -> anyhow::Result<()> {
         let block_processing_timer = start_timer(&FORK_CHOICE_BLOCK_PROCESSING_TIME, &[]);
 
-        let (state_provider, block_provider, latest_justified_provider, latest_finalized_provider) = {
+        let (
+            state_provider,
+            block_provider,
+            latest_justified_provider,
+            latest_finalized_provider,
+            gossip_signatures_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.state_provider(),
                 db.block_provider(),
                 db.latest_justified_provider(),
                 db.latest_finalized_provider(),
+                db.gossip_signatures_provider(),
             )
         };
+
+        #[cfg(feature = "devnet3")]
+        let (
+            validator_id_provider,
+            attestation_data_by_root_provider,
+            latest_known_aggregated_payloads_provider,
+        ) = {
+            let db = self.store.lock().await;
+            (
+                db.validator_id_provider(),
+                db.attestation_data_by_root_provider(),
+                db.latest_known_aggregated_payloads_provider(),
+            )
+        };
+
         let block = &signed_block_with_attestation.message.block;
         let proposer_attestation = &signed_block_with_attestation.message.proposer_attestation;
         let block_root = block.tree_hash_root();
@@ -1266,10 +1339,10 @@ impl Store {
 
         #[cfg(feature = "devnet3")]
         {
-            self.attestation_data_by_root.insert(
+            attestation_data_by_root_provider.insert(
                 proposer_attestation.data.tree_hash_root(),
                 proposer_attestation.data.clone(),
-            );
+            )?;
 
             for (attestation, proof) in aggregated_attestations
                 .iter()
@@ -1278,22 +1351,24 @@ impl Store {
                 let validator_ids = proof.to_validator_indices();
                 let data_root = attestation.message.tree_hash_root();
 
-                self.attestation_data_by_root
-                    .insert(data_root, attestation.message.clone());
+                attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
 
                 for validator_id in validator_ids {
                     let key = SignatureKey::from_parts(validator_id, data_root);
-                    self.latest_known_aggregated_payloads
-                        .entry(key)
-                        .or_default()
-                        .push(proof.clone());
+
+                    let mut existing_proofs = latest_known_aggregated_payloads_provider
+                        .get(key.clone())?
+                        .unwrap_or_default();
+
+                    existing_proofs.push(proof.clone());
+
+                    latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
                 }
             }
         }
 
         self.update_head().await?;
 
-        let gossip_signatures_provider = self.store.lock().await.gossip_signatures_provider();
         #[cfg(feature = "devnet2")]
         gossip_signatures_provider.insert(
             SignatureKey::new(
@@ -1307,7 +1382,7 @@ impl Store {
         let proposer_validator_id = proposer_attestation.validator_id;
 
         #[cfg(feature = "devnet3")]
-        if let Some(current_id) = self.validator_id
+        if let Ok(Some(current_id)) = validator_id_provider.get()
             && compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT)
                 == compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT)
         {
@@ -1337,12 +1412,12 @@ impl Store {
         {
             let proposer_validator_id = proposer_attestation.validator_id;
 
-            self.attestation_data_by_root.insert(
+            attestation_data_by_root_provider.insert(
                 proposer_attestation.data.tree_hash_root(),
                 proposer_attestation.data.clone(),
-            );
+            )?;
 
-            if let Some(current_id) = self.validator_id {
+            if let Ok(Some(current_id)) = validator_id_provider.get() {
                 let proposer_subnet =
                     compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT);
                 let current_subnet = compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
@@ -1459,7 +1534,18 @@ impl Store {
         };
 
         #[cfg(feature = "devnet3")]
-        let time_provider = self.store.lock().await.time_provider();
+        let (
+            time_provider,
+            attestation_data_by_root_provider,
+            latest_new_aggregated_payloads_provider,
+        ) = {
+            let db = self.store.lock().await;
+            (
+                db.time_provider(),
+                db.attestation_data_by_root_provider(),
+                db.latest_new_aggregated_payloads_provider(),
+            )
+        };
 
         #[cfg(feature = "devnet2")]
         let validate_attestation_timer = start_timer(&ATTESTATION_VALIDATION_TIME, &[]);
@@ -1548,16 +1634,18 @@ impl Store {
             )
             .map_err(|err| anyhow!("Aggregated signature verification failed: {err}"))?;
 
-            self.attestation_data_by_root
-                .insert(data_root, data.clone());
+            attestation_data_by_root_provider.insert(data_root, data.clone())?;
 
-            for &vid in &validator_ids {
-                let key = SignatureKey::from_parts(vid, data_root);
+            for &validator in &validator_ids {
+                let key = SignatureKey::from_parts(validator, data_root);
 
-                self.latest_new_aggregated_payloads
-                    .entry(key)
-                    .or_default()
-                    .push(proof.clone());
+                let mut proofs = latest_new_aggregated_payloads_provider
+                    .get(key.clone())?
+                    .unwrap_or_default();
+
+                proofs.push(proof.clone());
+
+                latest_new_aggregated_payloads_provider.insert(key, proofs)?;
             }
 
             let time_slots = time_provider.get()? / lean_network_spec().seconds_per_slot;
@@ -1574,40 +1662,50 @@ impl Store {
     pub async fn extract_attestations_from_aggregated_payloads(
         &self,
         aggregated_payloads: &HashMap<SignatureKey, Vec<AggregatedSignatureProof>>,
-    ) -> HashMap<u64, AttestationData> {
+    ) -> anyhow::Result<HashMap<u64, AttestationData>> {
         let mut attestations: HashMap<u64, AttestationData> = HashMap::new();
+        let attestation_data_by_root_provider =
+            self.store.lock().await.attestation_data_by_root_provider();
 
-        for (sig_key, proofs) in aggregated_payloads {
-            let data_root = sig_key.data_root;
-            let attestation_data = match self.attestation_data_by_root.get(&data_root) {
+        for (signature_key, proofs) in aggregated_payloads {
+            let data_root = signature_key.data_root;
+            let attestation_data = match attestation_data_by_root_provider.get(data_root)? {
                 Some(data) => data,
                 None => continue,
             };
 
             for proof in proofs {
                 let validator_ids = proof.to_validator_indices();
-                for vid in validator_ids {
+                for validator in validator_ids {
                     let is_newer = attestations
-                        .get(&vid)
+                        .get(&validator)
                         .is_none_or(|existing| existing.slot < attestation_data.slot);
 
                     if is_newer {
-                        attestations.insert(vid, attestation_data.clone());
+                        attestations.insert(validator, attestation_data.clone());
                     }
                 }
             }
         }
-        attestations
+        Ok(attestations)
     }
 
     #[cfg(feature = "devnet3")]
     pub async fn aggregate_committee_signatures(&mut self) -> anyhow::Result<()> {
-        let (state_provider, gossip_signatures_provider, head_root) = {
-            let database = self.store.lock().await;
+        let (
+            state_provider,
+            gossip_signatures_provider,
+            head_root,
+            attestation_data_by_root_provider,
+            latest_new_aggregated_payloads_provider,
+        ) = {
+            let db = self.store.lock().await;
             (
-                database.state_provider(),
-                database.gossip_signatures_provider(),
-                database.head_provider().get()?,
+                db.state_provider(),
+                db.gossip_signatures_provider(),
+                db.head_provider().get()?,
+                db.attestation_data_by_root_provider(),
+                db.latest_new_aggregated_payloads_provider(),
             )
         };
 
@@ -1618,13 +1716,13 @@ impl Store {
         let mut attestation_list = Vec::new();
         let mut aggregated_keys = Vec::new();
 
-        for sig_key in gossip_signatures_provider.get_keys()? {
-            if let Some(data) = self.attestation_data_by_root.get(&sig_key.data_root) {
+        for signature_key in gossip_signatures_provider.get_keys()? {
+            if let Some(data) = attestation_data_by_root_provider.get(signature_key.data_root)? {
                 attestation_list.push(AggregatedAttestations {
-                    validator_id: sig_key.validator_id,
+                    validator_id: signature_key.validator_id,
                     data: data.clone(),
                 });
-                aggregated_keys.push(sig_key);
+                aggregated_keys.push(signature_key);
             }
         }
 
@@ -1638,12 +1736,14 @@ impl Store {
             aggregated_results.into_iter().zip(proofs)
         {
             let data_root = aggregated_attestation.message.tree_hash_root();
-            for vid in aggregated_signature.to_validator_indices() {
-                let key = SignatureKey::from_parts(vid, data_root);
-                self.latest_new_aggregated_payloads
-                    .entry(key)
-                    .or_default()
-                    .push(aggregated_signature.clone());
+            for validator in aggregated_signature.to_validator_indices() {
+                let key = SignatureKey::from_parts(validator, data_root);
+                let mut proofs = latest_new_aggregated_payloads_provider
+                    .get(key.clone())?
+                    .unwrap_or_default();
+
+                proofs.push(aggregated_signature.clone());
+                latest_new_aggregated_payloads_provider.insert(key, proofs)?;
             }
         }
 
@@ -1667,6 +1767,14 @@ impl Store {
         let validator_id = signed_attestation.validator_id;
         let attestation_data = &signed_attestation.message;
         let signature = signed_attestation.signature;
+        #[cfg(feature = "devnet3")]
+        let (attestation_data_by_root_provider, validator_id_provider) = {
+            let db = self.store.lock().await;
+            (
+                db.attestation_data_by_root_provider(),
+                db.validator_id_provider(),
+            )
+        };
 
         self.validate_attestation(&signed_attestation).await?;
 
@@ -1706,7 +1814,7 @@ impl Store {
 
         #[cfg(feature = "devnet3")]
         {
-            if is_aggregator && let Some(current_id) = self.validator_id {
+            if is_aggregator && let Ok(Some(current_id)) = validator_id_provider.get() {
                 let current_validator_subnet =
                     compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
                 let attester_subnet = compute_subnet_id(validator_id, ATTESTATION_COMMITTEE_COUNT);
@@ -1717,8 +1825,7 @@ impl Store {
                 }
             }
 
-            self.attestation_data_by_root
-                .insert(data_root, attestation_data.clone());
+            attestation_data_by_root_provider.insert(data_root, attestation_data.clone())?;
         }
 
         Ok(())
@@ -1753,34 +1860,42 @@ impl Store {
 
     #[cfg(feature = "devnet3")]
     pub async fn prune_stale_attestation_data(&mut self) -> anyhow::Result<()> {
-        let (latest_finalized_provider, gossip_signatures_provider) = {
+        let (
+            latest_finalized_provider,
+            gossip_signatures_provider,
+            attestation_data_by_root_provider,
+            latest_new_aggregated_payloads_provider,
+            latest_known_aggregated_payloads_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.latest_finalized_provider(),
                 db.gossip_signatures_provider(),
+                db.attestation_data_by_root_provider(),
+                db.latest_new_aggregated_payloads_provider(),
+                db.latest_known_aggregated_payloads_provider(),
             )
         };
 
         let finalized_slot = latest_finalized_provider.get()?.slot;
-        let stale_roots: HashSet<B256> = self
-            .attestation_data_by_root
-            .iter()
+        let stale_roots: HashSet<B256> = attestation_data_by_root_provider
+            .iter()?
+            .into_iter()
             .filter(|(_, data)| data.target.slot <= finalized_slot)
-            .map(|(root, _)| *root)
+            .map(|(root, _)| root)
             .collect();
 
         if stale_roots.is_empty() {
             return Ok(());
         }
 
-        self.attestation_data_by_root
-            .retain(|root, _| !stale_roots.contains(root));
+        attestation_data_by_root_provider.retain(|root, _| !stale_roots.contains(root))?;
 
-        self.latest_new_aggregated_payloads
-            .retain(|key, _| !stale_roots.contains(&key.data_root));
+        latest_new_aggregated_payloads_provider
+            .retain(|key, _| !stale_roots.contains(&key.data_root))?;
 
-        self.latest_known_aggregated_payloads
-            .retain(|key, _| !stale_roots.contains(&key.data_root));
+        latest_known_aggregated_payloads_provider
+            .retain(|key, _| !stale_roots.contains(&key.data_root))?;
 
         gossip_signatures_provider.retain(|key| !stale_roots.contains(&key.data_root))?;
 
@@ -2077,11 +2192,11 @@ mod tests {
         let attestation_data = _make_attestation_data(5, 5);
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::new(1, &attestation_data);
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
 
         {
-            store
-                .attestation_data_by_root
-                .insert(data_root, attestation_data);
+            attestation_data_by_root_provider.insert(data_root, attestation_data)?;
             let db = store.store.lock().await;
             db.latest_finalized_provider()
                 .insert(Checkpoint {
@@ -2094,7 +2209,7 @@ mod tests {
                 .unwrap();
         }
 
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         {
             let db = store.store.lock().await;
             ensure!(
@@ -2107,7 +2222,7 @@ mod tests {
 
         store.prune_stale_attestation_data().await?;
 
-        ensure!(!store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
         let db = store.store.lock().await;
         ensure!(
             db.gossip_signatures_provider()
@@ -2125,11 +2240,11 @@ mod tests {
         let attestation_data = _make_attestation_data(3, 3);
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::new(1, &attestation_data);
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
 
         {
-            store
-                .attestation_data_by_root
-                .insert(data_root, attestation_data);
+            attestation_data_by_root_provider.insert(data_root, attestation_data)?;
             let db = store.store.lock().await;
             db.latest_finalized_provider()
                 .insert(Checkpoint {
@@ -2142,10 +2257,10 @@ mod tests {
                 .unwrap();
         }
 
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         store.prune_stale_attestation_data().await?;
 
-        ensure!(!store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
         let db = store.store.lock().await;
         ensure!(
             db.gossip_signatures_provider()
@@ -2163,11 +2278,11 @@ mod tests {
         let attestation_data = _make_attestation_data(10, 10);
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::new(1, &attestation_data);
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
 
         {
-            store
-                .attestation_data_by_root
-                .insert(data_root, attestation_data.clone());
+            attestation_data_by_root_provider.insert(data_root, attestation_data.clone())?;
             let db = store.store.lock().await;
             db.latest_finalized_provider()
                 .insert(Checkpoint {
@@ -2180,11 +2295,11 @@ mod tests {
                 .unwrap();
         }
 
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         store.prune_stale_attestation_data().await?;
 
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
-        ensure!(store.attestation_data_by_root.get(&data_root).unwrap() == &attestation_data);
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.get(data_root)?.unwrap() == attestation_data);
         let db = store.store.lock().await;
         ensure!(
             db.gossip_signatures_provider()
@@ -2212,28 +2327,33 @@ mod tests {
             ssz_types::BitList::with_capacity(4096).unwrap(),
             ssz_types::VariableList::empty(),
         );
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
+        let latest_new_aggregated_payloads_provider = store
+            .store
+            .lock()
+            .await
+            .latest_new_aggregated_payloads_provider();
+        let latest_known_aggregated_payloads_provider = store
+            .store
+            .lock()
+            .await
+            .latest_known_aggregated_payloads_provider();
 
         {
-            store
-                .attestation_data_by_root
-                .insert(stale_root, stale_attestation);
-            store
-                .attestation_data_by_root
-                .insert(fresh_root, fresh_attestation);
+            attestation_data_by_root_provider.insert(stale_root, stale_attestation)?;
+            attestation_data_by_root_provider.insert(fresh_root, fresh_attestation)?;
 
-            store
-                .latest_new_aggregated_payloads
-                .insert(stale_key.clone(), vec![mock_proof.clone()]);
-            store
-                .latest_new_aggregated_payloads
-                .insert(fresh_key.clone(), vec![mock_proof.clone()]);
+            latest_new_aggregated_payloads_provider
+                .insert(stale_key.clone(), vec![mock_proof.clone()])?;
+            latest_new_aggregated_payloads_provider
+                .insert(fresh_key.clone(), vec![mock_proof.clone()])?;
 
-            store
-                .latest_known_aggregated_payloads
-                .insert(stale_key.clone(), vec![mock_proof.clone()]);
-            store
-                .latest_known_aggregated_payloads
-                .insert(fresh_key.clone(), vec![mock_proof]);
+            latest_known_aggregated_payloads_provider
+                .insert(stale_key.clone(), vec![mock_proof.clone()])?;
+
+            latest_known_aggregated_payloads_provider
+                .insert(fresh_key.clone(), vec![mock_proof])?;
 
             let db = store.store.lock().await;
             db.latest_finalized_provider()
@@ -2250,38 +2370,18 @@ mod tests {
                 .unwrap();
         }
 
-        ensure!(store.attestation_data_by_root.contains_key(&stale_root));
-        ensure!(
-            store
-                .latest_new_aggregated_payloads
-                .contains_key(&stale_key)
-        );
-        ensure!(
-            store
-                .latest_known_aggregated_payloads
-                .contains_key(&stale_key)
-        );
+        ensure!(attestation_data_by_root_provider.contains_key(&stale_root));
+        ensure!(latest_new_aggregated_payloads_provider.contains_key(&stale_key));
+        ensure!(latest_known_aggregated_payloads_provider.contains_key(&stale_key));
 
         store.prune_stale_attestation_data().await?;
 
-        ensure!(!store.attestation_data_by_root.contains_key(&stale_root));
-        ensure!(
-            !store
-                .latest_new_aggregated_payloads
-                .contains_key(&stale_key)
-        );
-        ensure!(
-            !store
-                .latest_known_aggregated_payloads
-                .contains_key(&stale_key)
-        );
+        ensure!(!attestation_data_by_root_provider.contains_key(&stale_root));
+        ensure!(!latest_new_aggregated_payloads_provider.contains_key(&stale_key));
+        ensure!(!latest_known_aggregated_payloads_provider.contains_key(&stale_key));
 
-        ensure!(store.attestation_data_by_root.contains_key(&fresh_root));
-        ensure!(
-            store
-                .latest_new_aggregated_payloads
-                .contains_key(&fresh_key)
-        );
+        ensure!(attestation_data_by_root_provider.contains_key(&fresh_root));
+        ensure!(latest_new_aggregated_payloads_provider.contains_key(&fresh_key));
 
         let db = store.store.lock().await;
         ensure!(
@@ -2305,11 +2405,11 @@ mod tests {
         let mut store = sample_store(10).await;
         let fresh_attestation = _make_attestation_data(10, 10);
         let data_root = fresh_attestation.tree_hash_root();
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
 
         {
-            store
-                .attestation_data_by_root
-                .insert(data_root, fresh_attestation);
+            attestation_data_by_root_provider.insert(data_root, fresh_attestation)?;
             let db = store.store.lock().await;
             db.latest_finalized_provider()
                 .insert(Checkpoint {
@@ -2319,11 +2419,11 @@ mod tests {
                 .unwrap();
         }
 
-        let initial_len = store.attestation_data_by_root.len();
+        let initial_len = attestation_data_by_root_provider.len();
         store.prune_stale_attestation_data().await?;
 
-        ensure!(store.attestation_data_by_root.len() == initial_len);
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.len() == initial_len);
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         Ok(())
     }
 
@@ -2331,15 +2431,18 @@ mod tests {
     #[tokio::test]
     async fn test_handles_empty_attestation_data() -> anyhow::Result<()> {
         let mut store = sample_store(10).await;
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
+
         ensure!(
-            store.attestation_data_by_root.is_empty(),
+            attestation_data_by_root_provider.is_empty(),
             "Store should start empty"
         );
 
         store.prune_stale_attestation_data().await?;
 
         ensure!(
-            store.attestation_data_by_root.is_empty(),
+            attestation_data_by_root_provider.is_empty(),
             "Store should remain empty"
         );
         Ok(())
@@ -2353,9 +2456,11 @@ mod tests {
         let data_root = stale_data.tree_hash_root();
         let sig_key_1 = SignatureKey::new(1, &stale_data);
         let sig_key_2 = SignatureKey::new(2, &stale_data);
+        let attestation_data_by_root_provider =
+            store.store.lock().await.attestation_data_by_root_provider();
 
         {
-            store.attestation_data_by_root.insert(data_root, stale_data);
+            attestation_data_by_root_provider.insert(data_root, stale_data)?;
             let db = store.store.lock().await;
             db.latest_finalized_provider()
                 .insert(Checkpoint {
@@ -2373,10 +2478,10 @@ mod tests {
                 .unwrap();
         }
 
-        ensure!(store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         store.prune_stale_attestation_data().await?;
 
-        ensure!(!store.attestation_data_by_root.contains_key(&data_root));
+        ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
         let db = store.store.lock().await;
         ensure!(
             db.gossip_signatures_provider()
@@ -2414,7 +2519,7 @@ mod tests {
                 let root = data.tree_hash_root();
                 let key = SignatureKey::new(i, &data);
 
-                store.attestation_data_by_root.insert(root, data);
+                db.attestation_data_by_root_provider().insert(root, data)?;
                 gossip.insert(key, Signature::blank()).unwrap();
                 roots.push(root);
             }
@@ -2424,10 +2529,12 @@ mod tests {
 
         for (i, root) in roots.iter().enumerate() {
             let slot = (i + 1) as u64;
+            let attestation_data_by_root_provider =
+                store.store.lock().await.attestation_data_by_root_provider();
             if slot <= 5 {
-                ensure!(!store.attestation_data_by_root.contains_key(root));
+                ensure!(!attestation_data_by_root_provider.contains_key(root));
             } else {
-                ensure!(store.attestation_data_by_root.contains_key(root));
+                ensure!(attestation_data_by_root_provider.contains_key(root));
             }
         }
         Ok(())
