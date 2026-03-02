@@ -2700,10 +2700,11 @@ mod tests {
         let mut store = sample_store(10).await;
         let proposer_slot = 1;
         let proposer_index = 1;
-        let _ = store
+        store
             .produce_block_with_signatures(proposer_slot, proposer_index)
-            .await;
-        let _ = store.update_head().await;
+            .await
+            .unwrap();
+        store.update_head().await.unwrap();
 
         let attestor_slot = 2;
         let attestor_index = 7;
@@ -2975,6 +2976,30 @@ mod tests {
         assert_eq!(attestation.validator_id, 1000000);
     }
 
+    // GET FORKCHOICE STORE TESTS
+
+    // Test get_forkchoice_store() time initialization.
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_store_time_from_anchor_slot() {
+        let store = sample_store(10).await;
+        let (time_provider, head_provider, block_provider) = {
+            let db = store.store.lock().await;
+            (db.time_provider(), db.head_provider(), db.block_provider())
+        };
+
+        let time = time_provider.get().unwrap();
+        let genesis_hash = head_provider.get().unwrap();
+        let genesis_block = block_provider
+            .get(genesis_hash)
+            .unwrap()
+            .unwrap()
+            .message
+            .block;
+
+        assert!(time == INTERVALS_PER_SLOT * genesis_block.slot);
+    }
+
     // ON TICK TESTS
 
     // Test basic on_tick functionality.
@@ -3039,14 +3064,14 @@ mod tests {
         let current_target = lean_network_spec().genesis_time + initial_time;
 
         #[cfg(feature = "devnet2")]
-        store.on_tick(current_target, false).await.unwrap();
+        store.on_tick(current_target, true).await.unwrap();
 
         #[cfg(feature = "devnet3")]
-        store.on_tick(current_target, false, false).await.unwrap();
+        store.on_tick(current_target, true, false).await.unwrap();
 
         let new_time = time_provider.get().unwrap();
 
-        assert!(new_time - initial_time <= 10);
+        assert!(new_time == initial_time);
     }
 
     // Test on_tick with small time increment.
@@ -3070,7 +3095,7 @@ mod tests {
 
         let new_time = time_provider.get().unwrap();
 
-        assert!(new_time >= initial_time);
+        assert!(new_time == target_time - lean_network_spec().genesis_time);
     }
 
     // TEST INTERVAL TICKING
@@ -3336,6 +3361,19 @@ mod tests {
         );
     }
 
+    /// Test basic new attestation processing moves aggregated payloads.
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_accept_new_attestations_basic() {
+        let mut store = sample_store(10).await;
+        let initial_known_payloads = store.latest_known_aggregated_payloads.len();
+
+        store.accept_new_attestations().await.unwrap();
+
+        assert!(store.latest_new_aggregated_payloads.is_empty());
+        assert!(store.latest_known_aggregated_payloads.len() >= initial_known_payloads);
+    }
+
     // Test accepting multiple new attestations.
     #[cfg(feature = "devnet2")]
     #[tokio::test]
@@ -3422,14 +3460,21 @@ mod tests {
         }
     }
 
+    // Test accepting multiple new aggregated payloads.
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_accept_new_attestations_multiple() {
+        let mut store = sample_store(10).await;
+        store.accept_new_attestations().await.unwrap();
+
+        assert!(store.latest_new_aggregated_payloads.is_empty());
+    }
+
     // Test accepting new attestations when there are none.
+    #[cfg(feature = "devnet2")]
     #[tokio::test]
     pub async fn test_accept_new_attestations_empty() {
-        #[cfg(feature = "devnet2")]
         let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
-        let mut store = sample_store(10).await;
 
         let latest_known_attestations_provider = {
             store
@@ -3465,6 +3510,17 @@ mod tests {
 
         assert!(final_new_attestations_length == 0);
         assert!(latest_known_attestations_length == initial_known_attestations_length);
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_accept_new_attestations_empty() {
+        let mut store = sample_store(10).await;
+        let initial_known_payloads = store.latest_known_aggregated_payloads.len();
+        store.accept_new_attestations().await.unwrap();
+
+        assert!(store.latest_new_aggregated_payloads.is_empty());
+        assert!(store.latest_known_aggregated_payloads.len() == initial_known_payloads);
     }
 
     // TEST PROPOSAL HEAD TIMING
@@ -3567,6 +3623,15 @@ mod tests {
         assert!(new_attestations_length == 0);
         assert!(known_attestations_correct_checkpoint.slot == 10);
         assert!(known_attestations_correct_checkpoint == checkpoint);
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_get_proposal_head_processes_attestations() {
+        let mut store = sample_store(10).await;
+        store.get_proposal_head(1).await.unwrap();
+
+        assert!(store.latest_new_aggregated_payloads.is_empty());
     }
 
     // TEST TIME CONSTANTS
