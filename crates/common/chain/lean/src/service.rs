@@ -97,6 +97,43 @@ struct BackfillTelemetry {
     callback_latency_samples: u64,
 }
 
+#[derive(Debug)]
+struct SyncTelemetry {
+    near_head_backfill_strategy: NearHeadBackfillStrategy,
+    near_head_fanout_strategy: NearHeadFanoutStrategy,
+    handoff_strategy: HandoffStrategy,
+    backfill_timeout_strategy: BackfillTimeoutStrategy,
+    pending_dedup_strategy: PendingRequestDedupStrategy,
+    peer_selection_strategy: PeerSelectionStrategy,
+    recent_sync_blocks: Vec<RecentSyncBlock>,
+    callback_loss_mode: CallbackLossMode,
+    dropped_callback_roots: HashSet<alloy_primitives::B256>,
+    backfill_telemetry: BackfillTelemetry,
+    last_backfill_progress_log: Option<Instant>,
+    inflight_roots: HashMap<alloy_primitives::B256, InflightRootRequest>,
+    peer_avg_latency_ms: HashMap<PeerId, f64>,
+}
+
+impl SyncTelemetry {
+    fn from_env() -> Self {
+        Self {
+            near_head_backfill_strategy: NearHeadBackfillStrategy::from_env(),
+            near_head_fanout_strategy: NearHeadFanoutStrategy::from_env(),
+            handoff_strategy: HandoffStrategy::from_env(),
+            backfill_timeout_strategy: BackfillTimeoutStrategy::from_env(),
+            pending_dedup_strategy: PendingRequestDedupStrategy::from_env(),
+            peer_selection_strategy: PeerSelectionStrategy::from_env(),
+            recent_sync_blocks: Vec::new(),
+            callback_loss_mode: CallbackLossMode::from_env(),
+            dropped_callback_roots: HashSet::new(),
+            backfill_telemetry: BackfillTelemetry::default(),
+            last_backfill_progress_log: None,
+            inflight_roots: HashMap::new(),
+            peer_avg_latency_ms: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct InflightRootRequest {
     primary_peer: PeerId,
@@ -132,19 +169,7 @@ pub struct LeanChainService {
     pending_callbacks: FuturesUnordered<CallbackFuture>,
     #[cfg(feature = "devnet3")]
     is_aggregator: bool,
-    near_head_backfill_strategy: NearHeadBackfillStrategy,
-    near_head_fanout_strategy: NearHeadFanoutStrategy,
-    handoff_strategy: HandoffStrategy,
-    backfill_timeout_strategy: BackfillTimeoutStrategy,
-    pending_dedup_strategy: PendingRequestDedupStrategy,
-    peer_selection_strategy: PeerSelectionStrategy,
-    recent_sync_blocks: Vec<RecentSyncBlock>,
-    callback_loss_mode: CallbackLossMode,
-    dropped_callback_roots: HashSet<alloy_primitives::B256>,
-    backfill_telemetry: BackfillTelemetry,
-    last_backfill_progress_log: Option<Instant>,
-    inflight_roots: HashMap<alloy_primitives::B256, InflightRootRequest>,
-    peer_avg_latency_ms: HashMap<PeerId, f64>,
+    telemetry: SyncTelemetry,
 }
 
 impl LeanChainService {
@@ -168,32 +193,20 @@ impl LeanChainService {
             pending_job_requests: VecDeque::new(),
             #[cfg(feature = "devnet3")]
             is_aggregator,
-            near_head_backfill_strategy: NearHeadBackfillStrategy::from_env(),
-            near_head_fanout_strategy: NearHeadFanoutStrategy::from_env(),
-            handoff_strategy: HandoffStrategy::from_env(),
-            backfill_timeout_strategy: BackfillTimeoutStrategy::from_env(),
-            pending_dedup_strategy: PendingRequestDedupStrategy::from_env(),
-            peer_selection_strategy: PeerSelectionStrategy::from_env(),
-            recent_sync_blocks: Vec::new(),
-            callback_loss_mode: CallbackLossMode::from_env(),
-            dropped_callback_roots: HashSet::new(),
-            backfill_telemetry: BackfillTelemetry::default(),
-            last_backfill_progress_log: None,
-            inflight_roots: HashMap::new(),
-            peer_avg_latency_ms: HashMap::new(),
+            telemetry: SyncTelemetry::from_env(),
         }
     }
 
     pub async fn start(mut self) -> anyhow::Result<()> {
         info!(
             genesis_time = lean_network_spec().genesis_time,
-            near_head_backfill_strategy = ?self.near_head_backfill_strategy,
-            near_head_fanout_strategy = ?self.near_head_fanout_strategy,
-            handoff_strategy = ?self.handoff_strategy,
-            backfill_timeout_strategy = ?self.backfill_timeout_strategy,
-            pending_dedup_strategy = ?self.pending_dedup_strategy,
-            peer_selection_strategy = ?self.peer_selection_strategy,
-            callback_loss_mode = ?self.callback_loss_mode,
+            near_head_backfill_strategy = ?self.telemetry.near_head_backfill_strategy,
+            near_head_fanout_strategy = ?self.telemetry.near_head_fanout_strategy,
+            handoff_strategy = ?self.telemetry.handoff_strategy,
+            backfill_timeout_strategy = ?self.telemetry.backfill_timeout_strategy,
+            pending_dedup_strategy = ?self.telemetry.pending_dedup_strategy,
+            peer_selection_strategy = ?self.telemetry.peer_selection_strategy,
+            callback_loss_mode = ?self.telemetry.callback_loss_mode,
             "LeanChainService started",
         );
 
@@ -619,8 +632,8 @@ impl LeanChainService {
         self.prune_recent_sync_blocks();
         let backfill_job_timeout = self.current_backfill_job_timeout().await;
         for timed_out_job in self.sync_status.reset_timed_out_jobs(backfill_job_timeout) {
-            self.backfill_telemetry.request_retries += 1;
-            self.inflight_roots.remove(&timed_out_job.root);
+            self.telemetry.backfill_telemetry.request_retries += 1;
+            self.telemetry.inflight_roots.remove(&timed_out_job.root);
             warn!(
                 peer_id = ?timed_out_job.peer_id,
                 root = ?timed_out_job.root,
@@ -659,7 +672,7 @@ impl LeanChainService {
         // queue unqueued jobs
         let peer_gap_slots = self.current_peer_gap_slots().await;
         let enable_near_head_fanout = should_fanout_near_head(
-            self.near_head_fanout_strategy,
+            self.telemetry.near_head_fanout_strategy,
             peer_gap_slots,
             NEAR_HEAD_FANOUT_MAX_GAP_SLOTS,
         );
@@ -684,14 +697,14 @@ impl LeanChainService {
             }
 
             if matches!(
-                self.near_head_backfill_strategy,
+                self.telemetry.near_head_backfill_strategy,
                 NearHeadBackfillStrategy::GossipPreferred
             ) && self.try_advance_job_with_cached_block(job.root).await?
             {
                 continue;
             }
 
-            if self.inflight_roots.contains_key(&job.root) {
+            if self.telemetry.inflight_roots.contains_key(&job.root) {
                 continue;
             }
 
@@ -711,7 +724,7 @@ impl LeanChainService {
                 requested_at: Instant::now(),
                 backup_sent: false,
             };
-            if self.near_head_fanout_strategy == NearHeadFanoutStrategy::DualPeer
+            if self.telemetry.near_head_fanout_strategy == NearHeadFanoutStrategy::DualPeer
                 && let Some(backup_peer_id) = backup_peer
             {
                 inflight_request.backup_sent =
@@ -725,7 +738,9 @@ impl LeanChainService {
                     );
                 }
             }
-            self.inflight_roots.insert(job.root, inflight_request);
+            self.telemetry
+                .inflight_roots
+                .insert(job.root, inflight_request);
 
             self.sync_status.mark_job_as_requested(job.root);
         }
@@ -819,10 +834,11 @@ impl LeanChainService {
 
     fn peer_weight(&self, peer_id: PeerId, score: u8) -> f64 {
         let score_weight = f64::from(score.max(1));
-        match self.peer_selection_strategy {
+        match self.telemetry.peer_selection_strategy {
             PeerSelectionStrategy::ScoreOnly => score_weight,
             PeerSelectionStrategy::LatencyWeighted => {
                 let latency_penalty = self
+                    .telemetry
                     .peer_avg_latency_ms
                     .get(&peer_id)
                     .map(|latency_ms| 1.0 / (1.0 + (latency_ms / 1500.0)))
@@ -851,17 +867,18 @@ impl LeanChainService {
             return false;
         }
         self.push_callback_receiver(rx);
-        self.backfill_telemetry.requests_sent += 1;
+        self.telemetry.backfill_telemetry.requests_sent += 1;
         true
     }
 
     fn process_delayed_hedges(&mut self) {
-        if self.near_head_fanout_strategy != NearHeadFanoutStrategy::DelayedHedge {
+        if self.telemetry.near_head_fanout_strategy != NearHeadFanoutStrategy::DelayedHedge {
             return;
         }
 
         let now = Instant::now();
         let roots_to_hedge: Vec<(alloy_primitives::B256, PeerId, PeerId)> = self
+            .telemetry
             .inflight_roots
             .iter()
             .filter_map(|(root, inflight)| {
@@ -878,7 +895,7 @@ impl LeanChainService {
         for (root, primary_peer_id, backup_peer_id) in roots_to_hedge {
             let backup_sent = self.request_block_by_root_from_peer(backup_peer_id, root);
             if backup_sent {
-                if let Some(inflight) = self.inflight_roots.get_mut(&root) {
+                if let Some(inflight) = self.telemetry.inflight_roots.get_mut(&root) {
                     inflight.backup_sent = true;
                 }
                 trace!(
@@ -939,14 +956,14 @@ impl LeanChainService {
         let is_behind_peers = highest_peer_head_slot > current_head_slot + 2;
         let has_pending_backfill_work = self.has_pending_backfill_work();
         let has_active_backfill_jobs = self.has_active_backfill_jobs();
-        let has_inflight_backfill_requests = !self.inflight_roots.is_empty();
+        let has_inflight_backfill_requests = !self.telemetry.inflight_roots.is_empty();
         let has_near_head_bridge = self.has_recent_near_head_gossip_bridge(
             head,
             current_head_slot,
             highest_peer_head_slot,
         );
         let should_be_synced = should_switch_to_synced(
-            self.handoff_strategy,
+            self.telemetry.handoff_strategy,
             HandoffInputs {
                 is_behind_peers,
                 has_pending_backfill_work,
@@ -983,7 +1000,7 @@ impl LeanChainService {
                     has_near_head_bridge,
                     has_active_backfill_jobs,
                     has_inflight_backfill_requests,
-                    handoff_strategy = ?self.handoff_strategy,
+                    handoff_strategy = ?self.telemetry.handoff_strategy,
                     "Node remains in backfill syncing mode"
                 );
                 SyncStatus::Syncing { jobs: Vec::new() }
@@ -993,8 +1010,8 @@ impl LeanChainService {
         };
 
         if sync_status == SyncStatus::Synced {
-            self.dropped_callback_roots.clear();
-            self.inflight_roots.clear();
+            self.telemetry.dropped_callback_roots.clear();
+            self.telemetry.inflight_roots.clear();
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|err| anyhow!("System time before epoch: {err:?}"))?
@@ -1010,7 +1027,8 @@ impl LeanChainService {
 
     async fn current_backfill_job_timeout(&self) -> Duration {
         let peer_gap = self.current_peer_gap_slots().await;
-        self.backfill_timeout_strategy
+        self.telemetry
+            .backfill_timeout_strategy
             .timeout_for_peer_gap(peer_gap)
     }
 
@@ -1043,40 +1061,41 @@ impl LeanChainService {
 
     fn maybe_log_backfill_progress(&mut self) {
         let now = Instant::now();
-        if let Some(last_log_time) = self.last_backfill_progress_log
+        if let Some(last_log_time) = self.telemetry.last_backfill_progress_log
             && now.saturating_duration_since(last_log_time) < BACKFILL_PROGRESS_LOG_INTERVAL
         {
             return;
         }
-        self.last_backfill_progress_log = Some(now);
+        self.telemetry.last_backfill_progress_log = Some(now);
 
         let (queue_count, total_jobs) = self.sync_queue_stats();
-        let avg_callback_latency_ms = if self.backfill_telemetry.callback_latency_samples == 0 {
-            0.0
-        } else {
-            self.backfill_telemetry.callback_latency_ms_total as f64
-                / self.backfill_telemetry.callback_latency_samples as f64
-        };
+        let avg_callback_latency_ms =
+            if self.telemetry.backfill_telemetry.callback_latency_samples == 0 {
+                0.0
+            } else {
+                self.telemetry.backfill_telemetry.callback_latency_ms_total as f64
+                    / self.telemetry.backfill_telemetry.callback_latency_samples as f64
+            };
         info!(
             slot = get_current_slot(),
             queue_count,
             total_jobs,
             pending_requests = self.pending_job_requests.len(),
-            inflight_roots = self.inflight_roots.len(),
+            inflight_roots = self.telemetry.inflight_roots.len(),
             peers_in_use = self.peers_in_use.len(),
-            recent_sync_blocks = self.recent_sync_blocks.len(),
-            requests_sent = self.backfill_telemetry.requests_sent,
-            request_retries = self.backfill_telemetry.request_retries,
-            callbacks_processed = self.backfill_telemetry.callbacks_processed,
-            callbacks_dropped = self.backfill_telemetry.callbacks_dropped,
+            recent_sync_blocks = self.telemetry.recent_sync_blocks.len(),
+            requests_sent = self.telemetry.backfill_telemetry.requests_sent,
+            request_retries = self.telemetry.backfill_telemetry.request_retries,
+            callbacks_processed = self.telemetry.backfill_telemetry.callbacks_processed,
+            callbacks_dropped = self.telemetry.backfill_telemetry.callbacks_dropped,
             avg_callback_latency_ms,
-            peer_latency_entries = self.peer_avg_latency_ms.len(),
+            peer_latency_entries = self.telemetry.peer_avg_latency_ms.len(),
             "Node is syncing; backfill progress"
         );
     }
 
     fn queue_pending_reset(&mut self, peer_id: PeerId) {
-        if self.pending_dedup_strategy == PendingRequestDedupStrategy::Dedup
+        if self.telemetry.pending_dedup_strategy == PendingRequestDedupStrategy::Dedup
             && self
                 .pending_job_requests
                 .iter()
@@ -1095,7 +1114,7 @@ impl LeanChainService {
         slot: u64,
         parent_root: alloy_primitives::B256,
     ) {
-        if self.pending_dedup_strategy == PendingRequestDedupStrategy::Dedup
+        if self.telemetry.pending_dedup_strategy == PendingRequestDedupStrategy::Dedup
             && self
                 .pending_job_requests
                 .iter()
@@ -1123,7 +1142,7 @@ impl LeanChainService {
         }
 
         let now = Instant::now();
-        self.recent_sync_blocks.iter().any(|block| {
+        self.telemetry.recent_sync_blocks.iter().any(|block| {
             block.source == SyncBlockSource::Gossip
                 && now.saturating_duration_since(block.seen_at) <= RECENT_SYNC_BLOCK_RETENTION
                 && block.parent_root == head
@@ -1138,7 +1157,7 @@ impl LeanChainService {
         slot: u64,
         source: SyncBlockSource,
     ) {
-        self.recent_sync_blocks.push(RecentSyncBlock {
+        self.telemetry.recent_sync_blocks.push(RecentSyncBlock {
             parent_root,
             slot,
             seen_at: Instant::now(),
@@ -1149,7 +1168,7 @@ impl LeanChainService {
 
     fn prune_recent_sync_blocks(&mut self) {
         let now = Instant::now();
-        self.recent_sync_blocks.retain(|block| {
+        self.telemetry.recent_sync_blocks.retain(|block| {
             now.saturating_duration_since(block.seen_at) <= RECENT_SYNC_BLOCK_RETENTION
         });
     }
@@ -1229,7 +1248,7 @@ impl LeanChainService {
             return Ok(());
         }
         self.peers_in_use.remove(&peer_id);
-        self.inflight_roots.retain(|_, inflight| {
+        self.telemetry.inflight_roots.retain(|_, inflight| {
             inflight.primary_peer != peer_id && inflight.backup_peer != Some(peer_id)
         });
         self.queue_pending_reset(peer_id);
@@ -1244,7 +1263,7 @@ impl LeanChainService {
         match &*message {
             LeanResponseMessage::BlocksByRoot(signed_block_with_attestation) => {
                 let block_root = signed_block_with_attestation.message.block.tree_hash_root();
-                if !self.inflight_roots.contains_key(&block_root)
+                if !self.telemetry.inflight_roots.contains_key(&block_root)
                     && !self.sync_status.contains_job_root(block_root)
                 {
                     trace!(
@@ -1255,11 +1274,11 @@ impl LeanChainService {
                     return Ok(());
                 }
                 if self.should_drop_callback_response(block_root) {
-                    self.backfill_telemetry.callbacks_dropped += 1;
+                    self.telemetry.backfill_telemetry.callbacks_dropped += 1;
                     warn!(
                         peer_id = ?peer_id,
                         block_root = ?block_root,
-                        callback_loss_mode = ?self.callback_loss_mode,
+                        callback_loss_mode = ?self.telemetry.callback_loss_mode,
                         "Dropping req/resp block callback to simulate packet loss"
                     );
                     return Ok(());
@@ -1280,9 +1299,11 @@ impl LeanChainService {
     }
 
     fn should_drop_callback_response(&mut self, root: alloy_primitives::B256) -> bool {
-        match self.callback_loss_mode {
+        match self.telemetry.callback_loss_mode {
             CallbackLossMode::None => false,
-            CallbackLossMode::DropFirstPerRoot => self.dropped_callback_roots.insert(root),
+            CallbackLossMode::DropFirstPerRoot => {
+                self.telemetry.dropped_callback_roots.insert(root)
+            }
         }
     }
 
@@ -1336,13 +1357,13 @@ impl LeanChainService {
         let last_root = signed_block_with_attestation.message.block.tree_hash_root();
         let parent_root = signed_block_with_attestation.message.block.parent_root;
         let slot = signed_block_with_attestation.message.block.slot;
-        self.inflight_roots.remove(&last_root);
+        self.telemetry.inflight_roots.remove(&last_root);
         let mut request_latency_ms: Option<f64> = None;
         if source == SyncBlockSource::ReqResp {
-            self.backfill_telemetry.callbacks_processed += 1;
+            self.telemetry.backfill_telemetry.callbacks_processed += 1;
             if let Some(latency) = self.sync_status.request_latency_for_root(last_root) {
-                self.backfill_telemetry.callback_latency_ms_total += latency.as_millis();
-                self.backfill_telemetry.callback_latency_samples += 1;
+                self.telemetry.backfill_telemetry.callback_latency_ms_total += latency.as_millis();
+                self.telemetry.backfill_telemetry.callback_latency_samples += 1;
                 request_latency_ms = Some(latency.as_secs_f64() * 1_000.0);
             }
         }
@@ -1366,7 +1387,8 @@ impl LeanChainService {
         if let Some(peer_id) = source_peer_id {
             self.network_state.successful_response_from_peer(peer_id);
             if let Some(latency_ms) = request_latency_ms {
-                self.peer_avg_latency_ms
+                self.telemetry
+                    .peer_avg_latency_ms
                     .entry(peer_id)
                     .and_modify(|avg_ms| *avg_ms = (*avg_ms * 0.8) + (latency_ms * 0.2))
                     .or_insert(latency_ms);
