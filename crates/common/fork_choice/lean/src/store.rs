@@ -1936,7 +1936,7 @@ mod tests {
     use ream_post_quantum_crypto::leansig::signature::Signature;
     #[cfg(feature = "devnet2")]
     use ream_storage::db::{ReamDB, lean::LeanDB};
-    use ream_storage::tables::{field::REDBField, lean::head::LeanHeadField, table::REDBTable};
+    use ream_storage::tables::{field::REDBField, table::REDBTable};
     use ream_test_utils::store::sample_store;
     #[cfg(feature = "devnet2")]
     use ssz_types::VariableList;
@@ -2553,7 +2553,7 @@ mod tests {
             .await
             .unwrap();
 
-        let head_provider: LeanHeadField = { store.store.lock().await.head_provider() };
+        let head_provider = { store.store.lock().await.head_provider() };
         assert!(block.slot == slot);
         assert!(block.proposer_index == validator_index);
         assert!(block.parent_root == head_provider.get().unwrap());
@@ -3473,12 +3473,40 @@ mod tests {
     #[tokio::test]
     pub async fn test_accept_new_attestations_basic() {
         let mut store = sample_store(10).await;
-        let initial_known_payloads = store.latest_known_aggregated_payloads.len();
+        let latest_known_aggregated_payloads_provider = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_known_aggregated_payloads_provider()
+        };
+        let latest_new_aggregated_payloads_provider = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_aggregated_payloads_provider()
+        };
+        let initial_known_payloads = latest_known_aggregated_payloads_provider
+            .iter()
+            .unwrap()
+            .len();
 
         store.accept_new_attestations().await.unwrap();
 
-        assert!(store.latest_new_aggregated_payloads.is_empty());
-        assert!(store.latest_known_aggregated_payloads.len() >= initial_known_payloads);
+        assert!(
+            latest_new_aggregated_payloads_provider
+                .iter()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            latest_known_aggregated_payloads_provider
+                .iter()
+                .unwrap()
+                .len()
+                >= initial_known_payloads
+        );
     }
 
     // Test accepting multiple new attestations.
@@ -3573,8 +3601,20 @@ mod tests {
     pub async fn test_accept_new_attestations_multiple() {
         let mut store = sample_store(10).await;
         store.accept_new_attestations().await.unwrap();
+        let latest_new_aggregated_payloads_provider = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_aggregated_payloads_provider()
+        };
 
-        assert!(store.latest_new_aggregated_payloads.is_empty());
+        assert!(
+            latest_new_aggregated_payloads_provider
+                .iter()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     // Test accepting new attestations when there are none.
@@ -3623,11 +3663,40 @@ mod tests {
     #[tokio::test]
     pub async fn test_accept_new_attestations_empty() {
         let mut store = sample_store(10).await;
-        let initial_known_payloads = store.latest_known_aggregated_payloads.len();
+        let latest_known_aggregated_payloads_provider = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_known_aggregated_payloads_provider()
+        };
+        let latest_new_aggregated_payloads_provider = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_aggregated_payloads_provider()
+        };
+        let initial_known_payloads = latest_known_aggregated_payloads_provider
+            .iter()
+            .unwrap()
+            .len();
+
         store.accept_new_attestations().await.unwrap();
 
-        assert!(store.latest_new_aggregated_payloads.is_empty());
-        assert!(store.latest_known_aggregated_payloads.len() == initial_known_payloads);
+        assert!(
+            latest_new_aggregated_payloads_provider
+                .iter()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            latest_known_aggregated_payloads_provider
+                .iter()
+                .unwrap()
+                .len()
+                == initial_known_payloads
+        );
     }
 
     // TEST PROPOSAL HEAD TIMING
@@ -3737,8 +3806,20 @@ mod tests {
     pub async fn test_get_proposal_head_processes_attestations() {
         let mut store = sample_store(10).await;
         store.get_proposal_head(1).await.unwrap();
+        let latest_new_aggregated_payloads_provider = {
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_aggregated_payloads_provider()
+        };
 
-        assert!(store.latest_new_aggregated_payloads.is_empty());
+        assert!(
+            latest_new_aggregated_payloads_provider
+                .iter()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     // TEST TIME CONSTANTS
