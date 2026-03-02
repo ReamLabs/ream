@@ -69,6 +69,9 @@ pub fn is_valid_merkle_branch(
     index: u64,
     root: B256,
 ) -> bool {
+    if branch.len() != depth as usize {
+        return false;
+    }
     root == get_root_from_merkle_branch(leaf, branch, depth, index)
 }
 
@@ -92,6 +95,9 @@ pub fn is_valid_normalized_merkle_branch(
 ) -> bool {
     let depth = (generalized_index as f64).log2().floor() as u64;
     let index = get_subtree_index(generalized_index);
+    if branch.len() < depth as usize {
+        return false;
+    }
     let num_extra = branch.len() - depth as usize;
     for node in branch[..num_extra].iter() {
         if *node != B256::ZERO {
