@@ -6,10 +6,7 @@ use crate::gossipsub::error::GossipsubError;
 pub const TOPIC_PREFIX: &str = "leanconsensus";
 pub const ENCODING_POSTFIX: &str = "ssz_snappy";
 
-#[cfg(feature = "devnet2")]
 pub const LEAN_BLOCK_TOPIC: &str = "block";
-#[cfg(feature = "devnet3")]
-pub const LEAN_BLOCK_TOPIC: &str = "blocks";
 
 #[cfg(feature = "devnet2")]
 pub const LEAN_ATTESTATION_TOPIC: &str = "attestation";
