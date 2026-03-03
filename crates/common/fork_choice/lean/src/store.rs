@@ -1438,7 +1438,7 @@ impl Store {
             let mut merged_bits = BitList::<U4096>::with_capacity(
                 all_indices.iter().max().map_or(0, |&id| id as usize + 1),
             )
-                .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+            .map_err(|err| anyhow!("BitList error: {err:?}"))?;
 
             for id in &all_indices {
                 merged_bits
