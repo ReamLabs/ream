@@ -200,7 +200,7 @@ jobs:
                 $aggregator_flag \
                 $checkpoint_sync_flag"
 
-          node_docker="--security-opt seccomp=unconfined blockblaz/zeam:devnet2 node \
+          node_docker="--security-opt seccomp=unconfined ${ZEAM_DOCKER_IMAGE:-blockblaz/zeam:devnet2} node \
                 --custom_genesis /config \
                 --validator_config $validatorConfig \
                 --data-dir /data \
@@ -237,7 +237,7 @@ jobs:
                 --metrics-port $metricsPort \
                 -linfo"
 
-          node_docker="--security-opt seccomp=unconfined qdrvm/qlean-mini:devnet-2 \
+          node_docker="--security-opt seccomp=unconfined ${QLEAN_DOCKER_IMAGE:-qdrvm/qlean-mini:devnet-2} \
                 --genesis /config/config.yaml \
                 --validator-registry-path /config/validators.yaml \
                 --validator-keys-manifest /config/hash-sig-keys/validator-keys-manifest.yaml \
@@ -332,6 +332,8 @@ jobs:
         env:
           NETWORK_DIR: local-devnet
           REAM_BINARY_PATH: ${{ github.workspace }}/ream-bin/ream
+          ZEAM_DOCKER_IMAGE: ${{ matrix.devnet == 'devnet3' && 'blockblaz/zeam:devnet3' || 'blockblaz/zeam:devnet2' }}
+          QLEAN_DOCKER_IMAGE: ${{ matrix.devnet == 'devnet3' && 'qdrvm/qlean-mini:devnet-3' || 'qdrvm/qlean-mini:devnet-2' }}
         run: |
           set -euo pipefail
 
