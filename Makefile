@@ -40,7 +40,7 @@ install: # Build and install the Ream binary under `~/.cargo/bin`.
 ##@ Testing and Linting
 
 .PHONY: test
-test: test-devnet2 test-devnet3
+test: test-devnet2 test-devnet3 test-devnet4
 
 .PHONY: test-devnet2
 test-devnet2: # Run all tests for for Devnet 2.
@@ -49,6 +49,10 @@ test-devnet2: # Run all tests for for Devnet 2.
 .PHONY: test-devnet3
 test-devnet3: # Run all tests for for Devnet 3.
 	cargo test --workspace --no-default-features --features "devnet3" -- --nocapture
+
+.PHONY: test-devnet4
+test-devnet4: # Run all tests for for Devnet 4.
+	cargo test --workspace --no-default-features --features "devnet4" -- --nocapture
 
 
 .PHONY: fmt
@@ -86,6 +90,10 @@ clippy: # Run `clippy` on the entire workspace.
 clippy-devnet3: # Run `clippy` for Devnet 3.
 	cargo clippy --workspace --all-targets --no-default-features --features "devnet3" --no-deps -- --deny warnings
 
+.PHONY: clippy-devnet4
+clippy-devnet4: # Run `clippy` for Devnet 4.
+	cargo clippy --workspace --all-targets --no-default-features --features "devnet4" --no-deps -- --deny warnings
+
 .PHONY: sort
 sort: # Run `cargo sort` on the entire workspace.
 	cargo sort --grouped --workspace
@@ -122,6 +130,7 @@ build-%:
 docker-build-push:
 	$(MAKE) docker-build-push-default
 	$(MAKE) docker-build-push-devnet3
+	$(MAKE) docker-build-push-devnet4
 
 .PHONY: docker-build-push-default
 docker-build-push-default:
@@ -156,6 +165,25 @@ docker-build-push-devnet3:
 	docker buildx build --file ./Dockerfile.cross . \
 		--platform linux/amd64,linux/arm64 \
 		--tag ghcr.io/reamlabs/ream:latest-devnet3 \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--provenance=false \
+		--push
+
+.PHONY: docker-build-push-devnet4
+docker-build-push-devnet4:
+	$(MAKE) build-x86_64-unknown-linux-gnu FEATURES="devnet4" EXTRA_FLAGS="--no-default-features"
+	mkdir -p $(BIN_DIR)/amd64
+	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
+
+	$(MAKE) build-aarch64-unknown-linux-gnu FEATURES="devnet4" EXTRA_FLAGS="--no-default-features"
+	mkdir -p $(BIN_DIR)/arm64
+	cp $(CARGO_TARGET_DIR)/aarch64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/arm64/ream
+
+	docker buildx build --file ./Dockerfile.cross . \
+		--platform linux/amd64,linux/arm64 \
+		--tag ghcr.io/reamlabs/ream:latest-devnet4 \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \

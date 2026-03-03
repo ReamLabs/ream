@@ -22,6 +22,7 @@ devnet3 = [
     "ream-network-state-lean/devnet3",
     "ream-test-utils/devnet3",
 ]
+devnet4 = ["devnet3"]
 
 [dependencies]
 actix-web.workspace = true

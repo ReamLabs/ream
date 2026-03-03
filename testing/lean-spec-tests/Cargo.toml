@@ -14,6 +14,7 @@ lean-spec-tests = []
 default = ["devnet2"]
 devnet2 = ["ream-consensus-lean/devnet2", "ream-fork-choice-lean/devnet2"]
 devnet3 = ["ream-consensus-lean/devnet3", "ream-fork-choice-lean/devnet3"]
+devnet4 = ["devnet3"]
 
 [dependencies]
 alloy-primitives.workspace = true

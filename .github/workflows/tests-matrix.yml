@@ -61,7 +61,7 @@ jobs:
           if [ "${{ inputs.network }}" = "default" ]; then
             cargo test --release --workspace -- --nocapture "${skip_args[@]}"
           else
-            cargo test --workspace --no-default-features --features devnet3 -- --nocapture "${skip_args[@]}"
+            cargo test --workspace --no-default-features --features "${{ inputs.network }}" -- --nocapture "${skip_args[@]}"
           fi
 
   test-serial:
@@ -96,6 +96,6 @@ jobs:
               --bin ream \
               ${{ matrix.test_name }} \
               --no-default-features \
-              --features devnet3 \
+              --features "${{ inputs.network }}" \
               -- --nocapture
           fi

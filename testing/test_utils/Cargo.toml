@@ -21,6 +21,7 @@ devnet3 = [
     "ream-fork-choice-lean/devnet3",
     "ream-storage/devnet3",
 ]
+devnet4 = ["devnet3"]
 
 [dependencies]
 ssz_types.workspace = true

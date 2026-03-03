@@ -32,6 +32,7 @@ devnet3 = [
     "ream-rpc-lean/devnet3",
     "ream-validator-lean/devnet3",
 ]
+devnet4 = ["devnet3"]
 
 [dependencies]
 alloy-primitives.workspace = true
