@@ -1,4 +1,4 @@
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 use alloy_primitives::B256;
 use ream_post_quantum_crypto::leansig::signature::Signature;
@@ -69,14 +69,8 @@ impl AggregatedSignatureProof {
     }
 }
 
-impl Hash for AggregatedSignatureProof {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.tree_hash_root().hash(state);
-    }
-}
-
 #[cfg(feature = "devnet4")]
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode)]
 pub struct AggregatedSignatureProof {
     pub participants: BitList<U4096>,
     pub proof_data: VariableList<u8, U1048576>,
