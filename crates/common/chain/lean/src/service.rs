@@ -167,7 +167,6 @@ pub struct LeanChainService {
     forward_syncer: Option<JoinHandle<anyhow::Result<ForwardSyncResults>>>,
     checkpoints_to_queue: Vec<(Checkpoint, bool)>,
     pending_callbacks: FuturesUnordered<CallbackFuture>,
-    #[cfg(feature = "devnet3")]
     is_aggregator: bool,
     telemetry: SyncTelemetry,
 }
@@ -177,7 +176,7 @@ impl LeanChainService {
         store: LeanStoreWriter,
         receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
         outbound_p2p: mpsc::UnboundedSender<LeanP2PRequest>,
-        #[cfg(feature = "devnet3")] is_aggregator: bool,
+        is_aggregator: bool,
     ) -> Self {
         let network_state = store.read().await.network_state.clone();
         LeanChainService {
@@ -191,7 +190,6 @@ impl LeanChainService {
             checkpoints_to_queue: Vec::new(),
             pending_callbacks: FuturesUnordered::new(),
             pending_job_requests: VecDeque::new(),
-            #[cfg(feature = "devnet3")]
             is_aggregator,
             telemetry: SyncTelemetry::from_env(),
         }
@@ -242,9 +240,6 @@ impl LeanChainService {
                         self.sync_status = self.update_sync_status().await?;
                     }
                     if self.sync_status == SyncStatus::Synced {
-                        #[cfg(feature = "devnet2")]
-                        self.store.write().await.tick_interval(tick_count % INTERVALS_PER_SLOT == 1).await.expect("Failed to tick interval");
-                        #[cfg(feature = "devnet3")]
                         self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), self.is_aggregator).await.expect("Failed to tick interval");
                         self.step_head_sync(tick_count).await?;
                     }
@@ -388,31 +383,7 @@ impl LeanChainService {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
-                        #[cfg(feature = "devnet2")]
-                        LeanChainServiceMessage::ProcessAttestation { signed_attestation, need_gossip } => {
-                            if self.sync_status != SyncStatus::Synced {
-                                trace!("Received ProcessAttestation request while syncing. Ignoring.");
-                                continue;
-                            }
 
-                            debug!(
-                                slot = signed_attestation.message.slot,
-                                head = ?signed_attestation.message.head,
-                                source = ?signed_attestation.message.source,
-                                target = ?signed_attestation.message.target,
-                                "Processing attestation by Validator {}",
-                                signed_attestation.validator_id,
-                            );
-
-                            if let Err(err) = self.handle_process_attestation(*signed_attestation.clone()).await {
-                                warn!("Failed to handle process attestation message: {err:?}");
-                            }
-
-                            if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipAttestation(signed_attestation)) {
-                                warn!("Failed to send item to outbound gossip channel: {err:?}");
-                            }
-                        }
-                        #[cfg(feature = "devnet3")]
                         LeanChainServiceMessage::ProcessAttestation { signed_attestation, subnet_id, need_gossip } => {
                             if self.sync_status != SyncStatus::Synced {
                                 trace!("Received ProcessAttestation request while syncing. Ignoring.");
@@ -437,7 +408,7 @@ impl LeanChainService {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
-                        #[cfg(feature = "devnet3")]
+
                         LeanChainServiceMessage::ProcessAggregatedAttestation { aggregated_attestation, need_gossip } => {
                             if self.sync_status != SyncStatus::Synced {
                                 trace!("Received ProcessAggregatedAttestation request while syncing. Ignoring.");
@@ -560,37 +531,6 @@ impl LeanChainService {
                     warn!("Pruning cycle failed (non-fatal): {err:?}");
                 }
             }
-            #[cfg(feature = "devnet2")]
-            2 => {
-                // Third tick (devnet2): Compute the safe target.
-                info!(
-                    slot = get_current_slot(),
-                    tick = tick_count,
-                    "Computing safe target"
-                );
-                self.store
-                    .write()
-                    .await
-                    .update_safe_target()
-                    .await
-                    .expect("Failed to update safe target");
-            }
-            #[cfg(feature = "devnet2")]
-            3 => {
-                // Fourth tick (devnet2): Accept new attestations.
-                info!(
-                    slot = get_current_slot(),
-                    tick = tick_count,
-                    "Accepting new attestations"
-                );
-                self.store
-                    .write()
-                    .await
-                    .accept_new_attestations()
-                    .await
-                    .expect("Failed to accept new attestations");
-            }
-            #[cfg(feature = "devnet3")]
             3 => {
                 // Fourth tick (devnet3): Compute the safe target.
                 info!(
@@ -605,7 +545,6 @@ impl LeanChainService {
                     .await
                     .expect("Failed to update safe target");
             }
-            #[cfg(feature = "devnet3")]
             4 => {
                 // Fifth tick (devnet3): Accept new attestations.
                 info!(
@@ -1014,9 +953,6 @@ impl LeanChainService {
                 .duration_since(UNIX_EPOCH)
                 .map_err(|err| anyhow!("System time before epoch: {err:?}"))?
                 .as_secs();
-            #[cfg(feature = "devnet2")]
-            self.store.write().await.on_tick(now, false).await?;
-            #[cfg(feature = "devnet3")]
             self.store.write().await.on_tick(now, false, true).await?;
         }
 
@@ -1579,14 +1515,6 @@ impl LeanChainService {
         &mut self,
         signed_attestation: SignedAttestation,
     ) -> anyhow::Result<()> {
-        #[cfg(feature = "devnet2")]
-        self.store
-            .write()
-            .await
-            .on_gossip_attestation(signed_attestation)
-            .await?;
-
-        #[cfg(feature = "devnet3")]
         self.store
             .write()
             .await

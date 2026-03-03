@@ -110,7 +110,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         state,
         db,
         None,
-        #[cfg(feature = "devnet3")]
         None,
     )?;
 
@@ -144,10 +143,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 // Advance time to the block's slot before processing
                 let time = ream_block.slot * network_spec.seconds_per_slot;
-                #[cfg(feature = "devnet2")]
-                store.on_tick(time, true).await?;
-
-                #[cfg(feature = "devnet3")]
                 store.on_tick(time, true, false).await?;
 
                 // Get the parent state and parent block to extract the correct checkpoints
