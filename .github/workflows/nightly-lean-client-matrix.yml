@@ -188,17 +188,13 @@ jobs:
               checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
           fi
 
-          # Zeam exposes API and metrics on different ports.
-          zeam_api_port=$((metricsPort + 1000))
-
           node_binary="$scriptDir/../zig-out/bin/zeam node \
                 --custom_genesis $configDir \
                 --validator_config $validatorConfig \
                 --data-dir $dataDir/$item \
                 --node-id $item --node-key $configDir/$item.key \
                 $metrics_flag \
-                --api-port $zeam_api_port \
-                --metrics-port $metricsPort \
+                --api-port $metricsPort \
                 $aggregator_flag \
                 $checkpoint_sync_flag"
 
@@ -208,8 +204,7 @@ jobs:
                 --data-dir /data \
                 --node-id $item --node-key /config/$item.key \
                 $metrics_flag \
-                --api-port $zeam_api_port \
-                --metrics-port $metricsPort \
+                --api-port $metricsPort \
                 $aggregator_flag \
                 $checkpoint_sync_flag"
 
@@ -224,6 +219,18 @@ jobs:
           # expects "qlean" submodule or symlink inside "lean-quickstart" root directory
           # https://github.com/qdrvm/qlean-mini
 
+          # Set aggregator flag based on isAggregator value
+          aggregator_flag=""
+          if [ "$isAggregator" == "true" ]; then
+              aggregator_flag="--is-aggregator"
+          fi
+
+          # Set checkpoint sync URL when restarting with checkpoint sync
+          checkpoint_sync_flag=""
+          if [ -n "${checkpoint_sync_url:-}" ]; then
+              checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
+          fi
+
           node_binary="$scriptDir/qlean/build/src/executable/qlean \
                 --modules-dir $scriptDir/qlean/build/src/modules \
                 --genesis $configDir/config.yaml \
@@ -235,8 +242,9 @@ jobs:
                 --data-dir $dataDir/$item \
                 --node-id $item --node-key $configDir/$privKeyPath \
                 --listen-addr /ip4/0.0.0.0/udp/$quicPort/quic-v1 \
-                --metrics-host 0.0.0.0 \
-                --metrics-port $metricsPort \
+                --prometheus-port $metricsPort \
+                $aggregator_flag \
+                $checkpoint_sync_flag \
                 -linfo"
 
           node_docker="--security-opt seccomp=unconfined ${QLEAN_DOCKER_IMAGE:-qdrvm/qlean-mini:devnet-2} \
@@ -249,8 +257,9 @@ jobs:
                 --data-dir /data \
                 --node-id $item --node-key /config/$privKeyPath \
                 --listen-addr /ip4/0.0.0.0/udp/$quicPort/quic-v1 \
-                --metrics-host 0.0.0.0 \
-                --metrics-port $metricsPort \
+                --prometheus-port $metricsPort \
+                $aggregator_flag \
+                $checkpoint_sync_flag \
                 -linfo"
 
           # choose either binary or docker
@@ -290,6 +299,19 @@ jobs:
               ;;
           esac
 
+          # Ensure at least one ream node aggregates, otherwise devnet3 can
+          # keep producing blocks without advancing finalization.
+          node_one_aggregator="false"
+          node_two_aggregator="false"
+          node_three_aggregator="false"
+          if [[ "$node_one" == ream_* ]]; then
+            node_one_aggregator="true"
+          elif [[ "$node_two" == ream_* ]]; then
+            node_two_aggregator="true"
+          else
+            node_three_aggregator="true"
+          fi
+
           cat > validator-config.yaml <<EOF
           shuffle: roundrobin
           deployment_mode: local
@@ -303,7 +325,7 @@ jobs:
                 ip: "127.0.0.1"
                 quic: 9101
               metricsPort: 18101
-              isAggregator: false
+              isAggregator: ${node_one_aggregator}
               count: 1
 
             - name: "$node_two"
@@ -312,7 +334,7 @@ jobs:
                 ip: "127.0.0.1"
                 quic: 9102
               metricsPort: 18102
-              isAggregator: false
+              isAggregator: ${node_two_aggregator}
               count: 1
 
             - name: "$node_three"
@@ -321,7 +343,7 @@ jobs:
                 ip: "127.0.0.1"
                 quic: 9103
               metricsPort: 18103
-              isAggregator: false
+              isAggregator: ${node_three_aggregator}
               count: 1
           EOF
 
