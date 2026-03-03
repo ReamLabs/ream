@@ -1,12 +1,14 @@
 name: Nightly Lean Client Matrix
 
 on:
-  # Temporary: allow PR-side validation before merging.
-  pull_request:
-    branches: ["master"]
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Optional ream commit SHA to test (defaults to master HEAD)"
+        required: false
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,7 +24,10 @@ jobs:
         devnet: [devnet2, devnet3]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout ream
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || 'master' }}
 
       - uses: dtolnay/rust-toolchain@stable
 
