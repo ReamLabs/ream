@@ -25,6 +25,7 @@ devnet3 = [
 
 [dependencies]
 actix-web.workspace = true
+alloy-primitives.workspace = true
 ethereum_ssz.workspace = true
 libp2p.workspace = true
 parking_lot.workspace = true

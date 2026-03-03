@@ -1,6 +1,8 @@
 pub mod block;
 pub mod block_header;
 pub mod checkpoint;
+#[cfg(feature = "devnet3")]
+pub mod fork_choice;
 pub mod head;
 pub mod health;
 pub mod peer;

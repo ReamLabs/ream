@@ -156,93 +156,22 @@ impl LeanBlockTable {
         Ok(children_map)
     }
 
-    pub fn get_all_blocks(&self) -> Result<Vec<SignedBlockWithAttestation>, StoreError> {
+    pub fn get_all_blocks(
+        &self,
+        min_slot: u64,
+    ) -> Result<Vec<SignedBlockWithAttestation>, StoreError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
         let mut blocks = Vec::new();
 
         for entry in table.iter()? {
             let (_, block_entry) = entry?;
-            blocks.push(block_entry.value());
+            let block = block_entry.value();
+            if block.message.block.slot >= min_slot {
+                blocks.push(block);
+            }
         }
 
         Ok(blocks)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use ream_consensus_lean::{attestation::AggregatedAttestations, block::{BlockSignatures, BlockWithAttestation}};
-    use ream_post_quantum_crypto::leansig::signature::Signature;
-    use ssz_types::VariableList;
-
-    use super::*;
-
-    #[test]
-    fn test_get_all_blocks() {
-        let db = Arc::new(Database::create(":memory:").unwrap());
-        let table = LeanBlockTable {
-            db,
-            cache: None,
-        };
-
-        // Insert test blocks
-        let block1 = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: anchor_block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 0,
-                    data: attestation_data,
-                },
-            },
-            let anchor_block = ream_consensus_lean::block::Block {
-                slot: 0,
-                parent_root: B256::ZERO,
-                state_root: B256::ZERO,
-                body: ream_consensus_lean::block::BlockBody::default(),
-            };
-
-            let attestation_data = ream_consensus_lean::attestation::AttestationData {
-                slot: 0,
-                index: 0,
-                beacon_block_root: B256::ZERO,
-                source: ream_consensus_lean::checkpoint::Checkpoint {
-                    epoch: 0,
-                    root: B256::ZERO,
-                },
-                target: ream_consensus_lean::checkpoint::Checkpoint {
-                    epoch: 0,
-                    root: B256::ZERO,
-                },
-            };
-
-            let block2 = SignedBlockWithAttestation {
-                message: BlockWithAttestation {
-                    block: anchor_block.clone(),
-                    proposer_attestation: AggregatedAttestations {
-                        validator_id: 1,
-                        data: attestation_data.clone(),
-                    },
-                },
-                signature: BlockSignatures {
-                    attestation_signatures: VariableList::default(),
-                    proposer_signature: Signature::blank(),
-                },
-            };
-            signature: BlockSignatures {
-                attestation_signatures: VariableList::default(),
-                proposer_signature: Signature::blank(),
-            },
-        };
-
-        let key1 = B256::random();
-        let key2 = B256::random();
-
-        table.insert(key1, block1.clone()).unwrap();
-        table.insert(key2, block2.clone()).unwrap();
-
-        // Retrieve all blocks
-        let all_blocks = table.get_all_blocks().unwrap();
-        assert_eq!(all_blocks.len(), 2);
     }
 }

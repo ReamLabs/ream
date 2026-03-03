@@ -1754,6 +1754,44 @@ impl Store {
         Ok(())
     }
 
+    #[cfg(feature = "devnet3")]
+    pub async fn compute_block_weights(&self) -> anyhow::Result<HashMap<B256, u64>> {
+        let latest_known_aggregated_payloads_provider = self
+            .store
+            .lock()
+            .await
+            .latest_known_aggregated_payloads_provider();
+
+        let aggregated_payloads = latest_known_aggregated_payloads_provider
+            .iter()?
+            .into_iter()
+            .collect();
+
+        let attestations = self
+            .extract_attestations_from_aggregated_payloads(&aggregated_payloads)
+            .await?;
+
+        let db = self.store.lock().await;
+        let start_slot = db.latest_finalized_provider().get()?.slot;
+
+        let mut weights: HashMap<B256, u64> = HashMap::new();
+        let block_provider = db.block_provider();
+
+        for attestation_data in attestations.values() {
+            let mut current_root = attestation_data.head.root;
+
+            while let Some(block) = block_provider.get(current_root).ok().flatten() {
+                if block.message.block.slot <= start_slot {
+                    break;
+                }
+                *weights.entry(current_root).or_insert(0) += 1;
+                current_root = block.message.block.parent_root;
+            }
+        }
+
+        Ok(weights)
+    }
+
     /// Process a signed attestation from gossip network.
     /// 1. Validates attestation structure
     /// 2. Verifies XMSS signature
