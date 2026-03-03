@@ -105,10 +105,6 @@ impl AggregatedSignatureProof {
         }
     }
 
-    pub fn is_recursive(&self) -> bool {
-        self.bytecode_point.is_some()
-    }
-
     pub fn to_validator_indices(&self) -> Vec<u64> {
         self.participants
             .iter()
