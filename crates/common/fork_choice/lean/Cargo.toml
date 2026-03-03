@@ -17,6 +17,12 @@ devnet3 = [
     "ream-network-state-lean/devnet3",
     "ream-storage/devnet3",
 ]
+devnet4 = [
+    "ream-consensus-lean/devnet4",
+    "ream-consensus-misc/devnet4",
+    "ream-network-state-lean/devnet4",
+    "ream-storage/devnet4",
+]
 
 [dependencies]
 alloy-consensus.workspace = true

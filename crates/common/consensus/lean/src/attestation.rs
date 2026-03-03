@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use alloy_primitives::B256;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
@@ -10,6 +12,9 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::checkpoint::Checkpoint;
+
+#[cfg(feature = "devnet4")]
+pub type BytecodePointOption = Option<VariableList<u8, U1048576>>;
 
 /// Key for signature storage, combining validator ID and attestation data root.
 /// Used for both gossip_signatures and aggregated_payloads maps.
@@ -37,12 +42,14 @@ impl SignatureKey {
     }
 }
 
+#[cfg(feature = "devnet3")]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct AggregatedSignatureProof {
     pub participants: BitList<U4096>,
     pub proof_data: VariableList<u8, U1048576>,
 }
 
+#[cfg(feature = "devnet3")]
 impl AggregatedSignatureProof {
     pub fn new(participants: BitList<U4096>, proof_data: VariableList<u8, U1048576>) -> Self {
         Self {
@@ -59,6 +66,84 @@ impl AggregatedSignatureProof {
             .filter(|(_, bit)| *bit)
             .map(|(index, _)| index as u64)
             .collect()
+    }
+}
+
+impl Hash for AggregatedSignatureProof {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.tree_hash_root().hash(state);
+    }
+}
+
+#[cfg(feature = "devnet4")]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
+pub struct AggregatedSignatureProof {
+    pub participants: BitList<U4096>,
+    pub proof_data: VariableList<u8, U1048576>,
+    pub bytecode_point: BytecodePointOption,
+}
+
+#[cfg(feature = "devnet4")]
+impl AggregatedSignatureProof {
+    pub fn new(participants: BitList<U4096>, proof_data: VariableList<u8, U1048576>) -> Self {
+        Self {
+            participants,
+            proof_data,
+            bytecode_point: None,
+        }
+    }
+
+    pub fn new_recursive(
+        participants: BitList<U4096>,
+        proof_data: VariableList<u8, U1048576>,
+        bytecode_point: VariableList<u8, U1048576>,
+    ) -> Self {
+        Self {
+            participants,
+            proof_data,
+            bytecode_point: Some(bytecode_point),
+        }
+    }
+
+    pub fn is_recursive(&self) -> bool {
+        self.bytecode_point.is_some()
+    }
+
+    pub fn to_validator_indices(&self) -> Vec<u64> {
+        self.participants
+            .iter()
+            .enumerate()
+            .filter(|(_, bit)| *bit)
+            .map(|(index, _)| index as u64)
+            .collect()
+    }
+}
+
+#[cfg(feature = "devnet4")]
+impl TreeHash for AggregatedSignatureProof {
+    fn tree_hash_type() -> tree_hash::TreeHashType {
+        tree_hash::TreeHashType::Container
+    }
+
+    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
+        unreachable!("Struct should never be packed")
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        1
+    }
+
+    fn tree_hash_root(&self) -> tree_hash::Hash256 {
+        let bytecode_hash = match &self.bytecode_point {
+            Some(bytes) => bytes.tree_hash_root(),
+            None => tree_hash::Hash256::ZERO,
+        };
+
+        let mut leaves = Vec::with_capacity(3 * 32);
+        leaves.extend_from_slice(self.participants.tree_hash_root().as_slice());
+        leaves.extend_from_slice(self.proof_data.tree_hash_root().as_slice());
+        leaves.extend_from_slice(bytecode_hash.as_slice());
+        tree_hash::merkle_root(&leaves, 0)
     }
 }
 

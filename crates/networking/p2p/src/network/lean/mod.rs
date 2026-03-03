@@ -436,7 +436,6 @@ impl LeanNetworkService {
         }
     }
 
-    #[cfg(feature = "devnet3")]
     fn publish_gossip_to_subnet(&mut self, subnet_id: u64, data: Vec<u8>, slot: u64, name: &str) {
         let topic = self
             .network_config

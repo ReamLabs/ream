@@ -110,7 +110,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         state,
         db,
         None,
-        #[cfg(feature = "devnet3")]
         None,
     )?;
 

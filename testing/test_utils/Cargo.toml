@@ -16,6 +16,11 @@ devnet3 = [
     "ream-fork-choice-lean/devnet3",
     "ream-storage/devnet3",
 ]
+devnet4 = [
+    "ream-consensus-lean/devnet4",
+    "ream-fork-choice-lean/devnet4",
+    "ream-storage/devnet4",
+]
 
 [dependencies]
 ssz_types.workspace = true

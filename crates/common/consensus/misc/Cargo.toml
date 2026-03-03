@@ -11,6 +11,7 @@ version.workspace = true
 
 [features]
 devnet3 = []
+devnet4 = []
 
 [dependencies]
 alloy-primitives.workspace = true

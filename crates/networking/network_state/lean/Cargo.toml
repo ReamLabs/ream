@@ -12,6 +12,7 @@ version.workspace = true
 [features]
 default = ["devnet3"]
 devnet3 = ["ream-consensus-lean/devnet3"]
+devnet4 = ["ream-consensus-lean/devnet4"]
 
 [dependencies]
 libp2p.workspace = true

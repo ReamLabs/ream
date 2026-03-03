@@ -12,7 +12,18 @@ version.workspace = true
 [features]
 lean-spec-tests = []
 default = ["devnet3"]
-devnet3 = ["ream-consensus-lean/devnet3", "ream-fork-choice-lean/devnet3"]
+devnet3 = [
+    "ream-consensus-lean/devnet3",
+    "ream-consensus-misc/devnet3",
+    "ream-fork-choice-lean/devnet3",
+    "ream-storage/devnet3",
+]
+devnet4 = [
+    "ream-consensus-lean/devnet4",
+    "ream-consensus-misc/devnet4",
+    "ream-fork-choice-lean/devnet4",
+    "ream-storage/devnet4",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

@@ -47,6 +47,7 @@ jobs:
         run: |
           cargo clippy --all --all-targets --no-deps -- --deny warnings
           cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings
+          make clippy-devnet4
 
   cargo-sort:
     runs-on: ubuntu-latest
@@ -79,12 +80,19 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-  test:
-    name: test
+  test-default:
+    name: test default
     needs: [format, cargo-clippy]
     uses: ./.github/workflows/tests-matrix.yml
     with:
       network: default
+
+  test-devnet4:
+    name: test devnet4
+    needs: [format, cargo-clippy]
+    uses: ./.github/workflows/tests-matrix.yml
+    with:
+      network: devnet4
 
   ef-tests:
     runs-on: ubuntu-latest

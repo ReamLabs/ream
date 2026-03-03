@@ -58,7 +58,11 @@ jobs:
             skip_args+=(--skip "$test_name")
           done
 
-          cargo test --release --workspace -- --nocapture "${skip_args[@]}"
+          if [ "${{ inputs.network }}" = "default" ]; then
+            cargo test --release --workspace -- --nocapture "${skip_args[@]}"
+          else
+            cargo test --workspace --no-default-features --features devnet4 -- --nocapture "${skip_args[@]}"
+          fi
 
   test-serial:
     name: serial (${{ matrix.test_name }})
@@ -79,9 +83,19 @@ jobs:
 
       - name: Test Serial
         run: |
-          cargo test \
-            --release \
-            --package ream \
-            --bin ream \
-            ${{ matrix.test_name }} \
-            -- --nocapture
+          if [ "${{ inputs.network }}" = "default" ]; then
+            cargo test \
+              --release \
+              --package ream \
+              --bin ream \
+              ${{ matrix.test_name }} \
+              -- --nocapture
+          else
+            cargo test \
+              --package ream \
+              --bin ream \
+              ${{ matrix.test_name }} \
+              --no-default-features \
+              --features devnet4 \
+              -- --nocapture
+          fi

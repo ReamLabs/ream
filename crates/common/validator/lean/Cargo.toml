@@ -16,6 +16,11 @@ devnet3 = [
     "ream-chain-lean/devnet3",
     "ream-fork-choice-lean/devnet3",
 ]
+devnet4 = [
+    "ream-consensus-lean/devnet4",
+    "ream-chain-lean/devnet4",
+    "ream-fork-choice-lean/devnet4",
+]
 
 [dependencies]
 alloy-primitives.workspace = true
