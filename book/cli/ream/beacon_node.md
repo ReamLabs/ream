@@ -41,6 +41,8 @@ Options:
           The URL of a service compatible with the MEV-boost API
       --blob-retention-epochs <BLOB_RETENTION_EPOCHS>
           Number of epochs to retain blob sidecars. Defaults to network spec value (4096 epochs for mainnet, ~18 days)
+      --das-allowed-failures <DAS_ALLOWED_FAILURES>
+          Number of column retrieval failures tolerated per slot before DAS sampling is considered failed. Higher values sample more columns to compensate. [default: 0]
   -h, --help
           Print help
 ```

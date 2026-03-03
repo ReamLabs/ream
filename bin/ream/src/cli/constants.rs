@@ -15,3 +15,4 @@ pub const DEFAULT_NETWORK: &str = "mainnet";
 pub const DEFAULT_REQUEST_TIMEOUT: &str = "60";
 pub const DEFAULT_SOCKET_ADDRESS: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 pub const DEFAULT_SOCKET_PORT: u16 = 9000;
+pub const DEFAULT_DAS_ALLOWED_FAILURES: u64 = 0;

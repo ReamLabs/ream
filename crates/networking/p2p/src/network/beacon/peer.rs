@@ -28,6 +28,20 @@ pub struct CachedPeer {
     pub status: Option<Status>,
 
     pub meta_data: Option<GetMetaDataV3>,
+
+    /// DAS peer sampling score. Tracks responsiveness for data availability sampling.
+    /// Initialized to a neutral midpoint (128). Successful sampling responses increase
+    /// the score; failures decrease it more aggressively to penalize unreliable peers.
+    pub sampling_score: u8,
+
+    /// Total number of DAS sampling requests sent to this peer.
+    pub sampling_requests: u64,
+
+    /// Total number of successful DAS sampling responses from this peer.
+    pub sampling_successes: u64,
+
+    /// Total number of failed DAS sampling responses from this peer.
+    pub sampling_failures: u64,
 }
 
 impl CachedPeer {
@@ -47,6 +61,10 @@ impl CachedPeer {
             enr,
             status: None,
             meta_data: None,
+            sampling_score: u8::MAX / 2,
+            sampling_requests: 0,
+            sampling_successes: 0,
+            sampling_failures: 0,
         }
     }
 

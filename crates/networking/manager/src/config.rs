@@ -18,4 +18,5 @@ pub struct ManagerConfig {
     pub enable_builder: bool,
     pub mev_relay_url: Option<Url>,
     pub blob_retention_epochs: Option<u64>,
+    pub das_allowed_failures: u64,
 }
