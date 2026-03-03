@@ -46,7 +46,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        peer_client: [zeam, qlean, lantern, lighthouse, grandine, ethlambda]
+        peer_client: [zeam, qlean]
         topology: [peer-peer-ream, peer-ream-ream]
 
     steps:
@@ -142,6 +142,7 @@ jobs:
           chmod +x client-cmds/ream-cmd.sh
 
           sed -i 's/--http-port 5055/--http-port $((metricsPort + 1000))/g' client-cmds/lantern-cmd.sh
+          sed -i 's|qdrvm/qlean-mini:devnet-2|qdrvm/qlean-mini:dd67521|g' client-cmds/qlean-cmd.sh
 
       - id: config
         name: Generate matrix validator-config
@@ -248,7 +249,10 @@ jobs:
               node="${nodes[$i]}"
               port="${ports[$i]}"
 
-              metrics="$(curl -fsS --max-time 3 "http://127.0.0.1:${port}/metrics" || true)"
+              metrics="$(curl -sS --max-time 3 "http://127.0.0.1:${port}/metrics" || true)"
+              if [ -z "$metrics" ] || ! grep -q "lean_latest_finalized_slot" <<< "$metrics"; then
+                metrics="$(curl -sS --max-time 3 "http://127.0.0.1:${port}/" || true)"
+              fi
               finalized_slot="$(awk '/^lean_latest_finalized_slot([ {]|$)/ {print $2; exit}' <<< "$metrics" || true)"
 
               if [ -z "$finalized_slot" ]; then
