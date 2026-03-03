@@ -1466,7 +1466,8 @@ impl Store {
                     merged_bits.clone(),
                     VariableList::new(proof_data)
                         .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
-                    // TODO: Compute actual bytecode_point from recursive aggregation once lean-multisig supports it
+                    // TODO: Compute actual bytecode_point from recursive aggregation once
+                    // lean-multisig supports it
                     VariableList::new(vec![0u8; 1])
                         .map_err(|err| anyhow!("Failed to create bytecode_point: {err:?}"))?,
                 )
