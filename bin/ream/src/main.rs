@@ -1502,19 +1502,17 @@ mod tests {
                 .latest_finalized
                 .slot
                 .saturating_sub(head_state.latest_finalized.slot);
+            let node_3_head_slot = head_state.slot;
+            let node_1_head_slot = head_state_1.slot;
+            let node_3_finalized_slot = head_state.latest_finalized.slot;
+            let node_1_finalized_slot = head_state_1.latest_finalized.slot;
             assert!(
                 head_slot_delta <= 2,
-                "Node 3 head diverged too much from Node 1. Node 3: {}, Node 1: {}, delta: {}",
-                head_state.slot,
-                head_state_1.slot,
-                head_slot_delta
+                "Node 3 head diverged too much from Node 1. Node 3: {node_3_head_slot}, Node 1: {node_1_head_slot}, delta: {head_slot_delta}"
             );
             assert!(
                 finalized_slot_lag <= 4,
-                "Node 3 finalized slot lagged too far behind Node 1. Node 3: {}, Node 1: {}, lag: {}",
-                head_state.latest_finalized.slot,
-                head_state_1.latest_finalized.slot,
-                finalized_slot_lag
+                "Node 3 finalized slot lagged too far behind Node 1. Node 3: {node_3_finalized_slot}, Node 1: {node_1_finalized_slot}, lag: {finalized_slot_lag}"
             );
         });
     }

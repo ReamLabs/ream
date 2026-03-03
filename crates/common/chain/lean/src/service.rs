@@ -990,23 +990,21 @@ impl LeanChainService {
                 }
             }
             SyncStatus::Synced
+        } else if self.sync_status == SyncStatus::Synced {
+            info!(
+                slot = get_current_slot(),
+                head_slot = current_head_slot,
+                peer_head_slot = highest_peer_head_slot,
+                has_pending_backfill_work,
+                has_near_head_bridge,
+                has_active_backfill_jobs,
+                has_inflight_backfill_requests,
+                handoff_strategy = ?self.telemetry.handoff_strategy,
+                "Node remains in backfill syncing mode"
+            );
+            SyncStatus::Syncing { jobs: Vec::new() }
         } else {
-            if self.sync_status == SyncStatus::Synced {
-                info!(
-                    slot = get_current_slot(),
-                    head_slot = current_head_slot,
-                    peer_head_slot = highest_peer_head_slot,
-                    has_pending_backfill_work,
-                    has_near_head_bridge,
-                    has_active_backfill_jobs,
-                    has_inflight_backfill_requests,
-                    handoff_strategy = ?self.telemetry.handoff_strategy,
-                    "Node remains in backfill syncing mode"
-                );
-                SyncStatus::Syncing { jobs: Vec::new() }
-            } else {
-                self.sync_status.clone()
-            }
+            self.sync_status.clone()
         };
 
         if sync_status == SyncStatus::Synced {

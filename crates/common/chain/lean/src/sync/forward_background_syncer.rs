@@ -51,7 +51,9 @@ impl ForwardBackgroundSyncer {
                     Some(block) => block,
                     None => {
                         let last_block = last_block.ok_or_else(|| {
-                            anyhow!("Failed to find block with root {next_root:?} in pending blocks")
+                            anyhow!(
+                                "Failed to find block with root {next_root:?} in pending blocks"
+                            )
                         })?;
                         return Ok(ForwardSyncResults::ChainIncomplete {
                             prevous_queue: self.job_queue.clone(),
