@@ -42,10 +42,9 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     validator::Validator,
 };
-#[cfg(feature = "devnet3")]
-use ream_consensus_misc::constants::lean::ATTESTATION_COMMITTEE_COUNT;
 use ream_consensus_misc::{
-    constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
+    constants::{beacon::set_genesis_validator_root, lean::ATTESTATION_COMMITTEE_COUNT},
+    misc::compute_epoch_at_slot,
 };
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
@@ -291,7 +290,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             anchor_state,
             lean_db,
             None,
-            #[cfg(feature = "devnet3")]
             keystores.first().map(|keystore| keystore.index),
         )
         .expect("Could not get forkchoice store"),
@@ -302,19 +300,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // Initialize the lean network service
     let fork = "devnet0".to_string();
 
-    #[cfg(feature = "devnet2")]
-    let topics: Vec<LeanGossipTopic> = vec![
-        LeanGossipTopic {
-            fork: fork.clone(),
-            kind: LeanGossipTopicKind::Block,
-        },
-        LeanGossipTopic {
-            fork: fork.clone(),
-            kind: LeanGossipTopicKind::Attestation,
-        },
-    ];
-
-    #[cfg(feature = "devnet3")]
     let topics: Vec<LeanGossipTopic> = {
         let mut topics = vec![
             LeanGossipTopic {
@@ -358,7 +343,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         lean_chain_writer,
         chain_receiver,
         outbound_p2p_sender,
-        #[cfg(feature = "devnet3")]
         config.is_aggregator,
     )
     .await;

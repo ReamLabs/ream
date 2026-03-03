@@ -1,6 +1,4 @@
 use alloy_primitives::B256;
-#[cfg(feature = "devnet2")]
-use alloy_primitives::FixedBytes;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -121,13 +119,6 @@ pub struct AggregatedAttestation {
 /// Aggregated attestation bundled with aggregated signatures.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedAggregatedAttestation {
-    #[cfg(feature = "devnet2")]
-    pub message: AggregatedAttestation,
-    /// U4096 = VALIDATOR_REGISTRY_LIMIT
-    #[cfg(feature = "devnet2")]
-    pub signature: VariableList<FixedBytes<4000>, U4096>,
-    #[cfg(feature = "devnet3")]
     pub data: AttestationData,
-    #[cfg(feature = "devnet3")]
     pub proof: AggregatedSignatureProof,
 }

@@ -10,13 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet2"]
-devnet2 = [
-    "ream-consensus-lean/devnet2",
-    "ream-consensus-misc/devnet2",
-    "ream-network-state-lean/devnet2",
-    "ream-storage/devnet2",
-]
+default = ["devnet3"]
 devnet3 = [
     "ream-consensus-lean/devnet3",
     "ream-consensus-misc/devnet3",
@@ -40,7 +34,6 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 ssz_types.workspace = true
-tempdir.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

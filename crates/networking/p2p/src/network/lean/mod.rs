@@ -284,17 +284,6 @@ impl LeanNetworkService {
                                 "block"
                             );
                         }
-                        #[cfg(feature = "devnet2")]
-                        LeanP2PRequest::GossipAttestation(attestation) => {
-                            let slot = attestation.message.slot;
-                            self.publish_gossip(
-                                |topic| matches!(topic, LeanGossipTopicKind::Attestation),
-                                attestation.as_ssz_bytes(),
-                                slot,
-                                "attestation"
-                            );
-                        }
-                        #[cfg(feature = "devnet3")]
                         LeanP2PRequest::GossipAttestation { subnet_id, attestation } => {
                             let slot = attestation.message.slot;
                             self.publish_gossip_to_subnet(
@@ -304,7 +293,6 @@ impl LeanNetworkService {
                                 "attestation"
                             );
                         }
-                        #[cfg(feature = "devnet3")]
                         LeanP2PRequest::GossipAggregatedAttestation(aggregated) => {
                             let slot = aggregated.data.slot;
                             self.publish_gossip(
@@ -570,20 +558,6 @@ impl LeanNetworkService {
                         warn!("failed to send block for slot {slot} item to chain: {err:?}");
                     }
                 }
-                #[cfg(feature = "devnet2")]
-                Ok(LeanGossipsubMessage::Attestation(signed_attestation)) => {
-                    let slot = signed_attestation.message.slot;
-
-                    if let Err(err) = self.chain_message_sender.send(
-                        LeanChainServiceMessage::ProcessAttestation {
-                            signed_attestation,
-                            need_gossip: false,
-                        },
-                    ) {
-                        warn!("failed to send attestation for slot {slot} to chain: {err:?}");
-                    }
-                }
-                #[cfg(feature = "devnet3")]
                 Ok(LeanGossipsubMessage::Attestation {
                     subnet_id,
                     attestation: signed_attestation,
@@ -602,7 +576,6 @@ impl LeanNetworkService {
                         );
                     }
                 }
-                #[cfg(feature = "devnet3")]
                 Ok(LeanGossipsubMessage::AggregatedAttestation(aggregated_attestation)) => {
                     let slot = aggregated_attestation.data.slot;
 

@@ -11,7 +11,6 @@ version.workspace = true
 
 [features]
 default = []
-devnet2 = ["ream-consensus-lean/devnet2"]
 devnet3 = ["ream-consensus-lean/devnet3"]
 
 [dependencies]
