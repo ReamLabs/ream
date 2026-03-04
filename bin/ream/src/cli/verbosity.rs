@@ -9,16 +9,16 @@ pub enum Verbosity {
 
 impl Verbosity {
     pub fn directive(&self) -> String {
-        const FILTERS: &str =
-            ",actix_server=warn,discv5=error,air=error,rec_aggregation=error,sub_protocols=error";
-
         match self {
-            Verbosity::Error => format!("error{FILTERS}"),
-            Verbosity::Warn => format!("warn{FILTERS}"),
-            Verbosity::Info => format!("info{FILTERS}"),
-            Verbosity::Debug => "debug".to_string(),
-            Verbosity::Trace => "trace".to_string(),
+            Verbosity::Error => "error,actix_server=warn,discv5=error,air=error,rec_aggregation=error,sub_protocols=error",
+            Verbosity::Warn => "warn,acti
+            
+            x_server=warn,discv5=error,air=error,rec_aggregation=error,sub_protocols=error",
+            Verbosity::Info => "info,actix_server=warn,discv5=error,air=error,rec_aggregation=error,sub_protocols=error",
+            Verbosity::Debug => "debug",
+            Verbosity::Trace => "trace",
         }
+        .to_string()
     }
 }
 
