@@ -8,12 +8,7 @@ pub const ENCODING_POSTFIX: &str = "ssz_snappy";
 
 pub const LEAN_BLOCK_TOPIC: &str = "block";
 
-#[cfg(feature = "devnet2")]
-pub const LEAN_ATTESTATION_TOPIC: &str = "attestation";
-
-#[cfg(feature = "devnet3")]
 pub const LEAN_ATTESTATION_SUBNET_PREFIX: &str = "attestation_";
-#[cfg(feature = "devnet3")]
 pub const LEAN_AGGREGATION_TOPIC: &str = "aggregation";
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -38,18 +33,6 @@ impl LeanGossipTopic {
         let fork = topic_parts[1].to_string();
         let topic_name = topic_parts[2];
 
-        #[cfg(feature = "devnet2")]
-        let kind = match topic_name {
-            LEAN_BLOCK_TOPIC => LeanGossipTopicKind::Block,
-            LEAN_ATTESTATION_TOPIC => LeanGossipTopicKind::Attestation,
-            other => {
-                return Err(GossipsubError::InvalidTopic(format!(
-                    "Invalid topic: {other:?}"
-                )));
-            }
-        };
-
-        #[cfg(feature = "devnet3")]
         let kind = if topic_name == LEAN_BLOCK_TOPIC {
             LeanGossipTopicKind::Block
         } else if topic_name == LEAN_AGGREGATION_TOPIC {
@@ -73,13 +56,6 @@ impl LeanGossipTopic {
 
 impl std::fmt::Display for LeanGossipTopic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        #[cfg(feature = "devnet2")]
-        let topic_name = match &self.kind {
-            Block => LEAN_BLOCK_TOPIC.to_string(),
-            Attestation => LEAN_ATTESTATION_TOPIC.to_string(),
-        };
-
-        #[cfg(feature = "devnet3")]
         let topic_name = match &self.kind {
             Block => LEAN_BLOCK_TOPIC.to_string(),
             AttestationSubnet(subnet_id) => format!("{LEAN_ATTESTATION_SUBNET_PREFIX}{subnet_id}"),
@@ -108,13 +84,6 @@ impl From<LeanGossipTopic> for String {
 
 impl From<LeanGossipTopic> for TopicHash {
     fn from(val: LeanGossipTopic) -> Self {
-        #[cfg(feature = "devnet2")]
-        let kind_str = match &val.kind {
-            Block => LEAN_BLOCK_TOPIC,
-            Attestation => LEAN_ATTESTATION_TOPIC,
-        };
-
-        #[cfg(feature = "devnet3")]
         let kind_str = match &val.kind {
             Block => LEAN_BLOCK_TOPIC.to_string(),
             AttestationSubnet(subnet_id) => format!("{LEAN_ATTESTATION_SUBNET_PREFIX}{subnet_id}"),
@@ -128,14 +97,6 @@ impl From<LeanGossipTopic> for TopicHash {
     }
 }
 
-#[cfg(feature = "devnet2")]
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
-pub enum LeanGossipTopicKind {
-    Block,
-    Attestation,
-}
-
-#[cfg(feature = "devnet3")]
 #[derive(Debug, Hash, Clone, PartialEq, Eq)]
 pub enum LeanGossipTopicKind {
     Block,
@@ -145,13 +106,6 @@ pub enum LeanGossipTopicKind {
 
 impl std::fmt::Display for LeanGossipTopicKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        #[cfg(feature = "devnet2")]
-        match self {
-            LeanGossipTopicKind::Block => write!(f, "{LEAN_BLOCK_TOPIC}"),
-            LeanGossipTopicKind::Attestation => write!(f, "{LEAN_ATTESTATION_TOPIC}"),
-        }
-
-        #[cfg(feature = "devnet3")]
         match self {
             LeanGossipTopicKind::Block => write!(f, "{LEAN_BLOCK_TOPIC}"),
             LeanGossipTopicKind::AttestationSubnet(subnet_id) => {

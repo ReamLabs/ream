@@ -92,9 +92,6 @@ impl ForwardBackgroundSyncer {
             })?;
             let time = lean_network_spec().genesis_time
                 + (block.message.block.slot * lean_network_spec().seconds_per_slot);
-            #[cfg(feature = "devnet2")]
-            store_writer.on_tick(time, false).await?;
-            #[cfg(feature = "devnet3")]
             store_writer.on_tick(time, false, true).await?;
             store_writer.on_block(&block, true).await?;
             blocks_synced += 1;

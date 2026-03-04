@@ -9,10 +9,7 @@ use ream_consensus_lean::{
         BlockSignatures, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation,
     },
 };
-#[cfg(feature = "devnet3")]
-use ream_consensus_misc::constants::lean::ATTESTATION_COMMITTEE_COUNT;
-use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
-#[cfg(feature = "devnet3")]
+use ream_consensus_misc::constants::lean::{ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT};
 use ream_fork_choice_lean::store::compute_subnet_id;
 use ream_keystore::lean_keystore::ValidatorKeystore;
 use ream_metrics::{
@@ -197,17 +194,10 @@ impl ValidatorService {
                             }
 
                             for signed_attestation in signed_attestations {
-                                #[cfg(feature = "devnet2")]
+                                let subnet_id = compute_subnet_id(signed_attestation.validator_id, ATTESTATION_COMMITTEE_COUNT);
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation: Box::new(signed_attestation), need_gossip: true })
+                                    .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation: Box::new(signed_attestation), subnet_id, need_gossip: true })
                                     .map_err(|err| anyhow!("Failed to send attestation to LeanChainService: {err:?}"))?;
-                                #[cfg(feature = "devnet3")]
-                                {
-                                    let subnet_id = compute_subnet_id(signed_attestation.validator_id, ATTESTATION_COMMITTEE_COUNT);
-                                    self.chain_sender
-                                        .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation: Box::new(signed_attestation), subnet_id, need_gossip: true })
-                                        .map_err(|err| anyhow!("Failed to send attestation to LeanChainService: {err:?}"))?;
-                                }
                             }
                         }
                         _ => {
