@@ -44,7 +44,7 @@ impl ForwardBackgroundSyncer {
         let mut next_root = self.job_queue.starting_root;
         let mut last_block: Option<SignedBlockWithAttestation> = None;
         let mut chained_roots = vec![];
-        while next_root != head {
+        while next_root != head && next_root != B256::ZERO {
             let current_block = match pending_blocks_provider.get(next_root)? {
                 Some(block) => block,
                 None => match block_provider.get(next_root)? {
@@ -58,8 +58,8 @@ impl ForwardBackgroundSyncer {
                         return Ok(ForwardSyncResults::ChainIncomplete {
                             prevous_queue: self.job_queue.clone(),
                             checkpoint_for_new_queue: Checkpoint {
-                                root: last_block.message.block.tree_hash_root(),
-                                slot: last_block.message.block.slot,
+                                root: next_root,
+                                slot: last_block.message.block.slot.saturating_sub(1),
                             },
                         });
                     }
