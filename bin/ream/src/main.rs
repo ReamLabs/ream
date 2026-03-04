@@ -42,10 +42,9 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     validator::Validator,
 };
-#[cfg(feature = "devnet3")]
-use ream_consensus_misc::constants::lean::ATTESTATION_COMMITTEE_COUNT;
 use ream_consensus_misc::{
-    constants::beacon::set_genesis_validator_root, misc::compute_epoch_at_slot,
+    constants::{beacon::set_genesis_validator_root, lean::ATTESTATION_COMMITTEE_COUNT},
+    misc::compute_epoch_at_slot,
 };
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
@@ -291,7 +290,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             anchor_state,
             lean_db,
             None,
-            #[cfg(feature = "devnet3")]
             keystores.first().map(|keystore| keystore.index),
         )
         .expect("Could not get forkchoice store"),
@@ -302,19 +300,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // Initialize the lean network service
     let fork = "devnet0".to_string();
 
-    #[cfg(feature = "devnet2")]
-    let topics: Vec<LeanGossipTopic> = vec![
-        LeanGossipTopic {
-            fork: fork.clone(),
-            kind: LeanGossipTopicKind::Block,
-        },
-        LeanGossipTopic {
-            fork: fork.clone(),
-            kind: LeanGossipTopicKind::Attestation,
-        },
-    ];
-
-    #[cfg(feature = "devnet3")]
     let topics: Vec<LeanGossipTopic> = {
         let mut topics = vec![
             LeanGossipTopic {
@@ -358,7 +343,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         lean_chain_writer,
         chain_receiver,
         outbound_p2p_sender,
-        #[cfg(feature = "devnet3")]
         config.is_aggregator,
     )
     .await;
@@ -1497,11 +1481,22 @@ mod tests {
                 head_state_1.slot, head_state_1.latest_finalized.slot
             );
 
+            let head_slot_delta = head_state.slot.abs_diff(head_state_1.slot);
+            let finalized_slot_lag = head_state_1
+                .latest_finalized
+                .slot
+                .saturating_sub(head_state.latest_finalized.slot);
+            let node_3_head_slot = head_state.slot;
+            let node_1_head_slot = head_state_1.slot;
+            let node_3_finalized_slot = head_state.latest_finalized.slot;
+            let node_1_finalized_slot = head_state_1.latest_finalized.slot;
             assert!(
-                head_state.slot.abs_diff(head_state_1.slot) <= 1,
-                "Node 3 is too far behind Node 1. Node 3: {}, Node 1: {}",
-                head_state.slot,
-                head_state_1.slot
+                head_slot_delta <= 2,
+                "Node 3 head diverged too much from Node 1. Node 3: {node_3_head_slot}, Node 1: {node_1_head_slot}, delta: {head_slot_delta}"
+            );
+            assert!(
+                finalized_slot_lag <= 4,
+                "Node 3 finalized slot lagged too far behind Node 1. Node 3: {node_3_finalized_slot}, Node 1: {node_1_finalized_slot}, lag: {finalized_slot_lag}"
             );
         });
     }

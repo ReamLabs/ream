@@ -32,32 +32,38 @@ impl ForwardBackgroundSyncer {
 
     pub async fn start(&mut self) -> anyhow::Result<ForwardSyncResults> {
         let timer = Instant::now();
-        let (head, pending_blocks_provider) = {
+        let (head, pending_blocks_provider, block_provider) = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
             (
                 store.head_provider().get()?,
                 store.pending_blocks_provider(),
+                store.block_provider(),
             )
         };
         let mut next_root = self.job_queue.starting_root;
         let mut last_block: Option<SignedBlockWithAttestation> = None;
         let mut chained_roots = vec![];
-        while next_root != head {
+        while next_root != head && next_root != B256::ZERO {
             let current_block = match pending_blocks_provider.get(next_root)? {
                 Some(block) => block,
-                None => {
-                    let last_block = last_block.ok_or_else(|| {
-                        anyhow!("Failed to find block with root {next_root:?} in pending blocks")
-                    })?;
-                    return Ok(ForwardSyncResults::ChainIncomplete {
-                        prevous_queue: self.job_queue.clone(),
-                        checkpoint_for_new_queue: Checkpoint {
-                            root: last_block.message.block.tree_hash_root(),
-                            slot: last_block.message.block.slot,
-                        },
-                    });
-                }
+                None => match block_provider.get(next_root)? {
+                    Some(block) => block,
+                    None => {
+                        let last_block = last_block.ok_or_else(|| {
+                            anyhow!(
+                                "Failed to find block with root {next_root:?} in pending blocks"
+                            )
+                        })?;
+                        return Ok(ForwardSyncResults::ChainIncomplete {
+                            prevous_queue: self.job_queue.clone(),
+                            checkpoint_for_new_queue: Checkpoint {
+                                root: next_root,
+                                slot: last_block.message.block.slot.saturating_sub(1),
+                            },
+                        });
+                    }
+                },
             };
             ensure!(
                 current_block.message.block.tree_hash_root() == next_root,
@@ -70,9 +76,15 @@ impl ForwardBackgroundSyncer {
         }
 
         chained_roots.reverse();
-        let blocks_synced = chained_roots.len();
+        let mut blocks_synced = 0usize;
 
+        let mut store_writer = self.store.write().await;
         for root in chained_roots {
+            if block_provider.get(root)?.is_some() {
+                let _ = pending_blocks_provider.remove(root)?;
+                continue;
+            }
+
             let block = pending_blocks_provider.get(root)?.ok_or_else(|| {
                 anyhow!(
                     "Failed to find block with root {root:?} in pending blocks during insertion"
@@ -80,11 +92,12 @@ impl ForwardBackgroundSyncer {
             })?;
             let time = lean_network_spec().genesis_time
                 + (block.message.block.slot * lean_network_spec().seconds_per_slot);
-            #[cfg(feature = "devnet2")]
-            self.store.write().await.on_tick(time, false).await?;
-            #[cfg(feature = "devnet3")]
-            self.store.write().await.on_tick(time, false, true).await?;
-            self.store.write().await.on_block(&block, true).await?;
+            store_writer.on_tick(time, false, true).await?;
+            store_writer.on_block(&block, true).await?;
+            blocks_synced += 1;
+            // Remove blocks that have been applied to canonical storage to prevent unbounded growth
+            // of the pending-blocks table.
+            let _ = pending_blocks_provider.remove(root)?;
         }
 
         Ok(ForwardSyncResults::Completed {

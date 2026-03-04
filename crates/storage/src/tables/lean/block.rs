@@ -155,4 +155,23 @@ impl LeanBlockTable {
         }
         Ok(children_map)
     }
+
+    pub fn get_all_blocks(
+        &self,
+        min_slot: u64,
+    ) -> Result<Vec<SignedBlockWithAttestation>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+        let mut blocks = Vec::new();
+
+        for entry in table.iter()? {
+            let (_, block_entry) = entry?;
+            let block = block_entry.value();
+            if block.message.block.slot >= min_slot {
+                blocks.push(block);
+            }
+        }
+
+        Ok(blocks)
+    }
 }

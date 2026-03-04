@@ -1,5 +1,8 @@
 pub mod forward_background_syncer;
 pub mod job;
+pub mod strategy;
+
+use std::time::{Duration, Instant};
 
 use alloy_primitives::B256;
 use libp2p_identity::PeerId;
@@ -193,6 +196,72 @@ impl SyncStatus {
         unqueued_jobs
     }
 
+    pub fn contains_job_root(&self, root: B256) -> bool {
+        if let SyncStatus::Syncing { jobs } = self {
+            return jobs.iter().any(|queue| queue.jobs.contains_key(&root));
+        }
+
+        false
+    }
+
+    pub fn peer_for_job_root(&self, root: B256) -> Option<PeerId> {
+        if let SyncStatus::Syncing { jobs } = self {
+            for queue in jobs {
+                if let Some(job) = queue.jobs.get(&root) {
+                    return Some(job.peer_id);
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn reset_timed_out_jobs(&mut self, timeout: Duration) -> Vec<JobRequest> {
+        let mut timed_out_jobs = Vec::new();
+        if let SyncStatus::Syncing { jobs } = self {
+            for queue in jobs {
+                for job in queue.jobs.values_mut() {
+                    if job.has_been_requested
+                        && let Some(time_requested) = job.time_requested
+                        && time_requested.elapsed() >= timeout
+                    {
+                        timed_out_jobs.push(job.clone());
+                        job.has_been_requested = false;
+                        job.time_requested = None;
+                    }
+                }
+            }
+        }
+        timed_out_jobs
+    }
+
+    pub fn request_latency_for_root(&self, root: B256) -> Option<Duration> {
+        if let SyncStatus::Syncing { jobs } = self {
+            for queue in jobs {
+                if let Some(job) = queue.jobs.get(&root)
+                    && let Some(requested_at) = job.time_requested
+                {
+                    let now = Instant::now();
+                    return Some(now.saturating_duration_since(requested_at));
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn has_job_for_peer(&self, peer_id: PeerId) -> bool {
+        if let SyncStatus::Syncing { jobs } = self {
+            for queue in jobs {
+                if queue.jobs.values().any(|job| job.peer_id == peer_id) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
     pub fn mark_job_as_requested(&mut self, root: B256) {
         if let SyncStatus::Syncing { jobs } = self {
             for queue in jobs.iter_mut() {
@@ -370,5 +439,92 @@ mod tests {
 
         let unqueued_jobs_after = status.unqueued_jobs();
         assert!(unqueued_jobs_after.is_empty());
+    }
+
+    #[test]
+    fn test_contains_job_root() {
+        let mut status = SyncStatus::Syncing { jobs: Vec::new() };
+        let peer_id = PeerId::random();
+        let root = mock_root(7);
+
+        status.add_new_job_queue(
+            Checkpoint { root, slot: 15 },
+            JobRequest::new(peer_id, root),
+            false,
+        );
+
+        assert!(status.contains_job_root(root));
+        assert!(!status.contains_job_root(mock_root(9)));
+    }
+
+    #[test]
+    fn test_reset_timed_out_jobs() {
+        let mut status = SyncStatus::Syncing { jobs: Vec::new() };
+        let peer_id = PeerId::random();
+        let root = mock_root(1);
+
+        status.add_new_job_queue(
+            Checkpoint { root, slot: 100 },
+            JobRequest::new(peer_id, root),
+            false,
+        );
+        status.mark_job_as_requested(root);
+
+        let timed_out_jobs = status.reset_timed_out_jobs(Duration::from_millis(0));
+        assert_eq!(timed_out_jobs.len(), 1);
+        assert_eq!(timed_out_jobs[0].root, root);
+
+        let unqueued_jobs = status.unqueued_jobs();
+        assert_eq!(unqueued_jobs.len(), 1);
+        assert!(!unqueued_jobs[0].has_been_requested);
+    }
+
+    #[test]
+    fn test_peer_for_job_root() {
+        let mut status = SyncStatus::Syncing { jobs: Vec::new() };
+        let peer_id = PeerId::random();
+        let root = mock_root(42);
+        status.add_new_job_queue(
+            Checkpoint { root, slot: 10 },
+            JobRequest::new(peer_id, root),
+            false,
+        );
+
+        assert_eq!(status.peer_for_job_root(root), Some(peer_id));
+        assert_eq!(status.peer_for_job_root(mock_root(100)), None);
+    }
+
+    #[test]
+    fn test_request_latency_for_root_after_mark_requested() {
+        let mut status = SyncStatus::Syncing { jobs: Vec::new() };
+        let peer_id = PeerId::random();
+        let root = mock_root(9);
+        status.add_new_job_queue(
+            Checkpoint { root, slot: 12 },
+            JobRequest::new(peer_id, root),
+            false,
+        );
+
+        assert_eq!(status.request_latency_for_root(root), None);
+
+        status.mark_job_as_requested(root);
+        let latency = status.request_latency_for_root(root);
+        assert!(latency.is_some());
+    }
+
+    #[test]
+    fn test_has_job_for_peer() {
+        let mut status = SyncStatus::Syncing { jobs: Vec::new() };
+        let peer_id = PeerId::random();
+        let other_peer = PeerId::random();
+        let root = mock_root(77);
+        status.add_new_job_queue(
+            Checkpoint { root, slot: 1 },
+            JobRequest::new(peer_id, root),
+            false,
+        );
+
+        assert!(status.has_job_for_peer(peer_id));
+        assert!(!status.has_job_for_peer(other_peer));
     }
 }

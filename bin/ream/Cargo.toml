@@ -15,22 +15,24 @@ name = "ream"
 path = "src/main.rs"
 
 [features]
-default = ["devnet2"]
-devnet2 = [
-    "ream-chain-lean/devnet2",
-    "ream-consensus-lean/devnet2",
-    "ream-fork-choice-lean/devnet2",
-    "ream-p2p/devnet2",
-    "ream-rpc-lean/devnet2",
-    "ream-validator-lean/devnet2",
-]
+default = ["devnet3"]
 devnet3 = [
     "ream-chain-lean/devnet3",
     "ream-consensus-lean/devnet3",
     "ream-fork-choice-lean/devnet3",
     "ream-p2p/devnet3",
     "ream-rpc-lean/devnet3",
+    "ream-storage/devnet3",
     "ream-validator-lean/devnet3",
+]
+devnet4 = [
+    "ream-chain-lean/devnet4",
+    "ream-consensus-lean/devnet4",
+    "ream-fork-choice-lean/devnet4",
+    "ream-p2p/devnet4",
+    "ream-rpc-lean/devnet4",
+    "ream-storage/devnet4",
+    "ream-validator-lean/devnet4",
 ]
 
 [dependencies]

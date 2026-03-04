@@ -7,12 +7,10 @@ use std::{
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::attestation::SignedAggregatedAttestation;
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
-        SignatureKey, SignedAttestation,
+        SignatureKey, SignedAggregatedAttestation, SignedAttestation,
     },
     block::{Block, BlockBody, BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
@@ -20,17 +18,7 @@ use ream_consensus_lean::{
     state::LeanState,
     validator::is_proposer,
 };
-#[cfg(feature = "devnet3")]
-use ream_consensus_misc::constants::lean::ATTESTATION_COMMITTEE_COUNT;
-use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
-#[cfg(feature = "devnet2")]
-use ream_metrics::{
-    ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL, ATTESTATIONS_VALID_TOTAL,
-    FINALIZATIONS_TOTAL, FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT,
-    JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME,
-    SAFE_TARGET_SLOT, inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
-};
-#[cfg(feature = "devnet3")]
+use ream_consensus_misc::constants::lean::{ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT};
 use ream_metrics::{
     FINALIZATIONS_TOTAL, FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT,
     JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME,
@@ -38,20 +26,13 @@ use ream_metrics::{
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
-#[cfg(feature = "devnet3")]
-use ream_post_quantum_crypto::lean_multisig::aggregate::verify_aggregate_signature;
 use ream_post_quantum_crypto::{
-    lean_multisig::aggregate::aggregate_signatures, leansig::signature::Signature,
-};
-#[cfg(feature = "devnet3")]
-use ream_storage::tables::lean::gossip_signatures::GossipSignaturesTable;
-#[cfg(feature = "devnet2")]
-use ream_storage::tables::lean::{
-    aggregated_payloads::AggregatedPayloadsTable, gossip_signatures::GossipSignaturesTable,
+    lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
+    leansig::signature::Signature,
 };
 use ream_storage::{
     db::lean::LeanDB,
-    tables::{field::REDBField, table::REDBTable},
+    tables::{field::REDBField, lean::gossip_signatures::GossipSignaturesTable, table::REDBTable},
 };
 use ream_sync::rwlock::{Reader, Writer};
 use ssz_types::{BitList, VariableList, typenum::U4096};
@@ -77,7 +58,7 @@ impl Store {
         anchor_state: LeanState,
         db: LeanDB,
         time: Option<u64>,
-        #[cfg(feature = "devnet3")] validator_id: Option<u64>,
+        validator_id: Option<u64>,
     ) -> anyhow::Result<Store> {
         ensure!(
             anchor_block.message.block.state_root == anchor_state.tree_hash_root(),
@@ -85,18 +66,11 @@ impl Store {
         );
         let anchor_root = anchor_block.message.block.tree_hash_root();
         let anchor_slot = anchor_block.message.block.slot;
-        #[cfg(feature = "devnet2")]
-        let anchor_checkpoint = Checkpoint {
-            root: anchor_root,
-            slot: anchor_slot,
-        };
 
-        #[cfg(feature = "devnet3")]
         let justified_checkpoint = Checkpoint {
             root: anchor_root,
             slot: anchor_state.latest_justified.slot,
         };
-        #[cfg(feature = "devnet3")]
         let finalized_checkpoint = Checkpoint {
             root: anchor_root,
             slot: anchor_state.latest_finalized.slot,
@@ -108,21 +82,11 @@ impl Store {
         db.block_provider()
             .insert(anchor_root, anchor_block)
             .expect("Failed to insert genesis block");
-        #[cfg(feature = "devnet3")]
         db.latest_finalized_provider()
             .insert(finalized_checkpoint)
             .expect("Failed to insert latest finalized checkpoint");
-        #[cfg(feature = "devnet3")]
         db.latest_justified_provider()
             .insert(justified_checkpoint)
-            .expect("Failed to insert latest justified checkpoint");
-        #[cfg(feature = "devnet2")]
-        db.latest_finalized_provider()
-            .insert(anchor_checkpoint)
-            .expect("Failed to insert latest finalized checkpoint");
-        #[cfg(feature = "devnet2")]
-        db.latest_justified_provider()
-            .insert(anchor_checkpoint)
             .expect("Failed to insert latest justified checkpoint");
         db.state_provider()
             .insert(anchor_root, anchor_state)
@@ -133,16 +97,12 @@ impl Store {
         db.safe_target_provider()
             .insert(anchor_root)
             .expect("Failed to insert genesis block hash");
-        #[cfg(feature = "devnet3")]
         db.validator_id_provider()
             .insert(validator_id)
             .expect("Failed to insert validator id");
 
         Ok(Store {
             store: Arc::new(Mutex::new(db)),
-            #[cfg(feature = "devnet2")]
-            network_state: Arc::new(NetworkState::new(anchor_checkpoint, anchor_checkpoint)),
-            #[cfg(feature = "devnet3")]
             network_state: Arc::new(NetworkState::new(
                 justified_checkpoint,
                 finalized_checkpoint,
@@ -242,25 +202,6 @@ impl Store {
     pub async fn update_safe_target(&self) -> anyhow::Result<()> {
         // 2/3rd majority min voting weight for target selection
         // Note that we use ceiling division here.
-        #[cfg(feature = "devnet2")]
-        let (
-            head_provider,
-            state_provider,
-            latest_justified_provider,
-            safe_target_provider,
-            latest_new_attestations_provider,
-        ) = {
-            let db = self.store.lock().await;
-            (
-                db.head_provider(),
-                db.state_provider(),
-                db.latest_justified_provider(),
-                db.safe_target_provider(),
-                db.latest_new_attestations_provider(),
-            )
-        };
-
-        #[cfg(feature = "devnet3")]
         let (
             head_provider,
             state_provider,
@@ -287,7 +228,6 @@ impl Store {
         let min_target_score = (head_state.validators.len() as u64 * 2).div_ceil(3);
         let latest_justified_root = latest_justified_provider.get()?.root;
 
-        #[cfg(feature = "devnet3")]
         let attestations = {
             let mut all_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>> =
                 latest_known_aggregated_payloads_provider
@@ -310,9 +250,6 @@ impl Store {
 
         let (new_safe_target_root, new_safe_target_slot) = self
             .compute_lmd_ghost_head(
-                #[cfg(feature = "devnet2")]
-                latest_new_attestations_provider.iter_values()?,
-                #[cfg(feature = "devnet3")]
                 attestations.into_iter().map(|(validator, data)| {
                     Ok(SignedAttestation {
                         validator_id: validator,
@@ -333,27 +270,6 @@ impl Store {
         Ok(())
     }
 
-    #[cfg(feature = "devnet2")]
-    pub async fn accept_new_attestations(&self) -> anyhow::Result<()> {
-        let latest_known_attestation_provider = {
-            let db = self.store.lock().await;
-            db.latest_known_attestations_provider()
-        };
-
-        latest_known_attestation_provider.batch_insert(
-            self.store
-                .lock()
-                .await
-                .latest_new_attestations_provider()
-                .drain()?
-                .into_iter(),
-        )?;
-
-        self.update_head().await?;
-        Ok(())
-    }
-
-    #[cfg(feature = "devnet3")]
     pub async fn accept_new_attestations(&mut self) -> anyhow::Result<()> {
         let latest_new_aggregated_payloads_provider = self
             .store
@@ -381,27 +297,6 @@ impl Store {
         Ok(())
     }
 
-    #[cfg(feature = "devnet2")]
-    pub async fn tick_interval(&self, has_proposal: bool) -> anyhow::Result<()> {
-        let current_interval = {
-            let time_provider = self.store.lock().await.time_provider();
-            let time = time_provider.get()? + 1;
-            time_provider.insert(time)?;
-            time % lean_network_spec().seconds_per_slot % INTERVALS_PER_SLOT
-        };
-        if current_interval == 0 {
-            if has_proposal {
-                self.accept_new_attestations().await?;
-            }
-        } else if current_interval == 2 {
-            self.update_safe_target().await?;
-        } else if current_interval == 3 {
-            self.accept_new_attestations().await?;
-        };
-        Ok(())
-    }
-
-    #[cfg(feature = "devnet3")]
     pub async fn tick_interval(
         &mut self,
         has_proposal: bool,
@@ -421,7 +316,10 @@ impl Store {
         } else if current_interval == 2 {
             // Interval 2: Only aggregate signatures if aggregator
             if is_aggregator {
+                #[cfg(feature = "devnet3")]
                 self.aggregate_committee_signatures().await?;
+                #[cfg(feature = "devnet4")]
+                self.aggregate_committee_signatures_and_payloads().await?;
             }
         } else if current_interval == 3 {
             // Interval 3: Update safe target
@@ -434,22 +332,6 @@ impl Store {
         Ok(())
     }
 
-    #[cfg(feature = "devnet2")]
-    pub async fn on_tick(&self, time: u64, has_proposal: bool) -> anyhow::Result<()> {
-        let seconds_per_interval = lean_network_spec().seconds_per_slot / INTERVALS_PER_SLOT;
-        let tick_interval_time = (time - lean_network_spec().genesis_time) / seconds_per_interval;
-
-        let time_provider = self.store.lock().await.time_provider();
-        while time_provider.get()? < tick_interval_time {
-            let should_signal_proposal =
-                has_proposal && (time_provider.get()? + 1) == tick_interval_time;
-
-            self.tick_interval(should_signal_proposal).await?;
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "devnet3")]
     pub async fn on_tick(
         &mut self,
         time: u64,
@@ -473,25 +355,16 @@ impl Store {
 
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
-        #[cfg(feature = "devnet2")]
-        let latest_known_attestations = self
-            .store
-            .lock()
-            .await
-            .latest_known_attestations_provider()
-            .get_all_attestations();
         let (latest_justified_provider, head_provider) = {
             let db = self.store.lock().await;
             (db.latest_justified_provider(), db.head_provider())
         };
-        #[cfg(feature = "devnet3")]
         let latest_known_aggregated_payloads_provider = self
             .store
             .lock()
             .await
             .latest_known_aggregated_payloads_provider();
 
-        #[cfg(feature = "devnet3")]
         let attestations = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
 
@@ -504,9 +377,6 @@ impl Store {
 
         let (new_head, new_head_slot) = self
             .compute_lmd_ghost_head(
-                #[cfg(feature = "devnet2")]
-                latest_known_attestations?.into_values().map(Ok),
-                #[cfg(feature = "devnet3")]
                 attestations.into_iter().map(|(validator, data)| {
                     Ok(SignedAttestation {
                         validator_id: validator,
@@ -598,18 +468,6 @@ impl Store {
 
     /// Get the head for block proposal at given slot.
     /// Ensures store is up-to-date and processes any pending attestations.
-    #[cfg(feature = "devnet2")]
-    pub async fn get_proposal_head(&self, slot: u64) -> anyhow::Result<B256> {
-        let slot_time =
-            lean_network_spec().genesis_time + slot * lean_network_spec().seconds_per_slot;
-        self.on_tick(slot_time, true).await?;
-        self.accept_new_attestations().await?;
-        Ok(self.store.lock().await.head_provider().get()?)
-    }
-
-    /// Get the head for block proposal at given slot.
-    /// Ensures store is up-to-date and processes any pending attestations.
-    #[cfg(feature = "devnet3")]
     pub async fn get_proposal_head(&mut self, slot: u64) -> anyhow::Result<B256> {
         let slot_duration_seconds = slot * lean_network_spec().seconds_per_slot;
         let slot_time = lean_network_spec().genesis_time + slot_duration_seconds;
@@ -618,147 +476,6 @@ impl Store {
         Ok(self.store.lock().await.head_provider().get()?)
     }
 
-    /// Compute aggregated signatures for a set of attestations.
-    ///
-    /// This method implements a two-phase signature collection strategy:
-    ///
-    /// 1. **Gossip Phase**: For each attestation group, first attempt to collect individual XMSS
-    ///    signatures from the gossip network.
-    ///
-    /// 2. **Fallback Phase**: For any validators not covered by gossip, fall back to
-    ///    previously-seen aggregated proofs from blocks using a greedy set-cover approach to
-    ///    minimize the number of proofs needed.
-    #[cfg(feature = "devnet2")]
-    fn compute_aggregated_signatures(
-        &self,
-        head_state: &LeanState,
-        attestations: &[AggregatedAttestations],
-        gossip_signatures_provider: &GossipSignaturesTable,
-        aggregated_payloads_provider: &AggregatedPayloadsTable,
-    ) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<AggregatedSignatureProof>)> {
-        let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
-        for attestation in attestations.iter() {
-            groups
-                .entry(attestation.data.clone())
-                .or_default()
-                .push(attestation.validator_id);
-        }
-
-        let mut results = Vec::new();
-
-        for (data, mut validator_ids) in groups {
-            validator_ids.sort();
-            let data_root = data.tree_hash_root();
-
-            // Phase 1: Gossip Collection
-            // Collect individual XMSS signatures from the gossip network
-            let mut gossip_signatures = Vec::new();
-            let mut gossip_keys = Vec::new();
-            let mut gossip_ids = Vec::new();
-            let mut remaining = HashSet::new();
-
-            for &validator_id in &validator_ids {
-                if let Ok(Some(signature)) = gossip_signatures_provider
-                    .get(SignatureKey::from_parts(validator_id, data_root))
-                {
-                    gossip_signatures.push(signature);
-                    if let Some(validator) = head_state.validators.get(validator_id as usize) {
-                        gossip_keys.push(validator.public_key);
-                    }
-                    gossip_ids.push(validator_id);
-                } else {
-                    remaining.insert(validator_id);
-                }
-            }
-
-            // If we collected gossip signatures, aggregate them into a proof
-            if !gossip_ids.is_empty() && gossip_signatures.len() == gossip_keys.len() {
-                let mut bits = BitList::<U4096>::with_capacity(
-                    gossip_ids.iter().max().map_or(0, |&id| id as usize + 1),
-                )
-                .map_err(|err| anyhow!("BitList error: {err:?}"))?;
-
-                for id in &gossip_ids {
-                    bits.set(*id as usize, true)
-                        .map_err(|err| anyhow!("BitList error: {err:?}"))?;
-                }
-
-                results.push((
-                    AggregatedAttestation {
-                        aggregation_bits: bits.clone(),
-                        message: data.clone(),
-                    },
-                    AggregatedSignatureProof::new(
-                        bits,
-                        VariableList::new(aggregate_signatures(
-                            &gossip_keys,
-                            &gossip_signatures,
-                            &data_root.0,
-                            data.slot as u32,
-                        )?)
-                        .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
-                    ),
-                ));
-            }
-
-            // Phase 2: Fallback to existing proofs using greedy set-cover
-            while let Some(&target_id) = remaining.iter().next() {
-                let candidates = match aggregated_payloads_provider
-                    .get(SignatureKey::from_parts(target_id, data_root))
-                {
-                    Ok(Some(payloads)) => payloads.proofs.to_vec(),
-                    _ => break,
-                };
-
-                if candidates.is_empty() {
-                    break;
-                }
-
-                let mut best_proof = None;
-                let mut best_covered = HashSet::new();
-
-                for proof in &candidates {
-                    let covered = proof
-                        .to_validator_indices()
-                        .into_iter()
-                        .collect::<HashSet<u64>>();
-                    let overlap = covered
-                        .intersection(&remaining)
-                        .copied()
-                        .collect::<HashSet<u64>>();
-                    if overlap.len() > best_covered.len() {
-                        best_proof = Some(proof);
-                        best_covered = overlap;
-                    }
-                }
-
-                if best_covered.is_empty() {
-                    break;
-                }
-
-                if let Some(proof) = best_proof {
-                    results.push((
-                        AggregatedAttestation {
-                            aggregation_bits: proof.participants.clone(),
-                            message: data.clone(),
-                        },
-                        proof.clone(),
-                    ));
-                    remaining = remaining.difference(&best_covered).copied().collect();
-                }
-            }
-        }
-
-        // Unzip results into parallel lists
-        if results.is_empty() {
-            return Ok((Vec::new(), Vec::new()));
-        }
-
-        let (attestations, proofs): (Vec<_>, Vec<_>) = results.into_iter().unzip();
-        Ok((attestations, proofs))
-    }
-
-    #[cfg(feature = "devnet3")]
     fn aggregate_gossip_signatures(
         &self,
         head_state: &LeanState,
@@ -832,7 +549,6 @@ impl Store {
         Ok((attestations, proofs))
     }
 
-    #[cfg(feature = "devnet3")]
     async fn select_aggregated_proofs(
         &self,
         attestations: &[AggregatedAttestations],
@@ -926,15 +642,6 @@ impl Store {
                 db.block_provider(),
             )
         };
-        #[cfg(feature = "devnet2")]
-        let (gossip_signatures_provider, aggregated_payloads_provider) = {
-            let db = self.store.lock().await;
-            (
-                db.gossip_signatures_provider(),
-                db.aggregated_payloads_provider(),
-            )
-        };
-        #[cfg(feature = "devnet3")]
         let latest_known_aggregated_payloads_provider = self
             .store
             .lock()
@@ -1019,19 +726,6 @@ impl Store {
                     continue;
                 }
 
-                #[cfg(feature = "devnet2")]
-                let has_proof = gossip_signatures_provider
-                    .get(signature_key.clone())
-                    .ok()
-                    .flatten()
-                    .is_some()
-                    || aggregated_payloads_provider
-                        .get(signature_key.clone())
-                        .ok()
-                        .flatten()
-                        .is_some();
-
-                #[cfg(feature = "devnet3")]
                 let has_proof =
                     latest_known_aggregated_payloads_provider.contains_key(&signature_key);
 
@@ -1055,15 +749,6 @@ impl Store {
 
         let attestations_vec: Vec<_> = attestations.to_vec();
 
-        #[cfg(feature = "devnet2")]
-        let (aggregated_attestations, aggregated_proofs) = self.compute_aggregated_signatures(
-            &head_state,
-            &attestations_vec,
-            &gossip_signatures_provider,
-            &aggregated_payloads_provider,
-        )?;
-
-        #[cfg(feature = "devnet3")]
         let (aggregated_attestations, aggregated_proofs) =
             self.select_aggregated_proofs(&attestations_vec).await?;
 
@@ -1122,19 +807,13 @@ impl Store {
 
         let add_attestations_timer =
             start_timer(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
-        #[cfg(feature = "devnet2")]
-        let (mut candidate_block, proofs, post_state) = self
-            .build_block(slot, validator_index, head_root, None)
-            .await?;
 
-        #[cfg(feature = "devnet3")]
         let latest_known_aggregated_payloads_provider = self
             .store
             .lock()
             .await
             .latest_known_aggregated_payloads_provider();
 
-        #[cfg(feature = "devnet3")]
         let attestation_data_map = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
 
@@ -1145,7 +824,6 @@ impl Store {
                 .await?
         };
 
-        #[cfg(feature = "devnet3")]
         let attestation_vector: Vec<AggregatedAttestations> = attestation_data_map
             .into_iter()
             .map(|(validator, data)| AggregatedAttestations {
@@ -1154,11 +832,9 @@ impl Store {
             })
             .collect();
 
-        #[cfg(feature = "devnet3")]
         let attestation_list = VariableList::new(attestation_vector.clone())
             .map_err(|err| anyhow!("Failed to create VariableList: {err:?}"))?;
 
-        #[cfg(feature = "devnet3")]
         let (mut candidate_block, proofs, post_state) = self
             .build_block(slot, validator_index, head_root, Some(attestation_list))
             .await?;
@@ -1172,13 +848,11 @@ impl Store {
         let signatures_list = VariableList::new(proofs)
             .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
 
-        #[cfg(feature = "devnet3")]
         let finalized_advanced = {
             let db = self.store.lock().await;
             post_state.latest_finalized.slot > db.latest_finalized_provider().get()?.slot
         };
 
-        #[cfg(feature = "devnet3")]
         if finalized_advanced {
             self.prune_stale_attestation_data().await?;
         }
@@ -1213,7 +887,6 @@ impl Store {
             )
         };
 
-        #[cfg(feature = "devnet3")]
         let (
             validator_id_provider,
             attestation_data_by_root_provider,
@@ -1252,19 +925,8 @@ impl Store {
                 latest_justified_provider.get()?
             };
 
-        #[cfg(feature = "devnet2")]
-        let latest_finalized =
-            if parent_state.latest_finalized.slot > latest_finalized_provider.get()?.slot {
-                inc_int_counter_vec(&FINALIZATIONS_TOTAL, &["success"]);
-                parent_state.latest_finalized
-            } else {
-                latest_finalized_provider.get()?
-            };
-
-        #[cfg(feature = "devnet3")]
         let finalized_advanced =
             parent_state.latest_finalized.slot > latest_finalized_provider.get()?.slot;
-        #[cfg(feature = "devnet3")]
         let latest_finalized = if finalized_advanced {
             inc_int_counter_vec(&FINALIZATIONS_TOTAL, &["success"]);
             parent_state.latest_finalized
@@ -1297,49 +959,6 @@ impl Store {
             "Attestation signature groups must match aggregated attestations"
         );
 
-        #[cfg(feature = "devnet2")]
-        {
-            let aggregated_payloads_provider =
-                self.store.lock().await.aggregated_payloads_provider();
-
-            // Process each aggregated attestation for fork choice and store proofs
-            for (aggregated_attestation, aggregated_proof) in aggregated_attestations
-                .iter()
-                .zip(attestation_signatures.iter())
-            {
-                let validator_ids: Vec<u64> = aggregated_attestation
-                    .aggregation_bits
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, bit)| *bit)
-                    .map(|(index, _)| index as u64)
-                    .collect();
-
-                // Process each validator's attestation for fork choice and store proofs
-                for validator_id in validator_ids {
-                    // Store the aggregated proof with participants for this validator
-                    aggregated_payloads_provider.append_proof(
-                        SignatureKey::from_parts(
-                            validator_id,
-                            aggregated_attestation.message.tree_hash_root(),
-                        ),
-                        aggregated_proof.clone(),
-                    )?;
-
-                    self.on_gossip_aggregated_attestation(
-                        SignedAttestation {
-                            validator_id,
-                            message: aggregated_attestation.message.clone(),
-                            signature: Signature::blank(),
-                        },
-                        true,
-                    )
-                    .await?;
-                }
-            }
-        }
-
-        #[cfg(feature = "devnet3")]
         {
             attestation_data_by_root_provider.insert(
                 proposer_attestation.data.tree_hash_root(),
@@ -1371,19 +990,8 @@ impl Store {
 
         self.update_head().await?;
 
-        #[cfg(feature = "devnet2")]
-        gossip_signatures_provider.insert(
-            SignatureKey::new(
-                proposer_attestation.validator_id,
-                &proposer_attestation.data,
-            ),
-            signed_block_with_attestation.signature.proposer_signature,
-        )?;
-
-        #[cfg(feature = "devnet3")]
         let proposer_validator_id = proposer_attestation.validator_id;
 
-        #[cfg(feature = "devnet3")]
         if let Ok(Some(current_id)) = validator_id_provider.get()
             && compute_subnet_id(
                 proposer_validator_id,
@@ -1399,20 +1007,6 @@ impl Store {
             )?;
         }
 
-        #[cfg(feature = "devnet2")]
-        {
-            self.on_gossip_aggregated_attestation(
-                SignedAttestation {
-                    validator_id: proposer_attestation.validator_id,
-                    message: proposer_attestation.data.clone(),
-                    signature: signed_block_with_attestation.signature.proposer_signature,
-                },
-                false,
-            )
-            .await?;
-        }
-
-        #[cfg(feature = "devnet3")]
         {
             let proposer_validator_id = proposer_attestation.validator_id;
 
@@ -1440,7 +1034,6 @@ impl Store {
             }
         }
 
-        #[cfg(feature = "devnet3")]
         if finalized_advanced {
             self.prune_stale_attestation_data().await?;
         }
@@ -1480,7 +1073,6 @@ impl Store {
             data.source.slot <= data.target.slot,
             "Source checkpoint slot must not exceed target"
         );
-        #[cfg(feature = "devnet3")]
         ensure!(
             data.head.slot >= data.target.slot,
             "Head checkpoint must not be older than target"
@@ -1492,7 +1084,6 @@ impl Store {
         let target_block = block_provider
             .get(data.target.root)?
             .ok_or(anyhow!("Failed to get target block"))?;
-        #[cfg(feature = "devnet3")]
         let head_block = block_provider
             .get(data.head.root)?
             .ok_or(anyhow!("Failed to get head block"))?;
@@ -1507,7 +1098,6 @@ impl Store {
             "Target checkpoint slot mismatch"
         );
 
-        #[cfg(feature = "devnet3")]
         ensure!(
             head_block.message.block.slot == data.head.slot,
             "Head checkpoint slot mismatch"
@@ -1526,21 +1116,8 @@ impl Store {
 
     pub async fn on_gossip_aggregated_attestation(
         &mut self,
-        #[cfg(feature = "devnet2")] signed_attestation: SignedAttestation,
-        #[cfg(feature = "devnet2")] is_from_block: bool,
-        #[cfg(feature = "devnet3")] signed_attestation: SignedAggregatedAttestation,
+        signed_attestation: SignedAggregatedAttestation,
     ) -> anyhow::Result<()> {
-        #[cfg(feature = "devnet2")]
-        let (latest_known_attestations_provider, latest_new_attestations_provider, time_provider) = {
-            let db = self.store.lock().await;
-            (
-                db.latest_known_attestations_provider(),
-                db.latest_new_attestations_provider(),
-                db.time_provider(),
-            )
-        };
-
-        #[cfg(feature = "devnet3")]
         let (
             time_provider,
             attestation_data_by_root_provider,
@@ -1554,58 +1131,6 @@ impl Store {
             )
         };
 
-        #[cfg(feature = "devnet2")]
-        let validate_attestation_timer = start_timer(&ATTESTATION_VALIDATION_TIME, &[]);
-
-        #[cfg(feature = "devnet2")]
-        match self.validate_attestation(&signed_attestation).await {
-            Ok(_) => {
-                inc_int_counter_vec(&ATTESTATIONS_VALID_TOTAL, &[]);
-                stop_timer(validate_attestation_timer);
-            }
-            Err(err) => {
-                inc_int_counter_vec(&ATTESTATIONS_INVALID_TOTAL, &[]);
-                stop_timer(validate_attestation_timer);
-                return Err(err);
-            }
-        }
-
-        #[cfg(feature = "devnet2")]
-        {
-            let validator_id = signed_attestation.validator_id;
-            let attestation_slot = signed_attestation.message.slot;
-
-            if is_from_block {
-                let latest_known = match latest_known_attestations_provider.get(validator_id)? {
-                    Some(known) => known.message.slot < attestation_slot,
-                    None => true,
-                };
-                if latest_known {
-                    latest_known_attestations_provider
-                        .insert(validator_id, signed_attestation.clone())?;
-                }
-                let remove = match latest_new_attestations_provider.get(validator_id)? {
-                    Some(new) => new.message.slot <= attestation_slot,
-                    None => false,
-                };
-                if remove {
-                    latest_new_attestations_provider.remove(validator_id)?;
-                }
-            } else {
-                let time_slots = time_provider.get()? / lean_network_spec().seconds_per_slot;
-                ensure!(attestation_slot <= time_slots, "Future slot");
-
-                let latest_new = match latest_new_attestations_provider.get(validator_id)? {
-                    Some(new) => new.message.slot < attestation_slot,
-                    None => true,
-                };
-                if latest_new {
-                    latest_new_attestations_provider.insert(validator_id, signed_attestation)?;
-                }
-            }
-        }
-
-        #[cfg(feature = "devnet3")]
         {
             let data = &signed_attestation.data;
             let proof = &signed_attestation.proof;
@@ -1665,7 +1190,6 @@ impl Store {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     pub async fn extract_attestations_from_aggregated_payloads(
         &self,
         aggregated_payloads: &HashMap<SignatureKey, Vec<AggregatedSignatureProof>>,
@@ -1697,7 +1221,6 @@ impl Store {
         Ok(attestations)
     }
 
-    #[cfg(feature = "devnet3")]
     pub async fn aggregate_committee_signatures(&mut self) -> anyhow::Result<()> {
         let (
             state_provider,
@@ -1761,6 +1284,329 @@ impl Store {
         Ok(())
     }
 
+    #[cfg(feature = "devnet4")]
+    async fn merged_aggregated_payloads(
+        &self,
+    ) -> anyhow::Result<HashMap<SignatureKey, Vec<AggregatedSignatureProof>>> {
+        let (latest_new_provider, latest_known_provider) = {
+            let db = self.store.lock().await;
+            (
+                db.latest_new_aggregated_payloads_provider(),
+                db.latest_known_aggregated_payloads_provider(),
+            )
+        };
+
+        let mut merged: HashMap<SignatureKey, Vec<AggregatedSignatureProof>> = HashMap::new();
+
+        for (key, proofs) in latest_known_provider.iter()? {
+            merged.insert(key, proofs);
+        }
+
+        for (key, proofs) in latest_new_provider.iter()? {
+            merged
+                .entry(key)
+                .and_modify(|existing| existing.extend(proofs.clone()))
+                .or_insert(proofs);
+        }
+
+        Ok(merged)
+    }
+
+    #[cfg(feature = "devnet4")]
+    async fn attestations_from_gossip_and_payloads(
+        &self,
+    ) -> anyhow::Result<Vec<AggregatedAttestations>> {
+        let (
+            gossip_provider,
+            new_payloads_provider,
+            known_payloads_provider,
+            attestation_data_provider,
+        ) = {
+            let db = self.store.lock().await;
+            (
+                db.gossip_signatures_provider(),
+                db.latest_new_aggregated_payloads_provider(),
+                db.latest_known_aggregated_payloads_provider(),
+                db.attestation_data_by_root_provider(),
+            )
+        };
+
+        let gossip_keys = gossip_provider.get_keys()?;
+        let new_payload_keys: Vec<SignatureKey> = new_payloads_provider
+            .iter()?
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect();
+
+        let fresh_data_roots: HashSet<B256> = gossip_keys
+            .iter()
+            .map(|secret_key| secret_key.data_root)
+            .chain(
+                new_payload_keys
+                    .iter()
+                    .map(|secret_key| secret_key.data_root),
+            )
+            .collect();
+
+        let mut all_keys: HashSet<SignatureKey> = HashSet::new();
+
+        for key in gossip_keys {
+            all_keys.insert(key);
+        }
+        for key in new_payload_keys {
+            all_keys.insert(key);
+        }
+        for (key, _) in known_payloads_provider.iter()? {
+            if fresh_data_roots.contains(&key.data_root) {
+                all_keys.insert(key);
+            }
+        }
+
+        let mut attestations = Vec::new();
+        for sig_key in all_keys {
+            if let Some(attestation_data) = attestation_data_provider.get(sig_key.data_root)? {
+                attestations.push(AggregatedAttestations {
+                    validator_id: sig_key.validator_id,
+                    data: attestation_data,
+                });
+            }
+        }
+
+        Ok(attestations)
+    }
+
+    #[cfg(feature = "devnet4")]
+    fn aggregate(
+        &self,
+        head_state: &LeanState,
+        attestations: &[AggregatedAttestations],
+        gossip_signatures_provider: &GossipSignaturesTable,
+        children_payloads: Option<&HashMap<SignatureKey, Vec<AggregatedSignatureProof>>>,
+    ) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<AggregatedSignatureProof>)> {
+        let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
+        for attestation in attestations.iter() {
+            groups
+                .entry(attestation.data.clone())
+                .or_default()
+                .push(attestation.validator_id);
+        }
+
+        let mut results = Vec::new();
+
+        for (data, mut validator_ids) in groups {
+            validator_ids.sort();
+            let data_root = data.tree_hash_root();
+            let mut gossip_signatures = Vec::new();
+            let mut gossip_keys = Vec::new();
+            let mut gossip_ids = Vec::new();
+
+            for &validator_id in &validator_ids {
+                if let Ok(Some(signature)) = gossip_signatures_provider
+                    .get(SignatureKey::from_parts(validator_id, data_root))
+                {
+                    gossip_signatures.push(signature);
+                    if let Some(validator) = head_state.validators.get(validator_id as usize) {
+                        gossip_keys.push(validator.public_key);
+                    }
+                    gossip_ids.push(validator_id);
+                }
+            }
+
+            let gossip_id_set: HashSet<u64> = gossip_ids.iter().copied().collect();
+            let mut children_proofs: HashSet<AggregatedSignatureProof> = HashSet::new();
+
+            if let Some(payloads) = children_payloads {
+                for &validator_id in &validator_ids {
+                    if gossip_id_set.contains(&validator_id) {
+                        continue;
+                    }
+                    let key = SignatureKey::from_parts(validator_id, data_root);
+                    if let Some(proofs) = payloads.get(&key) {
+                        for proof in proofs {
+                            children_proofs.insert(proof.clone());
+                        }
+                    }
+                }
+            }
+
+            if gossip_ids.is_empty() && children_proofs.len() < 2 {
+                continue;
+            }
+
+            if !gossip_ids.is_empty() && gossip_signatures.len() != gossip_keys.len() {
+                continue;
+            }
+
+            let mut all_indices: HashSet<u64> = gossip_ids.iter().copied().collect();
+            for child in &children_proofs {
+                all_indices.extend(child.to_validator_indices());
+            }
+
+            let mut merged_bits = BitList::<U4096>::with_capacity(
+                all_indices.iter().max().map_or(0, |&id| id as usize + 1),
+            )
+            .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+
+            for id in &all_indices {
+                merged_bits
+                    .set(*id as usize, true)
+                    .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+            }
+
+            let proof = if !children_proofs.is_empty() {
+                let proof_data = if !gossip_ids.is_empty() {
+                    aggregate_signatures(
+                        &gossip_keys,
+                        &gossip_signatures,
+                        &data_root.0,
+                        data.slot as u32,
+                    )?
+                } else {
+                    children_proofs
+                        .iter()
+                        .next()
+                        .map(|p| p.proof_data.to_vec())
+                        .unwrap_or_default()
+                };
+
+                AggregatedSignatureProof::new_recursive(
+                    merged_bits.clone(),
+                    VariableList::new(proof_data)
+                        .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+                    // TODO: Compute actual bytecode_point from recursive aggregation once
+                    // lean-multisig supports it
+                    VariableList::new(vec![0u8; 1])
+                        .map_err(|err| anyhow!("Failed to create bytecode_point: {err:?}"))?,
+                )
+            } else {
+                AggregatedSignatureProof::new(
+                    merged_bits.clone(),
+                    VariableList::new(aggregate_signatures(
+                        &gossip_keys,
+                        &gossip_signatures,
+                        &data_root.0,
+                        data.slot as u32,
+                    )?)
+                    .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+                )
+            };
+
+            results.push((
+                AggregatedAttestation {
+                    aggregation_bits: merged_bits,
+                    message: data.clone(),
+                },
+                proof,
+            ));
+        }
+
+        if results.is_empty() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+
+        let (attestations, proofs): (Vec<_>, Vec<_>) = results.into_iter().unzip();
+        Ok((attestations, proofs))
+    }
+
+    #[cfg(feature = "devnet4")]
+    pub async fn aggregate_committee_signatures_and_payloads(
+        &mut self,
+    ) -> anyhow::Result<Vec<SignedAggregatedAttestation>> {
+        let (
+            state_provider,
+            gossip_signatures_provider,
+            head_root,
+            latest_new_aggregated_payloads_provider,
+        ) = {
+            let db = self.store.lock().await;
+            (
+                db.state_provider(),
+                db.gossip_signatures_provider(),
+                db.head_provider().get()?,
+                db.latest_new_aggregated_payloads_provider(),
+            )
+        };
+
+        let head_state = state_provider
+            .get(head_root)?
+            .ok_or_else(|| anyhow!("Head state not found"))?;
+
+        // Perform aggregation with recursive support
+        let (aggregated_results, proofs) = self.aggregate(
+            &head_state,
+            &self.attestations_from_gossip_and_payloads().await?,
+            &gossip_signatures_provider,
+            Some(&self.merged_aggregated_payloads().await?),
+        )?;
+
+        // Store aggregated proofs
+        let mut signed_attestations = Vec::new();
+        for (aggregated_attestation, aggregated_signature) in
+            aggregated_results.into_iter().zip(proofs)
+        {
+            let data_root = aggregated_attestation.message.tree_hash_root();
+            for validator in aggregated_signature.to_validator_indices() {
+                let key = SignatureKey::from_parts(validator, data_root);
+                let mut proofs = latest_new_aggregated_payloads_provider
+                    .get(key.clone())?
+                    .unwrap_or_default();
+
+                proofs.push(aggregated_signature.clone());
+                latest_new_aggregated_payloads_provider.insert(key, proofs)?;
+            }
+
+            signed_attestations.push(SignedAggregatedAttestation {
+                data: aggregated_attestation.message,
+                proof: aggregated_signature,
+            });
+        }
+
+        // Clear processed gossip signatures
+        for signature_key in gossip_signatures_provider.get_keys()? {
+            let _ = gossip_signatures_provider.remove(signature_key);
+        }
+
+        Ok(signed_attestations)
+    }
+
+    #[cfg(feature = "devnet3")]
+    pub async fn compute_block_weights(&self) -> anyhow::Result<HashMap<B256, u64>> {
+        let latest_known_aggregated_payloads_provider = self
+            .store
+            .lock()
+            .await
+            .latest_known_aggregated_payloads_provider();
+
+        let aggregated_payloads = latest_known_aggregated_payloads_provider
+            .iter()?
+            .into_iter()
+            .collect();
+
+        let attestations = self
+            .extract_attestations_from_aggregated_payloads(&aggregated_payloads)
+            .await?;
+
+        let db = self.store.lock().await;
+        let start_slot = db.latest_finalized_provider().get()?.slot;
+
+        let mut weights: HashMap<B256, u64> = HashMap::new();
+        let block_provider = db.block_provider();
+
+        for attestation_data in attestations.values() {
+            let mut current_root = attestation_data.head.root;
+
+            while let Some(block) = block_provider.get(current_root).ok().flatten() {
+                if block.message.block.slot <= start_slot {
+                    break;
+                }
+                *weights.entry(current_root).or_insert(0) += 1;
+                current_root = block.message.block.parent_root;
+            }
+        }
+
+        Ok(weights)
+    }
+
     /// Process a signed attestation from gossip network.
     /// 1. Validates attestation structure
     /// 2. Verifies XMSS signature
@@ -1769,12 +1615,11 @@ impl Store {
     pub async fn on_gossip_attestation(
         &mut self,
         signed_attestation: SignedAttestation,
-        #[cfg(feature = "devnet3")] is_aggregator: bool,
+        is_aggregator: bool,
     ) -> anyhow::Result<()> {
         let validator_id = signed_attestation.validator_id;
         let attestation_data = &signed_attestation.message;
         let signature = signed_attestation.signature;
-        #[cfg(feature = "devnet3")]
         let (attestation_data_by_root_provider, validator_id_provider) = {
             let db = self.store.lock().await;
             (
@@ -1807,17 +1652,12 @@ impl Store {
             "Signature verification failed"
         );
 
-        #[cfg(feature = "devnet3")]
         let data_root = attestation_data.tree_hash_root();
 
-        #[cfg(feature = "devnet2")]
-        {
-            gossip_signatures_provider
-                .insert(SignatureKey::new(validator_id, attestation_data), signature)?;
-
-            self.on_gossip_aggregated_attestation(signed_attestation, false)
-                .await?;
-        }
+        if is_aggregator && let Ok(Some(current_id)) = validator_id_provider.get() {
+            let current_validator_subnet =
+                compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
+            let attester_subnet = compute_subnet_id(validator_id, ATTESTATION_COMMITTEE_COUNT);
 
         #[cfg(feature = "devnet3")]
         {
@@ -1832,9 +1672,9 @@ impl Store {
                         .insert(SignatureKey::new(validator_id, attestation_data), signature)?;
                 }
             }
-
-            attestation_data_by_root_provider.insert(data_root, attestation_data.clone())?;
         }
+
+        attestation_data_by_root_provider.insert(data_root, attestation_data.clone())?;
 
         Ok(())
     }
@@ -1866,7 +1706,6 @@ impl Store {
         })
     }
 
-    #[cfg(feature = "devnet3")]
     pub async fn prune_stale_attestation_data(&mut self) -> anyhow::Result<()> {
         let (
             latest_finalized_provider,
@@ -1945,7 +1784,6 @@ mod tests {
     };
 
     use alloy_primitives::{B256, FixedBytes};
-    #[cfg(feature = "devnet3")]
     use anyhow::ensure;
     #[cfg(feature = "devnet3")]
     use ream_consensus_lean::attestation::SignedAggregatedAttestation;
@@ -2238,7 +2076,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     #[ignore]
     async fn test_head_slot_less_than_source_rejected() -> anyhow::Result<()> {
@@ -2283,7 +2120,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     #[ignore]
     async fn test_head_slot_less_than_target_rejected() -> anyhow::Result<()> {
@@ -2325,7 +2161,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     #[ignore]
     async fn test_valid_attestation_with_correct_head_passes() -> anyhow::Result<()> {
@@ -2359,7 +2194,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_head_equal_to_source_and_target_passes() -> anyhow::Result<()> {
         let store = sample_store(10).await;
@@ -2383,7 +2217,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     fn _make_attestation_data(slot: u64, target_slot: u64) -> AttestationData {
         let mut root = B256::ZERO;
         root[24..32].copy_from_slice(&target_slot.to_be_bytes());
@@ -2405,7 +2238,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_prunes_entries_with_target_at_finalized() -> anyhow::Result<()> {
         let mut store = sample_store(10).await;
@@ -2453,7 +2285,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_prunes_entries_with_target_before_finalized() -> anyhow::Result<()> {
         let mut store = sample_store(10).await;
@@ -2491,7 +2322,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_keeps_entries_with_target_after_finalized() -> anyhow::Result<()> {
         let mut store = sample_store(10).await;
@@ -2530,7 +2360,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_prunes_related_structures_together() -> anyhow::Result<()> {
         let mut store = sample_store(10).await;
@@ -2619,7 +2448,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_returns_self_when_nothing_to_prune() -> anyhow::Result<()> {
         let mut store = sample_store(10).await;
@@ -2647,7 +2475,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_handles_empty_attestation_data() -> anyhow::Result<()> {
         let mut store = sample_store(10).await;
@@ -2668,7 +2495,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_prunes_multiple_validators_same_data_root() -> anyhow::Result<()> {
         let mut store = sample_store(10).await;
@@ -2718,7 +2544,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_mixed_stale_and_fresh_entries() -> anyhow::Result<()> {
         let mut store = sample_store(10).await;
@@ -2790,7 +2615,7 @@ mod tests {
 
     // Test block production includes available attestations
     // This test generates real key pairs for validators to ensure signature aggregation works.
-    #[cfg(feature = "devnet2")]
+    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_produce_block_with_attestations() {
         use rand::rng;
@@ -2928,7 +2753,6 @@ mod tests {
         );
         assert_ne!(block_with_signature.block.state_root, B256::ZERO);
 
-        #[cfg(feature = "devnet3")]
         {
             let state_provider = { store.store.lock().await.state_provider() };
 
@@ -2967,39 +2791,7 @@ mod tests {
             }
         }
     }
-
-    // Test producing blocks in sequential slots.
-    #[cfg(feature = "devnet2")]
-    #[tokio::test]
-    pub async fn test_produce_block_sequential_slots() {
-        let mut store = sample_store(10).await;
-        let block_provider = store.store.lock().await.block_provider();
-        let genesis_hash = store.store.lock().await.head_provider().get().unwrap();
-
-        let mut slot = 1;
-        let mut validator_index = 1;
-        let BlockWithSignatures { block: block1, .. } = store
-            .produce_block_with_signatures(slot, validator_index)
-            .await
-            .unwrap();
-        assert_eq!(block1.slot, slot);
-        assert_eq!(block1.proposer_index, validator_index);
-        assert_eq!(block1.parent_root, genesis_hash);
-
-        slot = 2;
-        validator_index = 2;
-        let BlockWithSignatures { block: block2, .. } = store
-            .produce_block_with_signatures(slot, validator_index)
-            .await
-            .unwrap();
-
-        assert_eq!(block2.slot, slot);
-        assert_eq!(block2.proposer_index, validator_index);
-        assert_eq!(block2.parent_root, genesis_hash);
-        assert!(block_provider.get(genesis_hash).unwrap().is_some());
-    }
-
-    // Test block production with no available attestations.
+    /// Test block production with no available attestations.
     #[tokio::test]
     pub async fn test_produce_block_empty_attestations() {
         let mut store = sample_store(10).await;
@@ -3135,9 +2927,6 @@ mod tests {
     #[tokio::test]
     pub async fn test_produce_attestation_head_reference() {
         let slot = 2;
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
         let block_provider = store.store.lock().await.block_provider();
         let attestation = AggregatedAttestations {
@@ -3306,7 +3095,6 @@ mod tests {
     // GET FORKCHOICE STORE TESTS
 
     // Test get_forkchoice_store() time initialization.
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_store_time_from_anchor_slot() {
         let store = sample_store(10).await;
@@ -3332,20 +3120,12 @@ mod tests {
     // Test basic on_tick functionality.
     #[tokio::test]
     pub async fn test_on_tick_basic() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
         let target_time = lean_network_spec().genesis_time + 200;
 
-        #[cfg(feature = "devnet2")]
-        store.on_tick(target_time, true).await.unwrap();
-
-        #[cfg(feature = "devnet3")]
         store.on_tick(target_time, true, false).await.unwrap();
 
         let new_time = time_provider.get().unwrap();
@@ -3356,20 +3136,12 @@ mod tests {
     // Test on_tick without proposal.
     #[tokio::test]
     pub async fn test_on_tick_no_proposal() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
         let target_time = lean_network_spec().genesis_time + 100;
 
-        #[cfg(feature = "devnet2")]
-        store.on_tick(target_time, true).await.unwrap();
-
-        #[cfg(feature = "devnet3")]
         store.on_tick(target_time, true, false).await.unwrap();
 
         let new_time = time_provider.get().unwrap();
@@ -3380,20 +3152,12 @@ mod tests {
     // Test on_tick when already at target time.
     #[tokio::test]
     pub async fn test_on_tick_already_current() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
         let current_target = lean_network_spec().genesis_time + initial_time;
 
-        #[cfg(feature = "devnet2")]
-        store.on_tick(current_target, true).await.unwrap();
-
-        #[cfg(feature = "devnet3")]
         store.on_tick(current_target, true, false).await.unwrap();
 
         let new_time = time_provider.get().unwrap();
@@ -3404,20 +3168,12 @@ mod tests {
     // Test on_tick with small time increment.
     #[tokio::test]
     pub async fn test_on_tick_small_increment() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
         let target_time = lean_network_spec().genesis_time + initial_time + 1;
 
-        #[cfg(feature = "devnet2")]
-        store.on_tick(target_time, false).await.unwrap();
-
-        #[cfg(feature = "devnet3")]
         store.on_tick(target_time, false, false).await.unwrap();
 
         let new_time = time_provider.get().unwrap();
@@ -3430,19 +3186,11 @@ mod tests {
     // Test basic interval ticking.
     #[tokio::test]
     pub async fn test_tick_interval_basic() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
 
-        #[cfg(feature = "devnet2")]
-        store.tick_interval(false).await.unwrap();
-
-        #[cfg(feature = "devnet3")]
         store.tick_interval(false, false).await.unwrap();
 
         let new_time = time_provider.get().unwrap();
@@ -3453,19 +3201,11 @@ mod tests {
     // Test interval ticking with proposal.
     #[tokio::test]
     pub async fn test_tick_interval_with_proposal() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
 
-        #[cfg(feature = "devnet2")]
-        store.tick_interval(true).await.unwrap();
-
-        #[cfg(feature = "devnet3")]
         store.tick_interval(true, false).await.unwrap();
 
         let new_time = time_provider.get().unwrap();
@@ -3476,21 +3216,11 @@ mod tests {
     // Test sequence of interval ticks.
     #[tokio::test]
     pub async fn test_tick_interval_sequence() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
         let initial_time = time_provider.get().unwrap();
 
-        #[cfg(feature = "devnet2")]
-        for i in 0..5 {
-            store.tick_interval((i % 2) == 0).await.unwrap();
-        }
-
-        #[cfg(feature = "devnet3")]
         for i in 0..5 {
             store.tick_interval((i % 2) == 0, false).await.unwrap();
         }
@@ -3503,10 +3233,6 @@ mod tests {
     // Test different actions performed based on interval phase.
     #[tokio::test]
     pub async fn test_tick_interval_actions_by_phase() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
 
         let mut root = [0u8; 32];
@@ -3538,9 +3264,6 @@ mod tests {
 
         for interval in 0..INTERVALS_PER_SLOT {
             let has_proposal = interval == 0;
-            #[cfg(feature = "devnet2")]
-            store.tick_interval(has_proposal).await.unwrap();
-            #[cfg(feature = "devnet3")]
             store.tick_interval(has_proposal, false).await.unwrap();
 
             let new_time = {
@@ -3594,7 +3317,7 @@ mod tests {
     }
 
     // Test interval calculations within slots.
-    #[cfg(feature = "devnet2")]
+    #[ignore]
     #[tokio::test]
     pub async fn test_interval_calculations() {
         let total_intervals = 10;
@@ -3615,13 +3338,9 @@ mod tests {
     // TEST ATTESTATION PROCESSING TIMING
 
     // Test basic new attestation processing.
-    #[cfg(feature = "devnet2")]
+    #[ignore]
     #[tokio::test]
-    pub async fn test_accept_new_attestations_basic() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
+    pub async fn test_accept_new_attestations_basic_devnet2() {
         let mut store = sample_store(10).await;
 
         let mut root = [0u8; 32];
@@ -3688,8 +3407,7 @@ mod tests {
         );
     }
 
-    // Test basic new attestation processing moves aggregated payloads.
-    #[cfg(feature = "devnet3")]
+    /// Test basic new attestation processing moves aggregated payloads.
     #[tokio::test]
     pub async fn test_accept_new_attestations_basic() {
         let mut store = sample_store(10).await;
@@ -3730,13 +3448,9 @@ mod tests {
     }
 
     // Test accepting multiple new attestations.
-    #[cfg(feature = "devnet2")]
+    #[ignore]
     #[tokio::test]
-    pub async fn test_accept_new_attestations_multiple() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
+    pub async fn test_accept_new_attestations_multiple_devnet2() {
         let mut store = sample_store(10).await;
 
         let mut checkpoints: Vec<Checkpoint> = Vec::new();
@@ -3816,7 +3530,6 @@ mod tests {
     }
 
     // Test accepting multiple new aggregated payloads.
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_accept_new_attestations_multiple() {
         let mut store = sample_store(10).await;
@@ -3838,10 +3551,10 @@ mod tests {
     }
 
     // Test accepting new attestations when there are none.
-    #[cfg(feature = "devnet2")]
+    #[ignore]
     #[tokio::test]
-    pub async fn test_accept_new_attestations_empty() {
-        let store = sample_store(10).await;
+    pub async fn test_accept_new_attestations_empty_devnet2() {
+        let mut store = sample_store(10).await;
 
         let latest_known_attestations_provider = {
             store
@@ -3879,7 +3592,6 @@ mod tests {
         assert!(latest_known_attestations_length == initial_known_attestations_length);
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_accept_new_attestations_empty() {
         let mut store = sample_store(10).await;
@@ -3924,10 +3636,6 @@ mod tests {
     // Test getting proposal head for a slot.
     #[tokio::test]
     pub async fn test_get_proposal_head_basic() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
 
         let head = store.get_proposal_head(0).await.unwrap();
@@ -3940,10 +3648,6 @@ mod tests {
     // Test that get_proposal_head advances store time appropriately.
     #[tokio::test]
     pub async fn test_get_proposal_head_advances_time() {
-        #[cfg(feature = "devnet2")]
-        let store = sample_store(10).await;
-
-        #[cfg(feature = "devnet3")]
         let mut store = sample_store(10).await;
         let time_provider = { store.store.lock().await.time_provider() };
 
@@ -3957,10 +3661,10 @@ mod tests {
     }
 
     // Test that get_proposal_head processes pending attestations.
-    #[cfg(feature = "devnet2")]
+    #[ignore]
     #[tokio::test]
-    pub async fn test_get_proposal_head_processes_attestations() {
-        let store = sample_store(10).await;
+    pub async fn test_get_proposal_head_processes_attestations_devnet2() {
+        let mut store = sample_store(10).await;
 
         let root = {
             let mut root_vec = [0u8; 32];
@@ -4021,7 +3725,6 @@ mod tests {
         assert!(known_attestations_correct_checkpoint == checkpoint);
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_get_proposal_head_processes_attestations() {
         let mut store = sample_store(10).await;
@@ -4045,7 +3748,7 @@ mod tests {
     // TEST TIME CONSTANTS
 
     // Test that time constants are consistent with each other.
-    #[cfg(feature = "devnet2")]
+    #[ignore]
     #[allow(clippy::assertions_on_constants)]
     #[tokio::test]
     pub async fn test_time_constants_consistency() {
