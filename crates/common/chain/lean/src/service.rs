@@ -292,6 +292,8 @@ impl LeanChainService {
                                 starting_slot = prevous_queue.starting_slot,
                                 "Forward background sync incomplete; re-queuing job",
                             );
+
+                            self.sync_status.remove_processed_queue(prevous_queue.starting_root);
                             self.checkpoints_to_queue.push((checkpoint_for_new_queue, true));
                         }
                     }
