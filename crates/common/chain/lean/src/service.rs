@@ -1140,7 +1140,7 @@ impl LeanChainService {
                     let store = fork_choice.store.lock().await;
                     store.block_provider()
                 };
-                for root in blocks_by_root_v1_request.inner {
+                for root in blocks_by_root_v1_request.roots {
                     match block_provider.get(root) {
                         Ok(Some(block)) => {
                             if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::Response {
@@ -1335,10 +1335,14 @@ impl LeanChainService {
         let parent_root_in_block_store = block_provider.get(parent_root)?.is_some();
         let parent_root_is_start_of_any_queue =
             self.sync_status.is_root_start_of_any_queue(&parent_root);
+
+        let parent_root_is_genesis = parent_root == alloy_primitives::B256::ZERO;
+
         if parent_root_is_local_head
             || parent_root_in_pending_blocks
             || parent_root_in_block_store
             || parent_root_is_start_of_any_queue
+            || parent_root_is_genesis
         {
             trace!(
                 root = ?last_root,
