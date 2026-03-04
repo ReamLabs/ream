@@ -11,9 +11,7 @@ impl Verbosity {
     pub fn directive(&self) -> String {
         match self {
             Verbosity::Error => "error,actix_server=warn,discv5=error,air=error,rec_aggregation=error,sub_protocols=error",
-            Verbosity::Warn => "warn,acti
-            
-            x_server=warn,discv5=error,air=error,rec_aggregation=error,sub_protocols=error",
+            Verbosity::Warn => "warn,actix_server=warn,discv5=error,air=error,rec_aggregation=error,sub_protocols=error",
             Verbosity::Info => "info,actix_server=warn,discv5=error,air=error,rec_aggregation=error,sub_protocols=error",
             Verbosity::Debug => "debug",
             Verbosity::Trace => "trace",
