@@ -176,6 +176,11 @@ impl Decoder for OutboundSSZSnappyCodec {
             }
         };
 
+        // A zero-length success payload is invalid SSZ for any response type.
+        if length == 0 && response_code == ResponseCode::Success {
+            return Ok(Some(RespMessage::EndOfStream));
+        }
+
         // The length-prefix is within the expected size bounds derived from the payload SSZ
         // type or MAX_PAYLOAD_SIZE, whichever is smaller.
         if length > max_message_size() as usize {
