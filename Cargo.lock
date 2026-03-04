@@ -6529,6 +6529,7 @@ name = "ream-rpc-lean"
 version = "0.1.0"
 dependencies = [
  "actix-web",
+ "alloy-primitives",
  "ethereum_ssz",
  "libp2p",
  "parking_lot",
