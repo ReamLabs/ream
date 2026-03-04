@@ -20,7 +20,9 @@ use ream_consensus_lean::{
     state::LeanState,
     validator::is_proposer,
 };
-use ream_consensus_misc::constants::lean::{ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT};
+#[cfg(feature = "devnet3")]
+use ream_consensus_misc::constants::lean::ATTESTATION_COMMITTEE_COUNT;
+use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 #[cfg(feature = "devnet2")]
 use ream_metrics::{
     ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL, ATTESTATIONS_VALID_TOTAL,
@@ -1913,10 +1915,11 @@ pub fn compute_subnet_id(validator_id: u64, num_committees: u64) -> u64 {
     validator_id % num_committees
 }
 
+#[cfg(feature = "devnet3")]
 fn effective_attestation_committee_count() -> u64 {
     #[cfg(test)]
     {
-        return TEST_ATTESTATION_COMMITTEE_COUNT.load(Ordering::Relaxed);
+        TEST_ATTESTATION_COMMITTEE_COUNT.load(Ordering::Relaxed)
     }
 
     #[cfg(not(test))]
@@ -1925,10 +1928,10 @@ fn effective_attestation_committee_count() -> u64 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "devnet3"))]
 static TEST_ATTESTATION_COMMITTEE_COUNT: AtomicU64 = AtomicU64::new(ATTESTATION_COMMITTEE_COUNT);
 
-#[cfg(test)]
+#[cfg(all(test, feature = "devnet3"))]
 fn swap_test_attestation_committee_count(new_value: u64) -> u64 {
     TEST_ATTESTATION_COMMITTEE_COUNT.swap(new_value, Ordering::Relaxed)
 }
@@ -1944,6 +1947,8 @@ mod tests {
     use alloy_primitives::{B256, FixedBytes};
     #[cfg(feature = "devnet3")]
     use anyhow::ensure;
+    #[cfg(feature = "devnet3")]
+    use ream_consensus_lean::attestation::SignedAggregatedAttestation;
     #[cfg(feature = "devnet2")]
     use ream_consensus_lean::block::{
         Block, BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation,
@@ -1955,7 +1960,7 @@ mod tests {
     use ream_consensus_lean::{
         attestation::{
             AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
-            AttestationData, SignatureKey, SignedAggregatedAttestation, SignedAttestation,
+            AttestationData, SignatureKey, SignedAttestation,
         },
         block::BlockWithSignatures,
         checkpoint::Checkpoint,
@@ -2005,10 +2010,12 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "devnet3")]
     struct CommitteeCountOverride {
         previous: u64,
     }
 
+    #[cfg(feature = "devnet3")]
     impl CommitteeCountOverride {
         fn new(value: u64) -> Self {
             let previous = swap_test_attestation_committee_count(value);
@@ -2016,9 +2023,10 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "devnet3")]
     impl Drop for CommitteeCountOverride {
         fn drop(&mut self) {
-            let _ = swap_test_attestation_committee_count(self.previous);
+            swap_test_attestation_committee_count(self.previous);
         }
     }
 
