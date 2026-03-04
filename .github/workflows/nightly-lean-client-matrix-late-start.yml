@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        devnet: [devnet2, devnet3]
+        devnet: [devnet3]
     steps:
       - name: Checkout ream
         uses: actions/checkout@v4
