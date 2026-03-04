@@ -17,7 +17,7 @@ use ream_p2p::{
 };
 use ream_storage::{cache::BeaconCacheDB, db::beacon::BeaconDB};
 use ream_sync_committee_pool::SyncCommitteePool;
-use ream_syncer::block_range::BlockRangeSyncer;
+use ream_syncer::{block_range::BlockRangeSyncer, column_sampler::ColumnSampler};
 use tokio::{sync::mpsc, time::interval};
 use tracing::{error, info};
 
@@ -34,6 +34,7 @@ pub struct NetworkManagerService {
     pub p2p_sender: P2PSender,
     pub network_state: Arc<NetworkState>,
     pub block_range_syncer: BlockRangeSyncer,
+    pub column_sampler: ColumnSampler,
     pub ream_db: BeaconDB,
     pub cached_db: Arc<BeaconCacheDB>,
     pub sync_committee_pool: Arc<SyncCommitteePool>,
@@ -111,12 +112,20 @@ impl NetworkManagerService {
             executor.clone(),
         );
 
+        let column_sampler = ColumnSampler::new(
+            network_state.clone(),
+            p2p_sender.clone(),
+            executor.clone(),
+            config.das_allowed_failures,
+        );
+
         Ok(Self {
             beacon_chain,
             manager_receiver,
             p2p_sender: P2PSender(p2p_sender),
             network_state,
             block_range_syncer,
+            column_sampler,
             ream_db,
             cached_db,
             sync_committee_pool,
@@ -136,6 +145,7 @@ impl NetworkManagerService {
             cached_db,
             network_state,
             block_range_syncer,
+            column_sampler,
             ..
         } = self;
 
@@ -178,8 +188,25 @@ impl NetworkManagerService {
                         .expect("correct time")
                         .as_secs();
 
-                    if let Err(err) =  beacon_chain.process_tick(time).await {
+                    if let Err(err) = beacon_chain.process_tick(time).await {
                         error!("Failed to process gossipsub tick: {err}");
+                    }
+
+                    match beacon_chain.store.lock().await.get_head() {
+                        Ok(head_root) => {
+                            let result = column_sampler.sample_columns(head_root).await;
+                            if !result.success {
+                                error!(
+                                    "Peer sampling failed: {}/{} columns retrieved, missing: {:?}",
+                                    result.columns_retrieved.len(),
+                                    result.columns_requested.len(),
+                                    result.columns_missing
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            error!("Failed to get head root for peer sampling: {err}");
+                        }
                     }
                 }
                 Some(event) = manager_receiver.recv() => {
