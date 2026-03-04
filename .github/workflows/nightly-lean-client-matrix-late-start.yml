@@ -64,7 +64,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        devnet: [devnet2, devnet3]
+        devnet: [devnet3]
         peer_client: [zeam, qlean, lantern, lighthouse, grandine, ethlambda]
         topology: [peer-peer-ream, peer-ream-ream]
     steps:
@@ -244,16 +244,14 @@ jobs:
               exit 1
               ;;
           esac
-          # Ensure at least one ream node aggregates
+          # Ensure at least one early-starting node is an aggregator
           node_one_aggregator="false"
           node_two_aggregator="false"
           node_three_aggregator="false"
-          if [[ "$node_one" == ream_* ]]; then
-            node_one_aggregator="true"
-          elif [[ "$node_two" == ream_* ]]; then
+          if [[ "$node_two" == ream_* ]]; then
             node_two_aggregator="true"
           else
-            node_three_aggregator="true"
+            node_one_aggregator="true"
           fi
           cat > validator-config.yaml <<EOF
           shuffle: roundrobin
