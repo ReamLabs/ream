@@ -1936,7 +1936,10 @@ fn swap_test_attestation_committee_count(new_value: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "devnet3")]
-    use std::collections::{HashMap, HashSet};
+    use std::{
+        collections::{HashMap, HashSet},
+        vec,
+    };
 
     use alloy_primitives::{B256, FixedBytes};
     #[cfg(feature = "devnet3")]
@@ -4656,17 +4659,416 @@ mod tests {
         assert!(stored_proofs.contains(&proof_2));
     }
 
-    #[cfg(feature = "devnet3")] // PASS
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_aggregates_gossip_signatures_into_proof() {
+        let mut store: Store = sample_store_as_store(4).await;
+        set_validator_id(&store, Some(0)).await;
+        let attesting_validators: Vec<u64> = vec![1, 2];
+        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
+        let slot = 1;
+
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        let data_root = attestation_data.tree_hash_root();
+
+        for &validator_id in attesting_validators.iter() {
+            let signature = key_pairs
+                .get(&validator_id)
+                .unwrap()
+                .1
+                .sign(&data_root.0, attestation_data.slot as u32)
+                .unwrap();
+
+            store
+                .on_gossip_attestation(
+                    SignedAttestation {
+                        validator_id,
+                        message: attestation_data.clone(),
+                        signature,
+                    },
+                    true,
+                )
+                .await
+                .unwrap();
+        }
+
+        store.aggregate_committee_signatures().await.unwrap();
+
+        let latest_new = store
+            .store
+            .lock()
+            .await
+            .latest_new_aggregated_payloads_provider();
+
+        for validator_id in attesting_validators {
+            let key = SignatureKey::from_parts(validator_id, data_root);
+            let proofs = latest_new.get(key).unwrap().unwrap();
+            assert!(!proofs.is_empty());
+        }
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_aggregated_proof_is_valid() {
+        let mut store: Store = sample_store_as_store(4).await;
+        set_validator_id(&store, Some(0)).await;
+        let attesting_validators: Vec<u64> = vec![1, 2];
+        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
+        let slot = 1;
+
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        let data_root = attestation_data.tree_hash_root();
+
+        for &validator_id in attesting_validators.iter() {
+            let signature = key_pairs
+                .get(&validator_id)
+                .unwrap()
+                .1
+                .sign(&data_root.0, attestation_data.slot as u32)
+                .unwrap();
+
+            store
+                .on_gossip_attestation(
+                    SignedAttestation {
+                        validator_id,
+                        message: attestation_data.clone(),
+                        signature,
+                    },
+                    true,
+                )
+                .await
+                .unwrap();
+        }
+
+        store.aggregate_committee_signatures().await.unwrap();
+
+        let proof = store
+            .store
+            .lock()
+            .await
+            .latest_new_aggregated_payloads_provider()
+            .get(SignatureKey::from_parts(attesting_validators[0], data_root))
+            .unwrap()
+            .unwrap()
+            .first()
+            .cloned()
+            .unwrap();
+
+        let participants = proof.to_validator_indices();
+        let state = store
+            .store
+            .lock()
+            .await
+            .state_provider()
+            .get(attestation_data.target.root)
+            .unwrap()
+            .unwrap();
+        let public_keys: Vec<_> = participants
+            .iter()
+            .map(|&validator_id| state.validators[validator_id as usize].public_key)
+            .collect();
+
+        assert!(
+            verify_aggregate_signature(
+                &public_keys,
+                &data_root.0,
+                proof.proof_data.as_ref(),
+                attestation_data.slot as u32
+            )
+            .is_ok()
+        );
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_empty_gossip_signatures_produces_no_proofs() {
+        let mut store: Store = sample_store_as_store(4).await;
+        store.aggregate_committee_signatures().await.unwrap();
+
+        let is_empty = store
+            .store
+            .lock()
+            .await
+            .latest_new_aggregated_payloads_provider()
+            .iter()
+            .unwrap()
+            .is_empty();
+        assert!(is_empty);
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_multiple_attestation_data_grouped_separately() {
+        let mut store: Store = sample_store_as_store(4).await;
+        let attesting_validators: Vec<u64> = vec![1, 2];
+        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
+        let slot = 1;
+
+        let attestation_data_1 = store.produce_attestation_data(slot).await.unwrap();
+        let attestation_data_2 = AttestationData {
+            slot,
+            head: Checkpoint {
+                root: FixedBytes::repeat_byte(1),
+                slot: 1,
+            },
+            target: attestation_data_1.target,
+            source: attestation_data_1.source,
+        };
+        let data_root_1 = attestation_data_1.tree_hash_root();
+        let data_root_2 = attestation_data_2.tree_hash_root();
+
+        let sig_1 = key_pairs
+            .get(&1)
+            .unwrap()
+            .1
+            .sign(&data_root_1.0, attestation_data_1.slot as u32)
+            .unwrap();
+        let sig_2 = key_pairs
+            .get(&2)
+            .unwrap()
+            .1
+            .sign(&data_root_2.0, attestation_data_2.slot as u32)
+            .unwrap();
+
+        {
+            let db = store.store.lock().await;
+            let attestation_data_by_root = db.attestation_data_by_root_provider();
+            let gossip_signatures = db.gossip_signatures_provider();
+
+            attestation_data_by_root
+                .insert(data_root_1, attestation_data_1)
+                .unwrap();
+            attestation_data_by_root
+                .insert(data_root_2, attestation_data_2)
+                .unwrap();
+
+            gossip_signatures
+                .insert(
+                    SignatureKey::from_parts(attesting_validators[0], data_root_1),
+                    sig_1,
+                )
+                .unwrap();
+            gossip_signatures
+                .insert(
+                    SignatureKey::from_parts(attesting_validators[1], data_root_2),
+                    sig_2,
+                )
+                .unwrap();
+        }
+
+        store.aggregate_committee_signatures().await.unwrap();
+
+        let latest_new = store
+            .store
+            .lock()
+            .await
+            .latest_new_aggregated_payloads_provider();
+
+        assert!(
+            latest_new
+                .get(SignatureKey::from_parts(
+                    attesting_validators[0],
+                    data_root_1
+                ))
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            latest_new
+                .get(SignatureKey::from_parts(
+                    attesting_validators[1],
+                    data_root_2
+                ))
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_interval_2_triggers_aggregation_for_aggregator() {
+        let mut store: Store = sample_store_as_store(4).await;
+        set_validator_id(&store, Some(0)).await;
+        let attesting_validators: Vec<u64> = vec![1, 2];
+        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
+        let slot = 1;
+
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        let data_root = attestation_data.tree_hash_root();
+
+        for &validator_id in attesting_validators.iter() {
+            let signature = key_pairs
+                .get(&validator_id)
+                .unwrap()
+                .1
+                .sign(&data_root.0, attestation_data.slot as u32)
+                .unwrap();
+
+            store
+                .on_gossip_attestation(
+                    SignedAttestation {
+                        validator_id,
+                        message: attestation_data.clone(),
+                        signature,
+                    },
+                    true,
+                )
+                .await
+                .unwrap();
+        }
+
+        store.store.lock().await.time_provider().insert(1).unwrap();
+        store.tick_interval(false, true).await.unwrap();
+
+        let sig_key = SignatureKey::from_parts(attesting_validators[0], data_root);
+        assert!(
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_aggregated_payloads_provider()
+                .get(sig_key)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_interval_2_skips_aggregation_for_non_aggregator() {
+        let mut store: Store = sample_store_as_store(4).await;
+        set_validator_id(&store, Some(0)).await;
+        let attesting_validators: Vec<u64> = vec![1, 2];
+        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
+        let slot = 1;
+
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        let data_root = attestation_data.tree_hash_root();
+
+        for &validator_id in attesting_validators.iter() {
+            let signature = key_pairs
+                .get(&validator_id)
+                .unwrap()
+                .1
+                .sign(&data_root.0, attestation_data.slot as u32)
+                .unwrap();
+
+            store
+                .on_gossip_attestation(
+                    SignedAttestation {
+                        validator_id,
+                        message: attestation_data.clone(),
+                        signature,
+                    },
+                    true,
+                )
+                .await
+                .unwrap();
+        }
+
+        store.store.lock().await.time_provider().insert(1).unwrap();
+        store.tick_interval(false, false).await.unwrap();
+
+        let sig_key = SignatureKey::from_parts(attesting_validators[0], data_root);
+        assert!(
+            store
+                .store
+                .lock()
+                .await
+                .latest_new_aggregated_payloads_provider()
+                .get(sig_key)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_other_intervals_do_not_trigger_aggregation() {
+        let mut store: Store = sample_store_as_store(4).await;
+        let attesting_validators: Vec<u64> = vec![1, 2];
+        set_validator_id(&store, Some(0)).await;
+        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
+        let slot = 1;
+
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        let data_root = attestation_data.tree_hash_root();
+        let sig_key = SignatureKey::from_parts(1, data_root);
+
+        for &validator_id in attesting_validators.iter() {
+            let signature = key_pairs
+                .get(&validator_id)
+                .unwrap()
+                .1
+                .sign(&data_root.0, attestation_data.slot as u32)
+                .unwrap();
+
+            store
+                .on_gossip_attestation(
+                    SignedAttestation {
+                        validator_id,
+                        message: attestation_data.clone(),
+                        signature,
+                    },
+                    true,
+                )
+                .await
+                .unwrap();
+        }
+
+        let non_aggregation_intervals = vec![0, 1, 3, 4];
+        for target_interval in non_aggregation_intervals {
+            let pre_tick_time = (target_interval + INTERVALS_PER_SLOT - 1) % INTERVALS_PER_SLOT;
+            {
+                let db = store.store.lock().await;
+                db.time_provider().insert(pre_tick_time).unwrap();
+                db.latest_new_aggregated_payloads_provider()
+                    .drain()
+                    .unwrap();
+            }
+
+            store.tick_interval(false, true).await.unwrap();
+
+            assert!(
+                store
+                    .store
+                    .lock()
+                    .await
+                    .latest_new_aggregated_payloads_provider()
+                    .get(sig_key.clone())
+                    .unwrap()
+                    .is_none(),
+                "Aggregation should not occur at interval {target_interval}"
+            );
+        }
+    }
+
+    #[cfg(feature = "devnet3")]
+    #[tokio::test]
+    pub async fn test_interval_0_accepts_attestations_with_proposal() {
+        let mut store: Store = sample_store_as_store(4).await;
+
+        store.store.lock().await.time_provider().insert(4).unwrap();
+        store.tick_interval(true, true).await.unwrap();
+
+        let time = store.store.lock().await.time_provider().get().unwrap();
+        assert_eq!(time, 5);
+        assert_eq!(time % INTERVALS_PER_SLOT, 0);
+    }
+
+    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_gossip_to_aggregation_to_storage() {
         let mut store: Store = sample_store_as_store(4).await;
         set_validator_id(&store, Some(0)).await;
-        let key_pairs = install_validator_keys(&store, &[1, 2]).await;
+        let attesting_validators: Vec<u64> = vec![1, 2];
+        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
+        let slot = 1;
 
-        let attestation_data = store.produce_attestation_data(1).await.unwrap();
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
         let data_root = attestation_data.tree_hash_root();
 
-        for validator_id in [1_u64, 2_u64] {
+        for &validator_id in attesting_validators.iter() {
             let signature = key_pairs
                 .get(&validator_id)
                 .unwrap()
@@ -4684,18 +5086,17 @@ mod tests {
                 )
                 .await
                 .unwrap();
+            assert!(
+                store
+                    .store
+                    .lock()
+                    .await
+                    .gossip_signatures_provider()
+                    .get(SignatureKey::from_parts(validator_id, data_root))
+                    .unwrap()
+                    .is_some()
+            );
         }
-
-        assert!(
-            store
-                .store
-                .lock()
-                .await
-                .gossip_signatures_provider()
-                .get(SignatureKey::from_parts(1, data_root))
-                .unwrap()
-                .is_some()
-        );
 
         store.store.lock().await.time_provider().insert(1).unwrap();
         store.tick_interval(false, true).await.unwrap();
