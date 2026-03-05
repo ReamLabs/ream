@@ -1,0 +1,703 @@
+name: Nightly Lean Client Matrix
+
+on:
+  pull_request:
+    branches: ["master"]
+  push:
+    branches: ["master"]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Optional ream commit SHA to test (defaults to master HEAD)"
+        required: false
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-ream-binary:
+    name: Build ream binary (${{ matrix.devnet }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        devnet: [devnet3, devnet4]
+
+    steps:
+      - name: Checkout ream
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'workflow_dispatch' && inputs.commit_sha || 'master' }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build ream
+        run: |
+          set -euo pipefail
+
+          case "${{ matrix.devnet }}" in
+            devnet3)
+              cargo build --release --package ream --bin ream --no-default-features --features devnet3
+              ;;
+            devnet4)
+              cargo build --release --package ream --bin ream --no-default-features --features devnet4
+              ;;
+            *)
+              echo "Unknown devnet: ${{ matrix.devnet }}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Upload ream binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ream-nightly-binary-${{ matrix.devnet }}
+          path: target/release/ream
+          if-no-files-found: error
+          retention-days: 3
+
+  interop-matrix:
+    name: ${{ matrix.devnet }} / ${{ matrix.peer_client }} / ${{ matrix.topology }}
+    runs-on: ubuntu-latest
+    needs: [build-ream-binary]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        devnet: [devnet3, devnet4]
+        peer_client: [zeam, qlean, lantern, lighthouse, grandine, ethlambda]
+        topology: [peer-peer-ream, peer-ream-ream]
+
+    steps:
+      - name: Checkout lean-quickstart
+        uses: actions/checkout@v4
+        with:
+          repository: blockblaz/lean-quickstart
+          path: lean-quickstart
+
+      - id: preflight
+        name: Preflight client availability
+        run: |
+          set -euo pipefail
+
+          skip_run="false"
+          skip_reason=""
+
+          # Grandine lean devnet images are intermittently unpublished.
+          # Skip these matrix legs until the image tags are available again.
+          if [ "${{ matrix.peer_client }}" = "grandine" ]; then
+            grandine_image="sifrai/lean:devnet-3"
+            if [ "${{ matrix.devnet }}" = "devnet4" ]; then
+              grandine_image="sifrai/lean:devnet-4"
+            fi
+
+            if ! docker manifest inspect "$grandine_image" >/dev/null 2>&1; then
+              skip_run="true"
+              skip_reason="Grandine image not published: $grandine_image"
+            fi
+          fi
+
+          echo "skip_run=$skip_run" >> "$GITHUB_OUTPUT"
+          echo "skip_reason=$skip_reason" >> "$GITHUB_OUTPUT"
+
+      - name: Skip unavailable matrix leg
+        if: steps.preflight.outputs.skip_run == 'true'
+        run: |
+          echo "Skipping matrix leg."
+          echo "Reason: ${{ steps.preflight.outputs.skip_reason }}"
+
+      - name: Download ream binary
+        if: steps.preflight.outputs.skip_run != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: ream-nightly-binary-${{ matrix.devnet }}
+          path: ream-bin
+
+      - name: Prepare dependencies
+        if: steps.preflight.outputs.skip_run != 'true'
+        run: |
+          set -euo pipefail
+
+          chmod +x ream-bin/ream
+
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Patch client launch scripts for matrix mode
+        if: steps.preflight.outputs.skip_run != 'true'
+        working-directory: lean-quickstart
+        run: |
+          set -euo pipefail
+
+          cat > client-cmds/ream-cmd.sh <<'EOF'
+          #!/bin/bash
+
+          #-----------------------ream setup----------------------
+          # Metrics enabled by default
+          metrics_flag="--metrics"
+
+          # Set aggregator flag based on isAggregator value
+          aggregator_flag=""
+          if [ "$isAggregator" == "true" ]; then
+              aggregator_flag="--is-aggregator"
+          fi
+
+          # Set checkpoint sync URL when restarting with checkpoint sync
+          checkpoint_sync_flag=""
+          if [ -n "${checkpoint_sync_url:-}" ]; then
+              checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
+          fi
+
+          # Ensure unique HTTP ports when multiple ream nodes run on host networking
+          ream_http_port=$((metricsPort + 1000))
+
+          # Use CI-built binary when provided, otherwise fall back to default local path
+          ream_binary_path="${REAM_BINARY_PATH:-$scriptDir/../ream/target/release/ream}"
+
+          node_binary="$ream_binary_path --data-dir $dataDir/$item \
+                  lean_node \
+                  --network $configDir/config.yaml \
+                  --validator-registry-path $configDir/validators.yaml \
+                  --bootnodes $configDir/nodes.yaml \
+                  --node-id $item --node-key $configDir/$privKeyPath \
+                  --socket-port $quicPort \
+                  $metrics_flag \
+                  --metrics-address 0.0.0.0 \
+                  --metrics-port $metricsPort \
+                  --http-address 0.0.0.0 \
+                  --http-port $ream_http_port \
+                  $aggregator_flag \
+                  $checkpoint_sync_flag"
+
+          node_docker="${REAM_DOCKER_IMAGE:-ghcr.io/reamlabs/ream:latest-devnet3} --data-dir /data \
+                  lean_node \
+                  --network /config/config.yaml \
+                  --validator-registry-path /config/validators.yaml \
+                  --bootnodes /config/nodes.yaml \
+                  --node-id $item --node-key /config/$privKeyPath \
+                  --socket-port $quicPort \
+                  $metrics_flag \
+                  --metrics-address 0.0.0.0 \
+                  --metrics-port $metricsPort \
+                  --http-address 0.0.0.0 \
+                  --http-port $ream_http_port \
+                  $aggregator_flag \
+                  $checkpoint_sync_flag"
+
+          # Force binary mode in CI when REAM_BINARY_PATH is set.
+          if [ -n "${REAM_BINARY_PATH:-}" ]; then
+              node_setup="binary"
+          else
+              node_setup="docker"
+          fi
+          EOF
+
+          cat > client-cmds/zeam-cmd.sh <<'EOF'
+          #!/bin/bash
+
+          #-----------------------zeam setup----------------------
+          # setup where lean-quickstart is a submodule folder in zeam repo
+          # update the path to your binary here if you want to use binary
+          # Metrics enabled by default
+          metrics_flag="--metrics_enable"
+
+          # Set aggregator flag based on isAggregator value
+          aggregator_flag=""
+          if [ "$isAggregator" == "true" ]; then
+              aggregator_flag="--is-aggregator"
+          fi
+
+          # Set checkpoint sync URL when restarting with checkpoint sync
+          checkpoint_sync_flag=""
+          if [ -n "${checkpoint_sync_url:-}" ]; then
+              checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
+          fi
+
+          node_binary="$scriptDir/../zig-out/bin/zeam node \
+                --custom_genesis $configDir \
+                --validator_config $validatorConfig \
+                --data-dir $dataDir/$item \
+                --node-id $item --node-key $configDir/$item.key \
+                $metrics_flag \
+                --api-port $metricsPort \
+                $aggregator_flag \
+                $checkpoint_sync_flag"
+
+          node_docker="--security-opt seccomp=unconfined ${ZEAM_DOCKER_IMAGE:-blockblaz/zeam:devnet3} node \
+                --custom_genesis /config \
+                --validator_config $validatorConfig \
+                --data-dir /data \
+                --node-id $item --node-key /config/$item.key \
+                $metrics_flag \
+                --api-port $metricsPort \
+                $aggregator_flag \
+                $checkpoint_sync_flag"
+
+          # choose either binary or docker
+          node_setup="docker"
+          EOF
+
+          cat > client-cmds/qlean-cmd.sh <<'EOF'
+          #!/bin/bash
+
+          #-----------------------qlean setup----------------------
+          # expects "qlean" submodule or symlink inside "lean-quickstart" root directory
+          # https://github.com/qdrvm/qlean-mini
+
+          # Set aggregator flag based on isAggregator value
+          aggregator_flag=""
+          if [ "$isAggregator" == "true" ]; then
+              aggregator_flag="--is-aggregator"
+          fi
+
+          # Set checkpoint sync URL when restarting with checkpoint sync
+          checkpoint_sync_flag=""
+          if [ -n "${checkpoint_sync_url:-}" ]; then
+              checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
+          fi
+
+          node_binary="$scriptDir/qlean/build/src/executable/qlean \
+                --modules-dir $scriptDir/qlean/build/src/modules \
+                --genesis $configDir/config.yaml \
+                --validator-registry-path $configDir/validators.yaml \
+                --validator-keys-manifest $configDir/hash-sig-keys/validator-keys-manifest.yaml \
+                --xmss-pk $hashSigPkPath \
+                --xmss-sk $hashSigSkPath \
+                --bootnodes $configDir/nodes.yaml \
+                --data-dir $dataDir/$item \
+                --node-id $item --node-key $configDir/$privKeyPath \
+                --listen-addr /ip4/0.0.0.0/udp/$quicPort/quic-v1 \
+                --metrics-host 0.0.0.0 \
+                --metrics-port $metricsPort \
+                $aggregator_flag \
+                $checkpoint_sync_flag \
+                -linfo"
+
+          node_docker="--security-opt seccomp=unconfined ${QLEAN_DOCKER_IMAGE:-qdrvm/qlean-mini:devnet-3} \
+                --genesis /config/config.yaml \
+                --validator-registry-path /config/validators.yaml \
+                --validator-keys-manifest /config/hash-sig-keys/validator-keys-manifest.yaml \
+                --xmss-pk /config/hash-sig-keys/validator_${hashSigKeyIndex}_pk.json \
+                --xmss-sk /config/hash-sig-keys/validator_${hashSigKeyIndex}_sk.json \
+                --bootnodes /config/nodes.yaml \
+                --data-dir /data \
+                --node-id $item --node-key /config/$privKeyPath \
+                --listen-addr /ip4/0.0.0.0/udp/$quicPort/quic-v1 \
+                --metrics-host 0.0.0.0 \
+                --metrics-port $metricsPort \
+                $aggregator_flag \
+                $checkpoint_sync_flag \
+                -linfo"
+
+          # choose either binary or docker
+          node_setup="docker"
+          EOF
+
+          cat > client-cmds/lantern-cmd.sh <<'EOF'
+          #!/bin/bash
+
+          #-----------------------lantern setup----------------------
+          LANTERN_IMAGE="${LANTERN_DOCKER_IMAGE:-piertwo/lantern:v0.0.3}"
+
+          devnet_flag=""
+          if [ -n "$devnet" ]; then
+                  devnet_flag="--devnet $devnet"
+          fi
+
+          # Set aggregator flag based on isAggregator value
+          aggregator_flag=""
+          if [ "$isAggregator" == "true" ]; then
+              aggregator_flag="--is-aggregator"
+          fi
+
+          # Set attestation committee count flag if explicitly configured
+          attestation_committee_flag=""
+          if [ -n "$attestationCommitteeCount" ]; then
+              attestation_committee_flag="--attestation-committee-count $attestationCommitteeCount"
+          fi
+
+          # Keep HTTP API unique per node under host networking.
+          lantern_http_port=$((metricsPort + 1000))
+
+          # Set checkpoint sync URL when restarting with checkpoint sync
+          checkpoint_sync_flag=""
+          if [ -n "${checkpoint_sync_url:-}" ]; then
+              checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
+          fi
+
+          node_binary="$scriptDir/lantern/build/lantern_cli \
+                  --data-dir $dataDir/$item \
+                  --genesis-config $configDir/config.yaml \
+                  --validator-registry-path $configDir/validators.yaml \
+                  --genesis-state $configDir/genesis.ssz \
+                  --validator-config $configDir/validator-config.yaml \
+                  $devnet_flag \
+                  --nodes-path $configDir/nodes.yaml \
+                  --node-id $item --node-key-path $configDir/$privKeyPath \
+                  --listen-address /ip4/0.0.0.0/udp/$quicPort/quic-v1 \
+                  --metrics-port $metricsPort \
+                  --http-port $lantern_http_port \
+                  --log-level info \
+                  --hash-sig-key-dir $configDir/hash-sig-keys \
+                  $attestation_committee_flag \
+                  $aggregator_flag \
+                  $checkpoint_sync_flag"
+
+          node_docker="$LANTERN_IMAGE --data-dir /data \
+                  --genesis-config /config/config.yaml \
+                  --validator-registry-path /config/validators.yaml \
+                  --genesis-state /config/genesis.ssz \
+                  --validator-config /config/validator-config.yaml \
+                  $devnet_flag \
+                  --nodes-path /config/nodes.yaml \
+                  --node-id $item --node-key-path /config/$privKeyPath \
+                  --listen-address /ip4/0.0.0.0/udp/$quicPort/quic-v1 \
+                  --metrics-port $metricsPort \
+                  --http-port $lantern_http_port \
+                  --log-level info \
+                  --hash-sig-key-dir /config/hash-sig-keys \
+                  $attestation_committee_flag \
+                  $aggregator_flag \
+                  $checkpoint_sync_flag"
+
+          # choose either binary or docker
+          node_setup="docker"
+          EOF
+
+          chmod +x client-cmds/ream-cmd.sh
+          chmod +x client-cmds/zeam-cmd.sh
+          chmod +x client-cmds/qlean-cmd.sh
+          chmod +x client-cmds/lantern-cmd.sh
+
+          sed -i 's/docker run --rm --pull=never/docker run --pull=never/g' spin-node.sh
+
+      - id: config
+        if: steps.preflight.outputs.skip_run != 'true'
+        name: Generate matrix validator-config
+        working-directory: lean-quickstart/local-devnet/genesis
+        run: |
+          set -euo pipefail
+
+          peer_client="${{ matrix.peer_client }}"
+          topology="${{ matrix.topology }}"
+
+          case "$topology" in
+            peer-peer-ream)
+              node_one="${peer_client}_0"
+              node_two="${peer_client}_1"
+              node_three="ream_0"
+              ;;
+            peer-ream-ream)
+              node_one="${peer_client}_0"
+              node_two="ream_0"
+              node_three="ream_1"
+              ;;
+            *)
+              echo "Unknown topology: $topology" >&2
+              exit 1
+              ;;
+          esac
+
+          # Force spin-node to use a ream aggregator whenever present to avoid
+          # random client aggregators causing flaky interop finalization.
+          aggregator_node=""
+          for candidate in "$node_one" "$node_two" "$node_three"; do
+            if [[ "$candidate" == ream_* ]]; then
+              aggregator_node="$candidate"
+              break
+            fi
+          done
+          if [ -z "$aggregator_node" ]; then
+            aggregator_node="$node_one"
+          fi
+
+          node_one_aggregator="false"
+          node_two_aggregator="false"
+          node_three_aggregator="false"
+          if [ "$node_one" = "$aggregator_node" ]; then
+            node_one_aggregator="true"
+          elif [ "$node_two" = "$aggregator_node" ]; then
+            node_two_aggregator="true"
+          else
+            node_three_aggregator="true"
+          fi
+
+          cat > validator-config.yaml <<EOF
+          shuffle: roundrobin
+          deployment_mode: local
+          config:
+            activeEpoch: 18
+            keyType: "hash-sig"
+          validators:
+            - name: "$node_one"
+              privkey: "bdf953adc161873ba026330c56450453f582e3c4ee6cb713644794bcfdd85fe5"
+              enrFields:
+                ip: "127.0.0.1"
+                quic: 9101
+              metricsPort: 18101
+              isAggregator: ${node_one_aggregator}
+              count: 1
+
+            - name: "$node_two"
+              privkey: "af27950128b49cda7e7bc9fcb7b0270f7a3945aa7543326f3bfdbd57d2a97a32"
+              enrFields:
+                ip: "127.0.0.1"
+                quic: 9102
+              metricsPort: 18102
+              isAggregator: ${node_two_aggregator}
+              count: 1
+
+            - name: "$node_three"
+              privkey: "c2bbdac5e876b3e9d4b8b6b8c2bbdac5e876b3e9d4b8b6b8c2bbdac5e876b3e9"
+              enrFields:
+                ip: "127.0.0.1"
+                quic: 9103
+              metricsPort: 18103
+              isAggregator: ${node_three_aggregator}
+              count: 1
+          EOF
+
+          echo "node_names=${node_one},${node_two},${node_three}" >> "$GITHUB_OUTPUT"
+          echo "metrics_ports=18101,18102,18103" >> "$GITHUB_OUTPUT"
+          echo "aggregator_node=$aggregator_node" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve peer client docker images
+        if: steps.preflight.outputs.skip_run != 'true'
+        run: |
+          set -euo pipefail
+
+          ream_image="ghcr.io/reamlabs/ream:latest-devnet3"
+          zeam_image="blockblaz/zeam:devnet3"
+          qlean_image="qdrvm/qlean-mini:devnet-3"
+
+          if [ "${{ matrix.devnet }}" = "devnet4" ]; then
+            ream_candidate="ghcr.io/reamlabs/ream:latest-devnet4"
+            zeam_candidate="blockblaz/zeam:devnet4"
+            qlean_candidate="qdrvm/qlean-mini:devnet-4"
+
+            if docker manifest inspect "$ream_candidate" >/dev/null 2>&1; then
+              ream_image="$ream_candidate"
+            fi
+            if docker manifest inspect "$zeam_candidate" >/dev/null 2>&1; then
+              zeam_image="$zeam_candidate"
+            fi
+            if docker manifest inspect "$qlean_candidate" >/dev/null 2>&1; then
+              qlean_image="$qlean_candidate"
+            fi
+          fi
+
+          echo "REAM_DOCKER_IMAGE=$ream_image" >> "$GITHUB_ENV"
+          echo "ZEAM_DOCKER_IMAGE=$zeam_image" >> "$GITHUB_ENV"
+          echo "QLEAN_DOCKER_IMAGE=$qlean_image" >> "$GITHUB_ENV"
+
+          echo "Using ream image: $ream_image"
+          echo "Using zeam image: $zeam_image"
+          echo "Using qlean image: $qlean_image"
+
+      - id: start
+        if: steps.preflight.outputs.skip_run != 'true'
+        name: Start lean-quickstart network
+        working-directory: lean-quickstart
+        env:
+          NETWORK_DIR: local-devnet
+          REAM_BINARY_PATH: ${{ github.workspace }}/ream-bin/ream
+          AGGREGATOR_NODE: ${{ steps.config.outputs.aggregator_node }}
+        run: |
+          set -euo pipefail
+
+          spin_log="$RUNNER_TEMP/spin-node.log"
+          ./spin-node.sh --node all --generateGenesis --aggregator "$AGGREGATOR_NODE" > "$spin_log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/spin-node.pid"
+
+          echo "log_path=$spin_log" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for all nodes to finalize
+        if: steps.preflight.outputs.skip_run != 'true'
+        env:
+          NODE_NAMES: ${{ steps.config.outputs.node_names }}
+          METRICS_PORTS: ${{ steps.config.outputs.metrics_ports }}
+        run: |
+          set -euo pipefail
+
+          strip_ansi_and_cr() {
+            sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' | tr -d '\r'
+          }
+
+          extract_finalized_slot_from_metrics() {
+            local metrics="$1"
+            metrics="$(printf '%s\n' "$metrics" | strip_ansi_and_cr)"
+            awk '
+              /^[[:space:]]*#/ { next }
+              NF < 2 { next }
+              $2 !~ /^[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$/ { next }
+              ($1 ~ /lean_latest_finalized_slot/ || $1 ~ /latest_finalized_slot/ || $1 ~ /finalized_slot/) {
+                value = $2 + 0
+                if (value > max) {
+                  max = value
+                }
+                found = 1
+              }
+              END {
+                if (found) {
+                  print max
+                }
+              }
+            ' <<< "$metrics" || true
+          }
+
+          extract_finalized_slot_from_logs() {
+            local node="$1"
+            local logs
+
+            # Containers may not exist yet during early startup; treat as "no data yet".
+            if ! docker ps -a --format '{{.Names}}' | grep -qx "$node"; then
+              return 0
+            fi
+
+            logs="$(docker logs --tail 500 "$node" 2>&1 || true)"
+            logs="$(printf '%s\n' "$logs" | strip_ansi_and_cr)"
+
+            case "$node" in
+              zeam_*)
+                awk '
+                    match($0, /Latest Finalized:[^0-9]*([0-9]+)/, m) {
+                      slot = m[1]
+                    }
+                    END { if (slot != "") print slot }
+                  ' <<< "$logs"
+                ;;
+              lantern_*)
+                awk '
+                    match($0, /persisted finalized replay state slot=([0-9]+)/, m) {
+                      slot = m[1]
+                    }
+                    match($0, /Latest Finalized:[^0-9]*([0-9]+)/, m) {
+                      if ((m[1] + 0) > (slot + 0)) {
+                        slot = m[1]
+                      }
+                      }
+                      END { if (slot != "") print slot }
+                    '
+                  <<< "$logs"
+                ;;
+            esac
+          }
+
+          IFS=',' read -r -a nodes <<< "$NODE_NAMES"
+          IFS=',' read -r -a ports <<< "$METRICS_PORTS"
+
+          if [ "${#nodes[@]}" -ne "${#ports[@]}" ]; then
+            echo "Node/port length mismatch" >&2
+            exit 1
+          fi
+
+          max_attempts=72
+          sleep_seconds=10
+
+          for attempt in $(seq 1 "$max_attempts"); do
+            echo "Attempt $attempt/$max_attempts: checking finalization"
+            all_clients_finalized=true
+            declare -A client_max_finalized=()
+
+            for i in "${!nodes[@]}"; do
+              node="${nodes[$i]}"
+              port="${ports[$i]}"
+              client="${node%%_*}"
+
+              metrics="$(curl -sS --max-time 3 "http://127.0.0.1:${port}/metrics" || true)"
+              if [ -z "$metrics" ]; then
+                metrics="$(curl -sS --max-time 3 "http://127.0.0.1:${port}/" || true)"
+              fi
+              finalized_slot="$(extract_finalized_slot_from_metrics "$metrics")"
+              if [ -z "$finalized_slot" ]; then
+                finalized_slot="$(extract_finalized_slot_from_logs "$node")"
+              fi
+
+              if [ -z "$finalized_slot" ]; then
+                echo "  - $node (port $port): metrics not ready"
+                continue
+              fi
+
+              finalized_slot_int="${finalized_slot%%.*}"
+              if ! [[ "$finalized_slot_int" =~ ^[0-9]+$ ]]; then
+                echo "  - $node (port $port): unexpected finalized slot '$finalized_slot'"
+                continue
+              fi
+
+              echo "  - $node (port $port): finalized=$finalized_slot_int"
+
+              current_max="${client_max_finalized[$client]:-0}"
+              if [ "$finalized_slot_int" -gt "$current_max" ]; then
+                client_max_finalized["$client"]="$finalized_slot_int"
+              fi
+            done
+
+            declare -A required_clients=()
+            for node in "${nodes[@]}"; do
+              required_clients["${node%%_*}"]=1
+            done
+
+            for client in "${!required_clients[@]}"; do
+              client_slot="${client_max_finalized[$client]:-0}"
+              echo "  * client $client: max_finalized=$client_slot"
+              if [ "$client_slot" -le 0 ]; then
+                all_clients_finalized=false
+              fi
+            done
+
+            if [ "$all_clients_finalized" = "true" ]; then
+              echo "All required clients finalized for this matrix run."
+              exit 0
+            fi
+
+            sleep "$sleep_seconds"
+          done
+
+          echo "Timed out waiting for all nodes to finalize" >&2
+          exit 1
+
+      - name: Failure diagnostics
+        if: failure() && steps.preflight.outputs.skip_run != 'true'
+        env:
+          NODE_NAMES: ${{ steps.config.outputs.node_names }}
+        working-directory: lean-quickstart
+        run: |
+          set -euo pipefail
+
+          echo "=== docker ps ==="
+          docker ps -a || true
+
+          echo "=== spin-node log (tail) ==="
+          tail -n 250 "${{ steps.start.outputs.log_path }}" || true
+
+          IFS=',' read -r -a nodes <<< "$NODE_NAMES"
+          for node in "${nodes[@]}"; do
+            echo "=== docker logs: $node ==="
+            docker logs --tail 250 "$node" || true
+          done
+
+      - name: Cleanup
+        if: always() && steps.preflight.outputs.skip_run != 'true'
+        working-directory: lean-quickstart
+        env:
+          NETWORK_DIR: local-devnet
+        run: |
+          set -euo pipefail
+
+          ./spin-node.sh --node all --stop || true
+
+          if [ -f "$RUNNER_TEMP/spin-node.pid" ]; then
+            pid="$(cat "$RUNNER_TEMP/spin-node.pid")"
+            kill "$pid" 2>/dev/null || true
+            sleep 2
+            kill -9 "$pid" 2>/dev/null || true
+          fi
