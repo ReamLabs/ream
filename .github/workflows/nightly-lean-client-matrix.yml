@@ -84,13 +84,46 @@ jobs:
           repository: blockblaz/lean-quickstart
           path: lean-quickstart
 
+      - id: preflight
+        name: Preflight client availability
+        run: |
+          set -euo pipefail
+
+          skip_run="false"
+          skip_reason=""
+
+          # Grandine lean devnet images are intermittently unpublished.
+          # Skip these matrix legs until the image tags are available again.
+          if [ "${{ matrix.peer_client }}" = "grandine" ]; then
+            grandine_image="sifrai/lean:devnet-3"
+            if [ "${{ matrix.devnet }}" = "devnet4" ]; then
+              grandine_image="sifrai/lean:devnet-4"
+            fi
+
+            if ! docker manifest inspect "$grandine_image" >/dev/null 2>&1; then
+              skip_run="true"
+              skip_reason="Grandine image not published: $grandine_image"
+            fi
+          fi
+
+          echo "skip_run=$skip_run" >> "$GITHUB_OUTPUT"
+          echo "skip_reason=$skip_reason" >> "$GITHUB_OUTPUT"
+
+      - name: Skip unavailable matrix leg
+        if: steps.preflight.outputs.skip_run == 'true'
+        run: |
+          echo "Skipping matrix leg."
+          echo "Reason: ${{ steps.preflight.outputs.skip_reason }}"
+
       - name: Download ream binary
+        if: steps.preflight.outputs.skip_run != 'true'
         uses: actions/download-artifact@v4
         with:
           name: ream-nightly-binary-${{ matrix.devnet }}
           path: ream-bin
 
       - name: Prepare dependencies
+        if: steps.preflight.outputs.skip_run != 'true'
         run: |
           set -euo pipefail
 
@@ -100,6 +133,7 @@ jobs:
           sudo chmod +x /usr/local/bin/yq
 
       - name: Patch client launch scripts for matrix mode
+        if: steps.preflight.outputs.skip_run != 'true'
         working-directory: lean-quickstart
         run: |
           set -euo pipefail
@@ -347,6 +381,7 @@ jobs:
           sed -i 's/docker run --rm --pull=never/docker run --pull=never/g' spin-node.sh
 
       - id: config
+        if: steps.preflight.outputs.skip_run != 'true'
         name: Generate matrix validator-config
         working-directory: lean-quickstart/local-devnet/genesis
         run: |
@@ -436,6 +471,7 @@ jobs:
           echo "aggregator_node=$aggregator_node" >> "$GITHUB_OUTPUT"
 
       - name: Resolve peer client docker images
+        if: steps.preflight.outputs.skip_run != 'true'
         run: |
           set -euo pipefail
 
@@ -468,6 +504,7 @@ jobs:
           echo "Using qlean image: $qlean_image"
 
       - id: start
+        if: steps.preflight.outputs.skip_run != 'true'
         name: Start lean-quickstart network
         working-directory: lean-quickstart
         env:
@@ -484,6 +521,7 @@ jobs:
           echo "log_path=$spin_log" >> "$GITHUB_OUTPUT"
 
       - name: Wait for all nodes to finalize
+        if: steps.preflight.outputs.skip_run != 'true'
         env:
           NODE_NAMES: ${{ steps.config.outputs.node_names }}
           METRICS_PORTS: ${{ steps.config.outputs.metrics_ports }}
@@ -628,7 +666,7 @@ jobs:
           exit 1
 
       - name: Failure diagnostics
-        if: failure()
+        if: failure() && steps.preflight.outputs.skip_run != 'true'
         env:
           NODE_NAMES: ${{ steps.config.outputs.node_names }}
         working-directory: lean-quickstart
@@ -648,7 +686,7 @@ jobs:
           done
 
       - name: Cleanup
-        if: always()
+        if: always() && steps.preflight.outputs.skip_run != 'true'
         working-directory: lean-quickstart
         env:
           NETWORK_DIR: local-devnet
