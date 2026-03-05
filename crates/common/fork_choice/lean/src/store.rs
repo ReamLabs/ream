@@ -4945,4 +4945,101 @@ mod tests {
         let correct_weights = HashMap::from([(block_1_root, 1), (block_2_root, 1)]);
         assert_eq!(weights, correct_weights);
     }
+
+    /// Multiple validators attesting to the same head accumulate weight.
+    #[tokio::test]
+    pub async fn test_multiple_attestations_accumulate() {
+        let store = sample_store_as_store(10).await;
+        let head_provider = { store.store.lock().await.head_provider() };
+        let genesis_root = head_provider.get().unwrap();
+        let slot_1 = 1;
+        let proposer_index_1 = 0;
+
+        let block_1 = Block {
+            slot: slot_1,
+            proposer_index: proposer_index_1,
+            parent_root: genesis_root,
+            state_root: FixedBytes::repeat_byte(10),
+            body: BlockBody {
+                attestations: VariableList::empty(),
+            },
+        };
+        let block_1_root = block_1.tree_hash_root();
+        let block_attestation_data_1 = AttestationData {
+            slot: slot_1,
+            head: Checkpoint {
+                root: block_1_root,
+                slot: slot_1,
+            },
+            target: Checkpoint {
+                root: block_1_root,
+                slot: slot_1,
+            },
+            source: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
+        };
+
+        let signed_block_1 = build_signed_block_with_attestation(
+            block_attestation_data_1,
+            block_1,
+            VariableList::empty(),
+        );
+
+        {
+            let db = store.store.lock().await;
+            let block_provider = db.block_provider();
+            block_provider.insert(block_1_root, signed_block_1).unwrap();
+            let state_provider = db.state_provider();
+            let genesis_state = state_provider.get(genesis_root).unwrap().unwrap();
+            state_provider
+                .insert(block_1_root, genesis_state.clone())
+                .unwrap();
+        }
+
+        let attestation_data = AttestationData {
+            slot: slot_1,
+            head: Checkpoint {
+                root: block_1_root,
+                slot: slot_1,
+            },
+            target: Checkpoint {
+                root: block_1_root,
+                slot: slot_1,
+            },
+            source: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
+        };
+        let data_root = attestation_data.tree_hash_root();
+
+        let participants = vec![0, 1];
+        let proof = make_test_aggregated_proof(&participants);
+
+        let aggregated_payloads = [
+            SignatureKey::from_parts(participants[0], data_root),
+            SignatureKey::from_parts(participants[1], data_root),
+        ];
+
+        {
+            let db = store.store.lock().await;
+            db.head_provider().insert(block_1_root).unwrap();
+            db.latest_known_aggregated_payloads_provider()
+                .insert(aggregated_payloads[0].clone(), vec![proof.clone()])
+                .unwrap();
+            db.latest_known_aggregated_payloads_provider()
+                .insert(aggregated_payloads[1].clone(), vec![proof])
+                .unwrap();
+            db.attestation_data_by_root_provider()
+                .insert(data_root, attestation_data)
+                .unwrap();
+        }
+
+        let weights = store.compute_block_weights().await.unwrap();
+
+        let correct_weights = HashMap::from([(block_1_root, 2)]);
+        assert_eq!(weights, correct_weights);
+    }
 }
