@@ -316,7 +316,7 @@ impl Store {
         } else if current_interval == 2 {
             // Interval 2: Only aggregate signatures if aggregator
             if is_aggregator {
-                #[cfg(not(feature = "devnet4"))]
+                #[cfg(feature = "devnet3")]
                 self.aggregate_committee_signatures().await?;
                 #[cfg(feature = "devnet4")]
                 self.aggregate_committee_signatures_and_payloads().await?;
@@ -1771,6 +1771,7 @@ mod tests {
     use std::{
         collections::{HashMap, HashSet},
         fs,
+        sync::{Mutex, OnceLock},
         time::{SystemTime, UNIX_EPOCH},
         vec,
     };
@@ -1804,6 +1805,11 @@ mod tests {
     use tree_hash::TreeHash;
 
     use super::{Store, compute_subnet_id, swap_test_attestation_committee_count};
+
+    fn test_global_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     pub fn db_setup() -> LeanDB {
         let unique = SystemTime::now()
@@ -2582,6 +2588,7 @@ mod tests {
     // This test generates real key pairs for validators to ensure signature aggregation works.
     #[tokio::test]
     async fn test_produce_block_with_attestations() {
+        let _test_guard = test_global_lock().lock().unwrap();
         use rand::rng;
 
         // Generate real key pairs for validators
@@ -3717,6 +3724,7 @@ mod tests {
     #[allow(clippy::assertions_on_constants)]
     #[tokio::test]
     pub async fn test_time_constants_consistency() {
+        let _test_guard = test_global_lock().lock().unwrap();
         set_lean_network_spec(LeanNetworkSpec::ephemery().into());
         let seconds_per_interval = lean_network_spec().seconds_per_slot / INTERVALS_PER_SLOT;
 
@@ -3927,6 +3935,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_same_subnet_stores_signature() {
+        let _test_guard = test_global_lock().lock().unwrap();
         let _committee_count_override = CommitteeCountOverride::new(4);
         let mut store: Store = sample_store_as_store(8).await;
 
@@ -3987,6 +3996,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_cross_subnet_ignores_signature() {
+        let _test_guard = test_global_lock().lock().unwrap();
         let _committee_count_override = CommitteeCountOverride::new(4);
         let mut store: Store = sample_store_as_store(8).await;
         let current_validator = 0;
@@ -4094,6 +4104,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_attestation_data_always_stored() {
+        let _test_guard = test_global_lock().lock().unwrap();
         let _committee_count_override = CommitteeCountOverride::new(4);
         let mut store: Store = sample_store_as_store(8).await;
 
@@ -4327,6 +4338,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_aggregates_gossip_signatures_into_proof() {
+        let _test_guard = test_global_lock().lock().unwrap();
         let mut store: Store = sample_store_as_store(4).await;
         set_validator_id(&store, Some(0)).await;
         let attesting_validators: Vec<u64> = vec![1, 2];
@@ -4374,6 +4386,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_aggregated_proof_is_valid() {
+        let _test_guard = test_global_lock().lock().unwrap();
         let mut store: Store = sample_store_as_store(4).await;
         set_validator_id(&store, Some(0)).await;
         let attesting_validators: Vec<u64> = vec![1, 2];
@@ -4548,6 +4561,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_interval_2_triggers_aggregation_for_aggregator() {
+        let _test_guard = test_global_lock().lock().unwrap();
         let mut store: Store = sample_store_as_store(4).await;
         set_validator_id(&store, Some(0)).await;
         let attesting_validators: Vec<u64> = vec![1, 2];
@@ -4596,6 +4610,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_interval_2_skips_aggregation_for_non_aggregator() {
+        let _test_guard = test_global_lock().lock().unwrap();
         let mut store: Store = sample_store_as_store(4).await;
         set_validator_id(&store, Some(0)).await;
         let attesting_validators: Vec<u64> = vec![1, 2];
@@ -4644,6 +4659,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_other_intervals_do_not_trigger_aggregation() {
+        let _test_guard = test_global_lock().lock().unwrap();
         let mut store: Store = sample_store_as_store(4).await;
         let attesting_validators: Vec<u64> = vec![1, 2];
         set_validator_id(&store, Some(0)).await;
@@ -4716,6 +4732,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_gossip_to_aggregation_to_storage() {
+        let _test_guard = test_global_lock().lock().unwrap();
         let mut store: Store = sample_store_as_store(4).await;
         set_validator_id(&store, Some(0)).await;
         let attesting_validators: Vec<u64> = vec![1, 2];
