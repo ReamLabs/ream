@@ -372,14 +372,25 @@ jobs:
               ;;
           esac
 
-          # Ensure at least one ream node aggregates, otherwise the network can
-          # keep producing blocks without advancing finalization.
+          # Force spin-node to use a ream aggregator whenever present to avoid
+          # random client aggregators causing flaky interop finalization.
+          aggregator_node=""
+          for candidate in "$node_one" "$node_two" "$node_three"; do
+            if [[ "$candidate" == ream_* ]]; then
+              aggregator_node="$candidate"
+              break
+            fi
+          done
+          if [ -z "$aggregator_node" ]; then
+            aggregator_node="$node_one"
+          fi
+
           node_one_aggregator="false"
           node_two_aggregator="false"
           node_three_aggregator="false"
-          if [[ "$node_one" == ream_* ]]; then
+          if [ "$node_one" = "$aggregator_node" ]; then
             node_one_aggregator="true"
-          elif [[ "$node_two" == ream_* ]]; then
+          elif [ "$node_two" = "$aggregator_node" ]; then
             node_two_aggregator="true"
           else
             node_three_aggregator="true"
@@ -422,6 +433,7 @@ jobs:
 
           echo "node_names=${node_one},${node_two},${node_three}" >> "$GITHUB_OUTPUT"
           echo "metrics_ports=18101,18102,18103" >> "$GITHUB_OUTPUT"
+          echo "aggregator_node=$aggregator_node" >> "$GITHUB_OUTPUT"
 
       - name: Resolve peer client docker images
         run: |
@@ -461,11 +473,12 @@ jobs:
         env:
           NETWORK_DIR: local-devnet
           REAM_BINARY_PATH: ${{ github.workspace }}/ream-bin/ream
+          AGGREGATOR_NODE: ${{ steps.config.outputs.aggregator_node }}
         run: |
           set -euo pipefail
 
           spin_log="$RUNNER_TEMP/spin-node.log"
-          ./spin-node.sh --node all --generateGenesis > "$spin_log" 2>&1 &
+          ./spin-node.sh --node all --generateGenesis --aggregator "$AGGREGATOR_NODE" > "$spin_log" 2>&1 &
           echo $! > "$RUNNER_TEMP/spin-node.pid"
 
           echo "log_path=$spin_log" >> "$GITHUB_OUTPUT"
@@ -477,54 +490,66 @@ jobs:
         run: |
           set -euo pipefail
 
+          strip_ansi_and_cr() {
+            sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' | tr -d '\r'
+          }
+
           extract_finalized_slot_from_metrics() {
             local metrics="$1"
+            metrics="$(printf '%s\n' "$metrics" | strip_ansi_and_cr)"
             awk '
               /^[[:space:]]*#/ { next }
               NF < 2 { next }
               $2 !~ /^[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$/ { next }
               ($1 ~ /lean_latest_finalized_slot/ || $1 ~ /latest_finalized_slot/ || $1 ~ /finalized_slot/) {
-                print $2
-                exit
+                value = $2 + 0
+                if (value > max) {
+                  max = value
+                }
+                found = 1
+              }
+              END {
+                if (found) {
+                  print max
+                }
               }
             ' <<< "$metrics" || true
           }
 
           extract_finalized_slot_from_logs() {
             local node="$1"
+            local logs
 
             # Containers may not exist yet during early startup; treat as "no data yet".
             if ! docker ps -a --format '{{.Names}}' | grep -qx "$node"; then
               return 0
             fi
 
+            logs="$(docker logs --tail 500 "$node" 2>&1 || true)"
+            logs="$(printf '%s\n' "$logs" | strip_ansi_and_cr)"
+
             case "$node" in
               zeam_*)
-                (docker logs --tail 300 "$node" 2>&1 || true) \
-                  | awk '
-                      /Latest Finalized:/ {
-                        for (i = 1; i <= NF; i++) {
-                          if ($i ~ /^Slot:?$/ && (i + 1) <= NF && $(i + 1) ~ /^[0-9]+$/) {
-                            slot = $(i + 1)
-                          }
-                        }
-                      }
-                      END { if (slot != "") print slot }
-                    '
+                awk '
+                    match($0, /Latest Finalized:[^0-9]*([0-9]+)/, m) {
+                      slot = m[1]
+                    }
+                    END { if (slot != "") print slot }
+                  ' <<< "$logs"
                 ;;
               lantern_*)
-                (docker logs --tail 300 "$node" 2>&1 || true) \
-                  | awk '
-                      /persisted finalized replay state slot=[0-9]+/ {
-                        line = $0
-                        sub(/^.*slot=/, "", line)
-                        sub(/[^0-9].*$/, "", line)
-                        if (line ~ /^[0-9]+$/) {
-                          slot = line
-                        }
+                awk '
+                    match($0, /persisted finalized replay state slot=([0-9]+)/, m) {
+                      slot = m[1]
+                    }
+                    match($0, /Latest Finalized:[^0-9]*([0-9]+)/, m) {
+                      if ((m[1] + 0) > (slot + 0)) {
+                        slot = m[1]
+                      }
                       }
                       END { if (slot != "") print slot }
                     '
+                  <<< "$logs"
                 ;;
             esac
           }
@@ -542,11 +567,13 @@ jobs:
 
           for attempt in $(seq 1 "$max_attempts"); do
             echo "Attempt $attempt/$max_attempts: checking finalization"
-            all_finalized=true
+            all_clients_finalized=true
+            declare -A client_max_finalized=()
 
             for i in "${!nodes[@]}"; do
               node="${nodes[$i]}"
               port="${ports[$i]}"
+              client="${node%%_*}"
 
               metrics="$(curl -sS --max-time 3 "http://127.0.0.1:${port}/metrics" || true)"
               if [ -z "$metrics" ]; then
@@ -559,25 +586,38 @@ jobs:
 
               if [ -z "$finalized_slot" ]; then
                 echo "  - $node (port $port): metrics not ready"
-                all_finalized=false
                 continue
               fi
 
               finalized_slot_int="${finalized_slot%%.*}"
               if ! [[ "$finalized_slot_int" =~ ^[0-9]+$ ]]; then
                 echo "  - $node (port $port): unexpected finalized slot '$finalized_slot'"
-                all_finalized=false
                 continue
               fi
 
               echo "  - $node (port $port): finalized=$finalized_slot_int"
-              if [ "$finalized_slot_int" -le 0 ]; then
-                all_finalized=false
+
+              current_max="${client_max_finalized[$client]:-0}"
+              if [ "$finalized_slot_int" -gt "$current_max" ]; then
+                client_max_finalized["$client"]="$finalized_slot_int"
               fi
             done
 
-            if [ "$all_finalized" = "true" ]; then
-              echo "All nodes finalized for this matrix run."
+            declare -A required_clients=()
+            for node in "${nodes[@]}"; do
+              required_clients["${node%%_*}"]=1
+            done
+
+            for client in "${!required_clients[@]}"; do
+              client_slot="${client_max_finalized[$client]:-0}"
+              echo "  * client $client: max_finalized=$client_slot"
+              if [ "$client_slot" -le 0 ]; then
+                all_clients_finalized=false
+              fi
+            done
+
+            if [ "$all_clients_finalized" = "true" ]; then
+              echo "All required clients finalized for this matrix run."
               exit 0
             fi
 
