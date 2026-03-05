@@ -268,12 +268,82 @@ jobs:
           node_setup="docker"
           EOF
 
+          cat > client-cmds/lantern-cmd.sh <<'EOF'
+          #!/bin/bash
+
+          #-----------------------lantern setup----------------------
+          LANTERN_IMAGE="${LANTERN_DOCKER_IMAGE:-piertwo/lantern:v0.0.3}"
+
+          devnet_flag=""
+          if [ -n "$devnet" ]; then
+                  devnet_flag="--devnet $devnet"
+          fi
+
+          # Set aggregator flag based on isAggregator value
+          aggregator_flag=""
+          if [ "$isAggregator" == "true" ]; then
+              aggregator_flag="--is-aggregator"
+          fi
+
+          # Set attestation committee count flag if explicitly configured
+          attestation_committee_flag=""
+          if [ -n "$attestationCommitteeCount" ]; then
+              attestation_committee_flag="--attestation-committee-count $attestationCommitteeCount"
+          fi
+
+          # Keep HTTP API unique per node under host networking.
+          lantern_http_port=$((metricsPort + 1000))
+
+          # Set checkpoint sync URL when restarting with checkpoint sync
+          checkpoint_sync_flag=""
+          if [ -n "${checkpoint_sync_url:-}" ]; then
+              checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
+          fi
+
+          node_binary="$scriptDir/lantern/build/lantern_cli \
+                  --data-dir $dataDir/$item \
+                  --genesis-config $configDir/config.yaml \
+                  --validator-registry-path $configDir/validators.yaml \
+                  --genesis-state $configDir/genesis.ssz \
+                  --validator-config $configDir/validator-config.yaml \
+                  $devnet_flag \
+                  --nodes-path $configDir/nodes.yaml \
+                  --node-id $item --node-key-path $configDir/$privKeyPath \
+                  --listen-address /ip4/0.0.0.0/udp/$quicPort/quic-v1 \
+                  --metrics-port $metricsPort \
+                  --http-port $lantern_http_port \
+                  --log-level info \
+                  --hash-sig-key-dir $configDir/hash-sig-keys \
+                  $attestation_committee_flag \
+                  $aggregator_flag \
+                  $checkpoint_sync_flag"
+
+          node_docker="$LANTERN_IMAGE --data-dir /data \
+                  --genesis-config /config/config.yaml \
+                  --validator-registry-path /config/validators.yaml \
+                  --genesis-state /config/genesis.ssz \
+                  --validator-config /config/validator-config.yaml \
+                  $devnet_flag \
+                  --nodes-path /config/nodes.yaml \
+                  --node-id $item --node-key-path /config/$privKeyPath \
+                  --listen-address /ip4/0.0.0.0/udp/$quicPort/quic-v1 \
+                  --metrics-port $metricsPort \
+                  --http-port $lantern_http_port \
+                  --log-level info \
+                  --hash-sig-key-dir /config/hash-sig-keys \
+                  $attestation_committee_flag \
+                  $aggregator_flag \
+                  $checkpoint_sync_flag"
+
+          # choose either binary or docker
+          node_setup="docker"
+          EOF
+
           chmod +x client-cmds/ream-cmd.sh
           chmod +x client-cmds/zeam-cmd.sh
           chmod +x client-cmds/qlean-cmd.sh
+          chmod +x client-cmds/lantern-cmd.sh
 
-          # Avoid HTTP port collisions when multiple lantern nodes share host networking.
-          sed -i 's/^httpPort=.*/httpPort=$((metricsPort + 1000))/g' client-cmds/lantern-cmd.sh
           sed -i 's/docker run --rm --pull=never/docker run --pull=never/g' spin-node.sh
 
       - id: config
@@ -428,7 +498,7 @@ jobs:
                   | awk '
                       /Latest Finalized:/ {
                         for (i = 1; i <= NF; i++) {
-                          if ($i == "Slot:" && (i + 1) <= NF && $(i + 1) ~ /^[0-9]+$/) {
+                          if ($i ~ /^Slot:?$/ && (i + 1) <= NF && $(i + 1) ~ /^[0-9]+$/) {
                             slot = $(i + 1)
                           }
                         }
