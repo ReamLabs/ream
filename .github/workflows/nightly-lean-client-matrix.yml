@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        devnet: [devnet2, devnet3]
+        devnet: [devnet3, devnet4]
 
     steps:
       - name: Checkout ream
@@ -44,11 +44,11 @@ jobs:
           set -euo pipefail
 
           case "${{ matrix.devnet }}" in
-            devnet2)
-              cargo build --release --package ream --bin ream --no-default-features --features devnet2
-              ;;
             devnet3)
               cargo build --release --package ream --bin ream --no-default-features --features devnet3
+              ;;
+            devnet4)
+              cargo build --release --package ream --bin ream --no-default-features --features devnet4
               ;;
             *)
               echo "Unknown devnet: ${{ matrix.devnet }}" >&2
@@ -73,7 +73,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        devnet: [devnet2, devnet3]
+        devnet: [devnet3, devnet4]
         peer_client: [zeam, qlean, lantern, lighthouse, grandine, ethlambda]
         topology: [peer-peer-ream, peer-ream-ream]
 
@@ -144,7 +144,7 @@ jobs:
                   $aggregator_flag \
                   $checkpoint_sync_flag"
 
-          node_docker="${REAM_DOCKER_IMAGE:-ghcr.io/reamlabs/ream:latest-devnet2} --data-dir /data \
+          node_docker="${REAM_DOCKER_IMAGE:-ghcr.io/reamlabs/ream:latest-devnet3} --data-dir /data \
                   lean_node \
                   --network /config/config.yaml \
                   --validator-registry-path /config/validators.yaml \
@@ -198,7 +198,7 @@ jobs:
                 $aggregator_flag \
                 $checkpoint_sync_flag"
 
-          node_docker="--security-opt seccomp=unconfined ${ZEAM_DOCKER_IMAGE:-blockblaz/zeam:devnet2} node \
+          node_docker="--security-opt seccomp=unconfined ${ZEAM_DOCKER_IMAGE:-blockblaz/zeam:devnet3} node \
                 --custom_genesis /config \
                 --validator_config $validatorConfig \
                 --data-dir /data \
@@ -247,7 +247,7 @@ jobs:
                 $checkpoint_sync_flag \
                 -linfo"
 
-          node_docker="--security-opt seccomp=unconfined ${QLEAN_DOCKER_IMAGE:-qdrvm/qlean-mini:devnet-2} \
+          node_docker="--security-opt seccomp=unconfined ${QLEAN_DOCKER_IMAGE:-qdrvm/qlean-mini:devnet-3} \
                 --genesis /config/config.yaml \
                 --validator-registry-path /config/validators.yaml \
                 --validator-keys-manifest /config/hash-sig-keys/validator-keys-manifest.yaml \
@@ -299,7 +299,7 @@ jobs:
               ;;
           esac
 
-          # Ensure at least one ream node aggregates, otherwise devnet3 can
+          # Ensure at least one ream node aggregates, otherwise the network can
           # keep producing blocks without advancing finalization.
           node_one_aggregator="false"
           node_two_aggregator="false"
@@ -356,8 +356,9 @@ jobs:
         env:
           NETWORK_DIR: local-devnet
           REAM_BINARY_PATH: ${{ github.workspace }}/ream-bin/ream
-          ZEAM_DOCKER_IMAGE: ${{ matrix.devnet == 'devnet3' && 'blockblaz/zeam:devnet3' || 'blockblaz/zeam:devnet2' }}
-          QLEAN_DOCKER_IMAGE: ${{ matrix.devnet == 'devnet3' && 'qdrvm/qlean-mini:devnet-3' || 'qdrvm/qlean-mini:devnet-2' }}
+          REAM_DOCKER_IMAGE: ${{ matrix.devnet == 'devnet4' && 'ghcr.io/reamlabs/ream:latest-devnet4' || 'ghcr.io/reamlabs/ream:latest-devnet3' }}
+          ZEAM_DOCKER_IMAGE: ${{ matrix.devnet == 'devnet4' && 'blockblaz/zeam:devnet4' || 'blockblaz/zeam:devnet3' }}
+          QLEAN_DOCKER_IMAGE: ${{ matrix.devnet == 'devnet4' && 'qdrvm/qlean-mini:devnet-4' || 'qdrvm/qlean-mini:devnet-3' }}
         run: |
           set -euo pipefail
 
