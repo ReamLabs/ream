@@ -100,35 +100,37 @@ mod tests {
 
         let app = test::init_service(
             App::new()
-            .app_data(Data::new(reader))
-            .service(get_fork_choice_tree),
+                .app_data(Data::new(reader))
+                .service(get_fork_choice_tree),
         )
         .await;
 
-        let req = test::TestRequest::get()
-            .uri("/fork_choice")
-            .to_request();
+        let req = test::TestRequest::get().uri("/fork_choice").to_request();
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
-        
+
         let body = test::read_body(resp).await;
-        let json: serde_json::Value =
-            serde_json::from_slice(&body).expect("Failed to decode JSON");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("Failed to decode JSON");
 
         let validator_count = json
             .get("validator_count")
             .expect("validator_count field missing");
-        assert_eq!(validator_count.as_u64().expect("validator_count must be a number"), 5);
+        assert_eq!(
+            validator_count
+                .as_u64()
+                .expect("validator_count must be a number"),
+            5
+        );
 
         let nodes = json
             .get("nodes")
             .expect("nodes field missing")
             .as_array()
             .expect("nodes must be an array");
-        
+
         assert_eq!(nodes.len(), 1);
-        
+
         let genesis_block = nodes.first().expect("At least one block should exist");
         assert_eq!(genesis_block.get("slot").unwrap().as_u64().unwrap(), 0);
     }
@@ -137,9 +139,7 @@ mod tests {
     async fn test_get_fork_choice_tree_uninitialized() {
         let app = test::init_service(App::new().service(get_fork_choice_tree)).await;
 
-        let req = test::TestRequest::get()
-            .uri("/fork_choice")
-            .to_request();
+        let req = test::TestRequest::get().uri("/fork_choice").to_request();
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
