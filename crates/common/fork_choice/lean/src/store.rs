@@ -2559,7 +2559,7 @@ mod tests {
 
     // BLOCK PRODUCTION TESTS
 
-    // Test basic block production by authorized proposer.
+    /// Test basic block production by authorized proposer.
     #[tokio::test]
     async fn test_produce_block_basic() {
         let slot = 1;
@@ -2577,7 +2577,7 @@ mod tests {
         assert!(block.state_root != B256::ZERO);
     }
 
-    // Test block production fails for unauthorized proposer.
+    /// Test block production fails for unauthorized proposer.
     #[tokio::test]
     async fn test_produce_block_unauthorized_proposer() {
         let mut store = sample_store(10).await;
@@ -2585,8 +2585,8 @@ mod tests {
         assert!(block_with_signature.is_err());
     }
 
-    // Test block production includes available attestations
-    // This test generates real key pairs for validators to ensure signature aggregation works.
+    /// Test block production includes available attestations
+    /// This test generates real key pairs for validators to ensure signature aggregation works.
     #[tokio::test]
     async fn test_produce_block_with_attestations() {
         let _test_guard = test_global_lock().lock().await;
@@ -2786,7 +2786,7 @@ mod tests {
 
     // VALIDATOR INTEGRATION TESTS
 
-    // Test producing a block then creating attestation for it.
+    /// Test producing a block then creating attestation for it.
     #[tokio::test]
     pub async fn test_block_production_then_attestation() {
         let mut store = sample_store(10).await;
@@ -2821,7 +2821,7 @@ mod tests {
         assert!(attestation.data.source == latest_justified);
     }
 
-    // Test multiple validators producing blocks and attestations.
+    /// Test multiple validators producing blocks and attestations.
     #[tokio::test]
     pub async fn test_multiple_validators_coordination() {
         let mut store = sample_store(10).await;
@@ -2849,7 +2849,7 @@ mod tests {
         assert!(block2.block.parent_root == genesis_hash);
     }
 
-    // Test edge cases in validator operations.
+    /// Test edge cases in validator operations.
     #[tokio::test]
     pub async fn test_validator_edge_cases() {
         let mut store = sample_store(10).await;
@@ -2872,7 +2872,7 @@ mod tests {
 
     // ATTESTATION TESTS
 
-    // Test basic attestation production.
+    /// Test basic attestation production.
     #[tokio::test]
     pub async fn test_produce_attestation_basic() {
         let slot = 1;
@@ -2896,7 +2896,7 @@ mod tests {
         assert_eq!(attestation.data.source, latest_justified_checkpoint);
     }
 
-    // Test that attestation references correct head.
+    /// Test that attestation references correct head.
     #[tokio::test]
     pub async fn test_produce_attestation_head_reference() {
         let slot = 2;
@@ -2914,7 +2914,7 @@ mod tests {
         assert_eq!(attestation.data.head.slot, head_block.message.block.slot);
     }
 
-    // Test that attestation calculates target correctly.
+    /// Test that attestation calculates target correctly.
     #[tokio::test]
     pub async fn test_produce_attestation_target_calculation() {
         let store = sample_store(10).await;
@@ -2927,7 +2927,7 @@ mod tests {
         assert_eq!(attestation.data.target.slot, expected_target.slot);
     }
 
-    // Test attestation production for different validators in same slot.
+    /// Test attestation production for different validators in same slot.
     #[tokio::test]
     pub async fn test_produce_attestation_different_validators() {
         let slot = 4;
@@ -2953,7 +2953,7 @@ mod tests {
         }
     }
 
-    // Test attestation production across sequential slots.
+    /// Test attestation production across sequential slots.
     #[tokio::test]
     pub async fn test_produce_attestation_sequential_slots() {
         let store = sample_store(10).await;
@@ -2980,7 +2980,7 @@ mod tests {
         );
     }
 
-    // Test that attestation source uses current justified checkpoint.
+    /// Test that attestation source uses current justified checkpoint.
     #[tokio::test]
     pub async fn test_produce_attestation_justification_consistency() {
         let store = sample_store(10).await;
@@ -3011,7 +3011,7 @@ mod tests {
 
     // VALIDATOR ERROR HANDLING TESTS
 
-    // Test error when wrong validator tries to produce block.
+    /// Test error when wrong validator tries to produce block.
     #[tokio::test]
     pub async fn test_produce_block_wrong_proposer() {
         let mut store = sample_store(10).await;
@@ -3024,7 +3024,7 @@ mod tests {
         );
     }
 
-    // Test error when parent state is missing.
+    /// Test error when parent state is missing.
     #[tokio::test]
     pub async fn test_produce_block_missing_parent_state() {
         let mut store = sample_store(10).await;
@@ -3050,7 +3050,7 @@ mod tests {
         );
     }
 
-    // Test validator operations with invalid parameters.
+    /// Test validator operations with invalid parameters.
     #[tokio::test]
     pub async fn test_validator_operations_invalid_parameters() {
         let store = sample_store(10).await;
@@ -3067,7 +3067,7 @@ mod tests {
 
     // GET FORKCHOICE STORE TESTS
 
-    // Test get_forkchoice_store() time initialization.
+    /// Test get_forkchoice_store() time initialization.
     #[tokio::test]
     pub async fn test_store_time_from_anchor_slot() {
         let store = sample_store(10).await;
@@ -3090,7 +3090,7 @@ mod tests {
 
     // ON TICK TESTS
 
-    // Test basic on_tick functionality.
+    /// Test basic on_tick functionality.
     #[tokio::test]
     pub async fn test_on_tick_basic() {
         let mut store = sample_store(10).await;
@@ -3106,7 +3106,7 @@ mod tests {
         assert!(new_time > initial_time);
     }
 
-    // Test on_tick without proposal.
+    /// Test on_tick without proposal.
     #[tokio::test]
     pub async fn test_on_tick_no_proposal() {
         let mut store = sample_store(10).await;
@@ -3122,7 +3122,7 @@ mod tests {
         assert!(new_time >= initial_time);
     }
 
-    // Test on_tick when already at target time.
+    /// Test on_tick when already at target time.
     #[tokio::test]
     pub async fn test_on_tick_already_current() {
         let mut store = sample_store(10).await;
@@ -3138,7 +3138,7 @@ mod tests {
         assert!(new_time == initial_time);
     }
 
-    // Test on_tick with small time increment.
+    /// Test on_tick with small time increment.
     #[tokio::test]
     pub async fn test_on_tick_small_increment() {
         let mut store = sample_store(10).await;
@@ -3156,7 +3156,7 @@ mod tests {
 
     // TEST INTERVAL TICKING
 
-    // Test basic interval ticking.
+    /// Test basic interval ticking.
     #[tokio::test]
     pub async fn test_tick_interval_basic() {
         let mut store = sample_store(10).await;
@@ -3171,7 +3171,7 @@ mod tests {
         assert!(new_time == initial_time + 1)
     }
 
-    // Test interval ticking with proposal.
+    /// Test interval ticking with proposal.
     #[tokio::test]
     pub async fn test_tick_interval_with_proposal() {
         let mut store = sample_store(10).await;
@@ -3186,7 +3186,7 @@ mod tests {
         assert!(new_time == initial_time + 1)
     }
 
-    // Test sequence of interval ticks.
+    /// Test sequence of interval ticks.
     #[tokio::test]
     pub async fn test_tick_interval_sequence() {
         let mut store = sample_store(10).await;
@@ -3203,7 +3203,7 @@ mod tests {
         assert!(new_time == initial_time + 5)
     }
 
-    // Test different actions performed based on interval phase.
+    /// Test different actions performed based on interval phase.
     #[tokio::test]
     pub async fn test_tick_interval_actions_by_phase() {
         let mut store = sample_store(10).await;
@@ -3252,7 +3252,7 @@ mod tests {
 
     // TEST SLOT TIME CALCULATIONS
 
-    // Test conversion from slot to time.
+    /// Test conversion from slot to time.
     #[tokio::test]
     pub async fn test_slot_to_time_conversion() {
         let _ = sample_store(10).await;
@@ -3269,7 +3269,7 @@ mod tests {
         assert!(slot_10_time == genesis_time + 10 * lean_network_spec().seconds_per_slot);
     }
 
-    // Test conversion from time to slot.
+    /// Test conversion from time to slot.
     #[tokio::test]
     pub async fn test_time_to_slot_conversion() {
         let _ = sample_store(10).await;
@@ -3289,7 +3289,7 @@ mod tests {
         assert!(slot_5 == 5);
     }
 
-    // Test interval calculations within slots.
+    /// Test interval calculations within slots.
     #[ignore]
     #[tokio::test]
     pub async fn test_interval_calculations() {
@@ -3310,7 +3310,7 @@ mod tests {
 
     // TEST ATTESTATION PROCESSING TIMING
 
-    // Test basic new attestation processing.
+    /// Test basic new attestation processing.
     #[ignore]
     #[tokio::test]
     pub async fn test_accept_new_attestations_basic_devnet2() {
@@ -3420,7 +3420,7 @@ mod tests {
         );
     }
 
-    // Test accepting multiple new attestations.
+    /// Test accepting multiple new attestations.
     #[ignore]
     #[tokio::test]
     pub async fn test_accept_new_attestations_multiple_devnet2() {
@@ -3502,7 +3502,7 @@ mod tests {
         }
     }
 
-    // Test accepting multiple new aggregated payloads.
+    /// Test accepting multiple new aggregated payloads.
     #[tokio::test]
     pub async fn test_accept_new_attestations_multiple() {
         let mut store = sample_store(10).await;
@@ -3523,7 +3523,7 @@ mod tests {
         );
     }
 
-    // Test accepting new attestations when there are none.
+    /// Test accepting new attestations when there are none.
     #[ignore]
     #[tokio::test]
     pub async fn test_accept_new_attestations_empty_devnet2() {
@@ -3606,7 +3606,7 @@ mod tests {
 
     // TEST PROPOSAL HEAD TIMING
 
-    // Test getting proposal head for a slot.
+    /// Test getting proposal head for a slot.
     #[tokio::test]
     pub async fn test_get_proposal_head_basic() {
         let mut store = sample_store(10).await;
@@ -3618,7 +3618,7 @@ mod tests {
         assert!(head == stored_head);
     }
 
-    // Test that get_proposal_head advances store time appropriately.
+    /// Test that get_proposal_head advances store time appropriately.
     #[tokio::test]
     pub async fn test_get_proposal_head_advances_time() {
         let mut store = sample_store(10).await;
@@ -3633,7 +3633,7 @@ mod tests {
         assert!(new_time >= initial_time);
     }
 
-    // Test that get_proposal_head processes pending attestations.
+    /// Test that get_proposal_head processes pending attestations.
     #[ignore]
     #[tokio::test]
     pub async fn test_get_proposal_head_processes_attestations_devnet2() {
@@ -3720,7 +3720,7 @@ mod tests {
 
     // TEST TIME CONSTANTS
 
-    // Test that time constants are consistent with each other.
+    /// Test that time constants are consistent with each other.
     #[ignore]
     #[allow(clippy::assertions_on_constants)]
     #[tokio::test]
@@ -3734,7 +3734,7 @@ mod tests {
         assert!(lean_network_spec().seconds_per_slot > 0);
     }
 
-    // Test the relationship between intervals and slots.
+    /// Test the relationship between intervals and slots.
     #[allow(clippy::assertions_on_constants)]
     #[tokio::test]
     pub async fn test_interval_slot_relationship() {
