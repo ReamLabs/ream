@@ -242,7 +242,8 @@ jobs:
                 --data-dir $dataDir/$item \
                 --node-id $item --node-key $configDir/$privKeyPath \
                 --listen-addr /ip4/0.0.0.0/udp/$quicPort/quic-v1 \
-                --prometheus-port $metricsPort \
+                --metrics-host 0.0.0.0 \
+                --metrics-port $metricsPort \
                 $aggregator_flag \
                 $checkpoint_sync_flag \
                 -linfo"
@@ -257,7 +258,8 @@ jobs:
                 --data-dir /data \
                 --node-id $item --node-key /config/$privKeyPath \
                 --listen-addr /ip4/0.0.0.0/udp/$quicPort/quic-v1 \
-                --prometheus-port $metricsPort \
+                --metrics-host 0.0.0.0 \
+                --metrics-port $metricsPort \
                 $aggregator_flag \
                 $checkpoint_sync_flag \
                 -linfo"
@@ -270,7 +272,8 @@ jobs:
           chmod +x client-cmds/zeam-cmd.sh
           chmod +x client-cmds/qlean-cmd.sh
 
-          sed -i 's/--http-port 5055/--http-port $((metricsPort + 1000))/g' client-cmds/lantern-cmd.sh
+          # Avoid HTTP port collisions when multiple lantern nodes share host networking.
+          sed -i 's/^httpPort=.*/httpPort=$((metricsPort + 1000))/g' client-cmds/lantern-cmd.sh
           sed -i 's/docker run --rm --pull=never/docker run --pull=never/g' spin-node.sh
 
       - id: config
@@ -404,6 +407,52 @@ jobs:
         run: |
           set -euo pipefail
 
+          extract_finalized_slot_from_metrics() {
+            local metrics="$1"
+            awk '
+              /^[[:space:]]*#/ { next }
+              NF < 2 { next }
+              $2 !~ /^[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$/ { next }
+              ($1 ~ /lean_latest_finalized_slot/ || $1 ~ /latest_finalized_slot/ || $1 ~ /finalized_slot/) {
+                print $2
+                exit
+              }
+            ' <<< "$metrics" || true
+          }
+
+          extract_finalized_slot_from_logs() {
+            local node="$1"
+            case "$node" in
+              zeam_*)
+                docker logs --tail 300 "$node" 2>&1 \
+                  | awk '
+                      /Latest Finalized:/ {
+                        for (i = 1; i <= NF; i++) {
+                          if ($i == "Slot:" && (i + 1) <= NF && $(i + 1) ~ /^[0-9]+$/) {
+                            slot = $(i + 1)
+                          }
+                        }
+                      }
+                      END { if (slot != "") print slot }
+                    '
+                ;;
+              lantern_*)
+                docker logs --tail 300 "$node" 2>&1 \
+                  | awk '
+                      /persisted finalized replay state slot=[0-9]+/ {
+                        line = $0
+                        sub(/^.*slot=/, "", line)
+                        sub(/[^0-9].*$/, "", line)
+                        if (line ~ /^[0-9]+$/) {
+                          slot = line
+                        }
+                      }
+                      END { if (slot != "") print slot }
+                    '
+                ;;
+            esac
+          }
+
           IFS=',' read -r -a nodes <<< "$NODE_NAMES"
           IFS=',' read -r -a ports <<< "$METRICS_PORTS"
 
@@ -424,10 +473,13 @@ jobs:
               port="${ports[$i]}"
 
               metrics="$(curl -sS --max-time 3 "http://127.0.0.1:${port}/metrics" || true)"
-              if [ -z "$metrics" ] || ! grep -q "lean_latest_finalized_slot" <<< "$metrics"; then
+              if [ -z "$metrics" ]; then
                 metrics="$(curl -sS --max-time 3 "http://127.0.0.1:${port}/" || true)"
               fi
-              finalized_slot="$(awk '/^lean_latest_finalized_slot([ {]|$)/ {print $2; exit}' <<< "$metrics" || true)"
+              finalized_slot="$(extract_finalized_slot_from_metrics "$metrics")"
+              if [ -z "$finalized_slot" ]; then
+                finalized_slot="$(extract_finalized_slot_from_logs "$node")"
+              fi
 
               if [ -z "$finalized_slot" ]; then
                 echo "  - $node (port $port): metrics not ready"
