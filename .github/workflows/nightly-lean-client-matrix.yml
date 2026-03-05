@@ -492,9 +492,15 @@ jobs:
 
           extract_finalized_slot_from_logs() {
             local node="$1"
+
+            # Containers may not exist yet during early startup; treat as "no data yet".
+            if ! docker ps -a --format '{{.Names}}' | grep -qx "$node"; then
+              return 0
+            fi
+
             case "$node" in
               zeam_*)
-                docker logs --tail 300 "$node" 2>&1 \
+                (docker logs --tail 300 "$node" 2>&1 || true) \
                   | awk '
                       /Latest Finalized:/ {
                         for (i = 1; i <= NF; i++) {
@@ -507,7 +513,7 @@ jobs:
                     '
                 ;;
               lantern_*)
-                docker logs --tail 300 "$node" 2>&1 \
+                (docker logs --tail 300 "$node" 2>&1 || true) \
                   | awk '
                       /persisted finalized replay state slot=[0-9]+/ {
                         line = $0
