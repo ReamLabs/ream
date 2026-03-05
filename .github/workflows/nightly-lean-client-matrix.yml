@@ -350,15 +350,44 @@ jobs:
           echo "node_names=${node_one},${node_two},${node_three}" >> "$GITHUB_OUTPUT"
           echo "metrics_ports=18101,18102,18103" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve peer client docker images
+        run: |
+          set -euo pipefail
+
+          ream_image="ghcr.io/reamlabs/ream:latest-devnet3"
+          zeam_image="blockblaz/zeam:devnet3"
+          qlean_image="qdrvm/qlean-mini:devnet-3"
+
+          if [ "${{ matrix.devnet }}" = "devnet4" ]; then
+            ream_candidate="ghcr.io/reamlabs/ream:latest-devnet4"
+            zeam_candidate="blockblaz/zeam:devnet4"
+            qlean_candidate="qdrvm/qlean-mini:devnet-4"
+
+            if docker manifest inspect "$ream_candidate" >/dev/null 2>&1; then
+              ream_image="$ream_candidate"
+            fi
+            if docker manifest inspect "$zeam_candidate" >/dev/null 2>&1; then
+              zeam_image="$zeam_candidate"
+            fi
+            if docker manifest inspect "$qlean_candidate" >/dev/null 2>&1; then
+              qlean_image="$qlean_candidate"
+            fi
+          fi
+
+          echo "REAM_DOCKER_IMAGE=$ream_image" >> "$GITHUB_ENV"
+          echo "ZEAM_DOCKER_IMAGE=$zeam_image" >> "$GITHUB_ENV"
+          echo "QLEAN_DOCKER_IMAGE=$qlean_image" >> "$GITHUB_ENV"
+
+          echo "Using ream image: $ream_image"
+          echo "Using zeam image: $zeam_image"
+          echo "Using qlean image: $qlean_image"
+
       - id: start
         name: Start lean-quickstart network
         working-directory: lean-quickstart
         env:
           NETWORK_DIR: local-devnet
           REAM_BINARY_PATH: ${{ github.workspace }}/ream-bin/ream
-          REAM_DOCKER_IMAGE: ${{ matrix.devnet == 'devnet4' && 'ghcr.io/reamlabs/ream:latest-devnet4' || 'ghcr.io/reamlabs/ream:latest-devnet3' }}
-          ZEAM_DOCKER_IMAGE: ${{ matrix.devnet == 'devnet4' && 'blockblaz/zeam:devnet4' || 'blockblaz/zeam:devnet3' }}
-          QLEAN_DOCKER_IMAGE: ${{ matrix.devnet == 'devnet4' && 'qdrvm/qlean-mini:devnet-4' || 'qdrvm/qlean-mini:devnet-3' }}
         run: |
           set -euo pipefail
 
