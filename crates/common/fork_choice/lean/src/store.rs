@@ -1,4 +1,4 @@
-#[cfg(all(test, feature = "devnet3"))]
+#[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     collections::{HashMap, HashSet},
@@ -316,7 +316,7 @@ impl Store {
         } else if current_interval == 2 {
             // Interval 2: Only aggregate signatures if aggregator
             if is_aggregator {
-                #[cfg(feature = "devnet3")]
+                #[cfg(not(feature = "devnet4"))]
                 self.aggregate_committee_signatures().await?;
                 #[cfg(feature = "devnet4")]
                 self.aggregate_committee_signatures_and_payloads().await?;
@@ -1656,21 +1656,13 @@ impl Store {
 
         if is_aggregator && let Ok(Some(current_id)) = validator_id_provider.get() {
             let current_validator_subnet =
-                compute_subnet_id(current_id, ATTESTATION_COMMITTEE_COUNT);
-            let attester_subnet = compute_subnet_id(validator_id, ATTESTATION_COMMITTEE_COUNT);
+                compute_subnet_id(current_id, effective_attestation_committee_count());
+            let attester_subnet =
+                compute_subnet_id(validator_id, effective_attestation_committee_count());
 
-        #[cfg(feature = "devnet3")]
-        {
-            if is_aggregator && let Ok(Some(current_id)) = validator_id_provider.get() {
-                let current_validator_subnet =
-                    compute_subnet_id(current_id, effective_attestation_committee_count());
-                let attester_subnet =
-                    compute_subnet_id(validator_id, effective_attestation_committee_count());
-
-                if current_validator_subnet == attester_subnet {
-                    gossip_signatures_provider
-                        .insert(SignatureKey::new(validator_id, attestation_data), signature)?;
-                }
+            if current_validator_subnet == attester_subnet {
+                gossip_signatures_provider
+                    .insert(SignatureKey::new(validator_id, attestation_data), signature)?;
             }
         }
 
@@ -1754,7 +1746,6 @@ pub fn compute_subnet_id(validator_id: u64, num_committees: u64) -> u64 {
     validator_id % num_committees
 }
 
-#[cfg(feature = "devnet3")]
 fn effective_attestation_committee_count() -> u64 {
     #[cfg(test)]
     {
@@ -1767,79 +1758,64 @@ fn effective_attestation_committee_count() -> u64 {
     }
 }
 
-#[cfg(all(test, feature = "devnet3"))]
+#[cfg(test)]
 static TEST_ATTESTATION_COMMITTEE_COUNT: AtomicU64 = AtomicU64::new(ATTESTATION_COMMITTEE_COUNT);
 
-#[cfg(all(test, feature = "devnet3"))]
+#[cfg(test)]
 fn swap_test_attestation_committee_count(new_value: u64) -> u64 {
     TEST_ATTESTATION_COMMITTEE_COUNT.swap(new_value, Ordering::Relaxed)
 }
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "devnet3")]
     use std::{
         collections::{HashMap, HashSet},
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
         vec,
     };
 
     use alloy_primitives::{B256, FixedBytes};
     use anyhow::ensure;
-    #[cfg(feature = "devnet3")]
-    use ream_consensus_lean::attestation::SignedAggregatedAttestation;
-    #[cfg(feature = "devnet2")]
-    use ream_consensus_lean::block::{
-        Block, BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation,
-    };
-    #[cfg(feature = "devnet3")]
-    use ream_consensus_lean::block::{
-        BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation,
-    };
     use ream_consensus_lean::{
         attestation::{
             AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
-            AttestationData, SignatureKey, SignedAttestation,
+            AttestationData, SignatureKey, SignedAggregatedAttestation, SignedAttestation,
         },
-        block::BlockWithSignatures,
+        block::{
+            Block, BlockSignatures, BlockWithAttestation, BlockWithSignatures,
+            SignedBlockWithAttestation,
+        },
         checkpoint::Checkpoint,
         validator::{Validator, is_proposer},
     };
     use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
-    use ream_network_spec::networks::lean_network_spec;
-    #[cfg(feature = "devnet2")]
-    use ream_network_spec::networks::{LeanNetworkSpec, set_lean_network_spec};
-    #[cfg(feature = "devnet3")]
-    use ream_post_quantum_crypto::lean_multisig::aggregate::{
-        aggregate_signatures, verify_aggregate_signature,
+    use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
+    use ream_post_quantum_crypto::{
+        lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
+        leansig::{private_key::PrivateKey, signature::Signature},
     };
-    use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, signature::Signature};
-    #[cfg(feature = "devnet2")]
-    use ream_storage::db::{ReamDB, lean::LeanDB};
-    use ream_storage::tables::{field::REDBField, table::REDBTable};
+    use ream_storage::{
+        db::{ReamDB, lean::LeanDB},
+        tables::{field::REDBField, table::REDBTable},
+    };
     use ream_test_utils::store::sample_store;
     use ssz_types::{BitList, VariableList, typenum::U4096};
-    #[cfg(feature = "devnet2")]
-    use tempdir::TempDir;
     use tree_hash::TreeHash;
 
-    #[cfg(feature = "devnet2")]
-    use super::Store;
-    #[cfg(feature = "devnet3")]
-    use super::Store;
-    #[cfg(feature = "devnet3")]
-    use super::compute_subnet_id;
-    #[cfg(feature = "devnet3")]
-    use super::swap_test_attestation_committee_count;
+    use super::{Store, compute_subnet_id, swap_test_attestation_committee_count};
 
-    #[cfg(feature = "devnet2")]
     pub fn db_setup() -> LeanDB {
-        let temp_dir = TempDir::new("lean_test").unwrap();
-        let temp_path = temp_dir.path().to_path_buf();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp_path = std::env::temp_dir().join(format!("lean_test_{unique}"));
+        fs::create_dir_all(&temp_path).unwrap();
         let ream_db = ReamDB::new(temp_path).expect("unable to init Ream Database");
         ream_db.init_lean_db().unwrap()
     }
 
-    #[cfg(feature = "devnet3")]
     async fn sample_store_as_store(no_of_validators: usize) -> Store {
         let test_store = sample_store(no_of_validators).await;
         Store {
@@ -1848,12 +1824,10 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "devnet3")]
     struct CommitteeCountOverride {
         previous: u64,
     }
 
-    #[cfg(feature = "devnet3")]
     impl CommitteeCountOverride {
         fn new(value: u64) -> Self {
             let previous = swap_test_attestation_committee_count(value);
@@ -1861,14 +1835,12 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "devnet3")]
     impl Drop for CommitteeCountOverride {
         fn drop(&mut self) {
             swap_test_attestation_committee_count(self.previous);
         }
     }
 
-    #[cfg(feature = "devnet2")]
     pub fn build_signed_block_with_attestation(
         attestation_data: AttestationData,
         block: Block,
@@ -1889,13 +1861,11 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "devnet3")]
     async fn set_validator_id(store: &Store, validator_id: Option<u64>) {
         let provider = { store.store.lock().await.validator_id_provider() };
         provider.insert(validator_id).unwrap();
     }
 
-    #[cfg(feature = "devnet3")]
     async fn install_validator_keys(
         store: &Store,
         validator_ids: &[u64],
@@ -1946,7 +1916,6 @@ mod tests {
         key_pairs
     }
 
-    #[cfg(feature = "devnet3")]
     fn make_aggregated_proof(
         participants: &[u64],
         key_pairs: &HashMap<
@@ -1992,7 +1961,6 @@ mod tests {
         AggregatedSignatureProof::new(aggregation_bits, proof_data)
     }
 
-    #[cfg(feature = "devnet3")]
     fn make_test_aggregated_proof(participants: &[u64]) -> AggregatedSignatureProof {
         let mut aggregation_bits = BitList::<U4096>::with_capacity(
             participants.iter().max().map_or(0, |m| *m as usize + 1),
@@ -2006,7 +1974,6 @@ mod tests {
         AggregatedSignatureProof::new(aggregation_bits, VariableList::new(vec![0u8]).unwrap())
     }
 
-    #[cfg(feature = "devnet3")]
     async fn set_time_for_slot(store: &Store, slot: u64) {
         let time_provider = { store.store.lock().await.time_provider() };
         time_provider
@@ -2014,7 +1981,6 @@ mod tests {
             .unwrap();
     }
 
-    #[cfg(feature = "devnet3")]
     fn build_signed_block(
         block_with_signatures: BlockWithSignatures,
         proposer_attestation: AttestationData,
@@ -2035,7 +2001,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     #[ignore]
     async fn test_head_checkpoint_slot_mismatch_rejected() -> anyhow::Result<()> {
@@ -2615,7 +2580,6 @@ mod tests {
 
     // Test block production includes available attestations
     // This test generates real key pairs for validators to ensure signature aggregation works.
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_produce_block_with_attestations() {
         use rand::rng;
@@ -2659,6 +2623,7 @@ mod tests {
             genesis_state.clone(),
             db_setup(),
             Some(0),
+            None,
         )
         .unwrap();
 
@@ -3776,7 +3741,6 @@ mod tests {
 
     // TEST STORE ATTESTATION HANDLING
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_on_block_processes_multi_validator_aggregations() {
         let mut store: Store = sample_store_as_store(3).await;
@@ -3840,7 +3804,6 @@ mod tests {
         assert_eq!(extracted.get(&participants[1]), Some(&attestation_data));
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_on_block_preserves_immutability_of_aggregated_payloads() {
         let mut store: Store = sample_store_as_store(3).await;
@@ -3962,7 +3925,6 @@ mod tests {
 
     // TEST ON GOSSIP ATTESTATION SUBNET FILTERING
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_same_subnet_stores_signature() {
         let _committee_count_override = CommitteeCountOverride::new(4);
@@ -4023,7 +3985,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_cross_subnet_ignores_signature() {
         let _committee_count_override = CommitteeCountOverride::new(4);
@@ -4075,7 +4036,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_non_aggregator_never_stores_signature() {
         let mut store: Store = sample_store_as_store(8).await;
@@ -4132,7 +4092,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_attestation_data_always_stored() {
         let _committee_count_override = CommitteeCountOverride::new(4);
@@ -4197,7 +4156,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_valid_proof_stored_correctly() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4250,7 +4208,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_attestation_data_stored_by_root() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4283,7 +4240,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_invalid_proof_rejected() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4323,7 +4279,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_multiple_proofs_accumulate() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4370,7 +4325,6 @@ mod tests {
         assert!(stored_proofs.contains(&proof_2));
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_aggregates_gossip_signatures_into_proof() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4418,7 +4372,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_aggregated_proof_is_valid() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4490,7 +4443,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_empty_gossip_signatures_produces_no_proofs() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4507,7 +4459,6 @@ mod tests {
         assert!(is_empty);
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_multiple_attestation_data_grouped_separately() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4595,7 +4546,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_interval_2_triggers_aggregation_for_aggregator() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4644,7 +4594,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_interval_2_skips_aggregation_for_non_aggregator() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4693,7 +4642,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_other_intervals_do_not_trigger_aggregation() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4754,7 +4702,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_interval_0_accepts_attestations_with_proposal() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4767,7 +4714,6 @@ mod tests {
         assert_eq!(time % INTERVALS_PER_SLOT, 0);
     }
 
-    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_gossip_to_aggregation_to_storage() {
         let mut store: Store = sample_store_as_store(4).await;
