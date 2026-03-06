@@ -13,8 +13,8 @@ use ream_consensus_misc::constants::lean::{ATTESTATION_COMMITTEE_COUNT, INTERVAL
 use ream_fork_choice_lean::store::compute_subnet_id;
 use ream_keystore::lean_keystore::ValidatorKeystore;
 use ream_metrics::{
-    PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, VALIDATORS_COUNT, set_int_gauge_vec, start_timer,
-    stop_timer,
+    PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, PQ_SIG_ATTESTATION_SIGNING_TIME, VALIDATORS_COUNT,
+    inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{mpsc, oneshot};
@@ -113,9 +113,10 @@ impl ValidatorService {
                                 };
                                 let message = AggregatedAttestations { validator_id: keystore.index, data: attestation_data.clone() };
 
-                                let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
+                                let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
                                 let proposer_signature = keystore.private_key.sign(&attestation_data.tree_hash_root(), slot as u32)?;
                                 stop_timer(timer);
+                                inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
 
 
                                 let signed_block_with_attestation = SignedBlockWithAttestation {
@@ -183,9 +184,11 @@ impl ValidatorService {
                             let mut signed_attestations = vec![];
                             for (_, keystore) in self.keystores.iter().enumerate().filter(|(index, _)| *index as u64 != slot % lean_network_spec().num_validators) {
                                 let message = attestation_data.clone();
-                                let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_SIGNING_TIME, &[]);
-                                let signature = keystore.private_key.sign(&message.tree_hash_root(), slot as u32)?;
+                                let message_root = message.tree_hash_root();
+                                let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
+                                let signature = keystore.private_key.sign(&message_root, slot as u32)?;
                                 stop_timer(timer);
+                                inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
                                 signed_attestations.push(SignedAttestation {
                                     signature,
                                     message,

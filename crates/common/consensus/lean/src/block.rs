@@ -1,6 +1,10 @@
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
-use ream_metrics::{PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, start_timer, stop_timer};
+use ream_metrics::{
+    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
+    PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, inc_int_counter_vec, start_timer, stop_timer,
+};
 use ream_post_quantum_crypto::{
     lean_multisig::aggregate::verify_aggregate_signature, leansig::signature::Signature,
 };
@@ -82,18 +86,32 @@ impl SignedBlockWithAttestation {
                 .collect::<Result<Vec<_>, _>>()?;
 
             if verify_signatures {
-                let timer = start_timer(&PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME, &[]);
+                let timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
 
-                verify_aggregate_signature(
+                match verify_aggregate_signature(
                     &public_keys,
                     &attestation_root,
                     aggregated_signature.proof_data.as_ref(),
                     aggregated_attestation.message.slot as u32,
-                )
-                .map_err(|err| {
-                    anyhow!("Attestation aggregated signature verification failed: {err}")
-                })?;
-                stop_timer(timer);
+                ) {
+                    Ok(()) => {
+                        stop_timer(timer);
+                        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
+                        for _ in &validator_ids {
+                            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, &[]);
+                        }
+                    }
+                    Err(err) => {
+                        stop_timer(timer);
+                        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, &[]);
+                        for _ in &validator_ids {
+                            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, &[]);
+                        }
+                        return Err(anyhow!(
+                            "Attestation aggregated signature verification failed: {err}"
+                        ));
+                    }
+                }
             }
         }
 

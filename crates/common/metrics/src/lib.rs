@@ -189,19 +189,102 @@ lazy_static::lazy_static! {
     ).expect("failed to create FINALIZATIONS_TOTAL int counter vec");
 
     // PQ Signature Metrics
-    pub static ref PQ_SIGNATURE_ATTESTATION_SIGNING_TIME: HistogramVec = register_histogram_vec_with_registry!(
-        "lean_pq_signature_attestation_signing_time_seconds",
-        "Time taken to sign an attestation",
-        &[],
-        default_registry()
-    ).expect("failed to create PQ_SIGNATURE_ATTESTATION_SIGNING_TIME histogram vec");
+    pub static ref PQ_SIG_ATTESTATION_SIGNING_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_pq_sig_attestation_signing_time_seconds",
+            "Time taken to sign an attestation"
+        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 1.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create PQ_SIG_ATTESTATION_SIGNING_TIME histogram vec")
+    };
 
-    pub static ref PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME: HistogramVec = register_histogram_vec_with_registry!(
-        "lean_pq_signature_attestation_verification_time_seconds",
-        "Time taken to verify an attestation signature",
+    pub static ref PQ_SIG_ATTESTATION_VERIFICATION_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_pq_sig_attestation_verification_time_seconds",
+            "Time taken to verify an attestation signature"
+        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 1.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create PQ_SIG_ATTESTATION_VERIFICATION_TIME histogram vec")
+    };
+
+    pub static ref PQ_SIG_ATTESTATION_SIGNATURES_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_pq_sig_attestation_signatures_total",
+        "Total number of individual attestation signatures",
         &[],
         default_registry()
-    ).expect("failed to create PQ_SIGNATURE_ATTESTATION_VERIFICATION_TIME histogram vec");
+    ).expect("failed to create PQ_SIG_ATTESTATION_SIGNATURES_TOTAL int counter vec");
+
+    pub static ref PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_pq_sig_attestation_signatures_valid_total",
+        "Total number of valid individual attestation signatures",
+        &[],
+        default_registry()
+    ).expect("failed to create PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL int counter vec");
+
+    pub static ref PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_pq_sig_attestation_signatures_invalid_total",
+        "Total number of invalid individual attestation signatures",
+        &[],
+        default_registry()
+    ).expect("failed to create PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL int counter vec");
+
+    pub static ref PQ_SIG_AGGREGATED_SIGNATURES_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_pq_sig_aggregated_signatures_total",
+        "Total number of aggregated signatures",
+        &[],
+        default_registry()
+    ).expect("failed to create PQ_SIG_AGGREGATED_SIGNATURES_TOTAL int counter vec");
+
+    pub static ref PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_pq_sig_attestations_in_aggregated_signatures_total",
+        "Total number of attestations included into aggregated signatures",
+        &[],
+        default_registry()
+    ).expect("failed to create PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL int counter vec");
+
+    pub static ref PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_pq_sig_aggregated_signatures_valid_total",
+        "Total number of valid aggregated signatures",
+        &[],
+        default_registry()
+    ).expect("failed to create PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL int counter vec");
+
+    pub static ref PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_pq_sig_aggregated_signatures_building_time_seconds",
+            "Time taken to build an aggregated attestation signature"
+        ).buckets(vec![0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME histogram vec")
+    };
+
+    pub static ref PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_pq_sig_aggregated_signatures_invalid_total",
+        "Total number of invalid aggregated signatures",
+        &[],
+        default_registry()
+    ).expect("failed to create PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL int counter vec");
+
+    pub static ref PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_pq_sig_aggregated_signatures_verification_time_seconds",
+            "Time taken to verify an aggregated attestation signature"
+        ).buckets(vec![0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME histogram vec")
+    };
 
     // Network Metrics
     pub static ref LEAN_PEER_COUNT: IntGaugeVec = register_int_gauge_vec_with_registry!(
@@ -224,6 +307,62 @@ lazy_static::lazy_static! {
         &[],
         default_registry()
     ).expect("failed to create LEAN_DISCONNECTION_EVENT_TOTAL int counter vec");
+
+    pub static ref ATTESTATION_COMMITTEE_SUBNET: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_attestation_committee_subnet",
+        "Node's attestation committee subnet",
+        &[],
+        default_registry()
+    ).expect("failed to create ATTESTATION_COMMITTEE_SUBNET int gauge vec");
+
+    pub static ref ATTESTATION_COMMITTEE_COUNT: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_attestation_committee_count",
+        "Number of attestation committees",
+        &[],
+        default_registry()
+    ).expect("failed to create ATTESTATION_COMMITTEE_COUNT int gauge vec");
+
+    // Fork-Choice Additional Metrics
+    pub static ref GOSSIP_SIGNATURES: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_gossip_signatures",
+        "Number of gossip signatures in fork-choice store",
+        &[],
+        default_registry()
+    ).expect("failed to create GOSSIP_SIGNATURES int gauge vec");
+
+    pub static ref LATEST_NEW_AGGREGATED_PAYLOADS: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_latest_new_aggregated_payloads",
+        "Number of new aggregated payload items",
+        &[],
+        default_registry()
+    ).expect("failed to create LATEST_NEW_AGGREGATED_PAYLOADS int gauge vec");
+
+    pub static ref LATEST_KNOWN_AGGREGATED_PAYLOADS: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_latest_known_aggregated_payloads",
+        "Number of known aggregated payload items",
+        &[],
+        default_registry()
+    ).expect("failed to create LATEST_KNOWN_AGGREGATED_PAYLOADS int gauge vec");
+
+    pub static ref COMMITTEE_SIGNATURES_AGGREGATION_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_committee_signatures_aggregation_time_seconds",
+            "Time taken to aggregate committee signatures"
+        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create COMMITTEE_SIGNATURES_AGGREGATION_TIME histogram vec")
+    };
+
+    // State Transition Additional Metrics
+    pub static ref IS_AGGREGATOR: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_is_aggregator",
+        "Validator's is_aggregator status. True=1, False=0",
+        &[],
+        default_registry()
+    ).expect("failed to create IS_AGGREGATOR int gauge vec");
 }
 
 /// Set the value of a gauge metric
