@@ -20,9 +20,16 @@ use ream_consensus_lean::{
 };
 use ream_consensus_misc::constants::lean::{ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT};
 use ream_metrics::{
-    FINALIZATIONS_TOTAL, FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT,
-    JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, PROPOSE_BLOCK_TIME,
-    SAFE_TARGET_SLOT, inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
+    ATTESTATION_COMMITTEE_SUBNET, COMMITTEE_SIGNATURES_AGGREGATION_TIME, FINALIZATIONS_TOTAL,
+    FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, GOSSIP_SIGNATURES, HEAD_SLOT,
+    JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS,
+    LATEST_NEW_AGGREGATED_PAYLOADS, PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME,
+    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME,
+    PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL,
+    PQ_SIG_ATTESTATION_VERIFICATION_TIME, PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL,
+    PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT, inc_int_counter_vec, set_int_gauge_vec, start_timer,
+    stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -282,7 +289,10 @@ impl Store {
             .await
             .latest_known_aggregated_payloads_provider();
 
-        for (signature_key, mut new_proofs) in latest_new_aggregated_payloads_provider.drain()? {
+        let payloads = latest_new_aggregated_payloads_provider.drain()?;
+        set_int_gauge_vec(&LATEST_NEW_AGGREGATED_PAYLOADS, payloads.len() as i64, &[]);
+
+        for (signature_key, mut new_proofs) in payloads {
             let mut existing_proofs = latest_known_aggregated_payloads_provider
                 .get(signature_key.clone())?
                 .unwrap_or_default();
@@ -291,6 +301,12 @@ impl Store {
 
             latest_known_aggregated_payloads_provider.insert(signature_key, existing_proofs)?;
         }
+
+        set_int_gauge_vec(
+            &LATEST_KNOWN_AGGREGATED_PAYLOADS,
+            latest_known_aggregated_payloads_provider.iter()?.len() as i64,
+            &[],
+        );
 
         self.update_head().await?;
 
@@ -522,6 +538,21 @@ impl Store {
                         .map_err(|err| anyhow!("BitList error: {err:?}"))?;
                 }
 
+                let aggregation_timer =
+                    start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
+                let aggregated_signature = aggregate_signatures(
+                    &gossip_keys,
+                    &gossip_signatures,
+                    &data_root.0,
+                    data.slot as u32,
+                )?;
+                stop_timer(aggregation_timer);
+
+                inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
+                for _ in &gossip_ids {
+                    inc_int_counter_vec(&PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL, &[]);
+                }
+
                 results.push((
                     AggregatedAttestation {
                         aggregation_bits: bits.clone(),
@@ -529,13 +560,8 @@ impl Store {
                     },
                     AggregatedSignatureProof::new(
                         bits,
-                        VariableList::new(aggregate_signatures(
-                            &gossip_keys,
-                            &gossip_signatures,
-                            &data_root.0,
-                            data.slot as u32,
-                        )?)
-                        .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+                        VariableList::new(aggregated_signature)
+                            .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
                     ),
                 ));
             }
@@ -1158,13 +1184,30 @@ impl Store {
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
-            verify_aggregate_signature(
+            let verification_timer =
+                start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
+            match verify_aggregate_signature(
                 &public_keys,
                 &data_root.0,
                 proof.proof_data.as_ref(),
                 attestation_slot as u32,
-            )
-            .map_err(|err| anyhow!("Aggregated signature verification failed: {err}"))?;
+            ) {
+                Ok(()) => {
+                    stop_timer(verification_timer);
+                    inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
+                    for _ in &validator_ids {
+                        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, &[]);
+                    }
+                }
+                Err(err) => {
+                    stop_timer(verification_timer);
+                    inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, &[]);
+                    for _ in &validator_ids {
+                        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, &[]);
+                    }
+                    return Err(anyhow!("Aggregated signature verification failed: {err}"));
+                }
+            }
 
             attestation_data_by_root_provider.insert(data_root, data.clone())?;
 
@@ -1222,6 +1265,8 @@ impl Store {
     }
 
     pub async fn aggregate_committee_signatures(&mut self) -> anyhow::Result<()> {
+        let aggregation_timer = start_timer(&COMMITTEE_SIGNATURES_AGGREGATION_TIME, &[]);
+
         let (
             state_provider,
             gossip_signatures_provider,
@@ -1238,6 +1283,9 @@ impl Store {
                 db.latest_new_aggregated_payloads_provider(),
             )
         };
+
+        let gossip_signatures_count = gossip_signatures_provider.get_keys()?.len();
+        set_int_gauge_vec(&GOSSIP_SIGNATURES, gossip_signatures_count as i64, &[]);
 
         let head_state = state_provider
             .get(head_root)?
@@ -1280,6 +1328,8 @@ impl Store {
         for signature_key in aggregated_keys {
             let _ = gossip_signatures_provider.remove(signature_key);
         }
+
+        stop_timer(aggregation_timer);
 
         Ok(())
     }
@@ -1642,20 +1692,32 @@ impl Store {
             "Validator {validator_id} not found in state",
         );
 
-        ensure!(
-            signature.verify(
-                &key_state.validators[validator_id as usize].public_key,
-                attestation_data.slot as u32,
-                &attestation_data.tree_hash_root(),
-            )?,
-            "Signature verification failed"
-        );
+        let verification_timer = start_timer(&PQ_SIG_ATTESTATION_VERIFICATION_TIME, &[]);
+        let signature_valid = signature.verify(
+            &key_state.validators[validator_id as usize].public_key,
+            attestation_data.slot as u32,
+            &attestation_data.tree_hash_root(),
+        )?;
+        stop_timer(verification_timer);
+
+        if signature_valid {
+            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, &[]);
+        } else {
+            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, &[]);
+        }
+
+        ensure!(signature_valid, "Signature verification failed");
 
         let data_root = attestation_data.tree_hash_root();
 
         if is_aggregator && let Ok(Some(current_id)) = validator_id_provider.get() {
             let current_validator_subnet =
                 compute_subnet_id(current_id, effective_attestation_committee_count());
+            set_int_gauge_vec(
+                &ATTESTATION_COMMITTEE_SUBNET,
+                current_validator_subnet as i64,
+                &[],
+            );
             let attester_subnet =
                 compute_subnet_id(validator_id, effective_attestation_committee_count());
 
