@@ -3630,6 +3630,8 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "ream-consensus-lean",
  "ream-consensus-misc",
  "ream-fork-choice-lean",
