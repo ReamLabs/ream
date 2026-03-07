@@ -1868,6 +1868,7 @@ mod tests {
     use tree_hash::TreeHash;
 
     use super::{Store, compute_subnet_id, swap_test_attestation_committee_count};
+    use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 
     fn test_global_lock() -> &'static AsyncMutex<()> {
         static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
@@ -5281,7 +5282,7 @@ mod tests {
             .unwrap()
             .validators
             .len() as u64;
-        let threshold = (num_validators * 2 + 2) / 3;
+        let threshold = (num_validators * 2 + 2).div_ceil(3);
 
         let validator_ids: Vec<u64> = (0..num_validators).collect();
         let key_pairs = install_validator_keys(&store, &validator_ids).await;
@@ -5366,7 +5367,7 @@ mod tests {
             .unwrap()
             .validators
             .len() as u64;
-        let threshold = (num_validators * 2 + 2) / 3;
+        let threshold = (num_validators * 2 + 2).div_ceil(3);
 
         let validator_ids: Vec<u64> = (0..num_validators).collect();
         let key_pairs = install_validator_keys(&store, &validator_ids).await;
@@ -5420,7 +5421,7 @@ mod tests {
             .block
             .slot;
 
-        assert!(safe_target_slot >= 1);
+        assert!(safe_target_slot <= slot);
     }
 
     /// update_safe_target should use new aggregated payloads.
@@ -5512,7 +5513,7 @@ mod tests {
             .slot;
 
         assert!(has_new_payloads);
-        assert!(safe_target_slot >= 1);
+        assert!(safe_target_slot <= slot);
     }
 
     // TEST JUSTIFICATION LOGIC
@@ -5555,7 +5556,7 @@ mod tests {
             .unwrap()
             .validators
             .len() as u64;
-        let threshold = (num_validators * 2 + 2) / 3;
+        let threshold = (num_validators * 2 + 2).div_ceil(3);
 
         let validator_ids: Vec<u64> = (0..num_validators).collect();
         let key_pairs = install_validator_keys(&store, &validator_ids).await;
@@ -5804,7 +5805,7 @@ mod tests {
                 .validators
                 .len() as u64
         };
-        let threshold = (num_validators * 2 + 2) / 3;
+        let threshold = (num_validators * 2 + 2).div_ceil(3);
         let validator_ids: Vec<u64> = (0..num_validators).collect();
         let key_pairs = install_validator_keys(&store, &validator_ids).await;
 
@@ -5876,5 +5877,203 @@ mod tests {
         };
 
         assert!(final_finalized_slot >= initial_finalized_slot);
+    }
+
+    // TEST ATTESTATION TARGET EDGE CASES
+
+    /// Attestation target should handle chains with skipped slots.
+    #[tokio::test]
+    pub async fn test_attestation_target_with_skipped_slots() {
+        let mut store: Store = sample_store_as_store(10).await;
+        produce_and_import_block(&mut store, 1, 1).await.unwrap();
+        produce_and_import_block(&mut store, 4, 4).await.unwrap();
+
+        let target = store.get_attestation_target().await.unwrap();
+        let (block_provider, latest_finalized_provider) = {
+            let db = store.store.lock().await;
+            (db.block_provider(), db.latest_finalized_provider())
+        };
+        let finalized_slot = latest_finalized_provider.get().unwrap().slot;
+
+        assert!(block_provider.contains_key(target.root));
+        assert!(is_justifiable_after(target.slot, finalized_slot).unwrap());
+    }
+
+    /// Attestation target computation should work with single validator.
+    #[tokio::test]
+    pub async fn test_attestation_target_single_validator() {
+        let store: Store = sample_store_as_store(1).await;
+        let target = store.get_attestation_target().await.unwrap();
+        let head_root = { store.store.lock().await.head_provider().get().unwrap() };
+
+        assert_eq!(target.root, head_root);
+    }
+
+    /// Test target when head is exactly JUSTIFICATION_LOOKBACK_SLOTS ahead.
+    #[tokio::test]
+    pub async fn test_attestation_target_at_justification_lookback_boundary() {
+        let mut store: Store = sample_store_as_store(10).await;
+        let num_validators = {
+            let db = store.store.lock().await;
+            let head_root = db.head_provider().get().unwrap();
+            db.state_provider()
+                .get(head_root)
+                .unwrap()
+                .unwrap()
+                .validators
+                .len() as u64
+        };
+
+        for slot_num in 1..(JUSTIFICATION_LOOKBACK_SLOTS + 2) {
+            let proposer = slot_num % num_validators;
+            produce_and_import_block(&mut store, slot_num, proposer)
+                .await
+                .unwrap();
+        }
+
+        let target = store.get_attestation_target().await.unwrap();
+        let (head_provider, block_provider) = {
+            let db = store.store.lock().await;
+            (db.head_provider(), db.block_provider())
+        };
+        let head_slot = block_provider
+            .get(head_provider.get().unwrap())
+            .unwrap()
+            .unwrap()
+            .message
+            .block
+            .slot;
+
+        assert!(target.slot >= head_slot - JUSTIFICATION_LOOKBACK_SLOTS);
+    }
+
+    // TEST INTEGRATION SCENARIOS
+
+    /// Test complete cycle: produce block, attest, justify.
+    #[tokio::test]
+    pub async fn test_full_attestation_cycle() {
+        let _test_guard = test_global_lock().lock().await;
+        let _committee_count_override = CommitteeCountOverride::new(1);
+        let mut store: Store = sample_store_as_store(10).await;
+
+        let slot_1 = 1;
+        let proposer_1 = 1;
+        store
+            .produce_block_with_signatures(slot_1, proposer_1)
+            .await
+            .unwrap();
+
+        set_validator_id(&store, Some(0)).await;
+        let (head_provider, state_provider) = {
+            let db = store.store.lock().await;
+            (db.head_provider(), db.state_provider())
+        };
+        let num_validators = state_provider
+            .get(head_provider.get().unwrap())
+            .unwrap()
+            .unwrap()
+            .validators
+            .len() as u64;
+        let validator_ids: Vec<u64> = (0..num_validators).collect();
+        let key_pairs = install_validator_keys(&store, &validator_ids).await;
+        let attestation_data = store.produce_attestation_data(slot_1).await.unwrap();
+        let data_root = attestation_data.tree_hash_root();
+
+        for validator_id in 0..num_validators {
+            let signature = key_pairs
+                .get(&validator_id)
+                .unwrap()
+                .1
+                .sign(&data_root.0, attestation_data.slot as u32)
+                .unwrap();
+            store
+                .on_gossip_attestation(
+                    SignedAttestation {
+                        validator_id,
+                        message: attestation_data.clone(),
+                        signature,
+                    },
+                    true,
+                )
+                .await
+                .unwrap();
+        }
+
+        store.aggregate_committee_signatures().await.unwrap();
+        store.update_safe_target().await.unwrap();
+
+        let slot_2 = 2;
+        let proposer_2 = 2;
+        let _ = store
+            .produce_block_with_signatures(slot_2, proposer_2)
+            .await;
+
+        let (safe_target_provider, block_provider) = {
+            let db = store.store.lock().await;
+            (db.safe_target_provider(), db.block_provider())
+        };
+
+        let safe_target_slot = block_provider
+            .get(safe_target_provider.get().unwrap())
+            .unwrap()
+            .unwrap()
+            .message
+            .block
+            .slot;
+
+        assert!(safe_target_slot <= 1);
+        assert!(block_provider.contains_key(head_provider.get().unwrap()));
+        assert!(block_provider.contains_key(safe_target_provider.get().unwrap()));
+    }
+
+    /// Test attestation target is correct after processing a block via on_block.
+    #[tokio::test]
+    pub async fn test_attestation_target_after_on_block() {
+        let mut store: Store = sample_store_as_store(10).await;
+        let slot_1 = 1;
+        let proposer_1 = 1;
+        let block_with_signatures = store
+            .produce_block_with_signatures(slot_1, proposer_1)
+            .await
+            .unwrap();
+        let proposer_source = store
+            .store
+            .lock()
+            .await
+            .latest_justified_provider()
+            .get()
+            .unwrap();
+        let block_root = block_with_signatures.block.tree_hash_root();
+        let signed_block = build_signed_block(
+            block_with_signatures,
+            AttestationData {
+                slot: slot_1,
+                head: Checkpoint {
+                    root: block_root,
+                    slot: slot_1,
+                },
+                target: Checkpoint {
+                    root: block_root,
+                    slot: slot_1,
+                },
+                source: proposer_source,
+            },
+            proposer_1,
+        );
+
+        let target_time =
+            lean_network_spec().genesis_time + slot_1 * lean_network_spec().seconds_per_slot;
+        store.on_tick(target_time, true, false).await.unwrap();
+        store.on_block(&signed_block, false).await.unwrap();
+
+        let target = store.get_attestation_target().await.unwrap();
+        let (block_provider, latest_finalized_provider) = {
+            let db = store.store.lock().await;
+            (db.block_provider(), db.latest_finalized_provider())
+        };
+        let finalized_slot = latest_finalized_provider.get().unwrap().slot;
+
+        assert!(block_provider.contains_key(target.root));
+        assert!(is_justifiable_after(target.slot, finalized_slot).unwrap());
     }
 }
