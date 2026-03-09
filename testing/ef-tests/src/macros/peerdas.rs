@@ -15,7 +15,7 @@ macro_rules! test_peerdas_kzg {
                 use ream_execution_rpc_types::get_blobs::Blob;
                 use rust_eth_kzg::{DASContext, UsePrecomp, TrustedSetup};
                 use ream_polynomial_commitments::handlers::verify_cell_kzg_proof_batch;
-                use ream_consensus_beacon::matrix_entry::{compute_cells_and_kzg_proofs, recover_cells_and_kzg_proofs};
+                use ream_consensus_beacon::matrix_entry::{compute_cells_and_kzg_proofs, recover_cells_and_kzg_proofs, compute_cells};
 
                 #[derive(Debug, Deserialize)]
                 pub struct KzgInput {
@@ -103,6 +103,21 @@ macro_rules! test_peerdas_kzg {
                                                 proofs.iter().map(|proof| const_hex::encode_prefixed(proof.0.as_ref())).collect::<Vec<_>>()
                                             )).unwrap()
                                         }).map_err(|err| anyhow!("Failed to get recover_cells_and_kzg_proofs {err:?}"))
+                                    },
+                                    "compute_cells" => {
+                                        let blob_hex = input.blob.as_ref().expect("No blob");
+                                        let blob = Blob::from_ssz_bytes(
+                                            &const_hex::decode(blob_hex.strip_prefix("0x").unwrap_or(blob_hex))?
+                                        ).map_err(|err| anyhow!("Failed to decode {err:?}"))?;
+
+                                        compute_cells(blob, &context).map(|cells| {
+                                            let output: Vec<String> = cells
+                                                .iter()
+                                                .map(|cell| const_hex::encode_prefixed(cell.as_ref()))
+                                                .collect();
+
+                                            to_value(output).unwrap()
+                                        }).map_err(|err| anyhow!("Failed to execute compute_cells: {err:?}"))
                                     },
                                     _ => Err(anyhow!("Unknown function path: {path}")),
                                 }

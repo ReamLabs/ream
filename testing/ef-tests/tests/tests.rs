@@ -226,3 +226,4 @@ test_sanity_blocks!(test_finality, "finality/finality");
 test_peerdas_kzg!(verify_cell_kzg_proof_batch);
 test_peerdas_kzg!(compute_cells_and_kzg_proofs);
 test_peerdas_kzg!(recover_cells_and_kzg_proofs);
+test_peerdas_kzg!(compute_cells);
