@@ -71,7 +71,15 @@ impl Store {
             anchor_block.message.block.state_root == anchor_state.tree_hash_root(),
             "Anchor block state root must match anchor state hash"
         );
-        let anchor_root = anchor_block.message.block.tree_hash_root();
+
+        let anchor_root = {
+            let mut header = anchor_state.latest_block_header.clone();
+            if header.state_root == B256::ZERO {
+                header.state_root = anchor_state.tree_hash_root();
+            }
+            header.tree_hash_root()
+        };
+
         let anchor_slot = anchor_block.message.block.slot;
 
         let justified_checkpoint = Checkpoint {
@@ -89,6 +97,12 @@ impl Store {
         db.block_provider()
             .insert(anchor_root, anchor_block)
             .expect("Failed to insert genesis block");
+        db.slot_index_provider()
+            .insert(anchor_slot, anchor_root)
+            .expect("Failed to overwrite anchor slot index");
+        db.state_root_index_provider()
+            .insert(anchor_state.tree_hash_root(), anchor_root)
+            .expect("Failed to overwrite anchor state root index");
         db.latest_finalized_provider()
             .insert(finalized_checkpoint)
             .expect("Failed to insert latest finalized checkpoint");
@@ -133,7 +147,7 @@ impl Store {
         };
 
         // Start at genesis by default
-        if root == B256::ZERO {
+        if root == B256::ZERO || block_provider.get(root)?.is_none() {
             root = slot_index_table
                 .get_oldest_root()?
                 .ok_or(anyhow!("No blocks found to calculate fork choice"))?;
@@ -141,7 +155,7 @@ impl Store {
 
         let start_slot = block_provider
             .get(root)?
-            .expect("Failed to get block for root")
+            .ok_or(anyhow!("Failed to get block for root {root:?}"))?
             .message
             .block
             .slot;
@@ -473,7 +487,7 @@ impl Store {
             .ok_or(anyhow!("Block not found for target block root"))?;
 
         Ok(Checkpoint {
-            root: target_block.message.block.tree_hash_root(),
+            root: target_block_root,
             slot: target_block.message.block.slot,
         })
     }
@@ -933,15 +947,18 @@ impl Store {
 
         parent_state.state_transition(block, true)?;
 
-        let latest_justified =
-            if parent_state.latest_justified.slot > latest_justified_provider.get()?.slot {
-                parent_state.latest_justified
-            } else {
-                latest_justified_provider.get()?
-            };
+        let latest_justified = if parent_state.latest_justified.slot
+            > latest_justified_provider.get()?.slot
+            && block_provider.contains_key(parent_state.latest_justified.root)
+        {
+            parent_state.latest_justified
+        } else {
+            latest_justified_provider.get()?
+        };
 
-        let finalized_advanced =
-            parent_state.latest_finalized.slot > latest_finalized_provider.get()?.slot;
+        let finalized_advanced = parent_state.latest_finalized.slot
+            > latest_finalized_provider.get()?.slot
+            && block_provider.contains_key(parent_state.latest_finalized.root);
         let latest_finalized = if finalized_advanced {
             inc_int_counter_vec(&FINALIZATIONS_TOTAL, &["success"]);
             parent_state.latest_finalized
