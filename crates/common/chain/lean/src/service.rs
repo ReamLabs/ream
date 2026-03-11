@@ -1486,7 +1486,9 @@ impl LeanChainService {
             Ok(block) => block,
             Err(err) => {
                 warn!("Failed to produce block for slot {slot}: {err}");
-                let _ = response.send(ServiceResponse::Err(err));
+                if let Err(err) = response.send(ServiceResponse::Err(err)) {
+                    warn!("Failed to send error response for ProduceBlock: {err:?}");
+                }
                 return Ok(());
             }
         };
@@ -1512,7 +1514,9 @@ impl LeanChainService {
             Ok(data) => data,
             Err(err) => {
                 warn!("Failed to build attestation data for slot {slot}: {err}");
-                let _ = response.send(ServiceResponse::Err(err));
+                if let Err(err) = response.send(ServiceResponse::Err(err)) {
+                    warn!("Failed to send error response for BuildAttestationData: {err:?}");
+                }
                 return Ok(());
             }
         };
