@@ -278,16 +278,13 @@ impl Store {
     }
 
     pub async fn accept_new_attestations(&mut self) -> anyhow::Result<()> {
-        let latest_new_aggregated_payloads_provider = self
-            .store
-            .lock()
-            .await
-            .latest_new_aggregated_payloads_provider();
-        let latest_known_aggregated_payloads_provider = self
-            .store
-            .lock()
-            .await
-            .latest_known_aggregated_payloads_provider();
+        let (latest_new_aggregated_payloads_provider, latest_known_aggregated_payloads_provider) = {
+            let db = self.store.lock().await;
+            (
+                db.latest_new_aggregated_payloads_provider(),
+                db.latest_known_aggregated_payloads_provider(),
+            )
+        };
 
         let payloads = latest_new_aggregated_payloads_provider.drain()?;
         set_int_gauge_vec(&LATEST_NEW_AGGREGATED_PAYLOADS, payloads.len() as i64, &[]);
@@ -371,15 +368,14 @@ impl Store {
 
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
-        let (latest_justified_provider, head_provider) = {
+        let (latest_justified_provider, head_provider, latest_known_aggregated_payloads_provider) = {
             let db = self.store.lock().await;
-            (db.latest_justified_provider(), db.head_provider())
+            (
+                db.latest_justified_provider(),
+                db.head_provider(),
+                db.latest_known_aggregated_payloads_provider(),
+            )
         };
-        let latest_known_aggregated_payloads_provider = self
-            .store
-            .lock()
-            .await
-            .latest_known_aggregated_payloads_provider();
 
         let attestations = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
@@ -660,19 +656,20 @@ impl Store {
         parent_root: B256,
         attestations: Option<VariableList<AggregatedAttestations, U4096>>,
     ) -> anyhow::Result<(Block, Vec<AggregatedSignatureProof>, LeanState)> {
-        let (state_provider, latest_known_attestation_provider, block_provider) = {
+        let (
+            state_provider,
+            latest_known_attestation_provider,
+            block_provider,
+            latest_known_aggregated_payloads_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.state_provider(),
                 db.latest_known_attestations_provider(),
                 db.block_provider(),
+                db.latest_known_aggregated_payloads_provider(),
             )
         };
-        let latest_known_aggregated_payloads_provider = self
-            .store
-            .lock()
-            .await
-            .latest_known_aggregated_payloads_provider();
 
         let available_signed_attestations =
             latest_known_attestation_provider.get_all_attestations()?;
@@ -813,15 +810,22 @@ impl Store {
         slot: u64,
         validator_index: u64,
     ) -> anyhow::Result<BlockWithSignatures> {
+        let (state_provider, latest_known_aggregated_payloads_provider, latest_finalized_provider) = {
+            let db = self.store.lock().await;
+            (
+                db.state_provider(),
+                db.latest_known_aggregated_payloads_provider(),
+                db.latest_finalized_provider(),
+            )
+        };
+
         let head_root = self.get_proposal_head(slot).await?;
         let initialize_block_timer = start_timer(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
 
-        let head_state = {
-            let db = self.store.lock().await;
-            db.state_provider()
-                .get(head_root)?
-                .ok_or(anyhow!("State not found for head root"))?
-        };
+        let head_state = state_provider
+            .get(head_root)?
+            .ok_or(anyhow!("State not found for head root"))?;
+
         stop_timer(initialize_block_timer);
 
         let num_validators = head_state.validators.len();
@@ -833,12 +837,6 @@ impl Store {
 
         let add_attestations_timer =
             start_timer(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
-
-        let latest_known_aggregated_payloads_provider = self
-            .store
-            .lock()
-            .await
-            .latest_known_aggregated_payloads_provider();
 
         let attestation_data_map = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
@@ -874,10 +872,8 @@ impl Store {
         let signatures_list = VariableList::new(proofs)
             .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
 
-        let finalized_advanced = {
-            let db = self.store.lock().await;
-            post_state.latest_finalized.slot > db.latest_finalized_provider().get()?.slot
-        };
+        let finalized_advanced =
+            post_state.latest_finalized.slot > latest_finalized_provider.get()?.slot;
 
         if finalized_advanced {
             self.prune_stale_attestation_data().await?;
@@ -902,6 +898,9 @@ impl Store {
             latest_justified_provider,
             latest_finalized_provider,
             gossip_signatures_provider,
+            validator_id_provider,
+            attestation_data_by_root_provider,
+            latest_known_aggregated_payloads_provider,
         ) = {
             let db = self.store.lock().await;
             (
@@ -910,16 +909,6 @@ impl Store {
                 db.latest_justified_provider(),
                 db.latest_finalized_provider(),
                 db.gossip_signatures_provider(),
-            )
-        };
-
-        let (
-            validator_id_provider,
-            attestation_data_by_root_provider,
-            latest_known_aggregated_payloads_provider,
-        ) = {
-            let db = self.store.lock().await;
-            (
                 db.validator_id_provider(),
                 db.attestation_data_by_root_provider(),
                 db.latest_known_aggregated_payloads_provider(),
@@ -1620,11 +1609,14 @@ impl Store {
     }
 
     pub async fn compute_block_weights(&self) -> anyhow::Result<HashMap<B256, u64>> {
-        let latest_known_aggregated_payloads_provider = self
-            .store
-            .lock()
-            .await
-            .latest_known_aggregated_payloads_provider();
+        let (latest_known_aggregated_payloads_provider, latest_finalized_provider, block_provider) = {
+            let db = self.store.lock().await;
+            (
+                db.latest_known_aggregated_payloads_provider(),
+                db.latest_finalized_provider(),
+                db.block_provider(),
+            )
+        };
 
         let aggregated_payloads = latest_known_aggregated_payloads_provider
             .iter()?
@@ -1635,11 +1627,8 @@ impl Store {
             .extract_attestations_from_aggregated_payloads(&aggregated_payloads)
             .await?;
 
-        let db = self.store.lock().await;
-        let start_slot = db.latest_finalized_provider().get()?.slot;
-
+        let start_slot = latest_finalized_provider.get()?.slot;
         let mut weights: HashMap<B256, u64> = HashMap::new();
-        let block_provider = db.block_provider();
 
         for attestation_data in attestations.values() {
             let mut current_root = attestation_data.head.root;
@@ -1669,20 +1658,23 @@ impl Store {
         let validator_id = signed_attestation.validator_id;
         let attestation_data = &signed_attestation.message;
         let signature = signed_attestation.signature;
-        let (attestation_data_by_root_provider, validator_id_provider) = {
+        let (
+            attestation_data_by_root_provider,
+            validator_id_provider,
+            state_provider,
+            gossip_signatures_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.attestation_data_by_root_provider(),
                 db.validator_id_provider(),
+                db.state_provider(),
+                db.gossip_signatures_provider(),
             )
         };
 
         self.validate_attestation(&signed_attestation).await?;
 
-        let (state_provider, gossip_signatures_provider) = {
-            let db = self.store.lock().await;
-            (db.state_provider(), db.gossip_signatures_provider())
-        };
         let key_state = state_provider
             .get(attestation_data.target.root)?
             .ok_or_else(|| anyhow!("No state available for signature verification"))?;
@@ -3386,78 +3378,6 @@ mod tests {
         assert!(boundary_interval == 0);
     }
 
-    // TEST ATTESTATION PROCESSING TIMING
-
-    /// Test basic new attestation processing.
-    #[ignore]
-    #[tokio::test]
-    pub async fn test_accept_new_attestations_basic_devnet2() {
-        let mut store = sample_store(10).await;
-
-        let mut root = [0u8; 32];
-        root[..4].copy_from_slice(b"test");
-        let checkpoint = Checkpoint {
-            slot: 1,
-            root: FixedBytes::new(root),
-        };
-        {
-            let db = store.store.lock().await;
-            let justified_provider = db.latest_justified_provider();
-            let justified_checkpoint = justified_provider.get().unwrap();
-            let signed_attestation = SignedAttestation {
-                message: AttestationData {
-                    slot: 1,
-                    head: justified_checkpoint,
-                    target: checkpoint,
-                    source: justified_checkpoint,
-                },
-                validator_id: 5,
-                signature: Signature::blank(),
-            };
-            let db_table = db.latest_new_attestations_provider();
-            db_table
-                .insert(signed_attestation.validator_id, signed_attestation)
-                .unwrap();
-        };
-        let latest_new_attestations_provider =
-            { store.store.lock().await.latest_new_attestations_provider() };
-        let latest_known_attestations_provider = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_known_attestations_provider()
-        };
-
-        let inititial_new_attestations_length = latest_new_attestations_provider
-            .iter_values()
-            .unwrap()
-            .count();
-        let initial_known_attestations_length = latest_known_attestations_provider
-            .get_all_attestations()
-            .unwrap()
-            .keys()
-            .len();
-
-        store.accept_new_attestations().await.unwrap();
-
-        let final_new_attestations_length = latest_new_attestations_provider
-            .iter_values()
-            .unwrap()
-            .count();
-        let final_latest_known_attestations_length = latest_known_attestations_provider
-            .get_all_attestations()
-            .unwrap()
-            .keys()
-            .len();
-
-        assert!(final_new_attestations_length == 0);
-        assert!(
-            final_latest_known_attestations_length
-                == initial_known_attestations_length + inititial_new_attestations_length
-        );
-    }
-
     /// Test basic new attestation processing moves aggregated payloads.
     #[tokio::test]
     pub async fn test_accept_new_attestations_basic() {
@@ -3498,88 +3418,6 @@ mod tests {
         );
     }
 
-    /// Test accepting multiple new attestations.
-    #[ignore]
-    #[tokio::test]
-    pub async fn test_accept_new_attestations_multiple_devnet2() {
-        let mut store = sample_store(10).await;
-
-        let mut checkpoints: Vec<Checkpoint> = Vec::new();
-        for i in 0..5 {
-            let root = {
-                let mut root_vec = [0u8; 32];
-                root_vec[..4].copy_from_slice(b"test");
-                root_vec[5] = i;
-                FixedBytes::new(root_vec)
-            };
-
-            checkpoints.push(Checkpoint {
-                root,
-                slot: i.into(),
-            });
-        }
-
-        for (i, checkpoint) in checkpoints.iter().enumerate().map(|(i, c)| (i as u64, c)) {
-            let db = store.store.lock().await;
-            let justified_provider = db.latest_justified_provider();
-            let justified_checkpoint = justified_provider.get().unwrap();
-            let signed_attestation = SignedAttestation {
-                message: AttestationData {
-                    slot: i,
-                    head: justified_checkpoint,
-                    target: *checkpoint,
-                    source: justified_checkpoint,
-                },
-                validator_id: i,
-                signature: Signature::blank(),
-            };
-            let db_table = db.latest_new_attestations_provider();
-
-            db_table
-                .insert(signed_attestation.validator_id, signed_attestation)
-                .unwrap();
-        }
-
-        let latest_known_attestations_provider = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_known_attestations_provider()
-        };
-
-        store.accept_new_attestations().await.unwrap();
-
-        let new_attestations_length = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_attestations_provider()
-                .iter_values()
-                .unwrap()
-                .count()
-        };
-        let latest_known_attestations_length = latest_known_attestations_provider
-            .get_all_attestations()
-            .unwrap()
-            .keys()
-            .len();
-
-        assert!(new_attestations_length == 0);
-        assert!(latest_known_attestations_length == 5);
-
-        for (i, checkpoint) in checkpoints.iter().enumerate().map(|(i, c)| (i as u64, c)) {
-            let stored_checkpoint = latest_known_attestations_provider
-                .get(i)
-                .unwrap()
-                .unwrap()
-                .message
-                .target;
-            assert!(stored_checkpoint == *checkpoint);
-        }
-    }
-
     /// Test accepting multiple new aggregated payloads.
     #[tokio::test]
     pub async fn test_accept_new_attestations_multiple() {
@@ -3599,48 +3437,6 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-    }
-
-    /// Test accepting new attestations when there are none.
-    #[ignore]
-    #[tokio::test]
-    pub async fn test_accept_new_attestations_empty_devnet2() {
-        let mut store = sample_store(10).await;
-
-        let latest_known_attestations_provider = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_known_attestations_provider()
-        };
-
-        let initial_known_attestations_length = latest_known_attestations_provider
-            .get_all_attestations()
-            .unwrap()
-            .keys()
-            .len();
-
-        store.accept_new_attestations().await.unwrap();
-
-        let final_new_attestations_length = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_attestations_provider()
-                .iter_values()
-                .unwrap()
-                .count()
-        };
-        let latest_known_attestations_length = latest_known_attestations_provider
-            .get_all_attestations()
-            .unwrap()
-            .keys()
-            .len();
-
-        assert!(final_new_attestations_length == 0);
-        assert!(latest_known_attestations_length == initial_known_attestations_length);
     }
 
     #[tokio::test]
@@ -3709,71 +3505,6 @@ mod tests {
         let new_time = time_provider.get().unwrap();
 
         assert!(new_time >= initial_time);
-    }
-
-    /// Test that get_proposal_head processes pending attestations.
-    #[ignore]
-    #[tokio::test]
-    pub async fn test_get_proposal_head_processes_attestations_devnet2() {
-        let mut store = sample_store(10).await;
-
-        let root = {
-            let mut root_vec = [0u8; 32];
-            root_vec[..11].copy_from_slice(b"attestation");
-            FixedBytes::new(root_vec)
-        };
-        let checkpoint = Checkpoint { slot: 10, root };
-
-        {
-            let db = store.store.lock().await;
-            let justified_provider = db.latest_justified_provider();
-            let justified_checkpoint = justified_provider.get().unwrap();
-            let signed_attestation = SignedAttestation {
-                message: AttestationData {
-                    slot: 10,
-                    head: justified_checkpoint,
-                    target: checkpoint,
-                    source: justified_checkpoint,
-                },
-                validator_id: 10,
-                signature: Signature::blank(),
-            };
-            let db_table = db.latest_new_attestations_provider();
-            db_table
-                .insert(signed_attestation.validator_id, signed_attestation)
-                .unwrap();
-        };
-
-        store.get_proposal_head(1).await.unwrap();
-
-        let new_attestations_length = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_new_attestations_provider()
-                .iter_values()
-                .unwrap()
-                .count()
-        };
-
-        let known_attestations_correct_checkpoint = {
-            store
-                .store
-                .lock()
-                .await
-                .latest_known_attestations_provider()
-                .get_all_attestations()
-                .unwrap()
-                .get(&10)
-                .unwrap()
-                .message
-                .target
-        };
-
-        assert!(new_attestations_length == 0);
-        assert!(known_attestations_correct_checkpoint.slot == 10);
-        assert!(known_attestations_correct_checkpoint == checkpoint);
     }
 
     #[tokio::test]
