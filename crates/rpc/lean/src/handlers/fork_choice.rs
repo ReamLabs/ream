@@ -9,8 +9,8 @@ pub async fn get_fork_choice_tree(
     lean_chain: Data<LeanStoreReader>,
 ) -> Result<impl Responder, ApiError> {
     let lean_chain = lean_chain.read().await;
-    let db = lean_chain.store.lock().await;
     let weight_map = lean_chain.compute_block_weights().await;
+    let db = lean_chain.store.lock().await;
 
     let finalized_checkpoint = db.latest_finalized_provider().get().map_err(|err| {
         ApiError::InternalError(format!(
