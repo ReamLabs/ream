@@ -262,8 +262,6 @@ impl LeanState {
             }
         }
 
-        let original_finalized_slot = self.latest_finalized.slot;
-
         let mut root_to_slot: HashMap<B256, u64> = HashMap::new();
         let start_slot = self.latest_finalized.slot + 1;
         for index in start_slot..(self.historical_block_hashes.len() as u64) {
@@ -363,7 +361,7 @@ impl LeanState {
                 continue;
             }
 
-            if !is_justifiable_after(attestation.target().slot, original_finalized_slot)? {
+            if !is_justifiable_after(attestation.target().slot, self.latest_finalized.slot)? {
                 info!(
                     reason = "Target slot not justifiable",
                     source_slot = attestation.source().slot,
@@ -430,7 +428,7 @@ impl LeanState {
                 // hash after the source
                 let is_target_next_valid_justifiable_slot =
                     !((attestation.source().slot + 1)..attestation.target().slot).any(|slot| {
-                        is_justifiable_after(slot, original_finalized_slot).unwrap_or(false)
+                        is_justifiable_after(slot, self.latest_finalized.slot).unwrap_or(false)
                     });
 
                 if is_target_next_valid_justifiable_slot {
