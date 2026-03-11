@@ -40,6 +40,7 @@ use ream_req_resp::{
         BeaconRequestMessage, BeaconResponseMessage,
         blob_sidecars::BlobSidecarsByRootV1Request,
         blocks::{BeaconBlocksByRangeV2Request, BeaconBlocksByRootV2Request},
+        data_column_sidecars::DataColumnSidecarsByRootV1Request,
         meta_data::GetMetaDataV3,
         ping::Ping,
         status::Status,
@@ -331,6 +332,13 @@ impl Network {
                             },
                             P2PRequest::BlobIdentifiers { peer_id, blob_identifiers, callback } => {
                                 if let Some(request_id) = self.send_request(peer_id, BeaconRequestMessage::BlobSidecarsByRoot(BlobSidecarsByRootV1Request::new(blob_identifiers))) {
+                                    self.callbacks.insert(request_id, callback);
+                                } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
+                                    warn!("Failed to send error response: {err:?}");
+                                }
+                            },
+                            P2PRequest::DataColumnsByRoot { peer_id, identifiers, callback } => {
+                                if let Some(request_id) = self.send_request(peer_id, BeaconRequestMessage::DataColumnSidecarsByRoot(DataColumnSidecarsByRootV1Request::new(identifiers))) {
                                     self.callbacks.insert(request_id, callback);
                                 } else if let Err(err) = callback.send(Ok(P2PCallbackResponse::Disconnected)).await {
                                     warn!("Failed to send error response: {err:?}");

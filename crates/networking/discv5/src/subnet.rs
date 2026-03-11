@@ -2,6 +2,7 @@ use alloy_primitives::{B256, aliases::B32};
 use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
 use anyhow::{anyhow, ensure};
 use discv5::{Enr, enr::NodeId};
+use ream_consensus_beacon::custody_group::get_custody_group_indices;
 use ream_consensus_misc::misc::compute_shuffled_index;
 use sha2::{Digest, Sha256};
 use ssz::{Decode, Encode};
@@ -316,6 +317,49 @@ pub fn sync_committee_subnet_predicate(subnets: Vec<u64>) -> impl Fn(&Enr) -> bo
                     subnet_id,
                     enr.node_id()
                 );
+            }
+        }
+
+        false
+    }
+}
+
+/// Predicate to filter peers by custody group coverage.
+///
+/// Returns true if the peer's custody groups (derived from their node_id and advertised
+/// custody_group_count) contain any of the requested custody group indices.
+pub fn custody_group_predicate(requested_groups: Vec<u64>) -> impl Fn(&Enr) -> bool + Send + Sync {
+    move |enr: &Enr| {
+        if requested_groups.is_empty() {
+            return true;
+        }
+
+        // Read custody_group_count from ENR
+        let custody_group_count =
+            match enr.get_decodable::<CustodyGroupCount>(CUSTODY_GROUP_COUNT_ENR_KEY) {
+                Some(Ok(cgc)) if cgc.0 > 0 => cgc.0,
+                _ => {
+                    trace!(
+                        "Peer rejected: missing or zero cgc field; peer_id: {}",
+                        enr.node_id()
+                    );
+                    return false;
+                }
+            };
+
+        let node_id = enr.node_id();
+        let Ok(peer_groups) = get_custody_group_indices(node_id, custody_group_count) else {
+            trace!(
+                "Peer rejected: failed to compute custody groups; peer_id: {}",
+                enr.node_id()
+            );
+            return false;
+        };
+
+        // Check if any of the requested groups are in the peer's custody
+        for group in &requested_groups {
+            if peer_groups.contains(group) {
+                return true;
             }
         }
 

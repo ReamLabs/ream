@@ -8,9 +8,9 @@ use ream_p2p::bootnodes::Bootnodes;
 use url::Url;
 
 use crate::cli::constants::{
-    DEFAULT_DISABLE_DISCOVERY, DEFAULT_DISCOVERY_PORT, DEFAULT_HTTP_ADDRESS,
-    DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_NETWORK, DEFAULT_SOCKET_ADDRESS,
-    DEFAULT_SOCKET_PORT,
+    DEFAULT_DAS_ALLOWED_FAILURES, DEFAULT_DISABLE_DISCOVERY, DEFAULT_DISCOVERY_PORT,
+    DEFAULT_HTTP_ADDRESS, DEFAULT_HTTP_ALLOW_ORIGIN, DEFAULT_HTTP_PORT, DEFAULT_NETWORK,
+    DEFAULT_SOCKET_ADDRESS, DEFAULT_SOCKET_PORT,
 };
 
 #[derive(Debug, Parser)]
@@ -89,6 +89,13 @@ pub struct BeaconNodeConfig {
         help = "Number of epochs to retain blob sidecars. Defaults to network spec value (4096 epochs for mainnet, ~18 days)"
     )]
     pub blob_retention_epochs: Option<u64>,
+
+    #[arg(
+        long,
+        help = "Number of column retrieval failures tolerated per slot before DAS sampling is considered failed. Higher values sample more columns to compensate.",
+        default_value_t = DEFAULT_DAS_ALLOWED_FAILURES
+    )]
+    pub das_allowed_failures: u64,
 }
 
 impl From<BeaconNodeConfig> for ManagerConfig {
@@ -108,6 +115,7 @@ impl From<BeaconNodeConfig> for ManagerConfig {
             enable_builder: config.enable_builder,
             mev_relay_url: config.mev_relay_url,
             blob_retention_epochs: config.blob_retention_epochs,
+            das_allowed_failures: config.das_allowed_failures,
         }
     }
 }

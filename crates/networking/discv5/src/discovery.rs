@@ -35,7 +35,7 @@ use crate::{
         ATTESTATION_BITFIELD_ENR_KEY, AttestationSubnets, CUSTODY_GROUP_COUNT_ENR_KEY,
         EPOCHS_PER_SUBNET_SUBSCRIPTION, NEXT_FORK_DIGEST_ENR_KEY, NextForkDigest,
         SYNC_COMMITTEE_BITFIELD_ENR_KEY, attestation_subnet_predicate, compute_subscribed_subnets,
-        sync_committee_subnet_predicate,
+        custody_group_predicate, sync_committee_subnet_predicate,
     },
 };
 
@@ -62,6 +62,8 @@ pub enum QueryType {
     Peers,
     AttestationSubnetPeers(Vec<u64>),
     SyncCommitteeSubnetPeers(Vec<u64>),
+    /// Discover peers that custody specific custody group indices.
+    CustodyGroupPeers(Vec<u64>),
 }
 
 struct QueryResult {
@@ -262,6 +264,9 @@ impl Discovery {
                     QueryType::SyncCommitteeSubnetPeers(subnet_ids) => {
                         Box::new(sync_committee_subnet_predicate(subnet_ids))
                     }
+                    QueryType::CustodyGroupPeers(group_ids) => {
+                        Box::new(custody_group_predicate(group_ids))
+                    }
                 },
                 target_peers,
             )
@@ -336,6 +341,28 @@ impl Discovery {
                         }
                         Err(err) => {
                             warn!("Failed to find sync committee subnet peers: {err:?}");
+                            None
+                        }
+                    }
+                }
+                QueryType::CustodyGroupPeers(group_ids) => {
+                    self.find_peer_active = false;
+                    match query.result {
+                        Ok(peers) => {
+                            let predicate = custody_group_predicate(group_ids);
+                            let filtered_peers = peers
+                                .into_iter()
+                                .filter(|enr| predicate(enr))
+                                .collect::<Vec<_>>();
+                            info!("Found {} peers for custody groups", filtered_peers.len(),);
+                            let mut peer_map = HashMap::new();
+                            for peer in filtered_peers {
+                                peer_map.insert(peer, None);
+                            }
+                            Some(peer_map)
+                        }
+                        Err(err) => {
+                            warn!("Failed to find custody group peers: {err:?}");
                             None
                         }
                     }
