@@ -1575,7 +1575,7 @@ mod tests {
     use tokio::sync::{mpsc, oneshot};
 
     use super::LeanChainService;
-    use crate::{messages::ServiceResponse, p2p_request::LeanP2PRequest};
+    use crate::{messages::ServiceResponse, p2p_request::LeanP2PRequest, sync::SyncStatus};
 
     #[tokio::test]
     async fn test_handle_produce_block_stale_slot_responds_with_err() {
@@ -1610,7 +1610,7 @@ mod tests {
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
-        service.sync_status = crate::sync::SyncStatus::Synced;
+        service.sync_status = SyncStatus::Synced;
 
         // Try to produce a block for slot 2 (behind head slot 3)
         let (tx, rx) = oneshot::channel::<ServiceResponse<BlockWithSignatures>>();
