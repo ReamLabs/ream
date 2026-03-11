@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-use anyhow::Error;
 use libp2p_identity::PeerId;
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAggregatedAttestation, SignedAttestation},
@@ -77,5 +76,5 @@ pub enum RequestResult<T> {
 pub enum ServiceResponse<T> {
     Ok(T),
     Syncing,
-    Err(Error),
+    Err(anyhow::Error),
 }
