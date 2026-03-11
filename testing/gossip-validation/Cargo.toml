@@ -9,6 +9,19 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+default = ["devnet3"]
+devnet3 = [
+    "ream-consensus-lean/devnet3",
+    "ream-p2p/devnet3",
+    "ream-storage/devnet3",
+]
+devnet4 = [
+    "ream-consensus-lean/devnet4",
+    "ream-p2p/devnet4",
+    "ream-storage/devnet4",
+]
+
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
@@ -23,10 +36,12 @@ tokio.workspace = true
 # ream
 ream-chain-beacon.workspace = true
 ream-consensus-beacon.workspace = true
+ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
 ream-network-manager = { workspace = true, features = ["disable_ancestor_validation"] }
 ream-network-spec.workspace = true
 ream-operation-pool.workspace = true
+ream-p2p.workspace = true
 ream-storage.workspace = true
 ream-sync-committee-pool.workspace = true
 

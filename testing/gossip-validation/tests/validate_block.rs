@@ -27,7 +27,7 @@ mod tests {
     use tempdir::TempDir;
 
     const SEPOLIA_GENESIS_TIME: u64 = 1655733600;
-    const CURRENT_TIME: u64 = 1752744600;
+    const CURRENT_TIME: u64 = 1770358512;
 
     pub async fn db_setup() -> (BeaconChain, Arc<BeaconCacheDB>, B256) {
         let temp_dir = TempDir::new("ream_gossip_test").unwrap();
@@ -40,25 +40,27 @@ mod tests {
             .with_cache(cached_db.clone());
 
         let ancestor_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
-            "./assets/sepolia/blocks/slot_8084160.ssz_snappy",
+            "./assets/sepolia/blocks/ancestor_9551988.ssz_snappy",
         )
         .unwrap();
 
-        let grandparent_beacon_state =
-            read_ssz_snappy_file::<BeaconState>("./assets/sepolia/states/slot_8084248.ssz_snappy")
-                .unwrap();
+        let grandparent_beacon_state = read_ssz_snappy_file::<BeaconState>(
+            "./assets/sepolia/states/grandparent_state_9552074.ssz_snappy",
+        )
+        .unwrap();
 
         let grandparent_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
-            "./assets/sepolia/blocks/slot_8084248.ssz_snappy",
+            "./assets/sepolia/blocks/grandparent_9552074.ssz_snappy",
         )
         .unwrap();
 
-        let parent_beacon_state =
-            read_ssz_snappy_file::<BeaconState>("./assets/sepolia/states/slot_8084249.ssz_snappy")
-                .unwrap();
+        let parent_beacon_state = read_ssz_snappy_file::<BeaconState>(
+            "./assets/sepolia/states/parent_state_9552075.ssz_snappy",
+        )
+        .unwrap();
 
         let parent_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
-            "./assets/sepolia/blocks/slot_8084249.ssz_snappy",
+            "./assets/sepolia/blocks/parent_9552075.ssz_snappy",
         )
         .unwrap();
 
@@ -131,8 +133,6 @@ mod tests {
         db.time_provider().insert(CURRENT_TIME).unwrap();
     }
 
-    /// TODO: Update test to Fulu
-    #[ignore = "Update test to Fulu"]
     #[tokio::test]
     pub async fn test_validate_beacon_block() {
         initialize_test_network_spec();
@@ -147,17 +147,17 @@ mod tests {
             )
         };
         assert_eq!(latest_state_in_db.slot, latest_block.message.slot);
-        assert_eq!(latest_block.message.slot, 8084249);
+        assert_eq!(latest_block.message.slot, 9552075);
 
         let incoming_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
-            "./assets/sepolia/blocks/slot_8084250.ssz_snappy",
+            "./assets/sepolia/blocks/child_9552076.ssz_snappy",
         )
         .unwrap();
 
-        assert_eq!(incoming_beacon_block.message.slot, 8084250);
+        assert_eq!(incoming_beacon_block.message.slot, 9552076);
         assert_eq!(
             incoming_beacon_block.message.block_root(),
-            B256::from_str("0x9ad84061d301d8b2d2613ffcb83a937a35f789b52ec1975005ef3c6c9faa3c43")
+            B256::from_str("0x0645b766a8f23559db28d9eec1b5e7997dee78edd176a1d1b209cd9c44d0f1a8")
                 .unwrap()
         );
 
