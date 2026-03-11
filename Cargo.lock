@@ -5893,6 +5893,7 @@ dependencies = [
  "ream-req-resp",
  "ream-storage",
  "ream-sync",
+ "ream-test-utils",
  "serde",
  "ssz_types",
  "tokio",
