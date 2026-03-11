@@ -83,6 +83,11 @@ impl ValidatorService {
                                         tick_count += 1;
                                         continue;
                                     }
+                                    Ok(ServiceResponse::Err(err)) => {
+                                        warn!("Failed to produce block for slot {slot}: {err}");
+                                        tick_count += 1;
+                                        continue;
+                                    }
                                     Err(err) => {
                                         return Err(anyhow!("Failed to receive block from LeanChainService: {err:?}"));
                                     }
@@ -104,6 +109,11 @@ impl ValidatorService {
                                     Ok(ServiceResponse::Ok(data)) => data,
                                     Ok(ServiceResponse::Syncing) => {
                                         warn!("LeanChainService is syncing, cannot build attestation data for slot {slot}");
+                                        tick_count += 1;
+                                        continue;
+                                    }
+                                    Ok(ServiceResponse::Err(err)) => {
+                                        warn!("Failed to build attestation data for slot {slot}: {err}");
                                         tick_count += 1;
                                         continue;
                                     }
@@ -154,6 +164,11 @@ impl ValidatorService {
                                 Ok(ServiceResponse::Ok(data)) => data,
                                 Ok(ServiceResponse::Syncing) => {
                                     warn!("LeanChainService is syncing, cannot build attestation data for slot {slot}");
+                                    tick_count += 1;
+                                    continue;
+                                }
+                                Ok(ServiceResponse::Err(err)) => {
+                                    warn!("Failed to build attestation data for slot {slot}: {err}");
                                     tick_count += 1;
                                     continue;
                                 }

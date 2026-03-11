@@ -1476,12 +1476,20 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
-        let block_with_signatures = self
+        let block_with_signatures = match self
             .store
             .write()
             .await
             .produce_block_with_signatures(slot, slot % lean_network_spec().num_validators)
-            .await?;
+            .await
+        {
+            Ok(block) => block,
+            Err(err) => {
+                warn!("Failed to produce block for slot {slot}: {err}");
+                let _ = response.send(ServiceResponse::Err(format!("{err}")));
+                return Ok(());
+            }
+        };
 
         response
             .send(ServiceResponse::Ok(block_with_signatures))
@@ -1500,12 +1508,14 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<AttestationData>>,
     ) -> anyhow::Result<()> {
-        let attestation_data = self
-            .store
-            .read()
-            .await
-            .produce_attestation_data(slot)
-            .await?;
+        let attestation_data = match self.store.read().await.produce_attestation_data(slot).await {
+            Ok(data) => data,
+            Err(err) => {
+                warn!("Failed to build attestation data for slot {slot}: {err}");
+                let _ = response.send(ServiceResponse::Err(format!("{err}")));
+                return Ok(());
+            }
+        };
 
         response
             .send(ServiceResponse::Ok(attestation_data))
@@ -1548,5 +1558,67 @@ impl LeanChainService {
         });
 
         self.pending_callbacks.push(future);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ream_consensus_lean::{
+        attestation::AggregatedAttestations,
+        block::{
+            BlockSignatures, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation,
+        },
+    };
+    use ream_post_quantum_crypto::leansig::signature::Signature;
+    use ream_sync::rwlock::Writer;
+    use ream_test_utils::store::sample_store;
+    use tokio::sync::{mpsc, oneshot};
+
+    use super::LeanChainService;
+    use crate::{messages::ServiceResponse, p2p_request::LeanP2PRequest};
+
+    #[tokio::test]
+    async fn test_handle_produce_block_stale_slot_responds_with_err() {
+        let mut store = sample_store(10).await;
+
+        // Advance the store to slot 3
+        for slot in 1..=3 {
+            let proposer_index = slot % 10;
+            let attestation = store.produce_attestation_data(slot).await.unwrap();
+            let block = store
+                .produce_block_with_signatures(slot, proposer_index)
+                .await
+                .unwrap();
+            let signed_block = SignedBlockWithAttestation {
+                message: BlockWithAttestation {
+                    block: block.block,
+                    proposer_attestation: AggregatedAttestations {
+                        validator_id: proposer_index,
+                        data: attestation,
+                    },
+                },
+                signature: BlockSignatures {
+                    attestation_signatures: block.signatures,
+                    proposer_signature: Signature::blank(),
+                },
+            };
+            store.on_block(&signed_block, false).await.unwrap();
+        }
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = crate::sync::SyncStatus::Synced;
+
+        // Try to produce a block for slot 2 (behind head slot 3)
+        let (tx, rx) = oneshot::channel::<ServiceResponse<BlockWithSignatures>>();
+        let _ = service.handle_produce_block(2, tx).await;
+
+        assert!(
+            rx.await.is_ok(),
+            "Channel was dropped instead of sending a response"
+        );
     }
 }

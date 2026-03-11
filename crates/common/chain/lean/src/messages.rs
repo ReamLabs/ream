@@ -76,4 +76,5 @@ pub enum RequestResult<T> {
 pub enum ServiceResponse<T> {
     Ok(T),
     Syncing,
+    Err(String),
 }
