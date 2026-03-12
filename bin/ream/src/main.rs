@@ -908,10 +908,13 @@ mod tests {
     #[test]
     #[serial]
     fn test_lean_node_finalizes() {
-        let _ = tracing_subscriber::fmt()
+        if let Err(err) = tracing_subscriber::fmt()
             .with_env_filter(Verbosity::Info.directive())
             .with_test_writer()
-            .try_init();
+            .try_init()
+        {
+            warn!("Failed to initialize tracing subscriber: {err}");
+        }
 
         let cli = Cli::parse_from([
             "ream",
@@ -1027,10 +1030,13 @@ mod tests {
 
     fn run_multi_node_finalization_test(topology: Vec<Vec<usize>>, test_name: &str) {
         if true {
-            let _ = tracing_subscriber::fmt()
+            if let Err(err) = tracing_subscriber::fmt()
                 .with_env_filter(Verbosity::Info.directive())
                 .with_test_writer()
-                .try_init();
+                .try_init()
+            {
+                warn!("Failed to initialize tracing subscriber: {err}");
+            }
         }
 
         info!("Starting multi-node finalization test: {}", test_name);
@@ -1233,10 +1239,13 @@ mod tests {
         let test_name = "late_joiner_sync";
 
         if true {
-            let _ = tracing_subscriber::fmt()
+            if let Err(err) = tracing_subscriber::fmt()
                 .with_env_filter(Verbosity::Info.directive())
                 .with_test_writer()
-                .try_init();
+                .try_init()
+            {
+                warn!("Failed to initialize tracing subscriber: {err}");
+            }
         }
 
         info!(
@@ -1515,10 +1524,13 @@ mod tests {
     #[test]
     #[serial]
     fn test_lean_node_checkpoint_sync_from_running_node() {
-        let _ = tracing_subscriber::fmt()
+        if let Err(err) = tracing_subscriber::fmt()
             .with_env_filter(Verbosity::Info.directive())
             .with_test_writer()
-            .try_init();
+            .try_init()
+        {
+            warn!("Failed to initialize tracing subscriber: {err}");
+        }
 
         let test_name = "checkpoint_sync_late_joiner";
         info!("Starting checkpoint sync test: {}", test_name);
@@ -1808,10 +1820,13 @@ mod tests {
         );
 
         if true {
-            let _ = tracing_subscriber::fmt()
+            if let Err(err) = tracing_subscriber::fmt()
                 .with_env_filter(Verbosity::Info.directive())
                 .with_test_writer()
-                .try_init();
+                .try_init()
+            {
+                warn!("Failed to initialize tracing subscriber: {err}");
+            }
         }
 
         let topology = [vec![], vec![0]];
