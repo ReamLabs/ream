@@ -42,9 +42,12 @@ fn test_all_state_transition_fixtures() {
         Ok(filter) => EnvFilter::builder().parse_lossy(filter),
         Err(_) => EnvFilter::new("info"),
     };
-    let _ = tracing_subscriber::fmt()
+    if let Err(err) = tracing_subscriber::fmt()
         .with_env_filter(env_filter)
-        .try_init();
+        .try_init()
+    {
+        warn!("Failed to initialize tracing subscriber: {err}");
+    }
 
     let fixtures = find_json_files("fixtures/devnet3/state_transition");
 
@@ -103,9 +106,12 @@ fn test_all_ssz_fixtures() {
         Ok(filter) => EnvFilter::builder().parse_lossy(filter),
         Err(_) => EnvFilter::new("info"),
     };
-    let _ = tracing_subscriber::fmt()
+    if let Err(err) = tracing_subscriber::fmt()
         .with_env_filter(env_filter)
-        .try_init();
+        .try_init()
+    {
+        warn!("Failed to initialize tracing subscriber: {err}");
+    }
 
     let fixtures = find_json_files("fixtures/devnet3/ssz/devnet");
 
