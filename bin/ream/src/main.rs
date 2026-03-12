@@ -1029,14 +1029,12 @@ mod tests {
     }
 
     fn run_multi_node_finalization_test(topology: Vec<Vec<usize>>, test_name: &str) {
-        if true {
-            if let Err(err) = tracing_subscriber::fmt()
-                .with_env_filter(Verbosity::Info.directive())
-                .with_test_writer()
-                .try_init()
-            {
-                warn!("Failed to initialize tracing subscriber: {err}");
-            }
+        if let Err(err) = tracing_subscriber::fmt()
+            .with_env_filter(Verbosity::Info.directive())
+            .with_test_writer()
+            .try_init()
+        {
+            warn!("Failed to initialize tracing subscriber: {err}");
         }
 
         info!("Starting multi-node finalization test: {}", test_name);
@@ -1238,14 +1236,12 @@ mod tests {
         let topology = [vec![], vec![0], vec![0, 1]];
         let test_name = "late_joiner_sync";
 
-        if true {
-            if let Err(err) = tracing_subscriber::fmt()
-                .with_env_filter(Verbosity::Info.directive())
-                .with_test_writer()
-                .try_init()
-            {
-                warn!("Failed to initialize tracing subscriber: {err}");
-            }
+        if let Err(err) = tracing_subscriber::fmt()
+            .with_env_filter(Verbosity::Info.directive())
+            .with_test_writer()
+            .try_init()
+        {
+            warn!("Failed to initialize tracing subscriber: {err}");
         }
 
         info!(
@@ -1819,14 +1815,12 @@ mod tests {
             "REAM_KNOWN_GOOD_BIN path does not exist: {known_good_bin}"
         );
 
-        if true {
-            if let Err(err) = tracing_subscriber::fmt()
-                .with_env_filter(Verbosity::Info.directive())
-                .with_test_writer()
-                .try_init()
-            {
-                warn!("Failed to initialize tracing subscriber: {err}");
-            }
+        if let Err(err) = tracing_subscriber::fmt()
+            .with_env_filter(Verbosity::Info.directive())
+            .with_test_writer()
+            .try_init()
+        {
+            warn!("Failed to initialize tracing subscriber: {err}");
         }
 
         let topology = [vec![], vec![0]];
