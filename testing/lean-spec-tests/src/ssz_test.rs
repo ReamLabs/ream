@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use alloy_primitives::hex;
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
@@ -83,10 +83,7 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
         // Networking containers
         "Status" => run_test::<StatusJSON, StatusJSON>(&test.value, &expected_ssz),
         "BlocksByRootRequest" => {
-            run_test::<BlocksByRootRequestJSON, BlocksByRootRequestSSZ>(
-                &test.value,
-                &expected_ssz,
-            )
+            run_test::<BlocksByRootRequestJSON, BlocksByRootRequestSSZ>(&test.value, &expected_ssz)
         }
 
         // XMSS containers

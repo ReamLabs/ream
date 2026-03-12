@@ -26,7 +26,7 @@ use ream_post_quantum_crypto::leansig::{public_key::PublicKey, signature::Signat
 use serde::Deserialize;
 use ssz_types::{
     BitList, VariableList,
-    typenum::{U1024, U1073741824, U262144},
+    typenum::{U1024, U262144, U1073741824},
 };
 
 // ============================================================================
@@ -38,9 +38,7 @@ fn decode_hex(hex: &str) -> anyhow::Result<Vec<u8>> {
         .map_err(|err| anyhow!("hex decode failed: {err}"))
 }
 
-fn bools_to_bitlist<N: ssz_types::typenum::Unsigned>(
-    bools: &[bool],
-) -> anyhow::Result<BitList<N>> {
+fn bools_to_bitlist<N: ssz_types::typenum::Unsigned>(bools: &[bool]) -> anyhow::Result<BitList<N>> {
     let mut bits = BitList::<N>::with_capacity(bools.len())
         .map_err(|err| anyhow!("BitList creation failed: {err:?}"))?;
     for (index, &bit) in bools.iter().enumerate() {
@@ -49,7 +47,6 @@ fn bools_to_bitlist<N: ssz_types::typenum::Unsigned>(
     }
     Ok(bits)
 }
-
 
 fn decode_signature(hex: &str) -> anyhow::Result<Signature> {
     let bytes = decode_hex(hex)?;
@@ -323,10 +320,8 @@ impl TryFrom<&StateJSON> for LeanState {
                     .collect::<Result<Vec<_>, _>>()?,
             )
             .map_err(|e| anyhow!("{e}"))?,
-            justifications_roots: VariableList::try_from(
-                value.justifications_roots.data.clone(),
-            )
-            .map_err(|e| anyhow!("{e}"))?,
+            justifications_roots: VariableList::try_from(value.justifications_roots.data.clone())
+                .map_err(|e| anyhow!("{e}"))?,
             justifications_validators: bools_to_bitlist::<U1073741824>(
                 &value.justifications_validators.data,
             )?,
@@ -417,6 +412,8 @@ impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
             participants: bools_to_bitlist(&value.participants.data)?,
             proof_data: VariableList::try_from(decode_hex(&value.proof_data.data)?)
                 .map_err(|e| anyhow!("{e}"))?,
+            #[cfg(feature = "devnet4")]
+            bytecode_point: None,
         })
     }
 }
@@ -452,8 +449,7 @@ impl TryFrom<&BlocksByRootRequestJSON> for BlocksByRootRequestSSZ {
 
     fn try_from(value: &BlocksByRootRequestJSON) -> anyhow::Result<Self> {
         Ok(Self {
-            roots: VariableList::try_from(value.roots.data.clone())
-                .map_err(|e| anyhow!("{e}"))?,
+            roots: VariableList::try_from(value.roots.data.clone()).map_err(|e| anyhow!("{e}"))?,
         })
     }
 }
