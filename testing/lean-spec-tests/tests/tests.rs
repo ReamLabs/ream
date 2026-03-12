@@ -68,11 +68,11 @@ fn test_all_state_transition_fixtures() {
             Ok(fixture) => {
                 for (test_name, test) in &fixture {
                     total_tests += 1;
-                    info!("Starting test: {}", test_name);
+                    info!("Starting test: {test_name}");
                     match run_state_transition_test(test_name, test) {
                         Ok(_) => {
                             passed += 1;
-                            info!("PASSED: {}", test_name);
+                            info!("PASSED: {test_name}");
                         }
                         Err(err) => {
                             failed += 1;
@@ -134,11 +134,11 @@ fn test_all_ssz_fixtures() {
                     match run_ssz_test(test_name, test) {
                         Ok(true) => {
                             passed += 1;
-                            info!("PASSED: {}", test_name);
+                            info!("PASSED: {test_name}");
                         }
                         Ok(false) => {
                             skipped += 1;
-                            info!("SKIPPED: {}", test_name);
+                            info!("SKIPPED: {test_name}");
                         }
                         Err(err) => {
                             failed += 1;
