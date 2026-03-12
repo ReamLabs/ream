@@ -234,7 +234,7 @@ impl TryFrom<&BlockBodyJSON> for BlockBody {
                     .map(TryInto::try_into)
                     .collect::<Result<Vec<_>, _>>()?,
             )
-            .map_err(|e| anyhow!("{e}"))?,
+            .map_err(|err| anyhow!("{err}"))?,
         })
     }
 }
@@ -309,7 +309,7 @@ impl TryFrom<&StateJSON> for LeanState {
             historical_block_hashes: VariableList::try_from(
                 value.historical_block_hashes.data.clone(),
             )
-            .map_err(|e| anyhow!("{e}"))?,
+            .map_err(|err| anyhow!("{err}"))?,
             justified_slots: bools_to_bitlist::<U262144>(&value.justified_slots.data)?,
             validators: VariableList::try_from(
                 value
@@ -319,9 +319,9 @@ impl TryFrom<&StateJSON> for LeanState {
                     .map(TryInto::try_into)
                     .collect::<Result<Vec<_>, _>>()?,
             )
-            .map_err(|e| anyhow!("{e}"))?,
+            .map_err(|err| anyhow!("{err}"))?,
             justifications_roots: VariableList::try_from(value.justifications_roots.data.clone())
-                .map_err(|e| anyhow!("{e}"))?,
+                .map_err(|err| anyhow!("{err}"))?,
             justifications_validators: bools_to_bitlist::<U1073741824>(
                 &value.justifications_validators.data,
             )?,
@@ -373,7 +373,7 @@ impl TryFrom<&BlockSignaturesJSON> for BlockSignatures {
                     .map(TryInto::try_into)
                     .collect::<Result<Vec<_>, _>>()?,
             )
-            .map_err(|e| anyhow!("{e}"))?,
+            .map_err(|err| anyhow!("{err}"))?,
             proposer_signature: decode_signature(&value.proposer_signature)?,
         })
     }
@@ -411,7 +411,7 @@ impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
         Ok(Self {
             participants: bools_to_bitlist(&value.participants.data)?,
             proof_data: VariableList::try_from(decode_hex(&value.proof_data.data)?)
-                .map_err(|e| anyhow!("{e}"))?,
+                .map_err(|err| anyhow!("{err}"))?,
             #[cfg(feature = "devnet4")]
             bytecode_point: None,
         })
@@ -449,7 +449,7 @@ impl TryFrom<&BlocksByRootRequestJSON> for BlocksByRootRequestSSZ {
 
     fn try_from(value: &BlocksByRootRequestJSON) -> anyhow::Result<Self> {
         Ok(Self {
-            roots: VariableList::try_from(value.roots.data.clone()).map_err(|e| anyhow!("{e}"))?,
+            roots: VariableList::try_from(value.roots.data.clone()).map_err(|err| anyhow!("{err}"))?,
         })
     }
 }
