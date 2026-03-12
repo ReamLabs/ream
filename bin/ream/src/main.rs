@@ -1503,6 +1503,281 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_lean_node_checkpoint_sync_from_running_node() {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(Verbosity::Info.directive())
+            .with_test_writer()
+            .try_init();
+
+        let test_name = "checkpoint_sync";
+        info!("Starting checkpoint sync test: {}", test_name);
+
+        let test_duration_secs: u64 = 180;
+        let checkpoint_sync_start_delay: u64 = 100;
+        let base_p2p_port = 23600;
+        let base_http_port = 19652;
+        let node_count = 3;
+
+        let potential_paths = vec![
+            PathBuf::from("bin/ream/assets/lean"),
+            PathBuf::from("assets/lean"),
+            PathBuf::from("../assets/lean"),
+        ];
+
+        let assets_directory = potential_paths
+            .into_iter()
+            .find(|p| p.exists())
+            .expect("Could not find 'assets/lean' directory.")
+            .canonicalize()
+            .expect("Failed to canonicalize assets path");
+
+        let registry_path =
+            assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
+
+        let validators_yaml = "node1:\n  - 0\nnode2:\n  - 1\nnode3:\n  - 2\n";
+        fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
+        let registry_path_string = registry_path.to_string_lossy().to_string();
+
+        let network_config_path = create_test_network_config(test_name, 3);
+        let network_config_path_string = network_config_path.to_string_lossy().to_string();
+
+        let executor = ReamExecutor::new().unwrap();
+        executor.clone().runtime().block_on(async move {
+            let mut node_addresses: Vec<String> = Vec::new();
+            let mut db_instances: Vec<Option<ReamDB>> = vec![None; node_count];
+            let mut key_paths = Vec::new();
+
+            for i in 0..node_count {
+                let node_index = i + 1;
+                let ream_dir = std::env::temp_dir()
+                    .join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
+
+                if ream_dir.exists() {
+                    let _ = fs::remove_dir_all(&ream_dir);
+                }
+                fs::create_dir_all(&ream_dir).expect("Failed to create data dir");
+
+                let key_path = ream_dir.join("node_key");
+                let peer_id = generate_node_identity(&key_path);
+                key_paths.push(key_path);
+
+                let port_offset = (test_name.len() as u16) % 100;
+                let p2p_port = base_p2p_port + port_offset + (i as u16);
+
+                let address =
+                    format!("/ip4/127.0.0.1/udp/{p2p_port}/quic-v1/p2p/{peer_id}");
+                node_addresses.push(address);
+
+                let db = ReamDB::new(ream_dir).unwrap();
+                db_instances[i] = Some(db);
+            }
+
+            let port_offset = (test_name.len() as u16) % 100;
+
+            let node1_http_port = base_http_port + port_offset;
+            let mut node_handles: Vec<Option<tokio::task::JoinHandle<()>>> =
+                (0..node_count).map(|_| None).collect();
+
+            for i in 0..2 {
+                let node_index = i + 1;
+                let p2p_port = base_p2p_port + port_offset + (i as u16);
+                let http_port = base_http_port + port_offset + (i as u16);
+
+                let mut args = vec![
+                    "ream".to_string(),
+                    "lean_node".to_string(),
+                    "--network".to_string(),
+                    network_config_path_string.clone(),
+                    "--validator-registry-path".to_string(),
+                    registry_path_string.clone(),
+                    "--socket-port".to_string(),
+                    p2p_port.to_string(),
+                    "--socket-address".to_string(),
+                    "127.0.0.1".to_string(),
+                    "--http-port".to_string(),
+                    http_port.to_string(),
+                    "--node-id".to_string(),
+                    format!("node{node_index}"),
+                    "--private-key-path".to_string(),
+                    key_paths[i].to_string_lossy().to_string(),
+                ];
+
+                if i == 0 {
+                    args.push("--is-aggregator".to_string());
+                } else {
+                    args.push("--bootnodes".to_string());
+                    args.push(node_addresses[0].clone());
+                }
+
+                let cli = Cli::parse_from(args);
+                let Commands::LeanNode(config) = cli.command else {
+                    panic!("Expected lean_node command");
+                };
+
+                let db = db_instances[i].clone().unwrap();
+                let node_executor = executor.clone();
+                let handle = {
+                    use tracing::{Instrument, info_span};
+                    let node_id = format!("node{node_index}");
+                    let span = info_span!("lean_node", node_id = %node_id);
+                    tokio::spawn(
+                        async move {
+                            run_lean_node(*config, node_executor, db).await;
+                        }
+                        .instrument(span),
+                    )
+                };
+                node_handles[i] = Some(handle);
+
+                if i == 0 {
+                    info!("Waiting 5s for Node 1 to initialize QUIC listener...");
+                    sleep(Duration::from_secs(5)).await;
+                }
+            }
+
+            info!("Nodes 1 and 2 started, waiting for finalization before starting checkpoint sync node...");
+
+            let start_time = std::time::Instant::now();
+
+            loop {
+                let elapsed = start_time.elapsed().as_secs();
+                if elapsed >= test_duration_secs {
+                    break;
+                }
+
+                if node_handles[2].is_none() && elapsed >= checkpoint_sync_start_delay {
+                    info!("Starting Node 3 with --checkpoint-sync-url from Node 1...");
+
+                    let node3_p2p_port = base_p2p_port + port_offset + 2;
+                    let node3_http_port = base_http_port + port_offset + 2;
+
+                    let node3_args = vec![
+                        "ream".to_string(),
+                        "lean_node".to_string(),
+                        "--network".to_string(),
+                        network_config_path_string.clone(),
+                        "--validator-registry-path".to_string(),
+                        registry_path_string.clone(),
+                        "--socket-port".to_string(),
+                        node3_p2p_port.to_string(),
+                        "--socket-address".to_string(),
+                        "127.0.0.1".to_string(),
+                        "--http-port".to_string(),
+                        node3_http_port.to_string(),
+                        "--node-id".to_string(),
+                        "node3".to_string(),
+                        "--private-key-path".to_string(),
+                        key_paths[2].to_string_lossy().to_string(),
+                        "--checkpoint-sync-url".to_string(),
+                        format!("http://127.0.0.1:{node1_http_port}"),
+                        "--bootnodes".to_string(),
+                        format!("{},{}", node_addresses[0], node_addresses[1]),
+                    ];
+
+                    let cli3 = Cli::parse_from(node3_args);
+                    let Commands::LeanNode(config3) = cli3.command else {
+                        panic!("Expected lean_node command");
+                    };
+
+                    let db3 = db_instances[2].clone().unwrap();
+                    let node3_executor = executor.clone();
+                    let handle = {
+                        use tracing::{Instrument, info_span};
+                        let span = info_span!("lean_node", node_id = "node3");
+                        tokio::spawn(
+                            async move {
+                                run_lean_node(*config3, node3_executor, db3).await;
+                            }
+                            .instrument(span),
+                        )
+                    };
+                    node_handles[2] = Some(handle);
+                }
+
+                sleep(Duration::from_secs(2)).await;
+
+                for (i, db_opt) in db_instances.iter().enumerate() {
+                    if let Some(db) = db_opt
+                        && let Ok(lean_db) = db.init_lean_db()
+                        && let Ok(head) = lean_db.head_provider().get()
+                        && let Ok(Some(state)) = lean_db.state_provider().get(head)
+                    {
+                        info!(
+                            "Node {} Chain: Slot={} | Finalized={}",
+                            i + 1,
+                            state.slot,
+                            state.latest_finalized.slot
+                        );
+                    }
+                }
+            }
+
+            let _ = fs::remove_file(&registry_path);
+            let _ = fs::remove_file(&network_config_path);
+            for handle in node_handles.into_iter().flatten() {
+                handle.abort();
+            }
+            sleep(Duration::from_secs(2)).await;
+
+            let lean_db_3 = db_instances[2].as_ref().unwrap().init_lean_db().unwrap();
+            let head_3 = lean_db_3
+                .head_provider()
+                .get()
+                .expect("Failed to get head for node 3");
+            let head_state_3 = lean_db_3
+                .state_provider()
+                .get(head_3)
+                .unwrap()
+                .expect("Failed to get head state for node 3");
+
+            let lean_db_1 = db_instances[0].as_ref().unwrap().init_lean_db().unwrap();
+            let head_1 = lean_db_1
+                .head_provider()
+                .get()
+                .expect("Failed to get head for node 1");
+            let head_state_1 = lean_db_1
+                .state_provider()
+                .get(head_1)
+                .unwrap()
+                .expect("Failed to get head state for node 1");
+
+            info!(
+                "FINAL: Node 1 Slot: {}, Finalized: {} | Node 3 Slot: {}, Finalized: {}",
+                head_state_1.slot,
+                head_state_1.latest_finalized.slot,
+                head_state_3.slot,
+                head_state_3.latest_finalized.slot,
+            );
+
+            assert!(
+                head_state_3.latest_finalized.slot > 0,
+                "Checkpoint-synced node failed to finalize. Finalized slot: {}",
+                head_state_3.latest_finalized.slot
+            );
+
+            let head_slot_delta = head_state_3.slot.abs_diff(head_state_1.slot);
+            assert!(
+                head_slot_delta <= 2,
+                "Checkpoint-synced node head diverged too much from Node 1. Node 3: {}, Node 1: {}, delta: {head_slot_delta}",
+                head_state_3.slot,
+                head_state_1.slot,
+            );
+
+            let finalized_slot_lag = head_state_1
+                .latest_finalized
+                .slot
+                .saturating_sub(head_state_3.latest_finalized.slot);
+            assert!(
+                finalized_slot_lag <= 4,
+                "Checkpoint-synced node finalized slot lagged too far behind Node 1. Node 3: {}, Node 1: {}, lag: {finalized_slot_lag}",
+                head_state_3.latest_finalized.slot,
+                head_state_1.latest_finalized.slot,
+            );
+        });
+    }
+
+    #[test]
+    #[serial]
     fn test_lean_node_syncs_and_finalizes_two_nodes() {
         if std::env::var("REAM_RUN_INTEROP_TESTS").unwrap_or_default() != "1" {
             info!("Skipping interop test: set REAM_RUN_INTEROP_TESTS=1 to enable");
