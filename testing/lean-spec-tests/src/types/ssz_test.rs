@@ -7,7 +7,7 @@
 //! codebase uses snake_case.
 
 use alloy_primitives::B256;
-use anyhow::anyhow;
+use anyhow::{anyhow, ensure};
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
@@ -50,12 +50,11 @@ fn bools_to_bitlist<N: ssz_types::typenum::Unsigned>(bools: &[bool]) -> anyhow::
 
 fn decode_signature(hex: &str) -> anyhow::Result<Signature> {
     let bytes = decode_hex(hex)?;
-    if bytes.len() != 3112 {
-        return Err(anyhow!(
-            "Expected 3112-byte signature, got {} bytes",
-            bytes.len()
-        ));
-    }
+    ensure!(
+        bytes.len() == 3112,
+        "Expected 3112-byte signature, got {} bytes",
+        bytes.len()
+    );
     Ok(Signature::from(&bytes[..]))
 }
 
@@ -169,7 +168,11 @@ impl TryFrom<&ValidatorJSON> for Validator {
         Ok(Self {
             public_key: {
                 let bytes = decode_hex(&value.pubkey)?;
-                ensure!(bytes.len() = 52, "Expected 52-byte pubkey, got {}", bytes.len());
+                ensure!(
+                    bytes.len() == 52,
+                    "Expected 52-byte pubkey, got {}",
+                    bytes.len()
+                );
                 PublicKey::from(&bytes[..])
             },
             index: value.index,
@@ -232,7 +235,7 @@ impl TryFrom<&BlockBodyJSON> for BlockBody {
                     .map(TryInto::try_into)
                     .collect::<Result<Vec<_>, _>>()?,
             )
-            .map_err(|err| anyhow!("{err}"))?,
+            .map_err(|err| anyhow!("Failed to convert attestations: {err}"))?,
         })
     }
 }
@@ -307,7 +310,7 @@ impl TryFrom<&StateJSON> for LeanState {
             historical_block_hashes: VariableList::try_from(
                 value.historical_block_hashes.data.clone(),
             )
-            .map_err(|err| anyhow!("{err}"))?,
+            .map_err(|err| anyhow!("Failed to convert historical_block_hashes: {err}"))?,
             justified_slots: bools_to_bitlist::<U262144>(&value.justified_slots.data)?,
             validators: VariableList::try_from(
                 value
@@ -317,9 +320,11 @@ impl TryFrom<&StateJSON> for LeanState {
                     .map(TryInto::try_into)
                     .collect::<Result<Vec<_>, _>>()?,
             )
-            .map_err(|err| anyhow!("{err}"))?,
+            .map_err(|err| anyhow!("Failed to convert validators: {err}"))?,
             justifications_roots: VariableList::try_from(value.justifications_roots.data.clone())
-                .map_err(|err| anyhow!("{err}"))?,
+                .map_err(|err| {
+                anyhow!("Failed to convert justifications_roots: {err}")
+            })?,
             justifications_validators: bools_to_bitlist::<U1073741824>(
                 &value.justifications_validators.data,
             )?,
@@ -371,7 +376,7 @@ impl TryFrom<&BlockSignaturesJSON> for BlockSignatures {
                     .map(TryInto::try_into)
                     .collect::<Result<Vec<_>, _>>()?,
             )
-            .map_err(|err| anyhow!("{err}"))?,
+            .map_err(|err| anyhow!("Failed to convert attestation_signatures: {err}"))?,
             proposer_signature: decode_signature(&value.proposer_signature)?,
         })
     }
@@ -409,7 +414,7 @@ impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
         Ok(Self {
             participants: bools_to_bitlist(&value.participants.data)?,
             proof_data: VariableList::try_from(decode_hex(&value.proof_data.data)?)
-                .map_err(|err| anyhow!("{err}"))?,
+                .map_err(|err| anyhow!("Failed to convert proof_data: {err}"))?,
             #[cfg(feature = "devnet4")]
             bytecode_point: None,
         })
@@ -447,7 +452,8 @@ impl TryFrom<&BlocksByRootRequestJSON> for BlocksByRootRequestSSZ {
 
     fn try_from(value: &BlocksByRootRequestJSON) -> anyhow::Result<Self> {
         Ok(Self {
-            roots: VariableList::try_from(value.roots.data.clone()).map_err(|err| anyhow!("{err}"))?,
+            roots: VariableList::try_from(value.roots.data.clone())
+                .map_err(|err| anyhow!("Failed to convert roots: {err}"))?,
         })
     }
 }
@@ -487,8 +493,16 @@ impl TryFrom<&PublicKeyJSON> for PublicKey {
     type Error = anyhow::Error;
 
     fn try_from(value: &PublicKeyJSON) -> anyhow::Result<Self> {
-        ensure!(value.root.data.len() == 8, "Expected 8 root elements, got {}", value.root.data.len());
-        ensure!(value.parameter.data.len() == 5, "Expected 5 parameter elements, got {}", value.parameter.data.len());
+        ensure!(
+            value.root.data.len() == 8,
+            "Expected 8 root elements, got {}",
+            value.root.data.len()
+        );
+        ensure!(
+            value.parameter.data.len() == 5,
+            "Expected 5 parameter elements, got {}",
+            value.parameter.data.len()
+        );
 
         let bytes: Vec<u8> = value
             .root
