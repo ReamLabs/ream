@@ -169,9 +169,7 @@ impl TryFrom<&ValidatorJSON> for Validator {
         Ok(Self {
             public_key: {
                 let bytes = decode_hex(&value.pubkey)?;
-                if bytes.len() != 52 {
-                    return Err(anyhow!("Expected 52-byte pubkey, got {}", bytes.len()));
-                }
+                ensure!(bytes.len() = 52, "Expected 52-byte pubkey, got {}", bytes.len());
                 PublicKey::from(&bytes[..])
             },
             index: value.index,
@@ -489,18 +487,8 @@ impl TryFrom<&PublicKeyJSON> for PublicKey {
     type Error = anyhow::Error;
 
     fn try_from(value: &PublicKeyJSON) -> anyhow::Result<Self> {
-        if value.root.data.len() != 8 {
-            return Err(anyhow!(
-                "Expected 8 root elements, got {}",
-                value.root.data.len()
-            ));
-        }
-        if value.parameter.data.len() != 5 {
-            return Err(anyhow!(
-                "Expected 5 parameter elements, got {}",
-                value.parameter.data.len()
-            ));
-        }
+        ensure!(value.root.data.len() == 8, "Expected 8 root elements, got {}", value.root.data.len());
+        ensure!(value.parameter.data.len() == 5, "Expected 5 parameter elements, got {}", value.parameter.data.len());
 
         let bytes: Vec<u8> = value
             .root
