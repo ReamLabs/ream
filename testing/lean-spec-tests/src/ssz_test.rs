@@ -23,11 +23,11 @@ use tracing::{debug, info, warn};
 use crate::types::{
     TestFixture,
     ssz_test::{
-        AggregatedAttestationJSON, AggregatedSignatureProofJSON, AttestationJSON, BlockBodyJSON,
-        BlockHeaderJSON, BlockJSON, BlockSignaturesJSON, BlockWithAttestationJSON,
-        BlocksByRootRequestJSON, BlocksByRootRequestSSZ, ConfigJSON, PublicKeyJSON, SSZTest,
-        SignatureJSON, SignedAttestationJSON, SignedBlockWithAttestationJSON, StateJSON, StatusJSON,
-        ValidatorJSON,
+        AggregatedAttestationJSON, AggregatedSignatureProofJSON, AttestationDataJSON,
+        AttestationJSON, BlockBodyJSON, BlockHeaderJSON, BlockJSON, BlockSignaturesJSON,
+        BlockWithAttestationJSON, BlocksByRootRequestJSON, BlocksByRootRequestSSZ, CheckpointJSON,
+        ConfigJSON, PublicKeyJSON, SSZTest, SignatureJSON, SignedAttestationJSON,
+        SignedBlockWithAttestationJSON, StateJSON, StatusJSON, ValidatorJSON,
     },
 };
 
@@ -50,8 +50,10 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
 
     match test.type_name.as_str() {
         // Consensus containers
-        "Checkpoint" => run_test_direct::<Checkpoint>(&test.value, &expected_ssz),
-        "AttestationData" => run_test_direct::<AttestationData>(&test.value, &expected_ssz),
+        "Checkpoint" => run_test::<CheckpointJSON, Checkpoint>(&test.value, &expected_ssz),
+        "AttestationData" => {
+            run_test::<AttestationDataJSON, AttestationData>(&test.value, &expected_ssz)
+        }
         "AggregatedAttestation" => {
             run_test::<AggregatedAttestationJSON, AggregatedAttestation>(&test.value, &expected_ssz)
         }
@@ -79,7 +81,7 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
         >(&test.value, &expected_ssz),
 
         // Networking containers
-        "Status" => run_test_direct::<StatusJSON>(&test.value, &expected_ssz),
+        "Status" => run_test::<StatusJSON, StatusJSON>(&test.value, &expected_ssz),
         "BlocksByRootRequest" => {
             run_test::<BlocksByRootRequestJSON, BlocksByRootRequestSSZ>(
                 &test.value,
@@ -104,17 +106,7 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
     Ok(true)
 }
 
-/// Run SSZ test for types that directly implement Encode (no conversion needed).
-fn run_test_direct<T>(value: &serde_json::Value, expected_ssz: &[u8]) -> anyhow::Result<()>
-where
-    T: serde::de::DeserializeOwned + Encode,
-{
-    let typed_value: T =
-        serde_json::from_value(value.clone()).context("Failed to deserialize JSON")?;
-    verify_ssz(&typed_value, expected_ssz)
-}
-
-/// Run SSZ test where type conversion is needed. J is the JSON type, T is the target Ream type.
+/// Run SSZ test. J is the JSON type, T is the SSZ-encodable target type.
 fn run_test<J, T>(value: &serde_json::Value, expected_ssz: &[u8]) -> anyhow::Result<()>
 where
     J: serde::de::DeserializeOwned,

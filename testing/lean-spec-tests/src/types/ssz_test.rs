@@ -95,6 +95,30 @@ pub struct ProofDataJSON {
 // ============================================================================
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(transparent)]
+pub struct CheckpointJSON(pub Checkpoint);
+
+impl TryFrom<&CheckpointJSON> for Checkpoint {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &CheckpointJSON) -> anyhow::Result<Self> {
+        Ok(value.0)
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(transparent)]
+pub struct AttestationDataJSON(pub AttestationData);
+
+impl TryFrom<&AttestationDataJSON> for AttestationData {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &AttestationDataJSON) -> anyhow::Result<Self> {
+        Ok(value.0.clone())
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigJSON {
     pub genesis_time: u64,
@@ -407,6 +431,14 @@ impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
 pub struct StatusJSON {
     pub finalized: Checkpoint,
     pub head: Checkpoint,
+}
+
+impl TryFrom<&StatusJSON> for StatusJSON {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &StatusJSON) -> anyhow::Result<Self> {
+        Ok(value.clone())
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
