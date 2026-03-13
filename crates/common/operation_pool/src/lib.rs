@@ -178,8 +178,8 @@ impl OperationPool {
     pub fn get_all_attestations(&self) -> Vec<Attestation> {
         self.attestations
             .read()
-            .iter()
-            .flat_map(|(_, attestations)| attestations.clone())
+            .values()
+            .flat_map(|attestations| attestations.clone())
             .collect()
     }
 
