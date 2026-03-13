@@ -22,8 +22,7 @@ pub fn compute_matrix(blobs: Vec<Blob>, das_context: &DASContext) -> Result<Vec<
 
     for (blob_index, blob) in blobs.iter().enumerate() {
         let (cells, proofs) = compute_cells_and_kzg_proofs(blob, das_context)?;
-        for (cell_index, (cell, kzg_proof)) in cells.into_iter().zip(proofs.into_iter()).enumerate()
-        {
+        for (cell_index, (cell, kzg_proof)) in cells.into_iter().zip(proofs).enumerate() {
             matrix.push(MatrixEntry {
                 cell,
                 kzg_proof,
@@ -55,7 +54,7 @@ pub fn recover_matrix(
 
         for (cell_index, (cell, kzg_proof)) in recovered_cells
             .into_iter()
-            .zip(recovered_proofs.into_iter())
+            .zip(recovered_proofs)
             .enumerate()
         {
             matrix.push(MatrixEntry {

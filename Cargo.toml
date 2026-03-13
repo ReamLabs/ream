@@ -57,14 +57,7 @@ exclude = ["book/cli"]
 [workspace.package]
 authors = ["https://github.com/ReamLabs/ream/graphs/contributors"]
 edition = "2024"
-keywords = [
-    "ethereum",
-    "beam-chain",
-    "blockchain",
-    "consensus",
-    "protocol",
-    "ream",
-]
+keywords = ["ethereum", "beam-chain", "blockchain", "consensus", "protocol", "ream"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/ReamLabs/ream"
