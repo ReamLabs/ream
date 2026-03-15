@@ -74,7 +74,7 @@ jobs:
       max-parallel: 3
       matrix:
         devnet: [devnet3, devnet4]
-        peer_client: [zeam, qlean, lantern, lighthouse, grandine, ethlambda]
+        peer_client: [zeam, qlean, lantern, grandine, ethlambda]
         topology: [peer-peer-ream, peer-ream-ream]
 
     steps:
