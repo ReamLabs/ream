@@ -233,9 +233,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             .await
             .expect("Failed to fetch checkpoint state");
 
-        if !verify_checkpoint_state(&state) {
-            panic!("Downloaded checkpoint state failed to verify");
-        }
+        verify_checkpoint_state(&state).expect("Downloaded checkpoint state failed to verify");
 
         let block = Block {
             slot: state.slot,
@@ -807,7 +805,7 @@ pub async fn countdown_for_genesis() {
 mod tests {
     use std::{
         fs,
-        path::PathBuf,
+        path::{Path, PathBuf},
         process::{Command, Stdio},
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
@@ -815,7 +813,8 @@ mod tests {
     use alloy_primitives::hex;
     use clap::Parser;
     use libp2p_identity::{Keypair, secp256k1};
-    use ream::cli::{Cli, Commands, verbosity::Verbosity};
+    use ream::cli::{Cli, Commands, lean_node::LeanNodeConfig, verbosity::Verbosity};
+    use ream_consensus_lean::state::LeanState;
     use ream_executor::ReamExecutor;
     use ream_storage::{
         db::ReamDB,
@@ -833,6 +832,433 @@ mod tests {
         "0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e377237595d9a27887421b5233d09a50832db2f303d",
         "0xd4355005bc37f76f390dcd2bcc51677d8c6ab44e0cc64913fb84ad459789a31105bd9a69afd2690ffd737d22ec6e3b31d47a642f",
     ];
+
+    struct CheckpointSyncScenario {
+        test_name: &'static str,
+        test_duration_secs: u64,
+        checkpoint_sync_start_delay: u64,
+        restart_delay_after_node_3_start: Option<u64>,
+        preseed_node_3_before_checkpoint_sync: bool,
+    }
+
+    fn init_test_tracing() {
+        if let Err(err) = tracing_subscriber::fmt()
+            .with_env_filter(Verbosity::Info.directive())
+            .with_test_writer()
+            .try_init()
+        {
+            warn!("Failed to initialize tracing subscriber: {err}");
+        }
+    }
+
+    fn lean_assets_directory() -> PathBuf {
+        [
+            PathBuf::from("bin/ream/assets/lean"),
+            PathBuf::from("assets/lean"),
+            PathBuf::from("../assets/lean"),
+        ]
+        .into_iter()
+        .find(|p| p.exists())
+        .expect("Could not find 'assets/lean' directory.")
+        .canonicalize()
+        .expect("Failed to canonicalize assets path")
+    }
+
+    fn write_test_validator_registry(
+        assets_directory: &Path,
+        test_name: &str,
+        node_count: usize,
+    ) -> PathBuf {
+        let registry_path =
+            assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
+
+        let mut validators_yaml = String::new();
+        for i in 0..node_count {
+            validators_yaml.push_str(&format!("node{}:\n  - {i}\n", i + 1));
+        }
+
+        fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
+        registry_path
+    }
+
+    fn spawn_lean_test_node(
+        config: LeanNodeConfig,
+        db: ReamDB,
+        executor: ReamExecutor,
+    ) -> tokio::task::JoinHandle<()> {
+        use tracing::{Instrument, info_span};
+
+        let span = info_span!("lean_node", node_id = %config.node_id);
+        tokio::spawn(
+            async move {
+                run_lean_node(config, executor, db).await;
+            }
+            .instrument(span),
+        )
+    }
+
+    fn read_head_state(db: &ReamDB) -> Option<LeanState> {
+        let lean_db = db.init_lean_db().ok()?;
+        let head = lean_db.head_provider().get().ok()?;
+        lean_db.state_provider().get(head).ok().flatten()
+    }
+
+    fn run_checkpoint_sync_scenario(scenario: CheckpointSyncScenario) {
+        init_test_tracing();
+
+        info!("Starting checkpoint sync test: {}", scenario.test_name);
+
+        let base_p2p_port = 23600;
+        let base_http_port = 19652;
+        let node_count = 3;
+        let port_offset = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("System time is before UNIX epoch")
+            .subsec_nanos() as u16
+            % 1000;
+        let assets_directory = lean_assets_directory();
+        let registry_path =
+            write_test_validator_registry(&assets_directory, scenario.test_name, node_count);
+        let registry_path_string = registry_path.to_string_lossy().to_string();
+
+        let network_config_path = create_test_network_config(scenario.test_name, 3);
+        let network_config_path_string = network_config_path.to_string_lossy().to_string();
+
+        let control_executor = ReamExecutor::new().unwrap();
+        let (remaining_node_executors, retired_node_executors) =
+            control_executor.clone().runtime().block_on(async move {
+            let mut node_addresses: Vec<String> = Vec::new();
+            let mut db_instances: Vec<Option<ReamDB>> = vec![None; node_count];
+            let mut node_executors: Vec<Option<ReamExecutor>> = vec![None; node_count];
+            let mut retired_node_executors = Vec::new();
+            let mut key_paths = Vec::new();
+
+            for (i, db_slot) in db_instances.iter_mut().enumerate().take(node_count) {
+                let node_index = i + 1;
+                let ream_dir = std::env::temp_dir()
+                    .join(format!("{APP_NAME}_{}_node_{node_index}", scenario.test_name));
+
+                if ream_dir.exists()
+                    && let Err(err) = fs::remove_dir_all(&ream_dir)
+                {
+                    warn!("Failed to remove ream directory: {err}");
+                }
+                fs::create_dir_all(&ream_dir).expect("Failed to create data dir");
+
+                let key_path = ream_dir.join("node_key");
+                let peer_id = generate_node_identity(&key_path);
+                key_paths.push(key_path);
+
+                let p2p_port = base_p2p_port + port_offset + (i as u16);
+
+                let address =
+                    format!("/ip4/127.0.0.1/udp/{p2p_port}/quic-v1/p2p/{peer_id}");
+                node_addresses.push(address);
+
+                *db_slot = Some(ReamDB::new(ream_dir).unwrap());
+            }
+
+            let node_1_http_port = base_http_port + port_offset;
+            let mut node_handles: Vec<Option<tokio::task::JoinHandle<()>>> =
+                (0..node_count).map(|_| None).collect();
+
+            for i in 0..2 {
+                let node_index = i + 1;
+                let p2p_port = base_p2p_port + port_offset + (i as u16);
+                let http_port = base_http_port + port_offset + (i as u16);
+
+                let mut args = vec![
+                    "ream".to_string(),
+                    "lean_node".to_string(),
+                    "--network".to_string(),
+                    network_config_path_string.clone(),
+                    "--validator-registry-path".to_string(),
+                    registry_path_string.clone(),
+                    "--socket-port".to_string(),
+                    p2p_port.to_string(),
+                    "--socket-address".to_string(),
+                    "127.0.0.1".to_string(),
+                    "--http-port".to_string(),
+                    http_port.to_string(),
+                    "--node-id".to_string(),
+                    format!("node{node_index}"),
+                    "--private-key-path".to_string(),
+                    key_paths[i].to_string_lossy().to_string(),
+                ];
+
+                if i == 0 {
+                    args.push("--is-aggregator".to_string());
+                } else {
+                    args.push("--bootnodes".to_string());
+                    args.push(node_addresses[0].clone());
+                }
+
+                let cli = Cli::parse_from(args);
+                let Commands::LeanNode(config) = cli.command else {
+                    panic!("Expected lean_node command");
+                };
+
+                let db = db_instances[i].clone().unwrap();
+                let node_executor = ReamExecutor::new().unwrap();
+                let handle = spawn_lean_test_node(*config, db, node_executor.clone());
+                node_executors[i] = Some(node_executor);
+                node_handles[i] = Some(handle);
+
+                if i == 0 {
+                    info!("Waiting 5s for Node 1 to initialize QUIC listener...");
+                    sleep(Duration::from_secs(5)).await;
+                }
+            }
+
+            info!("Nodes 1 and 2 started, monitoring checkpoint sync scenarios...");
+
+            let start_time = Instant::now();
+            let mut node_3_started = false;
+            let mut node_3_checkpoint_sync_started = false;
+            let mut node_3_restarted = false;
+            let mut node_3_config: Option<LeanNodeConfig> = None;
+            let mut node_3_state_before_restart: Option<LeanState> = None;
+
+            if scenario.preseed_node_3_before_checkpoint_sync {
+                info!("Starting Node 3 without checkpoint sync to create existing local state...");
+
+                let node_3_p2p_port = base_p2p_port + port_offset + 2;
+                let node_3_http_port = base_http_port + port_offset + 2;
+
+                let node_3_args = vec![
+                    "ream".to_string(),
+                    "lean_node".to_string(),
+                    "--network".to_string(),
+                    network_config_path_string.clone(),
+                    "--validator-registry-path".to_string(),
+                    registry_path_string.clone(),
+                    "--socket-port".to_string(),
+                    node_3_p2p_port.to_string(),
+                    "--socket-address".to_string(),
+                    "127.0.0.1".to_string(),
+                    "--http-port".to_string(),
+                    node_3_http_port.to_string(),
+                    "--node-id".to_string(),
+                    "node3".to_string(),
+                    "--private-key-path".to_string(),
+                    key_paths[2].to_string_lossy().to_string(),
+                    "--bootnodes".to_string(),
+                    format!("{},{}", node_addresses[0], node_addresses[1]),
+                ];
+
+                let cli_3 = Cli::parse_from(node_3_args);
+                let Commands::LeanNode(config_3) = cli_3.command else {
+                    panic!("Expected lean_node command");
+                };
+
+                let db_3 = db_instances[2].clone().unwrap();
+                let node_executor = ReamExecutor::new().unwrap();
+                node_handles[2] = Some(spawn_lean_test_node(*config_3, db_3, node_executor.clone()));
+                node_executors[2] = Some(node_executor);
+                node_3_started = true;
+            }
+
+            loop {
+                let elapsed = start_time.elapsed().as_secs();
+                if elapsed >= scenario.test_duration_secs {
+                    break;
+                }
+
+                if !node_3_checkpoint_sync_started
+                    && elapsed >= scenario.checkpoint_sync_start_delay
+                {
+                    if node_3_started {
+                        info!(
+                            "Restarting Node 3 with --checkpoint-sync-url using existing data dir..."
+                        );
+                        node_3_state_before_restart =
+                            db_instances[2].as_ref().and_then(read_head_state);
+
+                        if let Some(node_executor) = node_executors[2].take() {
+                            node_executor.shutdown_signal();
+                            retired_node_executors.push(node_executor);
+                        }
+
+                        if let Some(handle) = node_handles[2].take() {
+                            let _ = timeout(Duration::from_secs(5), handle).await;
+                        }
+
+                        sleep(Duration::from_secs(2)).await;
+                    } else {
+                        info!("Starting Node 3 with --checkpoint-sync-url from Node 1...");
+                    }
+
+                    let node_3_p2p_port = base_p2p_port + port_offset + 2;
+                    let node_3_http_port = base_http_port + port_offset + 2;
+
+                    let node_3_args = vec![
+                        "ream".to_string(),
+                        "lean_node".to_string(),
+                        "--network".to_string(),
+                        network_config_path_string.clone(),
+                        "--validator-registry-path".to_string(),
+                        registry_path_string.clone(),
+                        "--socket-port".to_string(),
+                        node_3_p2p_port.to_string(),
+                        "--socket-address".to_string(),
+                        "127.0.0.1".to_string(),
+                        "--http-port".to_string(),
+                        node_3_http_port.to_string(),
+                        "--node-id".to_string(),
+                        "node3".to_string(),
+                        "--private-key-path".to_string(),
+                        key_paths[2].to_string_lossy().to_string(),
+                        "--checkpoint-sync-url".to_string(),
+                        format!("http://127.0.0.1:{node_1_http_port}"),
+                        "--bootnodes".to_string(),
+                        format!("{},{}", node_addresses[0], node_addresses[1]),
+                    ];
+
+                    let cli_3 = Cli::parse_from(node_3_args);
+                    let Commands::LeanNode(config_3) = cli_3.command else {
+                        panic!("Expected lean_node command");
+                    };
+
+                    let mut config_3 = *config_3;
+                    if node_3_started {
+                        config_3.socket_port += 50;
+                        config_3.http_port += 50;
+                    }
+                    let db_3 = db_instances[2].clone().unwrap();
+                    let node_executor = ReamExecutor::new().unwrap();
+                    node_3_config = Some(config_3.clone());
+                    node_handles[2] =
+                        Some(spawn_lean_test_node(config_3, db_3, node_executor.clone()));
+                    node_executors[2] = Some(node_executor);
+                    node_3_started = true;
+                    node_3_checkpoint_sync_started = true;
+                }
+
+                if node_3_checkpoint_sync_started
+                    && !node_3_restarted
+                    && let Some(restart_delay) = scenario.restart_delay_after_node_3_start
+                    && elapsed >= scenario.checkpoint_sync_start_delay + restart_delay
+                {
+                    info!("Restarting Node 3 on existing data directory...");
+
+                    node_3_state_before_restart =
+                        db_instances[2].as_ref().and_then(read_head_state);
+
+                    if let Some(node_executor) = node_executors[2].take() {
+                        node_executor.shutdown_signal();
+                        retired_node_executors.push(node_executor);
+                    }
+
+                    if let Some(handle) = node_handles[2].take() {
+                        let _ = timeout(Duration::from_secs(5), handle).await;
+                    }
+
+                    sleep(Duration::from_secs(2)).await;
+
+                    let mut config_3 = node_3_config
+                        .clone()
+                        .expect("Node 3 config should exist before restart");
+                    config_3.socket_port += 50;
+                    config_3.http_port += 50;
+                    let db_3 = db_instances[2].clone().unwrap();
+                    let node_executor = ReamExecutor::new().unwrap();
+                    node_handles[2] =
+                        Some(spawn_lean_test_node(config_3, db_3, node_executor.clone()));
+                    node_executors[2] = Some(node_executor);
+                    node_3_restarted = true;
+                }
+
+                sleep(Duration::from_secs(2)).await;
+
+                for (i, db_option) in db_instances.iter().enumerate() {
+                    if let Some(db) = db_option
+                        && let Some(state) = read_head_state(db)
+                    {
+                        info!(
+                            "Node {} Chain: Slot={} | Finalized={}",
+                            i + 1,
+                            state.slot,
+                            state.latest_finalized.slot
+                        );
+                    }
+                }
+            }
+
+            if let Err(err) = fs::remove_file(&registry_path) {
+                warn!("Failed to remove registry file: {err}");
+            }
+            if let Err(err) = fs::remove_file(&network_config_path) {
+                warn!("Failed to remove network config file: {err}");
+            }
+            for node_executor in node_executors.iter().flatten() {
+                node_executor.shutdown_signal();
+            }
+            for handle in node_handles.into_iter().flatten() {
+                let _ = timeout(Duration::from_secs(5), handle).await;
+            }
+            sleep(Duration::from_secs(2)).await;
+
+            let head_state_3 = read_head_state(db_instances[2].as_ref().unwrap())
+                .expect("Failed to get head state for node 3");
+            let head_state_1 = read_head_state(db_instances[0].as_ref().unwrap())
+                .expect("Failed to get head state for node 1");
+
+            info!(
+                "FINAL: Node 1 Slot: {}, Finalized: {} | Node 3 Slot: {}, Finalized: {}",
+                head_state_1.slot,
+                head_state_1.latest_finalized.slot,
+                head_state_3.slot,
+                head_state_3.latest_finalized.slot,
+            );
+
+            assert!(
+                head_state_3.latest_finalized.slot > 0,
+                "Checkpoint-synced node failed to finalize. Finalized slot: {}",
+                head_state_3.latest_finalized.slot
+            );
+
+            let head_slot_delta = head_state_3.slot.abs_diff(head_state_1.slot);
+            assert!(
+                head_slot_delta <= 2,
+                "Checkpoint-synced node head diverged too much from Node 1. Node 3: {}, Node 1: {}, delta: {head_slot_delta}",
+                head_state_3.slot,
+                head_state_1.slot,
+            );
+
+            let finalized_slot_lag = head_state_1
+                .latest_finalized
+                .slot
+                .saturating_sub(head_state_3.latest_finalized.slot);
+            assert!(
+                finalized_slot_lag <= 4,
+                "Checkpoint-synced node finalized slot lagged too far behind Node 1. Node 3: {}, Node 1: {}, lag: {finalized_slot_lag}",
+                head_state_3.latest_finalized.slot,
+                head_state_1.latest_finalized.slot,
+            );
+
+            if let Some(state_before_restart) = node_3_state_before_restart {
+                assert!(
+                    head_state_3.slot > state_before_restart.slot,
+                    "Restarted checkpoint-sync node did not advance its head. Before restart: {}, after restart: {}",
+                    state_before_restart.slot,
+                    head_state_3.slot,
+                );
+                assert!(
+                    head_state_3.latest_finalized.slot >= state_before_restart.latest_finalized.slot,
+                    "Restarted checkpoint-sync node regressed finalized slot. Before restart: {}, after restart: {}",
+                    state_before_restart.latest_finalized.slot,
+                    head_state_3.latest_finalized.slot,
+                );
+            }
+
+            (
+                node_executors.into_iter().flatten().collect::<Vec<_>>(),
+                retired_node_executors,
+            )
+        });
+        drop(remaining_node_executors);
+        drop(retired_node_executors);
+    }
 
     fn create_test_network_config(test_name: &str, num_validators: usize) -> PathBuf {
         let unique_suffix = SystemTime::now()
@@ -1520,283 +1946,53 @@ mod tests {
     #[test]
     #[serial]
     fn test_lean_node_checkpoint_sync_from_running_node() {
-        if let Err(err) = tracing_subscriber::fmt()
-            .with_env_filter(Verbosity::Info.directive())
-            .with_test_writer()
-            .try_init()
-        {
-            warn!("Failed to initialize tracing subscriber: {err}");
-        }
+        #[cfg(feature = "devnet4")]
+        let test_duration_secs = 240;
+        #[cfg(not(feature = "devnet4"))]
+        let test_duration_secs = 180;
 
-        let test_name = "checkpoint_sync_late_joiner";
-        info!("Starting checkpoint sync test: {}", test_name);
+        run_checkpoint_sync_scenario(CheckpointSyncScenario {
+            test_name: "checkpoint_sync_late_joiner",
+            test_duration_secs,
+            checkpoint_sync_start_delay: 100,
+            restart_delay_after_node_3_start: None,
+            preseed_node_3_before_checkpoint_sync: false,
+        });
+    }
 
-        let test_duration_secs: u64 = 180;
-        let checkpoint_sync_start_delay: u64 = 100;
-        let base_p2p_port = 23600;
-        let base_http_port = 19652;
-        let node_count = 3;
+    #[test]
+    #[serial]
+    fn test_lean_node_checkpoint_sync_from_fresh_source() {
+        run_checkpoint_sync_scenario(CheckpointSyncScenario {
+            test_name: "checkpoint_sync_fresh_source",
+            test_duration_secs: 140,
+            checkpoint_sync_start_delay: 0,
+            restart_delay_after_node_3_start: None,
+            preseed_node_3_before_checkpoint_sync: false,
+        });
+    }
 
-        let potential_paths = vec![
-            PathBuf::from("bin/ream/assets/lean"),
-            PathBuf::from("assets/lean"),
-            PathBuf::from("../assets/lean"),
-        ];
+    #[test]
+    #[serial]
+    fn test_lean_node_checkpoint_sync_restart_existing_node() {
+        run_checkpoint_sync_scenario(CheckpointSyncScenario {
+            test_name: "checkpoint_sync_restart_existing_node",
+            test_duration_secs: 170,
+            checkpoint_sync_start_delay: 70,
+            restart_delay_after_node_3_start: Some(35),
+            preseed_node_3_before_checkpoint_sync: false,
+        });
+    }
 
-        let assets_directory = potential_paths
-            .into_iter()
-            .find(|p| p.exists())
-            .expect("Could not find 'assets/lean' directory.")
-            .canonicalize()
-            .expect("Failed to canonicalize assets path");
-
-        let registry_path =
-            assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
-
-        let validators_yaml = "node1:\n  - 0\nnode2:\n  - 1\nnode3:\n  - 2\n";
-        fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
-        let registry_path_string = registry_path.to_string_lossy().to_string();
-
-        let network_config_path = create_test_network_config(test_name, 3);
-        let network_config_path_string = network_config_path.to_string_lossy().to_string();
-
-        let executor = ReamExecutor::new().unwrap();
-        executor.clone().runtime().block_on(async move {
-            let mut node_addresses: Vec<String> = Vec::new();
-            let mut db_instances: Vec<Option<ReamDB>> = vec![None; node_count];
-            let mut key_paths = Vec::new();
-
-            for (i, db_slot) in db_instances.iter_mut().enumerate().take(node_count) {
-                let node_index = i + 1;
-                let ream_dir = std::env::temp_dir()
-                    .join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
-
-                if ream_dir.exists()
-                    && let Err(err) = fs::remove_dir_all(&ream_dir)
-                {
-                    warn!("Failed to remove ream directory: {err}");
-                }
-                fs::create_dir_all(&ream_dir).expect("Failed to create data dir");
-
-                let key_path = ream_dir.join("node_key");
-                let peer_id = generate_node_identity(&key_path);
-                key_paths.push(key_path);
-
-                let port_offset = (test_name.len() as u16) % 100;
-                let p2p_port = base_p2p_port + port_offset + (i as u16);
-
-                let address =
-                    format!("/ip4/127.0.0.1/udp/{p2p_port}/quic-v1/p2p/{peer_id}");
-                node_addresses.push(address);
-
-                *db_slot = Some(ReamDB::new(ream_dir).unwrap());
-            }
-
-            let port_offset = (test_name.len() as u16) % 100;
-
-            let node1_http_port = base_http_port + port_offset;
-            let mut node_handles: Vec<Option<tokio::task::JoinHandle<()>>> =
-                (0..node_count).map(|_| None).collect();
-
-            for i in 0..2 {
-                let node_index = i + 1;
-                let p2p_port = base_p2p_port + port_offset + (i as u16);
-                let http_port = base_http_port + port_offset + (i as u16);
-
-                let mut args = vec![
-                    "ream".to_string(),
-                    "lean_node".to_string(),
-                    "--network".to_string(),
-                    network_config_path_string.clone(),
-                    "--validator-registry-path".to_string(),
-                    registry_path_string.clone(),
-                    "--socket-port".to_string(),
-                    p2p_port.to_string(),
-                    "--socket-address".to_string(),
-                    "127.0.0.1".to_string(),
-                    "--http-port".to_string(),
-                    http_port.to_string(),
-                    "--node-id".to_string(),
-                    format!("node{node_index}"),
-                    "--private-key-path".to_string(),
-                    key_paths[i].to_string_lossy().to_string(),
-                ];
-
-                if i == 0 {
-                    args.push("--is-aggregator".to_string());
-                } else {
-                    args.push("--bootnodes".to_string());
-                    args.push(node_addresses[0].clone());
-                }
-
-                let cli = Cli::parse_from(args);
-                let Commands::LeanNode(config) = cli.command else {
-                    panic!("Expected lean_node command");
-                };
-
-                let db = db_instances[i].clone().unwrap();
-                let node_executor = executor.clone();
-                let handle = {
-                    use tracing::{Instrument, info_span};
-                    let node_id = format!("node{node_index}");
-                    let span = info_span!("lean_node", node_id = %node_id);
-                    tokio::spawn(
-                        async move {
-                            run_lean_node(*config, node_executor, db).await;
-                        }
-                        .instrument(span),
-                    )
-                };
-                node_handles[i] = Some(handle);
-
-                if i == 0 {
-                    info!("Waiting 5s for Node 1 to initialize QUIC listener...");
-                    sleep(Duration::from_secs(5)).await;
-                }
-            }
-
-            info!("Nodes 1 and 2 started, waiting for finalization before starting checkpoint sync node...");
-
-            let start_time = Instant::now();
-
-            loop {
-                let elapsed = start_time.elapsed().as_secs();
-                if elapsed >= test_duration_secs {
-                    break;
-                }
-
-                if node_handles[2].is_none() && elapsed >= checkpoint_sync_start_delay {
-                    info!("Starting Node 3 with --checkpoint-sync-url from Node 1...");
-
-                    let node3_p2p_port = base_p2p_port + port_offset + 2;
-                    let node3_http_port = base_http_port + port_offset + 2;
-
-                    let node_3_args = vec![
-                        "ream".to_string(),
-                        "lean_node".to_string(),
-                        "--network".to_string(),
-                        network_config_path_string.clone(),
-                        "--validator-registry-path".to_string(),
-                        registry_path_string.clone(),
-                        "--socket-port".to_string(),
-                        node3_p2p_port.to_string(),
-                        "--socket-address".to_string(),
-                        "127.0.0.1".to_string(),
-                        "--http-port".to_string(),
-                        node3_http_port.to_string(),
-                        "--node-id".to_string(),
-                        "node3".to_string(),
-                        "--private-key-path".to_string(),
-                        key_paths[2].to_string_lossy().to_string(),
-                        "--checkpoint-sync-url".to_string(),
-                        format!("http://127.0.0.1:{node1_http_port}"),
-                        "--bootnodes".to_string(),
-                        format!("{},{}", node_addresses[0], node_addresses[1]),
-                    ];
-
-                    let cli_3 = Cli::parse_from(node_3_args);
-                    let Commands::LeanNode(config_3) = cli_3.command else {
-                        panic!("Expected lean_node command");
-                    };
-
-                    let db_3 = db_instances[2].clone().unwrap();
-                    let node_3_executor = executor.clone();
-                    let handle = {
-                        use tracing::{Instrument, info_span};
-                        let span = info_span!("lean_node", node_id = "node3");
-                        tokio::spawn(
-                            async move {
-                                run_lean_node(*config_3, node_3_executor, db_3).await;
-                            }
-                            .instrument(span),
-                        )
-                    };
-                    node_handles[2] = Some(handle);
-                }
-
-                sleep(Duration::from_secs(2)).await;
-
-                for (i, db_option) in db_instances.iter().enumerate() {
-                    if let Some(db) = db_option
-                        && let Ok(lean_db) = db.init_lean_db()
-                        && let Ok(head) = lean_db.head_provider().get()
-                        && let Ok(Some(state)) = lean_db.state_provider().get(head)
-                    {
-                        info!(
-                            "Node {} Chain: Slot={} | Finalized={}",
-                            i + 1,
-                            state.slot,
-                            state.latest_finalized.slot
-                        );
-                    }
-                }
-            }
-
-            if let Err(err) = fs::remove_file(&registry_path) {
-                warn!("Failed to remove registry file: {err}");
-            }
-            if let Err(err) = fs::remove_file(&network_config_path) {
-                warn!("Failed to remove network config file: {err}");
-            }
-            for handle in node_handles.into_iter().flatten() {
-                handle.abort();
-            }
-            sleep(Duration::from_secs(2)).await;
-
-            let lean_db_3 = db_instances[2].as_ref().unwrap().init_lean_db().unwrap();
-            let head_3 = lean_db_3
-                .head_provider()
-                .get()
-                .expect("Failed to get head for node 3");
-            let head_state_3 = lean_db_3
-                .state_provider()
-                .get(head_3)
-                .unwrap()
-                .expect("Failed to get head state for node 3");
-
-            let lean_db_1 = db_instances[0].as_ref().unwrap().init_lean_db().unwrap();
-            let head_1 = lean_db_1
-                .head_provider()
-                .get()
-                .expect("Failed to get head for node 1");
-            let head_state_1 = lean_db_1
-                .state_provider()
-                .get(head_1)
-                .unwrap()
-                .expect("Failed to get head state for node 1");
-
-            info!(
-                "FINAL: Node 1 Slot: {}, Finalized: {} | Node 3 Slot: {}, Finalized: {}",
-                head_state_1.slot,
-                head_state_1.latest_finalized.slot,
-                head_state_3.slot,
-                head_state_3.latest_finalized.slot,
-            );
-
-            assert!(
-                head_state_3.latest_finalized.slot > 0,
-                "Checkpoint-synced node failed to finalize. Finalized slot: {}",
-                head_state_3.latest_finalized.slot
-            );
-
-            let head_slot_delta = head_state_3.slot.abs_diff(head_state_1.slot);
-            assert!(
-                head_slot_delta <= 2,
-                "Checkpoint-synced node head diverged too much from Node 1. Node 3: {}, Node 1: {}, delta: {head_slot_delta}",
-                head_state_3.slot,
-                head_state_1.slot,
-            );
-
-            let finalized_slot_lag = head_state_1
-                .latest_finalized
-                .slot
-                .saturating_sub(head_state_3.latest_finalized.slot);
-            assert!(
-                finalized_slot_lag <= 4,
-                "Checkpoint-synced node finalized slot lagged too far behind Node 1. Node 3: {}, Node 1: {}, lag: {finalized_slot_lag}",
-                head_state_3.latest_finalized.slot,
-                head_state_1.latest_finalized.slot,
-            );
+    #[test]
+    #[serial]
+    fn test_lean_node_checkpoint_sync_from_existing_data_dir() {
+        run_checkpoint_sync_scenario(CheckpointSyncScenario {
+            test_name: "checkpoint_sync_existing_data_dir",
+            test_duration_secs: 170,
+            checkpoint_sync_start_delay: 45,
+            restart_delay_after_node_3_start: None,
+            preseed_node_3_before_checkpoint_sync: true,
         });
     }
 

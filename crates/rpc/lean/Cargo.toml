@@ -52,7 +52,6 @@ ssz_types.workspace = true
 tree_hash.workspace = true
 
 [dev-dependencies]
-ream-checkpoint-sync-lean.workspace = true
 ream-test-utils.workspace = true
 url.workspace = true
 
