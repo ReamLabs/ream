@@ -6,7 +6,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  KNOWN_GOOD_REF: 6f8c567bd33baf6ee0e76dd5bfc4407f7650be7f
+  KNOWN_GOOD_REF: 8fc998c6f6660cc72e19e312605512d24e517422
 
 jobs:
   devnet3-known-good-vs-current-pr:
