@@ -373,6 +373,72 @@ jobs:
           node_setup="docker"
           EOF
 
+          cat > client-cmds/grandine-cmd.sh <<'EOF'
+          #!/bin/bash
+
+          #-----------------------grandine setup----------------------
+          grandine_bin="${GRANDINE_BINARY_PATH:-$scriptDir/grandine/target/release/grandine}"
+          GRANDINE_IMAGE="${GRANDINE_DOCKER_IMAGE:-sifrai/lean:devnet-3}"
+
+          # Set aggregator flag based on isAggregator value
+          aggregator_flag=""
+          if [ "$isAggregator" == "true" ]; then
+              aggregator_flag="--is-aggregator"
+          fi
+
+          # Set attestation committee count flag if explicitly configured
+          attestation_committee_flag=""
+          if [ -n "$attestationCommitteeCount" ]; then
+              attestation_committee_flag="--attestation-committee-count $attestationCommitteeCount"
+          fi
+
+          # Set checkpoint sync URL when restarting with checkpoint sync
+          checkpoint_sync_flag=""
+          if [ -n "${checkpoint_sync_url:-}" ]; then
+              checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
+          fi
+
+          apiPort=$((metricsPort + 1001))
+
+          node_binary="$grandine_bin \
+                  --genesis $configDir/config.yaml \
+                  --validator-registry-path $configDir/validators.yaml \
+                  --bootnodes $configDir/nodes.yaml \
+                  --node-id $item \
+                  --node-key $configDir/$privKeyPath \
+                  --port $quicPort \
+                  --address 0.0.0.0 \
+                  --http-address 0.0.0.0 \
+                  --http-port $apiPort \
+                  --metrics \
+                  --metrics-address 0.0.0.0 \
+                  --metrics-port $metricsPort \
+                  --hash-sig-key-dir $configDir/hash-sig-keys \
+                  $attestation_committee_flag \
+                  $aggregator_flag \
+                  $checkpoint_sync_flag"
+
+          node_docker="$GRANDINE_IMAGE \
+                  --genesis /config/config.yaml \
+                  --validator-registry-path /config/validators.yaml \
+                  --bootnodes /config/nodes.yaml \
+                  --node-id $item \
+                  --node-key /config/$privKeyPath \
+                  --port $quicPort \
+                  --http-address 0.0.0.0 \
+                  --http-port $apiPort \
+                  --metrics \
+                  --metrics-address 0.0.0.0 \
+                  --metrics-port $metricsPort \
+                  --hash-sig-key-dir /config/hash-sig-keys \
+                  $attestation_committee_flag \
+                  $aggregator_flag \
+                  $checkpoint_sync_flag"
+
+          # choose either binary or docker
+          node_setup="docker"
+          EOF
+
           cat > client-cmds/ethlambda-cmd.sh <<'EOF'
           #!/bin/bash
 
@@ -432,6 +498,7 @@ jobs:
           chmod +x client-cmds/zeam-cmd.sh
           chmod +x client-cmds/qlean-cmd.sh
           chmod +x client-cmds/lantern-cmd.sh
+          chmod +x client-cmds/grandine-cmd.sh
           chmod +x client-cmds/ethlambda-cmd.sh
 
           sed -i 's/docker run --rm --pull=never/docker run --pull=never/g' spin-node.sh
@@ -534,12 +601,14 @@ jobs:
           ream_image="ghcr.io/reamlabs/ream:latest-devnet3"
           zeam_image="blockblaz/zeam:devnet3"
           qlean_image="qdrvm/qlean-mini:devnet-3"
+          grandine_image="sifrai/lean:devnet-3"
           ethlambda_image="ghcr.io/lambdaclass/ethlambda:devnet3"
 
           if [ "${{ matrix.devnet }}" = "devnet4" ]; then
             ream_candidate="ghcr.io/reamlabs/ream:latest-devnet4"
             zeam_candidate="blockblaz/zeam:devnet4"
             qlean_candidate="qdrvm/qlean-mini:devnet-4"
+            grandine_candidate="sifrai/lean:devnet-4"
 
             if docker manifest inspect "$ream_candidate" >/dev/null 2>&1; then
               ream_image="$ream_candidate"
@@ -550,16 +619,21 @@ jobs:
             if docker manifest inspect "$qlean_candidate" >/dev/null 2>&1; then
               qlean_image="$qlean_candidate"
             fi
+            if docker manifest inspect "$grandine_candidate" >/dev/null 2>&1; then
+              grandine_image="$grandine_candidate"
+            fi
           fi
 
           echo "REAM_DOCKER_IMAGE=$ream_image" >> "$GITHUB_ENV"
           echo "ZEAM_DOCKER_IMAGE=$zeam_image" >> "$GITHUB_ENV"
           echo "QLEAN_DOCKER_IMAGE=$qlean_image" >> "$GITHUB_ENV"
+          echo "GRANDINE_DOCKER_IMAGE=$grandine_image" >> "$GITHUB_ENV"
           echo "ETHLAMBDA_DOCKER_IMAGE=$ethlambda_image" >> "$GITHUB_ENV"
 
           echo "Using ream image: $ream_image"
           echo "Using zeam image: $zeam_image"
           echo "Using qlean image: $qlean_image"
+          echo "Using grandine image: $grandine_image"
           echo "Using ethlambda image: $ethlambda_image"
 
       - id: start
