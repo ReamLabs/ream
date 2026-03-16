@@ -40,7 +40,7 @@ mod tests {
             .with_cache(cached_db.clone());
 
         let ancestor_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
-            "./assets/sepolia/blocks/ancestor_9551988.ssz_snappy",
+            "./assets/sepolia/blocks/ancestor_9551968.ssz_snappy",
         )
         .unwrap();
 
@@ -190,15 +190,13 @@ mod tests {
         );
     }
 
-    /// TODO: Update test to Fulu
-    #[ignore = "Update test to Fulu"]
     #[tokio::test]
     pub async fn test_block_at_or_before_finalized_slot_is_ignored() {
         initialize_test_network_spec();
         let (beacon_chain, cached_db, _block_root) = db_setup().await;
 
         let ancestor_block = read_ssz_snappy_file::<SignedBeaconBlock>(
-            "./assets/sepolia/blocks/slot_8084160.ssz_snappy",
+            "./assets/sepolia/blocks/ancestor_9551968.ssz_snappy",
         )
         .unwrap();
 
