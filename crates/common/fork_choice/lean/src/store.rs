@@ -991,11 +991,6 @@ impl Store {
             "Attestation signature groups must match aggregated attestations"
         );
 
-        attestation_data_by_root_provider.insert(
-            proposer_attestation.data.tree_hash_root(),
-            proposer_attestation.data.clone(),
-        )?;
-
         for (attestation, proof) in aggregated_attestations
             .iter()
             .zip(attestation_signatures.iter())
