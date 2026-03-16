@@ -991,78 +991,46 @@ impl Store {
             "Attestation signature groups must match aggregated attestations"
         );
 
+        for (attestation, proof) in aggregated_attestations
+            .iter()
+            .zip(attestation_signatures.iter())
         {
-            attestation_data_by_root_provider.insert(
-                proposer_attestation.data.tree_hash_root(),
-                proposer_attestation.data.clone(),
-            )?;
+            let validator_ids = proof.to_validator_indices();
+            let data_root = attestation.message.tree_hash_root();
 
-            for (attestation, proof) in aggregated_attestations
-                .iter()
-                .zip(attestation_signatures.iter())
-            {
-                let validator_ids = proof.to_validator_indices();
-                let data_root = attestation.message.tree_hash_root();
+            attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
 
-                attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
+            for validator_id in validator_ids {
+                let key = SignatureKey::from_parts(validator_id, data_root);
 
-                for validator_id in validator_ids {
-                    let key = SignatureKey::from_parts(validator_id, data_root);
+                let mut existing_proofs = latest_known_aggregated_payloads_provider
+                    .get(key.clone())?
+                    .unwrap_or_default();
 
-                    let mut existing_proofs = latest_known_aggregated_payloads_provider
-                        .get(key.clone())?
-                        .unwrap_or_default();
+                existing_proofs.push(proof.clone());
 
-                    existing_proofs.push(proof.clone());
-
-                    latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
-                }
+                latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
             }
         }
 
         self.update_head().await?;
 
-        let proposer_validator_id = proposer_attestation.validator_id;
-
-        if let Ok(Some(current_id)) = validator_id_provider.get()
-            && compute_subnet_id(
-                proposer_validator_id,
+        if let Ok(Some(current_id)) = validator_id_provider.get() {
+            let proposer_subnet = compute_subnet_id(
+                proposer_attestation.validator_id,
                 effective_attestation_committee_count(),
-            ) == compute_subnet_id(current_id, effective_attestation_committee_count())
-        {
-            gossip_signatures_provider.insert(
-                SignatureKey::new(
-                    proposer_attestation.validator_id,
-                    &proposer_attestation.data,
-                ),
-                signed_block_with_attestation.signature.proposer_signature,
-            )?;
-        }
+            );
+            let current_subnet =
+                compute_subnet_id(current_id, effective_attestation_committee_count());
 
-        {
-            let proposer_validator_id = proposer_attestation.validator_id;
-
-            attestation_data_by_root_provider.insert(
-                proposer_attestation.data.tree_hash_root(),
-                proposer_attestation.data.clone(),
-            )?;
-
-            if let Ok(Some(current_id)) = validator_id_provider.get() {
-                let proposer_subnet = compute_subnet_id(
-                    proposer_validator_id,
-                    effective_attestation_committee_count(),
-                );
-                let current_subnet =
-                    compute_subnet_id(current_id, effective_attestation_committee_count());
-
-                if proposer_subnet == current_subnet {
-                    let gossip_signatures_provider =
-                        self.store.lock().await.gossip_signatures_provider();
-                    gossip_signatures_provider.insert(
-                        SignatureKey::new(proposer_validator_id, &proposer_attestation.data),
-                        signed_block_with_attestation.signature.proposer_signature,
-                    )?;
-                }
+            if proposer_subnet == current_subnet {
+                gossip_signatures_provider.insert(
+                    SignatureKey::new(
+                        proposer_attestation.validator_id,
+                        &proposer_attestation.data,
+                    ),
+                    signed_block_with_attestation.signature.proposer_signature,
+                )?;
             }
         }
 
