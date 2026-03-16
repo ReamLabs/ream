@@ -373,10 +373,66 @@ jobs:
           node_setup="docker"
           EOF
 
+          cat > client-cmds/ethlambda-cmd.sh <<'EOF'
+          #!/bin/bash
+
+          #-----------------------ethlambda setup----------------------
+          # Set aggregator flag based on isAggregator value
+          aggregator_flag=""
+          if [ "$isAggregator" == "true" ]; then
+            aggregator_flag="--is-aggregator"
+          fi
+
+          # Set checkpoint sync URL when restarting with checkpoint sync
+          checkpoint_sync_flag=""
+          if [ -n "${checkpoint_sync_url:-}" ]; then
+            checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
+          fi
+
+          # Set attestation committee count flag if explicitly configured
+          attestation_committee_flag=""
+          if [ -n "$attestationCommitteeCount" ]; then
+            attestation_committee_flag="--attestation-committee-count $attestationCommitteeCount"
+          fi
+
+          # ethlambda runs API and metrics on separate ports.
+          apiPort=$((metricsPort + 1000))
+
+          binary_path="${ETHLAMBDA_BINARY_PATH:-$scriptDir/ethlambda/build/ethlambda}"
+
+          node_binary="$binary_path \
+            --custom-network-config-dir $configDir \
+            --gossipsub-port $quicPort \
+            --node-id $item \
+            --node-key $configDir/$item.key \
+            --http-address 0.0.0.0 \
+            --api-port $apiPort \
+            --metrics-port $metricsPort \
+            $attestation_committee_flag \
+            $aggregator_flag \
+            $checkpoint_sync_flag"
+
+          node_docker="${ETHLAMBDA_DOCKER_IMAGE:-ghcr.io/lambdaclass/ethlambda:devnet3} \
+            --custom-network-config-dir /config \
+            --gossipsub-port $quicPort \
+            --node-id $item \
+            --node-key /config/$item.key \
+            --http-address 0.0.0.0 \
+            --api-port $apiPort \
+            --metrics-port $metricsPort \
+            $attestation_committee_flag \
+            $aggregator_flag \
+            $checkpoint_sync_flag"
+
+          # choose either binary or docker
+          node_setup="docker"
+          EOF
+
           chmod +x client-cmds/ream-cmd.sh
           chmod +x client-cmds/zeam-cmd.sh
           chmod +x client-cmds/qlean-cmd.sh
           chmod +x client-cmds/lantern-cmd.sh
+          chmod +x client-cmds/ethlambda-cmd.sh
 
           sed -i 's/docker run --rm --pull=never/docker run --pull=never/g' spin-node.sh
 
@@ -478,6 +534,7 @@ jobs:
           ream_image="ghcr.io/reamlabs/ream:latest-devnet3"
           zeam_image="blockblaz/zeam:devnet3"
           qlean_image="qdrvm/qlean-mini:devnet-3"
+          ethlambda_image="ghcr.io/lambdaclass/ethlambda:devnet3"
 
           if [ "${{ matrix.devnet }}" = "devnet4" ]; then
             ream_candidate="ghcr.io/reamlabs/ream:latest-devnet4"
@@ -498,10 +555,12 @@ jobs:
           echo "REAM_DOCKER_IMAGE=$ream_image" >> "$GITHUB_ENV"
           echo "ZEAM_DOCKER_IMAGE=$zeam_image" >> "$GITHUB_ENV"
           echo "QLEAN_DOCKER_IMAGE=$qlean_image" >> "$GITHUB_ENV"
+          echo "ETHLAMBDA_DOCKER_IMAGE=$ethlambda_image" >> "$GITHUB_ENV"
 
           echo "Using ream image: $ream_image"
           echo "Using zeam image: $zeam_image"
           echo "Using qlean image: $qlean_image"
+          echo "Using ethlambda image: $ethlambda_image"
 
       - id: start
         if: steps.preflight.outputs.skip_run != 'true'
