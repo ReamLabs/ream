@@ -199,7 +199,7 @@ impl Store {
                         .flatten()
                         .map(|block| block.message.block.slot)
                         .unwrap_or(0);
-                    (*child_hash, slot, (vote_weight, slot, *child_hash))
+                    (*child_hash, slot, (vote_weight, *child_hash))
                 })
                 .max_by_key(|(_, _, key)| *key)
                 .map(|(hash, slot, _)| (hash, slot))
