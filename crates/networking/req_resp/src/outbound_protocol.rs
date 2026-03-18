@@ -18,9 +18,9 @@ use ream_consensus_beacon::{
     electra::beacon_block::SignedBeaconBlock,
 };
 #[cfg(feature = "devnet4")]
-use ream_consensus_lean::block::SignedBlock;
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::block::SignedBlockWithAttestation;
+use ream_consensus_lean::block::SignedBlock as ActiveBlock;
+#[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
+use ream_consensus_lean::block::SignedBlockWithAttestation as ActiveBlock;
 use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
 use ream_network_spec::networks::beacon_network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};
@@ -269,17 +269,9 @@ impl Decoder for OutboundSSZSnappyCodec {
                                 LeanSupportedProtocol::StatusV1 => LeanResponseMessage::Status(
                                     LeanStatus::from_ssz_bytes(&buf).map_err(ReqRespError::from)?,
                                 ),
-                                #[cfg(feature = "devnet3")]
                                 LeanSupportedProtocol::BlocksByRootV1 => {
                                     LeanResponseMessage::BlocksByRoot(Arc::new(
-                                        SignedBlockWithAttestation::from_ssz_bytes(&buf)
-                                            .map_err(ReqRespError::from)?,
-                                    ))
-                                }
-                                #[cfg(feature = "devnet4")]
-                                LeanSupportedProtocol::BlocksByRootV1 => {
-                                    LeanResponseMessage::BlocksByRoot(Arc::new(
-                                        SignedBlock::from_ssz_bytes(&buf)
+                                        ActiveBlock::from_ssz_bytes(&buf)
                                             .map_err(ReqRespError::from)?,
                                     ))
                                 }

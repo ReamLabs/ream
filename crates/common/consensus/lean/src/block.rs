@@ -262,7 +262,6 @@ impl SignedBlock {
 }
 
 /// Bundle containing a block and the proposer's attestation.
-#[cfg(feature = "devnet3")]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct BlockWithAttestation {
     pub block: Block,

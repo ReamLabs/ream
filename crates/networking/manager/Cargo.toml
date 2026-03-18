@@ -11,6 +11,8 @@ version.workspace = true
 
 [features]
 default = []
+devnet3 = ["ream-p2p/devnet3", "ream-storage/devnet3"]
+devnet4 = ["ream-p2p/devnet4", "ream-storage/devnet4"]
 disable_ancestor_validation = []
 
 [dependencies]

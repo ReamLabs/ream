@@ -277,6 +277,7 @@ impl TryFrom<&BlockJSON> for Block {
     }
 }
 
+#[cfg(feature = "devnet3")]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockWithAttestationJSON {
@@ -284,6 +285,7 @@ pub struct BlockWithAttestationJSON {
     pub proposer_attestation: AttestationJSON,
 }
 
+#[cfg(feature = "devnet3")]
 impl TryFrom<&BlockWithAttestationJSON> for BlockWithAttestation {
     type Error = anyhow::Error;
 
