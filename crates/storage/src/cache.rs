@@ -7,6 +7,9 @@ use ream_consensus_beacon::{
     bls_to_execution_change::BLSToExecutionChange,
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
 };
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::{block::SignedBlock, state::LeanState};
+#[cfg(feature = "devnet3")]
 use ream_consensus_lean::{block::SignedBlockWithAttestation, state::LeanState};
 use ream_consensus_misc::constants::beacon::SYNC_COMMITTEE_SIZE;
 use ream_light_client::finality_update::LightClientFinalityUpdate;
@@ -153,7 +156,10 @@ impl Default for BeaconCacheDB {
 #[derive(Debug)]
 pub struct LeanCacheDB {
     // Lean storage caches
+    #[cfg(feature = "devnet3")]
     pub blocks: Mutex<LruCache<B256, SignedBlockWithAttestation>>,
+    #[cfg(feature = "devnet4")]
+    pub blocks: Mutex<LruCache<B256, SignedBlock>>,
     pub states: Mutex<LruCache<B256, LeanState>>,
 }
 

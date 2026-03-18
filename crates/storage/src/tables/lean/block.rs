@@ -1,6 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::block::SignedBlock;
+#[cfg(feature = "devnet3")]
 use ream_consensus_lean::block::SignedBlockWithAttestation;
 use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 use tree_hash::TreeHash;
@@ -22,19 +25,27 @@ pub struct LeanBlockTable {
 /// Key: block_root
 /// Value: [SignedBlockWithAttestation]
 impl REDBTable for LeanBlockTable {
+    #[cfg(feature = "devnet3")]
     const TABLE_DEFINITION: TableDefinition<
         '_,
         SSZEncoding<B256>,
         SSZEncoding<SignedBlockWithAttestation>,
     > = TableDefinition::new("lean_block");
+    #[cfg(feature = "devnet4")]
+    const TABLE_DEFINITION: TableDefinition<'_, SSZEncoding<B256>, SSZEncoding<SignedBlock>> =
+        TableDefinition::new("lean_block");
 
     type Key = B256;
 
     type KeyTableDefinition = SSZEncoding<B256>;
-
+    #[cfg(feature = "devnet3")]
     type Value = SignedBlockWithAttestation;
-
+    #[cfg(feature = "devnet3")]
     type ValueTableDefinition = SSZEncoding<SignedBlockWithAttestation>;
+    #[cfg(feature = "devnet4")]
+    type Value = SignedBlock;
+    #[cfg(feature = "devnet4")]
+    type ValueTableDefinition = SSZEncoding<SignedBlock>;
 
     fn database(&self) -> Arc<Database> {
         self.db.clone()
@@ -68,17 +79,26 @@ impl REDBTable for LeanBlockTable {
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
         // insert entry to slot_index table
+        #[cfg(feature = "devnet3")]
         let block_root = value.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let block_root = value.message.tree_hash_root();
         let slot_index_table = LeanSlotIndexTable {
             db: self.db.clone(),
         };
+        #[cfg(feature = "devnet3")]
         slot_index_table.insert(value.message.block.slot, block_root)?;
+        #[cfg(feature = "devnet4")]
+        slot_index_table.insert(value.message.slot, block_root)?;
 
         // insert entry to state root index table
         let state_root_index_table = LeanStateRootIndexTable {
             db: self.db.clone(),
         };
+        #[cfg(feature = "devnet3")]
         state_root_index_table.insert(value.message.block.state_root, block_root)?;
+        #[cfg(feature = "devnet4")]
+        state_root_index_table.insert(value.message.state_root, block_root)?;
 
         if let Some(cache) = &self.cache
             && let Ok(mut cache_lock) = cache.blocks.lock()
@@ -109,11 +129,17 @@ impl REDBTable for LeanBlockTable {
             let slot_index_table = LeanSlotIndexTable {
                 db: self.db.clone(),
             };
+            #[cfg(feature = "devnet3")]
             slot_index_table.remove(block.message.block.slot)?;
+            #[cfg(feature = "devnet4")]
+            slot_index_table.remove(block.message.slot)?;
             let state_root_index_table = LeanStateRootIndexTable {
                 db: self.db.clone(),
             };
+            #[cfg(feature = "devnet3")]
             state_root_index_table.remove(block.message.block.state_root)?;
+            #[cfg(feature = "devnet4")]
+            state_root_index_table.remove(block.message.state_root)?;
         }
         drop(table);
         write_txn.commit()?;
@@ -138,7 +164,10 @@ impl LeanBlockTable {
         for entry in table.iter()? {
             let (hash_entry, block_entry) = entry?;
             let root: B256 = hash_entry.value();
+            #[cfg(feature = "devnet3")]
             let block = block_entry.value().message.block;
+            #[cfg(feature = "devnet4")]
+            let block = block_entry.value().message;
 
             if block.parent_root == B256::ZERO {
                 continue;
@@ -155,7 +184,7 @@ impl LeanBlockTable {
         }
         Ok(children_map)
     }
-
+    #[cfg(feature = "devnet3")]
     pub fn get_all_blocks(
         &self,
         min_slot: u64,
@@ -168,6 +197,22 @@ impl LeanBlockTable {
             let (_, block_entry) = entry?;
             let block = block_entry.value();
             if block.message.block.slot >= min_slot {
+                blocks.push(block);
+            }
+        }
+
+        Ok(blocks)
+    }
+    #[cfg(feature = "devnet4")]
+    pub fn get_all_blocks(&self, min_slot: u64) -> Result<Vec<SignedBlock>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+        let mut blocks = Vec::new();
+
+        for entry in table.iter()? {
+            let (_, block_entry) = entry?;
+            let block = block_entry.value();
+            if block.message.slot >= min_slot {
                 blocks.push(block);
             }
         }

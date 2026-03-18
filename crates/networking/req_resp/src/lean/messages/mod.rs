@@ -1,8 +1,10 @@
 pub mod blocks;
 pub mod status;
-
 use std::sync::Arc;
 
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::block::SignedBlock;
+#[cfg(feature = "devnet3")]
 use ream_consensus_lean::block::SignedBlockWithAttestation;
 use ssz_derive::{Decode, Encode};
 
@@ -45,5 +47,8 @@ impl LeanRequestMessage {
 #[ssz(enum_behaviour = "transparent")]
 pub enum LeanResponseMessage {
     Status(Status),
+    #[cfg(feature = "devnet3")]
     BlocksByRoot(Arc<SignedBlockWithAttestation>),
+    #[cfg(feature = "devnet4")]
+    BlocksByRoot(Arc<SignedBlock>),
 }

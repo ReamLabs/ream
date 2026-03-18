@@ -7,6 +7,19 @@ use std::{
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::{
+    attestation::{
+        AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
+        SignatureKey, SignedAggregatedAttestation, SignedAttestation,
+    },
+    block::{Block, BlockBody, BlockWithSignatures, SignedBlock},
+    checkpoint::Checkpoint,
+    slot::is_justifiable_after,
+    state::LeanState,
+    validator::is_proposer,
+};
+#[cfg(feature = "devnet3")]
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
@@ -61,14 +74,21 @@ pub struct Store {
 impl Store {
     /// Initialize forkchoice store from an anchor state and anchor block.
     pub fn get_forkchoice_store(
-        anchor_block: SignedBlockWithAttestation,
+        #[cfg(feature = "devnet3")] anchor_block: SignedBlockWithAttestation,
+        #[cfg(feature = "devnet4")] anchor_block: SignedBlock,
         anchor_state: LeanState,
         db: LeanDB,
         time: Option<u64>,
         validator_id: Option<u64>,
     ) -> anyhow::Result<Store> {
+        #[cfg(feature = "devnet3")]
         ensure!(
             anchor_block.message.block.state_root == anchor_state.tree_hash_root(),
+            "Anchor block state root must match anchor state hash"
+        );
+        #[cfg(feature = "devnet4")]
+        ensure!(
+            anchor_block.message.state_root == anchor_state.tree_hash_root(),
             "Anchor block state root must match anchor state hash"
         );
 
@@ -79,8 +99,10 @@ impl Store {
             }
             header.tree_hash_root()
         };
-
+        #[cfg(feature = "devnet3")]
         let anchor_slot = anchor_block.message.block.slot;
+        #[cfg(feature = "devnet4")]
+        let anchor_slot = anchor_block.message.slot;
 
         let justified_checkpoint = Checkpoint {
             root: anchor_root,
@@ -152,12 +174,19 @@ impl Store {
                 .get_oldest_root()?
                 .ok_or(anyhow!("No blocks found to calculate fork choice"))?;
         }
-
+        #[cfg(feature = "devnet3")]
         let start_slot = block_provider
             .get(root)?
             .ok_or(anyhow!("Failed to get block for root {root:?}"))?
             .message
             .block
+            .slot;
+
+        #[cfg(feature = "devnet4")]
+        let start_slot = block_provider
+            .get(root)?
+            .ok_or(anyhow!("Failed to get block for root {root:?}"))?
+            .message
             .slot;
         // For each block, count the number of votes for that block. A vote
         // for any descendant of a block also counts as a vote for that block
@@ -168,7 +197,10 @@ impl Store {
             let mut current_root = attestation.message.head.root;
 
             while let Some(block) = block_provider.get(current_root)? {
+                #[cfg(feature = "devnet3")]
                 let block = block.message.block;
+                #[cfg(feature = "devnet4")]
+                let block = block.message;
 
                 if block.slot <= start_slot {
                     break;
@@ -193,11 +225,20 @@ impl Store {
                 .iter()
                 .map(|child_hash| {
                     let vote_weight = *weights.get(child_hash).unwrap_or(&0);
+                    #[cfg(feature = "devnet3")]
                     let slot = block_provider
                         .get(*child_hash)
                         .ok()
                         .flatten()
                         .map(|block| block.message.block.slot)
+                        .unwrap_or(0);
+
+                    #[cfg(feature = "devnet4")]
+                    let slot = block_provider
+                        .get(*child_hash)
+                        .ok()
+                        .flatten()
+                        .map(|block| block.message.slot)
                         .unwrap_or(0);
                     (*child_hash, slot, (vote_weight, *child_hash))
                 })
@@ -440,6 +481,7 @@ impl Store {
         let mut target_block_root = head_provider.get()?;
 
         for _ in 0..JUSTIFICATION_LOOKBACK_SLOTS {
+            #[cfg(feature = "devnet3")]
             if block_provider
                 .get(target_block_root)?
                 .ok_or(anyhow!("Block not found for target block root"))?
@@ -462,9 +504,30 @@ impl Store {
             } else {
                 break;
             }
+            #[cfg(feature = "devnet4")]
+            if block_provider
+                .get(target_block_root)?
+                .ok_or(anyhow!("Block not found for target block root"))?
+                .message
+                .slot
+                > block_provider
+                    .get(safe_target_provider.get()?)?
+                    .ok_or(anyhow!("Block not found for safe target"))?
+                    .message
+                    .slot
+            {
+                target_block_root = block_provider
+                    .get(target_block_root)?
+                    .ok_or(anyhow!("Block not found for target block root"))?
+                    .message
+                    .parent_root;
+            } else {
+                break;
+            }
         }
 
         let latest_finalized_slot = latest_finalized_provider.get()?.slot;
+        #[cfg(feature = "devnet3")]
         while !is_justifiable_after(
             block_provider
                 .get(target_block_root)?
@@ -481,6 +544,21 @@ impl Store {
                 .block
                 .parent_root;
         }
+        #[cfg(feature = "devnet4")]
+        while !is_justifiable_after(
+            block_provider
+                .get(target_block_root)?
+                .ok_or(anyhow!("Block not found for target block root"))?
+                .message
+                .slot,
+            latest_finalized_slot,
+        )? {
+            target_block_root = block_provider
+                .get(target_block_root)?
+                .ok_or(anyhow!("Block not found for target block root"))?
+                .message
+                .parent_root;
+        }
 
         let target_block = block_provider
             .get(target_block_root)?
@@ -488,7 +566,10 @@ impl Store {
 
         Ok(Checkpoint {
             root: target_block_root,
+            #[cfg(feature = "devnet3")]
             slot: target_block.message.block.slot,
+            #[cfg(feature = "devnet4")]
+            slot: target_block.message.slot,
         })
     }
 
@@ -901,11 +982,13 @@ impl Store {
 
     pub async fn on_block(
         &mut self,
-        signed_block_with_attestation: &SignedBlockWithAttestation,
+        #[cfg(feature = "devnet3")] signed_block_with_attestation: &SignedBlockWithAttestation,
+        #[cfg(feature = "devnet4")] signed_block: &SignedBlock,
         verify_signatures: bool,
     ) -> anyhow::Result<()> {
         let block_processing_timer = start_timer(&FORK_CHOICE_BLOCK_PROCESSING_TIME, &[]);
 
+        #[cfg(feature = "devnet3")]
         let (
             state_provider,
             block_provider,
@@ -929,8 +1012,32 @@ impl Store {
             )
         };
 
+        #[cfg(feature = "devnet4")]
+        let (
+            state_provider,
+            block_provider,
+            latest_justified_provider,
+            latest_finalized_provider,
+            attestation_data_by_root_provider,
+            latest_known_aggregated_payloads_provider,
+        ) = {
+            let db = self.store.lock().await;
+            (
+                db.state_provider(),
+                db.block_provider(),
+                db.latest_justified_provider(),
+                db.latest_finalized_provider(),
+                db.attestation_data_by_root_provider(),
+                db.latest_known_aggregated_payloads_provider(),
+            )
+        };
+
+        #[cfg(feature = "devnet3")]
         let block = &signed_block_with_attestation.message.block;
+        #[cfg(feature = "devnet3")]
         let proposer_attestation = &signed_block_with_attestation.message.proposer_attestation;
+        #[cfg(feature = "devnet4")]
+        let block = &signed_block.message;
         let block_root = block.tree_hash_root();
 
         // If the block is already known, ignore it
@@ -943,8 +1050,11 @@ impl Store {
             .get(block.parent_root)?
             .ok_or(anyhow!("State not found for parent root"))?;
 
+        #[cfg(feature = "devnet3")]
         signed_block_with_attestation.verify_signatures(&parent_state, verify_signatures)?;
 
+        #[cfg(feature = "devnet4")]
+        signed_block.verify_signatures(&parent_state, verify_signatures)?;
         parent_state.state_transition(block, true)?;
 
         let latest_justified = if parent_state.latest_justified.slot
@@ -970,21 +1080,29 @@ impl Store {
         set_int_gauge_vec(&FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
         set_int_gauge_vec(&LATEST_JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
         set_int_gauge_vec(&LATEST_FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
-
+        #[cfg(feature = "devnet3")]
         block_provider.insert(block_root, signed_block_with_attestation.clone())?;
+        #[cfg(feature = "devnet4")]
+        block_provider.insert(block_root, signed_block.clone())?;
         state_provider.insert(block_root, parent_state)?;
         latest_justified_provider.insert(latest_justified)?;
         latest_finalized_provider.insert(latest_finalized)?;
         *self.network_state.finalized_checkpoint.write() = latest_finalized;
-
+        #[cfg(feature = "devnet3")]
         let aggregated_attestations = &signed_block_with_attestation
             .message
             .block
             .body
             .attestations;
+        #[cfg(feature = "devnet3")]
         let attestation_signatures = &signed_block_with_attestation
             .signature
             .attestation_signatures;
+
+        #[cfg(feature = "devnet4")]
+        let aggregated_attestations = &block.body.attestations;
+        #[cfg(feature = "devnet4")]
+        let attestation_signatures = &signed_block.signature.attestation_signatures;
 
         ensure!(
             aggregated_attestations.len() == attestation_signatures.len(),
@@ -1019,6 +1137,7 @@ impl Store {
         attestation_data_by_root_provider
             .insert(proposer_data_root, proposer_attestation.data.clone())?;
 
+        #[cfg(feature = "devnet3")]
         if let Ok(Some(current_id)) = validator_id_provider.get() {
             let proposer_subnet = compute_subnet_id(
                 proposer_attestation.validator_id,
@@ -1091,19 +1210,35 @@ impl Store {
         let head_block = block_provider
             .get(data.head.root)?
             .ok_or(anyhow!("Failed to get head block"))?;
-
+        #[cfg(feature = "devnet3")]
         ensure!(
             source_block.message.block.slot == data.source.slot,
             "Source checkpoint slot mismatch"
         );
-
+        #[cfg(feature = "devnet3")]
         ensure!(
             target_block.message.block.slot == data.target.slot,
             "Target checkpoint slot mismatch"
         );
-
+        #[cfg(feature = "devnet3")]
         ensure!(
             head_block.message.block.slot == data.head.slot,
+            "Head checkpoint slot mismatch"
+        );
+
+        #[cfg(feature = "devnet4")]
+        ensure!(
+            source_block.message.slot == data.source.slot,
+            "Source checkpoint slot mismatch"
+        );
+        #[cfg(feature = "devnet4")]
+        ensure!(
+            target_block.message.slot == data.target.slot,
+            "Target checkpoint slot mismatch"
+        );
+        #[cfg(feature = "devnet4")]
+        ensure!(
+            head_block.message.slot == data.head.slot,
             "Head checkpoint slot mismatch"
         );
 
@@ -1621,13 +1756,21 @@ impl Store {
 
         for attestation_data in attestations.values() {
             let mut current_root = attestation_data.head.root;
-
+            #[cfg(feature = "devnet3")]
             while let Some(block) = block_provider.get(current_root).ok().flatten() {
                 if block.message.block.slot <= start_slot {
                     break;
                 }
                 *weights.entry(current_root).or_insert(0) += 1;
                 current_root = block.message.block.parent_root;
+            }
+            #[cfg(feature = "devnet4")]
+            while let Some(block) = block_provider.get(current_root).ok().flatten() {
+                if block.message.slot <= start_slot {
+                    break;
+                }
+                *weights.entry(current_root).or_insert(0) += 1;
+                current_root = block.message.parent_root;
             }
         }
 
@@ -1728,11 +1871,18 @@ impl Store {
             slot,
             head: Checkpoint {
                 root: head_root,
+                #[cfg(feature = "devnet3")]
                 slot: block_provider
                     .get(head_root)?
                     .ok_or(anyhow!("Failed to get head block"))?
                     .message
                     .block
+                    .slot,
+                #[cfg(feature = "devnet4")]
+                slot: block_provider
+                    .get(head_root)?
+                    .ok_or(anyhow!("Failed to get head block"))?
+                    .message
                     .slot,
             },
             target: self.get_attestation_target().await?,
@@ -1810,6 +1960,7 @@ fn swap_test_attestation_committee_count(new_value: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "devnet3")]
     use std::{
         collections::{HashMap, HashSet},
         fs,
@@ -1817,9 +1968,16 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
         vec,
     };
+    #[cfg(feature = "devnet4")]
+    use std::{
+        collections::{HashMap, HashSet},
+        sync::OnceLock,
+        vec,
+    };
 
     use alloy_primitives::{B256, FixedBytes};
     use anyhow::ensure;
+    #[cfg(feature = "devnet3")]
     use ream_consensus_lean::{
         attestation::{
             AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
@@ -1833,12 +1991,26 @@ mod tests {
         slot::is_justifiable_after,
         validator::{Validator, is_proposer},
     };
+    #[cfg(feature = "devnet4")]
+    use ream_consensus_lean::{
+        attestation::{
+            AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
+            AttestationData, SignatureKey, SignedAggregatedAttestation, SignedAttestation,
+        },
+        block::{BlockSignatures, BlockWithSignatures, SignedBlock},
+        checkpoint::Checkpoint,
+        slot::is_justifiable_after,
+        validator::{Validator, is_proposer},
+    };
     use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
     use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
     use ream_post_quantum_crypto::{
         lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
         leansig::{private_key::PrivateKey, signature::Signature},
     };
+    #[cfg(feature = "devnet4")]
+    use ream_storage::tables::{field::REDBField, table::REDBTable};
+    #[cfg(feature = "devnet3")]
     use ream_storage::{
         db::{ReamDB, lean::LeanDB},
         tables::{field::REDBField, table::REDBTable},
@@ -1856,6 +2028,7 @@ mod tests {
         LOCK.get_or_init(|| AsyncMutex::new(()))
     }
 
+    #[cfg(feature = "devnet3")]
     pub fn db_setup() -> LeanDB {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1892,6 +2065,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "devnet3")]
     pub fn build_signed_block_with_attestation(
         attestation_data: AttestationData,
         block: Block,
@@ -1907,6 +2081,38 @@ mod tests {
             },
             signature: BlockSignatures {
                 attestation_signatures,
+                proposer_signature: Signature::blank(),
+            },
+        }
+    }
+
+    #[cfg(feature = "devnet3")]
+    fn build_signed_block(
+        block_with_signatures: BlockWithSignatures,
+        proposer_attestation: AttestationData,
+        proposer_index: u64,
+    ) -> SignedBlockWithAttestation {
+        SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block_with_signatures.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: proposer_index,
+                    data: proposer_attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block_with_signatures.signatures,
+                proposer_signature: Signature::blank(),
+            },
+        }
+    }
+
+    #[cfg(feature = "devnet4")]
+    fn build_signed_block(block_with_signatures: BlockWithSignatures) -> SignedBlock {
+        SignedBlock {
+            message: block_with_signatures.block,
+            signature: BlockSignatures {
+                attestation_signatures: block_with_signatures.signatures,
                 proposer_signature: Signature::blank(),
             },
         }
@@ -2032,37 +2238,21 @@ mod tests {
             .unwrap();
     }
 
-    fn build_signed_block(
-        block_with_signatures: BlockWithSignatures,
-        proposer_attestation: AttestationData,
-        proposer_index: u64,
-    ) -> SignedBlockWithAttestation {
-        SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block_with_signatures.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: proposer_index,
-                    data: proposer_attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block_with_signatures.signatures,
-                proposer_signature: Signature::blank(),
-            },
-        }
-    }
-
     async fn produce_and_import_block(
         store: &mut Store,
         slot: u64,
         proposer_index: u64,
     ) -> anyhow::Result<()> {
+        #[cfg(feature = "devnet3")]
         let proposer_attestation = store.produce_attestation_data(slot).await?;
         let block_with_signatures = store
             .produce_block_with_signatures(slot, proposer_index)
             .await?;
+        #[cfg(feature = "devnet3")]
         let signed_block =
             build_signed_block(block_with_signatures, proposer_attestation, proposer_index);
+        #[cfg(feature = "devnet4")]
+        let signed_block = build_signed_block(block_with_signatures);
         store.on_block(&signed_block, false).await?;
         Ok(())
     }
@@ -2646,6 +2836,7 @@ mod tests {
 
     /// Test block production includes available attestations
     /// This test generates real key pairs for validators to ensure signature aggregation works.
+    #[cfg(feature = "devnet3")]
     #[tokio::test]
     async fn test_produce_block_with_attestations() {
         let _test_guard = test_global_lock().lock().await;
@@ -2970,7 +3161,10 @@ mod tests {
         assert_eq!(attestation.data.head.root, head);
 
         let head_block = block_provider.get(head).unwrap().unwrap();
+        #[cfg(feature = "devnet3")]
         assert_eq!(attestation.data.head.slot, head_block.message.block.slot);
+        #[cfg(feature = "devnet4")]
+        assert_eq!(attestation.data.head.slot, head_block.message.slot);
     }
 
     /// Test that attestation calculates target correctly.
@@ -3137,12 +3331,15 @@ mod tests {
 
         let time = time_provider.get().unwrap();
         let genesis_hash = head_provider.get().unwrap();
+        #[cfg(feature = "devnet3")]
         let genesis_block = block_provider
             .get(genesis_hash)
             .unwrap()
             .unwrap()
             .message
             .block;
+        #[cfg(feature = "devnet4")]
+        let genesis_block = block_provider.get(genesis_hash).unwrap().unwrap().message;
 
         assert!(time == lean_network_spec().seconds_per_slot * genesis_block.slot);
     }
@@ -3586,7 +3783,10 @@ mod tests {
             .produce_block_with_signatures(attestation_slot, proposer_index)
             .await
             .unwrap();
+        #[cfg(feature = "devnet3")]
         let signed_block = build_signed_block(block_with_signatures, attestation_data.clone(), 1);
+        #[cfg(feature = "devnet4")]
+        let signed_block = build_signed_block(block_with_signatures);
 
         store.on_block(&signed_block, false).await.unwrap();
 
@@ -3611,6 +3811,7 @@ mod tests {
         assert_eq!(extracted.get(&participants[1]), Some(&attestation_data));
     }
 
+    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_on_block_preserves_immutability_of_aggregated_payloads() {
         let mut store: Store = sample_store_as_store(3).await;
@@ -4623,6 +4824,7 @@ mod tests {
     }
 
     /// Weights walk up from the attested head through all ancestors above finalized slot.
+    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_linear_chain_weight_accumulates_upward() {
         let store = sample_store_as_store(10).await;
@@ -4746,6 +4948,7 @@ mod tests {
     }
 
     /// Multiple validators attesting to the same head accumulate weight.
+    #[cfg(feature = "devnet3")]
     #[tokio::test]
     pub async fn test_multiple_attestations_accumulate() {
         let store = sample_store_as_store(10).await;
@@ -4858,7 +5061,10 @@ mod tests {
         let genesis_block = block_provider.get(genesis_root).unwrap().unwrap();
 
         assert_eq!(target.root, genesis_root);
+        #[cfg(feature = "devnet3")]
         assert_eq!(target.slot, genesis_block.message.block.slot);
+        #[cfg(feature = "devnet4")]
+        assert_eq!(target.slot, genesis_block.message.slot);
     }
 
     /// get_attestation_target should return a Checkpoint.
@@ -4870,7 +5076,10 @@ mod tests {
         let target_block = block_provider.get(target.root).unwrap();
 
         assert!(target_block.is_some());
+        #[cfg(feature = "devnet3")]
         assert_eq!(target.slot, target_block.unwrap().message.block.slot);
+        #[cfg(feature = "devnet4")]
+        assert_eq!(target.slot, target_block.unwrap().message.slot);
     }
 
     /// Target should walk back toward safe_target when head is ahead.
@@ -4892,6 +5101,7 @@ mod tests {
             )
         };
         let head_root = head_provider.get().unwrap();
+        #[cfg(feature = "devnet3")]
         let head_slot = block_provider
             .get(head_root)
             .unwrap()
@@ -4900,13 +5110,24 @@ mod tests {
             .block
             .slot;
 
+        #[cfg(feature = "devnet4")]
+        let head_slot = block_provider.get(head_root).unwrap().unwrap().message.slot;
+
         let safe_target_root = safe_target_provider.get().unwrap();
+        #[cfg(feature = "devnet3")]
         let safe_target_slot = block_provider
             .get(safe_target_root)
             .unwrap()
             .unwrap()
             .message
             .block
+            .slot;
+        #[cfg(feature = "devnet4")]
+        let safe_target_slot = block_provider
+            .get(safe_target_root)
+            .unwrap()
+            .unwrap()
+            .message
             .slot;
         let target = store.get_attestation_target().await.unwrap();
 
@@ -4959,6 +5180,7 @@ mod tests {
         let mut current_root = head_provider.get().unwrap();
         let mut found_target = false;
 
+        #[cfg(feature = "devnet3")]
         while current_root != B256::ZERO {
             if current_root == target.root {
                 found_target = true;
@@ -4967,6 +5189,16 @@ mod tests {
 
             let current_block = block_provider.get(current_root).unwrap().unwrap();
             current_root = current_block.message.block.parent_root;
+        }
+        #[cfg(feature = "devnet4")]
+        while current_root != B256::ZERO {
+            if current_root == target.root {
+                found_target = true;
+                break;
+            }
+
+            let current_block = block_provider.get(current_root).unwrap().unwrap();
+            current_root = current_block.message.parent_root;
         }
 
         assert!(found_target, "Target should be an ancestor of head");
@@ -5048,12 +5280,20 @@ mod tests {
             let db = store.store.lock().await;
             (db.safe_target_provider(), db.block_provider())
         };
+        #[cfg(feature = "devnet3")]
         let safe_target_slot = block_provider
             .get(safe_target_provider.get().unwrap())
             .unwrap()
             .unwrap()
             .message
             .block
+            .slot;
+        #[cfg(feature = "devnet4")]
+        let safe_target_slot = block_provider
+            .get(safe_target_provider.get().unwrap())
+            .unwrap()
+            .unwrap()
+            .message
             .slot;
 
         assert!(safe_target_slot <= 1);
@@ -5133,12 +5373,20 @@ mod tests {
             let db = store.store.lock().await;
             (db.safe_target_provider(), db.block_provider())
         };
+        #[cfg(feature = "devnet3")]
         let safe_target_slot = block_provider
             .get(safe_target_provider.get().unwrap())
             .unwrap()
             .unwrap()
             .message
             .block
+            .slot;
+        #[cfg(feature = "devnet4")]
+        let safe_target_slot = block_provider
+            .get(safe_target_provider.get().unwrap())
+            .unwrap()
+            .unwrap()
+            .message
             .slot;
 
         assert!(safe_target_slot <= slot);
@@ -5224,12 +5472,20 @@ mod tests {
             let db = store.store.lock().await;
             (db.safe_target_provider(), db.block_provider())
         };
+        #[cfg(feature = "devnet3")]
         let safe_target_slot = block_provider
             .get(safe_target_provider.get().unwrap())
             .unwrap()
             .unwrap()
             .message
             .block
+            .slot;
+        #[cfg(feature = "devnet4")]
+        let safe_target_slot = block_provider
+            .get(safe_target_provider.get().unwrap())
+            .unwrap()
+            .unwrap()
+            .message
             .slot;
 
         assert!(has_new_payloads);
@@ -5251,12 +5507,16 @@ mod tests {
             .produce_block_with_signatures(slot_1, proposer_index_1)
             .await
             .unwrap();
+        #[cfg(feature = "devnet3")]
         let proposer_attestation_1 = store.produce_attestation_data(slot_1).await.unwrap();
+        #[cfg(feature = "devnet3")]
         let signed_block_1 = build_signed_block(
             block_1_with_signatures,
             proposer_attestation_1,
             proposer_index_1,
         );
+        #[cfg(feature = "devnet4")]
+        let signed_block_1 = build_signed_block(block_1_with_signatures);
         store.on_block(&signed_block_1, false).await.unwrap();
         set_validator_id(&store, Some(0)).await;
 
@@ -5373,8 +5633,12 @@ mod tests {
             .produce_block_with_signatures(slot, proposer_index)
             .await
             .unwrap();
+        #[cfg(feature = "devnet3")]
         let proposer_attestation_1 = store.produce_attestation_data(slot).await.unwrap();
+        #[cfg(feature = "devnet3")]
         let signed_block_1 = build_signed_block(block_1_with_signatures, proposer_attestation_1, 1);
+        #[cfg(feature = "devnet4")]
+        let signed_block_1 = build_signed_block(block_1_with_signatures);
         store.on_block(&signed_block_1, false).await.unwrap();
 
         let (head_provider, block_provider) = {
@@ -5382,12 +5646,20 @@ mod tests {
             (db.head_provider(), db.block_provider())
         };
         let block_root = head_provider.get().unwrap();
+        #[cfg(feature = "devnet3")]
         let block_slot = block_provider
             .get(block_root)
             .unwrap()
             .unwrap()
             .message
             .block
+            .slot;
+        #[cfg(feature = "devnet4")]
+        let block_slot = block_provider
+            .get(block_root)
+            .unwrap()
+            .unwrap()
+            .message
             .slot;
 
         let attestation = SignedAttestation {
@@ -5432,9 +5704,13 @@ mod tests {
                 .produce_block_with_signatures(slot_num, slot_num)
                 .await
                 .unwrap();
+            #[cfg(feature = "devnet3")]
             let proposer_attestation = store.produce_attestation_data(slot_num).await.unwrap();
+            #[cfg(feature = "devnet3")]
             let signed_block =
                 build_signed_block(block_with_signatures, proposer_attestation, slot_num);
+            #[cfg(feature = "devnet4")]
+            let signed_block = build_signed_block(block_with_signatures);
             store.on_block(&signed_block, false).await.unwrap();
         }
         set_validator_id(&store, Some(0)).await;
@@ -5445,7 +5721,10 @@ mod tests {
         };
         let head_root = head_provider.get().unwrap();
         let head_block = block_provider.get(head_root).unwrap().unwrap();
+        #[cfg(feature = "devnet3")]
         let head_slot = head_block.message.block.slot;
+        #[cfg(feature = "devnet4")]
+        let head_slot = head_block.message.slot;
         let num_validators = state_provider
             .get(head_root)
             .unwrap()
@@ -5541,7 +5820,10 @@ mod tests {
                 };
                 let prev_head = head_provider.get().unwrap();
                 let prev_block = block_provider.get(prev_head).unwrap().unwrap();
+                #[cfg(feature = "devnet3")]
                 let prev_slot = prev_block.message.block.slot;
+                #[cfg(feature = "devnet4")]
+                let prev_slot = prev_block.message.slot;
 
                 let attestation_data = AttestationData {
                     slot: prev_slot,
@@ -5656,12 +5938,21 @@ mod tests {
             let db = store.store.lock().await;
             (db.head_provider(), db.block_provider())
         };
+        #[cfg(feature = "devnet3")]
         let head_slot = block_provider
             .get(head_provider.get().unwrap())
             .unwrap()
             .unwrap()
             .message
             .block
+            .slot;
+
+        #[cfg(feature = "devnet4")]
+        let head_slot = block_provider
+            .get(head_provider.get().unwrap())
+            .unwrap()
+            .unwrap()
+            .message
             .slot;
 
         assert!(target.slot >= head_slot - JUSTIFICATION_LOOKBACK_SLOTS);
@@ -5733,12 +6024,21 @@ mod tests {
             (db.safe_target_provider(), db.block_provider())
         };
 
+        #[cfg(feature = "devnet3")]
         let safe_target_slot = block_provider
             .get(safe_target_provider.get().unwrap())
             .unwrap()
             .unwrap()
             .message
             .block
+            .slot;
+
+        #[cfg(feature = "devnet4")]
+        let safe_target_slot = block_provider
+            .get(safe_target_provider.get().unwrap())
+            .unwrap()
+            .unwrap()
+            .message
             .slot;
 
         assert!(safe_target_slot <= 1);
@@ -5756,6 +6056,7 @@ mod tests {
             .produce_block_with_signatures(slot_1, proposer_1)
             .await
             .unwrap();
+        #[cfg(feature = "devnet3")]
         let proposer_source = store
             .store
             .lock()
@@ -5763,7 +6064,9 @@ mod tests {
             .latest_justified_provider()
             .get()
             .unwrap();
+        #[cfg(feature = "devnet3")]
         let block_root = block_with_signatures.block.tree_hash_root();
+        #[cfg(feature = "devnet3")]
         let signed_block = build_signed_block(
             block_with_signatures,
             AttestationData {
@@ -5780,6 +6083,9 @@ mod tests {
             },
             proposer_1,
         );
+
+        #[cfg(feature = "devnet4")]
+        let signed_block = build_signed_block(block_with_signatures);
 
         let target_time =
             lean_network_spec().genesis_time + slot_1 * lean_network_spec().seconds_per_slot;

@@ -3,6 +3,12 @@ use ream_chain_lean::{
     clock::{create_lean_clock_interval, get_initial_tick_count},
     messages::{LeanChainServiceMessage, ServiceResponse},
 };
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::{
+    attestation::SignedAttestation,
+    block::{BlockSignatures, BlockWithSignatures, SignedBlock},
+};
+#[cfg(feature = "devnet3")]
 use ream_consensus_lean::{
     attestation::{AggregatedAttestations, SignedAttestation},
     block::{
@@ -121,6 +127,7 @@ impl ValidatorService {
                                         return Err(anyhow!("Failed to receive attestation data from LeanChainService: {err:?}"));
                                     }
                                 };
+                                #[cfg(feature = "devnet3")]
                                 let message = AggregatedAttestations { validator_id: keystore.index, data: attestation_data.clone() };
 
                                 let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
@@ -128,7 +135,7 @@ impl ValidatorService {
                                 stop_timer(timer);
                                 inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
 
-
+                                #[cfg(feature = "devnet3")]
                                 let signed_block_with_attestation = SignedBlockWithAttestation {
                                     message: BlockWithAttestation {
                                         block: block.clone(),
@@ -139,10 +146,23 @@ impl ValidatorService {
                                         proposer_signature,
                                     },
                                 };
+                                #[cfg(feature = "devnet4")]
+                                let signed_block = SignedBlock {
+                                    message: block.clone(),
+                                    signature: BlockSignatures {
+                                        attestation_signatures: signatures,
+                                        proposer_signature,
+                                    },
+                                };
 
                                 // Send block to the LeanChainService.
+                                #[cfg(feature = "devnet3")]
                                 self.chain_sender
                                     .send(LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation: Box::new(signed_block_with_attestation), need_gossip: true })
+                                    .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
+                                #[cfg(feature = "devnet4")]
+                                self.chain_sender
+                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block: Box::new(signed_block), need_gossip: true })
                                     .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
                             } else {
 
