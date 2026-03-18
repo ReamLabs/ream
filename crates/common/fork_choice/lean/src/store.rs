@@ -1015,6 +1015,10 @@ impl Store {
 
         self.update_head().await?;
 
+        let proposer_data_root = proposer_attestation.data.tree_hash_root();
+        attestation_data_by_root_provider
+            .insert(proposer_data_root, proposer_attestation.data.clone())?;
+
         if let Ok(Some(current_id)) = validator_id_provider.get() {
             let proposer_subnet = compute_subnet_id(
                 proposer_attestation.validator_id,
