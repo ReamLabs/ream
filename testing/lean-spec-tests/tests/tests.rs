@@ -195,17 +195,9 @@ async fn test_all_fork_choice_fixtures() {
 
     info!("Found {} fork choice test fixtures", fixtures.len());
 
-    // Tests that require real XMSS signatures and the full proposer attestation
-    // aggregation pipeline. Skipped until the fork choice store is updated to
-    // match the new spec.
-    const SKIPPED_TESTS: &[&str] = &[
-        "test_reorg_on_newly_justified_slot",
-    ];
-
     let mut total_tests = 0;
     let mut passed = 0;
     let mut failed = 0;
-    let mut skipped = 0;
 
     for fixture_path in fixtures {
         debug!("\n=== Loading fixture: {:?} ===", fixture_path.file_name());
@@ -214,11 +206,6 @@ async fn test_all_fork_choice_fixtures() {
             Ok(fixture) => {
                 for (test_name, test) in fixture {
                     total_tests += 1;
-                    if SKIPPED_TESTS.iter().any(|s| test_name.contains(s)) {
-                        skipped += 1;
-                        warn!("SKIPPED: {test_name} (requires proposer attestation pipeline)");
-                        continue;
-                    }
                     info!("Starting test: {test_name}");
                     match run_fork_choice_test(&test_name, test).await {
                         Ok(_) => {
@@ -242,7 +229,6 @@ async fn test_all_fork_choice_fixtures() {
     info!("\n=== Fork Choice Test Summary ===");
     info!("Total tests: {total_tests}");
     info!("Passed: {passed}");
-    info!("Skipped: {skipped}");
     info!("Failed: {failed}");
 
     assert_eq!(failed, 0, "Some fork choice tests failed");
