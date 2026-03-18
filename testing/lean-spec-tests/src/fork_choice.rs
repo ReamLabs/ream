@@ -232,10 +232,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     let key = keys.get_mut(&proposer_index).ok_or_else(|| {
                         anyhow!("No signing key found for proposer validator {proposer_index}")
                     })?;
-                    while !key
-                        .get_prepared_interval()
-                        .contains(&ream_block.slot)
-                    {
+                    while !key.get_prepared_interval().contains(&ream_block.slot) {
                         key.prepare_signature();
                     }
                     key.sign(&data_root.0, ream_block.slot as u32)
