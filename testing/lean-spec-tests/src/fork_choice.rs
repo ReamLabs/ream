@@ -1,5 +1,7 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
@@ -227,10 +229,13 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 let proposer_index = ream_block.proposer_index;
                 let data_root = proposer_attestation_data.tree_hash_root();
                 let proposer_signature = {
-                    let key = keys.get_mut(&(proposer_index as u64)).ok_or_else(|| {
+                    let key = keys.get_mut(&proposer_index).ok_or_else(|| {
                         anyhow!("No signing key found for proposer validator {proposer_index}")
                     })?;
-                    while !key.get_prepared_interval().contains(&(ream_block.slot as u64)) {
+                    while !key
+                        .get_prepared_interval()
+                        .contains(&ream_block.slot)
+                    {
                         key.prepare_signature();
                     }
                     key.sign(&data_root.0, ream_block.slot as u32)
