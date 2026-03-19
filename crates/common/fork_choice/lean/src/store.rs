@@ -199,7 +199,7 @@ impl Store {
                         .flatten()
                         .map(|block| block.message.block.slot)
                         .unwrap_or(0);
-                    (*child_hash, slot, (vote_weight, slot, *child_hash))
+                    (*child_hash, slot, (vote_weight, *child_hash))
                 })
                 .max_by_key(|(_, _, key)| *key)
                 .map(|(hash, slot, _)| (hash, slot))
@@ -1014,6 +1014,10 @@ impl Store {
         }
 
         self.update_head().await?;
+
+        let proposer_data_root = proposer_attestation.data.tree_hash_root();
+        attestation_data_by_root_provider
+            .insert(proposer_data_root, proposer_attestation.data.clone())?;
 
         if let Ok(Some(current_id)) = validator_id_provider.get() {
             let proposer_subnet = compute_subnet_id(

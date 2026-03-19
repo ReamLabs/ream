@@ -1,5 +1,9 @@
-use std::path::Path;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
+use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
 use ream_consensus_lean::{
     attestation::{
@@ -11,7 +15,7 @@ use ream_consensus_lean::{
 };
 use ream_fork_choice_lean::store::Store;
 use ream_network_spec::networks::LeanNetworkSpec;
-use ream_post_quantum_crypto::leansig::signature::Signature;
+use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, signature::Signature};
 use ream_storage::{
     db::ReamDB,
     dir::setup_data_dir,
@@ -50,9 +54,38 @@ pub fn load_fork_choice_test(
     Ok(fixture)
 }
 
+/// Load test private keys from fixtures/keys/prod_scheme/{i}.json
+fn load_test_keys() -> anyhow::Result<HashMap<u64, PrivateKey>> {
+    let keys_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/keys/prod_scheme");
+    let mut keys = HashMap::new();
+
+    for i in 0..12u64 {
+        let key_path = keys_dir.join(format!("{i}.json"));
+        if !key_path.exists() {
+            continue;
+        }
+        let content = std::fs::read_to_string(&key_path)
+            .map_err(|err| anyhow!("Failed to read key file {i}.json: {err}"))?;
+        let key_json: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|err| anyhow!("Failed to parse key file {i}.json: {err}"))?;
+        let secret_hex = key_json["secret"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing secret field in key file {i}.json"))?;
+        let secret_bytes = hex::decode(secret_hex.trim_start_matches("0x"))
+            .map_err(|err| anyhow!("Failed to decode secret hex for validator {i}: {err}"))?;
+        let private_key = PrivateKey::from_bytes(&secret_bytes)
+            .map_err(|err| anyhow!("Failed to create private key for validator {i}: {err}"))?;
+        keys.insert(i, private_key);
+    }
+
+    Ok(keys)
+}
+
 /// Run a single fork choice test case
 pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyhow::Result<()> {
     info!("Running fork choice test: {test_name}");
+
+    let mut keys = load_test_keys()?;
 
     // Extract values needed before consuming anchor_state
     let anchor_state_slot = test.anchor_state.slot;
@@ -110,7 +143,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         state,
         db,
         None,
-        None,
+        Some(0),
     )?;
 
     info!("  Network: {}", test.network);
@@ -123,9 +156,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         match step {
             ForkChoiceStep::Tick { time, .. } => {
                 debug!("  Step {index}: Tick to time {time}");
-                // Update store time
-                let db = store.store.lock().await;
-                db.time_provider().insert(*time)?;
+                store.on_tick(*time, false, true).await?;
             }
 
             ForkChoiceStep::Block {
@@ -143,7 +174,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 // Advance time to the block's slot before processing
                 let time = ream_block.slot * network_spec.seconds_per_slot;
-                store.on_tick(time, true, false).await?;
+                store.on_tick(time, true, true).await?;
 
                 // Get the parent state and parent block to extract the correct checkpoints
                 let db = store.store.lock().await;
@@ -181,33 +212,49 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     .map_err(|err| anyhow!("Failed to create signatures VariableList: {err}"))?
                 };
 
+                // Build proposer attestation data and sign with real key
+                let proposer_attestation_data = AttestationData {
+                    slot: ream_block.slot,
+                    head: Checkpoint {
+                        root: ream_block.tree_hash_root(),
+                        slot: ream_block.slot,
+                    },
+                    target: Checkpoint {
+                        root: ream_block.parent_root,
+                        slot: parent_slot,
+                    },
+                    source: source_checkpoint,
+                };
+
+                let proposer_index = ream_block.proposer_index;
+                let data_root = proposer_attestation_data.tree_hash_root();
+                let proposer_signature = {
+                    let key = keys.get_mut(&proposer_index).ok_or_else(|| {
+                        anyhow!("No signing key found for proposer validator {proposer_index}")
+                    })?;
+                    while !key.get_prepared_interval().contains(&ream_block.slot) {
+                        key.prepare_signature();
+                    }
+                    key.sign(&data_root.0, ream_block.slot as u32)
+                        .map_err(|err| anyhow!("Failed to sign proposer attestation: {err}"))?
+                };
+
                 let result = store
                     .on_block(
                         &SignedBlockWithAttestation {
                             message: BlockWithAttestation {
                                 proposer_attestation: AggregatedAttestations {
-                                    validator_id: ream_block.proposer_index,
-                                    data: AttestationData {
-                                        slot: ream_block.slot,
-                                        head: Checkpoint {
-                                            root: ream_block.tree_hash_root(),
-                                            slot: ream_block.slot,
-                                        },
-                                        target: Checkpoint {
-                                            root: ream_block.parent_root,
-                                            slot: parent_slot,
-                                        },
-                                        source: source_checkpoint,
-                                    },
+                                    validator_id: proposer_index,
+                                    data: proposer_attestation_data,
                                 },
                                 block: ream_block,
                             },
                             signature: BlockSignatures {
                                 attestation_signatures: signatures,
-                                proposer_signature: Signature::blank(),
+                                proposer_signature,
                             },
                         },
-                        false, // Don't verify signatures in spec tests (we use blank signatures)
+                        false,
                     )
                     .await;
 
