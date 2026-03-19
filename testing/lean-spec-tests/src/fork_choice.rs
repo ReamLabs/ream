@@ -34,7 +34,6 @@ use ssz_types::{
     typenum::{U4096, U1048576},
 };
 use tracing::{debug, info};
-#[cfg(feature = "devnet3")]
 use tree_hash::TreeHash;
 
 use crate::types::{
@@ -113,7 +112,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         .map_err(|err| anyhow!("Failed to convert anchor block: {err}"))?;
 
     // Create anchor checkpoint for use as source in attestations
-    #[cfg(feature = "devnet3")]
     let source_checkpoint = Checkpoint {
         root: block.tree_hash_root(),
         slot: block.slot,
@@ -214,8 +212,21 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                             ream_block.parent_root
                         )
                     })?;
+
+                #[cfg(feature = "devnet4")]
+                let parent_block = db
+                    .block_provider()
+                    .get(ream_block.parent_root)?
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Parent block not found for parent_root: {}",
+                            ream_block.parent_root
+                        )
+                    })?;
                 #[cfg(feature = "devnet3")]
                 let parent_slot = parent_block.message.block.slot;
+                #[cfg(feature = "devnet4")]
+                let parent_slot = parent_block.message.slot;
 
                 drop(db);
 
@@ -292,7 +303,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                             message: ream_block,
                             signature: BlockSignatures {
                                 attestation_signatures: signatures,
-                                proposer_signature: Signature::blank(),
+                                proposer_signature,
                             },
                         },
                         false, // Don't verify signatures in spec tests (we use blank signatures)

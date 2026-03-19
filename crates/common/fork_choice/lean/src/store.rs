@@ -1132,8 +1132,9 @@ impl Store {
         }
 
         self.update_head().await?;
-
+        #[cfg(feature = "devnet3")]
         let proposer_data_root = proposer_attestation.data.tree_hash_root();
+        #[cfg(feature = "devnet3")]
         attestation_data_by_root_provider
             .insert(proposer_data_root, proposer_attestation.data.clone())?;
 
