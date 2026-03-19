@@ -1,6 +1,15 @@
 use std::hash::Hash;
 
 use alloy_primitives::B256;
+#[cfg(feature = "devnet4")]
+use anyhow::{anyhow, ensure};
+#[cfg(feature = "devnet4")]
+use ream_post_quantum_crypto::{
+    lean_multisig::aggregate::{
+        aggregate_signatures, setup_prover, setup_verifier, verify_aggregate_signature,
+    },
+    leansig::public_key::PublicKey,
+};
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -106,6 +115,81 @@ impl AggregatedSignatureProof {
             .filter(|(_, bit)| *bit)
             .map(|(index, _)| index as u64)
             .collect()
+    }
+    
+    pub fn aggregate(
+        xmss_participants: Option<&BitList<U4096>>,
+        children: &[Self],
+        raw_xmss: &[(PublicKey, Signature)],
+        message: &[u8; 32],
+        slot: u32,
+    ) -> anyhow::Result<Self> {
+        if raw_xmss.is_empty() && children.is_empty() {
+            return Err(anyhow!(
+                "At least one raw signature or child proof is required"
+            ));
+        }
+
+        if !raw_xmss.is_empty() && xmss_participants.is_none() {
+            return Err(anyhow!(
+                "xmss_participants is required when raw_xmss is provided"
+            ));
+        }
+
+        if raw_xmss.is_empty() && children.len() < 2 {
+            return Err(anyhow!(
+                "At least two child proofs are required when no raw signatures are provided"
+            ));
+        }
+
+        let mut aggregated_validator_ids = std::collections::HashSet::<u64>::new();
+
+        if let Some(participants) = xmss_participants {
+            aggregated_validator_ids.extend(
+                participants
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, bit)| *bit)
+                    .map(|(index, _)| index as u64),
+            );
+        }
+
+        ensure!(
+            aggregated_validator_ids.len() == raw_xmss.len(),
+            "Raw signature count does not match XMSS participant count"
+        );
+
+        for child in children {
+            aggregated_validator_ids.extend(child.to_validator_indices());
+        }
+
+        let participants_capacity = aggregated_validator_ids
+            .iter()
+            .max()
+            .map_or(0, |&id| id as usize + 1);
+        let mut participants = BitList::<U4096>::with_capacity(participants_capacity)
+            .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+        for id in aggregated_validator_ids {
+            participants
+                .set(id as usize, true)
+                .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+        }
+
+        setup_prover();
+        let proof_bytes = aggregate_signatures(
+            &raw_xmss.iter().map(|(pk, _)| *pk).collect::<Vec<_>>(),
+            &raw_xmss.iter().map(|(_, sig)| sig.clone()).collect::<Vec<_>>(),
+            message,
+            slot,
+        )
+        .map_err(|err| anyhow!("Signature aggregation failed: {err}"))?;
+
+        Ok(Self {
+            participants,
+            proof_data: VariableList::new(proof_bytes)
+                .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+            bytecode_point: None,
+        })
     }
 }
 
