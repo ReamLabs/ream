@@ -10,6 +10,13 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use libp2p_identity::PeerId;
 use libp2p_swarm::ConnectionId;
 use rand::seq::IndexedRandom;
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::{
+    attestation::{AttestationData, SignedAttestation},
+    block::{BlockWithSignatures, SignedBlock},
+    checkpoint::Checkpoint,
+};
+#[cfg(feature = "devnet3")]
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{BlockWithSignatures, SignedBlockWithAttestation},
@@ -355,6 +362,7 @@ impl LeanChainService {
                                 error!("Failed to handle build attestation data message: {err:?}");
                             }
                         }
+                        #[cfg(feature = "devnet3")]
                         LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation, need_gossip } => {
                             if self.sync_status != SyncStatus::Synced {
                                 if let Err(err) = self
@@ -392,6 +400,47 @@ impl LeanChainService {
                             }
 
                             if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipBlock(signed_block_with_attestation)) {
+                                warn!("Failed to send item to outbound gossip channel: {err:?}");
+                            }
+                        }
+                        #[cfg(feature = "devnet4")]
+                        LeanChainServiceMessage::ProcessBlock { signed_block, need_gossip } => {
+                            if self.sync_status != SyncStatus::Synced {
+                                if let Err(err) = self
+                                    .handle_syncing_process_block(&signed_block)
+                                    .await
+                                {
+                                    warn!(
+                                        "Failed to handle ProcessBlock while backfill syncing: {err:?}"
+                                    );
+                                }
+                                continue;
+                            }
+
+                            if enabled!(Level::DEBUG) {
+                                debug!(
+                                    slot = signed_block.message.slot,
+                                    block_root = ?signed_block.message.tree_hash_root(),
+                                    parent_root = ?signed_block.message.parent_root,
+                                    state_root = ?signed_block.message.state_root,
+                                    attestations_length = signed_block.message.body.attestations.len(),
+                                    "Processing block built by Validator {}",
+                                    signed_block.message.proposer_index,
+                                );
+                            } else {
+                                info!(
+                                    slot = signed_block.message.slot,
+                                    block_root = ?signed_block.message.tree_hash_root(),
+                                    "Processing block built by Validator {}",
+                                    signed_block.message.proposer_index,
+                                );
+                            }
+
+                            if let Err(err) = self.handle_process_block(&signed_block).await {
+                                warn!("Failed to handle process block message: {err:?}");
+                            }
+
+                            if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipBlock(signed_block)) {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
@@ -882,8 +931,14 @@ impl LeanChainService {
                 Ok(head) => head,
                 Err(_) => return 0,
             };
+            #[cfg(feature = "devnet3")]
             match store.block_provider().get(head) {
                 Ok(Some(block)) => block.message.block.slot,
+                _ => return 0,
+            }
+            #[cfg(feature = "devnet4")]
+            match store.block_provider().get(head) {
+                Ok(Some(block)) => block.message.slot,
                 _ => return 0,
             }
         };
@@ -905,11 +960,18 @@ impl LeanChainService {
             let store = fork_choice.store.lock().await;
             (store.head_provider().get()?, store.block_provider())
         };
+        #[cfg(feature = "devnet3")]
         let current_head_slot = block_provider
             .get(head)?
             .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
             .message
             .block
+            .slot;
+        #[cfg(feature = "devnet4")]
+        let current_head_slot = block_provider
+            .get(head)?
+            .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
+            .message
             .slot;
 
         let tolerance = std::cmp::max(8, (lean_network_spec().num_validators * 2) / 3);
@@ -1222,6 +1284,7 @@ impl LeanChainService {
         message: Arc<LeanResponseMessage>,
     ) -> anyhow::Result<()> {
         match &*message {
+            #[cfg(feature = "devnet3")]
             LeanResponseMessage::BlocksByRoot(signed_block_with_attestation) => {
                 let block_root = signed_block_with_attestation.message.block.tree_hash_root();
                 if !self.telemetry.inflight_roots.contains_key(&block_root)
@@ -1251,6 +1314,36 @@ impl LeanChainService {
                 )
                 .await?;
             }
+            #[cfg(feature = "devnet4")]
+            LeanResponseMessage::BlocksByRoot(signed_block) => {
+                let block_root = signed_block.message.tree_hash_root();
+                if !self.telemetry.inflight_roots.contains_key(&block_root)
+                    && !self.sync_status.contains_job_root(block_root)
+                {
+                    trace!(
+                        peer_id = ?peer_id,
+                        block_root = ?block_root,
+                        "Ignoring stale backfill callback for completed root"
+                    );
+                    return Ok(());
+                }
+                if self.should_drop_callback_response(block_root) {
+                    self.telemetry.backfill_telemetry.callbacks_dropped += 1;
+                    warn!(
+                        peer_id = ?peer_id,
+                        block_root = ?block_root,
+                        callback_loss_mode = ?self.telemetry.callback_loss_mode,
+                        "Dropping req/resp block callback to simulate packet loss"
+                    );
+                    return Ok(());
+                }
+                self.handle_backfill_block(
+                    Some(peer_id),
+                    signed_block.as_ref().clone(),
+                    SyncBlockSource::ReqResp,
+                )
+                .await?;
+            }
             _ => warn!(
                 "We handle these messages elsewhere, received unexpected LeanRequestMessage: {:?}",
                 message
@@ -1267,7 +1360,7 @@ impl LeanChainService {
             }
         }
     }
-
+    #[cfg(feature = "devnet3")]
     async fn handle_syncing_process_block(
         &mut self,
         signed_block_with_attestation: &SignedBlockWithAttestation,
@@ -1284,6 +1377,20 @@ impl LeanChainService {
             SyncBlockSource::Gossip,
         )
         .await
+    }
+    #[cfg(feature = "devnet4")]
+    async fn handle_syncing_process_block(
+        &mut self,
+        signed_block: &SignedBlock,
+    ) -> anyhow::Result<()> {
+        let root = signed_block.message.tree_hash_root();
+        trace!(
+            root = ?root,
+            slot = signed_block.message.slot,
+            "Received gossiped block while backfill syncing"
+        );
+        self.handle_backfill_block(None, signed_block.clone(), SyncBlockSource::Gossip)
+            .await
     }
 
     async fn try_advance_job_with_cached_block(
@@ -1309,6 +1416,7 @@ impl LeanChainService {
         Ok(false)
     }
 
+    #[cfg(feature = "devnet3")]
     async fn handle_backfill_block(
         &mut self,
         source_peer_id: Option<PeerId>,
@@ -1339,6 +1447,86 @@ impl LeanChainService {
             )
         };
         pending_blocks_provider.insert(last_root, signed_block_with_attestation)?;
+        self.record_recent_sync_block(parent_root, slot, source);
+
+        if let Some(job_peer_id) = job_peer_id {
+            self.peers_in_use.remove(&job_peer_id);
+        }
+
+        if let Some(peer_id) = source_peer_id {
+            self.network_state.successful_response_from_peer(peer_id);
+            if let Some(latency_ms) = request_latency_ms {
+                self.telemetry
+                    .peer_avg_latency_ms
+                    .entry(peer_id)
+                    .and_modify(|avg_ms| *avg_ms = (*avg_ms * 0.8) + (latency_ms * 0.2))
+                    .or_insert(latency_ms);
+            }
+            self.peers_in_use.remove(&peer_id);
+        }
+
+        let parent_root_is_local_head = parent_root == head;
+        let parent_root_in_pending_blocks = pending_blocks_provider.get(parent_root)?.is_some();
+        let parent_root_in_block_store = block_provider.get(parent_root)?.is_some();
+        let parent_root_is_start_of_any_queue =
+            self.sync_status.is_root_start_of_any_queue(&parent_root);
+
+        let parent_root_is_genesis = parent_root == alloy_primitives::B256::ZERO;
+
+        if parent_root_is_local_head
+            || parent_root_in_pending_blocks
+            || parent_root_in_block_store
+            || parent_root_is_start_of_any_queue
+            || parent_root_is_genesis
+        {
+            trace!(
+                root = ?last_root,
+                parent_root = ?parent_root,
+                "Marking backfill queue as complete"
+            );
+            self.sync_status.mark_job_queue_as_complete(last_root);
+            return Ok(());
+        }
+
+        if self.sync_status.contains_job_root(last_root) {
+            self.queue_pending_initial(last_root, slot, parent_root);
+            self.queue_pending_job_requests().await?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet4")]
+    async fn handle_backfill_block(
+        &mut self,
+        source_peer_id: Option<PeerId>,
+        signed_block: SignedBlock,
+        source: SyncBlockSource,
+    ) -> anyhow::Result<()> {
+        let last_root = signed_block.message.tree_hash_root();
+        let parent_root = signed_block.message.parent_root;
+        let slot = signed_block.message.slot;
+        self.telemetry.inflight_roots.remove(&last_root);
+        let mut request_latency_ms: Option<f64> = None;
+        if source == SyncBlockSource::ReqResp {
+            self.telemetry.backfill_telemetry.callbacks_processed += 1;
+            if let Some(latency) = self.sync_status.request_latency_for_root(last_root) {
+                self.telemetry.backfill_telemetry.callback_latency_ms_total += latency.as_millis();
+                self.telemetry.backfill_telemetry.callback_latency_samples += 1;
+                request_latency_ms = Some(latency.as_secs_f64() * 1_000.0);
+            }
+        }
+        let job_peer_id = self.sync_status.peer_for_job_root(last_root);
+        let (head, pending_blocks_provider, block_provider) = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            (
+                store.head_provider().get()?,
+                store.pending_blocks_provider(),
+                store.block_provider(),
+            )
+        };
+        pending_blocks_provider.insert(last_root, signed_block)?;
         self.record_recent_sync_block(parent_root, slot, source);
 
         if let Some(job_peer_id) = job_peer_id {
@@ -1458,11 +1646,19 @@ impl LeanChainService {
             )
         };
 
+        #[cfg(feature = "devnet3")]
         let head_slot = block_provider
             .get(head)?
             .ok_or_else(|| anyhow!("State not found for head: {head}"))?
             .message
             .block
+            .slot;
+
+        #[cfg(feature = "devnet4")]
+        let head_slot = block_provider
+            .get(head)?
+            .ok_or_else(|| anyhow!("State not found for head: {head}"))?
+            .message
             .slot;
 
         if head_slot > STATE_RETENTION_SLOTS {
@@ -1542,7 +1738,7 @@ impl LeanChainService {
 
         Ok(())
     }
-
+    #[cfg(feature = "devnet3")]
     async fn handle_process_block(
         &mut self,
         signed_block_with_attestation: &SignedBlockWithAttestation,
@@ -1551,6 +1747,16 @@ impl LeanChainService {
             .write()
             .await
             .on_block(signed_block_with_attestation, true)
+            .await?;
+
+        Ok(())
+    }
+    #[cfg(feature = "devnet4")]
+    async fn handle_process_block(&mut self, signed_block: &SignedBlock) -> anyhow::Result<()> {
+        self.store
+            .write()
+            .await
+            .on_block(signed_block, true)
             .await?;
 
         Ok(())
@@ -1582,6 +1788,9 @@ impl LeanChainService {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "devnet4")]
+    use ream_consensus_lean::block::{BlockSignatures, BlockWithSignatures, SignedBlock};
+    #[cfg(feature = "devnet3")]
     use ream_consensus_lean::{
         attestation::AggregatedAttestations,
         block::{
@@ -1603,11 +1812,13 @@ mod tests {
         // Advance the store to slot 3
         for slot in 1..=3 {
             let proposer_index = slot % 10;
+            #[cfg(feature = "devnet3")]
             let attestation = store.produce_attestation_data(slot).await.unwrap();
             let block = store
                 .produce_block_with_signatures(slot, proposer_index)
                 .await
                 .unwrap();
+            #[cfg(feature = "devnet3")]
             let signed_block = SignedBlockWithAttestation {
                 message: BlockWithAttestation {
                     block: block.block,
@@ -1616,6 +1827,14 @@ mod tests {
                         data: attestation,
                     },
                 },
+                signature: BlockSignatures {
+                    attestation_signatures: block.signatures,
+                    proposer_signature: Signature::blank(),
+                },
+            };
+            #[cfg(feature = "devnet4")]
+            let signed_block = SignedBlock {
+                message: block.block,
                 signature: BlockSignatures {
                     attestation_signatures: block.signatures,
                     proposer_signature: Signature::blank(),

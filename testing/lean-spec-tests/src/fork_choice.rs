@@ -5,11 +5,19 @@ use std::{
 
 use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
+#[cfg(feature = "devnet3")]
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestations, AggregatedSignatureProof, AttestationData, SignedAttestation,
     },
     block::{Block, BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
+    checkpoint::Checkpoint,
+    state::LeanState,
+};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::{
+    attestation::{AggregatedSignatureProof, AttestationData, SignedAttestation},
+    block::{Block, BlockSignatures, SignedBlock},
     checkpoint::Checkpoint,
     state::LeanState,
 };
@@ -118,6 +126,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         .map_err(|err| anyhow!("Failed to initialize LeanDB: {err}"))?;
 
     // Initialize store with anchor state and block
+    #[cfg(feature = "devnet3")]
     let mut store = Store::get_forkchoice_store(
         SignedBlockWithAttestation {
             message: BlockWithAttestation {
@@ -144,6 +153,21 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         db,
         None,
         Some(0),
+    )?;
+
+    #[cfg(feature = "devnet4")]
+    let mut store = Store::get_forkchoice_store(
+        SignedBlock {
+            message: block,
+            signature: BlockSignatures {
+                attestation_signatures: VariableList::empty(),
+                proposer_signature: Signature::blank(),
+            },
+        },
+        state,
+        db,
+        None,
+        None,
     )?;
 
     info!("  Network: {}", test.network);
@@ -178,7 +202,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 // Get the parent state and parent block to extract the correct checkpoints
                 let db = store.store.lock().await;
-
+                #[cfg(feature = "devnet3")]
                 let parent_block = db
                     .block_provider()
                     .get(ream_block.parent_root)?
@@ -189,7 +213,20 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                         )
                     })?;
 
+                #[cfg(feature = "devnet4")]
+                let parent_block = db
+                    .block_provider()
+                    .get(ream_block.parent_root)?
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Parent block not found for parent_root: {}",
+                            ream_block.parent_root
+                        )
+                    })?;
+                #[cfg(feature = "devnet3")]
                 let parent_slot = parent_block.message.block.slot;
+                #[cfg(feature = "devnet4")]
+                let parent_slot = parent_block.message.slot;
 
                 drop(db);
 
@@ -239,6 +276,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                         .map_err(|err| anyhow!("Failed to sign proposer attestation: {err}"))?
                 };
 
+                #[cfg(feature = "devnet3")]
                 let result = store
                     .on_block(
                         &SignedBlockWithAttestation {
@@ -255,6 +293,20 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                             },
                         },
                         false,
+                    )
+                    .await;
+
+                #[cfg(feature = "devnet4")]
+                let result = store
+                    .on_block(
+                        &SignedBlock {
+                            message: ream_block,
+                            signature: BlockSignatures {
+                                attestation_signatures: signatures,
+                                proposer_signature,
+                            },
+                        },
+                        false, // Don't verify signatures in spec tests (we use blank signatures)
                     )
                     .await;
 
@@ -341,7 +393,10 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
             .block_provider()
             .get(head_root)?
             .ok_or_else(|| anyhow!("Head block not found"))?;
+        #[cfg(feature = "devnet3")]
         let actual_slot = head_block.message.block.slot;
+        #[cfg(feature = "devnet4")]
+        let actual_slot = head_block.message.slot;
 
         ensure!(
             actual_slot == expected_head_slot,

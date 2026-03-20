@@ -42,14 +42,14 @@ impl SignatureKey {
     }
 }
 
-#[cfg(feature = "devnet3")]
+#[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct AggregatedSignatureProof {
     pub participants: BitList<U4096>,
     pub proof_data: VariableList<u8, U1048576>,
 }
 
-#[cfg(feature = "devnet3")]
+#[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
 impl AggregatedSignatureProof {
     pub fn new(participants: BitList<U4096>, proof_data: VariableList<u8, U1048576>) -> Self {
         Self {

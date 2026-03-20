@@ -9,6 +9,11 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+default = []
+devnet3 = ["ream-network-manager/devnet3", "ream-storage/devnet3", "ream-p2p/devnet3"]
+devnet4 = ["ream-network-manager/devnet4", "ream-storage/devnet4", "ream-p2p/devnet4"]
+
 [dependencies]
 actix-web.workspace = true
 actix-web-lab.workspace = true

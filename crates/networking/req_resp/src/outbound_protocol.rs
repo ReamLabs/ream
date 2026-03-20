@@ -17,7 +17,10 @@ use ream_consensus_beacon::{
     blob_sidecar::BlobSidecar, data_column_sidecar::DataColumnSidecar,
     electra::beacon_block::SignedBeaconBlock,
 };
-use ream_consensus_lean::block::SignedBlockWithAttestation;
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::block::SignedBlock as ActiveBlock;
+#[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
+use ream_consensus_lean::block::SignedBlockWithAttestation as ActiveBlock;
 use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
 use ream_network_spec::networks::beacon_network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};
@@ -268,7 +271,7 @@ impl Decoder for OutboundSSZSnappyCodec {
                                 ),
                                 LeanSupportedProtocol::BlocksByRootV1 => {
                                     LeanResponseMessage::BlocksByRoot(Arc::new(
-                                        SignedBlockWithAttestation::from_ssz_bytes(&buf)
+                                        ActiveBlock::from_ssz_bytes(&buf)
                                             .map_err(ReqRespError::from)?,
                                     ))
                                 }

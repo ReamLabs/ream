@@ -36,10 +36,16 @@ use ream_chain_lean::{
 };
 use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
 use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
+#[cfg(feature = "devnet3")]
 use ream_consensus_lean::{
     attestation::{AggregatedAttestations, AttestationData},
     block::{Block, BlockBody, BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
+    validator::Validator,
+};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::{
+    block::{Block, BlockBody, BlockSignatures, SignedBlock},
     validator::Validator,
 };
 use ream_consensus_misc::{
@@ -259,7 +265,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         setup_genesis(lean_network_spec().genesis_time, validators)
     };
-
+    #[cfg(feature = "devnet3")]
     let attestation_data = AttestationData {
         slot: anchor_state.slot,
         head: Checkpoint {
@@ -270,6 +276,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         source: anchor_state.latest_justified,
     };
 
+    #[cfg(feature = "devnet3")]
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
             SignedBlockWithAttestation {
@@ -280,6 +287,24 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                         data: attestation_data,
                     },
                 },
+                signature: BlockSignatures {
+                    attestation_signatures: VariableList::default(),
+                    proposer_signature: Signature::blank(),
+                },
+            },
+            anchor_state,
+            lean_db,
+            None,
+            keystores.first().map(|keystore| keystore.index),
+        )
+        .expect("Could not get forkchoice store"),
+    );
+
+    #[cfg(feature = "devnet4")]
+    let (lean_chain_writer, lean_chain_reader) = Writer::new(
+        Store::get_forkchoice_store(
+            SignedBlock {
+                message: anchor_block,
                 signature: BlockSignatures {
                     attestation_signatures: VariableList::default(),
                     proposer_signature: Signature::blank(),
