@@ -19,7 +19,7 @@ devnet3 = [
     "ream-storage/devnet3",
     "ream-test-utils/devnet3",
     "ream-req-resp/devnet3",
-    "ream-sync/devnet3",   
+    "ream-sync/devnet3",
 ]
 devnet4 = [
     "ream-consensus-lean/devnet4",
@@ -29,7 +29,7 @@ devnet4 = [
     "ream-storage/devnet4",
     "ream-test-utils/devnet4",
     "ream-req-resp/devnet4",
-    "ream-sync/devnet4",     
+    "ream-sync/devnet4",
 ]
 
 [dependencies]
@@ -58,6 +58,7 @@ ream-storage.workspace = true
 ream-sync.workspace = true
 
 [dev-dependencies]
+ream-peer.workspace = true
 ream-test-utils.workspace = true
 
 [lints]

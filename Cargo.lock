@@ -5891,6 +5891,7 @@ dependencies = [
  "ream-metrics",
  "ream-network-spec",
  "ream-network-state-lean",
+ "ream-peer",
  "ream-post-quantum-crypto",
  "ream-req-resp",
  "ream-storage",
