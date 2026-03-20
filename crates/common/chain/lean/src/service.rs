@@ -48,7 +48,7 @@ use crate::{
     p2p_request::{LeanP2PRequest, P2PCallbackRequest},
     slot::get_current_slot,
     sync::{
-        SyncStatus,
+        QueueRecovery, SyncStatus,
         forward_background_syncer::{ForwardBackgroundSyncer, ForwardSyncResults},
         job::{pending::PendingJobRequest, request::JobRequest},
         strategy::{
@@ -65,6 +65,8 @@ const NEAR_HEAD_FANOUT_MAX_GAP_SLOTS: u64 = 4;
 const RECENT_SYNC_BLOCK_RETENTION: Duration = Duration::from_secs(16);
 const BACKFILL_PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(2);
 const BACKFILL_HEDGE_DELAY: Duration = Duration::from_millis(250);
+const BACKFILL_QUEUE_STALL_TIMEOUT_FLOOR: Duration = Duration::from_secs(30);
+const BACKFILL_QUEUE_STALL_TIMEOUT_MULTIPLIER: f64 = 8.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SyncBlockSource {
@@ -645,6 +647,13 @@ impl LeanChainService {
             self.peers_in_use.remove(&timed_out_job.peer_id);
             self.queue_pending_reset(timed_out_job.peer_id);
         }
+        let stalled_queue_timeout = self.current_backfill_queue_stall_timeout(backfill_job_timeout);
+        for recovery in self
+            .sync_status
+            .recover_stalled_queues(stalled_queue_timeout)
+        {
+            self.recover_stalled_queue(recovery, stalled_queue_timeout);
+        }
 
         // If a queue has reached the stored head, execute that queue in a background thread,
         // blocking any other threads from processing until it returns. The thread can
@@ -786,7 +795,7 @@ impl LeanChainService {
             .push((common_highest_checkpoint, false));
 
         while let Some((checkpoint, bypass_slot_check)) = self.checkpoints_to_queue.pop() {
-            let non_queued_peer_id = match self.non_queued_peer_id().await {
+            let non_queued_peer_id = match self.assignable_peer_id(None).await {
                 Some(id) => id,
                 None => {
                     if self.network_state.connected_peer_count() == 0 {
@@ -812,23 +821,49 @@ impl LeanChainService {
         Ok(())
     }
 
-    async fn non_queued_peer_id(&self) -> Option<PeerId> {
-        let candidates: Vec<(PeerId, u8)> = self
-            .network_state
-            .connected_peer_ids_with_scores()
-            .into_iter()
-            .filter(|(peer_id, _)| !self.peers_in_use.contains(peer_id))
-            .collect();
-
+    fn choose_weighted_peer(&self, candidates: &[(PeerId, u8)]) -> Option<PeerId> {
         match candidates.choose_weighted(&mut rand::rng(), |(peer_id, score)| {
             self.peer_weight(*peer_id, *score)
         }) {
             Ok((peer_id, _)) => Some(*peer_id),
             Err(err) => {
-                warn!("Failed to choose weighted peer: {err}");
+                if !candidates.is_empty() {
+                    warn!("Failed to choose weighted peer: {err}");
+                }
                 None
             }
         }
+    }
+
+    async fn assignable_peer_id(&self, avoid_peer_id: Option<PeerId>) -> Option<PeerId> {
+        let connected_peers = self.network_state.connected_peer_ids_with_scores();
+        let preferred_candidates: Vec<(PeerId, u8)> = connected_peers
+            .iter()
+            .copied()
+            .filter(|(peer_id, _)| {
+                !self.peers_in_use.contains(peer_id) && Some(*peer_id) != avoid_peer_id
+            })
+            .collect();
+
+        if let Some(peer_id) = self.choose_weighted_peer(&preferred_candidates) {
+            return Some(peer_id);
+        }
+
+        let fallback_candidates: Vec<(PeerId, u8)> = connected_peers
+            .into_iter()
+            .filter(|(peer_id, _)| Some(*peer_id) != avoid_peer_id)
+            .collect();
+
+        if !fallback_candidates.is_empty() {
+            debug!(
+                peers_in_use = self.peers_in_use.len(),
+                fallback_candidates = fallback_candidates.len(),
+                avoid_peer_id = ?avoid_peer_id,
+                "Falling back to assigning work to a connected peer already marked in use"
+            );
+        }
+
+        self.choose_weighted_peer(&fallback_candidates)
     }
 
     fn alternate_peer_for_fanout(&self, primary_peer_id: PeerId) -> Option<PeerId> {
@@ -839,12 +874,7 @@ impl LeanChainService {
             .filter(|(peer_id, _)| *peer_id != primary_peer_id)
             .collect();
 
-        match candidates.choose_weighted(&mut rand::rng(), |(peer_id, score)| {
-            self.peer_weight(*peer_id, *score)
-        }) {
-            Ok((peer_id, _)) => Some(*peer_id),
-            Err(_) => None,
-        }
+        self.choose_weighted_peer(&candidates)
     }
 
     fn peer_weight(&self, peer_id: PeerId, score: u8) -> f64 {
@@ -1055,6 +1085,12 @@ impl LeanChainService {
             .timeout_for_peer_gap(peer_gap)
     }
 
+    fn current_backfill_queue_stall_timeout(&self, backfill_job_timeout: Duration) -> Duration {
+        backfill_job_timeout
+            .mul_f64(BACKFILL_QUEUE_STALL_TIMEOUT_MULTIPLIER)
+            .max(BACKFILL_QUEUE_STALL_TIMEOUT_FLOOR)
+    }
+
     fn has_pending_backfill_work(&self) -> bool {
         let has_queued_jobs =
             matches!(&self.sync_status, SyncStatus::Syncing { jobs } if !jobs.is_empty());
@@ -1148,6 +1184,34 @@ impl LeanChainService {
 
         self.pending_job_requests
             .push_back(PendingJobRequest::new_initial(root, slot, parent_root));
+    }
+
+    fn recover_stalled_queue(&mut self, recovery: QueueRecovery, stall_timeout: Duration) {
+        for root in &recovery.job_roots {
+            self.telemetry.inflight_roots.remove(root);
+        }
+        for peer_id in &recovery.peer_ids {
+            self.peers_in_use.remove(peer_id);
+        }
+
+        if let Some(checkpoint) = recovery.restart_checkpoint {
+            warn!(
+                starting_root = ?recovery.starting_root,
+                starting_slot = recovery.starting_slot,
+                restart_root = ?checkpoint.root,
+                restart_slot = checkpoint.slot,
+                stall_timeout_seconds = stall_timeout.as_secs_f64(),
+                "Backfill queue stalled; rebuilding queue from current missing root",
+            );
+            self.checkpoints_to_queue.push((checkpoint, true));
+        } else {
+            warn!(
+                starting_root = ?recovery.starting_root,
+                starting_slot = recovery.starting_slot,
+                stall_timeout_seconds = stall_timeout.as_secs_f64(),
+                "Backfill queue stalled but was superseded by a newer complete queue; dropping stalled queue",
+            );
+        }
     }
 
     fn has_recent_near_head_gossip_bridge(
@@ -1578,7 +1642,11 @@ impl LeanChainService {
 
     async fn queue_pending_job_requests(&mut self) -> anyhow::Result<()> {
         while let Some(pending_job_request) = self.pending_job_requests.pop_front() {
-            let non_queued_peer_id = match self.non_queued_peer_id().await {
+            let avoid_peer_id = match &pending_job_request {
+                PendingJobRequest::Reset { peer_id } => Some(*peer_id),
+                PendingJobRequest::Initial { .. } => None,
+            };
+            let non_queued_peer_id = match self.assignable_peer_id(avoid_peer_id).await {
                 Some(id) => id,
                 None => {
                     info!(
@@ -1617,9 +1685,28 @@ impl LeanChainService {
                         .is_none()
                     {
                         warn!(
-                            "Failed to add initial pending job request for root {root:?} - job may already exist.",
+                            root = ?root,
+                            parent_root = ?parent_root,
+                            slot,
+                            "Failed to attach initial pending job request to existing queue; rebuilding as fresh queue",
                         );
-                        continue;
+                        let new_queue_added = self.sync_status.add_new_job_queue(
+                            Checkpoint {
+                                root: parent_root,
+                                slot: slot.saturating_sub(1),
+                            },
+                            JobRequest::new(non_queued_peer_id, parent_root),
+                            true,
+                        );
+                        if !new_queue_added {
+                            warn!(
+                                root = ?root,
+                                parent_root = ?parent_root,
+                                slot,
+                                "Failed to rebuild initial pending job request as fresh queue",
+                            );
+                            continue;
+                        }
                     }
                 }
             }
@@ -1788,6 +1875,8 @@ impl LeanChainService {
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::B256;
+    use libp2p_identity::PeerId;
     #[cfg(feature = "devnet4")]
     use ream_consensus_lean::block::{BlockSignatures, BlockWithSignatures, SignedBlock};
     #[cfg(feature = "devnet3")]
@@ -1797,13 +1886,40 @@ mod tests {
             BlockSignatures, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation,
         },
     };
+    use ream_peer::{ConnectionState, Direction};
     use ream_post_quantum_crypto::leansig::signature::Signature;
     use ream_sync::rwlock::Writer;
     use ream_test_utils::store::sample_store;
     use tokio::sync::{mpsc, oneshot};
 
     use super::LeanChainService;
-    use crate::{messages::ServiceResponse, p2p_request::LeanP2PRequest, sync::SyncStatus};
+    use crate::{
+        messages::ServiceResponse,
+        p2p_request::LeanP2PRequest,
+        sync::{SyncStatus, job::pending::PendingJobRequest},
+    };
+
+    #[tokio::test]
+    async fn test_assignable_peer_id_falls_back_to_connected_peer_when_all_are_in_use() {
+        let store = sample_store(10).await;
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.peers_in_use.insert(peer_id);
+
+        assert_eq!(service.assignable_peer_id(None).await, Some(peer_id));
+        assert_eq!(service.assignable_peer_id(Some(peer_id)).await, None);
+    }
 
     #[tokio::test]
     async fn test_handle_produce_block_stale_slot_responds_with_err() {
@@ -1858,5 +1974,42 @@ mod tests {
             rx.await.is_ok(),
             "Channel was dropped instead of sending a response"
         );
+    }
+
+    #[tokio::test]
+    async fn test_queue_pending_initial_rebuilds_fresh_queue_when_replace_fails() {
+        let store = sample_store(10).await;
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+
+        let root = B256::repeat_byte(1);
+        let parent_root = B256::repeat_byte(2);
+        service
+            .pending_job_requests
+            .push_back(PendingJobRequest::new_initial(root, 99, parent_root));
+
+        service.queue_pending_job_requests().await.unwrap();
+
+        assert!(service.peers_in_use.contains(&peer_id));
+        assert!(matches!(
+            &service.sync_status,
+            SyncStatus::Syncing { jobs }
+                if jobs.iter().any(|queue|
+                    queue.starting_root == parent_root
+                        && queue.starting_slot == 98
+                        && queue.jobs.contains_key(&parent_root)
+                )
+        ));
     }
 }

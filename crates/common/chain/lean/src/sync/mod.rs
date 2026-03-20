@@ -16,6 +16,15 @@ pub enum SyncStatus {
     Syncing { jobs: Vec<JobQueue> },
 }
 
+#[derive(Debug, Clone)]
+pub struct QueueRecovery {
+    pub starting_root: B256,
+    pub starting_slot: u64,
+    pub job_roots: Vec<B256>,
+    pub peer_ids: Vec<PeerId>,
+    pub restart_checkpoint: Option<Checkpoint>,
+}
+
 impl SyncStatus {
     pub fn remove_processed_queue(&mut self, starting_root: B256) {
         if let SyncStatus::Syncing { jobs } = self {
@@ -28,8 +37,8 @@ impl SyncStatus {
             && let Some((index, _)) = jobs
                 .iter()
                 .enumerate()
+                .filter(|(_, queue)| queue.is_complete)
                 .min_by_key(|(_, queue)| queue.starting_slot)
-            && jobs[index].is_complete
         {
             return jobs.get(index).cloned();
         }
@@ -57,6 +66,7 @@ impl SyncStatus {
             for queue in jobs.iter_mut() {
                 if queue.jobs.contains_key(&last_root) {
                     queue.is_complete = true;
+                    queue.touch_progress();
                     queue.jobs.clear();
                     return;
                 }
@@ -119,6 +129,7 @@ impl SyncStatus {
                 for queue in jobs.iter_mut() {
                     if let Some(old_job) = queue.jobs.remove(&last_root) {
                         queue.last_fetched_slot = last_slot;
+                        queue.touch_progress();
                         queue.jobs.insert(new_job.root, new_job);
 
                         return Some(old_job);
@@ -168,6 +179,7 @@ impl SyncStatus {
                     }
                     if let Some(old_job) = queue.jobs.remove(&last_root) {
                         queue.last_fetched_slot = last_slot;
+                        queue.touch_progress();
                         queue.jobs.insert(new_job.root, new_job);
 
                         return Some(old_job);
@@ -271,6 +283,54 @@ impl SyncStatus {
                 }
             }
         }
+    }
+
+    pub fn recover_stalled_queues(&mut self, timeout: Duration) -> Vec<QueueRecovery> {
+        let mut recoveries = Vec::new();
+
+        if let SyncStatus::Syncing { jobs } = self {
+            let now = Instant::now();
+            let complete_slots: Vec<u64> = jobs
+                .iter()
+                .filter(|queue| queue.is_complete)
+                .map(|queue| queue.starting_slot)
+                .collect();
+            let mut stalled_roots = Vec::new();
+
+            for queue in jobs.iter() {
+                if queue.is_complete
+                    || queue.jobs.is_empty()
+                    || now.saturating_duration_since(queue.last_progress_at) < timeout
+                {
+                    continue;
+                }
+
+                let superseded_by_complete_queue = complete_slots
+                    .iter()
+                    .any(|slot| *slot >= queue.starting_slot);
+                let restart_checkpoint = if superseded_by_complete_queue {
+                    None
+                } else {
+                    queue.jobs.values().next().map(|job| Checkpoint {
+                        root: job.root,
+                        slot: queue.last_fetched_slot.saturating_sub(1),
+                    })
+                };
+
+                recoveries.push(QueueRecovery {
+                    starting_root: queue.starting_root,
+                    starting_slot: queue.starting_slot,
+                    job_roots: queue.jobs.keys().copied().collect(),
+                    peer_ids: queue.jobs.values().map(|job| job.peer_id).collect(),
+                    restart_checkpoint,
+                });
+                stalled_roots.push(queue.starting_root);
+            }
+
+            jobs.retain(|queue| !stalled_roots.contains(&queue.starting_root));
+        }
+
+        recoveries
     }
 }
 
@@ -417,6 +477,105 @@ mod tests {
         status.remove_processed_queue(root_200);
 
         assert!(status.get_ready_to_process_queue().is_none());
+    }
+
+    #[test]
+    fn test_get_ready_to_process_queue_skips_older_incomplete_queue() {
+        let mut status = SyncStatus::Syncing { jobs: Vec::new() };
+        let peer_id = PeerId::random();
+
+        let root_older = mock_root(1);
+        status.add_new_job_queue(
+            Checkpoint {
+                root: root_older,
+                slot: 100,
+            },
+            JobRequest::new(peer_id, root_older),
+            false,
+        );
+
+        let root_newer = mock_root(2);
+        status.add_new_job_queue(
+            Checkpoint {
+                root: root_newer,
+                slot: 200,
+            },
+            JobRequest::new(peer_id, root_newer),
+            false,
+        );
+
+        status.mark_job_queue_as_complete(root_newer);
+
+        let queue = status.get_ready_to_process_queue().unwrap();
+        assert_eq!(queue.starting_slot, 200);
+        assert_eq!(queue.starting_root, root_newer);
+    }
+
+    #[test]
+    fn test_recover_stalled_queue_restarts_from_current_missing_root() {
+        let mut status = SyncStatus::Syncing { jobs: Vec::new() };
+        let peer_id = PeerId::random();
+        let root = mock_root(1);
+
+        status.add_new_job_queue(
+            Checkpoint { root, slot: 100 },
+            JobRequest::new(peer_id, root),
+            false,
+        );
+
+        if let SyncStatus::Syncing { jobs } = &mut status {
+            jobs[0].last_fetched_slot = 99;
+            jobs[0].last_progress_at = Instant::now() - Duration::from_secs(10);
+        }
+
+        let recoveries = status.recover_stalled_queues(Duration::from_secs(1));
+        assert_eq!(recoveries.len(), 1);
+        assert_eq!(recoveries[0].starting_root, root);
+        assert_eq!(
+            recoveries[0].restart_checkpoint,
+            Some(Checkpoint { root, slot: 98 })
+        );
+        assert!(matches!(status, SyncStatus::Syncing { jobs } if jobs.is_empty()));
+    }
+
+    #[test]
+    fn test_recover_stalled_queue_drops_if_superseded_by_complete_queue() {
+        let mut status = SyncStatus::Syncing { jobs: Vec::new() };
+        let peer_id = PeerId::random();
+        let root_old = mock_root(1);
+        let root_new = mock_root(2);
+
+        status.add_new_job_queue(
+            Checkpoint {
+                root: root_old,
+                slot: 100,
+            },
+            JobRequest::new(peer_id, root_old),
+            false,
+        );
+        status.add_new_job_queue(
+            Checkpoint {
+                root: root_new,
+                slot: 200,
+            },
+            JobRequest::new(peer_id, root_new),
+            false,
+        );
+        status.mark_job_queue_as_complete(root_new);
+
+        if let SyncStatus::Syncing { jobs } = &mut status {
+            jobs[0].last_progress_at = Instant::now() - Duration::from_secs(10);
+        }
+
+        let recoveries = status.recover_stalled_queues(Duration::from_secs(1));
+        assert_eq!(recoveries.len(), 1);
+        assert_eq!(recoveries[0].starting_root, root_old);
+        assert_eq!(recoveries[0].restart_checkpoint, None);
+        assert!(matches!(&status, SyncStatus::Syncing { jobs } if jobs.len() == 1));
+        assert_eq!(
+            status.get_ready_to_process_queue().unwrap().starting_root,
+            root_new
+        );
     }
 
     #[test]

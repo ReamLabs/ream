@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 use alloy_primitives::B256;
 
@@ -9,6 +9,7 @@ pub struct JobQueue {
     pub starting_root: B256,
     pub starting_slot: u64,
     pub last_fetched_slot: u64,
+    pub last_progress_at: Instant,
     pub jobs: HashMap<B256, JobRequest>,
     pub is_complete: bool,
 }
@@ -19,6 +20,7 @@ impl JobQueue {
             starting_root,
             starting_slot,
             last_fetched_slot,
+            last_progress_at: Instant::now(),
             jobs: HashMap::new(),
             is_complete: false,
         }
@@ -26,6 +28,10 @@ impl JobQueue {
 
     pub fn add_job(&mut self, job: JobRequest) {
         self.jobs.insert(job.root, job);
+    }
+
+    pub fn touch_progress(&mut self) {
+        self.last_progress_at = Instant::now();
     }
 
     pub fn get(&mut self, root: &B256) -> Option<&mut JobRequest> {
