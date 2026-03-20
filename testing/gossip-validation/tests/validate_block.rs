@@ -230,15 +230,13 @@ mod tests {
         );
     }
 
-    /// TODO: Update test to Fulu
-    #[ignore = "Update test to Fulu"]
     #[tokio::test]
     pub async fn test_duplicate_proposer_signature_is_ignored() {
         initialize_test_network_spec();
         let (beacon_chain, cached_db, _block_root) = db_setup().await;
 
         let incoming_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
-            "./assets/sepolia/blocks/slot_8084250.ssz_snappy",
+            "./assets/sepolia/blocks/child_9552076.ssz_snappy",
         )
         .unwrap();
 
@@ -271,15 +269,13 @@ mod tests {
         );
     }
 
-    /// TODO: Update test to Fulu
-    #[ignore = "Update test to Fulu"]
     #[tokio::test]
     pub async fn test_bls_to_execution_change_duplicate_is_ignored() {
         initialize_test_network_spec();
         let (beacon_chain, cached_db, _block_root) = db_setup().await;
 
         let incoming_beacon_block = read_ssz_snappy_file::<SignedBeaconBlock>(
-            "./assets/sepolia/blocks/slot_8084250.ssz_snappy",
+            "./assets/sepolia/blocks/child_9552076.ssz_snappy",
         )
         .unwrap();
 
