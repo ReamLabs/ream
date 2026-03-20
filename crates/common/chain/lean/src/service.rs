@@ -707,6 +707,21 @@ impl LeanChainService {
             }
         };
 
+        let local_head = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store.head_provider().get()?
+        };
+
+        if common_highest_checkpoint.root == local_head {
+            trace!(
+                root = ?common_highest_checkpoint.root,
+                slot = common_highest_checkpoint.slot,
+                "Skipping backfill queue for peer checkpoint already at local head"
+            );
+            return Ok(());
+        }
+
         if self
             .sync_status
             .slot_is_subset_of_any_queue(common_highest_checkpoint.slot)
