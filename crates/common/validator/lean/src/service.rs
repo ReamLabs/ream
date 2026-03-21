@@ -127,11 +127,19 @@ impl ValidatorService {
                                         return Err(anyhow!("Failed to receive attestation data from LeanChainService: {err:?}"));
                                     }
                                 };
+                                #[cfg(feature = "devnet4")]
+                                let _ = &attestation_data;
                                 #[cfg(feature = "devnet3")]
                                 let message = AggregatedAttestations { validator_id: keystore.index, data: attestation_data.clone() };
 
+                                #[cfg(feature = "devnet3")]
+                                let proposer_message_root = attestation_data.tree_hash_root();
+                                #[cfg(feature = "devnet4")]
+                                let proposer_message_root = block.tree_hash_root();
+
                                 let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
-                                let proposer_signature = keystore.private_key.sign(&attestation_data.tree_hash_root(), slot as u32)?;
+                                let proposer_signature =
+                                    keystore.private_key.sign(&proposer_message_root, slot as u32)?;
                                 stop_timer(timer);
                                 inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
 

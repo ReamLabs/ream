@@ -6,8 +6,10 @@ use tree_hash_derive::TreeHash;
 /// Represents a validator entry in the Lean chain.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Validator {
-    #[serde(rename = "pubkey")]
-    pub public_key: PublicKey,
+    #[serde(alias = "attestationPubkey", alias = "pubkey")]
+    pub attestation_pubkey: PublicKey,
+    #[serde(alias = "proposalPubkey")]
+    pub proposal_pubkey: PublicKey,
     pub index: u64,
 }
 

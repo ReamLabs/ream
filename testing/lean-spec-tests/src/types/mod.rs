@@ -58,7 +58,11 @@ pub struct Checkpoint {
 /// Validator
 #[derive(Debug, Deserialize, Clone)]
 pub struct Validator {
-    pub pubkey: String,
+    pub pubkey: Option<String>,
+    #[serde(alias = "attestationPubkey")]
+    pub attestation_pubkey: Option<String>,
+    #[serde(alias = "proposalPubkey")]
+    pub proposal_pubkey: Option<String>,
     pub index: u64,
 }
 
@@ -176,18 +180,39 @@ impl TryFrom<&Validator> for ReamValidator {
     type Error = anyhow::Error;
 
     fn try_from(validator: &Validator) -> anyhow::Result<Self> {
-        // Parse hex pubkey string
-        let pubkey_hex = validator.pubkey.trim_start_matches("0x");
-        let pubkey_bytes = hex::decode(pubkey_hex)
+        let attestation_pubkey_hex = validator
+            .attestation_pubkey
+            .as_deref()
+            .or(validator.pubkey.as_deref())
+            .ok_or_else(|| anyhow!("Validator fixture is missing attestation pubkey"))?;
+        let proposal_pubkey_hex = validator
+            .proposal_pubkey
+            .as_deref()
+            .or(validator.pubkey.as_deref())
+            .unwrap_or(attestation_pubkey_hex);
+
+        let attestation_pubkey_bytes = hex::decode(attestation_pubkey_hex.trim_start_matches("0x"))
+            .map_err(|err| anyhow!("Failed to decode validator pubkey hex: {err}"))?;
+        let proposal_pubkey_bytes = hex::decode(proposal_pubkey_hex.trim_start_matches("0x"))
             .map_err(|err| anyhow!("Failed to decode validator pubkey hex: {err}"))?;
 
-        // LeanSpec uses 52-byte XMSS public keys - verify the size
-        if pubkey_bytes.len() != 52 {
-            bail!("Expected 52-byte pubkey, got {} bytes", pubkey_bytes.len());
+        if attestation_pubkey_bytes.len() != 52 {
+            bail!(
+                "Expected 52-byte attestation pubkey, got {} bytes",
+                attestation_pubkey_bytes.len()
+            );
+        }
+
+        if proposal_pubkey_bytes.len() != 52 {
+            bail!(
+                "Expected 52-byte proposal pubkey, got {} bytes",
+                proposal_pubkey_bytes.len()
+            );
         }
 
         Ok(ReamValidator {
-            public_key: PublicKey::from(&pubkey_bytes[..]),
+            attestation_pubkey: PublicKey::from(&attestation_pubkey_bytes[..]),
+            proposal_pubkey: PublicKey::from(&proposal_pubkey_bytes[..]),
             index: validator.index,
         })
     }

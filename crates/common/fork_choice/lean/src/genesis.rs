@@ -39,7 +39,8 @@ mod test {
     fn test_genesis_block_hash_comparison() {
         let public_keys_1 = (0..3)
             .map(|index| Validator {
-                public_key: PublicKey::new(FixedBytes::from_slice(&[index + 1; 52])),
+                attestation_pubkey: PublicKey::new(FixedBytes::from_slice(&[index + 1; 52])),
+                proposal_pubkey: PublicKey::new(FixedBytes::from_slice(&[index + 1; 52])),
                 index: index as u64,
             })
             .collect::<Vec<_>>();
@@ -50,7 +51,8 @@ mod test {
 
         let public_keys_2 = (0..3)
             .map(|index| Validator {
-                public_key: PublicKey::new(FixedBytes::from_slice(&[index + 10; 52])),
+                attestation_pubkey: PublicKey::new(FixedBytes::from_slice(&[index + 10; 52])),
+                proposal_pubkey: PublicKey::new(FixedBytes::from_slice(&[index + 10; 52])),
                 index: index as u64,
             })
             .collect::<Vec<_>>();

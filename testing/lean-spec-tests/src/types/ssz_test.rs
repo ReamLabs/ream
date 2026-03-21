@@ -71,6 +71,16 @@ fn decode_signature(hex: &str) -> anyhow::Result<Signature> {
     Ok(Signature::from(&bytes[..]))
 }
 
+fn decode_public_key(hex: &str) -> anyhow::Result<PublicKey> {
+    let bytes = decode_hex(hex)?;
+    ensure!(
+        bytes.len() == 52,
+        "Expected 52-byte pubkey, got {}",
+        bytes.len()
+    );
+    Ok(PublicKey::from(&bytes[..]))
+}
+
 // ============================================================================
 // Test case structure
 // ============================================================================
@@ -170,7 +180,9 @@ impl TryFrom<&BlockHeaderJSON> for BlockHeader {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidatorJSON {
-    pub pubkey: String,
+    pub pubkey: Option<String>,
+    pub attestation_pubkey: Option<String>,
+    pub proposal_pubkey: Option<String>,
     pub index: u64,
 }
 
@@ -178,16 +190,20 @@ impl TryFrom<&ValidatorJSON> for Validator {
     type Error = anyhow::Error;
 
     fn try_from(value: &ValidatorJSON) -> anyhow::Result<Self> {
+        let attestation_pubkey = value
+            .attestation_pubkey
+            .as_deref()
+            .or(value.pubkey.as_deref())
+            .ok_or_else(|| anyhow!("validator is missing attestation pubkey"))?;
+        let proposal_pubkey = value
+            .proposal_pubkey
+            .as_deref()
+            .or(value.pubkey.as_deref())
+            .unwrap_or(attestation_pubkey);
+
         Ok(Self {
-            public_key: {
-                let bytes = decode_hex(&value.pubkey)?;
-                ensure!(
-                    bytes.len() == 52,
-                    "Expected 52-byte pubkey, got {}",
-                    bytes.len()
-                );
-                PublicKey::from(&bytes[..])
-            },
+            attestation_pubkey: decode_public_key(attestation_pubkey)?,
+            proposal_pubkey: decode_public_key(proposal_pubkey)?,
             index: value.index,
         })
     }
