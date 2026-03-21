@@ -52,9 +52,9 @@ use crate::{
         forward_background_syncer::{ForwardBackgroundSyncer, ForwardSyncResults},
         job::{pending::PendingJobRequest, request::JobRequest},
         strategy::{
-            BackfillTimeoutStrategy, HandoffStrategy, NearHeadBackfillStrategy,
+            BackfillTimeoutStrategy, HandoffInputs, HandoffStrategy, NearHeadBackfillStrategy,
             NearHeadFanoutStrategy, PeerSelectionStrategy, PendingRequestDedupStrategy,
-            should_fanout_near_head,
+            should_fanout_near_head, should_switch_to_synced,
         },
     },
 };
@@ -1032,10 +1032,17 @@ impl LeanChainService {
             current_head_slot,
             highest_peer_head_slot,
         );
-        let should_be_synced = !is_behind_finalized
-            && !has_orphaned_pending_blocks
-            && !has_pending_backfill_work
-            && !has_inflight_backfill_requests;
+        let should_be_synced = should_switch_to_synced(
+            self.telemetry.handoff_strategy,
+            HandoffInputs {
+                is_behind_peers: is_behind_finalized,
+                has_orphaned_pending_blocks,
+                has_pending_backfill_work,
+                has_near_head_bridge,
+                has_active_backfill_jobs,
+                has_inflight_backfill_requests,
+            },
+        );
         let transitioned_to_synced = should_be_synced && self.sync_status != SyncStatus::Synced;
 
         let sync_status = if should_be_synced {
@@ -1080,7 +1087,7 @@ impl LeanChainService {
             self.telemetry.dropped_callback_roots.clear();
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map_err(|err| anyhow!("System time before epoch: {err:?}"))?
+                .map_err(|err| anyhow!("System time before unix epoch: {err:?}"))?
                 .as_secs();
             self.store.write().await.on_tick(now, false, true).await?;
         }
