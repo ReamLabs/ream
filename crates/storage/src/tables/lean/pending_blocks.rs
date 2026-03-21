@@ -5,12 +5,11 @@ use alloy_primitives::B256;
 use ream_consensus_lean::block::SignedBlock;
 #[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
 use ream_consensus_lean::block::SignedBlockWithAttestation;
-use redb::{
-    Database, Durability, ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition,
-};
+use redb::{Database, Durability, ReadableDatabase, ReadableTableMetadata, TableDefinition};
 
 use crate::{
     cache::LeanCacheDB,
+    errors::StoreError,
     tables::{ssz_encoder::SSZEncoding, table::REDBTable},
 };
 
@@ -63,32 +62,21 @@ impl REDBTable for LeanPendingBlocksTable {
 }
 
 impl LeanPendingBlocksTable {
-    #[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
     pub fn iter(
         &self,
-    ) -> Result<Vec<(B256, SignedBlockWithAttestation)>, crate::errors::StoreError> {
+    ) -> Result<
+        impl Iterator<Item = Result<(B256, <Self as REDBTable>::Value), StoreError>>,
+        StoreError,
+    > {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
-
-        let mut entries = Vec::new();
-        for result in table.iter()? {
-            let (key_guard, value_guard) = result?;
-            entries.push((key_guard.value(), value_guard.value()));
-        }
-        Ok(entries)
-    }
-
-    #[cfg(feature = "devnet4")]
-    pub fn iter(&self) -> Result<Vec<(B256, SignedBlock)>, crate::errors::StoreError> {
-        let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
-
-        let mut entries = Vec::new();
-        for result in table.iter()? {
-            let (key_guard, value_guard) = result?;
-            entries.push((key_guard.value(), value_guard.value()));
-        }
-        Ok(entries)
+        Ok(table
+            .range::<<SSZEncoding<B256> as redb::Value>::SelfType<'_>>(..)?
+            .map(|result| {
+                result
+                    .map(|(key, value)| (key.value(), value.value()))
+                    .map_err(StoreError::from)
+            }))
     }
 
     pub fn retain<F>(&self, mut f: F) -> Result<(), crate::errors::StoreError>

@@ -1121,14 +1121,16 @@ impl LeanChainService {
 
         let stale_roots: Vec<_> = pending_blocks_provider
             .iter()?
-            .into_iter()
-            .filter_map(|(root, block)| {
-                let block_slot = pending_block_slot(&block);
-                let should_prune =
-                    block_provider.contains_key(root) || block_slot <= latest_finalized_slot;
-                should_prune.then_some(root)
+            .filter_map(|result| match result {
+                Ok((root, block)) => {
+                    let block_slot = pending_block_slot(&block);
+                    let should_prune =
+                        block_provider.contains_key(root) || block_slot <= latest_finalized_slot;
+                    should_prune.then_some(Ok(root))
+                }
+                Err(err) => Some(Err(err)),
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         if stale_roots.is_empty() {
             return Ok(());
