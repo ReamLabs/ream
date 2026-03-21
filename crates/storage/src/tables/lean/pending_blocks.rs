@@ -5,7 +5,9 @@ use alloy_primitives::B256;
 use ream_consensus_lean::block::SignedBlock;
 #[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
 use ream_consensus_lean::block::SignedBlockWithAttestation;
-use redb::{Database, TableDefinition};
+use redb::{
+    Database, Durability, ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition,
+};
 
 use crate::{
     cache::LeanCacheDB,
@@ -61,7 +63,63 @@ impl REDBTable for LeanPendingBlocksTable {
 }
 
 impl LeanPendingBlocksTable {
+    #[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
+    pub fn iter(
+        &self,
+    ) -> Result<Vec<(B256, SignedBlockWithAttestation)>, crate::errors::StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+
+        let mut entries = Vec::new();
+        for result in table.iter()? {
+            let (key_guard, value_guard) = result?;
+            entries.push((key_guard.value(), value_guard.value()));
+        }
+        Ok(entries)
+    }
+
+    #[cfg(feature = "devnet4")]
+    pub fn iter(&self) -> Result<Vec<(B256, SignedBlock)>, crate::errors::StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+
+        let mut entries = Vec::new();
+        for result in table.iter()? {
+            let (key_guard, value_guard) = result?;
+            entries.push((key_guard.value(), value_guard.value()));
+        }
+        Ok(entries)
+    }
+
+    pub fn retain<F>(&self, mut f: F) -> Result<(), crate::errors::StoreError>
+    where
+        F: FnMut(&B256, &<Self as REDBTable>::Value) -> bool,
+    {
+        let mut write_txn = self.db.begin_write()?;
+        write_txn.set_durability(Durability::Immediate)?;
+        {
+            let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
+            table.retain(|key, value| f(&key, &value))?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
     pub fn contains_key(&self, key: B256) -> bool {
         matches!(self.get(key), Ok(Some(_)))
+    }
+
+    pub fn len(&self) -> usize {
+        let Ok(read_txn) = self.db.begin_read() else {
+            return 0;
+        };
+        let Ok(table) = read_txn.open_table(Self::TABLE_DEFINITION) else {
+            return 0;
+        };
+        table.len().unwrap_or(0) as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }

@@ -52,9 +52,9 @@ use crate::{
         forward_background_syncer::{ForwardBackgroundSyncer, ForwardSyncResults},
         job::{pending::PendingJobRequest, request::JobRequest},
         strategy::{
-            BackfillTimeoutStrategy, HandoffInputs, HandoffStrategy, NearHeadBackfillStrategy,
+            BackfillTimeoutStrategy, HandoffStrategy, NearHeadBackfillStrategy,
             NearHeadFanoutStrategy, PeerSelectionStrategy, PendingRequestDedupStrategy,
-            should_fanout_near_head, should_switch_to_synced,
+            should_fanout_near_head,
         },
     },
 };
@@ -265,8 +265,10 @@ impl LeanChainService {
 
                     tick_count += 1;
                 }
-                _ = sync_interval.tick(), if self.sync_status != SyncStatus::Synced && genesis_passed => {
-                    self.step_backfill_sync().await?;
+                _ = sync_interval.tick(), if genesis_passed => {
+                    if self.sync_status != SyncStatus::Synced || self.should_run_backfill_sync().await {
+                        self.step_backfill_sync().await?;
+                    }
                 }
                 forward_syncer = async {
                     if let Some(handle) = self.forward_syncer.as_mut() {
@@ -630,6 +632,7 @@ impl LeanChainService {
     }
 
     async fn step_backfill_sync(&mut self) -> anyhow::Result<()> {
+        self.prune_stale_pending_blocks().await?;
         self.maybe_log_backfill_progress();
         self.prune_recent_sync_blocks();
         let backfill_job_timeout = self.current_backfill_job_timeout().await;
@@ -985,10 +988,14 @@ impl LeanChainService {
             return Ok(self.sync_status.clone());
         }
 
-        let (head, block_provider) = {
+        let (head, block_provider, has_orphaned_pending_blocks) = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
-            (store.head_provider().get()?, store.block_provider())
+            (
+                store.head_provider().get()?,
+                store.block_provider(),
+                !store.pending_blocks_provider().is_empty(),
+            )
         };
         #[cfg(feature = "devnet3")]
         let current_head_slot = block_provider
@@ -1009,9 +1016,14 @@ impl LeanChainService {
             .network_state
             .common_highest_checkpoint()
             .map(|c| c.slot)
-            .unwrap_or(0);
+            .unwrap_or(current_head_slot);
+        let highest_peer_finalized_slot = self
+            .network_state
+            .common_finalized_checkpoint()
+            .map(|c| c.slot)
+            .unwrap_or(current_head_slot);
         let is_synced_by_time = get_current_slot() <= current_head_slot + tolerance;
-        let is_behind_peers = highest_peer_head_slot > current_head_slot + 2;
+        let is_behind_finalized = highest_peer_finalized_slot > current_head_slot;
         let has_pending_backfill_work = self.has_pending_backfill_work();
         let has_active_backfill_jobs = self.has_active_backfill_jobs();
         let has_inflight_backfill_requests = !self.telemetry.inflight_roots.is_empty();
@@ -1020,30 +1032,27 @@ impl LeanChainService {
             current_head_slot,
             highest_peer_head_slot,
         );
-        let should_be_synced = should_switch_to_synced(
-            self.telemetry.handoff_strategy,
-            HandoffInputs {
-                is_behind_peers,
-                has_pending_backfill_work,
-                has_near_head_bridge,
-                has_active_backfill_jobs,
-                has_inflight_backfill_requests,
-            },
-        );
+        let should_be_synced = !is_behind_finalized
+            && !has_orphaned_pending_blocks
+            && !has_pending_backfill_work
+            && !has_inflight_backfill_requests;
+        let transitioned_to_synced = should_be_synced && self.sync_status != SyncStatus::Synced;
 
         let sync_status = if should_be_synced {
-            if self.sync_status != SyncStatus::Synced {
+            if transitioned_to_synced {
                 if is_synced_by_time {
                     info!(
                         slot = get_current_slot(),
                         head_slot = current_head_slot,
+                        peer_finalized_slot = highest_peer_finalized_slot,
                         "Node has synced to the head"
                     );
                 } else {
                     info!(
                         slot = get_current_slot(),
                         head_slot = current_head_slot,
-                        "Node is behind time but caught up to peers (stall detected); switching to Synced"
+                        peer_finalized_slot = highest_peer_finalized_slot,
+                        "Node is behind time but caught up to finalized safety; switching to Synced"
                     );
                 }
             }
@@ -1053,21 +1062,22 @@ impl LeanChainService {
                 slot = get_current_slot(),
                 head_slot = current_head_slot,
                 peer_head_slot = highest_peer_head_slot,
+                peer_finalized_slot = highest_peer_finalized_slot,
+                has_orphaned_pending_blocks,
                 has_pending_backfill_work,
                 has_near_head_bridge,
                 has_active_backfill_jobs,
                 has_inflight_backfill_requests,
                 handoff_strategy = ?self.telemetry.handoff_strategy,
-                "Node remains in backfill syncing mode"
+                "Node fell behind peer finalized checkpoint; switching to backfill syncing mode"
             );
             SyncStatus::Syncing { jobs: Vec::new() }
         } else {
             self.sync_status.clone()
         };
 
-        if sync_status == SyncStatus::Synced {
+        if transitioned_to_synced {
             self.telemetry.dropped_callback_roots.clear();
-            self.telemetry.inflight_roots.clear();
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|err| anyhow!("System time before epoch: {err:?}"))?
@@ -1076,6 +1086,57 @@ impl LeanChainService {
         }
 
         Ok(sync_status)
+    }
+
+    async fn should_run_backfill_sync(&self) -> bool {
+        self.current_peer_gap_slots().await > 0
+            || self.has_orphaned_pending_blocks().await
+            || self.has_pending_backfill_work()
+            || !self.telemetry.inflight_roots.is_empty()
+    }
+
+    async fn has_orphaned_pending_blocks(&self) -> bool {
+        let fork_choice = self.store.read().await;
+        let store = fork_choice.store.lock().await;
+        !store.pending_blocks_provider().is_empty()
+    }
+
+    async fn prune_stale_pending_blocks(&self) -> anyhow::Result<()> {
+        let (pending_blocks_provider, block_provider, latest_finalized_slot) = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            (
+                store.pending_blocks_provider(),
+                store.block_provider(),
+                store.latest_finalized_provider().get()?.slot,
+            )
+        };
+
+        let stale_roots: Vec<_> = pending_blocks_provider
+            .iter()?
+            .into_iter()
+            .filter_map(|(root, block)| {
+                let block_slot = pending_block_slot(&block);
+                let should_prune =
+                    block_provider.contains_key(root) || block_slot <= latest_finalized_slot;
+                should_prune.then_some(root)
+            })
+            .collect();
+
+        if stale_roots.is_empty() {
+            return Ok(());
+        }
+
+        for root in &stale_roots {
+            let _ = pending_blocks_provider.remove(*root)?;
+        }
+
+        debug!(
+            pruned_pending_blocks = stale_roots.len(),
+            latest_finalized_slot, "Pruned stale pending blocks"
+        );
+
+        Ok(())
     }
 
     async fn current_backfill_job_timeout(&self) -> Duration {
@@ -1830,6 +1891,23 @@ impl LeanChainService {
         &mut self,
         signed_block_with_attestation: &SignedBlockWithAttestation,
     ) -> anyhow::Result<()> {
+        let parent_root = signed_block_with_attestation.message.block.parent_root;
+        let has_parent_state = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store.state_provider().get(parent_root)?.is_some()
+        };
+        if !has_parent_state {
+            warn!(
+                root = ?signed_block_with_attestation.message.block.tree_hash_root(),
+                parent_root = ?parent_root,
+                "Missing parent state while processing synced block; routing block to backfill path"
+            );
+            return self
+                .handle_syncing_process_block(signed_block_with_attestation)
+                .await;
+        }
+
         self.store
             .write()
             .await
@@ -1840,6 +1918,21 @@ impl LeanChainService {
     }
     #[cfg(feature = "devnet4")]
     async fn handle_process_block(&mut self, signed_block: &SignedBlock) -> anyhow::Result<()> {
+        let parent_root = signed_block.message.parent_root;
+        let has_parent_state = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store.state_provider().get(parent_root)?.is_some()
+        };
+        if !has_parent_state {
+            warn!(
+                root = ?signed_block.message.tree_hash_root(),
+                parent_root = ?parent_root,
+                "Missing parent state while processing synced block; routing block to backfill path"
+            );
+            return self.handle_syncing_process_block(signed_block).await;
+        }
+
         self.store
             .write()
             .await
@@ -1873,12 +1966,23 @@ impl LeanChainService {
     }
 }
 
+#[cfg(feature = "devnet3")]
+fn pending_block_slot(block: &SignedBlockWithAttestation) -> u64 {
+    block.message.block.slot
+}
+
+#[cfg(feature = "devnet4")]
+fn pending_block_slot(block: &SignedBlock) -> u64 {
+    block.message.slot
+}
+
 #[cfg(test)]
 mod tests {
     use alloy_primitives::B256;
     use libp2p_identity::PeerId;
     #[cfg(feature = "devnet4")]
     use ream_consensus_lean::block::{BlockSignatures, BlockWithSignatures, SignedBlock};
+    use ream_consensus_lean::checkpoint::Checkpoint;
     #[cfg(feature = "devnet3")]
     use ream_consensus_lean::{
         attestation::AggregatedAttestations,
@@ -1886,11 +1990,14 @@ mod tests {
             BlockSignatures, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation,
         },
     };
+    use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
     use ream_post_quantum_crypto::leansig::signature::Signature;
+    use ream_storage::tables::{field::REDBField, table::REDBTable};
     use ream_sync::rwlock::Writer;
     use ream_test_utils::store::sample_store;
     use tokio::sync::{mpsc, oneshot};
+    use tree_hash::TreeHash;
 
     use super::LeanChainService;
     use crate::{
@@ -1899,35 +2006,9 @@ mod tests {
         sync::{SyncStatus, job::pending::PendingJobRequest},
     };
 
-    #[tokio::test]
-    async fn test_assignable_peer_id_falls_back_to_connected_peer_when_all_are_in_use() {
-        let store = sample_store(10).await;
-        let (writer, _reader) = Writer::new(store);
-        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
-        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
-
-        let peer_id = PeerId::random();
-        service.network_state.upsert_peer(
-            peer_id,
-            None,
-            ConnectionState::Connected,
-            Direction::Outbound,
-        );
-        service.peers_in_use.insert(peer_id);
-
-        assert_eq!(service.assignable_peer_id(None).await, Some(peer_id));
-        assert_eq!(service.assignable_peer_id(Some(peer_id)).await, None);
-    }
-
-    #[tokio::test]
-    async fn test_handle_produce_block_stale_slot_responds_with_err() {
-        let mut store = sample_store(10).await;
-
-        // Advance the store to slot 3
-        for slot in 1..=3 {
-            let proposer_index = slot % 10;
+    async fn advance_store_to_slot(store: &mut Store, target_slot: u64, validator_count: u64) {
+        for slot in 1..=target_slot {
+            let proposer_index = slot % validator_count;
             #[cfg(feature = "devnet3")]
             let attestation = store.produce_attestation_data(slot).await.unwrap();
             let block = store
@@ -1958,6 +2039,34 @@ mod tests {
             };
             store.on_block(&signed_block, false).await.unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn test_assignable_peer_id_falls_back_to_connected_peer_when_all_are_in_use() {
+        let store = sample_store(10).await;
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.peers_in_use.insert(peer_id);
+
+        assert_eq!(service.assignable_peer_id(None).await, Some(peer_id));
+        assert_eq!(service.assignable_peer_id(Some(peer_id)).await, None);
+    }
+
+    #[tokio::test]
+    async fn test_handle_produce_block_stale_slot_responds_with_err() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
 
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
@@ -1974,6 +2083,270 @@ mod tests {
             rx.await.is_ok(),
             "Channel was dropped instead of sending a response"
         );
+    }
+
+    #[tokio::test]
+    async fn test_update_sync_status_stays_synced_when_only_behind_peer_head() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.network_state.update_peer_checkpoints(
+            peer_id,
+            Checkpoint {
+                root: B256::repeat_byte(0x11),
+                slot: 7,
+            },
+            Checkpoint {
+                root: B256::repeat_byte(0x22),
+                slot: 2,
+            },
+        );
+
+        assert_eq!(
+            service.update_sync_status().await.unwrap(),
+            SyncStatus::Synced
+        );
+        assert!(service.should_run_backfill_sync().await);
+    }
+
+    #[tokio::test]
+    async fn test_update_sync_status_transitions_to_syncing_when_behind_peer_finalized() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.network_state.update_peer_checkpoints(
+            peer_id,
+            Checkpoint {
+                root: B256::repeat_byte(0x33),
+                slot: 7,
+            },
+            Checkpoint {
+                root: B256::repeat_byte(0x44),
+                slot: 4,
+            },
+        );
+
+        assert!(matches!(
+            service.update_sync_status().await.unwrap(),
+            SyncStatus::Syncing { jobs } if jobs.is_empty()
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_update_sync_status_stays_syncing_while_orphaned_pending_blocks_exist() {
+        let mut store = sample_store(10).await;
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(1).await.unwrap();
+        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let mut pending_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 1,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let mut pending_block = SignedBlock {
+            message: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        let pending_root = {
+            pending_block.message.block.parent_root = B256::repeat_byte(0x88);
+            pending_block.message.block.tree_hash_root()
+        };
+        #[cfg(feature = "devnet4")]
+        let pending_root = {
+            pending_block.message.parent_root = B256::repeat_byte(0x88);
+            pending_block.message.tree_hash_root()
+        };
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(pending_root, pending_block)
+            .unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Syncing { jobs: Vec::new() };
+
+        assert!(service.has_orphaned_pending_blocks().await);
+        assert!(matches!(
+            service.update_sync_status().await.unwrap(),
+            SyncStatus::Syncing { jobs } if jobs.is_empty()
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_prune_stale_pending_blocks_removes_finalized_orphans() {
+        let mut store = sample_store(10).await;
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(1).await.unwrap();
+        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let mut pending_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 1,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let mut pending_block = SignedBlock {
+            message: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        {
+            pending_block.message.block.parent_root = B256::repeat_byte(0x77);
+        }
+        #[cfg(feature = "devnet4")]
+        {
+            pending_block.message.parent_root = B256::repeat_byte(0x77);
+        }
+        #[cfg(feature = "devnet3")]
+        let pending_root = pending_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let pending_root = pending_block.message.tree_hash_root();
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(pending_root, pending_block)
+            .unwrap();
+        store
+            .store
+            .lock()
+            .await
+            .latest_finalized_provider()
+            .insert(Checkpoint {
+                root: B256::repeat_byte(0x55),
+                slot: 1,
+            })
+            .unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+
+        assert!(service.has_orphaned_pending_blocks().await);
+        service.prune_stale_pending_blocks().await.unwrap();
+        assert!(!service.has_orphaned_pending_blocks().await);
+    }
+
+    #[tokio::test]
+    async fn test_handle_process_block_routes_missing_parent_to_backfill_path() {
+        let mut target_store = sample_store(10).await;
+
+        #[cfg(feature = "devnet3")]
+        let attestation = target_store.produce_attestation_data(1).await.unwrap();
+        let block = target_store
+            .produce_block_with_signatures(1, 1)
+            .await
+            .unwrap();
+        #[cfg(feature = "devnet3")]
+        let mut signed_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 1,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let mut signed_block = SignedBlock {
+            message: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        {
+            signed_block.message.block.parent_root = B256::repeat_byte(0x99);
+        }
+        #[cfg(feature = "devnet4")]
+        {
+            signed_block.message.parent_root = B256::repeat_byte(0x99);
+        }
+        #[cfg(feature = "devnet3")]
+        let block_root = signed_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let block_root = signed_block.message.tree_hash_root();
+        let (writer, _reader) = Writer::new(target_store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+
+        service.handle_process_block(&signed_block).await.unwrap();
+
+        let pending_block_exists = {
+            let fork_choice = service.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store
+                .pending_blocks_provider()
+                .get(block_root)
+                .unwrap()
+                .is_some()
+        };
+        assert!(pending_block_exists);
     }
 
     #[tokio::test]

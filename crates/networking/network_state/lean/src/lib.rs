@@ -81,13 +81,24 @@ impl NetworkState {
     }
 
     pub fn common_highest_checkpoint(&self) -> Option<Checkpoint> {
+        self.common_checkpoint_by(|peer| peer.head_checkpoint)
+    }
+
+    pub fn common_finalized_checkpoint(&self) -> Option<Checkpoint> {
+        self.common_checkpoint_by(|peer| peer.finalized_checkpoint)
+    }
+
+    fn common_checkpoint_by(
+        &self,
+        checkpoint_selector: impl Fn(&CachedPeer) -> Option<Checkpoint>,
+    ) -> Option<Checkpoint> {
         let peer_table = self.peer_table.lock();
         let mut checkpoint_tally: HashMap<Checkpoint, usize> = HashMap::new();
         for peer in peer_table.values() {
-            if let (ConnectionState::Connected, Some(head_checkpoint)) =
-                (&peer.state, &peer.head_checkpoint)
+            if let (ConnectionState::Connected, Some(checkpoint)) =
+                (&peer.state, checkpoint_selector(peer))
             {
-                *checkpoint_tally.entry(*head_checkpoint).or_insert(0) += 1;
+                *checkpoint_tally.entry(checkpoint).or_insert(0) += 1;
             }
         }
 
