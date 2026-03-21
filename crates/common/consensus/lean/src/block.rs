@@ -82,7 +82,7 @@ impl SignedBlockWithAttestation {
                 .map(|&validator_id| {
                     validators
                         .get(validator_id)
-                        .map(|validator| validator.attestation_pubkey)
+                        .map(|validator| validator.attestation_pubkey())
                         .ok_or_else(|| anyhow!("Failed to get validator {validator_id}"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -132,7 +132,7 @@ impl SignedBlockWithAttestation {
         if verify_signatures {
             ensure!(
                 proposer_signature.verify(
-                    &proposer.proposal_pubkey,
+                    &proposer.proposal_pubkey(),
                     proposer_attestation.data.slot as u32,
                     &proposer_attestation.data.tree_hash_root(),
                 )?,
@@ -201,7 +201,7 @@ impl SignedBlock {
                 .map(|&validator_id| {
                     validators
                         .get(validator_id)
-                        .map(|validator| validator.attestation_pubkey)
+                        .map(|validator| validator.attestation_pubkey())
                         .ok_or_else(|| anyhow!("Failed to get validator {validator_id}"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -249,7 +249,7 @@ impl SignedBlock {
         if verify_signatures {
             ensure!(
                 signatures.proposer_signature.verify(
-                    &proposer.proposal_pubkey,
+                    &proposer.proposal_pubkey(),
                     block.slot as u32,
                     &block.tree_hash_root(),
                 )?,

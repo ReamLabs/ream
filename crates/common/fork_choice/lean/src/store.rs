@@ -612,7 +612,7 @@ impl Store {
                 {
                     gossip_signatures.push(signature);
                     if let Some(validator) = head_state.validators.get(validator_id as usize) {
-                        gossip_keys.push(validator.attestation_pubkey);
+                        gossip_keys.push(validator.attestation_pubkey());
                     }
                     gossip_ids.push(validator_id);
                 }
@@ -1293,7 +1293,7 @@ impl Store {
                     state
                         .validators
                         .get(validator as usize)
-                        .map(|validator| validator.attestation_pubkey)
+                        .map(|validator| validator.attestation_pubkey())
                         .ok_or_else(|| anyhow!("Validator {validator} not found in state"))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1570,7 +1570,7 @@ impl Store {
                 {
                     gossip_signatures.push(signature);
                     if let Some(validator) = head_state.validators.get(validator_id as usize) {
-                        gossip_keys.push(validator.attestation_pubkey);
+                        gossip_keys.push(validator.attestation_pubkey());
                     }
                     gossip_ids.push(validator_id);
                 }
@@ -1819,7 +1819,7 @@ impl Store {
 
         let verification_timer = start_timer(&PQ_SIG_ATTESTATION_VERIFICATION_TIME, &[]);
         let signature_valid = signature.verify(
-            &key_state.validators[validator_id as usize].attestation_pubkey,
+            &key_state.validators[validator_id as usize].attestation_pubkey(),
             attestation_data.slot as u32,
             &attestation_data.tree_hash_root(),
         )?;
@@ -2165,8 +2165,7 @@ mod tests {
 
             let mut validators: Vec<Validator> = state.validators.iter().cloned().collect();
             for (validator_id, (public_key, _)) in &key_pairs {
-                validators[*validator_id as usize].attestation_pubkey = *public_key;
-                validators[*validator_id as usize].proposal_pubkey = *public_key;
+                validators[*validator_id as usize].set_pubkeys(*public_key, *public_key);
             }
             state.validators = VariableList::new(validators).unwrap();
             state_provider.insert(state_root, state).unwrap();
@@ -2851,11 +2850,7 @@ mod tests {
 
         for i in 0..10 {
             let (pub_key, priv_key) = PrivateKey::generate_key_pair(&mut test_rng, 0, 10);
-            validators.push(Validator {
-                attestation_pubkey: pub_key,
-                proposal_pubkey: pub_key,
-                index: i as u64,
-            });
+            validators.push(Validator::from_public_key(pub_key, i as u64));
             private_keys.push(priv_key);
         }
 
@@ -3001,7 +2996,7 @@ mod tests {
                             .validators
                             .get(validator as usize)
                             .expect("invalid validator index")
-                            .attestation_pubkey
+                            .attestation_pubkey()
                     })
                     .collect();
 
@@ -4445,7 +4440,7 @@ mod tests {
             .unwrap();
         let public_keys: Vec<_> = participants
             .iter()
-            .map(|&validator_id| state.validators[validator_id as usize].attestation_pubkey)
+            .map(|&validator_id| state.validators[validator_id as usize].attestation_pubkey())
             .collect();
 
         assert!(
@@ -4802,7 +4797,7 @@ mod tests {
             .unwrap();
         let public_keys: Vec<_> = participants
             .iter()
-            .map(|&validator_id| state.validators[validator_id as usize].attestation_pubkey)
+            .map(|&validator_id| state.validators[validator_id as usize].attestation_pubkey())
             .collect();
 
         assert!(

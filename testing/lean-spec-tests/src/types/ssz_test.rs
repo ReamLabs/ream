@@ -201,11 +201,11 @@ impl TryFrom<&ValidatorJSON> for Validator {
             .or(value.pubkey.as_deref())
             .unwrap_or(attestation_pubkey);
 
-        Ok(Self {
-            attestation_pubkey: decode_public_key(attestation_pubkey)?,
-            proposal_pubkey: decode_public_key(proposal_pubkey)?,
-            index: value.index,
-        })
+        Ok(Self::from_pubkeys(
+            decode_public_key(attestation_pubkey)?,
+            decode_public_key(proposal_pubkey)?,
+            value.index,
+        ))
     }
 }
 

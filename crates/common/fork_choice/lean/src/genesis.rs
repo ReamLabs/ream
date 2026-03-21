@@ -38,10 +38,11 @@ mod test {
     #[test]
     fn test_genesis_block_hash_comparison() {
         let public_keys_1 = (0..3)
-            .map(|index| Validator {
-                attestation_pubkey: PublicKey::new(FixedBytes::from_slice(&[index + 1; 52])),
-                proposal_pubkey: PublicKey::new(FixedBytes::from_slice(&[index + 1; 52])),
-                index: index as u64,
+            .map(|index| {
+                Validator::from_public_key(
+                    PublicKey::new(FixedBytes::from_slice(&[index + 1; 52])),
+                    index as u64,
+                )
             })
             .collect::<Vec<_>>();
 
@@ -50,10 +51,11 @@ mod test {
         assert_eq!(block_1.tree_hash_root(), block_1_copy.tree_hash_root());
 
         let public_keys_2 = (0..3)
-            .map(|index| Validator {
-                attestation_pubkey: PublicKey::new(FixedBytes::from_slice(&[index + 10; 52])),
-                proposal_pubkey: PublicKey::new(FixedBytes::from_slice(&[index + 10; 52])),
-                index: index as u64,
+            .map(|index| {
+                Validator::from_public_key(
+                    PublicKey::new(FixedBytes::from_slice(&[index + 10; 52])),
+                    index as u64,
+                )
             })
             .collect::<Vec<_>>();
 

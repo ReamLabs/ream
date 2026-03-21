@@ -257,10 +257,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             .validator_public_keys
             .iter()
             .enumerate()
-            .map(|(index, public_key)| Validator {
-                attestation_pubkey: PublicKey::new(*public_key),
-                proposal_pubkey: PublicKey::new(*public_key),
-                index: index as u64,
+            .map(|(index, public_key)| {
+                Validator::from_public_key(PublicKey::new(*public_key), index as u64)
             })
             .collect::<Vec<_>>();
 

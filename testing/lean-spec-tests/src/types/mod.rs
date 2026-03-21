@@ -210,11 +210,11 @@ impl TryFrom<&Validator> for ReamValidator {
             );
         }
 
-        Ok(ReamValidator {
-            attestation_pubkey: PublicKey::from(&attestation_pubkey_bytes[..]),
-            proposal_pubkey: PublicKey::from(&proposal_pubkey_bytes[..]),
-            index: validator.index,
-        })
+        Ok(ReamValidator::from_pubkeys(
+            PublicKey::from(&attestation_pubkey_bytes[..]),
+            PublicKey::from(&proposal_pubkey_bytes[..]),
+            validator.index,
+        ))
     }
 }
 
