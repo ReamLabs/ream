@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(feature = "devnet4")]
+use std::collections::HashSet;
 
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
@@ -20,7 +22,7 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    attestation::AggregatedAttestation,
+    attestation::{AggregatedAttestation, AggregatedSignatureProof},
     block::{Block, BlockBody, BlockHeader},
     checkpoint::Checkpoint,
     config::Config,
@@ -137,6 +139,218 @@ impl LeanState {
     /// Check if a validator is the proposer for the current slot.
     fn is_proposer(&self, validator_index: u64) -> bool {
         is_proposer(validator_index, self.slot, self.validators.len() as u64)
+    }
+
+    #[cfg(feature = "devnet4")]
+    fn extend_proofs_greedily(
+        &self,
+        proofs: Option<&HashSet<AggregatedSignatureProof>>,
+        selected_proofs: &mut Vec<AggregatedSignatureProof>,
+        covered_validators: &mut HashSet<u64>
+    ) {
+        let Some(proofs) = proofs else { return };
+
+        let mut remaining = proofs.iter().cloned().collect::<Vec<_>>();
+
+        while !remaining.is_empty() {
+            let best_idx = remaining
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, proof)| {
+                    proof
+                        .participants
+                        .iter()
+                        .enumerate()
+                        .filter(|(validator_id, signed)| {
+                            *signed && !covered_validators.contains(&(*validator_id as u64))
+                        })
+                        .count()
+                })
+                .map(|(i, _)| i);
+
+            let Some(best_idx) = best_idx else { break };
+            let best = remaining.swap_remove(best_idx);
+
+            let participants = best
+                .participants
+                .iter()
+                .enumerate()
+                .filter_map(|(validator_id, signed)| signed.then_some(validator_id as u64))
+                .collect::<HashSet<u64>>();
+
+            if participants.difference(covered_validators).next().is_none() {
+                break;
+            }
+
+            selected_proofs.push(best);
+            covered_validators.extend(participants);
+        }
+    }
+
+    #[cfg(feature = "devnet4")]
+    fn aggregate(
+        &self,
+        attestation_signatures: Option<
+            &HashMap<
+                crate::attestation::AttestationData,
+                HashSet<crate::attestation::AttestationSignatureEntry>,
+            >,
+        >,
+        new_payloads: Option<
+            &HashMap<
+                crate::attestation::AttestationData,
+                HashSet<crate::attestation::AggregatedSignatureProof>,
+            >,
+        >,
+        known_payloads: Option<
+            &HashMap<
+                crate::attestation::AttestationData,
+                HashSet<crate::attestation::AggregatedSignatureProof>,
+            >,
+        >,
+        recursive: bool,
+    ) -> Vec<(
+        crate::attestation::AggregatedAttestation,
+        crate::attestation::AggregatedSignatureProof,
+    )> {
+        let mut results = Vec::new();
+
+        let empty_signatures = HashMap::new();
+        let empty_payloads = HashMap::new();
+
+        let gossip_signatures = attestation_signatures.unwrap_or(&empty_signatures);
+        let new_payloads = new_payloads.unwrap_or(&empty_payloads);
+        let known_payloads = known_payloads.unwrap_or(&empty_payloads);
+
+        if recursive {
+            let mut attestation_keys = HashSet::new();
+            attestation_keys.extend(new_payloads.keys().cloned());
+            attestation_keys.extend(gossip_signatures.keys().cloned());
+
+            if attestation_keys.is_empty() {
+                return results;
+            }
+
+            for data in attestation_keys {
+                let mut child_proofs: Vec<crate::attestation::AggregatedSignatureProof> = Vec::new();
+                let mut covered_validators: HashSet<u64> = HashSet::new();
+
+                self.extend_proofs_greedily(
+                    new_payloads.get(&data),
+                    &mut child_proofs,
+                    &mut covered_validators,
+                );
+                self.extend_proofs_greedily(
+                    known_payloads.get(&data),
+                    &mut child_proofs,
+                    &mut covered_validators,
+                );
+
+                let mut raw_entries: Vec<(u64, _, _)> = Vec::new();
+                let mut gossip_entries: Vec<_> = gossip_signatures
+                    .get(&data)
+                    .map(|s| s.iter().cloned().collect())
+                    .unwrap_or_default();
+
+                gossip_entries.sort_by_key(|e: &crate::attestation::AttestationSignatureEntry| e.validator_id);
+
+                for entry in gossip_entries {
+                    if covered_validators.contains(&entry.validator_id) {
+                        continue;
+                    }
+
+                    let public_key =
+                        self.validators[entry.validator_id as usize].get_attestation_pubkey();
+                    raw_entries.push((entry.validator_id, public_key, entry.signature));
+                    covered_validators.insert(entry.validator_id);
+                }
+
+                if raw_entries.is_empty() && child_proofs.len() < 2 {
+                    continue;
+                }
+
+                raw_entries.sort_by_key(|e| e.0);
+                let raw_xmss: Vec<_> = raw_entries
+                    .iter()
+                    .map(|(_, pk, sig)| (pk.clone(), sig.clone()))
+                    .collect();
+
+                let xmss_participants = crate::attestation::AggregationBits::from_validator_indices(
+                    crate::attestation::ValidatorIndices {
+                        data: raw_entries.iter().map(|e| e.0).collect(),
+                    },
+                );
+
+                let proof = crate::attestation::AggregatedSignatureProof::aggregate(
+                    xmss_participants,
+                    &child_proofs,
+                    &raw_xmss,
+                    data.data_root_bytes(),
+                    data.slot.try_into().unwrap(),
+                ).expect("Failed to aggregate signature proof");
+
+                let attestation = crate::attestation::AggregatedAttestation {
+                    aggregation_bits: proof.participants.clone(),
+                    message: data.clone(),
+                };
+
+                results.push((attestation, proof));
+            }
+        } else {
+            let attestation_keys: Vec<_> = gossip_signatures.keys().cloned().collect();
+            if attestation_keys.is_empty() {
+                return results;
+            }
+
+            for data in attestation_keys {
+                let mut raw_entries: Vec<(u64, _, _)> = Vec::new();
+                let mut gossip_entries: Vec<_> = gossip_signatures
+                    .get(&data)
+                    .map(|s| s.iter().cloned().collect())
+                    .unwrap_or_default();
+
+                gossip_entries.sort_by_key(|e: &crate::attestation::AttestationSignatureEntry| e.validator_id);
+
+                for entry in gossip_entries {
+                    let public_key =
+                        self.validators[entry.validator_id as usize].get_attestation_pubkey();
+                    raw_entries.push((entry.validator_id, public_key, entry.signature));
+                }
+
+                if raw_entries.is_empty() {
+                    continue;
+                }
+
+                raw_entries.sort_by_key(|e| e.0);
+                let raw_xmss: Vec<_> = raw_entries
+                    .iter()
+                    .map(|(_, pk, sig)| (pk.clone(), sig.clone()))
+                    .collect();
+
+                let xmss_participants = crate::attestation::AggregationBits::from_validator_indices(
+                    crate::attestation::ValidatorIndices {
+                        data: raw_entries.iter().map(|e| e.0).collect(),
+                    },
+                );
+
+                let proof = crate::attestation::AggregatedSignatureProof::aggregate(
+                    xmss_participants,
+                    &[],
+                    &raw_xmss,
+                    data.data_root_bytes(),
+                    data.slot.try_into().unwrap(),
+                ).expect("Failed to aggregate signature proof");
+
+                let attestation = crate::attestation::AggregatedAttestation {
+                    aggregation_bits: proof.participants.clone(),
+                    message: data.clone(),
+                };
+
+                results.push((attestation, proof));
+            }
+        }
+
+        results
     }
 
     /// Validate the block header and update header-linked state.

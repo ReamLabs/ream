@@ -1402,134 +1402,29 @@ impl Store {
     #[cfg(feature = "devnet4")]
     fn aggregate(
         &self,
-        head_state: &LeanState,
-        attestations: &[AggregatedAttestations],
-        gossip_signatures_provider: &GossipSignaturesTable,
-        children_payloads: Option<&HashMap<SignatureKey, Vec<AggregatedSignatureProof>>>,
+        recursive: bool
     ) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<AggregatedSignatureProof>)> {
-        let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
-        for attestation in attestations.iter() {
-            groups
-                .entry(attestation.data.clone())
-                .or_default()
-                .push(attestation.validator_id);
-        }
-
-        let mut results = Vec::new();
-
-        for (data, mut validator_ids) in groups {
-            validator_ids.sort();
-            let data_root = data.tree_hash_root();
-            let mut gossip_signatures = Vec::new();
-            let mut gossip_keys = Vec::new();
-            let mut gossip_ids = Vec::new();
-
-            for &validator_id in &validator_ids {
-                if let Ok(Some(signature)) = gossip_signatures_provider
-                    .get(SignatureKey::from_parts(validator_id, data_root))
-                {
-                    gossip_signatures.push(signature);
-                    if let Some(validator) = head_state.validators.get(validator_id as usize) {
-                        gossip_keys.push(validator.public_key);
-                    }
-                    gossip_ids.push(validator_id);
-                }
-            }
-
-            let gossip_id_set: HashSet<u64> = gossip_ids.iter().copied().collect();
-            let mut children_proofs: HashSet<AggregatedSignatureProof> = HashSet::new();
-
-            if let Some(payloads) = children_payloads {
-                for &validator_id in &validator_ids {
-                    if gossip_id_set.contains(&validator_id) {
-                        continue;
-                    }
-                    let key = SignatureKey::from_parts(validator_id, data_root);
-                    if let Some(proofs) = payloads.get(&key) {
-                        for proof in proofs {
-                            children_proofs.insert(proof.clone());
-                        }
-                    }
-                }
-            }
-
-            if gossip_ids.is_empty() && children_proofs.len() < 2 {
-                continue;
-            }
-
-            if !gossip_ids.is_empty() && gossip_signatures.len() != gossip_keys.len() {
-                continue;
-            }
-
-            let mut all_indices: HashSet<u64> = gossip_ids.iter().copied().collect();
-            for child in &children_proofs {
-                all_indices.extend(child.to_validator_indices());
-            }
-
-            let mut merged_bits = BitList::<U4096>::with_capacity(
-                all_indices.iter().max().map_or(0, |&id| id as usize + 1),
+        let (
+            state_provider,
+            head_root
+        ) = {
+            let db = self.store.lock().await;
+            (
+                db.state_provider(),
+                db.head_provider().get()?
             )
-            .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+        };
 
-            for id in &all_indices {
-                merged_bits
-                    .set(*id as usize, true)
-                    .map_err(|err| anyhow!("BitList error: {err:?}"))?;
-            }
+        let head_state = state_provider
+            .get(head_root)?
+            .ok_or_else(|| anyhow!("Head state not found"))?;
 
-            let proof = if !children_proofs.is_empty() {
-                let proof_data = if !gossip_ids.is_empty() {
-                    aggregate_signatures(
-                        &gossip_keys,
-                        &gossip_signatures,
-                        &data_root.0,
-                        data.slot as u32,
-                    )?
-                } else {
-                    children_proofs
-                        .iter()
-                        .next()
-                        .map(|p| p.proof_data.to_vec())
-                        .unwrap_or_default()
-                };
+        if recursive {
+            let aggregated_results = head_state
+        } else {
 
-                AggregatedSignatureProof::new_recursive(
-                    merged_bits.clone(),
-                    VariableList::new(proof_data)
-                        .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
-                    // TODO: Compute actual bytecode_point from recursive aggregation once
-                    // lean-multisig supports it
-                    VariableList::new(vec![0u8; 1])
-                        .map_err(|err| anyhow!("Failed to create bytecode_point: {err:?}"))?,
-                )
-            } else {
-                AggregatedSignatureProof::new(
-                    merged_bits.clone(),
-                    VariableList::new(aggregate_signatures(
-                        &gossip_keys,
-                        &gossip_signatures,
-                        &data_root.0,
-                        data.slot as u32,
-                    )?)
-                    .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
-                )
-            };
-
-            results.push((
-                AggregatedAttestation {
-                    aggregation_bits: merged_bits,
-                    message: data.clone(),
-                },
-                proof,
-            ));
         }
 
-        if results.is_empty() {
-            return Ok((Vec::new(), Vec::new()));
-        }
-
-        let (attestations, proofs): (Vec<_>, Vec<_>) = results.into_iter().unzip();
-        Ok((attestations, proofs))
     }
 
     #[cfg(feature = "devnet4")]
