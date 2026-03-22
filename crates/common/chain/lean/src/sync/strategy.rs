@@ -180,6 +180,7 @@ impl PendingRequestDedupStrategy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HandoffInputs {
     pub is_behind_peers: bool,
+    pub has_orphaned_pending_blocks: bool,
     pub has_pending_backfill_work: bool,
     pub has_near_head_bridge: bool,
     pub has_active_backfill_jobs: bool,
@@ -187,12 +188,15 @@ pub struct HandoffInputs {
 }
 
 pub fn should_switch_to_synced(strategy: HandoffStrategy, inputs: HandoffInputs) -> bool {
-    if inputs.is_behind_peers {
+    if inputs.is_behind_peers
+        || inputs.has_orphaned_pending_blocks
+        || inputs.has_inflight_backfill_requests
+    {
         return false;
     }
 
     match strategy {
-        HandoffStrategy::Legacy => true,
+        HandoffStrategy::Legacy => !inputs.has_pending_backfill_work,
         HandoffStrategy::RobustBridge => {
             if !inputs.has_pending_backfill_work {
                 return true;
@@ -223,15 +227,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn handoff_strategy_legacy_ignores_pending_backfill_work() {
-        assert!(should_switch_to_synced(
+    fn handoff_strategy_legacy_requires_no_pending_backfill_work() {
+        assert!(!should_switch_to_synced(
             HandoffStrategy::Legacy,
             HandoffInputs {
                 is_behind_peers: false,
+                has_orphaned_pending_blocks: false,
                 has_pending_backfill_work: true,
                 has_near_head_bridge: false,
                 has_active_backfill_jobs: true,
-                has_inflight_backfill_requests: true,
+                has_inflight_backfill_requests: false,
             },
         ));
     }
@@ -242,6 +247,7 @@ mod tests {
             HandoffStrategy::RobustBridge,
             HandoffInputs {
                 is_behind_peers: false,
+                has_orphaned_pending_blocks: false,
                 has_pending_backfill_work: true,
                 has_near_head_bridge: false,
                 has_active_backfill_jobs: true,
@@ -253,6 +259,7 @@ mod tests {
             HandoffStrategy::RobustBridge,
             HandoffInputs {
                 is_behind_peers: false,
+                has_orphaned_pending_blocks: false,
                 has_pending_backfill_work: true,
                 has_near_head_bridge: true,
                 has_active_backfill_jobs: true,
@@ -264,6 +271,7 @@ mod tests {
             HandoffStrategy::RobustBridge,
             HandoffInputs {
                 is_behind_peers: false,
+                has_orphaned_pending_blocks: false,
                 has_pending_backfill_work: true,
                 has_near_head_bridge: true,
                 has_active_backfill_jobs: false,
@@ -275,6 +283,7 @@ mod tests {
             HandoffStrategy::RobustBridge,
             HandoffInputs {
                 is_behind_peers: false,
+                has_orphaned_pending_blocks: false,
                 has_pending_backfill_work: true,
                 has_near_head_bridge: true,
                 has_active_backfill_jobs: false,
@@ -284,11 +293,63 @@ mod tests {
     }
 
     #[test]
-    fn handoff_stays_syncing_when_behind_peers() {
+    fn handoff_strategy_legacy_requires_no_pending_backfill_or_inflight_requests() {
+        assert!(!should_switch_to_synced(
+            HandoffStrategy::Legacy,
+            HandoffInputs {
+                is_behind_peers: false,
+                has_orphaned_pending_blocks: false,
+                has_pending_backfill_work: true,
+                has_near_head_bridge: true,
+                has_active_backfill_jobs: false,
+                has_inflight_backfill_requests: false,
+            },
+        ));
+
+        assert!(!should_switch_to_synced(
+            HandoffStrategy::Legacy,
+            HandoffInputs {
+                is_behind_peers: false,
+                has_orphaned_pending_blocks: false,
+                has_pending_backfill_work: false,
+                has_near_head_bridge: true,
+                has_active_backfill_jobs: false,
+                has_inflight_backfill_requests: true,
+            },
+        ));
+
+        assert!(should_switch_to_synced(
+            HandoffStrategy::Legacy,
+            HandoffInputs {
+                is_behind_peers: false,
+                has_orphaned_pending_blocks: false,
+                has_pending_backfill_work: false,
+                has_near_head_bridge: false,
+                has_active_backfill_jobs: false,
+                has_inflight_backfill_requests: false,
+            },
+        ));
+    }
+
+    #[test]
+    fn handoff_stays_syncing_when_behind_peers_or_orphaned_blocks_exist() {
         assert!(!should_switch_to_synced(
             HandoffStrategy::Legacy,
             HandoffInputs {
                 is_behind_peers: true,
+                has_orphaned_pending_blocks: false,
+                has_pending_backfill_work: false,
+                has_near_head_bridge: true,
+                has_active_backfill_jobs: false,
+                has_inflight_backfill_requests: false,
+            },
+        ));
+
+        assert!(!should_switch_to_synced(
+            HandoffStrategy::Legacy,
+            HandoffInputs {
+                is_behind_peers: false,
+                has_orphaned_pending_blocks: true,
                 has_pending_backfill_work: false,
                 has_near_head_bridge: true,
                 has_active_backfill_jobs: false,
