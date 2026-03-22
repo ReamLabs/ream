@@ -11,6 +11,8 @@ use ream_metrics::{
     STATE_TRANSITION_SLOTS_PROCESSED_TOTAL, STATE_TRANSITION_SLOTS_PROCESSING_TIME,
     STATE_TRANSITION_TIME, inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
 };
+#[cfg(feature = "devnet4")]
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{
@@ -21,6 +23,8 @@ use tracing::info;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
+#[cfg(feature = "devnet4")]
+use crate::attestation::AttestationData;
 use crate::{
     attestation::{AggregatedAttestation, AggregatedSignatureProof},
     block::{Block, BlockBody, BlockHeader},
@@ -190,29 +194,11 @@ impl LeanState {
     #[cfg(feature = "devnet4")]
     fn aggregate(
         &self,
-        attestation_signatures: Option<
-            &HashMap<
-                crate::attestation::AttestationData,
-                HashSet<crate::attestation::AttestationSignatureEntry>,
-            >,
-        >,
-        new_payloads: Option<
-            &HashMap<
-                crate::attestation::AttestationData,
-                HashSet<crate::attestation::AggregatedSignatureProof>,
-            >,
-        >,
-        known_payloads: Option<
-            &HashMap<
-                crate::attestation::AttestationData,
-                HashSet<crate::attestation::AggregatedSignatureProof>,
-            >,
-        >,
+        attestation_signatures: Option<&HashMap<AttestationData, HashSet<(u64, Signature)>>>,
+        new_payloads: Option<&HashMap<AttestationData, HashSet<AggregatedSignatureProof>>>,
+        known_payloads: Option<&HashMap<AttestationData, HashSet<AggregatedSignatureProof>>>,
         recursive: bool,
-    ) -> Vec<(
-        crate::attestation::AggregatedAttestation,
-        crate::attestation::AggregatedSignatureProof,
-    )> {
+    ) -> Vec<(AggregatedAttestation, AggregatedSignatureProof)> {
         let mut results = Vec::new();
 
         let empty_signatures = HashMap::new();
@@ -232,7 +218,7 @@ impl LeanState {
             }
 
             for data in attestation_keys {
-                let mut child_proofs: Vec<crate::attestation::AggregatedSignatureProof> = Vec::new();
+                let mut child_proofs: Vec<AggregatedSignatureProof> = Vec::new();
                 let mut covered_validators: HashSet<u64> = HashSet::new();
 
                 self.extend_proofs_greedily(
@@ -249,20 +235,20 @@ impl LeanState {
                 let mut raw_entries: Vec<(u64, _, _)> = Vec::new();
                 let mut gossip_entries: Vec<_> = gossip_signatures
                     .get(&data)
-                    .map(|s| s.iter().cloned().collect())
+                    .map(|s| s.iter().cloned().collect::<Vec<_>>())
                     .unwrap_or_default();
 
-                gossip_entries.sort_by_key(|e: &crate::attestation::AttestationSignatureEntry| e.validator_id);
+                gossip_entries.sort_by_key(|e| e.0);
 
-                for entry in gossip_entries {
-                    if covered_validators.contains(&entry.validator_id) {
+                for (validator_id, signature) in gossip_entries {
+                    if covered_validators.contains(&validator_id) {
                         continue;
                     }
 
                     let public_key =
-                        self.validators[entry.validator_id as usize].get_attestation_pubkey();
-                    raw_entries.push((entry.validator_id, public_key, entry.signature));
-                    covered_validators.insert(entry.validator_id);
+                        self.validators[validator_id as usize].get_attestation_pubkey();
+                    raw_entries.push((validator_id, public_key, signature));
+                    covered_validators.insert(validator_id);
                 }
 
                 if raw_entries.is_empty() && child_proofs.len() < 2 {
@@ -275,21 +261,21 @@ impl LeanState {
                     .map(|(_, pk, sig)| (pk.clone(), sig.clone()))
                     .collect();
 
-                let xmss_participants = crate::attestation::AggregationBits::from_validator_indices(
-                    crate::attestation::ValidatorIndices {
+                let xmss_participants = AggregationBits::from_validator_indices(
+                    ValidatorIndices {
                         data: raw_entries.iter().map(|e| e.0).collect(),
                     },
                 );
 
-                let proof = crate::attestation::AggregatedSignatureProof::aggregate(
+                let proof = AggregatedSignatureProof::aggregate(
                     xmss_participants,
                     &child_proofs,
                     &raw_xmss,
                     data.data_root_bytes(),
-                    data.slot.try_into().unwrap(),
+                    data.slot,
                 ).expect("Failed to aggregate signature proof");
 
-                let attestation = crate::attestation::AggregatedAttestation {
+                let attestation = AggregatedAttestation {
                     aggregation_bits: proof.participants.clone(),
                     message: data.clone(),
                 };
@@ -297,7 +283,7 @@ impl LeanState {
                 results.push((attestation, proof));
             }
         } else {
-            let attestation_keys: Vec<_> = gossip_signatures.keys().cloned().collect();
+            let attestation_keys: HashSet<_> = gossip_signatures.keys().cloned().collect();
             if attestation_keys.is_empty() {
                 return results;
             }
@@ -306,15 +292,15 @@ impl LeanState {
                 let mut raw_entries: Vec<(u64, _, _)> = Vec::new();
                 let mut gossip_entries: Vec<_> = gossip_signatures
                     .get(&data)
-                    .map(|s| s.iter().cloned().collect())
+                    .map(|s| s.iter().cloned().collect::<Vec<_>>())
                     .unwrap_or_default();
 
-                gossip_entries.sort_by_key(|e: &crate::attestation::AttestationSignatureEntry| e.validator_id);
+                gossip_entries.sort_by_key(|e| e.0);
 
-                for entry in gossip_entries {
+                for (validator_id, signature) in gossip_entries {
                     let public_key =
-                        self.validators[entry.validator_id as usize].get_attestation_pubkey();
-                    raw_entries.push((entry.validator_id, public_key, entry.signature));
+                        self.validators[validator_id as usize].get_attestation_pubkey();
+                    raw_entries.push((validator_id, public_key, signature));
                 }
 
                 if raw_entries.is_empty() {
@@ -327,21 +313,21 @@ impl LeanState {
                     .map(|(_, pk, sig)| (pk.clone(), sig.clone()))
                     .collect();
 
-                let xmss_participants = crate::attestation::AggregationBits::from_validator_indices(
-                    crate::attestation::ValidatorIndices {
+                let xmss_participants = AggregationBits::from_validator_indices(
+                    ValidatorIndices {
                         data: raw_entries.iter().map(|e| e.0).collect(),
                     },
                 );
 
-                let proof = crate::attestation::AggregatedSignatureProof::aggregate(
+                let proof = AggregatedSignatureProof::aggregate(
                     xmss_participants,
                     &[],
                     &raw_xmss,
                     data.data_root_bytes(),
-                    data.slot.try_into().unwrap(),
+                    data.slot,
                 ).expect("Failed to aggregate signature proof");
 
-                let attestation = crate::attestation::AggregatedAttestation {
+                let attestation = AggregatedAttestation {
                     aggregation_bits: proof.participants.clone(),
                     message: data.clone(),
                 };
