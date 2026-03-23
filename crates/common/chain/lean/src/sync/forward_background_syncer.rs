@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use alloy_primitives::B256;
-use anyhow::{anyhow, ensure};
+use anyhow::anyhow;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::{block::SignedBlock, checkpoint::Checkpoint};
 #[cfg(feature = "devnet3")]
@@ -44,6 +44,11 @@ impl ForwardBackgroundSyncer {
                 store.block_provider(),
             )
         };
+        let network_finalized_slot = self
+            .network_state
+            .common_finalized_checkpoint()
+            .map(|checkpoint| checkpoint.slot)
+            .unwrap_or(0);
         let mut next_root = self.job_queue.starting_root;
         #[cfg(feature = "devnet3")]
         let mut last_block: Option<SignedBlockWithAttestation> = None;
@@ -72,11 +77,22 @@ impl ForwardBackgroundSyncer {
                     }
                 },
             };
-            ensure!(
-                current_block.message.block.tree_hash_root() == next_root,
-                "Block root mismatch: expected {next_root:?}, got {:?}",
-                current_block.message.block.tree_hash_root()
-            );
+            if current_block.message.block.tree_hash_root() != next_root {
+                let bad_slot = current_block.message.block.slot;
+                return Ok(ForwardSyncResults::RootMismatch {
+                    previous_queue: self.job_queue.clone(),
+                    checkpoint_for_new_queue: (bad_slot > network_finalized_slot).then_some(
+                        Checkpoint {
+                            root: next_root,
+                            slot: bad_slot,
+                        },
+                    ),
+                    bad_root: next_root,
+                    bad_slot,
+                    actual_root: current_block.message.block.tree_hash_root(),
+                    network_finalized_slot,
+                });
+            }
             chained_roots.push(next_root);
             next_root = current_block.message.block.parent_root;
             last_block = Some(current_block.clone());
@@ -104,11 +120,22 @@ impl ForwardBackgroundSyncer {
                     }
                 },
             };
-            ensure!(
-                current_block.message.tree_hash_root() == next_root,
-                "Block root mismatch: expected {next_root:?}, got {:?}",
-                current_block.message.tree_hash_root()
-            );
+            if current_block.message.tree_hash_root() != next_root {
+                let bad_slot = current_block.message.slot;
+                return Ok(ForwardSyncResults::RootMismatch {
+                    previous_queue: self.job_queue.clone(),
+                    checkpoint_for_new_queue: (bad_slot > network_finalized_slot).then_some(
+                        Checkpoint {
+                            root: next_root,
+                            slot: bad_slot,
+                        },
+                    ),
+                    bad_root: next_root,
+                    bad_slot,
+                    actual_root: current_block.message.tree_hash_root(),
+                    network_finalized_slot,
+                });
+            }
             chained_roots.push(next_root);
             next_root = current_block.message.parent_root;
             last_block = Some(current_block.clone());
@@ -152,6 +179,7 @@ impl ForwardBackgroundSyncer {
     }
 }
 
+#[derive(Debug)]
 pub enum ForwardSyncResults {
     Completed {
         starting_root: B256,
@@ -163,4 +191,143 @@ pub enum ForwardSyncResults {
         prevous_queue: JobQueue,
         checkpoint_for_new_queue: Checkpoint,
     },
+    RootMismatch {
+        previous_queue: JobQueue,
+        checkpoint_for_new_queue: Option<Checkpoint>,
+        bad_root: B256,
+        bad_slot: u64,
+        actual_root: B256,
+        network_finalized_slot: u64,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use libp2p_identity::PeerId;
+    #[cfg(feature = "devnet4")]
+    use ream_consensus_lean::block::{BlockSignatures, SignedBlock};
+    #[cfg(feature = "devnet3")]
+    use ream_consensus_lean::{
+        attestation::AggregatedAttestations,
+        block::{BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
+    };
+    use ream_peer::{ConnectionState, Direction};
+    use ream_post_quantum_crypto::leansig::signature::Signature;
+    use ream_sync::rwlock::Writer;
+    use ream_test_utils::store::sample_store;
+
+    use super::*;
+
+    async fn root_mismatch_result(network_finalized_slot: u64) -> ForwardSyncResults {
+        let mut store = sample_store(10).await;
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(1).await.unwrap();
+        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let pending_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 1,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let pending_block = SignedBlock {
+            message: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        let bad_root = B256::repeat_byte(0xef);
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(bad_root, pending_block)
+            .unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let network_state = writer.read().await.network_state.clone();
+        let peer_id = PeerId::random();
+        network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        network_state.update_peer_checkpoints(
+            peer_id,
+            Checkpoint {
+                root: B256::repeat_byte(0x11),
+                slot: 1,
+            },
+            Checkpoint {
+                root: B256::repeat_byte(0x22),
+                slot: network_finalized_slot,
+            },
+        );
+
+        let mut queue = JobQueue::new(bad_root, 1, 1);
+        queue.is_complete = true;
+        let mut syncer = ForwardBackgroundSyncer::new(Arc::new(writer), network_state, queue);
+        syncer.start().await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_root_mismatch_requeues_before_network_finalized() {
+        let result = root_mismatch_result(0).await;
+
+        match result {
+            ForwardSyncResults::RootMismatch {
+                checkpoint_for_new_queue,
+                bad_root,
+                bad_slot,
+                network_finalized_slot,
+                ..
+            } => {
+                assert_eq!(bad_root, B256::repeat_byte(0xef));
+                assert_eq!(bad_slot, 1);
+                assert_eq!(network_finalized_slot, 0);
+                assert_eq!(
+                    checkpoint_for_new_queue,
+                    Some(Checkpoint {
+                        root: B256::repeat_byte(0xef),
+                        slot: 1,
+                    })
+                );
+            }
+            other => panic!("expected root mismatch result, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_root_mismatch_drops_after_network_finalized() {
+        let result = root_mismatch_result(1).await;
+
+        match result {
+            ForwardSyncResults::RootMismatch {
+                checkpoint_for_new_queue,
+                bad_root,
+                bad_slot,
+                network_finalized_slot,
+                ..
+            } => {
+                assert_eq!(bad_root, B256::repeat_byte(0xef));
+                assert_eq!(bad_slot, 1);
+                assert_eq!(network_finalized_slot, 1);
+                assert_eq!(checkpoint_for_new_queue, None);
+            }
+            other => panic!("expected root mismatch result, got {other:?}"),
+        }
+    }
 }
