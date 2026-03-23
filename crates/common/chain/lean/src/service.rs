@@ -2325,7 +2325,7 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
-            message: block.block,
+            block: block.block,
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
@@ -2338,8 +2338,8 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let pending_root = {
-            pending_block.message.parent_root = B256::repeat_byte(0x99);
-            pending_block.message.tree_hash_root()
+            pending_block.block.parent_root = B256::repeat_byte(0x99);
+            pending_block.block.tree_hash_root()
         };
         store
             .store
@@ -2412,7 +2412,7 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
-            message: block.block,
+            block: block.block,
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
@@ -2421,7 +2421,7 @@ mod tests {
         #[cfg(feature = "devnet3")]
         let actual_root = pending_block.message.block.tree_hash_root();
         #[cfg(feature = "devnet4")]
-        let actual_root = pending_block.message.tree_hash_root();
+        let actual_root = pending_block.block.tree_hash_root();
         let bad_root = B256::repeat_byte(0xab);
         store
             .store
@@ -2501,7 +2501,7 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
-            message: block.block,
+            block: block.block,
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
@@ -2510,7 +2510,7 @@ mod tests {
         #[cfg(feature = "devnet3")]
         let actual_root = pending_block.message.block.tree_hash_root();
         #[cfg(feature = "devnet4")]
-        let actual_root = pending_block.message.tree_hash_root();
+        let actual_root = pending_block.block.tree_hash_root();
         let bad_root = B256::repeat_byte(0xcd);
         store
             .store

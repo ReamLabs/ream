@@ -241,7 +241,7 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
-            message: block.block,
+            block: block.block,
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
