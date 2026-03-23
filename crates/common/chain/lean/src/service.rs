@@ -294,30 +294,7 @@ impl LeanChainService {
                         },
                     };
 
-                    match forward_syncer {
-                        ForwardSyncResults::Completed { starting_root, ending_root, blocks_synced, processing_time_seconds } => {
-                            info!(
-                                starting_root = ?starting_root,
-                                ending_root = ?ending_root,
-                                blocks_synced,
-                                processing_time_seconds,
-                                "Forward background sync completed",
-                            );
-                            // The ending root is the starting root of the processed queue, since
-                            // the sync walks backwards from there to the head.
-                            self.sync_status.remove_processed_queue(ending_root);
-                        }
-                        ForwardSyncResults::ChainIncomplete { prevous_queue, checkpoint_for_new_queue } => {
-                            warn!(
-                                starting_root = ?prevous_queue.starting_root,
-                                starting_slot = prevous_queue.starting_slot,
-                                "Forward background sync incomplete; re-queuing job",
-                            );
-
-                            self.sync_status.remove_processed_queue(prevous_queue.starting_root);
-                            self.checkpoints_to_queue.push((checkpoint_for_new_queue, true));
-                        }
-                    }
+                    self.handle_forward_sync_result(forward_syncer).await?;
                 }
                 Some((callback_response, rx)) = self.pending_callbacks.next() => {
                     match callback_response {
@@ -1032,7 +1009,7 @@ impl LeanChainService {
             current_head_slot,
             highest_peer_head_slot,
         );
-        let should_be_synced = should_switch_to_synced(
+        let should_transition_to_synced = should_switch_to_synced(
             self.telemetry.handoff_strategy,
             HandoffInputs {
                 is_behind_peers: is_behind_finalized,
@@ -1043,9 +1020,29 @@ impl LeanChainService {
                 has_inflight_backfill_requests,
             },
         );
-        let transitioned_to_synced = should_be_synced && self.sync_status != SyncStatus::Synced;
+        let transitioned_to_synced =
+            should_transition_to_synced && self.sync_status != SyncStatus::Synced;
 
-        let sync_status = if should_be_synced {
+        let sync_status = if self.sync_status == SyncStatus::Synced {
+            if is_behind_finalized {
+                info!(
+                    slot = get_current_slot(),
+                    head_slot = current_head_slot,
+                    peer_head_slot = highest_peer_head_slot,
+                    peer_finalized_slot = highest_peer_finalized_slot,
+                    has_orphaned_pending_blocks,
+                    has_pending_backfill_work,
+                    has_near_head_bridge,
+                    has_active_backfill_jobs,
+                    has_inflight_backfill_requests,
+                    handoff_strategy = ?self.telemetry.handoff_strategy,
+                    "Node fell behind network finalized checkpoint; switching to backfill syncing mode"
+                );
+                SyncStatus::Syncing { jobs: Vec::new() }
+            } else {
+                SyncStatus::Synced
+            }
+        } else if should_transition_to_synced {
             if transitioned_to_synced {
                 if is_synced_by_time {
                     info!(
@@ -1064,21 +1061,6 @@ impl LeanChainService {
                 }
             }
             SyncStatus::Synced
-        } else if self.sync_status == SyncStatus::Synced {
-            info!(
-                slot = get_current_slot(),
-                head_slot = current_head_slot,
-                peer_head_slot = highest_peer_head_slot,
-                peer_finalized_slot = highest_peer_finalized_slot,
-                has_orphaned_pending_blocks,
-                has_pending_backfill_work,
-                has_near_head_bridge,
-                has_active_backfill_jobs,
-                has_inflight_backfill_requests,
-                handoff_strategy = ?self.telemetry.handoff_strategy,
-                "Node fell behind peer finalized checkpoint; switching to backfill syncing mode"
-            );
-            SyncStatus::Syncing { jobs: Vec::new() }
         } else {
             self.sync_status.clone()
         };
@@ -1102,10 +1084,98 @@ impl LeanChainService {
             || !self.telemetry.inflight_roots.is_empty()
     }
 
+    async fn handle_forward_sync_result(
+        &mut self,
+        forward_syncer: ForwardSyncResults,
+    ) -> anyhow::Result<()> {
+        match forward_syncer {
+            ForwardSyncResults::Completed {
+                starting_root,
+                ending_root,
+                blocks_synced,
+                processing_time_seconds,
+            } => {
+                info!(
+                    starting_root = ?starting_root,
+                    ending_root = ?ending_root,
+                    blocks_synced,
+                    processing_time_seconds,
+                    "Forward background sync completed",
+                );
+                self.sync_status.remove_processed_queue(ending_root);
+            }
+            ForwardSyncResults::ChainIncomplete {
+                prevous_queue,
+                checkpoint_for_new_queue,
+            } => {
+                warn!(
+                    starting_root = ?prevous_queue.starting_root,
+                    starting_slot = prevous_queue.starting_slot,
+                    "Forward background sync incomplete; re-queuing job",
+                );
+
+                self.sync_status
+                    .remove_processed_queue(prevous_queue.starting_root);
+                self.checkpoints_to_queue
+                    .push((checkpoint_for_new_queue, true));
+            }
+            ForwardSyncResults::RootMismatch {
+                previous_queue,
+                checkpoint_for_new_queue,
+                bad_root,
+                bad_slot,
+                actual_root,
+                network_finalized_slot,
+            } => {
+                let removed_pending_block = self.remove_pending_block(bad_root).await?;
+                self.sync_status
+                    .remove_processed_queue(previous_queue.starting_root);
+
+                if let Some(checkpoint_for_new_queue) = checkpoint_for_new_queue {
+                    warn!(
+                        starting_root = ?previous_queue.starting_root,
+                        starting_slot = previous_queue.starting_slot,
+                        bad_root = ?bad_root,
+                        bad_slot,
+                        actual_root = ?actual_root,
+                        network_finalized_slot,
+                        removed_pending_block,
+                        "Forward background sync root mismatch; purged bad root and re-queuing job",
+                    );
+                    self.checkpoints_to_queue
+                        .push((checkpoint_for_new_queue, true));
+                } else {
+                    warn!(
+                        starting_root = ?previous_queue.starting_root,
+                        starting_slot = previous_queue.starting_slot,
+                        bad_root = ?bad_root,
+                        bad_slot,
+                        actual_root = ?actual_root,
+                        network_finalized_slot,
+                        removed_pending_block,
+                        "Forward background sync root mismatch for finalized slot; dropping erroneous queue",
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     async fn has_orphaned_pending_blocks(&self) -> bool {
         let fork_choice = self.store.read().await;
         let store = fork_choice.store.lock().await;
         !store.pending_blocks_provider().is_empty()
+    }
+
+    async fn remove_pending_block(&self, root: alloy_primitives::B256) -> anyhow::Result<bool> {
+        let pending_blocks_provider = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store.pending_blocks_provider()
+        };
+
+        Ok(pending_blocks_provider.remove(root)?.is_some())
     }
 
     async fn prune_stale_pending_blocks(&self) -> anyhow::Result<()> {
@@ -1987,6 +2057,8 @@ fn pending_block_slot(block: &SignedBlock) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use alloy_primitives::B256;
     use libp2p_identity::PeerId;
     #[cfg(feature = "devnet4")]
@@ -2008,11 +2080,15 @@ mod tests {
     use tokio::sync::{mpsc, oneshot};
     use tree_hash::TreeHash;
 
-    use super::LeanChainService;
+    use super::{InflightRootRequest, LeanChainService};
     use crate::{
         messages::ServiceResponse,
         p2p_request::LeanP2PRequest,
-        sync::{SyncStatus, job::pending::PendingJobRequest},
+        sync::{
+            SyncStatus,
+            forward_background_syncer::ForwardSyncResults,
+            job::{pending::PendingJobRequest, queue::JobQueue},
+        },
     };
 
     async fn advance_store_to_slot(store: &mut Store, target_slot: u64, validator_count: u64) {
@@ -2224,6 +2300,260 @@ mod tests {
             service.update_sync_status().await.unwrap(),
             SyncStatus::Syncing { jobs } if jobs.is_empty()
         ));
+        assert!(service.should_run_backfill_sync().await);
+    }
+
+    #[tokio::test]
+    async fn test_update_sync_status_stays_synced_with_only_orphaned_pending_blocks() {
+        let mut store = sample_store(10).await;
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(1).await.unwrap();
+        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let mut pending_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 1,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let mut pending_block = SignedBlock {
+            message: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        let pending_root = {
+            pending_block.message.block.parent_root = B256::repeat_byte(0x99);
+            pending_block.message.block.tree_hash_root()
+        };
+        #[cfg(feature = "devnet4")]
+        let pending_root = {
+            pending_block.message.parent_root = B256::repeat_byte(0x99);
+            pending_block.message.tree_hash_root()
+        };
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(pending_root, pending_block)
+            .unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+
+        assert!(service.has_orphaned_pending_blocks().await);
+        assert_eq!(
+            service.update_sync_status().await.unwrap(),
+            SyncStatus::Synced
+        );
+        assert!(service.should_run_backfill_sync().await);
+    }
+
+    #[tokio::test]
+    async fn test_update_sync_status_stays_synced_with_only_inflight_backfill_requests() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+        service.telemetry.inflight_roots.insert(
+            B256::repeat_byte(0xaa),
+            InflightRootRequest {
+                primary_peer: PeerId::random(),
+                backup_peer: None,
+                requested_at: Instant::now(),
+                backup_sent: false,
+            },
+        );
+
+        assert_eq!(
+            service.update_sync_status().await.unwrap(),
+            SyncStatus::Synced
+        );
+        assert!(service.should_run_backfill_sync().await);
+    }
+
+    #[tokio::test]
+    async fn test_handle_forward_sync_root_mismatch_requeues_before_network_finalized() {
+        let mut store = sample_store(10).await;
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(1).await.unwrap();
+        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let pending_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 1,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let pending_block = SignedBlock {
+            message: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        let actual_root = pending_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let actual_root = pending_block.message.tree_hash_root();
+        let bad_root = B256::repeat_byte(0xab);
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(bad_root, pending_block)
+            .unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut previous_queue = JobQueue::new(bad_root, 1, 1);
+        previous_queue.is_complete = true;
+        service.sync_status = SyncStatus::Syncing {
+            jobs: vec![previous_queue.clone()],
+        };
+
+        service
+            .handle_forward_sync_result(ForwardSyncResults::RootMismatch {
+                previous_queue,
+                checkpoint_for_new_queue: Some(Checkpoint {
+                    root: bad_root,
+                    slot: 1,
+                }),
+                bad_root,
+                bad_slot: 1,
+                actual_root,
+                network_finalized_slot: 0,
+            })
+            .await
+            .unwrap();
+
+        assert!(matches!(&service.sync_status, SyncStatus::Syncing { jobs } if jobs.is_empty()));
+        assert_eq!(
+            service.checkpoints_to_queue,
+            vec![(
+                Checkpoint {
+                    root: bad_root,
+                    slot: 1
+                },
+                true
+            )]
+        );
+        let pending_present = {
+            let fork_choice = service.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store
+                .pending_blocks_provider()
+                .get(bad_root)
+                .unwrap()
+                .is_some()
+        };
+        assert!(!pending_present);
+    }
+
+    #[tokio::test]
+    async fn test_handle_forward_sync_root_mismatch_drops_after_network_finalized() {
+        let mut store = sample_store(10).await;
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(1).await.unwrap();
+        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let pending_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 1,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let pending_block = SignedBlock {
+            message: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        let actual_root = pending_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let actual_root = pending_block.message.tree_hash_root();
+        let bad_root = B256::repeat_byte(0xcd);
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(bad_root, pending_block)
+            .unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut previous_queue = JobQueue::new(bad_root, 1, 1);
+        previous_queue.is_complete = true;
+        service.sync_status = SyncStatus::Syncing {
+            jobs: vec![previous_queue.clone()],
+        };
+
+        service
+            .handle_forward_sync_result(ForwardSyncResults::RootMismatch {
+                previous_queue,
+                checkpoint_for_new_queue: None,
+                bad_root,
+                bad_slot: 1,
+                actual_root,
+                network_finalized_slot: 1,
+            })
+            .await
+            .unwrap();
+
+        assert!(matches!(&service.sync_status, SyncStatus::Syncing { jobs } if jobs.is_empty()));
+        assert!(service.checkpoints_to_queue.is_empty());
+        let pending_present = {
+            let fork_choice = service.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store
+                .pending_blocks_provider()
+                .get(bad_root)
+                .unwrap()
+                .is_some()
+        };
+        assert!(!pending_present);
     }
 
     #[tokio::test]
