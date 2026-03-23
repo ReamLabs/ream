@@ -148,7 +148,7 @@ impl SignedBlockWithAttestation {
 #[cfg(feature = "devnet4")]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct SignedBlock {
-    pub message: Block,
+    pub block: Block,
     pub signature: BlockSignatures,
 }
 
@@ -159,7 +159,7 @@ impl SignedBlock {
         parent_state: &LeanState,
         verify_signatures: bool,
     ) -> anyhow::Result<bool> {
-        let block = &self.message;
+        let block = &self.block;
         let signatures = &self.signature;
         let aggregated_attestations = &block.body.attestations;
         let attestation_signatures = &signatures.attestation_signatures;

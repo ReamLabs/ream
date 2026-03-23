@@ -421,7 +421,7 @@ impl TryFrom<&SignedBlockWithAttestationJSON> for SignedBlockWithAttestation {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedBlockJSON {
-    pub message: BlockJSON,
+    pub block: BlockJSON,
     pub signature: BlockSignaturesJSON,
 }
 
@@ -431,7 +431,7 @@ impl TryFrom<&SignedBlockJSON> for SignedBlock {
 
     fn try_from(value: &SignedBlockJSON) -> anyhow::Result<Self> {
         Ok(Self {
-            message: (&value.message).try_into()?,
+            block: (&value.block).try_into()?,
             signature: (&value.signature).try_into()?,
         })
     }

@@ -114,14 +114,14 @@ impl ForwardBackgroundSyncer {
                             prevous_queue: self.job_queue.clone(),
                             checkpoint_for_new_queue: Checkpoint {
                                 root: next_root,
-                                slot: last_block.message.slot.saturating_sub(1),
+                                slot: last_block.block.slot.saturating_sub(1),
                             },
                         });
                     }
                 },
             };
-            if current_block.message.tree_hash_root() != next_root {
-                let bad_slot = current_block.message.slot;
+            if current_block.block.tree_hash_root() != next_root {
+                let bad_slot = current_block.block.slot;
                 return Ok(ForwardSyncResults::RootMismatch {
                     previous_queue: self.job_queue.clone(),
                     checkpoint_for_new_queue: (bad_slot > network_finalized_slot).then_some(
@@ -132,12 +132,12 @@ impl ForwardBackgroundSyncer {
                     ),
                     bad_root: next_root,
                     bad_slot,
-                    actual_root: current_block.message.tree_hash_root(),
+                    actual_root: current_block.block.tree_hash_root(),
                     network_finalized_slot,
                 });
             }
             chained_roots.push(next_root);
-            next_root = current_block.message.parent_root;
+            next_root = current_block.block.parent_root;
             last_block = Some(current_block.clone());
         }
 
@@ -161,7 +161,7 @@ impl ForwardBackgroundSyncer {
                 + (block.message.block.slot * lean_network_spec().seconds_per_slot);
             #[cfg(feature = "devnet4")]
             let time = lean_network_spec().genesis_time
-                + (block.message.slot * lean_network_spec().seconds_per_slot);
+                + (block.block.slot * lean_network_spec().seconds_per_slot);
             store_writer.on_tick(time, false, true).await?;
             store_writer.on_block(&block, true).await?;
             blocks_synced += 1;

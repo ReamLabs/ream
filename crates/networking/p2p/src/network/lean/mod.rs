@@ -283,7 +283,7 @@ impl LeanNetworkService {
                                 #[cfg(feature = "devnet3")]
                                 block.message.block.slot,
                                 #[cfg(feature = "devnet4")]
-                                block.message.slot,
+                                block.block.slot,
                                 "block"
                             );
                         }
@@ -563,7 +563,7 @@ impl LeanNetworkService {
                 }
                 #[cfg(feature = "devnet4")]
                 Ok(LeanGossipsubMessage::Block(signed_block)) => {
-                    let slot = signed_block.message.slot;
+                    let slot = signed_block.block.slot;
 
                     if let Err(err) =
                         self.chain_message_sender

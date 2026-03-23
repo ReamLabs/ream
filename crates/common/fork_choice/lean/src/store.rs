@@ -88,7 +88,7 @@ impl Store {
         );
         #[cfg(feature = "devnet4")]
         ensure!(
-            anchor_block.message.state_root == anchor_state.tree_hash_root(),
+            anchor_block.block.state_root == anchor_state.tree_hash_root(),
             "Anchor block state root must match anchor state hash"
         );
 
@@ -102,7 +102,7 @@ impl Store {
         #[cfg(feature = "devnet3")]
         let anchor_slot = anchor_block.message.block.slot;
         #[cfg(feature = "devnet4")]
-        let anchor_slot = anchor_block.message.slot;
+        let anchor_slot = anchor_block.block.slot;
 
         let justified_checkpoint = Checkpoint {
             root: anchor_root,
@@ -186,7 +186,7 @@ impl Store {
         let start_slot = block_provider
             .get(root)?
             .ok_or(anyhow!("Failed to get block for root {root:?}"))?
-            .message
+            .block
             .slot;
         // For each block, count the number of votes for that block. A vote
         // for any descendant of a block also counts as a vote for that block
@@ -200,7 +200,7 @@ impl Store {
                 #[cfg(feature = "devnet3")]
                 let block = block.message.block;
                 #[cfg(feature = "devnet4")]
-                let block = block.message;
+                let block = block.block;
 
                 if block.slot <= start_slot {
                     break;
@@ -238,7 +238,7 @@ impl Store {
                         .get(*child_hash)
                         .ok()
                         .flatten()
-                        .map(|block| block.message.slot)
+                        .map(|block| block.block.slot)
                         .unwrap_or(0);
                     (*child_hash, slot, (vote_weight, *child_hash))
                 })
@@ -508,18 +508,18 @@ impl Store {
             if block_provider
                 .get(target_block_root)?
                 .ok_or(anyhow!("Block not found for target block root"))?
-                .message
+                .block
                 .slot
                 > block_provider
                     .get(safe_target_provider.get()?)?
                     .ok_or(anyhow!("Block not found for safe target"))?
-                    .message
+                    .block
                     .slot
             {
                 target_block_root = block_provider
                     .get(target_block_root)?
                     .ok_or(anyhow!("Block not found for target block root"))?
-                    .message
+                    .block
                     .parent_root;
             } else {
                 break;
@@ -549,14 +549,14 @@ impl Store {
             block_provider
                 .get(target_block_root)?
                 .ok_or(anyhow!("Block not found for target block root"))?
-                .message
+                .block
                 .slot,
             latest_finalized_slot,
         )? {
             target_block_root = block_provider
                 .get(target_block_root)?
                 .ok_or(anyhow!("Block not found for target block root"))?
-                .message
+                .block
                 .parent_root;
         }
 
@@ -569,7 +569,7 @@ impl Store {
             #[cfg(feature = "devnet3")]
             slot: target_block.message.block.slot,
             #[cfg(feature = "devnet4")]
-            slot: target_block.message.slot,
+            slot: target_block.block.slot,
         })
     }
 
@@ -1037,7 +1037,7 @@ impl Store {
         #[cfg(feature = "devnet3")]
         let proposer_attestation = &signed_block_with_attestation.message.proposer_attestation;
         #[cfg(feature = "devnet4")]
-        let block = &signed_block.message;
+        let block = &signed_block.block;
         let block_root = block.tree_hash_root();
 
         // If the block is already known, ignore it
@@ -1229,17 +1229,17 @@ impl Store {
 
         #[cfg(feature = "devnet4")]
         ensure!(
-            source_block.message.slot == data.source.slot,
+            source_block.block.slot == data.source.slot,
             "Source checkpoint slot mismatch"
         );
         #[cfg(feature = "devnet4")]
         ensure!(
-            target_block.message.slot == data.target.slot,
+            target_block.block.slot == data.target.slot,
             "Target checkpoint slot mismatch"
         );
         #[cfg(feature = "devnet4")]
         ensure!(
-            head_block.message.slot == data.head.slot,
+            head_block.block.slot == data.head.slot,
             "Head checkpoint slot mismatch"
         );
 
@@ -1767,11 +1767,11 @@ impl Store {
             }
             #[cfg(feature = "devnet4")]
             while let Some(block) = block_provider.get(current_root).ok().flatten() {
-                if block.message.slot <= start_slot {
+                if block.block.slot <= start_slot {
                     break;
                 }
                 *weights.entry(current_root).or_insert(0) += 1;
-                current_root = block.message.parent_root;
+                current_root = block.block.parent_root;
             }
         }
 
@@ -1883,7 +1883,7 @@ impl Store {
                 slot: block_provider
                     .get(head_root)?
                     .ok_or(anyhow!("Failed to get head block"))?
-                    .message
+                    .block
                     .slot,
             },
             target: self.get_attestation_target().await?,
@@ -2111,7 +2111,7 @@ mod tests {
     #[cfg(feature = "devnet4")]
     fn build_signed_block(block_with_signatures: BlockWithSignatures) -> SignedBlock {
         SignedBlock {
-            message: block_with_signatures.block,
+            block: block_with_signatures.block,
             signature: BlockSignatures {
                 attestation_signatures: block_with_signatures.signatures,
                 proposer_signature: Signature::blank(),
@@ -3165,7 +3165,7 @@ mod tests {
         #[cfg(feature = "devnet3")]
         assert_eq!(attestation.data.head.slot, head_block.message.block.slot);
         #[cfg(feature = "devnet4")]
-        assert_eq!(attestation.data.head.slot, head_block.message.slot);
+        assert_eq!(attestation.data.head.slot, head_block.block.slot);
     }
 
     /// Test that attestation calculates target correctly.
@@ -3340,7 +3340,7 @@ mod tests {
             .message
             .block;
         #[cfg(feature = "devnet4")]
-        let genesis_block = block_provider.get(genesis_hash).unwrap().unwrap().message;
+        let genesis_block = block_provider.get(genesis_hash).unwrap().unwrap().block;
 
         assert!(time == lean_network_spec().seconds_per_slot * genesis_block.slot);
     }
@@ -5065,7 +5065,7 @@ mod tests {
         #[cfg(feature = "devnet3")]
         assert_eq!(target.slot, genesis_block.message.block.slot);
         #[cfg(feature = "devnet4")]
-        assert_eq!(target.slot, genesis_block.message.slot);
+        assert_eq!(target.slot, genesis_block.block.slot);
     }
 
     /// get_attestation_target should return a Checkpoint.
@@ -5080,7 +5080,7 @@ mod tests {
         #[cfg(feature = "devnet3")]
         assert_eq!(target.slot, target_block.unwrap().message.block.slot);
         #[cfg(feature = "devnet4")]
-        assert_eq!(target.slot, target_block.unwrap().message.slot);
+        assert_eq!(target.slot, target_block.unwrap().block.slot);
     }
 
     /// Target should walk back toward safe_target when head is ahead.
@@ -5112,7 +5112,7 @@ mod tests {
             .slot;
 
         #[cfg(feature = "devnet4")]
-        let head_slot = block_provider.get(head_root).unwrap().unwrap().message.slot;
+        let head_slot = block_provider.get(head_root).unwrap().unwrap().block.slot;
 
         let safe_target_root = safe_target_provider.get().unwrap();
         #[cfg(feature = "devnet3")]
@@ -5128,7 +5128,7 @@ mod tests {
             .get(safe_target_root)
             .unwrap()
             .unwrap()
-            .message
+            .block
             .slot;
         let target = store.get_attestation_target().await.unwrap();
 
@@ -5199,7 +5199,7 @@ mod tests {
             }
 
             let current_block = block_provider.get(current_root).unwrap().unwrap();
-            current_root = current_block.message.parent_root;
+            current_root = current_block.block.parent_root;
         }
 
         assert!(found_target, "Target should be an ancestor of head");
@@ -5294,7 +5294,7 @@ mod tests {
             .get(safe_target_provider.get().unwrap())
             .unwrap()
             .unwrap()
-            .message
+            .block
             .slot;
 
         assert!(safe_target_slot <= 1);
@@ -5387,7 +5387,7 @@ mod tests {
             .get(safe_target_provider.get().unwrap())
             .unwrap()
             .unwrap()
-            .message
+            .block
             .slot;
 
         assert!(safe_target_slot <= slot);
@@ -5486,7 +5486,7 @@ mod tests {
             .get(safe_target_provider.get().unwrap())
             .unwrap()
             .unwrap()
-            .message
+            .block
             .slot;
 
         assert!(has_new_payloads);
@@ -5656,12 +5656,7 @@ mod tests {
             .block
             .slot;
         #[cfg(feature = "devnet4")]
-        let block_slot = block_provider
-            .get(block_root)
-            .unwrap()
-            .unwrap()
-            .message
-            .slot;
+        let block_slot = block_provider.get(block_root).unwrap().unwrap().block.slot;
 
         let attestation = SignedAttestation {
             validator_id: 5,
@@ -5725,7 +5720,7 @@ mod tests {
         #[cfg(feature = "devnet3")]
         let head_slot = head_block.message.block.slot;
         #[cfg(feature = "devnet4")]
-        let head_slot = head_block.message.slot;
+        let head_slot = head_block.block.slot;
         let num_validators = state_provider
             .get(head_root)
             .unwrap()
@@ -5824,7 +5819,7 @@ mod tests {
                 #[cfg(feature = "devnet3")]
                 let prev_slot = prev_block.message.block.slot;
                 #[cfg(feature = "devnet4")]
-                let prev_slot = prev_block.message.slot;
+                let prev_slot = prev_block.block.slot;
 
                 let attestation_data = AttestationData {
                     slot: prev_slot,
@@ -5953,7 +5948,7 @@ mod tests {
             .get(head_provider.get().unwrap())
             .unwrap()
             .unwrap()
-            .message
+            .block
             .slot;
 
         assert!(target.slot >= head_slot - JUSTIFICATION_LOOKBACK_SLOTS);
@@ -6039,7 +6034,7 @@ mod tests {
             .get(safe_target_provider.get().unwrap())
             .unwrap()
             .unwrap()
-            .message
+            .block
             .slot;
 
         assert!(safe_target_slot <= 1);

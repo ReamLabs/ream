@@ -171,19 +171,19 @@ impl REDBTable for LeanBlockTable {
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
         // insert entry to slot_index table
-        let block_root = value.message.tree_hash_root();
+        let block_root = value.block.tree_hash_root();
         let slot_index_table = LeanSlotIndexTable {
             db: self.db.clone(),
         };
 
-        slot_index_table.insert(value.message.slot, block_root)?;
+        slot_index_table.insert(value.block.slot, block_root)?;
 
         // insert entry to state root index table
         let state_root_index_table = LeanStateRootIndexTable {
             db: self.db.clone(),
         };
 
-        state_root_index_table.insert(value.message.state_root, block_root)?;
+        state_root_index_table.insert(value.block.state_root, block_root)?;
 
         if let Some(cache) = &self.cache
             && let Ok(mut cache_lock) = cache.blocks.lock()
@@ -214,12 +214,12 @@ impl REDBTable for LeanBlockTable {
             let slot_index_table = LeanSlotIndexTable {
                 db: self.db.clone(),
             };
-            slot_index_table.remove(block.message.slot)?;
+            slot_index_table.remove(block.block.slot)?;
             let state_root_index_table = LeanStateRootIndexTable {
                 db: self.db.clone(),
             };
 
-            state_root_index_table.remove(block.message.state_root)?;
+            state_root_index_table.remove(block.block.state_root)?;
         }
         drop(table);
         write_txn.commit()?;
@@ -246,7 +246,7 @@ impl LeanBlockTable {
             let root: B256 = hash_entry.value();
 
             #[cfg(feature = "devnet4")]
-            let parent_root = block_entry.value().message.parent_root;
+            let parent_root = block_entry.value().block.parent_root;
 
             #[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
             let parent_root = block_entry.value().message.block.parent_root;
@@ -292,7 +292,7 @@ impl LeanBlockTable {
         for entry in table.iter()? {
             let (_, block_entry) = entry?;
             let block = block_entry.value();
-            if block.message.slot >= min_slot {
+            if block.block.slot >= min_slot {
                 blocks.push(block);
             }
         }
