@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(feature = "devnet4")]
+use std::collections::HashSet;
 
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
@@ -19,6 +21,9 @@ use tracing::info;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
+#[cfg(feature = "devnet4")]
+use crate::attestation::AggregatedSignatureProof;
+#[cfg(feature = "devnet3")]
 use crate::{
     attestation::AggregatedAttestation,
     block::{Block, BlockBody, BlockHeader},
@@ -137,6 +142,52 @@ impl LeanState {
     /// Check if a validator is the proposer for the current slot.
     fn is_proposer(&self, validator_index: u64) -> bool {
         is_proposer(validator_index, self.slot, self.validators.len() as u64)
+    }
+
+    #[cfg(feature = "devnet4")]
+    pub fn extend_proofs_greedily(
+        &self,
+        proofs: Option<&HashSet<AggregatedSignatureProof>>,
+        selected_proofs: &mut Vec<AggregatedSignatureProof>,
+        covered_validators: &mut HashSet<u64>,
+    ) {
+        let Some(proofs) = proofs else { return };
+        let mut remaining: Vec<_> = proofs.iter().cloned().collect();
+
+        while !remaining.is_empty() {
+            let best_selection = remaining
+                .iter()
+                .enumerate()
+                .map(|(index, proof)| {
+                    let count = proof
+                        .participants
+                        .iter()
+                        .enumerate()
+                        .filter(|(validator_id, signed)| {
+                            *signed && !covered_validators.contains(&(*validator_id as u64))
+                        })
+                        .count();
+                    (index, count)
+                })
+                .max_by_key(|&(_, count)| count);
+
+            let Some((best_index, count)) = best_selection else {
+                break;
+            };
+            if count == 0 {
+                break;
+            }
+
+            let best = remaining.swap_remove(best_index);
+
+            for (validator_id, signed) in best.participants.iter().enumerate() {
+                if signed {
+                    covered_validators.insert(validator_id as u64);
+                }
+            }
+
+            selected_proofs.push(best);
+        }
     }
 
     /// Validate the block header and update header-linked state.
