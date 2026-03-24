@@ -592,7 +592,7 @@ impl Store {
         new_payloads: Option<&HashMap<AttestationData, HashSet<AggregatedSignatureProof>>>,
         known_payloads: Option<&HashMap<AttestationData, HashSet<AggregatedSignatureProof>>>,
         recursive: bool,
-    ) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<AggregatedSignatureProof>)> {
+    ) -> anyhow::Result<Vec<SignedAggregatedAttestation>> {
         let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
         for attestation in attestations.iter() {
             groups
@@ -614,7 +614,7 @@ impl Store {
         };
 
         if attestation_keys.is_empty() {
-            return Ok((Vec::new(), Vec::new()));
+            return Ok(Vec::new());
         }
 
         for data in attestation_keys {
@@ -700,17 +700,13 @@ impl Store {
                 bytecode_point: None,
             };
 
-            results.push((
-                AggregatedAttestation {
-                    aggregation_bits: bits,
-                    message: data.clone(),
-                },
+            results.push(SignedAggregatedAttestation {
+                data: data.clone(),
                 proof,
-            ));
+            });
         }
 
-        let (attestations, proofs) = results.into_iter().unzip();
-        Ok((attestations, proofs))
+        Ok(results)
     }
 
     fn aggregate_gossip_signatures(
