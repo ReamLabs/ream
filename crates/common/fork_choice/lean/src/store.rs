@@ -583,7 +583,7 @@ impl Store {
         Ok(self.store.lock().await.head_provider().get()?)
     }
 
-    // #[cfg(feature = "devnet4")]
+    #[cfg(feature = "devnet4")]
     fn _aggregate(
         &self,
         head_state: &LeanState,
