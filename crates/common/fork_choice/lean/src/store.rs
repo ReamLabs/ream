@@ -592,7 +592,7 @@ impl Store {
     }
 
     #[cfg(feature = "devnet4")]
-    fn _aggregate(
+    fn state_aggregate(
         &self,
         head_state: &LeanState,
         attestations: &[AggregatedAttestations],
@@ -1647,7 +1647,7 @@ impl Store {
             }
         }
 
-        let signed_attestations = self._aggregate(
+        let signed_attestations = self.state_aggregate(
             &head_state,
             &attestation_signatures,
             &attestation_signatures_provider,
