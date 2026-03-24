@@ -651,12 +651,12 @@ impl Store {
 
                     if let Ok(Some(signature)) = gossip_signatures_provider
                         .get(SignatureKey::from_parts(validator_id, data_root))
+                        && let Some(validator) = head_state.validators.get(validator_id as usize)
                     {
-                        if let Some(validator) = head_state.validators.get(validator_id as usize) {
-                            raw_entries.push((validator_id, validator.public_key, signature));
-                            if recursive {
-                                covered_validators.insert(validator_id);
-                            }
+                        raw_entries.push((validator_id, validator.public_key, signature));
+
+                        if recursive {
+                            covered_validators.insert(validator_id);
                         }
                     }
                 }
@@ -666,10 +666,8 @@ impl Store {
                 if raw_entries.is_empty() && child_proofs.len() < 2 {
                     continue;
                 }
-            } else {
-                if raw_entries.is_empty() {
-                    continue;
-                }
+            } else if raw_entries.is_empty() {
+                continue;
             }
 
             raw_entries.sort_by_key(|err| err.0);
@@ -690,7 +688,7 @@ impl Store {
             }
 
             let xmss_keys: Vec<_> = raw_entries.iter().map(|err| err.1).collect();
-            let xmss_sigs: Vec<_> = raw_entries.iter().map(|err| err.2.clone()).collect();
+            let xmss_sigs: Vec<_> = raw_entries.iter().map(|err| err.2).collect();
 
             let aggregated_signature =
                 aggregate_signatures(&xmss_keys, &xmss_sigs, &data_root.0, data.slot as u32)?;
