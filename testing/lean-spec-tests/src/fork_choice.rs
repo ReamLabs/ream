@@ -158,7 +158,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     #[cfg(feature = "devnet4")]
     let mut store = Store::get_forkchoice_store(
         SignedBlock {
-            message: block,
+            block,
             signature: BlockSignatures {
                 attestation_signatures: VariableList::empty(),
                 proposer_signature: Signature::blank(),
@@ -226,7 +226,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 #[cfg(feature = "devnet3")]
                 let parent_slot = parent_block.message.block.slot;
                 #[cfg(feature = "devnet4")]
-                let parent_slot = parent_block.message.slot;
+                let parent_slot = parent_block.block.slot;
 
                 drop(db);
 
@@ -300,7 +300,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 let result = store
                     .on_block(
                         &SignedBlock {
-                            message: ream_block,
+                            block: ream_block,
                             signature: BlockSignatures {
                                 attestation_signatures: signatures,
                                 proposer_signature,
@@ -396,7 +396,7 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
         #[cfg(feature = "devnet3")]
         let actual_slot = head_block.message.block.slot;
         #[cfg(feature = "devnet4")]
-        let actual_slot = head_block.message.slot;
+        let actual_slot = head_block.block.slot;
 
         ensure!(
             actual_slot == expected_head_slot,

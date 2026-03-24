@@ -304,7 +304,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
             SignedBlock {
-                message: anchor_block,
+                block: anchor_block,
                 signature: BlockSignatures {
                     attestation_signatures: VariableList::default(),
                     proposer_signature: Signature::blank(),

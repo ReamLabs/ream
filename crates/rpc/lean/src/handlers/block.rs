@@ -118,8 +118,6 @@ pub async fn get_block_by_id(
     let provider = lean_chain.store.clone().lock().await.block_provider();
     provider
         .get(block_root?)
-        .map(|maybe_signed_block| {
-            maybe_signed_block.map(|signed_block| signed_block.message.clone())
-        })
+        .map(|maybe_signed_block| maybe_signed_block.map(|signed_block| signed_block.block.clone()))
         .map_err(|err| ApiError::InternalError(format!("DB error: {err}")))
 }

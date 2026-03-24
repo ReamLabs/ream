@@ -77,16 +77,16 @@ pub async fn get_fork_choice_tree(
         .unwrap_or(vec![])
         .iter()
         .map(|block| {
-            let root = block.message.tree_hash_root();
+            let root = block.block.tree_hash_root();
             let weight = weight_map
                 .as_ref()
                 .map(|weight_map| weight_map.get(&root).cloned().unwrap_or(0))
                 .unwrap_or(0);
             serde_json::json!({
                 "root": root,
-                "slot": block.message.slot,
-                "parent_root": block.message.parent_root,
-                "proposer_index": block.message.proposer_index,
+                "slot": block.block.slot,
+                "parent_root": block.block.parent_root,
+                "proposer_index": block.block.proposer_index,
                 "weight": weight,
             })
         })

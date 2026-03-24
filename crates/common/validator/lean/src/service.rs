@@ -148,7 +148,7 @@ impl ValidatorService {
                                 };
                                 #[cfg(feature = "devnet4")]
                                 let signed_block = SignedBlock {
-                                    message: block.clone(),
+                                    block: block.clone(),
                                     signature: BlockSignatures {
                                         attestation_signatures: signatures,
                                         proposer_signature,

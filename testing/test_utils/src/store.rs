@@ -52,7 +52,7 @@ pub async fn sample_store(no_of_validators: usize) -> Store {
 
     #[cfg(feature = "devnet4")]
     let signed_genesis_block = SignedBlock {
-        message: genesis_block,
+        block: genesis_block,
         signature: BlockSignatures {
             attestation_signatures: VariableList::default(),
             proposer_signature: Signature::blank(),

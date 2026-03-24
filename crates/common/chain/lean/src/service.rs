@@ -400,20 +400,20 @@ impl LeanChainService {
 
                             if enabled!(Level::DEBUG) {
                                 debug!(
-                                    slot = signed_block.message.slot,
-                                    block_root = ?signed_block.message.tree_hash_root(),
-                                    parent_root = ?signed_block.message.parent_root,
-                                    state_root = ?signed_block.message.state_root,
-                                    attestations_length = signed_block.message.body.attestations.len(),
+                                    slot = signed_block.block.slot,
+                                    block_root = ?signed_block.block.tree_hash_root(),
+                                    parent_root = ?signed_block.block.parent_root,
+                                    state_root = ?signed_block.block.state_root,
+                                    attestations_length = signed_block.block.body.attestations.len(),
                                     "Processing block built by Validator {}",
-                                    signed_block.message.proposer_index,
+                                    signed_block.block.proposer_index,
                                 );
                             } else {
                                 info!(
-                                    slot = signed_block.message.slot,
-                                    block_root = ?signed_block.message.tree_hash_root(),
+                                    slot = signed_block.block.slot,
+                                    block_root = ?signed_block.block.tree_hash_root(),
                                     "Processing block built by Validator {}",
-                                    signed_block.message.proposer_index,
+                                    signed_block.block.proposer_index,
                                 );
                             }
 
@@ -948,7 +948,7 @@ impl LeanChainService {
             }
             #[cfg(feature = "devnet4")]
             match store.block_provider().get(head) {
-                Ok(Some(block)) => block.message.slot,
+                Ok(Some(block)) => block.block.slot,
                 _ => return 0,
             }
         };
@@ -985,7 +985,7 @@ impl LeanChainService {
         let current_head_slot = block_provider
             .get(head)?
             .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
-            .message
+            .block
             .slot;
 
         let tolerance = std::cmp::max(8, (lean_network_spec().num_validators * 2) / 3);
@@ -1520,7 +1520,7 @@ impl LeanChainService {
             }
             #[cfg(feature = "devnet4")]
             LeanResponseMessage::BlocksByRoot(signed_block) => {
-                let block_root = signed_block.message.tree_hash_root();
+                let block_root = signed_block.block.tree_hash_root();
                 if !self.telemetry.inflight_roots.contains_key(&block_root)
                     && !self.sync_status.contains_job_root(block_root)
                 {
@@ -1587,10 +1587,10 @@ impl LeanChainService {
         &mut self,
         signed_block: &SignedBlock,
     ) -> anyhow::Result<()> {
-        let root = signed_block.message.tree_hash_root();
+        let root = signed_block.block.tree_hash_root();
         trace!(
             root = ?root,
-            slot = signed_block.message.slot,
+            slot = signed_block.block.slot,
             "Received gossiped block while backfill syncing"
         );
         self.handle_backfill_block(None, signed_block.clone(), SyncBlockSource::Gossip)
@@ -1707,9 +1707,9 @@ impl LeanChainService {
         signed_block: SignedBlock,
         source: SyncBlockSource,
     ) -> anyhow::Result<()> {
-        let last_root = signed_block.message.tree_hash_root();
-        let parent_root = signed_block.message.parent_root;
-        let slot = signed_block.message.slot;
+        let last_root = signed_block.block.tree_hash_root();
+        let parent_root = signed_block.block.parent_root;
+        let slot = signed_block.block.slot;
         self.telemetry.inflight_roots.remove(&last_root);
         let mut request_latency_ms: Option<f64> = None;
         if source == SyncBlockSource::ReqResp {
@@ -1885,7 +1885,7 @@ impl LeanChainService {
         let head_slot = block_provider
             .get(head)?
             .ok_or_else(|| anyhow!("State not found for head: {head}"))?
-            .message
+            .block
             .slot;
 
         if head_slot > STATE_RETENTION_SLOTS {
@@ -1997,7 +1997,7 @@ impl LeanChainService {
     }
     #[cfg(feature = "devnet4")]
     async fn handle_process_block(&mut self, signed_block: &SignedBlock) -> anyhow::Result<()> {
-        let parent_root = signed_block.message.parent_root;
+        let parent_root = signed_block.block.parent_root;
         let has_parent_state = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
@@ -2005,7 +2005,7 @@ impl LeanChainService {
         };
         if !has_parent_state {
             warn!(
-                root = ?signed_block.message.tree_hash_root(),
+                root = ?signed_block.block.tree_hash_root(),
                 parent_root = ?parent_root,
                 "Missing parent state while processing synced block; routing block to backfill path"
             );
@@ -2052,7 +2052,7 @@ fn pending_block_slot(block: &SignedBlockWithAttestation) -> u64 {
 
 #[cfg(feature = "devnet4")]
 fn pending_block_slot(block: &SignedBlock) -> u64 {
-    block.message.slot
+    block.block.slot
 }
 
 #[cfg(test)]
@@ -2116,7 +2116,7 @@ mod tests {
             };
             #[cfg(feature = "devnet4")]
             let signed_block = SignedBlock {
-                message: block.block,
+                block: block.block,
                 signature: BlockSignatures {
                     attestation_signatures: block.signatures,
                     proposer_signature: Signature::blank(),
@@ -2265,7 +2265,7 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
-            message: block.block,
+            block: block.block,
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
@@ -2278,8 +2278,8 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let pending_root = {
-            pending_block.message.parent_root = B256::repeat_byte(0x88);
-            pending_block.message.tree_hash_root()
+            pending_block.block.parent_root = B256::repeat_byte(0x88);
+            pending_block.block.tree_hash_root()
         };
         store
             .store
@@ -2325,7 +2325,7 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
-            message: block.block,
+            block: block.block,
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
@@ -2338,8 +2338,8 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let pending_root = {
-            pending_block.message.parent_root = B256::repeat_byte(0x99);
-            pending_block.message.tree_hash_root()
+            pending_block.block.parent_root = B256::repeat_byte(0x99);
+            pending_block.block.tree_hash_root()
         };
         store
             .store
@@ -2412,7 +2412,7 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
-            message: block.block,
+            block: block.block,
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
@@ -2421,7 +2421,7 @@ mod tests {
         #[cfg(feature = "devnet3")]
         let actual_root = pending_block.message.block.tree_hash_root();
         #[cfg(feature = "devnet4")]
-        let actual_root = pending_block.message.tree_hash_root();
+        let actual_root = pending_block.block.tree_hash_root();
         let bad_root = B256::repeat_byte(0xab);
         store
             .store
@@ -2501,7 +2501,7 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
-            message: block.block,
+            block: block.block,
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
@@ -2510,7 +2510,7 @@ mod tests {
         #[cfg(feature = "devnet3")]
         let actual_root = pending_block.message.block.tree_hash_root();
         #[cfg(feature = "devnet4")]
-        let actual_root = pending_block.message.tree_hash_root();
+        let actual_root = pending_block.block.tree_hash_root();
         let bad_root = B256::repeat_byte(0xcd);
         store
             .store
@@ -2578,7 +2578,7 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
-            message: block.block,
+            block: block.block,
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
@@ -2590,12 +2590,12 @@ mod tests {
         }
         #[cfg(feature = "devnet4")]
         {
-            pending_block.message.parent_root = B256::repeat_byte(0x77);
+            pending_block.block.parent_root = B256::repeat_byte(0x77);
         }
         #[cfg(feature = "devnet3")]
         let pending_root = pending_block.message.block.tree_hash_root();
         #[cfg(feature = "devnet4")]
-        let pending_root = pending_block.message.tree_hash_root();
+        let pending_root = pending_block.block.tree_hash_root();
         store
             .store
             .lock()
@@ -2650,7 +2650,7 @@ mod tests {
         };
         #[cfg(feature = "devnet4")]
         let mut signed_block = SignedBlock {
-            message: block.block,
+            block: block.block,
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
@@ -2662,12 +2662,12 @@ mod tests {
         }
         #[cfg(feature = "devnet4")]
         {
-            signed_block.message.parent_root = B256::repeat_byte(0x99);
+            signed_block.block.parent_root = B256::repeat_byte(0x99);
         }
         #[cfg(feature = "devnet3")]
         let block_root = signed_block.message.block.tree_hash_root();
         #[cfg(feature = "devnet4")]
-        let block_root = signed_block.message.tree_hash_root();
+        let block_root = signed_block.block.tree_hash_root();
         let (writer, _reader) = Writer::new(target_store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
