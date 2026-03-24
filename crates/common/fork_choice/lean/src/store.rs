@@ -583,6 +583,138 @@ impl Store {
         Ok(self.store.lock().await.head_provider().get()?)
     }
 
+    // #[cfg(feature = "devnet4")]
+    fn _aggregate(
+        &self,
+        head_state: &LeanState,
+        attestations: &[AggregatedAttestations],
+        gossip_signatures_provider: &GossipSignaturesTable,
+        new_payloads: Option<&HashMap<AttestationData, HashSet<AggregatedSignatureProof>>>,
+        known_payloads: Option<&HashMap<AttestationData, HashSet<AggregatedSignatureProof>>>,
+        recursive: bool,
+    ) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<AggregatedSignatureProof>)> {
+        let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
+        for attestation in attestations.iter() {
+            groups
+                .entry(attestation.data.clone())
+                .or_default()
+                .push(attestation.validator_id);
+        }
+
+        let mut results = Vec::new();
+
+        let attestation_keys: HashSet<AttestationData> = if recursive {
+            let mut keys: HashSet<AttestationData> = groups.keys().cloned().collect();
+            if let Some(payloads) = new_payloads {
+                keys.extend(payloads.keys().cloned());
+            }
+            keys
+        } else {
+            groups.keys().cloned().collect()
+        };
+
+        if attestation_keys.is_empty() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+
+        for data in attestation_keys {
+            let data_root = data.tree_hash_root();
+            let mut child_proofs = Vec::new();
+            let mut covered_validators = HashSet::new();
+
+            if recursive {
+                if let Some(payloads) = new_payloads {
+                    head_state.extend_proofs_greedily(
+                        payloads.get(&data),
+                        &mut child_proofs,
+                        &mut covered_validators,
+                    );
+                }
+                if let Some(payloads) = known_payloads {
+                    head_state.extend_proofs_greedily(
+                        payloads.get(&data),
+                        &mut child_proofs,
+                        &mut covered_validators,
+                    );
+                }
+            }
+
+            let mut raw_entries = Vec::new();
+            if let Some(validator_ids) = groups.get(&data) {
+                let mut sorted_ids = validator_ids.clone();
+                sorted_ids.sort();
+
+                for &validator_id in &sorted_ids {
+                    if recursive && covered_validators.contains(&validator_id) {
+                        continue;
+                    }
+
+                    if let Ok(Some(signature)) = gossip_signatures_provider
+                        .get(SignatureKey::from_parts(validator_id, data_root))
+                    {
+                        if let Some(validator) = head_state.validators.get(validator_id as usize) {
+                            raw_entries.push((validator_id, validator.public_key, signature));
+                            if recursive {
+                                covered_validators.insert(validator_id);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if recursive {
+                if raw_entries.is_empty() && child_proofs.len() < 2 {
+                    continue;
+                }
+            } else {
+                if raw_entries.is_empty() {
+                    continue;
+                }
+            }
+
+            raw_entries.sort_by_key(|err| err.0);
+
+            let mut bits = BitList::<U4096>::with_capacity(head_state.validators.len())
+                .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+
+            if recursive {
+                for id in &covered_validators {
+                    bits.set(*id as usize, true)
+                        .map_err(|err| anyhow!("Failed to set bits: {err:?}"))?;
+                }
+            } else {
+                for (id, _, _) in &raw_entries {
+                    bits.set(*id as usize, true)
+                        .map_err(|err| anyhow!("Failed to set bits: {err:?}"))?;
+                }
+            }
+
+            let xmss_keys: Vec<_> = raw_entries.iter().map(|err| err.1).collect();
+            let xmss_sigs: Vec<_> = raw_entries.iter().map(|err| err.2.clone()).collect();
+
+            let aggregated_signature =
+                aggregate_signatures(&xmss_keys, &xmss_sigs, &data_root.0, data.slot as u32)?;
+
+            let proof = AggregatedSignatureProof {
+                participants: bits.clone(),
+                proof_data: VariableList::new(aggregated_signature)
+                    .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+                bytecode_point: None,
+            };
+
+            results.push((
+                AggregatedAttestation {
+                    aggregation_bits: bits,
+                    message: data.clone(),
+                },
+                proof,
+            ));
+        }
+
+        let (attestations, proofs) = results.into_iter().unzip();
+        Ok((attestations, proofs))
+    }
+
     fn aggregate_gossip_signatures(
         &self,
         head_state: &LeanState,
