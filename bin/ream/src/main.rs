@@ -55,9 +55,14 @@ use ream_consensus_misc::{
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
-use ream_fork_choice_lean::{genesis::setup_genesis, store::Store};
+use ream_fork_choice_lean::{
+    genesis::setup_genesis,
+    store::{Store, compute_subnet_id},
+};
 use ream_keystore::keystore::EncryptedKeystore;
-use ream_metrics::{NODE_INFO, NODE_START_TIME_SECONDS, set_int_gauge_vec};
+use ream_metrics::{
+    ATTESTATION_COMMITTEE_SUBNET, NODE_INFO, NODE_START_TIME_SECONDS, set_int_gauge_vec,
+};
 use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::{
     beacon_network_spec, lean_network_spec, set_beacon_network_spec, set_lean_network_spec,
@@ -216,6 +221,14 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
         .expect("Failed to load validator registry");
+
+    if let Some(keystore) = keystores.first() {
+        set_int_gauge_vec(
+            &ATTESTATION_COMMITTEE_SUBNET,
+            compute_subnet_id(keystore.index, ATTESTATION_COMMITTEE_COUNT) as i64,
+            &[],
+        );
+    }
 
     // Fill in which devnet we are running
     set_lean_network_spec(Arc::new(config.network));
