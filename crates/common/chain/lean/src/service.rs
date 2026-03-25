@@ -67,6 +67,8 @@ const BACKFILL_PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(2);
 const BACKFILL_HEDGE_DELAY: Duration = Duration::from_millis(250);
 const BACKFILL_QUEUE_STALL_TIMEOUT_FLOOR: Duration = Duration::from_secs(30);
 const BACKFILL_QUEUE_STALL_TIMEOUT_MULTIPLIER: f64 = 8.0;
+const SYNCED_BACKFILL_GAP_PERSISTENCE_THRESHOLD: Duration = Duration::from_millis(300);
+const MAX_BACKFILL_RECOVERY_ATTEMPTS: u32 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SyncBlockSource {
@@ -122,6 +124,7 @@ struct SyncTelemetry {
     dropped_callback_roots: HashSet<alloy_primitives::B256>,
     backfill_telemetry: BackfillTelemetry,
     last_backfill_progress_log: Option<Instant>,
+    synced_peer_gap_started_at: Option<Instant>,
     inflight_roots: HashMap<alloy_primitives::B256, InflightRootRequest>,
     peer_avg_latency_ms: HashMap<PeerId, f64>,
 }
@@ -140,6 +143,7 @@ impl SyncTelemetry {
             dropped_callback_roots: HashSet::new(),
             backfill_telemetry: BackfillTelemetry::default(),
             last_backfill_progress_log: None,
+            synced_peer_gap_started_at: None,
             inflight_roots: HashMap::new(),
             peer_avg_latency_ms: HashMap::new(),
         }
@@ -152,6 +156,44 @@ struct InflightRootRequest {
     backup_peer: Option<PeerId>,
     requested_at: Instant,
     backup_sent: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecoveryCheckpointAction {
+    Queued {
+        attempts: u32,
+    },
+    AlreadyQueued,
+    AlreadyQuarantined {
+        attempts: u32,
+        current_head_slot: u64,
+        network_finalized_slot: u64,
+    },
+    AlreadyDropped,
+    QuarantinedByBudget {
+        attempts: u32,
+        current_head_slot: u64,
+        network_finalized_slot: u64,
+    },
+    DroppedByBudget {
+        attempts: u32,
+        current_head_slot: u64,
+        network_finalized_slot: u64,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct QuarantinedBackfillRoot {
+    slot: u64,
+    attempts: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CheckpointLocalCoverage {
+    local_head: alloy_primitives::B256,
+    current_head_slot: u64,
+    checkpoint_in_block_store: bool,
+    checkpoint_in_pending_store: bool,
 }
 
 type CallbackFuture = Pin<
@@ -179,6 +221,9 @@ pub struct LeanChainService {
     pending_job_requests: VecDeque<PendingJobRequest>,
     forward_syncer: Option<JoinHandle<anyhow::Result<ForwardSyncResults>>>,
     checkpoints_to_queue: Vec<(Checkpoint, bool)>,
+    backfill_recovery_attempts: HashMap<alloy_primitives::B256, u32>,
+    quarantined_backfill_roots: HashMap<alloy_primitives::B256, QuarantinedBackfillRoot>,
+    dropped_backfill_roots: HashSet<alloy_primitives::B256>,
     pending_callbacks: FuturesUnordered<CallbackFuture>,
     is_aggregator: bool,
     telemetry: SyncTelemetry,
@@ -202,6 +247,9 @@ impl LeanChainService {
             peers_in_use: HashSet::new(),
             forward_syncer: None,
             checkpoints_to_queue: Vec::new(),
+            backfill_recovery_attempts: HashMap::new(),
+            quarantined_backfill_roots: HashMap::new(),
+            dropped_backfill_roots: HashSet::new(),
             pending_callbacks: FuturesUnordered::new(),
             pending_job_requests: VecDeque::new(),
             is_aggregator,
@@ -611,6 +659,7 @@ impl LeanChainService {
     }
 
     async fn step_backfill_sync(&mut self) -> anyhow::Result<()> {
+        self.refresh_quarantined_backfill_roots().await?;
         self.prune_stale_pending_blocks().await?;
         self.maybe_log_backfill_progress();
         self.prune_recent_sync_blocks();
@@ -637,7 +686,8 @@ impl LeanChainService {
             .backfill_state
             .recover_stalled_queues(stalled_queue_timeout)
         {
-            self.recover_stalled_queue(recovery, stalled_queue_timeout);
+            self.recover_stalled_queue(recovery, stalled_queue_timeout)
+                .await?;
         }
 
         // If a queue has reached the stored head, execute that queue in a background thread,
@@ -743,6 +793,7 @@ impl LeanChainService {
         }
 
         self.queue_pending_job_requests().await?;
+        self.process_staged_backfill_checkpoints().await?;
 
         // start new queue from peers status
         let common_highest_checkpoint = match self.network_state.common_highest_checkpoint() {
@@ -759,19 +810,51 @@ impl LeanChainService {
             }
         };
 
-        let local_head = {
-            let fork_choice = self.store.read().await;
-            let store = fork_choice.store.lock().await;
-            store.head_provider().get()?
-        };
+        let coverage = self
+            .checkpoint_local_coverage(common_highest_checkpoint)
+            .await?;
+        let checkpoint_already_buffered_for_existing_backfill =
+            self.checkpoint_already_buffered_for_existing_backfill(coverage, false);
 
-        if common_highest_checkpoint.root == local_head {
+        if self.should_skip_backfill_checkpoint(common_highest_checkpoint, coverage, false) {
             trace!(
                 root = ?common_highest_checkpoint.root,
                 slot = common_highest_checkpoint.slot,
-                local_head = ?local_head,
+                local_head = ?coverage.local_head,
+                current_head_slot = coverage.current_head_slot,
+                checkpoint_in_block_store = coverage.checkpoint_in_block_store,
+                checkpoint_in_pending_store = coverage.checkpoint_in_pending_store,
+                checkpoint_already_buffered_for_existing_backfill,
                 sync_status = ?self.sync_status,
-                "Skipping backfill queue because peer checkpoint is already the local head"
+                "Skipping backfill queue because peer checkpoint is already covered by local chain or pending backfill state"
+            );
+            return Ok(());
+        }
+
+        if self
+            .dropped_backfill_roots
+            .contains(&common_highest_checkpoint.root)
+        {
+            trace!(
+                root = ?common_highest_checkpoint.root,
+                slot = common_highest_checkpoint.slot,
+                current_head_slot = coverage.current_head_slot,
+                sync_status = ?self.sync_status,
+                "Skipping backfill queue because checkpoint root has exhausted recovery budget"
+            );
+            return Ok(());
+        }
+
+        if self
+            .quarantined_backfill_roots
+            .contains_key(&common_highest_checkpoint.root)
+        {
+            trace!(
+                root = ?common_highest_checkpoint.root,
+                slot = common_highest_checkpoint.slot,
+                current_head_slot = coverage.current_head_slot,
+                sync_status = ?self.sync_status,
+                "Skipping backfill queue because checkpoint root is quarantined pending finalization or block arrival"
             );
             return Ok(());
         }
@@ -789,64 +872,7 @@ impl LeanChainService {
 
         self.checkpoints_to_queue
             .push((common_highest_checkpoint, false));
-
-        while let Some((checkpoint, bypass_slot_check)) = self.checkpoints_to_queue.pop() {
-            let non_queued_peer_id = match self.assignable_peer_id(None).await {
-                Some(id) => id,
-                None => {
-                    if self.network_state.connected_peer_count() == 0 {
-                        info!(
-                            queue_root = ?checkpoint.root,
-                            queue_slot = checkpoint.slot,
-                            bypass_slot_check,
-                            sync_status = ?self.sync_status,
-                            "No connected peers available to start backfill queue",
-                        );
-                    } else {
-                        info!(
-                            queue_root = ?checkpoint.root,
-                            queue_slot = checkpoint.slot,
-                            bypass_slot_check,
-                            connected_peer_count = self.network_state.connected_peer_count(),
-                            peers_in_use = self.peers_in_use.len(),
-                            sync_status = ?self.sync_status,
-                            "Unable to start backfill queue because all connected peers are already assigned",
-                        );
-                    }
-                    self.checkpoints_to_queue
-                        .push((checkpoint, bypass_slot_check));
-                    return Ok(());
-                }
-            };
-            let new_queue_added = self.backfill_state.add_new_job_queue(
-                checkpoint,
-                JobRequest::new(non_queued_peer_id, checkpoint.root),
-                bypass_slot_check,
-            );
-            if new_queue_added {
-                self.peers_in_use.insert(non_queued_peer_id);
-                info!(
-                    queue_root = ?checkpoint.root,
-                    queue_slot = checkpoint.slot,
-                    assigned_peer_id = ?non_queued_peer_id,
-                    bypass_slot_check,
-                    sync_status = ?self.sync_status,
-                    queue_count = self.backfill_state.jobs.len(),
-                    "Started backfill queue",
-                );
-            } else {
-                debug!(
-                    queue_root = ?checkpoint.root,
-                    queue_slot = checkpoint.slot,
-                    bypass_slot_check,
-                    sync_status = ?self.sync_status,
-                    existing_queue_count = self.backfill_state.jobs.len(),
-                    "Skipped backfill queue because an equal-or-better queue already exists",
-                );
-            }
-        }
-
-        Ok(())
+        self.process_staged_backfill_checkpoints().await
     }
 
     fn choose_weighted_peer(&self, candidates: &[(PeerId, u8)]) -> Option<PeerId> {
@@ -1114,22 +1140,367 @@ impl LeanChainService {
         };
 
         if transitioned_to_synced {
+            self.telemetry.synced_peer_gap_started_at = None;
             self.telemetry.dropped_callback_roots.clear();
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|err| anyhow!("System time before unix epoch: {err:?}"))?
                 .as_secs();
             self.store.write().await.on_tick(now, false, true).await?;
+        } else if sync_status != SyncStatus::Synced {
+            self.telemetry.synced_peer_gap_started_at = None;
         }
 
         Ok(sync_status)
     }
 
-    async fn should_run_backfill_sync(&self) -> bool {
-        self.current_peer_gap_slots().await > 0
-            || self.has_orphaned_pending_blocks().await
-            || self.has_pending_backfill_work()
+    async fn should_run_backfill_sync(&mut self) -> bool {
+        let has_orphaned_pending_blocks = self.has_orphaned_pending_blocks().await;
+        let has_pending_backfill_work = self.has_pending_backfill_work();
+        let has_inflight_backfill_requests = !self.telemetry.inflight_roots.is_empty();
+        let peer_gap_slots = self.current_peer_gap_slots().await;
+
+        if self.sync_status != SyncStatus::Synced {
+            return peer_gap_slots > 0
+                || has_orphaned_pending_blocks
+                || has_pending_backfill_work
+                || has_inflight_backfill_requests;
+        }
+
+        if has_orphaned_pending_blocks
+            || has_pending_backfill_work
+            || has_inflight_backfill_requests
+        {
+            self.telemetry.synced_peer_gap_started_at = None;
+            return true;
+        }
+
+        if peer_gap_slots == 0 {
+            self.telemetry.synced_peer_gap_started_at = None;
+            return false;
+        }
+
+        let gap_started_at = self
+            .telemetry
+            .synced_peer_gap_started_at
+            .get_or_insert_with(Instant::now);
+        gap_started_at.elapsed() >= SYNCED_BACKFILL_GAP_PERSISTENCE_THRESHOLD
+    }
+
+    async fn current_head_and_finalized_slots(&self) -> anyhow::Result<(u64, u64)> {
+        let current_head_slot = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            let head = store.head_provider().get()?;
+            let block_provider = store.block_provider();
+            #[cfg(feature = "devnet3")]
+            let current_head_slot = block_provider
+                .get(head)?
+                .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
+                .message
+                .block
+                .slot;
+            #[cfg(feature = "devnet4")]
+            let current_head_slot = block_provider
+                .get(head)?
+                .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
+                .block
+                .slot;
+            current_head_slot
+        };
+        let network_finalized_slot = self
+            .network_state
+            .common_finalized_checkpoint()
+            .map(|checkpoint| checkpoint.slot)
+            .unwrap_or(current_head_slot);
+
+        Ok((current_head_slot, network_finalized_slot))
+    }
+
+    async fn checkpoint_local_coverage(
+        &self,
+        checkpoint: Checkpoint,
+    ) -> anyhow::Result<CheckpointLocalCoverage> {
+        let fork_choice = self.store.read().await;
+        let store = fork_choice.store.lock().await;
+        let local_head = store.head_provider().get()?;
+        let block_provider = store.block_provider();
+        let pending_blocks_provider = store.pending_blocks_provider();
+        #[cfg(feature = "devnet3")]
+        let current_head_slot = block_provider
+            .get(local_head)?
+            .ok_or_else(|| anyhow!("Block not found for head: {local_head}"))?
+            .message
+            .block
+            .slot;
+        #[cfg(feature = "devnet4")]
+        let current_head_slot = block_provider
+            .get(local_head)?
+            .ok_or_else(|| anyhow!("Block not found for head: {local_head}"))?
+            .block
+            .slot;
+
+        Ok(CheckpointLocalCoverage {
+            local_head,
+            current_head_slot,
+            checkpoint_in_block_store: block_provider.get(checkpoint.root)?.is_some(),
+            checkpoint_in_pending_store: pending_blocks_provider.get(checkpoint.root)?.is_some(),
+        })
+    }
+
+    fn checkpoint_already_buffered_for_existing_backfill(
+        &self,
+        coverage: CheckpointLocalCoverage,
+        bypass_slot_check: bool,
+    ) -> bool {
+        if bypass_slot_check || !coverage.checkpoint_in_pending_store {
+            return false;
+        }
+
+        !self.backfill_state.jobs.is_empty()
+            || !self.pending_job_requests.is_empty()
+            || !self.peers_in_use.is_empty()
+            || self.forward_syncer.is_some()
             || !self.telemetry.inflight_roots.is_empty()
+    }
+
+    fn should_skip_backfill_checkpoint(
+        &self,
+        checkpoint: Checkpoint,
+        coverage: CheckpointLocalCoverage,
+        bypass_slot_check: bool,
+    ) -> bool {
+        checkpoint.root == coverage.local_head
+            || coverage.checkpoint_in_block_store
+            || (!bypass_slot_check && checkpoint.slot <= coverage.current_head_slot)
+            || self.checkpoint_already_buffered_for_existing_backfill(coverage, bypass_slot_check)
+    }
+
+    async fn process_staged_backfill_checkpoints(&mut self) -> anyhow::Result<()> {
+        let current_common_highest_checkpoint = self.network_state.common_highest_checkpoint();
+
+        while let Some((checkpoint, bypass_slot_check)) = self.checkpoints_to_queue.pop() {
+            if !bypass_slot_check && current_common_highest_checkpoint != Some(checkpoint) {
+                debug!(
+                    queue_root = ?checkpoint.root,
+                    queue_slot = checkpoint.slot,
+                    current_common_highest_checkpoint = ?current_common_highest_checkpoint,
+                    sync_status = ?self.sync_status,
+                    "Dropping staged backfill checkpoint because it no longer matches the current common peer checkpoint",
+                );
+                continue;
+            }
+            if self
+                .quarantined_backfill_roots
+                .contains_key(&checkpoint.root)
+            {
+                debug!(
+                    queue_root = ?checkpoint.root,
+                    queue_slot = checkpoint.slot,
+                    bypass_slot_check,
+                    sync_status = ?self.sync_status,
+                    "Skipping staged backfill checkpoint because the root is quarantined",
+                );
+                continue;
+            }
+            if self.dropped_backfill_roots.contains(&checkpoint.root) {
+                debug!(
+                    queue_root = ?checkpoint.root,
+                    queue_slot = checkpoint.slot,
+                    bypass_slot_check,
+                    sync_status = ?self.sync_status,
+                    "Skipping staged backfill checkpoint because the root has exhausted recovery budget",
+                );
+                continue;
+            }
+
+            let coverage = self.checkpoint_local_coverage(checkpoint).await?;
+            let checkpoint_already_buffered_for_existing_backfill =
+                self.checkpoint_already_buffered_for_existing_backfill(coverage, bypass_slot_check);
+            if self.should_skip_backfill_checkpoint(checkpoint, coverage, bypass_slot_check) {
+                debug!(
+                    queue_root = ?checkpoint.root,
+                    queue_slot = checkpoint.slot,
+                    bypass_slot_check,
+                    local_head = ?coverage.local_head,
+                    current_head_slot = coverage.current_head_slot,
+                    checkpoint_in_block_store = coverage.checkpoint_in_block_store,
+                    checkpoint_in_pending_store = coverage.checkpoint_in_pending_store,
+                    checkpoint_already_buffered_for_existing_backfill,
+                    sync_status = ?self.sync_status,
+                    "Dropping staged backfill checkpoint because it is already covered by local chain or pending backfill state",
+                );
+                continue;
+            }
+
+            let non_queued_peer_id = match self.assignable_peer_id(None).await {
+                Some(id) => id,
+                None => {
+                    if self.network_state.connected_peer_count() == 0 {
+                        info!(
+                            queue_root = ?checkpoint.root,
+                            queue_slot = checkpoint.slot,
+                            bypass_slot_check,
+                            sync_status = ?self.sync_status,
+                            "No connected peers available to start backfill queue",
+                        );
+                    } else {
+                        info!(
+                            queue_root = ?checkpoint.root,
+                            queue_slot = checkpoint.slot,
+                            bypass_slot_check,
+                            connected_peer_count = self.network_state.connected_peer_count(),
+                            peers_in_use = self.peers_in_use.len(),
+                            sync_status = ?self.sync_status,
+                            "Unable to start backfill queue because all connected peers are already assigned",
+                        );
+                    }
+                    self.checkpoints_to_queue
+                        .push((checkpoint, bypass_slot_check));
+                    return Ok(());
+                }
+            };
+            let new_queue_added = self.backfill_state.add_new_job_queue(
+                checkpoint,
+                JobRequest::new(non_queued_peer_id, checkpoint.root),
+                bypass_slot_check,
+            );
+            if new_queue_added {
+                self.peers_in_use.insert(non_queued_peer_id);
+                info!(
+                    queue_root = ?checkpoint.root,
+                    queue_slot = checkpoint.slot,
+                    assigned_peer_id = ?non_queued_peer_id,
+                    bypass_slot_check,
+                    sync_status = ?self.sync_status,
+                    queue_count = self.backfill_state.jobs.len(),
+                    "Started backfill queue",
+                );
+            } else {
+                debug!(
+                    queue_root = ?checkpoint.root,
+                    queue_slot = checkpoint.slot,
+                    bypass_slot_check,
+                    sync_status = ?self.sync_status,
+                    existing_queue_count = self.backfill_state.jobs.len(),
+                    "Skipped backfill queue because an equal-or-better queue already exists",
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn clear_backfill_retry_state(&mut self, root: alloy_primitives::B256) {
+        self.backfill_recovery_attempts.remove(&root);
+        self.quarantined_backfill_roots.remove(&root);
+        self.dropped_backfill_roots.remove(&root);
+    }
+
+    fn clear_backfill_arrival_state(&mut self, root: alloy_primitives::B256) {
+        self.quarantined_backfill_roots.remove(&root);
+        self.dropped_backfill_roots.remove(&root);
+    }
+
+    async fn refresh_quarantined_backfill_roots(&mut self) -> anyhow::Result<()> {
+        if self.quarantined_backfill_roots.is_empty() {
+            return Ok(());
+        }
+
+        let (_, network_finalized_slot) = self.current_head_and_finalized_slots().await?;
+        let roots_to_drop: Vec<(alloy_primitives::B256, QuarantinedBackfillRoot)> = self
+            .quarantined_backfill_roots
+            .iter()
+            .filter(|(_, entry)| entry.slot <= network_finalized_slot)
+            .map(|(root, entry)| (*root, *entry))
+            .collect();
+
+        for (root, entry) in roots_to_drop {
+            self.quarantined_backfill_roots.remove(&root);
+            self.backfill_recovery_attempts.remove(&root);
+            self.dropped_backfill_roots.insert(root);
+            warn!(
+                root = ?root,
+                slot = entry.slot,
+                attempts = entry.attempts,
+                network_finalized_slot,
+                "Dropping quarantined backfill root after network finalized passed it",
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn stage_recovery_checkpoint(
+        &mut self,
+        checkpoint: Checkpoint,
+    ) -> anyhow::Result<RecoveryCheckpointAction> {
+        self.refresh_quarantined_backfill_roots().await?;
+
+        if self.dropped_backfill_roots.contains(&checkpoint.root) {
+            return Ok(RecoveryCheckpointAction::AlreadyDropped);
+        }
+
+        if let Some(quarantined_root) = self.quarantined_backfill_roots.get(&checkpoint.root) {
+            let (current_head_slot, network_finalized_slot) =
+                self.current_head_and_finalized_slots().await?;
+            return Ok(RecoveryCheckpointAction::AlreadyQuarantined {
+                attempts: quarantined_root.attempts,
+                current_head_slot,
+                network_finalized_slot,
+            });
+        }
+
+        if self
+            .backfill_state
+            .jobs
+            .iter()
+            .any(|queue| queue.starting_root == checkpoint.root)
+            || self
+                .checkpoints_to_queue
+                .iter()
+                .any(|(existing, _)| existing.root == checkpoint.root)
+        {
+            return Ok(RecoveryCheckpointAction::AlreadyQueued);
+        }
+
+        let attempts = {
+            let attempts = self
+                .backfill_recovery_attempts
+                .entry(checkpoint.root)
+                .or_insert(0);
+            *attempts += 1;
+            *attempts
+        };
+
+        if attempts > MAX_BACKFILL_RECOVERY_ATTEMPTS {
+            let (current_head_slot, network_finalized_slot) =
+                self.current_head_and_finalized_slots().await?;
+            self.backfill_recovery_attempts.remove(&checkpoint.root);
+            if checkpoint.slot > network_finalized_slot {
+                self.quarantined_backfill_roots.insert(
+                    checkpoint.root,
+                    QuarantinedBackfillRoot {
+                        slot: checkpoint.slot,
+                        attempts,
+                    },
+                );
+                return Ok(RecoveryCheckpointAction::QuarantinedByBudget {
+                    attempts,
+                    current_head_slot,
+                    network_finalized_slot,
+                });
+            }
+            self.dropped_backfill_roots.insert(checkpoint.root);
+            return Ok(RecoveryCheckpointAction::DroppedByBudget {
+                attempts,
+                current_head_slot,
+                network_finalized_slot,
+            });
+        }
+
+        self.checkpoints_to_queue.push((checkpoint, true));
+        Ok(RecoveryCheckpointAction::Queued { attempts })
     }
 
     async fn handle_forward_sync_result(
@@ -1150,24 +1521,99 @@ impl LeanChainService {
                     processing_time_seconds,
                     "Forward background sync completed",
                 );
+                self.clear_backfill_retry_state(ending_root);
                 self.backfill_state.remove_processed_queue(ending_root);
             }
             ForwardSyncResults::ChainIncomplete {
                 prevous_queue,
                 checkpoint_for_new_queue,
             } => {
-                warn!(
-                    starting_root = ?prevous_queue.starting_root,
-                    starting_slot = prevous_queue.starting_slot,
-                    restart_root = ?checkpoint_for_new_queue.root,
-                    restart_slot = checkpoint_for_new_queue.slot,
-                    "Forward background sync incomplete; removing queue and re-queuing from missing root",
-                );
-
                 self.backfill_state
                     .remove_processed_queue(prevous_queue.starting_root);
-                self.checkpoints_to_queue
-                    .push((checkpoint_for_new_queue, true));
+                match self
+                    .stage_recovery_checkpoint(checkpoint_for_new_queue)
+                    .await?
+                {
+                    RecoveryCheckpointAction::Queued { attempts } => {
+                        warn!(
+                            starting_root = ?prevous_queue.starting_root,
+                            starting_slot = prevous_queue.starting_slot,
+                            restart_root = ?checkpoint_for_new_queue.root,
+                            restart_slot = checkpoint_for_new_queue.slot,
+                            recovery_attempt = attempts,
+                            max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                            "Forward background sync incomplete; removing queue and re-queuing from missing root",
+                        );
+                    }
+                    RecoveryCheckpointAction::AlreadyQueued => {
+                        debug!(
+                            starting_root = ?prevous_queue.starting_root,
+                            starting_slot = prevous_queue.starting_slot,
+                            restart_root = ?checkpoint_for_new_queue.root,
+                            restart_slot = checkpoint_for_new_queue.slot,
+                            "Forward background sync incomplete; missing root is already queued for recovery",
+                        );
+                    }
+                    RecoveryCheckpointAction::AlreadyQuarantined {
+                        attempts,
+                        current_head_slot,
+                        network_finalized_slot,
+                    } => {
+                        warn!(
+                            starting_root = ?prevous_queue.starting_root,
+                            starting_slot = prevous_queue.starting_slot,
+                            restart_root = ?checkpoint_for_new_queue.root,
+                            restart_slot = checkpoint_for_new_queue.slot,
+                            attempts,
+                            current_head_slot,
+                            network_finalized_slot,
+                            "Forward background sync incomplete; missing root remains quarantined until the block arrives or finalized passes it",
+                        );
+                    }
+                    RecoveryCheckpointAction::AlreadyDropped => {
+                        warn!(
+                            starting_root = ?prevous_queue.starting_root,
+                            starting_slot = prevous_queue.starting_slot,
+                            restart_root = ?checkpoint_for_new_queue.root,
+                            restart_slot = checkpoint_for_new_queue.slot,
+                            "Forward background sync incomplete; missing root has already exhausted recovery budget and will not be re-queued",
+                        );
+                    }
+                    RecoveryCheckpointAction::QuarantinedByBudget {
+                        attempts,
+                        current_head_slot,
+                        network_finalized_slot,
+                    } => {
+                        warn!(
+                            starting_root = ?prevous_queue.starting_root,
+                            starting_slot = prevous_queue.starting_slot,
+                            restart_root = ?checkpoint_for_new_queue.root,
+                            restart_slot = checkpoint_for_new_queue.slot,
+                            attempts,
+                            max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                            current_head_slot,
+                            network_finalized_slot,
+                            "Forward background sync incomplete; quarantining missing root until the block arrives or finalized passes it",
+                        );
+                    }
+                    RecoveryCheckpointAction::DroppedByBudget {
+                        attempts,
+                        current_head_slot,
+                        network_finalized_slot,
+                    } => {
+                        error!(
+                            starting_root = ?prevous_queue.starting_root,
+                            starting_slot = prevous_queue.starting_slot,
+                            restart_root = ?checkpoint_for_new_queue.root,
+                            restart_slot = checkpoint_for_new_queue.slot,
+                            attempts,
+                            max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                            current_head_slot,
+                            network_finalized_slot,
+                            "Forward background sync incomplete; dropping missing root after exhausting recovery budget",
+                        );
+                    }
+                }
             }
             ForwardSyncResults::RootMismatch {
                 previous_queue,
@@ -1192,10 +1638,80 @@ impl LeanChainService {
                         restart_root = ?checkpoint_for_new_queue.root,
                         restart_slot = checkpoint_for_new_queue.slot,
                         removed_pending_block,
-                        "Forward background sync root mismatch; purged bad pending block and re-queuing root",
+                        "Forward background sync root mismatch; purged bad pending block and evaluating root recovery",
                     );
-                    self.checkpoints_to_queue
-                        .push((checkpoint_for_new_queue, true));
+                    match self
+                        .stage_recovery_checkpoint(checkpoint_for_new_queue)
+                        .await?
+                    {
+                        RecoveryCheckpointAction::Queued { attempts } => {
+                            warn!(
+                                restart_root = ?checkpoint_for_new_queue.root,
+                                restart_slot = checkpoint_for_new_queue.slot,
+                                recovery_attempt = attempts,
+                                max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                                "Re-queued root after forward sync mismatch",
+                            );
+                        }
+                        RecoveryCheckpointAction::AlreadyQueued => {
+                            debug!(
+                                restart_root = ?checkpoint_for_new_queue.root,
+                                restart_slot = checkpoint_for_new_queue.slot,
+                                "Root mismatch recovery skipped because the root is already queued",
+                            );
+                        }
+                        RecoveryCheckpointAction::AlreadyQuarantined {
+                            attempts,
+                            current_head_slot,
+                            network_finalized_slot,
+                        } => {
+                            warn!(
+                                restart_root = ?checkpoint_for_new_queue.root,
+                                restart_slot = checkpoint_for_new_queue.slot,
+                                attempts,
+                                current_head_slot,
+                                network_finalized_slot,
+                                "Root mismatch recovery skipped because the root is quarantined until the block arrives or finalized passes it",
+                            );
+                        }
+                        RecoveryCheckpointAction::AlreadyDropped => {
+                            warn!(
+                                restart_root = ?checkpoint_for_new_queue.root,
+                                restart_slot = checkpoint_for_new_queue.slot,
+                                "Root mismatch recovery skipped because the root has already exhausted recovery budget",
+                            );
+                        }
+                        RecoveryCheckpointAction::QuarantinedByBudget {
+                            attempts,
+                            current_head_slot,
+                            network_finalized_slot,
+                        } => {
+                            warn!(
+                                restart_root = ?checkpoint_for_new_queue.root,
+                                restart_slot = checkpoint_for_new_queue.slot,
+                                attempts,
+                                max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                                current_head_slot,
+                                network_finalized_slot,
+                                "Quarantining mismatched root until the block arrives or finalized passes it",
+                            );
+                        }
+                        RecoveryCheckpointAction::DroppedByBudget {
+                            attempts,
+                            current_head_slot,
+                            network_finalized_slot,
+                        } => {
+                            error!(
+                                restart_root = ?checkpoint_for_new_queue.root,
+                                restart_slot = checkpoint_for_new_queue.slot,
+                                attempts,
+                                max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                                current_head_slot,
+                                network_finalized_slot,
+                                "Dropping root after exhausting mismatch recovery budget",
+                            );
+                        }
+                    }
                 } else {
                     warn!(
                         starting_root = ?previous_queue.starting_root,
@@ -1231,6 +1747,28 @@ impl LeanChainService {
     }
 
     async fn prune_stale_pending_blocks(&self) -> anyhow::Result<()> {
+        let protected_roots: HashSet<_> = self
+            .backfill_state
+            .jobs
+            .iter()
+            .flat_map(|queue| {
+                std::iter::once(queue.starting_root).chain(queue.jobs.keys().copied())
+            })
+            .chain(
+                self.checkpoints_to_queue
+                    .iter()
+                    .map(|(checkpoint, _)| checkpoint.root),
+            )
+            .chain(self.telemetry.inflight_roots.keys().copied())
+            .chain(
+                self.pending_job_requests
+                    .iter()
+                    .filter_map(|request| match request {
+                        PendingJobRequest::Initial { root, .. } => Some(*root),
+                        PendingJobRequest::Reset { .. } => None,
+                    }),
+            )
+            .collect();
         let (pending_blocks_provider, block_provider, latest_finalized_slot) = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
@@ -1246,8 +1784,9 @@ impl LeanChainService {
             .filter_map(|result| match result {
                 Ok((root, block)) => {
                     let block_slot = pending_block_slot(&block);
-                    let should_prune =
-                        block_provider.contains_key(root) || block_slot <= latest_finalized_slot;
+                    let should_prune = !protected_roots.contains(&root)
+                        && (block_provider.contains_key(root)
+                            || block_slot <= latest_finalized_slot);
                     should_prune.then_some(Ok(root))
                 }
                 Err(err) => Some(Err(err)),
@@ -1381,7 +1920,11 @@ impl LeanChainService {
             .push_back(PendingJobRequest::new_initial(root, slot, parent_root));
     }
 
-    fn recover_stalled_queue(&mut self, recovery: QueueRecovery, stall_timeout: Duration) {
+    async fn recover_stalled_queue(
+        &mut self,
+        recovery: QueueRecovery,
+        stall_timeout: Duration,
+    ) -> anyhow::Result<()> {
         for root in &recovery.job_roots {
             self.telemetry.inflight_roots.remove(root);
         }
@@ -1390,15 +1933,88 @@ impl LeanChainService {
         }
 
         if let Some(checkpoint) = recovery.restart_checkpoint {
-            warn!(
-                starting_root = ?recovery.starting_root,
-                starting_slot = recovery.starting_slot,
-                restart_root = ?checkpoint.root,
-                restart_slot = checkpoint.slot,
-                stall_timeout_seconds = stall_timeout.as_secs_f64(),
-                "Backfill queue stalled; rebuilding queue from current missing root",
-            );
-            self.checkpoints_to_queue.push((checkpoint, true));
+            match self.stage_recovery_checkpoint(checkpoint).await? {
+                RecoveryCheckpointAction::Queued { attempts } => {
+                    warn!(
+                        starting_root = ?recovery.starting_root,
+                        starting_slot = recovery.starting_slot,
+                        restart_root = ?checkpoint.root,
+                        restart_slot = checkpoint.slot,
+                        stall_timeout_seconds = stall_timeout.as_secs_f64(),
+                        recovery_attempt = attempts,
+                        max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                        "Backfill queue stalled; rebuilding queue from current missing root",
+                    );
+                }
+                RecoveryCheckpointAction::AlreadyQueued => {
+                    debug!(
+                        starting_root = ?recovery.starting_root,
+                        starting_slot = recovery.starting_slot,
+                        restart_root = ?checkpoint.root,
+                        restart_slot = checkpoint.slot,
+                        "Backfill queue stalled, but the missing root is already queued for recovery",
+                    );
+                }
+                RecoveryCheckpointAction::AlreadyQuarantined {
+                    attempts,
+                    current_head_slot,
+                    network_finalized_slot,
+                } => {
+                    warn!(
+                        starting_root = ?recovery.starting_root,
+                        starting_slot = recovery.starting_slot,
+                        restart_root = ?checkpoint.root,
+                        restart_slot = checkpoint.slot,
+                        attempts,
+                        current_head_slot,
+                        network_finalized_slot,
+                        "Backfill queue stalled, but the missing root remains quarantined until the block arrives or finalized passes it",
+                    );
+                }
+                RecoveryCheckpointAction::AlreadyDropped => {
+                    warn!(
+                        starting_root = ?recovery.starting_root,
+                        starting_slot = recovery.starting_slot,
+                        restart_root = ?checkpoint.root,
+                        restart_slot = checkpoint.slot,
+                        "Backfill queue stalled, but the missing root has already exhausted recovery budget",
+                    );
+                }
+                RecoveryCheckpointAction::QuarantinedByBudget {
+                    attempts,
+                    current_head_slot,
+                    network_finalized_slot,
+                } => {
+                    warn!(
+                        starting_root = ?recovery.starting_root,
+                        starting_slot = recovery.starting_slot,
+                        restart_root = ?checkpoint.root,
+                        restart_slot = checkpoint.slot,
+                        attempts,
+                        max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                        current_head_slot,
+                        network_finalized_slot,
+                        "Backfill queue stalled; quarantining missing root until the block arrives or finalized passes it",
+                    );
+                }
+                RecoveryCheckpointAction::DroppedByBudget {
+                    attempts,
+                    current_head_slot,
+                    network_finalized_slot,
+                } => {
+                    error!(
+                        starting_root = ?recovery.starting_root,
+                        starting_slot = recovery.starting_slot,
+                        restart_root = ?checkpoint.root,
+                        restart_slot = checkpoint.slot,
+                        attempts,
+                        max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                        current_head_slot,
+                        network_finalized_slot,
+                        "Backfill queue stalled; dropping missing root after exhausting recovery budget",
+                    );
+                }
+            }
         } else {
             warn!(
                 starting_root = ?recovery.starting_root,
@@ -1407,6 +2023,8 @@ impl LeanChainService {
                 "Backfill queue stalled but was superseded by a newer complete queue; dropping stalled queue",
             );
         }
+
+        Ok(())
     }
 
     fn has_recent_near_head_gossip_bridge(
@@ -1736,6 +2354,7 @@ impl LeanChainService {
             )
         };
         pending_blocks_provider.insert(last_root, signed_block_with_attestation)?;
+        self.clear_backfill_arrival_state(last_root);
         self.record_recent_sync_block(parent_root, slot, source);
 
         if let Some(job_peer_id) = job_peer_id {
@@ -1833,6 +2452,7 @@ impl LeanChainService {
             )
         };
         pending_blocks_provider.insert(last_root, signed_block)?;
+        self.clear_backfill_arrival_state(last_root);
         self.record_recent_sync_block(parent_root, slot, source);
 
         if let Some(job_peer_id) = job_peer_id {
@@ -2181,7 +2801,10 @@ fn pending_block_slot(block: &SignedBlock) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Instant};
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
     use alloy_primitives::B256;
     use libp2p_identity::PeerId;
@@ -2329,6 +2952,45 @@ mod tests {
             service.update_sync_status().await.unwrap(),
             SyncStatus::Synced
         );
+    }
+
+    #[tokio::test]
+    async fn test_should_run_backfill_sync_waits_for_persistent_peer_gap_when_synced() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.network_state.update_peer_checkpoints(
+            peer_id,
+            Checkpoint {
+                root: B256::repeat_byte(0x11),
+                slot: 7,
+            },
+            Checkpoint {
+                root: B256::repeat_byte(0x22),
+                slot: 2,
+            },
+        );
+
+        assert!(!service.should_run_backfill_sync().await);
+
+        tokio::time::sleep(
+            super::SYNCED_BACKFILL_GAP_PERSISTENCE_THRESHOLD + Duration::from_millis(50),
+        )
+        .await;
+
         assert!(service.should_run_backfill_sync().await);
     }
 
@@ -2375,6 +3037,471 @@ mod tests {
             service.backfill_state.jobs[0].starting_slot,
             head_checkpoint.slot
         );
+    }
+
+    #[tokio::test]
+    async fn test_step_backfill_sync_skips_peer_checkpoint_already_behind_local_head() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 8, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.network_state.update_peer_checkpoints(
+            peer_id,
+            Checkpoint {
+                root: B256::repeat_byte(0x11),
+                slot: 6,
+            },
+            Checkpoint {
+                root: B256::repeat_byte(0x22),
+                slot: 2,
+            },
+        );
+
+        service.step_backfill_sync().await.unwrap();
+
+        assert!(service.backfill_state.jobs.is_empty());
+        assert!(service.checkpoints_to_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_step_backfill_sync_skips_peer_checkpoint_already_in_canonical_store() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(4).await.unwrap();
+        let block = store.produce_block_with_signatures(4, 4).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let signed_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 4,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::blank(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let signed_block = SignedBlock {
+            block: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::blank(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        let checkpoint_root = signed_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let checkpoint_root = signed_block.block.tree_hash_root();
+
+        // Insert a newer canonical block without updating the head provider.
+        store.on_block(&signed_block, false).await.unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Syncing;
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.network_state.update_peer_checkpoints(
+            peer_id,
+            Checkpoint {
+                root: checkpoint_root,
+                slot: 4,
+            },
+            Checkpoint {
+                root: B256::repeat_byte(0x22),
+                slot: 2,
+            },
+        );
+
+        service.step_backfill_sync().await.unwrap();
+
+        assert!(service.backfill_state.jobs.is_empty());
+        assert!(service.checkpoints_to_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_step_backfill_sync_skips_peer_checkpoint_already_pending_while_other_backfill_work_exists()
+     {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(4).await.unwrap();
+        let block = store.produce_block_with_signatures(4, 4).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let signed_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 4,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::blank(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let signed_block = SignedBlock {
+            block: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::blank(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        let pending_root = signed_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let pending_root = signed_block.block.tree_hash_root();
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(pending_root, signed_block)
+            .unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Syncing;
+
+        let old_queue_root = B256::repeat_byte(0x99);
+        let old_peer = PeerId::random();
+        service.backfill_state.add_new_job_queue(
+            Checkpoint {
+                root: old_queue_root,
+                slot: 1,
+            },
+            JobRequest::new(old_peer, old_queue_root),
+            true,
+        );
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.network_state.update_peer_checkpoints(
+            peer_id,
+            Checkpoint {
+                root: pending_root,
+                slot: 4,
+            },
+            Checkpoint {
+                root: B256::repeat_byte(0x22),
+                slot: 2,
+            },
+        );
+
+        service.step_backfill_sync().await.unwrap();
+
+        assert_eq!(service.backfill_state.jobs.len(), 1);
+        assert_eq!(service.backfill_state.jobs[0].starting_root, old_queue_root);
+        assert!(service.checkpoints_to_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_step_backfill_sync_drops_stale_staged_peer_checkpoint_without_current_common_checkpoint()
+     {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+        service.checkpoints_to_queue.push((
+            Checkpoint {
+                root: B256::repeat_byte(0x77),
+                slot: 7,
+            },
+            false,
+        ));
+
+        service.step_backfill_sync().await.unwrap();
+
+        assert!(service.backfill_state.jobs.is_empty());
+        assert!(service.checkpoints_to_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_step_backfill_sync_replaces_stale_staged_peer_checkpoint_with_current_common_checkpoint()
+     {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Syncing;
+        service.checkpoints_to_queue.push((
+            Checkpoint {
+                root: B256::repeat_byte(0x66),
+                slot: 7,
+            },
+            false,
+        ));
+
+        let peer_id = PeerId::random();
+        let current_common_checkpoint = Checkpoint {
+            root: B256::repeat_byte(0x55),
+            slot: 6,
+        };
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.network_state.update_peer_checkpoints(
+            peer_id,
+            current_common_checkpoint,
+            Checkpoint {
+                root: B256::repeat_byte(0x22),
+                slot: 2,
+            },
+        );
+
+        service.step_backfill_sync().await.unwrap();
+
+        assert_eq!(service.backfill_state.jobs.len(), 1);
+        assert_eq!(
+            service.backfill_state.jobs[0].starting_root,
+            current_common_checkpoint.root
+        );
+        assert_eq!(
+            service.backfill_state.jobs[0].starting_slot,
+            current_common_checkpoint.slot
+        );
+        assert!(service.checkpoints_to_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_step_backfill_sync_skips_peer_checkpoint_with_quarantined_root() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+
+        let quarantined_root = B256::repeat_byte(0x33);
+        service.quarantined_backfill_roots.insert(
+            quarantined_root,
+            super::QuarantinedBackfillRoot {
+                slot: 7,
+                attempts: super::MAX_BACKFILL_RECOVERY_ATTEMPTS + 1,
+            },
+        );
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.network_state.update_peer_checkpoints(
+            peer_id,
+            Checkpoint {
+                root: quarantined_root,
+                slot: 7,
+            },
+            Checkpoint {
+                root: B256::repeat_byte(0x22),
+                slot: 2,
+            },
+        );
+
+        service.step_backfill_sync().await.unwrap();
+
+        assert!(service.backfill_state.jobs.is_empty());
+        assert!(service.checkpoints_to_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_stage_recovery_checkpoint_quarantines_root_before_finalized() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let checkpoint = Checkpoint {
+            root: B256::repeat_byte(0xbb),
+            slot: 5,
+        };
+
+        for attempt in 1..=super::MAX_BACKFILL_RECOVERY_ATTEMPTS {
+            match service.stage_recovery_checkpoint(checkpoint).await.unwrap() {
+                super::RecoveryCheckpointAction::Queued { attempts } => {
+                    assert_eq!(attempts, attempt);
+                }
+                other => panic!("expected queued recovery action, got {other:?}"),
+            }
+            service.checkpoints_to_queue.clear();
+        }
+
+        match service.stage_recovery_checkpoint(checkpoint).await.unwrap() {
+            super::RecoveryCheckpointAction::QuarantinedByBudget {
+                attempts,
+                current_head_slot,
+                network_finalized_slot,
+            } => {
+                assert_eq!(attempts, super::MAX_BACKFILL_RECOVERY_ATTEMPTS + 1);
+                assert_eq!(current_head_slot, 3);
+                assert_eq!(network_finalized_slot, 3);
+            }
+            other => panic!("expected quarantined-by-budget action, got {other:?}"),
+        }
+
+        assert!(service.checkpoints_to_queue.is_empty());
+        assert!(
+            service
+                .quarantined_backfill_roots
+                .contains_key(&checkpoint.root)
+        );
+        assert!(!service.dropped_backfill_roots.contains(&checkpoint.root));
+        assert!(
+            !service
+                .backfill_recovery_attempts
+                .contains_key(&checkpoint.root)
+        );
+        assert!(matches!(
+            service.stage_recovery_checkpoint(checkpoint).await.unwrap(),
+            super::RecoveryCheckpointAction::AlreadyQuarantined { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_stage_recovery_checkpoint_drops_root_after_retry_budget_once_finalized() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let checkpoint = Checkpoint {
+            root: B256::repeat_byte(0xaa),
+            slot: 1,
+        };
+
+        for attempt in 1..=super::MAX_BACKFILL_RECOVERY_ATTEMPTS {
+            match service.stage_recovery_checkpoint(checkpoint).await.unwrap() {
+                super::RecoveryCheckpointAction::Queued { attempts } => {
+                    assert_eq!(attempts, attempt);
+                }
+                other => panic!("expected queued recovery action, got {other:?}"),
+            }
+            service.checkpoints_to_queue.clear();
+        }
+
+        match service.stage_recovery_checkpoint(checkpoint).await.unwrap() {
+            super::RecoveryCheckpointAction::DroppedByBudget {
+                attempts,
+                current_head_slot,
+                network_finalized_slot,
+            } => {
+                assert_eq!(attempts, super::MAX_BACKFILL_RECOVERY_ATTEMPTS + 1);
+                assert_eq!(current_head_slot, 3);
+                assert_eq!(network_finalized_slot, 3);
+            }
+            other => panic!("expected dropped-by-budget action, got {other:?}"),
+        }
+
+        assert!(service.checkpoints_to_queue.is_empty());
+        assert!(service.dropped_backfill_roots.contains(&checkpoint.root));
+        assert!(
+            !service
+                .backfill_recovery_attempts
+                .contains_key(&checkpoint.root)
+        );
+        assert!(matches!(
+            service.stage_recovery_checkpoint(checkpoint).await.unwrap(),
+            super::RecoveryCheckpointAction::AlreadyDropped
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_quarantined_backfill_roots_drops_once_finalized_passes() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        service.network_state.update_peer_checkpoints(
+            peer_id,
+            Checkpoint {
+                root: B256::repeat_byte(0x44),
+                slot: 8,
+            },
+            Checkpoint {
+                root: B256::repeat_byte(0x55),
+                slot: 6,
+            },
+        );
+
+        let root = B256::repeat_byte(0xcc);
+        service.backfill_recovery_attempts.insert(root, 9);
+        service.quarantined_backfill_roots.insert(
+            root,
+            super::QuarantinedBackfillRoot {
+                slot: 5,
+                attempts: 9,
+            },
+        );
+
+        service.refresh_quarantined_backfill_roots().await.unwrap();
+
+        assert!(!service.quarantined_backfill_roots.contains_key(&root));
+        assert!(service.dropped_backfill_roots.contains(&root));
+        assert!(!service.backfill_recovery_attempts.contains_key(&root));
     }
 
     #[tokio::test]
@@ -2990,6 +4117,180 @@ mod tests {
         assert!(!surviving_queue.jobs.contains_key(&new_frontier));
         assert_eq!(surviving_queue.last_fetched_slot, 61);
         assert!(service.peers_in_use.contains(&peer_old));
+    }
+
+    #[tokio::test]
+    async fn test_handle_backfill_block_clears_quarantine_for_arrived_root_but_preserves_attempts()
+    {
+        let mut store = sample_store(10).await;
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(1).await.unwrap();
+        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let signed_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 1,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let signed_block = SignedBlock {
+            block: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        let root = signed_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let root = signed_block.block.tree_hash_root();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.backfill_recovery_attempts.insert(root, 3);
+        service.quarantined_backfill_roots.insert(
+            root,
+            super::QuarantinedBackfillRoot {
+                slot: 1,
+                attempts: 3,
+            },
+        );
+        service.dropped_backfill_roots.insert(root);
+
+        service
+            .handle_backfill_block(None, signed_block, SyncBlockSource::Gossip)
+            .await
+            .unwrap();
+
+        assert_eq!(service.backfill_recovery_attempts.get(&root), Some(&3));
+        assert!(!service.quarantined_backfill_roots.contains_key(&root));
+        assert!(!service.dropped_backfill_roots.contains(&root));
+    }
+
+    #[tokio::test]
+    async fn test_handle_forward_sync_completed_clears_recovery_state_for_ending_root() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let root = B256::repeat_byte(0xaa);
+        let mut previous_queue = JobQueue::new(root, 1, 1);
+        previous_queue.is_complete = true;
+        service.backfill_state.jobs.push(previous_queue);
+        service.backfill_recovery_attempts.insert(root, 3);
+        service.quarantined_backfill_roots.insert(
+            root,
+            super::QuarantinedBackfillRoot {
+                slot: 1,
+                attempts: 3,
+            },
+        );
+        service.dropped_backfill_roots.insert(root);
+
+        service
+            .handle_forward_sync_result(ForwardSyncResults::Completed {
+                starting_root: B256::repeat_byte(0x11),
+                ending_root: root,
+                blocks_synced: 1,
+                processing_time_seconds: 0.1,
+            })
+            .await
+            .unwrap();
+
+        assert!(!service.backfill_recovery_attempts.contains_key(&root));
+        assert!(!service.quarantined_backfill_roots.contains_key(&root));
+        assert!(!service.dropped_backfill_roots.contains(&root));
+        assert!(service.backfill_state.jobs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_prune_stale_pending_blocks_preserves_roots_still_referenced_by_backfill() {
+        let mut store = sample_store(10).await;
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(1).await.unwrap();
+        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let mut pending_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 1,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let mut pending_block = SignedBlock {
+            block: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        {
+            pending_block.message.block.slot = 0;
+            pending_block.message.block.parent_root = alloy_primitives::B256::ZERO;
+        }
+        #[cfg(feature = "devnet4")]
+        {
+            pending_block.block.slot = 0;
+            pending_block.block.parent_root = alloy_primitives::B256::ZERO;
+        }
+        #[cfg(feature = "devnet3")]
+        let pending_root = pending_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let pending_root = pending_block.block.tree_hash_root();
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(pending_root, pending_block)
+            .unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.backfill_state.add_new_job_queue(
+            Checkpoint {
+                root: pending_root,
+                slot: 1,
+            },
+            JobRequest::new(PeerId::random(), pending_root),
+            true,
+        );
+
+        service.prune_stale_pending_blocks().await.unwrap();
+
+        let pending_present = {
+            let fork_choice = service.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store
+                .pending_blocks_provider()
+                .get(pending_root)
+                .unwrap()
+                .is_some()
+        };
+        assert!(pending_present);
     }
 
     #[tokio::test]
