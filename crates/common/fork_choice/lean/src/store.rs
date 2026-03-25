@@ -661,7 +661,7 @@ impl Store {
                         .get(SignatureKey::from_parts(validator_id, data_root))
                         && let Some(validator) = head_state.validators.get(validator_id as usize)
                     {
-                        raw_entries.push((validator_id, validator.public_key, signature));
+                        raw_entries.push((validator_id, validator.attestation_public_key, signature));
 
                         if recursive {
                             covered_validators.insert(validator_id);
@@ -1428,7 +1428,16 @@ impl Store {
                     state
                         .validators
                         .get(validator as usize)
-                        .map(|validator| validator.public_key)
+                        .map(|validator| {
+                            #[cfg(feature = "devnet3")]
+                            {
+                                validator.public_key
+                            }
+                            #[cfg(feature = "devnet4")]
+                            {
+                                validator.attestation_public_key
+                            }
+                        })
                         .ok_or_else(|| anyhow!("Validator {validator} not found in state"))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1784,8 +1793,12 @@ impl Store {
         );
 
         let verification_timer = start_timer(&PQ_SIG_ATTESTATION_VERIFICATION_TIME, &[]);
+        #[cfg(feature = "devnet3")]
+        let attestation_key = key_state.validators[validator_id as usize].public_key;
+        #[cfg(feature = "devnet4")]
+        let attestation_key = key_state.validators[validator_id as usize].attestation_public_key;
         let signature_valid = signature.verify(
-            &key_state.validators[validator_id as usize].public_key,
+            &attestation_key,
             attestation_data.slot as u32,
             &attestation_data.tree_hash_root(),
         )?;
@@ -2156,7 +2169,15 @@ mod tests {
 
             let mut validators: Vec<Validator> = state.validators.iter().cloned().collect();
             for (validator_id, (public_key, _)) in &key_pairs {
-                validators[*validator_id as usize].public_key = *public_key;
+                #[cfg(feature = "devnet3")]
+                {
+                    validators[*validator_id as usize].public_key = *public_key;
+                }
+                #[cfg(feature = "devnet4")]
+                {
+                    validators[*validator_id as usize].attestation_public_key = *public_key;
+                    validators[*validator_id as usize].proposal_public_key = *public_key;
+                }
             }
             state.validators = VariableList::new(validators).unwrap();
             state_provider.insert(state_root, state).unwrap();
@@ -4595,7 +4616,16 @@ mod tests {
             .unwrap();
         let public_keys: Vec<_> = participants
             .iter()
-            .map(|&validator_id| state.validators[validator_id as usize].public_key)
+            .map(|&validator_id| {
+                #[cfg(feature = "devnet3")]
+                {
+                    state.validators[validator_id as usize].public_key
+                }
+                #[cfg(feature = "devnet4")]
+                {
+                    state.validators[validator_id as usize].attestation_public_key
+                }
+            })
             .collect();
 
         assert!(
@@ -4973,7 +5003,16 @@ mod tests {
             .unwrap();
         let public_keys: Vec<_> = participants
             .iter()
-            .map(|&validator_id| state.validators[validator_id as usize].public_key)
+            .map(|&validator_id| {
+                #[cfg(feature = "devnet3")]
+                {
+                    state.validators[validator_id as usize].public_key
+                }
+                #[cfg(feature = "devnet4")]
+                {
+                    state.validators[validator_id as usize].attestation_public_key
+                }
+            })
             .collect();
 
         assert!(

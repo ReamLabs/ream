@@ -186,8 +186,14 @@ impl TryFrom<&Validator> for ReamValidator {
             bail!("Expected 52-byte pubkey, got {} bytes", pubkey_bytes.len());
         }
 
+        let pubkey = PublicKey::from(&pubkey_bytes[..]);
         Ok(ReamValidator {
-            public_key: PublicKey::from(&pubkey_bytes[..]),
+            #[cfg(feature = "devnet3")]
+            public_key: pubkey,
+            #[cfg(feature = "devnet4")]
+            attestation_public_key: pubkey,
+            #[cfg(feature = "devnet4")]
+            proposal_public_key: pubkey,
             index: validator.index,
         })
     }

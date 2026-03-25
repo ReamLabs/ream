@@ -9,6 +9,11 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+default = ["devnet3"]
+devnet3 = []
+devnet4 = []
+
 [dependencies]
 aes.workspace = true
 alloy-primitives.workspace = true

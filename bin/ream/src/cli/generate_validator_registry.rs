@@ -10,7 +10,9 @@ use rand::rng;
 use ream_keystore::lean_keystore::{
     ConfigFile, ValidatorKeysManifest, ValidatorKeystoreRaw, ValidatorRegistry,
 };
-use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, public_key::PublicKey};
+use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
+#[cfg(feature = "devnet3")]
+use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 
 const NUM_ACTIVE_EPOCHS: u64 = 262144;
 
@@ -60,22 +62,58 @@ pub fn run_generate_validator_registry(
     path.push("hash-sig-keys");
     create_dir_all(&path)?;
     let mut validators: Vec<ValidatorKeystoreRaw> = Vec::new();
+    #[cfg(feature = "devnet3")]
     let mut genesis_validators: Vec<PublicKey> = vec![];
+    #[cfg(feature = "devnet4")]
+    let mut genesis_validators: Vec<ream_keystore::lean_keystore::GenesisValidatorEntry> = vec![];
     for i in 0..(keystore_config.number_of_nodes * keystore_config.number_of_validators_per_node) {
-        let (public_key, private_key) =
-            PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
-        genesis_validators.push(public_key);
+        #[cfg(feature = "devnet3")]
+        {
+            let (public_key, private_key) =
+                PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
+            genesis_validators.push(public_key);
 
-        let filename: String = format!("validator_{i}_sk.ssz");
-        path.push(&filename);
-        fs::write(&path, private_key.to_bytes())?;
-        path.pop();
+            let filename: String = format!("validator_{i}_sk.ssz");
+            path.push(&filename);
+            fs::write(&path, private_key.to_bytes())?;
+            path.pop();
 
-        validators.push(ValidatorKeystoreRaw {
-            index: i,
-            public_key,
-            privkey_file: filename,
-        });
+            validators.push(ValidatorKeystoreRaw {
+                index: i,
+                public_key,
+                privkey_file: filename,
+            });
+        }
+        #[cfg(feature = "devnet4")]
+        {
+            let (attestation_public_key, attestation_private_key) =
+                PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
+            let (proposal_public_key, proposal_private_key) =
+                PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
+
+            genesis_validators.push(ream_keystore::lean_keystore::GenesisValidatorEntry {
+                attestation_public_key,
+                proposal_public_key,
+            });
+
+            let att_filename = format!("validator_{i}_attestation_sk.ssz");
+            path.push(&att_filename);
+            fs::write(&path, attestation_private_key.to_bytes())?;
+            path.pop();
+
+            let prop_filename = format!("validator_{i}_proposal_sk.ssz");
+            path.push(&prop_filename);
+            fs::write(&path, proposal_private_key.to_bytes())?;
+            path.pop();
+
+            validators.push(ValidatorKeystoreRaw {
+                index: i,
+                attestation_public_key_hex: attestation_public_key,
+                proposal_public_key_hex: proposal_public_key,
+                attestation_privkey_file: att_filename,
+                proposal_privkey_file: prop_filename,
+            });
+        }
     }
 
     path.push("validator-keys-manifest.yaml");

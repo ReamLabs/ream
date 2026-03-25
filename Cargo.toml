@@ -149,7 +149,7 @@ ream-checkpoint-sync-beacon = { path = "crates/common/checkpoint_sync/beacon" }
 ream-checkpoint-sync-lean = { path = "crates/common/checkpoint_sync/lean", default-features = false }
 ream-consensus-beacon = { path = "crates/common/consensus/beacon" }
 ream-consensus-lean = { path = "crates/common/consensus/lean", default-features = false }
-ream-consensus-misc = { path = "crates/common/consensus/misc" }
+ream-consensus-misc = { path = "crates/common/consensus/misc", default-features = false }
 ream-discv5 = { path = "crates/networking/discv5" }
 ream-events-beacon = { path = "crates/common/events/beacon" }
 ream-execution-engine = { path = "crates/common/execution/engine" }
@@ -157,27 +157,27 @@ ream-execution-rpc-types = { path = "crates/common/execution/rpc_types" }
 ream-executor = { path = "crates/common/executor" }
 ream-fork-choice-beacon = { path = "crates/common/fork_choice/beacon" }
 ream-fork-choice-lean = { path = "crates/common/fork_choice/lean", default-features = false }
-ream-keystore = { path = "crates/crypto/keystore" }
+ream-keystore = { path = "crates/crypto/keystore", default-features = false }
 ream-light-client = { path = "crates/common/light_client" }
 ream-merkle = { path = "crates/crypto/merkle" }
-ream-metrics = { path = "crates/common/metrics" }
-ream-network-manager = { path = "crates/networking/manager" }
-ream-network-spec = { path = "crates/common/network_spec" }
+ream-metrics = { path = "crates/common/metrics", default-features = false }
+ream-network-manager = { path = "crates/networking/manager", default-features = false }
+ream-network-spec = { path = "crates/common/network_spec", default-features = false }
 ream-network-state-lean = { path = "crates/networking/network_state/lean", default-features = false }
 ream-node = { path = "crates/common/node" }
 ream-operation-pool = { path = "crates/common/operation_pool" }
 ream-p2p = { path = "crates/networking/p2p", default-features = false }
 ream-peer = { path = "crates/networking/peer" }
 ream-polynomial-commitments = { path = "crates/common/polynomial_commitments" }
-ream-post-quantum-crypto = { path = "crates/crypto/post_quantum" }
-ream-req-resp = { path = "crates/networking/req_resp" }
-ream-rpc-beacon = { path = "crates/rpc/beacon" }
+ream-post-quantum-crypto = { path = "crates/crypto/post_quantum", default-features = false }
+ream-req-resp = { path = "crates/networking/req_resp", default-features = false }
+ream-rpc-beacon = { path = "crates/rpc/beacon", default-features = false }
 ream-rpc-common = { path = "crates/rpc/common" }
 ream-rpc-lean = { path = "crates/rpc/lean", default-features = false }
-ream-storage = { path = "crates/storage" }
-ream-sync = { path = "crates/common/sync" }
+ream-storage = { path = "crates/storage", default-features = false }
+ream-sync = { path = "crates/common/sync", default-features = false }
 ream-sync-committee-pool = { path = "crates/common/sync_committee_pool" }
-ream-syncer = { path = "crates/networking/syncer" }
+ream-syncer = { path = "crates/networking/syncer", default-features = false }
 ream-test-utils = { path = "testing/test_utils", default-features = false }
 ream-validator-beacon = { path = "crates/common/validator/beacon" }
 ream-validator-lean = { path = "crates/common/validator/lean", default-features = false }

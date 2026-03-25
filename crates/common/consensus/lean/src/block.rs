@@ -195,13 +195,13 @@ impl SignedBlock {
                 );
             }
 
-            // Collect public keys for all validators in this aggregation
+            // Collect attestation public keys for all validators in this aggregation
             let public_keys: Vec<_> = validator_ids
                 .iter()
                 .map(|&validator_id| {
                     validators
                         .get(validator_id)
-                        .map(|validator| validator.public_key)
+                        .map(|validator| validator.attestation_public_key)
                         .ok_or_else(|| anyhow!("Failed to get validator {validator_id}"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -249,7 +249,7 @@ impl SignedBlock {
         if verify_signatures {
             ensure!(
                 signatures.proposer_signature.verify(
-                    &proposer.public_key,
+                    &proposer.proposal_public_key,
                     block.slot as u32,
                     &block.tree_hash_root(),
                 )?,

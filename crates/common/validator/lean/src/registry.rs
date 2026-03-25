@@ -58,28 +58,53 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
             .get(*ream_validator_index as usize)
             .expect("Failed to get ream validator index");
 
-        path.pop();
-        path.push(validator.privkey_file.clone());
-        let private_key = match PrivateKeyFormat::try_from(
-            path.extension().and_then(|s| s.to_str()).unwrap_or(""),
-        )? {
-            PrivateKeyFormat::Json => PrivateKey::new(
-                serde_json::from_str::<LeanSigPrivateKey>(&fs::read_to_string(&path)?)
-                    .map_err(|err| anyhow!("Failed to parse validator private key json: {err}"))?,
-            ),
-            PrivateKeyFormat::Ssz => {
-                PrivateKey::from_bytes(&fs::read(&path).map_err(|err| {
-                    anyhow!("Failed to read validator private key ssz file {err}",)
-                })?)?
-            }
-        };
+        #[cfg(feature = "devnet3")]
+        {
+            path.pop();
+            path.push(validator.privkey_file.clone());
+            let private_key = load_private_key(&path)?;
 
-        validator_keystores.push(ValidatorKeystore {
-            index: *ream_validator_index,
-            public_key: validator.public_key,
-            private_key,
-        });
-        path.pop();
+            validator_keystores.push(ValidatorKeystore {
+                index: *ream_validator_index,
+                public_key: validator.public_key,
+                private_key,
+            });
+            path.pop();
+        }
+
+        #[cfg(feature = "devnet4")]
+        {
+            path.pop();
+            path.push(validator.attestation_privkey_file.clone());
+            let attestation_private_key = load_private_key(&path)?;
+            path.pop();
+
+            path.push(validator.proposal_privkey_file.clone());
+            let proposal_private_key = load_private_key(&path)?;
+            path.pop();
+
+            validator_keystores.push(ValidatorKeystore {
+                index: *ream_validator_index,
+                attestation_public_key: validator.attestation_public_key_hex,
+                proposal_public_key: validator.proposal_public_key_hex,
+                attestation_private_key,
+                proposal_private_key,
+            });
+        }
     }
     Ok(validator_keystores)
+}
+
+fn load_private_key(path: &Path) -> anyhow::Result<PrivateKey> {
+    match PrivateKeyFormat::try_from(path.extension().and_then(|s| s.to_str()).unwrap_or(""))? {
+        PrivateKeyFormat::Json => Ok(PrivateKey::new(
+            serde_json::from_str::<LeanSigPrivateKey>(&fs::read_to_string(path)?)
+                .map_err(|err| anyhow!("Failed to parse validator private key json: {err}"))?,
+        )),
+        PrivateKeyFormat::Ssz => {
+            Ok(PrivateKey::from_bytes(&fs::read(path).map_err(|err| {
+                anyhow!("Failed to read validator private key ssz file {err}")
+            })?)?)
+        }
+    }
 }

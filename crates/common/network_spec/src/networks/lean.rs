@@ -4,6 +4,8 @@ use std::{
 };
 
 use alloy_primitives::FixedBytes;
+#[cfg(feature = "devnet4")]
+use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use tracing::warn;
 
@@ -53,6 +55,14 @@ fn default_seconds_per_slot() -> u64 {
     4
 }
 
+/// A single validator's public keys in the genesis configuration (devnet4).
+#[cfg(feature = "devnet4")]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Default)]
+pub struct GenesisValidatorEntry {
+    pub attestation_public_key: FixedBytes<52>,
+    pub proposal_public_key: FixedBytes<52>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Default)]
 #[serde(rename_all = "UPPERCASE")]
 pub struct LeanNetworkSpec {
@@ -60,8 +70,13 @@ pub struct LeanNetworkSpec {
     #[serde(alias = "VALIDATOR_COUNT")]
     pub num_validators: u64,
 
+    #[cfg(feature = "devnet3")]
     #[serde(alias = "GENESIS_VALIDATORS")]
     pub validator_public_keys: Vec<FixedBytes<52>>,
+
+    #[cfg(feature = "devnet4")]
+    #[serde(alias = "GENESIS_VALIDATORS")]
+    pub genesis_validators: Vec<GenesisValidatorEntry>,
 
     #[serde(default = "default_justification_lookback_slots")]
     pub justification_lookback_slots: u64,
@@ -91,7 +106,10 @@ impl LeanNetworkSpec {
             justification_lookback_slots: 3,
             seconds_per_slot: 4,
             num_validators: config.num_validators,
+            #[cfg(feature = "devnet3")]
             validator_public_keys: config.validator_public_keys,
+            #[cfg(feature = "devnet4")]
+            genesis_validators: config.genesis_validators,
             discarded_values: DiscardUnknown,
         }
     }
