@@ -48,7 +48,7 @@ use crate::{
     p2p_request::{LeanP2PRequest, P2PCallbackRequest},
     slot::get_current_slot,
     sync::{
-        QueueRecovery, SyncStatus,
+        BackfillState, QueueRecovery, SyncStatus,
         forward_background_syncer::{ForwardBackgroundSyncer, ForwardSyncResults},
         job::{pending::PendingJobRequest, request::JobRequest},
         strategy::{
@@ -174,6 +174,7 @@ pub struct LeanChainService {
     outbound_p2p: mpsc::UnboundedSender<LeanP2PRequest>,
     network_state: Arc<NetworkState>,
     sync_status: SyncStatus,
+    backfill_state: BackfillState,
     peers_in_use: HashSet<PeerId>,
     pending_job_requests: VecDeque<PendingJobRequest>,
     forward_syncer: Option<JoinHandle<anyhow::Result<ForwardSyncResults>>>,
@@ -196,7 +197,8 @@ impl LeanChainService {
             store: Arc::new(store),
             receiver,
             outbound_p2p,
-            sync_status: SyncStatus::Syncing { jobs: Vec::new() },
+            sync_status: SyncStatus::Syncing,
+            backfill_state: BackfillState::default(),
             peers_in_use: HashSet::new(),
             forward_syncer: None,
             checkpoints_to_queue: Vec::new(),
@@ -317,7 +319,7 @@ impl LeanChainService {
                 Some(message) = self.receiver.recv() => {
                     match message {
                         LeanChainServiceMessage::ProduceBlock { slot, sender } => {
-                            if let SyncStatus::Syncing { .. } = self.sync_status {
+                            if self.sync_status == SyncStatus::Syncing {
                                 warn!("Received ProduceBlock request while syncing. Ignoring.");
                                 if let Err(err) = sender.send(ServiceResponse::Syncing) {
                                     warn!("Failed to send syncing response for ProduceBlock: {err:?}");
@@ -331,7 +333,7 @@ impl LeanChainService {
                             }
                         }
                         LeanChainServiceMessage::BuildAttestationData { slot, sender } => {
-                            if let SyncStatus::Syncing { .. } = self.sync_status {
+                            if self.sync_status == SyncStatus::Syncing {
                                 warn!("Received BuildAttestationData request while syncing. Ignoring.");
                                 if let Err(err) = sender.send(ServiceResponse::Syncing) {
                                     warn!("Failed to send syncing response for BuildAttestationData: {err:?}");
@@ -613,7 +615,10 @@ impl LeanChainService {
         self.maybe_log_backfill_progress();
         self.prune_recent_sync_blocks();
         let backfill_job_timeout = self.current_backfill_job_timeout().await;
-        for timed_out_job in self.sync_status.reset_timed_out_jobs(backfill_job_timeout) {
+        for timed_out_job in self
+            .backfill_state
+            .reset_timed_out_jobs(backfill_job_timeout)
+        {
             self.telemetry.backfill_telemetry.request_retries += 1;
             self.telemetry.inflight_roots.remove(&timed_out_job.root);
             warn!(
@@ -629,7 +634,7 @@ impl LeanChainService {
         }
         let stalled_queue_timeout = self.current_backfill_queue_stall_timeout(backfill_job_timeout);
         for recovery in self
-            .sync_status
+            .backfill_state
             .recover_stalled_queues(stalled_queue_timeout)
         {
             self.recover_stalled_queue(recovery, stalled_queue_timeout);
@@ -640,13 +645,16 @@ impl LeanChainService {
         // return early and start a new queue if it finds that It can't walk back to the stored
         // head.
         if self.forward_syncer.is_none()
-            && let Some(earliest_complete_queue) = self.sync_status.get_ready_to_process_queue()
+            && let Some(earliest_complete_queue) = self.backfill_state.get_ready_to_process_queue()
         {
             let store = self.store.clone();
             let network_state = self.network_state.clone();
             info!(
-                "Starting forward background syncer for completed job queue starting at root {:?} and slot {}",
-                earliest_complete_queue.starting_root, earliest_complete_queue.starting_slot
+                sync_status = ?self.sync_status,
+                queue_starting_root = ?earliest_complete_queue.starting_root,
+                queue_starting_slot = earliest_complete_queue.starting_slot,
+                queue_count = self.backfill_state.jobs.len(),
+                "Starting forward background sync for completed queue",
             );
             self.forward_syncer = Some(tokio::spawn(
                 async move {
@@ -667,7 +675,7 @@ impl LeanChainService {
         );
         self.queue_pending_job_requests().await?;
         self.process_delayed_hedges();
-        let unqueued_jobs = self.sync_status.unqueued_jobs();
+        let unqueued_jobs = self.backfill_state.unqueued_jobs();
         for job in unqueued_jobs {
             if self.pending_job_requests.iter().any(|request| {
                 matches!(
@@ -731,7 +739,7 @@ impl LeanChainService {
                 .inflight_roots
                 .insert(job.root, inflight_request);
 
-            self.sync_status.mark_job_as_requested(job.root);
+            self.backfill_state.mark_job_as_requested(job.root);
         }
 
         self.queue_pending_job_requests().await?;
@@ -740,7 +748,13 @@ impl LeanChainService {
         let common_highest_checkpoint = match self.network_state.common_highest_checkpoint() {
             Some(checkpoint) => checkpoint,
             None => {
-                warn!("No common highest checkpoint found among connected peers.");
+                warn!(
+                    sync_status = ?self.sync_status,
+                    connected_peer_count = self.network_state.connected_peer_count(),
+                    queue_count = self.backfill_state.jobs.len(),
+                    staged_checkpoints = self.checkpoints_to_queue.len(),
+                    "No common highest checkpoint found among connected peers; cannot seed backfill queue",
+                );
                 return Ok(());
             }
         };
@@ -755,13 +769,15 @@ impl LeanChainService {
             trace!(
                 root = ?common_highest_checkpoint.root,
                 slot = common_highest_checkpoint.slot,
-                "Skipping backfill queue for peer checkpoint already at local head"
+                local_head = ?local_head,
+                sync_status = ?self.sync_status,
+                "Skipping backfill queue because peer checkpoint is already the local head"
             );
             return Ok(());
         }
 
         if self
-            .sync_status
+            .backfill_state
             .slot_is_subset_of_any_queue(common_highest_checkpoint.slot)
             || self
                 .checkpoints_to_queue
@@ -779,22 +795,54 @@ impl LeanChainService {
                 Some(id) => id,
                 None => {
                     if self.network_state.connected_peer_count() == 0 {
-                        info!("No connected peers available to start new job queue.");
+                        info!(
+                            queue_root = ?checkpoint.root,
+                            queue_slot = checkpoint.slot,
+                            bypass_slot_check,
+                            sync_status = ?self.sync_status,
+                            "No connected peers available to start backfill queue",
+                        );
                     } else {
-                        info!("All connected peers are currently in use for syncing.");
+                        info!(
+                            queue_root = ?checkpoint.root,
+                            queue_slot = checkpoint.slot,
+                            bypass_slot_check,
+                            connected_peer_count = self.network_state.connected_peer_count(),
+                            peers_in_use = self.peers_in_use.len(),
+                            sync_status = ?self.sync_status,
+                            "Unable to start backfill queue because all connected peers are already assigned",
+                        );
                     }
                     self.checkpoints_to_queue
                         .push((checkpoint, bypass_slot_check));
                     return Ok(());
                 }
             };
-            let new_queue_added = self.sync_status.add_new_job_queue(
+            let new_queue_added = self.backfill_state.add_new_job_queue(
                 checkpoint,
                 JobRequest::new(non_queued_peer_id, checkpoint.root),
                 bypass_slot_check,
             );
             if new_queue_added {
                 self.peers_in_use.insert(non_queued_peer_id);
+                info!(
+                    queue_root = ?checkpoint.root,
+                    queue_slot = checkpoint.slot,
+                    assigned_peer_id = ?non_queued_peer_id,
+                    bypass_slot_check,
+                    sync_status = ?self.sync_status,
+                    queue_count = self.backfill_state.jobs.len(),
+                    "Started backfill queue",
+                );
+            } else {
+                debug!(
+                    queue_root = ?checkpoint.root,
+                    queue_slot = checkpoint.slot,
+                    bypass_slot_check,
+                    sync_status = ?self.sync_status,
+                    existing_queue_count = self.backfill_state.jobs.len(),
+                    "Skipped backfill queue because an equal-or-better queue already exists",
+                );
             }
         }
 
@@ -962,7 +1010,7 @@ impl LeanChainService {
 
     async fn update_sync_status(&mut self) -> anyhow::Result<SyncStatus> {
         if self.forward_syncer.is_some() {
-            return Ok(self.sync_status.clone());
+            return Ok(self.sync_status);
         }
 
         let (head, block_provider, has_orphaned_pending_blocks) = {
@@ -1038,7 +1086,7 @@ impl LeanChainService {
                     handoff_strategy = ?self.telemetry.handoff_strategy,
                     "Node fell behind network finalized checkpoint; switching to backfill syncing mode"
                 );
-                SyncStatus::Syncing { jobs: Vec::new() }
+                SyncStatus::Syncing
             } else {
                 SyncStatus::Synced
             }
@@ -1062,7 +1110,7 @@ impl LeanChainService {
             }
             SyncStatus::Synced
         } else {
-            self.sync_status.clone()
+            self.sync_status
         };
 
         if transitioned_to_synced {
@@ -1102,7 +1150,7 @@ impl LeanChainService {
                     processing_time_seconds,
                     "Forward background sync completed",
                 );
-                self.sync_status.remove_processed_queue(ending_root);
+                self.backfill_state.remove_processed_queue(ending_root);
             }
             ForwardSyncResults::ChainIncomplete {
                 prevous_queue,
@@ -1111,10 +1159,12 @@ impl LeanChainService {
                 warn!(
                     starting_root = ?prevous_queue.starting_root,
                     starting_slot = prevous_queue.starting_slot,
-                    "Forward background sync incomplete; re-queuing job",
+                    restart_root = ?checkpoint_for_new_queue.root,
+                    restart_slot = checkpoint_for_new_queue.slot,
+                    "Forward background sync incomplete; removing queue and re-queuing from missing root",
                 );
 
-                self.sync_status
+                self.backfill_state
                     .remove_processed_queue(prevous_queue.starting_root);
                 self.checkpoints_to_queue
                     .push((checkpoint_for_new_queue, true));
@@ -1128,7 +1178,7 @@ impl LeanChainService {
                 network_finalized_slot,
             } => {
                 let removed_pending_block = self.remove_pending_block(bad_root).await?;
-                self.sync_status
+                self.backfill_state
                     .remove_processed_queue(previous_queue.starting_root);
 
                 if let Some(checkpoint_for_new_queue) = checkpoint_for_new_queue {
@@ -1139,8 +1189,10 @@ impl LeanChainService {
                         bad_slot,
                         actual_root = ?actual_root,
                         network_finalized_slot,
+                        restart_root = ?checkpoint_for_new_queue.root,
+                        restart_slot = checkpoint_for_new_queue.slot,
                         removed_pending_block,
-                        "Forward background sync root mismatch; purged bad root and re-queuing job",
+                        "Forward background sync root mismatch; purged bad pending block and re-queuing root",
                     );
                     self.checkpoints_to_queue
                         .push((checkpoint_for_new_queue, true));
@@ -1153,7 +1205,7 @@ impl LeanChainService {
                         actual_root = ?actual_root,
                         network_finalized_slot,
                         removed_pending_block,
-                        "Forward background sync root mismatch for finalized slot; dropping erroneous queue",
+                        "Forward background sync root mismatch for finalized slot; dropping obsolete queue",
                     );
                 }
             }
@@ -1232,8 +1284,7 @@ impl LeanChainService {
     }
 
     fn has_pending_backfill_work(&self) -> bool {
-        let has_queued_jobs =
-            matches!(&self.sync_status, SyncStatus::Syncing { jobs } if !jobs.is_empty());
+        let has_queued_jobs = !self.backfill_state.jobs.is_empty();
         let has_busy_peers = has_queued_jobs && !self.peers_in_use.is_empty();
         has_queued_jobs
             || !self.pending_job_requests.is_empty()
@@ -1243,19 +1294,21 @@ impl LeanChainService {
     }
 
     fn has_active_backfill_jobs(&self) -> bool {
-        matches!(
-            &self.sync_status,
-            SyncStatus::Syncing { jobs } if jobs.iter().any(|queue| !queue.jobs.is_empty())
-        )
+        self.backfill_state
+            .jobs
+            .iter()
+            .any(|queue| !queue.jobs.is_empty())
     }
 
     fn sync_queue_stats(&self) -> (usize, usize) {
-        if let SyncStatus::Syncing { jobs } = &self.sync_status {
-            let queue_count = jobs.len();
-            let total_jobs = jobs.iter().map(|queue| queue.jobs.len()).sum();
-            return (queue_count, total_jobs);
-        }
-        (0, 0)
+        let queue_count = self.backfill_state.jobs.len();
+        let total_jobs = self
+            .backfill_state
+            .jobs
+            .iter()
+            .map(|queue| queue.jobs.len())
+            .sum();
+        (queue_count, total_jobs)
     }
 
     fn maybe_log_backfill_progress(&mut self) {
@@ -1277,8 +1330,10 @@ impl LeanChainService {
             };
         info!(
             slot = get_current_slot(),
+            sync_status = ?self.sync_status,
             queue_count,
             total_jobs,
+            staged_checkpoints = self.checkpoints_to_queue.len(),
             pending_requests = self.pending_job_requests.len(),
             inflight_roots = self.telemetry.inflight_roots.len(),
             peers_in_use = self.peers_in_use.len(),
@@ -1289,7 +1344,7 @@ impl LeanChainService {
             callbacks_dropped = self.telemetry.backfill_telemetry.callbacks_dropped,
             avg_callback_latency_ms,
             peer_latency_entries = self.telemetry.peer_avg_latency_ms.len(),
-            "Node is syncing; backfill progress"
+            "Backfill progress"
         );
     }
 
@@ -1471,7 +1526,7 @@ impl LeanChainService {
 
     async fn handle_failed_job_request(&mut self, peer_id: PeerId) -> anyhow::Result<()> {
         self.network_state.failed_response_from_peer(peer_id);
-        if !self.sync_status.has_job_for_peer(peer_id) {
+        if !self.backfill_state.has_job_for_peer(peer_id) {
             return Ok(());
         }
         self.peers_in_use.remove(&peer_id);
@@ -1480,6 +1535,18 @@ impl LeanChainService {
         });
         self.queue_pending_reset(peer_id);
         Ok(())
+    }
+
+    fn callback_matches_current_assignment(
+        &self,
+        peer_id: PeerId,
+        root: alloy_primitives::B256,
+    ) -> bool {
+        if let Some(inflight) = self.telemetry.inflight_roots.get(&root) {
+            return inflight.primary_peer == peer_id || inflight.backup_peer == Some(peer_id);
+        }
+
+        self.backfill_state.peer_for_job_root(root) == Some(peer_id)
     }
 
     async fn handle_callback_response_message(
@@ -1492,12 +1559,21 @@ impl LeanChainService {
             LeanResponseMessage::BlocksByRoot(signed_block_with_attestation) => {
                 let block_root = signed_block_with_attestation.message.block.tree_hash_root();
                 if !self.telemetry.inflight_roots.contains_key(&block_root)
-                    && !self.sync_status.contains_job_root(block_root)
+                    && !self.backfill_state.contains_job_root(block_root)
                 {
                     trace!(
                         peer_id = ?peer_id,
                         block_root = ?block_root,
                         "Ignoring stale backfill callback for completed root"
+                    );
+                    return Ok(());
+                }
+                if !self.callback_matches_current_assignment(peer_id, block_root) {
+                    trace!(
+                        peer_id = ?peer_id,
+                        block_root = ?block_root,
+                        current_job_peer_id = ?self.backfill_state.peer_for_job_root(block_root),
+                        "Ignoring stale backfill callback for root that has been reassigned",
                     );
                     return Ok(());
                 }
@@ -1522,12 +1598,21 @@ impl LeanChainService {
             LeanResponseMessage::BlocksByRoot(signed_block) => {
                 let block_root = signed_block.block.tree_hash_root();
                 if !self.telemetry.inflight_roots.contains_key(&block_root)
-                    && !self.sync_status.contains_job_root(block_root)
+                    && !self.backfill_state.contains_job_root(block_root)
                 {
                     trace!(
                         peer_id = ?peer_id,
                         block_root = ?block_root,
                         "Ignoring stale backfill callback for completed root"
+                    );
+                    return Ok(());
+                }
+                if !self.callback_matches_current_assignment(peer_id, block_root) {
+                    trace!(
+                        peer_id = ?peer_id,
+                        block_root = ?block_root,
+                        current_job_peer_id = ?self.backfill_state.peer_for_job_root(block_root),
+                        "Ignoring stale backfill callback for root that has been reassigned",
                     );
                     return Ok(());
                 }
@@ -1634,13 +1719,13 @@ impl LeanChainService {
         let mut request_latency_ms: Option<f64> = None;
         if source == SyncBlockSource::ReqResp {
             self.telemetry.backfill_telemetry.callbacks_processed += 1;
-            if let Some(latency) = self.sync_status.request_latency_for_root(last_root) {
+            if let Some(latency) = self.backfill_state.request_latency_for_root(last_root) {
                 self.telemetry.backfill_telemetry.callback_latency_ms_total += latency.as_millis();
                 self.telemetry.backfill_telemetry.callback_latency_samples += 1;
                 request_latency_ms = Some(latency.as_secs_f64() * 1_000.0);
             }
         }
-        let job_peer_id = self.sync_status.peer_for_job_root(last_root);
+        let job_peer_id = self.backfill_state.peer_for_job_root(last_root);
         let (head, pending_blocks_provider, block_provider) = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
@@ -1673,7 +1758,7 @@ impl LeanChainService {
         let parent_root_in_pending_blocks = pending_blocks_provider.get(parent_root)?.is_some();
         let parent_root_in_block_store = block_provider.get(parent_root)?.is_some();
         let parent_root_is_start_of_any_queue =
-            self.sync_status.is_root_start_of_any_queue(&parent_root);
+            self.backfill_state.is_root_start_of_any_queue(&parent_root);
 
         let parent_root_is_genesis = parent_root == alloy_primitives::B256::ZERO;
 
@@ -1683,16 +1768,33 @@ impl LeanChainService {
             || parent_root_is_start_of_any_queue
             || parent_root_is_genesis
         {
+            if parent_root_is_start_of_any_queue
+                && let Some(absorption) =
+                    self.backfill_state
+                        .absorb_queue_frontier(last_root, slot, parent_root)
+            {
+                info!(
+                    completed_root = ?last_root,
+                    completed_slot = slot,
+                    absorbed_queue_root = ?absorption.absorbed_starting_root,
+                    absorbed_queue_slot = absorption.absorbed_starting_slot,
+                    merged_job_count = absorption.merged_job_count,
+                    "Absorbed older backfill queue frontier into newer queue",
+                );
+                self.queue_pending_job_requests().await?;
+                return Ok(());
+            }
+
             trace!(
                 root = ?last_root,
                 parent_root = ?parent_root,
                 "Marking backfill queue as complete"
             );
-            self.sync_status.mark_job_queue_as_complete(last_root);
+            self.backfill_state.mark_job_queue_as_complete(last_root);
             return Ok(());
         }
 
-        if self.sync_status.contains_job_root(last_root) {
+        if self.backfill_state.contains_job_root(last_root) {
             self.queue_pending_initial(last_root, slot, parent_root);
             self.queue_pending_job_requests().await?;
         }
@@ -1714,13 +1816,13 @@ impl LeanChainService {
         let mut request_latency_ms: Option<f64> = None;
         if source == SyncBlockSource::ReqResp {
             self.telemetry.backfill_telemetry.callbacks_processed += 1;
-            if let Some(latency) = self.sync_status.request_latency_for_root(last_root) {
+            if let Some(latency) = self.backfill_state.request_latency_for_root(last_root) {
                 self.telemetry.backfill_telemetry.callback_latency_ms_total += latency.as_millis();
                 self.telemetry.backfill_telemetry.callback_latency_samples += 1;
                 request_latency_ms = Some(latency.as_secs_f64() * 1_000.0);
             }
         }
-        let job_peer_id = self.sync_status.peer_for_job_root(last_root);
+        let job_peer_id = self.backfill_state.peer_for_job_root(last_root);
         let (head, pending_blocks_provider, block_provider) = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
@@ -1753,7 +1855,7 @@ impl LeanChainService {
         let parent_root_in_pending_blocks = pending_blocks_provider.get(parent_root)?.is_some();
         let parent_root_in_block_store = block_provider.get(parent_root)?.is_some();
         let parent_root_is_start_of_any_queue =
-            self.sync_status.is_root_start_of_any_queue(&parent_root);
+            self.backfill_state.is_root_start_of_any_queue(&parent_root);
 
         let parent_root_is_genesis = parent_root == alloy_primitives::B256::ZERO;
 
@@ -1763,16 +1865,33 @@ impl LeanChainService {
             || parent_root_is_start_of_any_queue
             || parent_root_is_genesis
         {
+            if parent_root_is_start_of_any_queue
+                && let Some(absorption) =
+                    self.backfill_state
+                        .absorb_queue_frontier(last_root, slot, parent_root)
+            {
+                info!(
+                    completed_root = ?last_root,
+                    completed_slot = slot,
+                    absorbed_queue_root = ?absorption.absorbed_starting_root,
+                    absorbed_queue_slot = absorption.absorbed_starting_slot,
+                    merged_job_count = absorption.merged_job_count,
+                    "Absorbed older backfill queue frontier into newer queue",
+                );
+                self.queue_pending_job_requests().await?;
+                return Ok(());
+            }
+
             trace!(
                 root = ?last_root,
                 parent_root = ?parent_root,
                 "Marking backfill queue as complete"
             );
-            self.sync_status.mark_job_queue_as_complete(last_root);
+            self.backfill_state.mark_job_queue_as_complete(last_root);
             return Ok(());
         }
 
-        if self.sync_status.contains_job_root(last_root) {
+        if self.backfill_state.contains_job_root(last_root) {
             self.queue_pending_initial(last_root, slot, parent_root);
             self.queue_pending_job_requests().await?;
         }
@@ -1790,8 +1909,13 @@ impl LeanChainService {
                 Some(id) => id,
                 None => {
                     info!(
-                        "No connected peers available to assign pending job request. {:?} || {:?}",
-                        self.sync_status, self.pending_job_requests
+                        sync_status = ?self.sync_status,
+                        request = ?pending_job_request,
+                        queue_count = self.backfill_state.jobs.len(),
+                        pending_requests_remaining = self.pending_job_requests.len(),
+                        connected_peer_count = self.network_state.connected_peer_count(),
+                        peers_in_use = self.peers_in_use.len(),
+                        "No assignable peer available for pending backfill job request",
                     );
                     self.pending_job_requests.push_back(pending_job_request);
                     return Ok(());
@@ -1800,7 +1924,7 @@ impl LeanChainService {
             match pending_job_request {
                 PendingJobRequest::Reset { peer_id } => {
                     if self
-                        .sync_status
+                        .backfill_state
                         .reset_job_with_new_peer_id(peer_id, non_queued_peer_id)
                         .is_none()
                     {
@@ -1816,7 +1940,7 @@ impl LeanChainService {
                     parent_root,
                 } => {
                     if self
-                        .sync_status
+                        .backfill_state
                         .replace_job_with_next_job(
                             root,
                             slot,
@@ -1830,7 +1954,7 @@ impl LeanChainService {
                             slot,
                             "Failed to attach initial pending job request to existing queue; rebuilding as fresh queue",
                         );
-                        let new_queue_added = self.sync_status.add_new_job_queue(
+                        let new_queue_added = self.backfill_state.add_new_job_queue(
                             Checkpoint {
                                 root: parent_root,
                                 slot: slot.saturating_sub(1),
@@ -2057,7 +2181,7 @@ fn pending_block_slot(block: &SignedBlock) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
+    use std::{sync::Arc, time::Instant};
 
     use alloy_primitives::B256;
     use libp2p_identity::PeerId;
@@ -2074,20 +2198,21 @@ mod tests {
     use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
     use ream_post_quantum_crypto::leansig::signature::Signature;
+    use ream_req_resp::lean::messages::LeanResponseMessage;
     use ream_storage::tables::{field::REDBField, table::REDBTable};
     use ream_sync::rwlock::Writer;
     use ream_test_utils::store::sample_store;
     use tokio::sync::{mpsc, oneshot};
     use tree_hash::TreeHash;
 
-    use super::{InflightRootRequest, LeanChainService};
+    use super::{InflightRootRequest, LeanChainService, SyncBlockSource};
     use crate::{
         messages::ServiceResponse,
         p2p_request::LeanP2PRequest,
         sync::{
             SyncStatus,
             forward_background_syncer::ForwardSyncResults,
-            job::{pending::PendingJobRequest, queue::JobQueue},
+            job::{pending::PendingJobRequest, queue::JobQueue, request::JobRequest},
         },
     };
 
@@ -2208,6 +2333,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_step_backfill_sync_starts_queue_while_synced_when_only_behind_peer_head() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 3, 10).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+
+        let peer_id = PeerId::random();
+        service.network_state.upsert_peer(
+            peer_id,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        let head_checkpoint = Checkpoint {
+            root: B256::repeat_byte(0x11),
+            slot: 7,
+        };
+        service.network_state.update_peer_checkpoints(
+            peer_id,
+            head_checkpoint,
+            Checkpoint {
+                root: B256::repeat_byte(0x22),
+                slot: 2,
+            },
+        );
+
+        service.step_backfill_sync().await.unwrap();
+
+        assert_eq!(service.sync_status, SyncStatus::Synced);
+        assert_eq!(service.backfill_state.jobs.len(), 1);
+        assert_eq!(
+            service.backfill_state.jobs[0].starting_root,
+            head_checkpoint.root
+        );
+        assert_eq!(
+            service.backfill_state.jobs[0].starting_slot,
+            head_checkpoint.slot
+        );
+    }
+
+    #[tokio::test]
     async fn test_update_sync_status_transitions_to_syncing_when_behind_peer_finalized() {
         let mut store = sample_store(10).await;
         advance_store_to_slot(&mut store, 3, 10).await;
@@ -2239,7 +2409,7 @@ mod tests {
 
         assert!(matches!(
             service.update_sync_status().await.unwrap(),
-            SyncStatus::Syncing { jobs } if jobs.is_empty()
+            SyncStatus::Syncing
         ));
     }
 
@@ -2293,12 +2463,12 @@ mod tests {
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
-        service.sync_status = SyncStatus::Syncing { jobs: Vec::new() };
+        service.sync_status = SyncStatus::Syncing;
 
         assert!(service.has_orphaned_pending_blocks().await);
         assert!(matches!(
             service.update_sync_status().await.unwrap(),
-            SyncStatus::Syncing { jobs } if jobs.is_empty()
+            SyncStatus::Syncing
         ));
         assert!(service.should_run_backfill_sync().await);
     }
@@ -2437,9 +2607,8 @@ mod tests {
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
         let mut previous_queue = JobQueue::new(bad_root, 1, 1);
         previous_queue.is_complete = true;
-        service.sync_status = SyncStatus::Syncing {
-            jobs: vec![previous_queue.clone()],
-        };
+        service.sync_status = SyncStatus::Syncing;
+        service.backfill_state.jobs.push(previous_queue.clone());
 
         service
             .handle_forward_sync_result(ForwardSyncResults::RootMismatch {
@@ -2456,7 +2625,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(matches!(&service.sync_status, SyncStatus::Syncing { jobs } if jobs.is_empty()));
+        assert_eq!(service.sync_status, SyncStatus::Syncing);
+        assert!(service.backfill_state.jobs.is_empty());
         assert_eq!(
             service.checkpoints_to_queue,
             vec![(
@@ -2526,9 +2696,8 @@ mod tests {
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
         let mut previous_queue = JobQueue::new(bad_root, 1, 1);
         previous_queue.is_complete = true;
-        service.sync_status = SyncStatus::Syncing {
-            jobs: vec![previous_queue.clone()],
-        };
+        service.sync_status = SyncStatus::Syncing;
+        service.backfill_state.jobs.push(previous_queue.clone());
 
         service
             .handle_forward_sync_result(ForwardSyncResults::RootMismatch {
@@ -2542,7 +2711,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(matches!(&service.sync_status, SyncStatus::Syncing { jobs } if jobs.is_empty()));
+        assert_eq!(service.sync_status, SyncStatus::Syncing);
+        assert!(service.backfill_state.jobs.is_empty());
         assert!(service.checkpoints_to_queue.is_empty());
         let pending_present = {
             let fork_choice = service.store.read().await;
@@ -2715,13 +2885,190 @@ mod tests {
 
         assert!(service.peers_in_use.contains(&peer_id));
         assert!(matches!(
-            &service.sync_status,
-            SyncStatus::Syncing { jobs }
-                if jobs.iter().any(|queue|
-                    queue.starting_root == parent_root
-                        && queue.starting_slot == 98
-                        && queue.jobs.contains_key(&parent_root)
-                )
+            &service.backfill_state.jobs,
+            jobs if jobs.iter().any(|queue|
+                queue.starting_root == parent_root
+                    && queue.starting_slot == 98
+                    && queue.jobs.contains_key(&parent_root)
+            )
         ));
+    }
+
+    #[tokio::test]
+    async fn test_handle_backfill_block_absorbs_older_queue_frontier() {
+        let mut store = sample_store(10).await;
+        let old_root = B256::repeat_byte(0x11);
+        let old_frontier = B256::repeat_byte(0x12);
+        let new_root = B256::repeat_byte(0x21);
+
+        #[cfg(feature = "devnet3")]
+        let signed_block = {
+            let attestation = store.produce_attestation_data(1).await.unwrap();
+            let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+            let mut signed_block = SignedBlockWithAttestation {
+                message: BlockWithAttestation {
+                    block: block.block,
+                    proposer_attestation: AggregatedAttestations {
+                        validator_id: 1,
+                        data: attestation,
+                    },
+                },
+                signature: BlockSignatures {
+                    attestation_signatures: block.signatures,
+                    proposer_signature: Signature::mock(),
+                },
+            };
+            signed_block.message.block.slot = 101;
+            signed_block.message.block.parent_root = old_root;
+            signed_block
+        };
+        #[cfg(feature = "devnet4")]
+        let signed_block = {
+            let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+            let mut signed_block = SignedBlock {
+                block: block.block,
+                signature: BlockSignatures {
+                    attestation_signatures: block.signatures,
+                    proposer_signature: Signature::mock(),
+                },
+            };
+            signed_block.block.slot = 101;
+            signed_block.block.parent_root = old_root;
+            signed_block
+        };
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let peer_old = PeerId::random();
+        let peer_new = PeerId::random();
+
+        service.backfill_state.add_new_job_queue(
+            Checkpoint {
+                root: old_root,
+                slot: 120,
+            },
+            JobRequest::new(peer_old, old_root),
+            false,
+        );
+        service.backfill_state.replace_job_with_next_job(
+            old_root,
+            61,
+            JobRequest::new(peer_old, old_frontier),
+        );
+        service.peers_in_use.insert(peer_old);
+
+        service.backfill_state.add_new_job_queue(
+            Checkpoint {
+                root: new_root,
+                slot: 140,
+            },
+            JobRequest::new(peer_new, new_root),
+            false,
+        );
+        #[cfg(feature = "devnet3")]
+        let new_frontier = signed_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let new_frontier = signed_block.block.tree_hash_root();
+        service.backfill_state.replace_job_with_next_job(
+            new_root,
+            101,
+            JobRequest::new(peer_new, new_frontier),
+        );
+
+        service
+            .handle_backfill_block(None, signed_block, SyncBlockSource::ReqResp)
+            .await
+            .unwrap();
+
+        assert_eq!(service.backfill_state.jobs.len(), 1);
+        let surviving_queue = &service.backfill_state.jobs[0];
+        assert_eq!(surviving_queue.starting_root, new_root);
+        assert!(surviving_queue.jobs.contains_key(&old_frontier));
+        assert!(!surviving_queue.jobs.contains_key(&new_frontier));
+        assert_eq!(surviving_queue.last_fetched_slot, 61);
+        assert!(service.peers_in_use.contains(&peer_old));
+    }
+
+    #[tokio::test]
+    async fn test_handle_callback_response_ignores_reassigned_peer_callback() {
+        let mut store = sample_store(10).await;
+
+        #[cfg(feature = "devnet3")]
+        let signed_block = {
+            let attestation = store.produce_attestation_data(1).await.unwrap();
+            let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+            SignedBlockWithAttestation {
+                message: BlockWithAttestation {
+                    block: block.block,
+                    proposer_attestation: AggregatedAttestations {
+                        validator_id: 1,
+                        data: attestation,
+                    },
+                },
+                signature: BlockSignatures {
+                    attestation_signatures: block.signatures,
+                    proposer_signature: Signature::mock(),
+                },
+            }
+        };
+        #[cfg(feature = "devnet4")]
+        let signed_block = {
+            let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+            SignedBlock {
+                block: block.block,
+                signature: BlockSignatures {
+                    attestation_signatures: block.signatures,
+                    proposer_signature: Signature::mock(),
+                },
+            }
+        };
+
+        #[cfg(feature = "devnet3")]
+        let block_root = signed_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let block_root = signed_block.block.tree_hash_root();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let old_peer = PeerId::random();
+        let new_peer = PeerId::random();
+        service.backfill_state.add_new_job_queue(
+            Checkpoint {
+                root: block_root,
+                slot: 1,
+            },
+            JobRequest::new(new_peer, block_root),
+            false,
+        );
+        service.peers_in_use.insert(new_peer);
+
+        service
+            .handle_callback_response_message(
+                old_peer,
+                Arc::new(LeanResponseMessage::BlocksByRoot(Arc::new(signed_block))),
+            )
+            .await
+            .unwrap();
+
+        assert!(service.peers_in_use.contains(&new_peer));
+        assert_eq!(service.telemetry.backfill_telemetry.callbacks_processed, 0);
+        assert!(service.backfill_state.contains_job_root(block_root));
+
+        let pending_block_exists = {
+            let fork_choice = service.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store
+                .pending_blocks_provider()
+                .get(block_root)
+                .unwrap()
+                .is_some()
+        };
+        assert!(!pending_block_exists);
     }
 }
