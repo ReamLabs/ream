@@ -661,7 +661,11 @@ impl Store {
                         .get(SignatureKey::from_parts(validator_id, data_root))
                         && let Some(validator) = head_state.validators.get(validator_id as usize)
                     {
-                        raw_entries.push((validator_id, validator.attestation_public_key, signature));
+                        raw_entries.push((
+                            validator_id,
+                            validator.attestation_public_key,
+                            signature,
+                        ));
 
                         if recursive {
                             covered_validators.insert(validator_id);

@@ -68,20 +68,22 @@ pub fn run_generate_validator_registry(
     let mut genesis_validators: Vec<PublicKey> = vec![];
     #[cfg(feature = "devnet4")]
     let mut genesis_validators: Vec<GenesisValidatorEntry> = vec![];
-    for i in 0..(keystore_config.number_of_nodes * keystore_config.number_of_validators_per_node) {
+    for index in
+        0..(keystore_config.number_of_nodes * keystore_config.number_of_validators_per_node)
+    {
         #[cfg(feature = "devnet3")]
         {
             let (public_key, private_key) =
                 PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
             genesis_validators.push(public_key);
 
-            let filename: String = format!("validator_{i}_sk.ssz");
+            let filename: String = format!("validator_{index}_sk.ssz");
             path.push(&filename);
             fs::write(&path, private_key.to_bytes())?;
             path.pop();
 
             validators.push(ValidatorKeystoreRaw {
-                index: i,
+                index,
                 public_key,
                 private_key_file: filename,
             });
@@ -98,22 +100,22 @@ pub fn run_generate_validator_registry(
                 proposal_public_key,
             });
 
-            let attester_secret_key_filename = format!("validator_{i}_attestation_sk.ssz");
+            let attester_secret_key_filename = format!("validator_{index}_attestation_sk.ssz");
             path.push(&attester_secret_key_filename);
             fs::write(&path, attestation_private_key.to_bytes())?;
             path.pop();
 
-            let proposer_secret_key_filename = format!("validator_{i}_proposal_sk.ssz");
+            let proposer_secret_key_filename = format!("validator_{index}_proposal_sk.ssz");
             path.push(&proposer_secret_key_filename);
             fs::write(&path, proposal_private_key.to_bytes())?;
             path.pop();
 
             validators.push(ValidatorKeystoreRaw {
-                index: i,
+                index,
                 attestation_public_key_hex: attestation_public_key,
                 proposal_public_key_hex: proposal_public_key,
-                attestation_private_key_file: attester_secret_key_filename,
-                proposal_private_key_file: proposer_secret_key_filename,
+                attestation_privkey_file: attester_secret_key_filename,
+                proposal_privkey_file: proposer_secret_key_filename,
             });
         }
     }
