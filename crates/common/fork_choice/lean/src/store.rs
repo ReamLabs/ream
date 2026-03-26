@@ -2020,6 +2020,25 @@ mod tests {
         LOCK.get_or_init(|| AsyncMutex::new(()))
     }
 
+    const CACHED_KEY_COUNT: usize = 10;
+
+    type CachedKeyPair = (
+        ream_post_quantum_crypto::leansig::public_key::PublicKey,
+        Vec<u8>,
+    );
+
+    fn cached_key_pairs() -> &'static [CachedKeyPair; CACHED_KEY_COUNT] {
+        static CACHE: OnceLock<[CachedKeyPair; CACHED_KEY_COUNT]> = OnceLock::new();
+        CACHE.get_or_init(|| {
+            use rand::rng;
+            let mut rng = rng();
+            std::array::from_fn(|_| {
+                let (public_key, private_key) = PrivateKey::generate_key_pair(&mut rng, 0, 10);
+                (public_key, private_key.to_bytes())
+            })
+        })
+    }
+
     #[cfg(feature = "devnet3")]
     pub fn db_setup() -> LeanDB {
         let unique = SystemTime::now()
@@ -2125,13 +2144,18 @@ mod tests {
             PrivateKey,
         ),
     > {
-        use rand::rng;
-
-        let mut rng = rng();
+        let cache = cached_key_pairs();
         let mut key_pairs = HashMap::new();
         for validator_id in validator_ids {
-            let (public_key, private_key) = PrivateKey::generate_key_pair(&mut rng, 0, 10);
-            key_pairs.insert(*validator_id, (public_key, private_key));
+            let validator_index = *validator_id as usize;
+            assert!(
+                validator_index < CACHED_KEY_COUNT,
+                "validator_id {validator_index} exceeds cached key count {CACHED_KEY_COUNT}"
+            );
+            let (public_key, private_key_bytes) = &cache[validator_index];
+            let private_key = PrivateKey::from_bytes(private_key_bytes)
+                .expect("cached key bytes should be valid");
+            key_pairs.insert(*validator_id, (*public_key, private_key));
         }
 
         let (head_provider, latest_justified_provider, latest_finalized_provider, state_provider) = {
@@ -2927,20 +2951,22 @@ mod tests {
     #[tokio::test]
     async fn test_produce_block_with_attestations() {
         let _test_guard = test_global_lock().lock().await;
-        use rand::rng;
 
-        // Generate real key pairs for validators
-        let mut test_rng = rng();
+        // Use cached key pairs for validators
+        let cache = cached_key_pairs();
         let mut validators = Vec::new();
         let mut private_keys = Vec::new();
 
         for i in 0..10 {
-            let (pub_key, priv_key) = PrivateKey::generate_key_pair(&mut test_rng, 0, 10);
+            let (pub_key, private_key_bytes) = &cache[i];
             validators.push(Validator {
-                public_key: pub_key,
+                public_key: *pub_key,
                 index: i as u64,
             });
-            private_keys.push(priv_key);
+            private_keys.push(
+                PrivateKey::from_bytes(private_key_bytes)
+                    .expect("cached key bytes should be valid"),
+            );
         }
 
         // Create store with validators that have real keys
