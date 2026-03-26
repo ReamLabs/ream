@@ -98,13 +98,13 @@ pub fn run_generate_validator_registry(
                 proposal_public_key,
             });
 
-            let att_filename = format!("validator_{i}_attestation_sk.ssz");
-            path.push(&att_filename);
+            let attester_secret_key_filename = format!("validator_{i}_attestation_sk.ssz");
+            path.push(&attester_secret_key_filename);
             fs::write(&path, attestation_private_key.to_bytes())?;
             path.pop();
 
-            let prop_filename = format!("validator_{i}_proposal_sk.ssz");
-            path.push(&prop_filename);
+            let proposer_secret_key_filename = format!("validator_{i}_proposal_sk.ssz");
+            path.push(&proposer_secret_key_filename);
             fs::write(&path, proposal_private_key.to_bytes())?;
             path.pop();
 
@@ -112,8 +112,8 @@ pub fn run_generate_validator_registry(
                 index: i,
                 attestation_public_key_hex: attestation_public_key,
                 proposal_public_key_hex: proposal_public_key,
-                attestation_privkey_file: att_filename,
-                proposal_privkey_file: prop_filename,
+                attestation_privkey_file: attester_secret_key_filename,
+                proposal_privkey_file: proposer_secret_key_filename,
             });
         }
     }
