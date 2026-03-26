@@ -97,7 +97,10 @@ impl LeanNetworkSpec {
             .expect("System time is before UNIX epoch")
             .as_secs();
 
+        #[cfg(feature = "devnet3")]
         let config: &str = include_str!("../../../../../bin/ream/assets/lean/config.yaml");
+        #[cfg(feature = "devnet4")]
+        let config: &str = include_str!("../../../../../bin/ream/assets/lean/config-devnet4.yaml");
         let config = serde_yaml::from_str::<LeanNetworkSpec>(config)
             .expect("Our sample config should always be correct");
 
