@@ -39,7 +39,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build ream
-        run: cargo build --release --package ream --bin ream
+        run: cargo build --release --package ream --bin ream --no-default-features --features devnet4
 
       - name: Checkout leanSpec
         uses: actions/checkout@v4
@@ -59,11 +59,18 @@ jobs:
         working-directory: leanSpec
         run: uv sync
 
+      - name: Generate devnet4 validator registry
+        run: |
+          ./target/release/ream generate-validator-registry \
+            --output ./devnet4-config \
+            --number-of-nodes 1 \
+            --number-of-validators-per-node 3
+
       - name: Start ream in background
         run: |
           ./target/release/ream --ephemeral lean_node \
             --network ephemery \
-            --validator-registry-path ./bin/ream/assets/lean/validators.yaml \
+            --validator-registry-path ./devnet4-config/validators.yaml \
             --bootnodes none \
             &
           echo $! > /tmp/ream.pid
