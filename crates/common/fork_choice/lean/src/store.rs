@@ -1998,7 +1998,7 @@ mod tests {
     use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
     use ream_post_quantum_crypto::{
         lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
-        leansig::{private_key::PrivateKey, signature::Signature},
+        leansig::{private_key::PrivateKey, public_key::PublicKey, signature::Signature},
     };
     #[cfg(feature = "devnet4")]
     use ream_storage::tables::{field::REDBField, table::REDBTable};
@@ -2022,10 +2022,7 @@ mod tests {
 
     const CACHED_KEY_COUNT: usize = 10;
 
-    type CachedKeyPair = (
-        ream_post_quantum_crypto::leansig::public_key::PublicKey,
-        Vec<u8>,
-    );
+    type CachedKeyPair = (PublicKey, Vec<u8>);
 
     fn cached_key_pairs() -> &'static [CachedKeyPair; CACHED_KEY_COUNT] {
         static CACHE: OnceLock<[CachedKeyPair; CACHED_KEY_COUNT]> = OnceLock::new();
@@ -2957,10 +2954,9 @@ mod tests {
         let mut validators = Vec::new();
         let mut private_keys = Vec::new();
 
-        for i in 0..10 {
-            let (pub_key, private_key_bytes) = &cache[i];
+        for (i, (public_key, private_key_bytes)) in cache.iter().enumerate().take(10) {
             validators.push(Validator {
-                public_key: *pub_key,
+                public_key: *public_key,
                 index: i as u64,
             });
             private_keys.push(
