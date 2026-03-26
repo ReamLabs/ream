@@ -93,7 +93,7 @@ pub fn run_generate_validator_registry(
             let (proposal_public_key, proposal_private_key) =
                 PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
 
-            genesis_validators.push(ream_keystore::lean_keystore::GenesisValidatorEntry {
+            genesis_validators.push(GenesisValidatorEntry {
                 attestation_public_key,
                 proposal_public_key,
             });
