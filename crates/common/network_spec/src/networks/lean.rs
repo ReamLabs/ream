@@ -3,6 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(any(feature = "devnet3", feature = "devnet4"))]
 use alloy_primitives::FixedBytes;
 #[cfg(feature = "devnet4")]
 use serde::Serialize;
@@ -101,6 +102,7 @@ impl LeanNetworkSpec {
         let config: &str = include_str!("../../../../../bin/ream/assets/lean/config.yaml");
         #[cfg(feature = "devnet4")]
         let config: &str = include_str!("../../../../../bin/ream/assets/lean/config-devnet4.yaml");
+        #[cfg(any(feature = "devnet3", feature = "devnet4"))]
         let config = serde_yaml::from_str::<LeanNetworkSpec>(config)
             .expect("Our sample config should always be correct");
 
@@ -108,7 +110,10 @@ impl LeanNetworkSpec {
             genesis_time: current_timestamp + 10,
             justification_lookback_slots: 3,
             seconds_per_slot: 4,
+            #[cfg(any(feature = "devnet3", feature = "devnet4"))]
             num_validators: config.num_validators,
+            #[cfg(not(any(feature = "devnet3", feature = "devnet4")))]
+            num_validators: 0,
             #[cfg(feature = "devnet3")]
             validator_public_keys: config.validator_public_keys,
             #[cfg(feature = "devnet4")]
