@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+#[cfg(any(feature = "devnet3", feature = "devnet4"))]
 use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, public_key::PublicKey};
 use serde::{Deserialize, Serialize};
 
+#[cfg(any(feature = "devnet3", feature = "devnet4"))]
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct ValidatorKeysManifest {
