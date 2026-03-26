@@ -7,6 +7,8 @@ use std::{
 use anyhow::ensure;
 use clap::Parser;
 use rand::rng;
+#[cfg(feature = "devnet4")]
+use ream_keystore::lean_keystore::GenesisValidatorEntry;
 use ream_keystore::lean_keystore::{
     ConfigFile, ValidatorKeysManifest, ValidatorKeystoreRaw, ValidatorRegistry,
 };
@@ -65,7 +67,7 @@ pub fn run_generate_validator_registry(
     #[cfg(feature = "devnet3")]
     let mut genesis_validators: Vec<PublicKey> = vec![];
     #[cfg(feature = "devnet4")]
-    let mut genesis_validators: Vec<ream_keystore::lean_keystore::GenesisValidatorEntry> = vec![];
+    let mut genesis_validators: Vec<GenesisValidatorEntry> = vec![];
     for i in 0..(keystore_config.number_of_nodes * keystore_config.number_of_validators_per_node) {
         #[cfg(feature = "devnet3")]
         {
