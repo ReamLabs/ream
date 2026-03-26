@@ -23,7 +23,8 @@ pub struct ValidatorKeystoreRaw {
     pub index: u64,
     #[serde(rename = "pubkey_hex")]
     pub public_key: PublicKey,
-    pub privkey_file: String,
+    #[serde(rename = "privkey_file")]
+    pub private_key_file: String,
 }
 
 #[cfg(feature = "devnet4")]
@@ -33,8 +34,8 @@ pub struct ValidatorKeystoreRaw {
     pub index: u64,
     pub attestation_public_key_hex: PublicKey,
     pub proposal_public_key_hex: PublicKey,
-    pub attestation_privkey_file: String,
-    pub proposal_privkey_file: String,
+    pub attestation_private_key_file: String,
+    pub proposal_private_key_file: String,
 }
 
 #[cfg(feature = "devnet3")]

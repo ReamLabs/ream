@@ -61,7 +61,7 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
         #[cfg(feature = "devnet3")]
         {
             path.pop();
-            path.push(validator.privkey_file.clone());
+            path.push(validator.private_key_file.clone());
             let private_key = load_private_key(&path)?;
 
             validator_keystores.push(ValidatorKeystore {
@@ -75,11 +75,11 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
         #[cfg(feature = "devnet4")]
         {
             path.pop();
-            path.push(validator.attestation_privkey_file.clone());
+            path.push(validator.attestation_private_key_file.clone());
             let attestation_private_key = load_private_key(&path)?;
             path.pop();
 
-            path.push(validator.proposal_privkey_file.clone());
+            path.push(validator.proposal_private_key_file.clone());
             let proposal_private_key = load_private_key(&path)?;
             path.pop();
 

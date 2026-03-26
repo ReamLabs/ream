@@ -83,7 +83,7 @@ pub fn run_generate_validator_registry(
             validators.push(ValidatorKeystoreRaw {
                 index: i,
                 public_key,
-                privkey_file: filename,
+                private_key_file: filename,
             });
         }
         #[cfg(feature = "devnet4")]
@@ -112,8 +112,8 @@ pub fn run_generate_validator_registry(
                 index: i,
                 attestation_public_key_hex: attestation_public_key,
                 proposal_public_key_hex: proposal_public_key,
-                attestation_privkey_file: attester_secret_key_filename,
-                proposal_privkey_file: proposer_secret_key_filename,
+                attestation_private_key_file: attester_secret_key_filename,
+                proposal_private_key_file: proposer_secret_key_filename,
             });
         }
     }
