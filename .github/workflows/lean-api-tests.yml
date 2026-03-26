@@ -61,7 +61,7 @@ jobs:
 
       - name: Generate devnet4 validator registry
         run: |
-          ./target/release/ream generate-validator-registry \
+          ./target/release/ream generate_validator_registry \
             --output ./devnet4-config \
             --number-of-nodes 1 \
             --number-of-validators-per-node 3
