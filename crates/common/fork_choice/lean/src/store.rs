@@ -2015,24 +2015,29 @@ mod tests {
     use super::{Store, compute_subnet_id, swap_test_attestation_committee_count};
     use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 
+    static TEST_GLOBAL_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+
     fn test_global_lock() -> &'static AsyncMutex<()> {
-        static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| AsyncMutex::new(()))
+        TEST_GLOBAL_LOCK.get_or_init(|| AsyncMutex::new(()))
     }
 
     const CACHED_KEY_COUNT: usize = 10;
 
     type CachedKeyPair = (PublicKey, Vec<u8>);
 
-    fn cached_key_pairs() -> &'static [CachedKeyPair; CACHED_KEY_COUNT] {
-        static CACHE: OnceLock<[CachedKeyPair; CACHED_KEY_COUNT]> = OnceLock::new();
-        CACHE.get_or_init(|| {
-            use rand::rng;
+    static CACHED_KEYS: OnceLock<Vec<CachedKeyPair>> = OnceLock::new();
+
+    fn cached_key_pairs() -> &'static Vec<CachedKeyPair> {
+        use rand::rng;
+
+        CACHED_KEYS.get_or_init(|| {
             let mut rng = rng();
-            std::array::from_fn(|_| {
-                let (public_key, private_key) = PrivateKey::generate_key_pair(&mut rng, 0, 10);
-                (public_key, private_key.to_bytes())
-            })
+            (0..CACHED_KEY_COUNT)
+                .map(|_| {
+                    let (public_key, private_key) = PrivateKey::generate_key_pair(&mut rng, 0, 10);
+                    (public_key, private_key.to_bytes())
+                })
+                .collect()
         })
     }
 
