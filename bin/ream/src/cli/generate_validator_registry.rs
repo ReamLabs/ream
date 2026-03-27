@@ -120,7 +120,10 @@ pub fn run_generate_validator_registry(
         }
     }
 
+    #[cfg(feature = "devnet3")]
     path.push("validator-keys-manifest.yaml");
+    #[cfg(feature = "devnet4")]
+    path.push("validator-keys-manifest-devnet4.yaml");
     fs::write(
         &path,
         serde_yaml::to_string(&ValidatorKeysManifest {

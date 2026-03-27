@@ -44,7 +44,10 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
         .get(node_id)
         .ok_or_else(|| anyhow!("Failed to get validator indexes for given node ID {node_id}"))?
     {
+        #[cfg(feature = "devnet3")]
         path.push("validator-keys-manifest.yaml");
+        #[cfg(feature = "devnet4")]
+        path.push("validator-keys-manifest-devnet4.yaml");
 
         let validator_keys_manifest_yaml = fs::read_to_string(&path)
             .map_err(|err| anyhow!("Failed to read validator keys manifest yaml file {err}",))?;
