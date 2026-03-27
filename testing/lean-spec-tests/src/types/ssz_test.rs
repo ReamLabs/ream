@@ -178,16 +178,20 @@ impl TryFrom<&ValidatorJSON> for Validator {
     type Error = anyhow::Error;
 
     fn try_from(value: &ValidatorJSON) -> anyhow::Result<Self> {
+        let bytes = decode_hex(&value.pubkey)?;
+        ensure!(
+            bytes.len() == 52,
+            "Expected 52-byte pubkey, got {}",
+            bytes.len()
+        );
+        let pubkey = PublicKey::from(&bytes[..]);
         Ok(Self {
-            public_key: {
-                let bytes = decode_hex(&value.pubkey)?;
-                ensure!(
-                    bytes.len() == 52,
-                    "Expected 52-byte pubkey, got {}",
-                    bytes.len()
-                );
-                PublicKey::from(&bytes[..])
-            },
+            #[cfg(feature = "devnet3")]
+            public_key: pubkey,
+            #[cfg(feature = "devnet4")]
+            attestation_public_key: pubkey,
+            #[cfg(feature = "devnet4")]
+            proposal_public_key: pubkey,
             index: value.index,
         })
     }

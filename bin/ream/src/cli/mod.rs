@@ -104,7 +104,10 @@ mod tests {
             "5",
             "lean_node",
             "--network",
+            #[cfg(feature = "devnet3")]
             "./assets/lean/config.yaml",
+            #[cfg(feature = "devnet4")]
+            "./assets/lean/config-devnet4.yaml",
             "--validator-registry-path",
             "./assets/lean/validator_registry.yml",
             // Test for alias of `private-key-path`

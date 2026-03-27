@@ -23,7 +23,6 @@ use tree_hash_derive::TreeHash;
 
 #[cfg(feature = "devnet4")]
 use crate::attestation::AggregatedSignatureProof;
-#[cfg(feature = "devnet3")]
 use crate::{
     attestation::AggregatedAttestation,
     block::{Block, BlockBody, BlockHeader},

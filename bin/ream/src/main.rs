@@ -266,12 +266,25 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         (block, state)
     } else {
+        #[cfg(feature = "devnet3")]
         let validators = lean_network_spec()
             .validator_public_keys
             .iter()
             .enumerate()
             .map(|(index, public_key)| Validator {
                 public_key: PublicKey::new(*public_key),
+                index: index as u64,
+            })
+            .collect::<Vec<_>>();
+
+        #[cfg(feature = "devnet4")]
+        let validators = lean_network_spec()
+            .genesis_validators
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| Validator {
+                attestation_public_key: PublicKey::new(entry.attestation_public_key),
+                proposal_public_key: PublicKey::new(entry.proposal_public_key),
                 index: index as u64,
             })
             .collect::<Vec<_>>();

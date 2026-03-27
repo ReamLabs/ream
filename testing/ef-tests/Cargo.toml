@@ -11,7 +11,11 @@ version.workspace = true
 
 [features]
 default = ["devnet3"]
-devnet3 = ["ream-consensus-lean/devnet3"]
+devnet3 = [
+    "ream-consensus-lean/devnet3",
+    "ream-storage/devnet3",
+    "ream-consensus-misc/devnet3",
+]
 ef-tests = []
 
 [dependencies]
