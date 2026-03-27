@@ -96,7 +96,11 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
 }
 
 fn load_private_key(path: &Path) -> anyhow::Result<PrivateKey> {
-    match PrivateKeyFormat::try_from(path.extension().and_then(|s| s.to_str()).unwrap_or(""))? {
+    match PrivateKeyFormat::try_from(
+        path.extension()
+            .and_then(|string| string.to_str())
+            .unwrap_or("Failed to get private key format"),
+    )? {
         PrivateKeyFormat::Json => Ok(PrivateKey::new(
             serde_json::from_str::<LeanSigPrivateKey>(&fs::read_to_string(path)?)
                 .map_err(|err| anyhow!("Failed to parse validator private key json: {err}"))?,

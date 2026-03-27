@@ -225,7 +225,7 @@ impl ValidatorService {
                             #[cfg(feature = "devnet3")]
                             let attestation_keystores = self.keystores.iter().enumerate()
                                 .filter(|(index, _)| *index as u64 != slot % lean_network_spec().num_validators)
-                                .map(|(_, ks)| ks)
+                                .map(|(_, keystore)| keystore)
                                 .collect::<Vec<_>>();
                             #[cfg(feature = "devnet4")]
                             let attestation_keystores = self.keystores.iter().collect::<Vec<_>>();
