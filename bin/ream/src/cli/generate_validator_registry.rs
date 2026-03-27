@@ -137,7 +137,10 @@ pub fn run_generate_validator_registry(
 
     path.pop();
     path.pop();
+    #[cfg(feature = "devnet3")]
     path.push("config.yaml");
+    #[cfg(feature = "devnet4")]
+    path.push("config-devnet4.yaml");
     fs::write(
         &path,
         serde_yaml::to_string(&ConfigFile {
