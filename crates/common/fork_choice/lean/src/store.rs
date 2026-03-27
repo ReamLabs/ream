@@ -1969,6 +1969,7 @@ mod tests {
 
     use alloy_primitives::{B256, FixedBytes};
     use anyhow::ensure;
+    use rand::rng;
     #[cfg(feature = "devnet3")]
     use ream_consensus_lean::{
         attestation::{
@@ -1998,7 +1999,7 @@ mod tests {
     use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
     use ream_post_quantum_crypto::{
         lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
-        leansig::{private_key::PrivateKey, signature::Signature},
+        leansig::{private_key::PrivateKey, public_key::PublicKey, signature::Signature},
     };
     #[cfg(feature = "devnet4")]
     use ream_storage::tables::{field::REDBField, table::REDBTable};
@@ -2015,9 +2016,28 @@ mod tests {
     use super::{Store, compute_subnet_id, swap_test_attestation_committee_count};
     use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 
+    static TEST_GLOBAL_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+
     fn test_global_lock() -> &'static AsyncMutex<()> {
-        static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| AsyncMutex::new(()))
+        TEST_GLOBAL_LOCK.get_or_init(|| AsyncMutex::new(()))
+    }
+
+    const CACHED_KEY_COUNT: usize = 10;
+
+    type CachedKeyPair = (PublicKey, Vec<u8>);
+
+    static CACHED_KEYS: OnceLock<Vec<CachedKeyPair>> = OnceLock::new();
+
+    fn cached_key_pairs() -> &'static Vec<CachedKeyPair> {
+        CACHED_KEYS.get_or_init(|| {
+            let mut rng = rng();
+            (0..CACHED_KEY_COUNT)
+                .map(|_| {
+                    let (public_key, private_key) = PrivateKey::generate_key_pair(&mut rng, 0, 10);
+                    (public_key, private_key.to_bytes())
+                })
+                .collect()
+        })
     }
 
     #[cfg(feature = "devnet3")]
@@ -2125,13 +2145,18 @@ mod tests {
             PrivateKey,
         ),
     > {
-        use rand::rng;
-
-        let mut rng = rng();
+        let cache = cached_key_pairs();
         let mut key_pairs = HashMap::new();
         for validator_id in validator_ids {
-            let (public_key, private_key) = PrivateKey::generate_key_pair(&mut rng, 0, 10);
-            key_pairs.insert(*validator_id, (public_key, private_key));
+            let validator_index = *validator_id as usize;
+            assert!(
+                validator_index < CACHED_KEY_COUNT,
+                "validator_id {validator_index} exceeds cached key count {CACHED_KEY_COUNT}"
+            );
+            let (public_key, private_key_bytes) = &cache[validator_index];
+            let private_key = PrivateKey::from_bytes(private_key_bytes)
+                .expect("cached key bytes should be valid");
+            key_pairs.insert(*validator_id, (*public_key, private_key));
         }
 
         let (head_provider, latest_justified_provider, latest_finalized_provider, state_provider) = {
@@ -2927,20 +2952,21 @@ mod tests {
     #[tokio::test]
     async fn test_produce_block_with_attestations() {
         let _test_guard = test_global_lock().lock().await;
-        use rand::rng;
 
-        // Generate real key pairs for validators
-        let mut test_rng = rng();
+        // Use cached key pairs for validators
+        let cache = cached_key_pairs();
         let mut validators = Vec::new();
         let mut private_keys = Vec::new();
 
-        for i in 0..10 {
-            let (pub_key, priv_key) = PrivateKey::generate_key_pair(&mut test_rng, 0, 10);
+        for (i, (public_key, private_key_bytes)) in cache.iter().enumerate().take(10) {
             validators.push(Validator {
-                public_key: pub_key,
+                public_key: *public_key,
                 index: i as u64,
             });
-            private_keys.push(priv_key);
+            private_keys.push(
+                PrivateKey::from_bytes(private_key_bytes)
+                    .expect("cached key bytes should be valid"),
+            );
         }
 
         // Create store with validators that have real keys
