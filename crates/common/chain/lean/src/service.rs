@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use alloy_primitives::B256;
 use anyhow::anyhow;
 use futures::stream::{FuturesUnordered, StreamExt};
 use libp2p_identity::PeerId;
@@ -78,7 +79,7 @@ enum SyncBlockSource {
 
 #[derive(Debug, Clone, Copy)]
 struct RecentSyncBlock {
-    parent_root: alloy_primitives::B256,
+    parent_root: B256,
     slot: u64,
     seen_at: Instant,
     source: SyncBlockSource,
@@ -121,11 +122,11 @@ struct SyncTelemetry {
     peer_selection_strategy: PeerSelectionStrategy,
     recent_sync_blocks: Vec<RecentSyncBlock>,
     callback_loss_mode: CallbackLossMode,
-    dropped_callback_roots: HashSet<alloy_primitives::B256>,
+    dropped_callback_roots: HashSet<B256>,
     backfill_telemetry: BackfillTelemetry,
     last_backfill_progress_log: Option<Instant>,
     synced_peer_gap_started_at: Option<Instant>,
-    inflight_roots: HashMap<alloy_primitives::B256, InflightRootRequest>,
+    inflight_roots: HashMap<B256, InflightRootRequest>,
     peer_avg_latency_ms: HashMap<PeerId, f64>,
 }
 
@@ -190,7 +191,7 @@ struct QuarantinedBackfillRoot {
 
 #[derive(Debug, Clone, Copy)]
 struct CheckpointLocalCoverage {
-    local_head: alloy_primitives::B256,
+    local_head: B256,
     current_head_slot: u64,
     checkpoint_in_block_store: bool,
     checkpoint_in_pending_store: bool,
@@ -221,9 +222,9 @@ pub struct LeanChainService {
     pending_job_requests: VecDeque<PendingJobRequest>,
     forward_syncer: Option<JoinHandle<anyhow::Result<ForwardSyncResults>>>,
     checkpoints_to_queue: Vec<(Checkpoint, bool)>,
-    backfill_recovery_attempts: HashMap<alloy_primitives::B256, u32>,
-    quarantined_backfill_roots: HashMap<alloy_primitives::B256, QuarantinedBackfillRoot>,
-    dropped_backfill_roots: HashSet<alloy_primitives::B256>,
+    backfill_recovery_attempts: HashMap<B256, u32>,
+    quarantined_backfill_roots: HashMap<B256, QuarantinedBackfillRoot>,
+    dropped_backfill_roots: HashSet<B256>,
     pending_callbacks: FuturesUnordered<CallbackFuture>,
     is_aggregator: bool,
     telemetry: SyncTelemetry,
@@ -947,11 +948,7 @@ impl LeanChainService {
         }
     }
 
-    fn request_block_by_root_from_peer(
-        &mut self,
-        peer_id: PeerId,
-        root: alloy_primitives::B256,
-    ) -> bool {
+    fn request_block_by_root_from_peer(&mut self, peer_id: PeerId, root: B256) -> bool {
         let (callback, rx) = mpsc::channel(100);
         if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::Request {
             peer_id,
@@ -976,7 +973,7 @@ impl LeanChainService {
         }
 
         let now = Instant::now();
-        let roots_to_hedge: Vec<(alloy_primitives::B256, PeerId, PeerId)> = self
+        let roots_to_hedge: Vec<(B256, PeerId, PeerId)> = self
             .telemetry
             .inflight_roots
             .iter()
@@ -1391,13 +1388,13 @@ impl LeanChainService {
         Ok(())
     }
 
-    fn clear_backfill_retry_state(&mut self, root: alloy_primitives::B256) {
+    fn clear_backfill_retry_state(&mut self, root: B256) {
         self.backfill_recovery_attempts.remove(&root);
         self.quarantined_backfill_roots.remove(&root);
         self.dropped_backfill_roots.remove(&root);
     }
 
-    fn clear_backfill_arrival_state(&mut self, root: alloy_primitives::B256) {
+    fn clear_backfill_arrival_state(&mut self, root: B256) {
         self.quarantined_backfill_roots.remove(&root);
         self.dropped_backfill_roots.remove(&root);
     }
@@ -1408,7 +1405,7 @@ impl LeanChainService {
         }
 
         let (_, network_finalized_slot) = self.current_head_and_finalized_slots().await?;
-        let roots_to_drop: Vec<(alloy_primitives::B256, QuarantinedBackfillRoot)> = self
+        let roots_to_drop: Vec<(B256, QuarantinedBackfillRoot)> = self
             .quarantined_backfill_roots
             .iter()
             .filter(|(_, entry)| entry.slot <= network_finalized_slot)
@@ -1596,7 +1593,7 @@ impl LeanChainService {
         !store.pending_blocks_provider().is_empty()
     }
 
-    async fn remove_pending_block(&self, root: alloy_primitives::B256) -> anyhow::Result<bool> {
+    async fn remove_pending_block(&self, root: B256) -> anyhow::Result<bool> {
         let pending_blocks_provider = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
@@ -1761,12 +1758,7 @@ impl LeanChainService {
             .push_back(PendingJobRequest::new_reset(peer_id));
     }
 
-    fn queue_pending_initial(
-        &mut self,
-        root: alloy_primitives::B256,
-        slot: u64,
-        parent_root: alloy_primitives::B256,
-    ) {
+    fn queue_pending_initial(&mut self, root: B256, slot: u64, parent_root: B256) {
         if self.telemetry.pending_dedup_strategy == PendingRequestDedupStrategy::Dedup
             && self
                 .pending_job_requests
@@ -1816,7 +1808,7 @@ impl LeanChainService {
     async fn parse_recovery_checkpoint(
         &mut self,
         checkpoint: Checkpoint,
-        starting_root: alloy_primitives::B256,
+        starting_root: B256,
         starting_slot: u64,
         timeout: Option<Duration>,
         reason: &str,
@@ -1908,7 +1900,7 @@ impl LeanChainService {
 
     fn has_recent_near_head_gossip_bridge(
         &self,
-        head: alloy_primitives::B256,
+        head: B256,
         current_head_slot: u64,
         highest_peer_head_slot: u64,
     ) -> bool {
@@ -1930,12 +1922,7 @@ impl LeanChainService {
         })
     }
 
-    fn record_recent_sync_block(
-        &mut self,
-        parent_root: alloy_primitives::B256,
-        slot: u64,
-        source: SyncBlockSource,
-    ) {
+    fn record_recent_sync_block(&mut self, parent_root: B256, slot: u64, source: SyncBlockSource) {
         self.telemetry.recent_sync_blocks.push(RecentSyncBlock {
             parent_root,
             slot,
@@ -2034,11 +2021,7 @@ impl LeanChainService {
         Ok(())
     }
 
-    fn callback_matches_current_assignment(
-        &self,
-        peer_id: PeerId,
-        root: alloy_primitives::B256,
-    ) -> bool {
+    fn callback_matches_current_assignment(&self, peer_id: PeerId, root: B256) -> bool {
         if let Some(inflight) = self.telemetry.inflight_roots.get(&root) {
             return inflight.primary_peer == peer_id || inflight.backup_peer == Some(peer_id);
         }
@@ -2138,7 +2121,7 @@ impl LeanChainService {
         Ok(())
     }
 
-    fn should_drop_callback_response(&mut self, root: alloy_primitives::B256) -> bool {
+    fn should_drop_callback_response(&mut self, root: B256) -> bool {
         match self.telemetry.callback_loss_mode {
             CallbackLossMode::None => false,
             CallbackLossMode::DropFirstPerRoot => {
@@ -2179,10 +2162,7 @@ impl LeanChainService {
             .await
     }
 
-    async fn try_advance_job_with_cached_block(
-        &mut self,
-        root: alloy_primitives::B256,
-    ) -> anyhow::Result<bool> {
+    async fn try_advance_job_with_cached_block(&mut self, root: B256) -> anyhow::Result<bool> {
         let pending_block = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
@@ -2258,7 +2238,7 @@ impl LeanChainService {
         let parent_root_is_start_of_any_queue =
             self.backfill_state.is_root_start_of_any_queue(&parent_root);
 
-        let parent_root_is_genesis = parent_root == alloy_primitives::B256::ZERO;
+        let parent_root_is_genesis = parent_root == B256::ZERO;
 
         if parent_root_is_local_head
             || parent_root_in_pending_blocks
@@ -2356,7 +2336,7 @@ impl LeanChainService {
         let parent_root_is_start_of_any_queue =
             self.backfill_state.is_root_start_of_any_queue(&parent_root);
 
-        let parent_root_is_genesis = parent_root == alloy_primitives::B256::ZERO;
+        let parent_root_is_genesis = parent_root == B256::ZERO;
 
         if parent_root_is_local_head
             || parent_root_in_pending_blocks
@@ -4126,12 +4106,12 @@ mod tests {
         #[cfg(feature = "devnet3")]
         {
             pending_block.message.block.slot = 0;
-            pending_block.message.block.parent_root = alloy_primitives::B256::ZERO;
+            pending_block.message.block.parent_root = B256::ZERO;
         }
         #[cfg(feature = "devnet4")]
         {
             pending_block.block.slot = 0;
-            pending_block.block.parent_root = alloy_primitives::B256::ZERO;
+            pending_block.block.parent_root = B256::ZERO;
         }
         #[cfg(feature = "devnet3")]
         let pending_root = pending_block.message.block.tree_hash_root();
