@@ -1969,6 +1969,7 @@ mod tests {
 
     use alloy_primitives::{B256, FixedBytes};
     use anyhow::ensure;
+    use rand::rng;
     #[cfg(feature = "devnet3")]
     use ream_consensus_lean::{
         attestation::{
@@ -2028,8 +2029,6 @@ mod tests {
     static CACHED_KEYS: OnceLock<Vec<CachedKeyPair>> = OnceLock::new();
 
     fn cached_key_pairs() -> &'static Vec<CachedKeyPair> {
-        use rand::rng;
-
         CACHED_KEYS.get_or_init(|| {
             let mut rng = rng();
             (0..CACHED_KEY_COUNT)
