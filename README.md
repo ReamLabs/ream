@@ -26,6 +26,19 @@ Building the first Lean consensus client which is
 - Blazingly Fast
 - Extendible
 
+## Getting Started
+
+### Prerequisites
+- [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
+- Build essentials (clang, cmake, etc.)
+
+### Build from source
+```bash
+git clone https://github.com/ReamLabs/ream.git
+cd ream
+cargo build --release
+```
+
 ## For Users
 
 See the [Ream documentation](https://ream.rs) for instructions on how to install and run Ream.
@@ -36,4 +49,3 @@ See the [Ream documentation](https://ream.rs) for instructions on how to install
 - Open an issue with [a bug](https://github.com/ReamLabs/ream/issues/new)
 
 [tg-url]: https://t.me/ReamLabs
-
