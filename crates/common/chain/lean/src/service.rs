@@ -1530,90 +1530,14 @@ impl LeanChainService {
             } => {
                 self.backfill_state
                     .remove_processed_queue(prevous_queue.starting_root);
-                match self
-                    .stage_recovery_checkpoint(checkpoint_for_new_queue)
-                    .await?
-                {
-                    RecoveryCheckpointAction::Queued { attempts } => {
-                        warn!(
-                            starting_root = ?prevous_queue.starting_root,
-                            starting_slot = prevous_queue.starting_slot,
-                            restart_root = ?checkpoint_for_new_queue.root,
-                            restart_slot = checkpoint_for_new_queue.slot,
-                            recovery_attempt = attempts,
-                            max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
-                            "Forward background sync incomplete; removing queue and re-queuing from missing root",
-                        );
-                    }
-                    RecoveryCheckpointAction::AlreadyQueued => {
-                        debug!(
-                            starting_root = ?prevous_queue.starting_root,
-                            starting_slot = prevous_queue.starting_slot,
-                            restart_root = ?checkpoint_for_new_queue.root,
-                            restart_slot = checkpoint_for_new_queue.slot,
-                            "Forward background sync incomplete; missing root is already queued for recovery",
-                        );
-                    }
-                    RecoveryCheckpointAction::AlreadyQuarantined {
-                        attempts,
-                        current_head_slot,
-                        network_finalized_slot,
-                    } => {
-                        warn!(
-                            starting_root = ?prevous_queue.starting_root,
-                            starting_slot = prevous_queue.starting_slot,
-                            restart_root = ?checkpoint_for_new_queue.root,
-                            restart_slot = checkpoint_for_new_queue.slot,
-                            attempts,
-                            current_head_slot,
-                            network_finalized_slot,
-                            "Forward background sync incomplete; missing root remains quarantined until the block arrives or finalized passes it",
-                        );
-                    }
-                    RecoveryCheckpointAction::AlreadyDropped => {
-                        warn!(
-                            starting_root = ?prevous_queue.starting_root,
-                            starting_slot = prevous_queue.starting_slot,
-                            restart_root = ?checkpoint_for_new_queue.root,
-                            restart_slot = checkpoint_for_new_queue.slot,
-                            "Forward background sync incomplete; missing root has already exhausted recovery budget and will not be re-queued",
-                        );
-                    }
-                    RecoveryCheckpointAction::QuarantinedByBudget {
-                        attempts,
-                        current_head_slot,
-                        network_finalized_slot,
-                    } => {
-                        warn!(
-                            starting_root = ?prevous_queue.starting_root,
-                            starting_slot = prevous_queue.starting_slot,
-                            restart_root = ?checkpoint_for_new_queue.root,
-                            restart_slot = checkpoint_for_new_queue.slot,
-                            attempts,
-                            max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
-                            current_head_slot,
-                            network_finalized_slot,
-                            "Forward background sync incomplete; quarantining missing root until the block arrives or finalized passes it",
-                        );
-                    }
-                    RecoveryCheckpointAction::DroppedByBudget {
-                        attempts,
-                        current_head_slot,
-                        network_finalized_slot,
-                    } => {
-                        error!(
-                            starting_root = ?prevous_queue.starting_root,
-                            starting_slot = prevous_queue.starting_slot,
-                            restart_root = ?checkpoint_for_new_queue.root,
-                            restart_slot = checkpoint_for_new_queue.slot,
-                            attempts,
-                            max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
-                            current_head_slot,
-                            network_finalized_slot,
-                            "Forward background sync incomplete; dropping missing root after exhausting recovery budget",
-                        );
-                    }
-                }
+                self.parse_recovery_checkpoint(
+                    checkpoint_for_new_queue,
+                    prevous_queue.starting_root,
+                    prevous_queue.starting_slot,
+                    None,
+                    "Forward background sync incomplete",
+                )
+                .await?;
             }
             ForwardSyncResults::RootMismatch {
                 previous_queue,
@@ -1640,78 +1564,14 @@ impl LeanChainService {
                         removed_pending_block,
                         "Forward background sync root mismatch; purged bad pending block and evaluating root recovery",
                     );
-                    match self
-                        .stage_recovery_checkpoint(checkpoint_for_new_queue)
-                        .await?
-                    {
-                        RecoveryCheckpointAction::Queued { attempts } => {
-                            warn!(
-                                restart_root = ?checkpoint_for_new_queue.root,
-                                restart_slot = checkpoint_for_new_queue.slot,
-                                recovery_attempt = attempts,
-                                max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
-                                "Re-queued root after forward sync mismatch",
-                            );
-                        }
-                        RecoveryCheckpointAction::AlreadyQueued => {
-                            debug!(
-                                restart_root = ?checkpoint_for_new_queue.root,
-                                restart_slot = checkpoint_for_new_queue.slot,
-                                "Root mismatch recovery skipped because the root is already queued",
-                            );
-                        }
-                        RecoveryCheckpointAction::AlreadyQuarantined {
-                            attempts,
-                            current_head_slot,
-                            network_finalized_slot,
-                        } => {
-                            warn!(
-                                restart_root = ?checkpoint_for_new_queue.root,
-                                restart_slot = checkpoint_for_new_queue.slot,
-                                attempts,
-                                current_head_slot,
-                                network_finalized_slot,
-                                "Root mismatch recovery skipped because the root is quarantined until the block arrives or finalized passes it",
-                            );
-                        }
-                        RecoveryCheckpointAction::AlreadyDropped => {
-                            warn!(
-                                restart_root = ?checkpoint_for_new_queue.root,
-                                restart_slot = checkpoint_for_new_queue.slot,
-                                "Root mismatch recovery skipped because the root has already exhausted recovery budget",
-                            );
-                        }
-                        RecoveryCheckpointAction::QuarantinedByBudget {
-                            attempts,
-                            current_head_slot,
-                            network_finalized_slot,
-                        } => {
-                            warn!(
-                                restart_root = ?checkpoint_for_new_queue.root,
-                                restart_slot = checkpoint_for_new_queue.slot,
-                                attempts,
-                                max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
-                                current_head_slot,
-                                network_finalized_slot,
-                                "Quarantining mismatched root until the block arrives or finalized passes it",
-                            );
-                        }
-                        RecoveryCheckpointAction::DroppedByBudget {
-                            attempts,
-                            current_head_slot,
-                            network_finalized_slot,
-                        } => {
-                            error!(
-                                restart_root = ?checkpoint_for_new_queue.root,
-                                restart_slot = checkpoint_for_new_queue.slot,
-                                attempts,
-                                max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
-                                current_head_slot,
-                                network_finalized_slot,
-                                "Dropping root after exhausting mismatch recovery budget",
-                            );
-                        }
-                    }
+                    self.parse_recovery_checkpoint(
+                        checkpoint_for_new_queue,
+                        previous_queue.starting_root,
+                        previous_queue.starting_slot,
+                        None,
+                        "Forward background sync root mismatch",
+                    )
+                    .await?;
                 } else {
                     warn!(
                         starting_root = ?previous_queue.starting_root,
@@ -1933,88 +1793,14 @@ impl LeanChainService {
         }
 
         if let Some(checkpoint) = recovery.restart_checkpoint {
-            match self.stage_recovery_checkpoint(checkpoint).await? {
-                RecoveryCheckpointAction::Queued { attempts } => {
-                    warn!(
-                        starting_root = ?recovery.starting_root,
-                        starting_slot = recovery.starting_slot,
-                        restart_root = ?checkpoint.root,
-                        restart_slot = checkpoint.slot,
-                        stall_timeout_seconds = stall_timeout.as_secs_f64(),
-                        recovery_attempt = attempts,
-                        max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
-                        "Backfill queue stalled; rebuilding queue from current missing root",
-                    );
-                }
-                RecoveryCheckpointAction::AlreadyQueued => {
-                    debug!(
-                        starting_root = ?recovery.starting_root,
-                        starting_slot = recovery.starting_slot,
-                        restart_root = ?checkpoint.root,
-                        restart_slot = checkpoint.slot,
-                        "Backfill queue stalled, but the missing root is already queued for recovery",
-                    );
-                }
-                RecoveryCheckpointAction::AlreadyQuarantined {
-                    attempts,
-                    current_head_slot,
-                    network_finalized_slot,
-                } => {
-                    warn!(
-                        starting_root = ?recovery.starting_root,
-                        starting_slot = recovery.starting_slot,
-                        restart_root = ?checkpoint.root,
-                        restart_slot = checkpoint.slot,
-                        attempts,
-                        current_head_slot,
-                        network_finalized_slot,
-                        "Backfill queue stalled, but the missing root remains quarantined until the block arrives or finalized passes it",
-                    );
-                }
-                RecoveryCheckpointAction::AlreadyDropped => {
-                    warn!(
-                        starting_root = ?recovery.starting_root,
-                        starting_slot = recovery.starting_slot,
-                        restart_root = ?checkpoint.root,
-                        restart_slot = checkpoint.slot,
-                        "Backfill queue stalled, but the missing root has already exhausted recovery budget",
-                    );
-                }
-                RecoveryCheckpointAction::QuarantinedByBudget {
-                    attempts,
-                    current_head_slot,
-                    network_finalized_slot,
-                } => {
-                    warn!(
-                        starting_root = ?recovery.starting_root,
-                        starting_slot = recovery.starting_slot,
-                        restart_root = ?checkpoint.root,
-                        restart_slot = checkpoint.slot,
-                        attempts,
-                        max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
-                        current_head_slot,
-                        network_finalized_slot,
-                        "Backfill queue stalled; quarantining missing root until the block arrives or finalized passes it",
-                    );
-                }
-                RecoveryCheckpointAction::DroppedByBudget {
-                    attempts,
-                    current_head_slot,
-                    network_finalized_slot,
-                } => {
-                    error!(
-                        starting_root = ?recovery.starting_root,
-                        starting_slot = recovery.starting_slot,
-                        restart_root = ?checkpoint.root,
-                        restart_slot = checkpoint.slot,
-                        attempts,
-                        max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
-                        current_head_slot,
-                        network_finalized_slot,
-                        "Backfill queue stalled; dropping missing root after exhausting recovery budget",
-                    );
-                }
-            }
+            self.parse_recovery_checkpoint(
+                checkpoint,
+                recovery.starting_root,
+                recovery.starting_slot,
+                Some(stall_timeout),
+                "Backfill queue stalled",
+            )
+            .await?;
         } else {
             warn!(
                 starting_root = ?recovery.starting_root,
@@ -2024,6 +1810,99 @@ impl LeanChainService {
             );
         }
 
+        Ok(())
+    }
+
+    async fn parse_recovery_checkpoint(
+        &mut self,
+        checkpoint: Checkpoint,
+        starting_root: alloy_primitives::B256,
+        starting_slot: u64,
+        timeout: Option<Duration>,
+        reason: &str,
+    ) -> anyhow::Result<()> {
+        match self.stage_recovery_checkpoint(checkpoint).await? {
+            RecoveryCheckpointAction::Queued { attempts } => {
+                warn!(
+                    starting_root = ?starting_root,
+                    starting_slot,
+                    restart_root = ?checkpoint.root,
+                    restart_slot = checkpoint.slot,
+                    stall_timeout_seconds = ?timeout.map(|t| t.as_secs_f64()),
+                    recovery_attempt = attempts,
+                    max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                    "{reason}; recovery root re-queued",
+                );
+            }
+            RecoveryCheckpointAction::AlreadyQueued => {
+                debug!(
+                    starting_root = ?starting_root,
+                    starting_slot,
+                    restart_root = ?checkpoint.root,
+                    restart_slot = checkpoint.slot,
+                    "{reason}; recovery root is already queued for recovery",
+                );
+            }
+            RecoveryCheckpointAction::AlreadyQuarantined {
+                attempts,
+                current_head_slot,
+                network_finalized_slot,
+            } => {
+                warn!(
+                    starting_root = ?starting_root,
+                    starting_slot,
+                    restart_root = ?checkpoint.root,
+                    restart_slot = checkpoint.slot,
+                    attempts,
+                    current_head_slot,
+                    network_finalized_slot,
+                    "{reason}; recovery root remains quarantined until the block arrives or finalized passes it",
+                );
+            }
+            RecoveryCheckpointAction::AlreadyDropped => {
+                warn!(
+                    starting_root = ?starting_root,
+                    starting_slot,
+                    restart_root = ?checkpoint.root,
+                    restart_slot = checkpoint.slot,
+                    "{reason}; recovery root is already dropped",
+                );
+            }
+            RecoveryCheckpointAction::QuarantinedByBudget {
+                attempts,
+                current_head_slot,
+                network_finalized_slot,
+            } => {
+                warn!(
+                    starting_root = ?starting_root,
+                    starting_slot,
+                    restart_root = ?checkpoint.root,
+                    restart_slot = checkpoint.slot,
+                    attempts,
+                    max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                    current_head_slot,
+                    network_finalized_slot,
+                    "{reason}; quarantining recovery root until the block arrives or finalized passes it",
+                );
+            }
+            RecoveryCheckpointAction::DroppedByBudget {
+                attempts,
+                current_head_slot,
+                network_finalized_slot,
+            } => {
+                error!(
+                    starting_root = ?starting_root,
+                    starting_slot,
+                    restart_root = ?checkpoint.root,
+                    restart_slot = checkpoint.slot,
+                    attempts,
+                    max_recovery_attempts = MAX_BACKFILL_RECOVERY_ATTEMPTS,
+                    current_head_slot,
+                    network_finalized_slot,
+                    "{reason}; dropping recovery root after exhausting recovery budget",
+                );
+            }
+        }
         Ok(())
     }
 
