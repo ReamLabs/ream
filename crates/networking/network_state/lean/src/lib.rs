@@ -102,6 +102,11 @@ impl NetworkState {
             }
         }
 
+        let max_tally = checkpoint_tally.values().copied().max()?;
+        if max_tally == 1 && checkpoint_tally.len() > 1 {
+            return None;
+        }
+
         checkpoint_tally
             .into_iter()
             .max_by_key(|(checkpoint, tally)| (*tally, checkpoint.slot))
@@ -118,5 +123,75 @@ impl NetworkState {
         if let Some(cached_peer) = self.peer_table.lock().get_mut(&peer_id) {
             cached_peer.peer_score = cached_peer.peer_score.saturating_sub(20);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use libp2p::PeerId;
+    use ream_peer::{ConnectionState, Direction};
+
+    use super::*;
+
+    fn checkpoint(byte: u8, slot: u64) -> Checkpoint {
+        let _ = byte;
+        Checkpoint {
+            root: Default::default(),
+            slot,
+        }
+    }
+
+    #[test]
+    fn common_highest_checkpoint_returns_none_for_singleton_outlier_tie() {
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
+        let peer_a = PeerId::random();
+        let peer_b = PeerId::random();
+
+        network_state.upsert_peer(
+            peer_a,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        network_state.upsert_peer(
+            peer_b,
+            None,
+            ConnectionState::Connected,
+            Direction::Outbound,
+        );
+        network_state.update_peer_checkpoints(peer_a, checkpoint(0x10, 40), checkpoint(0x20, 10));
+        network_state.update_peer_checkpoints(peer_b, checkpoint(0x11, 224), checkpoint(0x21, 211));
+
+        assert_eq!(network_state.common_highest_checkpoint(), None);
+        assert_eq!(network_state.common_finalized_checkpoint(), None);
+    }
+
+    #[test]
+    fn common_highest_checkpoint_prefers_agreed_checkpoint_over_outlier() {
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
+        let peer_a = PeerId::random();
+        let peer_b = PeerId::random();
+        let peer_c = PeerId::random();
+
+        for peer_id in [peer_a, peer_b, peer_c] {
+            network_state.upsert_peer(
+                peer_id,
+                None,
+                ConnectionState::Connected,
+                Direction::Outbound,
+            );
+        }
+
+        let agreed_head = checkpoint(0x30, 40);
+        let agreed_finalized = checkpoint(0x31, 30);
+        network_state.update_peer_checkpoints(peer_a, agreed_head, agreed_finalized);
+        network_state.update_peer_checkpoints(peer_b, agreed_head, agreed_finalized);
+        network_state.update_peer_checkpoints(peer_c, checkpoint(0x40, 224), checkpoint(0x41, 211));
+
+        assert_eq!(network_state.common_highest_checkpoint(), Some(agreed_head));
+        assert_eq!(
+            network_state.common_finalized_checkpoint(),
+            Some(agreed_finalized)
+        );
     }
 }

@@ -62,16 +62,16 @@ impl ForwardBackgroundSyncer {
                 None => match block_provider.get(next_root)? {
                     Some(block) => block,
                     None => {
-                        let last_block = last_block.ok_or_else(|| {
-                            anyhow!(
-                                "Failed to find block with root {next_root:?} in pending blocks"
-                            )
-                        })?;
                         return Ok(ForwardSyncResults::ChainIncomplete {
                             prevous_queue: self.job_queue.clone(),
                             checkpoint_for_new_queue: Checkpoint {
                                 root: next_root,
-                                slot: last_block.message.block.slot.saturating_sub(1),
+                                slot: last_block
+                                    .as_ref()
+                                    .map(|last_block| {
+                                        last_block.message.block.slot.saturating_sub(1)
+                                    })
+                                    .unwrap_or(self.job_queue.starting_slot),
                             },
                         });
                     }
@@ -105,16 +105,14 @@ impl ForwardBackgroundSyncer {
                 None => match block_provider.get(next_root)? {
                     Some(block) => block,
                     None => {
-                        let last_block = last_block.ok_or_else(|| {
-                            anyhow!(
-                                "Failed to find block with root {next_root:?} in pending blocks"
-                            )
-                        })?;
                         return Ok(ForwardSyncResults::ChainIncomplete {
                             prevous_queue: self.job_queue.clone(),
                             checkpoint_for_new_queue: Checkpoint {
                                 root: next_root,
-                                slot: last_block.block.slot.saturating_sub(1),
+                                slot: last_block
+                                    .as_ref()
+                                    .map(|last_block| last_block.block.slot.saturating_sub(1))
+                                    .unwrap_or(self.job_queue.starting_slot),
                             },
                         });
                     }
@@ -328,6 +326,30 @@ mod tests {
                 assert_eq!(checkpoint_for_new_queue, None);
             }
             other => panic!("expected root mismatch result, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_missing_starting_root_requeues_from_same_checkpoint() {
+        let store = sample_store(10).await;
+        let (writer, _reader) = Writer::new(store);
+        let network_state = writer.read().await.network_state.clone();
+        let mut queue = JobQueue::new(B256::repeat_byte(0xaa), 7, 7);
+        queue.is_complete = true;
+
+        let mut syncer = ForwardBackgroundSyncer::new(Arc::new(writer), network_state, queue);
+        let result = syncer.start().await.unwrap();
+
+        match result {
+            ForwardSyncResults::ChainIncomplete {
+                checkpoint_for_new_queue,
+                prevous_queue,
+            } => {
+                assert_eq!(prevous_queue.starting_root, B256::repeat_byte(0xaa));
+                assert_eq!(checkpoint_for_new_queue.root, B256::repeat_byte(0xaa));
+                assert_eq!(checkpoint_for_new_queue.slot, 7);
+            }
+            other => panic!("expected chain incomplete result, got {other:?}"),
         }
     }
 }
