@@ -84,7 +84,7 @@ mod test {
             );
             assert_eq!(
                 block_2.tree_hash_root().encode_hex(),
-                "6bd5347aa1397c63ed8558079fdd3042112a5f4258066e3a659a659ff75ba14f"
+                "cad1ca340fd23738541ee49ded6e28aa422e6328af56e7445c1a7cd1bf83f2ee"
             );
             assert_eq!(
                 block_3.tree_hash_root().encode_hex(),
