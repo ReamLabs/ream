@@ -12,6 +12,7 @@ pub struct JobQueue {
     pub last_progress_at: Instant,
     pub jobs: HashMap<B256, JobRequest>,
     pub is_complete: bool,
+    pub completion_root: Option<B256>,
 }
 
 impl JobQueue {
@@ -23,6 +24,7 @@ impl JobQueue {
             last_progress_at: Instant::now(),
             jobs: HashMap::new(),
             is_complete: false,
+            completion_root: None,
         }
     }
 
