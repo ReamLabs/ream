@@ -422,11 +422,11 @@ mod tests {
         );
         assert_eq!(
             BackfillTimeoutStrategy::AdaptiveGap.timeout_for_peer_gap(1),
-            Duration::from_millis(750)
+            Duration::from_millis(1500)
         );
         assert_eq!(
             BackfillTimeoutStrategy::AdaptiveGap.timeout_for_peer_gap(6),
-            Duration::from_secs(2)
+            Duration::from_secs(3)
         );
         assert_eq!(
             BackfillTimeoutStrategy::AdaptiveGap.timeout_for_peer_gap(30),
