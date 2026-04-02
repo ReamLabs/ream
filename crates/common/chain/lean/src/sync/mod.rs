@@ -61,9 +61,18 @@ impl BackfillState {
     }
 
     pub fn mark_job_queue_as_complete(&mut self, last_root: B256) {
+        self.mark_job_queue_as_complete_at(last_root, None);
+    }
+
+    pub fn mark_job_queue_as_complete_at(
+        &mut self,
+        last_root: B256,
+        completion_root: Option<B256>,
+    ) {
         for queue in &mut self.jobs {
             if queue.jobs.contains_key(&last_root) {
                 queue.is_complete = true;
+                queue.completion_root = completion_root;
                 queue.touch_progress();
                 queue.jobs.clear();
                 break;
@@ -431,6 +440,25 @@ mod tests {
         state.mark_job_queue_as_complete(root);
         assert!(state.jobs[0].is_complete);
         assert!(state.jobs[0].jobs.is_empty());
+        assert_eq!(state.jobs[0].completion_root, None);
+    }
+
+    #[test]
+    fn test_mark_job_queue_as_complete_records_completion_root() {
+        let mut state = BackfillState::default();
+        let peer_id = PeerId::random();
+        let root = mock_root(1);
+        let completion_root = mock_root(2);
+
+        state.add_new_job_queue(
+            Checkpoint { root, slot: 100 },
+            JobRequest::new(peer_id, root),
+            false,
+        );
+
+        state.mark_job_queue_as_complete_at(root, Some(completion_root));
+        assert!(state.jobs[0].is_complete);
+        assert_eq!(state.jobs[0].completion_root, Some(completion_root));
     }
 
     #[test]

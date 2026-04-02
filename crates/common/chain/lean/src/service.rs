@@ -183,6 +183,16 @@ enum RecoveryCheckpointAction {
     },
 }
 
+enum BackfillParentResolution {
+    Complete {
+        completion_root: B256,
+    },
+    NeedsRequest {
+        request_slot: u64,
+        missing_root: B256,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct QuarantinedBackfillRoot {
     slot: u64,
@@ -1399,6 +1409,58 @@ impl LeanChainService {
         self.dropped_backfill_roots.remove(&root);
     }
 
+    fn is_suppressed_backfill_root(&self, root: &B256) -> bool {
+        self.dropped_backfill_roots.contains(root)
+            || self.quarantined_backfill_roots.contains_key(root)
+    }
+
+    async fn resolve_backfill_parent_resolution(
+        &self,
+        head: B256,
+        parent_root: B256,
+        child_slot: u64,
+    ) -> anyhow::Result<BackfillParentResolution> {
+        let (pending_blocks_provider, block_provider) = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            (store.pending_blocks_provider(), store.block_provider())
+        };
+
+        let mut current_root = parent_root;
+        let mut request_slot = child_slot;
+
+        loop {
+            if current_root == B256::ZERO || current_root == head {
+                return Ok(BackfillParentResolution::Complete {
+                    completion_root: current_root,
+                });
+            }
+
+            if self.is_suppressed_backfill_root(&current_root) {
+                return Ok(BackfillParentResolution::NeedsRequest {
+                    request_slot,
+                    missing_root: current_root,
+                });
+            }
+
+            if block_provider.get(current_root)?.is_some() {
+                return Ok(BackfillParentResolution::Complete {
+                    completion_root: current_root,
+                });
+            }
+
+            let Some(block) = pending_blocks_provider.get(current_root)? else {
+                return Ok(BackfillParentResolution::NeedsRequest {
+                    request_slot,
+                    missing_root: current_root,
+                });
+            };
+
+            request_slot = pending_block_slot(&block);
+            current_root = pending_block_parent_root(&block);
+        }
+    }
+
     async fn refresh_quarantined_backfill_roots(&mut self) -> anyhow::Result<()> {
         if self.quarantined_backfill_roots.is_empty() {
             return Ok(());
@@ -1570,6 +1632,7 @@ impl LeanChainService {
                     )
                     .await?;
                 } else {
+                    self.dropped_backfill_roots.insert(bad_root);
                     warn!(
                         starting_root = ?previous_queue.starting_root,
                         starting_slot = previous_queue.starting_slot,
@@ -1578,7 +1641,7 @@ impl LeanChainService {
                         actual_root = ?actual_root,
                         network_finalized_slot,
                         removed_pending_block,
-                        "Forward background sync root mismatch for finalized slot; dropping obsolete queue",
+                        "Forward background sync root mismatch for finalized slot; dropping obsolete queue and suppressing the bad root until a fresh block arrives",
                     );
                 }
             }
@@ -2163,6 +2226,14 @@ impl LeanChainService {
     }
 
     async fn try_advance_job_with_cached_block(&mut self, root: B256) -> anyhow::Result<bool> {
+        if self.is_suppressed_backfill_root(&root) {
+            trace!(
+                root = ?root,
+                "Skipping cached pending block because the root is suppressed pending fresh arrival"
+            );
+            return Ok(false);
+        }
+
         let pending_block = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
@@ -2203,13 +2274,12 @@ impl LeanChainService {
             }
         }
         let job_peer_id = self.backfill_state.peer_for_job_root(last_root);
-        let (head, pending_blocks_provider, block_provider) = {
+        let (head, pending_blocks_provider) = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
             (
                 store.head_provider().get()?,
                 store.pending_blocks_provider(),
-                store.block_provider(),
             )
         };
         pending_blocks_provider.insert(last_root, signed_block_with_attestation)?;
@@ -2232,49 +2302,54 @@ impl LeanChainService {
             self.peers_in_use.remove(&peer_id);
         }
 
-        let parent_root_is_local_head = parent_root == head;
-        let parent_root_in_pending_blocks = pending_blocks_provider.get(parent_root)?.is_some();
-        let parent_root_in_block_store = block_provider.get(parent_root)?.is_some();
         let parent_root_is_start_of_any_queue =
             self.backfill_state.is_root_start_of_any_queue(&parent_root);
-
-        let parent_root_is_genesis = parent_root == B256::ZERO;
-
-        if parent_root_is_local_head
-            || parent_root_in_pending_blocks
-            || parent_root_in_block_store
-            || parent_root_is_start_of_any_queue
-            || parent_root_is_genesis
+        if parent_root_is_start_of_any_queue
+            && let Some(absorption) =
+                self.backfill_state
+                    .absorb_queue_frontier(last_root, slot, parent_root)
         {
-            if parent_root_is_start_of_any_queue
-                && let Some(absorption) =
-                    self.backfill_state
-                        .absorb_queue_frontier(last_root, slot, parent_root)
-            {
-                info!(
-                    completed_root = ?last_root,
-                    completed_slot = slot,
-                    absorbed_queue_root = ?absorption.absorbed_starting_root,
-                    absorbed_queue_slot = absorption.absorbed_starting_slot,
-                    merged_job_count = absorption.merged_job_count,
-                    "Absorbed older backfill queue frontier into newer queue",
-                );
-                self.queue_pending_job_requests().await?;
-                return Ok(());
-            }
-
-            trace!(
-                root = ?last_root,
-                parent_root = ?parent_root,
-                "Marking backfill queue as complete"
+            info!(
+                completed_root = ?last_root,
+                completed_slot = slot,
+                absorbed_queue_root = ?absorption.absorbed_starting_root,
+                absorbed_queue_slot = absorption.absorbed_starting_slot,
+                merged_job_count = absorption.merged_job_count,
+                "Absorbed older backfill queue frontier into newer queue",
             );
-            self.backfill_state.mark_job_queue_as_complete(last_root);
+            self.queue_pending_job_requests().await?;
             return Ok(());
         }
 
-        if self.backfill_state.contains_job_root(last_root) {
-            self.queue_pending_initial(last_root, slot, parent_root);
-            self.queue_pending_job_requests().await?;
+        let parent_resolution = if parent_root_is_start_of_any_queue {
+            BackfillParentResolution::Complete {
+                completion_root: parent_root,
+            }
+        } else {
+            self.resolve_backfill_parent_resolution(head, parent_root, slot)
+                .await?
+        };
+
+        match parent_resolution {
+            BackfillParentResolution::Complete { completion_root } => {
+                trace!(
+                    root = ?last_root,
+                    parent_root = ?parent_root,
+                    completion_root = ?completion_root,
+                    "Marking backfill queue as complete"
+                );
+                self.backfill_state
+                    .mark_job_queue_as_complete_at(last_root, Some(completion_root));
+            }
+            BackfillParentResolution::NeedsRequest {
+                request_slot,
+                missing_root,
+            } => {
+                if self.backfill_state.contains_job_root(last_root) {
+                    self.queue_pending_initial(last_root, request_slot, missing_root);
+                    self.queue_pending_job_requests().await?;
+                }
+            }
         }
 
         Ok(())
@@ -2301,13 +2376,12 @@ impl LeanChainService {
             }
         }
         let job_peer_id = self.backfill_state.peer_for_job_root(last_root);
-        let (head, pending_blocks_provider, block_provider) = {
+        let (head, pending_blocks_provider) = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
             (
                 store.head_provider().get()?,
                 store.pending_blocks_provider(),
-                store.block_provider(),
             )
         };
         pending_blocks_provider.insert(last_root, signed_block)?;
@@ -2330,49 +2404,54 @@ impl LeanChainService {
             self.peers_in_use.remove(&peer_id);
         }
 
-        let parent_root_is_local_head = parent_root == head;
-        let parent_root_in_pending_blocks = pending_blocks_provider.get(parent_root)?.is_some();
-        let parent_root_in_block_store = block_provider.get(parent_root)?.is_some();
         let parent_root_is_start_of_any_queue =
             self.backfill_state.is_root_start_of_any_queue(&parent_root);
-
-        let parent_root_is_genesis = parent_root == B256::ZERO;
-
-        if parent_root_is_local_head
-            || parent_root_in_pending_blocks
-            || parent_root_in_block_store
-            || parent_root_is_start_of_any_queue
-            || parent_root_is_genesis
+        if parent_root_is_start_of_any_queue
+            && let Some(absorption) =
+                self.backfill_state
+                    .absorb_queue_frontier(last_root, slot, parent_root)
         {
-            if parent_root_is_start_of_any_queue
-                && let Some(absorption) =
-                    self.backfill_state
-                        .absorb_queue_frontier(last_root, slot, parent_root)
-            {
-                info!(
-                    completed_root = ?last_root,
-                    completed_slot = slot,
-                    absorbed_queue_root = ?absorption.absorbed_starting_root,
-                    absorbed_queue_slot = absorption.absorbed_starting_slot,
-                    merged_job_count = absorption.merged_job_count,
-                    "Absorbed older backfill queue frontier into newer queue",
-                );
-                self.queue_pending_job_requests().await?;
-                return Ok(());
-            }
-
-            trace!(
-                root = ?last_root,
-                parent_root = ?parent_root,
-                "Marking backfill queue as complete"
+            info!(
+                completed_root = ?last_root,
+                completed_slot = slot,
+                absorbed_queue_root = ?absorption.absorbed_starting_root,
+                absorbed_queue_slot = absorption.absorbed_starting_slot,
+                merged_job_count = absorption.merged_job_count,
+                "Absorbed older backfill queue frontier into newer queue",
             );
-            self.backfill_state.mark_job_queue_as_complete(last_root);
+            self.queue_pending_job_requests().await?;
             return Ok(());
         }
 
-        if self.backfill_state.contains_job_root(last_root) {
-            self.queue_pending_initial(last_root, slot, parent_root);
-            self.queue_pending_job_requests().await?;
+        let parent_resolution = if parent_root_is_start_of_any_queue {
+            BackfillParentResolution::Complete {
+                completion_root: parent_root,
+            }
+        } else {
+            self.resolve_backfill_parent_resolution(head, parent_root, slot)
+                .await?
+        };
+
+        match parent_resolution {
+            BackfillParentResolution::Complete { completion_root } => {
+                trace!(
+                    root = ?last_root,
+                    parent_root = ?parent_root,
+                    completion_root = ?completion_root,
+                    "Marking backfill queue as complete"
+                );
+                self.backfill_state
+                    .mark_job_queue_as_complete_at(last_root, Some(completion_root));
+            }
+            BackfillParentResolution::NeedsRequest {
+                request_slot,
+                missing_root,
+            } => {
+                if self.backfill_state.contains_job_root(last_root) {
+                    self.queue_pending_initial(last_root, request_slot, missing_root);
+                    self.queue_pending_job_requests().await?;
+                }
+            }
         }
 
         Ok(())
@@ -2656,6 +2735,16 @@ fn pending_block_slot(block: &SignedBlockWithAttestation) -> u64 {
 #[cfg(feature = "devnet4")]
 fn pending_block_slot(block: &SignedBlock) -> u64 {
     block.block.slot
+}
+
+#[cfg(feature = "devnet3")]
+fn pending_block_parent_root(block: &SignedBlockWithAttestation) -> B256 {
+    block.message.block.parent_root
+}
+
+#[cfg(feature = "devnet4")]
+fn pending_block_parent_root(block: &SignedBlock) -> B256 {
+    block.block.parent_root
 }
 
 #[cfg(test)]
@@ -3710,6 +3799,381 @@ mod tests {
                 .is_some()
         };
         assert!(!pending_present);
+        assert!(service.dropped_backfill_roots.contains(&bad_root));
+    }
+
+    #[tokio::test]
+    async fn test_try_advance_job_with_cached_block_skips_suppressed_root() {
+        let mut store = sample_store(10).await;
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(1).await.unwrap();
+        let block = store.produce_block_with_signatures(1, 1).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let pending_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 1,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let pending_block = SignedBlock {
+            block: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        let pending_root = pending_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let pending_root = pending_block.block.tree_hash_root();
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(pending_root, pending_block)
+            .unwrap();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.dropped_backfill_roots.insert(pending_root);
+
+        let advanced = service
+            .try_advance_job_with_cached_block(pending_root)
+            .await
+            .unwrap();
+
+        assert!(!advanced);
+        let pending_present = {
+            let fork_choice = service.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store
+                .pending_blocks_provider()
+                .get(pending_root)
+                .unwrap()
+                .is_some()
+        };
+        assert!(pending_present);
+    }
+
+    #[tokio::test]
+    async fn test_handle_backfill_block_does_not_complete_queue_through_suppressed_parent_root() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 2, 10).await;
+        let suppressed_parent_root = {
+            let db = store.store.lock().await;
+            db.slot_index_provider().get(1).unwrap().unwrap()
+        };
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(3).await.unwrap();
+        let block = store.produce_block_with_signatures(3, 3).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let mut signed_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 3,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let mut signed_block = SignedBlock {
+            block: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        {
+            signed_block.message.block.parent_root = suppressed_parent_root;
+        }
+        #[cfg(feature = "devnet4")]
+        {
+            signed_block.block.parent_root = suppressed_parent_root;
+        }
+        #[cfg(feature = "devnet3")]
+        let last_root = signed_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let last_root = signed_block.block.tree_hash_root();
+        #[cfg(feature = "devnet3")]
+        assert_eq!(
+            signed_block.message.block.parent_root,
+            suppressed_parent_root
+        );
+        #[cfg(feature = "devnet4")]
+        assert_eq!(signed_block.block.parent_root, suppressed_parent_root);
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service
+            .dropped_backfill_roots
+            .insert(suppressed_parent_root);
+
+        let mut queue = JobQueue::new(last_root, 1, 1);
+        queue.add_job(JobRequest::new(PeerId::random(), last_root));
+        service.backfill_state.jobs.push(queue);
+
+        service
+            .handle_backfill_block(None, signed_block, SyncBlockSource::Gossip)
+            .await
+            .unwrap();
+
+        assert_eq!(service.backfill_state.jobs.len(), 1);
+        assert!(!service.backfill_state.jobs[0].is_complete);
+        assert!(matches!(
+            service.pending_job_requests.front(),
+            Some(PendingJobRequest::Initial {
+                root,
+                parent_root,
+                ..
+            }) if *root == last_root && *parent_root == suppressed_parent_root
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_handle_backfill_block_completes_through_pending_chain_to_canonical_root() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 2, 10).await;
+        let canonical_completion_root = {
+            let db = store.store.lock().await;
+            db.slot_index_provider().get(1).unwrap().unwrap()
+        };
+
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(3).await.unwrap();
+        let block = store.produce_block_with_signatures(3, 3).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let mut pending_parent = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block.clone(),
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 3,
+                    data: attestation.clone(),
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures.clone(),
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let mut pending_parent = SignedBlock {
+            block: block.block.clone(),
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures.clone(),
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        {
+            pending_parent.message.block.parent_root = canonical_completion_root;
+        }
+        #[cfg(feature = "devnet4")]
+        {
+            pending_parent.block.parent_root = canonical_completion_root;
+        }
+        #[cfg(feature = "devnet3")]
+        let pending_parent_root = pending_parent.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let pending_parent_root = pending_parent.block.tree_hash_root();
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(pending_parent_root, pending_parent)
+            .unwrap();
+
+        #[cfg(feature = "devnet3")]
+        let mut signed_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 3,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let mut signed_block = SignedBlock {
+            block: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        {
+            signed_block.message.block.slot = 4;
+            signed_block.message.block.parent_root = pending_parent_root;
+        }
+        #[cfg(feature = "devnet4")]
+        {
+            signed_block.block.slot = 4;
+            signed_block.block.parent_root = pending_parent_root;
+        }
+        #[cfg(feature = "devnet3")]
+        let last_root = signed_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let last_root = signed_block.block.tree_hash_root();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+
+        let mut queue = JobQueue::new(last_root, 4, 4);
+        queue.add_job(JobRequest::new(PeerId::random(), last_root));
+        service.backfill_state.jobs.push(queue);
+
+        service
+            .handle_backfill_block(None, signed_block, SyncBlockSource::Gossip)
+            .await
+            .unwrap();
+
+        assert_eq!(service.backfill_state.jobs.len(), 1);
+        assert!(service.backfill_state.jobs[0].is_complete);
+        assert_eq!(
+            service.backfill_state.jobs[0].completion_root,
+            Some(canonical_completion_root)
+        );
+        assert!(service.pending_job_requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_handle_backfill_block_requeues_first_missing_root_beyond_pending_chain() {
+        let mut store = sample_store(10).await;
+        let missing_root = B256::repeat_byte(0x66);
+
+        #[cfg(feature = "devnet3")]
+        let attestation = store.produce_attestation_data(3).await.unwrap();
+        let block = store.produce_block_with_signatures(3, 3).await.unwrap();
+        #[cfg(feature = "devnet3")]
+        let mut pending_parent = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block.clone(),
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 3,
+                    data: attestation.clone(),
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures.clone(),
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let mut pending_parent = SignedBlock {
+            block: block.block.clone(),
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures.clone(),
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        {
+            pending_parent.message.block.parent_root = missing_root;
+        }
+        #[cfg(feature = "devnet4")]
+        {
+            pending_parent.block.parent_root = missing_root;
+        }
+        #[cfg(feature = "devnet3")]
+        let pending_parent_root = pending_parent.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let pending_parent_root = pending_parent.block.tree_hash_root();
+        store
+            .store
+            .lock()
+            .await
+            .pending_blocks_provider()
+            .insert(pending_parent_root, pending_parent)
+            .unwrap();
+
+        #[cfg(feature = "devnet3")]
+        let mut signed_block = SignedBlockWithAttestation {
+            message: BlockWithAttestation {
+                block: block.block,
+                proposer_attestation: AggregatedAttestations {
+                    validator_id: 3,
+                    data: attestation,
+                },
+            },
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet4")]
+        let mut signed_block = SignedBlock {
+            block: block.block,
+            signature: BlockSignatures {
+                attestation_signatures: block.signatures,
+                proposer_signature: Signature::mock(),
+            },
+        };
+        #[cfg(feature = "devnet3")]
+        {
+            signed_block.message.block.slot = 4;
+            signed_block.message.block.parent_root = pending_parent_root;
+        }
+        #[cfg(feature = "devnet4")]
+        {
+            signed_block.block.slot = 4;
+            signed_block.block.parent_root = pending_parent_root;
+        }
+        #[cfg(feature = "devnet3")]
+        let last_root = signed_block.message.block.tree_hash_root();
+        #[cfg(feature = "devnet4")]
+        let last_root = signed_block.block.tree_hash_root();
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+
+        let mut queue = JobQueue::new(last_root, 4, 4);
+        queue.add_job(JobRequest::new(PeerId::random(), last_root));
+        service.backfill_state.jobs.push(queue);
+
+        service
+            .handle_backfill_block(None, signed_block, SyncBlockSource::Gossip)
+            .await
+            .unwrap();
+
+        assert_eq!(service.backfill_state.jobs.len(), 1);
+        assert!(!service.backfill_state.jobs[0].is_complete);
+        assert_eq!(service.backfill_state.jobs[0].completion_root, None);
+        assert!(matches!(
+            service.pending_job_requests.front(),
+            Some(PendingJobRequest::Initial {
+                root,
+                slot,
+                parent_root,
+            }) if *root == last_root && *slot == 3 && *parent_root == missing_root
+        ));
     }
 
     #[tokio::test]

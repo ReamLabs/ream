@@ -44,6 +44,7 @@ impl ForwardBackgroundSyncer {
                 store.block_provider(),
             )
         };
+        let stop_root = self.job_queue.completion_root.unwrap_or(head);
         let network_finalized_slot = self
             .network_state
             .common_finalized_checkpoint()
@@ -56,7 +57,7 @@ impl ForwardBackgroundSyncer {
         let mut last_block: Option<SignedBlock> = None;
         let mut chained_roots = vec![];
         #[cfg(feature = "devnet3")]
-        while next_root != head && next_root != B256::ZERO {
+        while next_root != stop_root && next_root != B256::ZERO {
             let current_block = match pending_blocks_provider.get(next_root)? {
                 Some(block) => block,
                 None => match block_provider.get(next_root)? {
@@ -99,7 +100,7 @@ impl ForwardBackgroundSyncer {
         }
 
         #[cfg(feature = "devnet4")]
-        while next_root != head && next_root != B256::ZERO {
+        while next_root != stop_root && next_root != B256::ZERO {
             let current_block = match pending_blocks_provider.get(next_root)? {
                 Some(block) => block,
                 None => match block_provider.get(next_root)? {
@@ -169,7 +170,7 @@ impl ForwardBackgroundSyncer {
         }
 
         Ok(ForwardSyncResults::Completed {
-            starting_root: head,
+            starting_root: stop_root,
             ending_root: self.job_queue.starting_root,
             blocks_synced,
             processing_time_seconds: timer.elapsed().as_secs_f64(),
@@ -211,12 +212,48 @@ mod tests {
         attestation::AggregatedAttestations,
         block::{BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
     };
+    use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
     use ream_post_quantum_crypto::leansig::signature::Signature;
     use ream_sync::rwlock::Writer;
     use ream_test_utils::store::sample_store;
 
     use super::*;
+
+    async fn advance_store_to_slot(store: &mut Store, target_slot: u64, validator_count: u64) {
+        for slot in 1..=target_slot {
+            let proposer_index = slot % validator_count;
+            #[cfg(feature = "devnet3")]
+            let attestation = store.produce_attestation_data(slot).await.unwrap();
+            let block = store
+                .produce_block_with_signatures(slot, proposer_index)
+                .await
+                .unwrap();
+            #[cfg(feature = "devnet3")]
+            let signed_block = SignedBlockWithAttestation {
+                message: BlockWithAttestation {
+                    block: block.block,
+                    proposer_attestation: AggregatedAttestations {
+                        validator_id: proposer_index,
+                        data: attestation,
+                    },
+                },
+                signature: BlockSignatures {
+                    attestation_signatures: block.signatures,
+                    proposer_signature: Signature::blank(),
+                },
+            };
+            #[cfg(feature = "devnet4")]
+            let signed_block = SignedBlock {
+                block: block.block,
+                signature: BlockSignatures {
+                    attestation_signatures: block.signatures,
+                    proposer_signature: Signature::blank(),
+                },
+            };
+            store.on_block(&signed_block, false).await.unwrap();
+        }
+    }
 
     async fn root_mismatch_result(network_finalized_slot: u64) -> ForwardSyncResults {
         let mut store = sample_store(10).await;
@@ -350,6 +387,72 @@ mod tests {
                 assert_eq!(checkpoint_for_new_queue.slot, 7);
             }
             other => panic!("expected chain incomplete result, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_forward_sync_stops_at_recorded_completion_root() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 2, 10).await;
+        let canonical_anchor_root = {
+            let db = store.store.lock().await;
+            db.slot_index_provider().get(1).unwrap().unwrap()
+        };
+
+        let (writer, _reader) = Writer::new(store);
+        let network_state = writer.read().await.network_state.clone();
+        let mut queue = JobQueue::new(canonical_anchor_root, 1, 1);
+        queue.is_complete = true;
+        queue.completion_root = Some(canonical_anchor_root);
+
+        let mut syncer = ForwardBackgroundSyncer::new(Arc::new(writer), network_state, queue);
+        let result = syncer.start().await.unwrap();
+
+        match result {
+            ForwardSyncResults::Completed {
+                starting_root,
+                ending_root,
+                blocks_synced,
+                ..
+            } => {
+                assert_eq!(starting_root, canonical_anchor_root);
+                assert_eq!(ending_root, canonical_anchor_root);
+                assert_eq!(blocks_synced, 0);
+            }
+            other => panic!("expected completed result, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_forward_sync_without_recorded_completion_root_falls_back_to_head() {
+        let mut store = sample_store(10).await;
+        advance_store_to_slot(&mut store, 2, 10).await;
+
+        let head_root = {
+            let db = store.store.lock().await;
+            db.slot_index_provider().get(2).unwrap().unwrap()
+        };
+
+        let (writer, _reader) = Writer::new(store);
+        let network_state = writer.read().await.network_state.clone();
+        let mut queue = JobQueue::new(head_root, 2, 2);
+        queue.is_complete = true;
+
+        let mut syncer = ForwardBackgroundSyncer::new(Arc::new(writer), network_state, queue);
+        let result = syncer.start().await.unwrap();
+
+        match result {
+            ForwardSyncResults::Completed {
+                starting_root,
+                ending_root,
+                blocks_synced,
+                ..
+            } => {
+                assert_eq!(starting_root, head_root);
+                assert_eq!(ending_root, head_root);
+                assert_eq!(blocks_synced, 0);
+            }
+            other => panic!("expected completed result, got {other:?}"),
         }
     }
 }
