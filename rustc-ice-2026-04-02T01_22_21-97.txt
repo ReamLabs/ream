@@ -1,0 +1,83 @@
+thread 'rustc' panicked at /rustc-dev/1e2183119f0ee19cc26df899e26b04ad0de3475d/compiler/rustc_data_structures/src/obligation_forest/mod.rs:695:39:
+internal error: entered unreachable code
+stack backtrace:
+   0:     0x79d7f8903a7b - <std[334e3a05f91ce6b]::backtrace::Backtrace>::create
+   1:     0x79d7f89039c5 - <std[334e3a05f91ce6b]::backtrace::Backtrace>::force_capture
+   2:     0x79d7f7912a8b - std[334e3a05f91ce6b]::panicking::update_hook::<alloc[80ad34989ab33c22]::boxed::Box<rustc_driver_impl[3131d979e8492565]::install_ice_hook::{closure#1}>>::{closure#0}
+   3:     0x79d7f8915ff2 - std[334e3a05f91ce6b]::panicking::panic_with_hook
+   4:     0x79d7f88f8a7a - std[334e3a05f91ce6b]::panicking::panic_handler::{closure#0}
+   5:     0x79d7f88ecf99 - std[334e3a05f91ce6b]::sys::backtrace::__rust_end_short_backtrace::<std[334e3a05f91ce6b]::panicking::panic_handler::{closure#0}, !>
+   6:     0x79d7f88fa4ad - __rustc[178ae0c4dde34ed0]::rust_begin_unwind
+   7:     0x79d7f54e19ac - core[88814feb75f0c322]::panicking::panic_fmt
+   8:     0x79d7f4fdc462 - core[88814feb75f0c322]::panicking::panic
+   9:     0x79d7f9008d92 - <rustc_data_structures[3de41463aa291d09]::obligation_forest::ObligationForest<rustc_trait_selection[1fd8c3d7795280b9]::traits::fulfill::PendingPredicateObligation>>::compress::<<rustc_data_structures[3de41463aa291d09]::obligation_forest::ObligationForest<rustc_trait_selection[1fd8c3d7795280b9]::traits::fulfill::PendingPredicateObligation>>::process_obligations<rustc_trait_selection[1fd8c3d7795280b9]::traits::fulfill::FulfillProcessor>::{closure#1}>
+  10:     0x79d7f9007221 - <rustc_data_structures[3de41463aa291d09]::obligation_forest::ObligationForest<rustc_trait_selection[1fd8c3d7795280b9]::traits::fulfill::PendingPredicateObligation>>::process_obligations::<rustc_trait_selection[1fd8c3d7795280b9]::traits::fulfill::FulfillProcessor>
+  11:     0x79d7f95f4438 - rustc_traits[27c83db87bbb7fcb]::normalize_projection_ty::normalize_canonicalized_projection
+  12:     0x79d7f95f39d9 - rustc_query_impl[acda3c8442a4ed97]::query_impl::normalize_canonicalized_projection::invoke_provider_fn::__rust_begin_short_backtrace
+  13:     0x79d7f95f2be0 - rustc_query_impl[acda3c8442a4ed97]::execution::try_execute_query::<rustc_middle[4b117c97894be9]::query::caches::DefaultCache<rustc_type_ir[e08431808e60f675]::canonical::CanonicalQueryInput<rustc_middle[4b117c97894be9]::ty::context::TyCtxt, rustc_middle[4b117c97894be9]::ty::ParamEnvAnd<rustc_type_ir[e08431808e60f675]::predicate::AliasTerm<rustc_middle[4b117c97894be9]::ty::context::TyCtxt>>>, rustc_middle[4b117c97894be9]::query::erase::ErasedData<[u8; 8usize]>>, false>
+  14:     0x79d7f95f283f - rustc_query_impl[acda3c8442a4ed97]::query_impl::normalize_canonicalized_projection::execute_query_non_incr::__rust_end_short_backtrace
+  15:     0x79d7f930de3a - <rustc_trait_selection[1fd8c3d7795280b9]::traits::query::normalize::QueryNormalizer>::try_fold_free_or_assoc
+  16:     0x79d7f930cf22 - <rustc_trait_selection[1fd8c3d7795280b9]::traits::query::normalize::QueryNormalizer as rustc_type_ir[e08431808e60f675]::fold::FallibleTypeFolder<rustc_middle[4b117c97894be9]::ty::context::TyCtxt>>::try_fold_ty
+  17:     0x79d7f930bf73 - <rustc_middle[4b117c97894be9]::ty::Ty as rustc_type_ir[e08431808e60f675]::fold::TypeSuperFoldable<rustc_middle[4b117c97894be9]::ty::context::TyCtxt>>::try_super_fold_with::<rustc_trait_selection[1fd8c3d7795280b9]::traits::query::normalize::QueryNormalizer>
+  18:     0x79d7f930cfa2 - <rustc_trait_selection[1fd8c3d7795280b9]::traits::query::normalize::QueryNormalizer as rustc_type_ir[e08431808e60f675]::fold::FallibleTypeFolder<rustc_middle[4b117c97894be9]::ty::context::TyCtxt>>::try_fold_ty
+  19:     0x79d7f9309eba - <rustc_traits[27c83db87bbb7fcb]::normalize_erasing_regions::provide::{closure#0} as core[88814feb75f0c322]::ops::function::FnOnce<(rustc_middle[4b117c97894be9]::ty::context::TyCtxt, rustc_middle[4b117c97894be9]::ty::PseudoCanonicalInput<rustc_middle[4b117c97894be9]::ty::generic_args::GenericArg>)>>::call_once
+  20:     0x79d7f9308c53 - rustc_query_impl[acda3c8442a4ed97]::execution::try_execute_query::<rustc_middle[4b117c97894be9]::query::caches::DefaultCache<rustc_middle[4b117c97894be9]::ty::PseudoCanonicalInput<rustc_middle[4b117c97894be9]::ty::generic_args::GenericArg>, rustc_middle[4b117c97894be9]::query::erase::ErasedData<[u8; 8usize]>>, false>
+  21:     0x79d7f9308941 - rustc_query_impl[acda3c8442a4ed97]::query_impl::try_normalize_generic_arg_after_erasing_regions::execute_query_non_incr::__rust_end_short_backtrace
+  22:     0x79d7f930814a - <rustc_middle[4b117c97894be9]::ty::normalize_erasing_regions::TryNormalizeAfterErasingRegionsFolder as rustc_type_ir[e08431808e60f675]::fold::FallibleTypeFolder<rustc_middle[4b117c97894be9]::ty::context::TyCtxt>>::try_fold_ty
+  23:     0x79d7f9a38e70 - <rustc_middle[4b117c97894be9]::mir::Body as rustc_type_ir[e08431808e60f675]::visit::TypeVisitable<rustc_middle[4b117c97894be9]::ty::context::TyCtxt>>::visit_with::<rustc_monomorphize[4060ec7886db8374]::collector::check_normalization_error::NormalizationChecker>
+  24:     0x79d7f9a46c4e - rustc_monomorphize[4060ec7886db8374]::collector::items_of_instance
+  25:     0x79d7f9a46ba7 - rustc_query_impl[acda3c8442a4ed97]::query_impl::items_of_instance::invoke_provider_fn::__rust_begin_short_backtrace
+  26:     0x79d7f9a4369a - rustc_query_impl[acda3c8442a4ed97]::execution::try_execute_query::<rustc_middle[4b117c97894be9]::query::caches::DefaultCache<(rustc_middle[4b117c97894be9]::ty::instance::Instance, rustc_middle[4b117c97894be9]::mir::mono::CollectionMode), rustc_middle[4b117c97894be9]::query::erase::ErasedData<[u8; 32usize]>>, false>
+  27:     0x79d7f9a432e1 - rustc_query_impl[acda3c8442a4ed97]::query_impl::items_of_instance::execute_query_non_incr::__rust_end_short_backtrace
+  28:     0x79d7fa531dd2 - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  29:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  30:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  31:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  32:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  33:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  34:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  35:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  36:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  37:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  38:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  39:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  40:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  41:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  42:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  43:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  44:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  45:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  46:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  47:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  48:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  49:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  50:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  51:     0x79d7fa533bcb - rustc_monomorphize[4060ec7886db8374]::collector::collect_items_rec
+  52:     0x79d7f9a0cae5 - rustc_monomorphize[4060ec7886db8374]::collector::collect_crate_mono_items::{closure#1}::{closure#0}
+  53:     0x79d7f9826e79 - rustc_monomorphize[4060ec7886db8374]::partitioning::collect_and_partition_mono_items
+  54:     0x79d7f9826b16 - rustc_query_impl[acda3c8442a4ed97]::query_impl::collect_and_partition_mono_items::invoke_provider_fn::__rust_begin_short_backtrace
+  55:     0x79d7fa295a2c - rustc_query_impl[acda3c8442a4ed97]::execution::try_execute_query::<rustc_middle[4b117c97894be9]::query::caches::SingleCache<rustc_middle[4b117c97894be9]::query::erase::ErasedData<[u8; 24usize]>>, false>
+  56:     0x79d7fa2957bc - rustc_query_impl[acda3c8442a4ed97]::query_impl::collect_and_partition_mono_items::execute_query_non_incr::__rust_end_short_backtrace
+  57:     0x79d7fa35fc39 - rustc_codegen_ssa[667fb5cb57fe14b3]::base::codegen_crate::<rustc_codegen_llvm[68a4dbe1fee8e1c1]::LlvmCodegenBackend>
+  58:     0x79d7fa35f94d - <rustc_codegen_llvm[68a4dbe1fee8e1c1]::LlvmCodegenBackend as rustc_codegen_ssa[667fb5cb57fe14b3]::traits::backend::CodegenBackend>::codegen_crate
+  59:     0x79d7fa24687a - <rustc_interface[bb5f09741e514130]::queries::Linker>::codegen_and_build_linker
+  60:     0x79d7fa240a71 - rustc_interface[bb5f09741e514130]::interface::run_compiler::<(), rustc_driver_impl[3131d979e8492565]::run_compiler::{closure#0}>::{closure#1}
+  61:     0x79d7fa27973e - std[334e3a05f91ce6b]::sys::backtrace::__rust_begin_short_backtrace::<rustc_interface[bb5f09741e514130]::util::run_in_thread_with_globals<rustc_interface[bb5f09741e514130]::util::run_in_thread_pool_with_globals<rustc_interface[bb5f09741e514130]::interface::run_compiler<(), rustc_driver_impl[3131d979e8492565]::run_compiler::{closure#0}>::{closure#1}, ()>::{closure#0}, ()>::{closure#0}::{closure#0}, ()>
+  62:     0x79d7fa279fe0 - <std[334e3a05f91ce6b]::thread::lifecycle::spawn_unchecked<rustc_interface[bb5f09741e514130]::util::run_in_thread_with_globals<rustc_interface[bb5f09741e514130]::util::run_in_thread_pool_with_globals<rustc_interface[bb5f09741e514130]::interface::run_compiler<(), rustc_driver_impl[3131d979e8492565]::run_compiler::{closure#0}>::{closure#1}, ()>::{closure#0}, ()>::{closure#0}::{closure#0}, ()>::{closure#1} as core[88814feb75f0c322]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  63:     0x79d7fa27ae6c - <std[334e3a05f91ce6b]::sys::thread::unix::Thread>::new::thread_start
+  64:     0x79d7f3a9caa4 - start_thread
+                               at ./nptl/pthread_create.c:447:8
+  65:     0x79d7f3b29c6c - clone3
+                               at ./misc/../sysdeps/unix/sysv/linux/x86_64/clone3.S:78:0
+  66:                0x0 - <unknown>
+
+
+rustc version: 1.96.0-nightly (1e2183119 2026-03-15)
+platform: x86_64-unknown-linux-gnu
+
+query stack during panic:
+#0 [normalize_canonicalized_projection] normalizing `<libp2p_core::upgrade::select::SelectUpgrade<libp2p_swarm::upgrade::SendWrapper<libp2p_core::upgrade::select::SelectUpgrade<libp2p_swarm::upgrade::SendWrapper<libp2p_core::upgrade::select::SelectUpgrade<libp2p_swarm::upgrade::SendWrapper<libp2p_core::upgrade::select::SelectUpgrade<libp2p_core::upgrade::ready::ReadyUpgrade<libp2p_swarm::stream_protocol::StreamProtocol>, libp2p_core::upgrade::ready::ReadyUpgrade<libp2p_swarm::stream_protocol::StreamProtocol>>>, libp2p_swarm::upgrade::SendWrapper<libp2p_core::upgrade::denied::DeniedUpgrade>>>, libp2p_swarm::upgrade::SendWrapper<ream_req_resp::inbound_protocol::InboundReqRespProtocol>>>, libp2p_swarm::upgrade::SendWrapper<either::Either<libp2p_gossipsub::protocol::ProtocolConfig, libp2p_core::upgrade::denied::DeniedUpgrade>>> as libp2p_swarm::upgrade::InboundUpgradeSend>::Error`
+#1 [try_normalize_generic_arg_after_erasing_regions] normalizing `either::Either<<<libp2p_swarm::handler::select::ConnectionHandlerSelect<libp2p_swarm::handler::select::ConnectionHandlerSelect<libp2p_swarm::handler::select::ConnectionHandlerSelect<libp2p_identify::handler::Handler, libp2p_swarm::dummy::ConnectionHandler>, ream_req_resp::handler::ReqRespConnectionHandler>, libp2p_gossipsub::handler::Handler> as libp2p_swarm::handler::ConnectionHandler>::InboundProtocol as libp2p_swarm::upgrade::InboundUpgradeSend>::Error, <<libp2p_swarm::dummy::ConnectionHandler as libp2p_swarm::handler::ConnectionHandler>::InboundProtocol as libp2p_swarm::upgrade::InboundUpgradeSend>::Error>`
+#2 [items_of_instance] collecting items used by `libp2p_swarm::handler::select::ConnectionHandlerSelect::<libp2p_swarm::handler::select::ConnectionHandlerSelect<libp2p_swarm::handler::select::ConnectionHandlerSelect<libp2p_swarm::handler::select::ConnectionHandlerSelect<libp2p_identify::handler::Handler, libp2p_swarm::dummy::ConnectionHandler>, ream_req_resp::handler::ReqRespConnectionHandler>, libp2p_gossipsub::handler::Handler>, libp2p_swarm::dummy::ConnectionHandler>::on_listen_upgrade_error`
+#3 [collect_and_partition_mono_items] collect_and_partition_mono_items
+end of query stack
