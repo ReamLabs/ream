@@ -254,6 +254,64 @@ impl BackfillState {
         None
     }
 
+    pub fn checkpoint_for_job_root(&self, root: B256) -> Option<Checkpoint> {
+        for queue in &self.jobs {
+            if queue.jobs.contains_key(&root) && queue.starting_root == root {
+                return Some(Checkpoint {
+                    root,
+                    slot: queue.starting_slot,
+                });
+            }
+        }
+
+        None
+    }
+
+    pub fn expected_slot_for_job_root(&self, root: B256) -> Option<u64> {
+        for queue in &self.jobs {
+            if queue.jobs.contains_key(&root) {
+                return Some(if queue.starting_root == root {
+                    queue.starting_slot
+                } else {
+                    queue.last_fetched_slot.saturating_sub(1)
+                });
+            }
+        }
+
+        None
+    }
+
+    pub fn checkpoint_for_peer(&self, peer_id: PeerId) -> Option<Checkpoint> {
+        for queue in &self.jobs {
+            for job in queue.jobs.values() {
+                if job.peer_id == peer_id && job.root == queue.starting_root {
+                    return Some(Checkpoint {
+                        root: job.root,
+                        slot: queue.starting_slot,
+                    });
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn expected_slot_for_peer(&self, peer_id: PeerId) -> Option<u64> {
+        for queue in &self.jobs {
+            for job in queue.jobs.values() {
+                if job.peer_id == peer_id {
+                    return Some(if job.root == queue.starting_root {
+                        queue.starting_slot
+                    } else {
+                        queue.last_fetched_slot.saturating_sub(1)
+                    });
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn reset_timed_out_jobs(&mut self, timeout: Duration) -> Vec<JobRequest> {
         let mut timed_out_jobs = Vec::new();
         for queue in &mut self.jobs {
@@ -829,6 +887,31 @@ mod tests {
         state.mark_job_as_requested(root);
         let latency = state.request_latency_for_root(root);
         assert!(latency.is_some());
+    }
+
+    #[test]
+    fn test_expected_slot_for_job_root_tracks_parent_retries() {
+        let mut state = BackfillState::default();
+        let peer_id = PeerId::random();
+        let root = mock_root(1);
+        let parent = mock_root(2);
+
+        state.add_new_job_queue(
+            Checkpoint { root, slot: 100 },
+            JobRequest::new(peer_id, root),
+            false,
+        );
+        assert_eq!(state.expected_slot_for_job_root(root), Some(100));
+        assert_eq!(
+            state.checkpoint_for_job_root(root),
+            Some(Checkpoint { root, slot: 100 })
+        );
+
+        state.replace_job_with_next_job(root, 100, JobRequest::new(peer_id, parent));
+
+        assert_eq!(state.expected_slot_for_job_root(parent), Some(99));
+        assert_eq!(state.checkpoint_for_job_root(parent), None);
+        assert_eq!(state.expected_slot_for_peer(peer_id), Some(99));
     }
 
     #[test]

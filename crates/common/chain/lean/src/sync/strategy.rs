@@ -114,9 +114,9 @@ impl BackfillTimeoutStrategy {
             // Near-head: retry faster. Far from head: allow slower peers more time.
             Self::AdaptiveGap => {
                 if peer_gap_slots <= 2 {
-                    Duration::from_millis(750)
+                    Duration::from_millis(1500)
                 } else if peer_gap_slots <= 8 {
-                    Self::FIXED_TIMEOUT
+                    Duration::from_secs(3)
                 } else {
                     Duration::from_secs(4)
                 }
@@ -422,11 +422,11 @@ mod tests {
         );
         assert_eq!(
             BackfillTimeoutStrategy::AdaptiveGap.timeout_for_peer_gap(1),
-            Duration::from_millis(750)
+            Duration::from_millis(1500)
         );
         assert_eq!(
             BackfillTimeoutStrategy::AdaptiveGap.timeout_for_peer_gap(6),
-            Duration::from_secs(2)
+            Duration::from_secs(3)
         );
         assert_eq!(
             BackfillTimeoutStrategy::AdaptiveGap.timeout_for_peer_gap(30),

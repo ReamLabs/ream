@@ -142,6 +142,8 @@ impl ForwardBackgroundSyncer {
 
         chained_roots.reverse();
         let mut blocks_synced = 0usize;
+        let mut imported_start_slot = None;
+        let mut imported_end_slot = None;
 
         let mut store_writer = self.store.write().await;
         for root in chained_roots {
@@ -161,9 +163,17 @@ impl ForwardBackgroundSyncer {
             #[cfg(feature = "devnet4")]
             let time = lean_network_spec().genesis_time
                 + (block.block.slot * lean_network_spec().seconds_per_slot);
+            #[cfg(feature = "devnet3")]
+            let block_slot = block.message.block.slot;
+            #[cfg(feature = "devnet4")]
+            let block_slot = block.block.slot;
             store_writer.on_tick(time, false, true).await?;
             store_writer.on_block(&block, true).await?;
             blocks_synced += 1;
+            if imported_start_slot.is_none() {
+                imported_start_slot = Some(block_slot);
+            }
+            imported_end_slot = Some(block_slot);
             // Remove blocks that have been applied to canonical storage to prevent unbounded growth
             // of the pending-blocks table.
             let _ = pending_blocks_provider.remove(root)?;
@@ -172,6 +182,8 @@ impl ForwardBackgroundSyncer {
         Ok(ForwardSyncResults::Completed {
             starting_root: stop_root,
             ending_root: self.job_queue.starting_root,
+            imported_start_slot,
+            imported_end_slot,
             blocks_synced,
             processing_time_seconds: timer.elapsed().as_secs_f64(),
         })
@@ -183,6 +195,8 @@ pub enum ForwardSyncResults {
     Completed {
         starting_root: B256,
         ending_root: B256,
+        imported_start_slot: Option<u64>,
+        imported_end_slot: Option<u64>,
         blocks_synced: usize,
         processing_time_seconds: f64,
     },
