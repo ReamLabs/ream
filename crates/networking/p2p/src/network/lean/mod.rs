@@ -295,6 +295,27 @@ impl NetworkBehaviour for SlowPeerBanBehaviour {
     }
 }
 
+fn should_skip_bootnode_dial(state: Option<ConnectionState>) -> bool {
+    matches!(
+        state,
+        Some(ConnectionState::Connected | ConnectionState::Connecting)
+    )
+}
+
+fn should_defer_bootnode_retry(state: Option<ConnectionState>) -> bool {
+    matches!(state, Some(ConnectionState::Connecting))
+}
+
+fn dedupe_retry_addresses(addresses: &mut Vec<Multiaddr>) {
+    let mut unique = Vec::with_capacity(addresses.len());
+    for address in addresses.drain(..) {
+        if !unique.contains(&address) {
+            unique.push(address);
+        }
+    }
+    *addresses = unique;
+}
+
 #[derive(NetworkBehaviour)]
 struct ReamBehaviour {
     pub identify: identify::Behaviour,
@@ -465,7 +486,7 @@ impl LeanNetworkService {
                 _ = bootnode_redial_interval.tick() => {
                     self.connect_to_multinodes(bootnode_addresses.clone()).await;
                 }
-                Some(Ok((peer_id, (attempts, addresses)))) = self.bootnode_retry_state.next() => {
+                Some(Ok((peer_id, (attempts, mut addresses)))) = self.bootnode_retry_state.next() => {
                     if self.is_slow_peer_banned(&peer_id) {
                         trace!(
                             peer = %peer_id,
@@ -474,7 +495,13 @@ impl LeanNetworkService {
                         );
                         continue;
                     }
-                    if matches!(self.network_state.peer_table.lock().get(&peer_id).map(|peer| peer.state), Some(ConnectionState::Connected)) {
+                    let peer_state = self.peer_connection_state(&peer_id);
+                    if matches!(peer_state, Some(ConnectionState::Connected)) {
+                        continue;
+                    }
+                    if should_defer_bootnode_retry(peer_state) {
+                        dedupe_retry_addresses(&mut addresses);
+                        self.bootnode_retry_state.insert(peer_id, (attempts, addresses));
                         continue;
                     }
                     if attempts >= 8 {
@@ -482,6 +509,7 @@ impl LeanNetworkService {
                         continue;
                     };
 
+                    dedupe_retry_addresses(&mut addresses);
                     for address in &addresses {
                         if let Err(err) = self.dial_peer(address.clone()) {
                             warn!("retry to peer_id: {peer_id:?}, address: {address} error: {err}");
@@ -789,6 +817,7 @@ impl LeanNetworkService {
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                 warn!("Failed to connect to {peer_id:?}: {error:?}");
+                self.handle_outgoing_connection_error(peer_id);
                 None
             }
             _ => None,
@@ -1099,23 +1128,12 @@ impl LeanNetworkService {
                     continue;
                 }
 
-                if let Some(cached_peer) = self.network_state.cached_peer(&peer_id)
-                    && matches!(cached_peer.state, ConnectionState::Connected)
-                {
-                    trace!("Already connected to peer {peer_id}, skipping dial.");
+                if should_skip_bootnode_dial(self.peer_connection_state(&peer_id)) {
+                    trace!("Peer {peer_id} is already connected or connecting, skipping dial.");
                     continue;
                 }
 
-                match self.bootnode_retry_state.remove(&peer_id) {
-                    Some((attempts, mut addresses)) => {
-                        addresses.push(peer.clone());
-                        self.bootnode_retry_state
-                            .insert(peer_id, (attempts, addresses));
-                    }
-                    None => self
-                        .bootnode_retry_state
-                        .insert(peer_id, (0, vec![peer.clone()])),
-                };
+                self.record_bootnode_retry_address(peer_id, peer.clone());
 
                 if let Err(err) = self.dial_peer(peer.clone()) {
                     warn!("Failed to dial peer: {err:?}");
@@ -1193,6 +1211,53 @@ impl LeanNetworkService {
             .behaviour_mut()
             .slow_peer_banlist
             .set_enforcement_enabled(enforce_bans);
+    }
+
+    fn peer_connection_state(&self, peer_id: &PeerId) -> Option<ConnectionState> {
+        self.network_state
+            .cached_peer(peer_id)
+            .map(|peer| peer.state)
+    }
+
+    fn record_bootnode_retry_address(&mut self, peer_id: PeerId, address: Multiaddr) {
+        let (attempts, mut addresses) = self
+            .bootnode_retry_state
+            .remove(&peer_id)
+            .unwrap_or((0, Vec::new()));
+
+        dedupe_retry_addresses(&mut addresses);
+        if !addresses.contains(&address) {
+            addresses.push(address);
+        }
+
+        self.bootnode_retry_state
+            .insert(peer_id, (attempts, addresses));
+    }
+
+    fn handle_outgoing_connection_error(&mut self, peer_id: Option<PeerId>) {
+        let Some(peer_id) = peer_id else {
+            return;
+        };
+
+        if self.swarm.is_connected(&peer_id) {
+            trace!(
+                ?peer_id,
+                "Skipping outgoing dial failure cleanup because peer remains connected"
+            );
+            return;
+        }
+
+        let address = self
+            .network_state
+            .cached_peer(&peer_id)
+            .and_then(|peer| peer.last_seen_p2p_address);
+
+        self.network_state.upsert_peer(
+            peer_id,
+            address,
+            ConnectionState::Disconnected,
+            Direction::Outbound,
+        );
     }
 
     fn dial_peer(&mut self, peer_addr: Multiaddr) -> anyhow::Result<()> {
@@ -1590,5 +1655,51 @@ mod tests {
         assert!(should_enforce_slow_peer_bans(
             SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT + 1,
         ));
+    }
+
+    fn test_multiaddr(peer_id: PeerId, port: u16) -> Multiaddr {
+        let mut addr: Multiaddr = Ipv4Addr::new(127, 0, 0, 1).into();
+        addr.push(Protocol::Udp(port));
+        addr.push(Protocol::QuicV1);
+        addr.push(Protocol::P2p(peer_id));
+        addr
+    }
+
+    #[test]
+    fn test_dedupe_retry_addresses_preserves_first_occurrence() {
+        let peer_id = PeerId::random();
+        let addr_1 = test_multiaddr(peer_id, 9004);
+        let addr_2 = test_multiaddr(peer_id, 9005);
+        let mut addresses = vec![
+            addr_1.clone(),
+            addr_1.clone(),
+            addr_2.clone(),
+            addr_1.clone(),
+            addr_2.clone(),
+        ];
+
+        dedupe_retry_addresses(&mut addresses);
+
+        assert_eq!(addresses, vec![addr_1, addr_2]);
+    }
+
+    #[test]
+    fn test_should_skip_bootnode_dial_for_connected_and_connecting_states() {
+        assert!(should_skip_bootnode_dial(Some(ConnectionState::Connected)));
+        assert!(should_skip_bootnode_dial(Some(ConnectionState::Connecting)));
+        assert!(!should_skip_bootnode_dial(Some(
+            ConnectionState::Disconnected
+        )));
+        assert!(!should_skip_bootnode_dial(None));
+
+        assert!(should_defer_bootnode_retry(Some(
+            ConnectionState::Connecting
+        )));
+        assert!(!should_defer_bootnode_retry(Some(
+            ConnectionState::Connected
+        )));
+        assert!(!should_defer_bootnode_retry(Some(
+            ConnectionState::Disconnected
+        )));
     }
 }
