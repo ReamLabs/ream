@@ -1,26 +1,37 @@
 use std::{
     collections::HashMap,
-    fs,
+    error::Error,
+    fmt, fs,
     net::IpAddr,
     num::{NonZeroU8, NonZeroUsize},
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
+    task::{Context, Poll},
+    time::Instant,
 };
 
 use alloy_primitives::hex;
 use anyhow::anyhow;
-use delay_map::HashMapDelay;
+use delay_map::{HashMapDelay, HashSetDelay};
 use discv5::multiaddr::Protocol;
 use futures::{StreamExt, stream::FuturesUnordered};
 use libp2p::{
     Multiaddr, SwarmBuilder,
     connection_limits::{self, ConnectionLimits},
-    core::ConnectedPoint,
-    gossipsub::{Event as GossipsubEvent, IdentTopic, MessageAuthenticity, PublishError},
+    core::{ConnectedPoint, Endpoint, transport::PortUse, util::unreachable},
+    gossipsub::{
+        Event as GossipsubEvent, FailedMessages, IdentTopic, MessageAuthenticity, PublishError,
+    },
     identify,
-    swarm::{Config, ConnectionId, NetworkBehaviour, Swarm, SwarmEvent},
+    swarm::{
+        Config, ConnectionDenied, ConnectionId, NetworkBehaviour, Swarm, SwarmEvent, THandler,
+        THandlerInEvent, THandlerOutEvent,
+        behaviour::{FromSwarm, ToSwarm},
+        dummy,
+    },
 };
 use libp2p_identity::{Keypair, PeerId, secp256k1};
 use ream_chain_lean::{
@@ -69,9 +80,223 @@ use crate::{
 };
 
 const BOOTNODE_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
+const SLOW_PEER_CONSECUTIVE_WINDOW: Duration = Duration::from_secs(5);
+const SLOW_PEER_DISCONNECT_THRESHOLD: u32 = 5;
+const SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT: usize = 6;
+const SLOW_PEER_BAN_DURATION: Duration = Duration::from_secs(30 * 60);
+
+#[derive(Debug, Default)]
+struct SlowPeerTracker {
+    last_event_at: Option<Instant>,
+    consecutive_events: u32,
+    disconnect_attempted: bool,
+    total_events: u64,
+    total_publish_failed: usize,
+    total_forward_failed: usize,
+    total_priority_queue_full: usize,
+    total_non_priority_queue_full: usize,
+    total_timeout: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SlowPeerSnapshot {
+    consecutive_events: u32,
+    total_events: u64,
+    total_publish_failed: usize,
+    total_forward_failed: usize,
+    total_priority_queue_full: usize,
+    total_non_priority_queue_full: usize,
+    total_timeout: usize,
+}
+
+impl SlowPeerTracker {
+    fn record(&mut self, failed_messages: &FailedMessages) -> SlowPeerSnapshot {
+        let now = Instant::now();
+        self.consecutive_events = match self.last_event_at {
+            Some(last_event_at)
+                if now.duration_since(last_event_at) <= SLOW_PEER_CONSECUTIVE_WINDOW =>
+            {
+                self.consecutive_events.saturating_add(1)
+            }
+            _ => 1,
+        };
+        self.last_event_at = Some(now);
+
+        self.total_events = self.total_events.saturating_add(1);
+        self.total_publish_failed = self
+            .total_publish_failed
+            .saturating_add(failed_messages.publish);
+        self.total_forward_failed = self
+            .total_forward_failed
+            .saturating_add(failed_messages.forward);
+        self.total_priority_queue_full = self
+            .total_priority_queue_full
+            .saturating_add(failed_messages.priority);
+        self.total_non_priority_queue_full = self
+            .total_non_priority_queue_full
+            .saturating_add(failed_messages.non_priority);
+        self.total_timeout = self.total_timeout.saturating_add(failed_messages.timeout);
+
+        SlowPeerSnapshot {
+            consecutive_events: self.consecutive_events,
+            total_events: self.total_events,
+            total_publish_failed: self.total_publish_failed,
+            total_forward_failed: self.total_forward_failed,
+            total_priority_queue_full: self.total_priority_queue_full,
+            total_non_priority_queue_full: self.total_non_priority_queue_full,
+            total_timeout: self.total_timeout,
+        }
+    }
+}
+
+fn should_disconnect_slow_peer(consecutive_events: u32, connected_peer_count: usize) -> bool {
+    consecutive_events >= SLOW_PEER_DISCONNECT_THRESHOLD
+        && connected_peer_count > SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT
+}
+
+fn should_enforce_slow_peer_bans(connected_peer_count: usize) -> bool {
+    connected_peer_count > SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT
+}
+
+#[derive(Debug)]
+enum SlowPeerBanEvent {
+    Expired { peer_id: PeerId },
+}
+
+#[derive(Debug)]
+struct SlowPeerBanError {
+    peer_id: PeerId,
+}
+
+impl fmt::Display for SlowPeerBanError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "peer {} is temporarily banned for slow gossipsub behavior",
+            self.peer_id
+        )
+    }
+}
+
+impl Error for SlowPeerBanError {}
+
+#[derive(Debug)]
+struct SlowPeerBanBehaviour {
+    banned_peers: HashSetDelay<PeerId>,
+    enforce_bans: bool,
+}
+
+impl SlowPeerBanBehaviour {
+    fn new() -> Self {
+        Self {
+            banned_peers: HashSetDelay::new(SLOW_PEER_BAN_DURATION),
+            enforce_bans: false,
+        }
+    }
+
+    fn ban_peer(&mut self, peer_id: PeerId) {
+        self.banned_peers.insert(peer_id);
+    }
+
+    fn unban_peer(&mut self, peer_id: &PeerId) {
+        self.banned_peers.remove(peer_id);
+    }
+
+    fn is_banned(&self, peer_id: &PeerId) -> bool {
+        self.banned_peers.contains_key(peer_id)
+    }
+
+    fn set_enforcement_enabled(&mut self, enabled: bool) {
+        self.enforce_bans = enabled;
+    }
+
+    fn should_reject_peer(&self, peer_id: &PeerId) -> bool {
+        self.enforce_bans && self.is_banned(peer_id)
+    }
+}
+
+impl NetworkBehaviour for SlowPeerBanBehaviour {
+    type ConnectionHandler = dummy::ConnectionHandler;
+    type ToSwarm = SlowPeerBanEvent;
+
+    fn handle_established_inbound_connection(
+        &mut self,
+        _: ConnectionId,
+        peer_id: PeerId,
+        _: &Multiaddr,
+        _: &Multiaddr,
+    ) -> Result<THandler<Self>, ConnectionDenied> {
+        if self.should_reject_peer(&peer_id) {
+            return Err(ConnectionDenied::new(SlowPeerBanError { peer_id }));
+        }
+
+        Ok(dummy::ConnectionHandler)
+    }
+
+    fn handle_pending_outbound_connection(
+        &mut self,
+        _: ConnectionId,
+        maybe_peer: Option<PeerId>,
+        _: &[Multiaddr],
+        _: Endpoint,
+    ) -> Result<Vec<Multiaddr>, ConnectionDenied> {
+        if let Some(peer_id) = maybe_peer
+            && self.should_reject_peer(&peer_id)
+        {
+            return Err(ConnectionDenied::new(SlowPeerBanError { peer_id }));
+        }
+
+        Ok(vec![])
+    }
+
+    fn handle_established_outbound_connection(
+        &mut self,
+        _: ConnectionId,
+        peer_id: PeerId,
+        _: &Multiaddr,
+        _: Endpoint,
+        _: PortUse,
+    ) -> Result<THandler<Self>, ConnectionDenied> {
+        if self.should_reject_peer(&peer_id) {
+            return Err(ConnectionDenied::new(SlowPeerBanError { peer_id }));
+        }
+
+        Ok(dummy::ConnectionHandler)
+    }
+
+    fn on_swarm_event(&mut self, _: FromSwarm) {}
+
+    fn on_connection_handler_event(
+        &mut self,
+        _: PeerId,
+        _: ConnectionId,
+        event: THandlerOutEvent<Self>,
+    ) {
+        unreachable(event)
+    }
+
+    fn poll(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+        loop {
+            match self.banned_peers.poll_expired(cx) {
+                Poll::Ready(Some(Ok(peer_id))) => {
+                    return Poll::Ready(ToSwarm::GenerateEvent(SlowPeerBanEvent::Expired {
+                        peer_id,
+                    }));
+                }
+                Poll::Ready(Some(Err(err))) => {
+                    warn!("Failed to expire slow peer ban entry: {err}");
+                }
+                Poll::Ready(None) | Poll::Pending => return Poll::Pending,
+            }
+        }
+    }
+}
 
 #[derive(NetworkBehaviour)]
-pub(crate) struct ReamBehaviour {
+struct ReamBehaviour {
     pub identify: identify::Behaviour,
 
     /// The request-response domain
@@ -80,6 +305,8 @@ pub(crate) struct ReamBehaviour {
     /// The gossip domain: gossipsub
     pub gossipsub: GossipsubBehaviour,
 
+    slow_peer_banlist: SlowPeerBanBehaviour,
+
     pub connection_limits: connection_limits::Behaviour,
 }
 
@@ -87,7 +314,7 @@ pub struct LeanNetworkConfig {
     pub gossipsub_config: LeanGossipsubConfig,
     pub socket_address: IpAddr,
     pub socket_port: u16,
-    pub private_key_path: Option<std::path::PathBuf>,
+    pub private_key_path: Option<PathBuf>,
 }
 
 pub struct LeanNetworkService {
@@ -100,6 +327,7 @@ pub struct LeanNetworkService {
     request_id: AtomicU64,
     pub network_state: Arc<NetworkState>,
     check_canonical_futures: FuturesUnordered<oneshot::Receiver<(PeerId, bool)>>,
+    slow_peer_trackers: HashMap<PeerId, SlowPeerTracker>,
     pub multi_addr: Multiaddr,
 }
 
@@ -166,6 +394,7 @@ impl LeanNetworkService {
                 req_resp: ReqResp::new(Chain::Lean),
                 gossipsub,
                 identify,
+                slow_peer_banlist: SlowPeerBanBehaviour::new(),
                 connection_limits,
             }
         };
@@ -199,6 +428,7 @@ impl LeanNetworkService {
             request_id: AtomicU64::new(1),
             network_state,
             check_canonical_futures: FuturesUnordered::new(),
+            slow_peer_trackers: HashMap::new(),
             multi_addr: multi_addr.clone(),
             chain_callback_requests: HashMap::new(),
         };
@@ -236,6 +466,14 @@ impl LeanNetworkService {
                     self.connect_to_multinodes(bootnode_addresses.clone()).await;
                 }
                 Some(Ok((peer_id, (attempts, addresses)))) = self.bootnode_retry_state.next() => {
+                    if self.is_slow_peer_banned(&peer_id) {
+                        trace!(
+                            peer = %peer_id,
+                            ban_duration_seconds = SLOW_PEER_BAN_DURATION.as_secs_f64(),
+                            "Skipping bootnode retry while peer is temporarily banned for slow behavior"
+                        );
+                        continue;
+                    }
                     if matches!(self.network_state.peer_table.lock().get(&peer_id).map(|peer| peer.state), Some(ConnectionState::Connected)) {
                         continue;
                     }
@@ -463,6 +701,16 @@ impl LeanNetworkService {
         event: SwarmEvent<ReamBehaviourEvent>,
     ) -> Option<ReamNetworkEvent> {
         match event {
+            SwarmEvent::Behaviour(ReamBehaviourEvent::SlowPeerBanlist(
+                SlowPeerBanEvent::Expired { peer_id },
+            )) => {
+                info!(
+                    peer = %peer_id,
+                    ban_duration_seconds = SLOW_PEER_BAN_DURATION.as_secs_f64(),
+                    "Slow peer ban expired"
+                );
+                None
+            }
             SwarmEvent::Behaviour(ReamBehaviourEvent::Gossipsub(gossipsub_event)) => {
                 self.handle_gossipsub_event(gossipsub_event)
             }
@@ -492,6 +740,7 @@ impl LeanNetworkService {
                     ConnectionState::Connected,
                     direction,
                 );
+                self.refresh_slow_peer_ban_enforcement();
                 set_int_gauge_vec(
                     &LEAN_PEER_COUNT,
                     self.network_state.connected_peer_count() as i64,
@@ -508,6 +757,7 @@ impl LeanNetworkService {
             SwarmEvent::ConnectionClosed {
                 peer_id, endpoint, ..
             } => {
+                self.slow_peer_trackers.remove(&peer_id);
                 let direction = match endpoint {
                     ConnectedPoint::Dialer { .. } => Direction::Outbound,
                     ConnectedPoint::Listener { .. } => Direction::Inbound,
@@ -518,6 +768,7 @@ impl LeanNetworkService {
                     ConnectionState::Disconnected,
                     direction,
                 );
+                self.refresh_slow_peer_ban_enforcement();
                 set_int_gauge_vec(
                     &LEAN_PEER_COUNT,
                     self.network_state.connected_peer_count() as i64,
@@ -545,72 +796,172 @@ impl LeanNetworkService {
     }
 
     fn handle_gossipsub_event(&mut self, event: GossipsubEvent) -> Option<ReamNetworkEvent> {
-        if let GossipsubEvent::Message { message, .. } = event {
-            match LeanGossipsubMessage::decode(&message.topic, &message.data) {
-                #[cfg(feature = "devnet3")]
-                Ok(LeanGossipsubMessage::Block(signed_block_with_attestation)) => {
-                    let slot = signed_block_with_attestation.message.block.slot;
+        match event {
+            GossipsubEvent::Message { message, .. } => {
+                match LeanGossipsubMessage::decode(&message.topic, &message.data) {
+                    #[cfg(feature = "devnet3")]
+                    Ok(LeanGossipsubMessage::Block(signed_block_with_attestation)) => {
+                        let slot = signed_block_with_attestation.message.block.slot;
 
-                    if let Err(err) =
-                        self.chain_message_sender
-                            .send(LeanChainServiceMessage::ProcessBlock {
-                                signed_block_with_attestation,
+                        if let Err(err) =
+                            self.chain_message_sender
+                                .send(LeanChainServiceMessage::ProcessBlock {
+                                    signed_block_with_attestation,
+                                    need_gossip: false,
+                                })
+                        {
+                            warn!("failed to send block for slot {slot} item to chain: {err:?}");
+                        }
+                    }
+                    #[cfg(feature = "devnet4")]
+                    Ok(LeanGossipsubMessage::Block(signed_block)) => {
+                        let slot = signed_block.block.slot;
+
+                        if let Err(err) =
+                            self.chain_message_sender
+                                .send(LeanChainServiceMessage::ProcessBlock {
+                                    signed_block,
+                                    need_gossip: false,
+                                })
+                        {
+                            warn!("failed to send block for slot {slot} item to chain: {err:?}");
+                        }
+                    }
+                    Ok(LeanGossipsubMessage::Attestation {
+                        subnet_id,
+                        attestation: signed_attestation,
+                    }) => {
+                        let slot = signed_attestation.message.slot;
+
+                        if let Err(err) = self.chain_message_sender.send(
+                            LeanChainServiceMessage::ProcessAttestation {
+                                signed_attestation,
+                                subnet_id,
                                 need_gossip: false,
-                            })
-                    {
-                        warn!("failed to send block for slot {slot} item to chain: {err:?}");
+                            },
+                        ) {
+                            warn!(
+                                "failed to send attestation for slot {slot} subnet {subnet_id} to chain: {err:?}"
+                            );
+                        }
                     }
-                }
-                #[cfg(feature = "devnet4")]
-                Ok(LeanGossipsubMessage::Block(signed_block)) => {
-                    let slot = signed_block.block.slot;
+                    Ok(LeanGossipsubMessage::AggregatedAttestation(aggregated_attestation)) => {
+                        let slot = aggregated_attestation.data.slot;
 
-                    if let Err(err) =
-                        self.chain_message_sender
-                            .send(LeanChainServiceMessage::ProcessBlock {
-                                signed_block,
+                        if let Err(err) = self.chain_message_sender.send(
+                            LeanChainServiceMessage::ProcessAggregatedAttestation {
+                                aggregated_attestation,
                                 need_gossip: false,
-                            })
-                    {
-                        warn!("failed to send block for slot {slot} item to chain: {err:?}");
+                            },
+                        ) {
+                            warn!(
+                                "failed to send aggregated attestation for slot {slot} to chain: {err:?}"
+                            );
+                        }
                     }
+                    Err(err) => warn!("Failed to decode {:?} gossip topic: {err:?}", message.topic),
                 }
-                Ok(LeanGossipsubMessage::Attestation {
-                    subnet_id,
-                    attestation: signed_attestation,
-                }) => {
-                    let slot = signed_attestation.message.slot;
-
-                    if let Err(err) = self.chain_message_sender.send(
-                        LeanChainServiceMessage::ProcessAttestation {
-                            signed_attestation,
-                            subnet_id,
-                            need_gossip: false,
-                        },
-                    ) {
-                        warn!(
-                            "failed to send attestation for slot {slot} subnet {subnet_id} to chain: {err:?}"
-                        );
-                    }
-                }
-                Ok(LeanGossipsubMessage::AggregatedAttestation(aggregated_attestation)) => {
-                    let slot = aggregated_attestation.data.slot;
-
-                    if let Err(err) = self.chain_message_sender.send(
-                        LeanChainServiceMessage::ProcessAggregatedAttestation {
-                            aggregated_attestation,
-                            need_gossip: false,
-                        },
-                    ) {
-                        warn!(
-                            "failed to send aggregated attestation for slot {slot} to chain: {err:?}"
-                        );
-                    }
-                }
-                Err(err) => warn!("Failed to decode {:?} gossip topic: {err:?}", message.topic),
             }
+            GossipsubEvent::SlowPeer {
+                peer_id,
+                failed_messages,
+            } => {
+                self.handle_slow_peer_event(peer_id, failed_messages);
+            }
+            _ => {}
         }
         None
+    }
+
+    fn handle_slow_peer_event(&mut self, peer_id: PeerId, failed_messages: FailedMessages) {
+        self.network_state.failed_response_from_peer(peer_id);
+
+        let snapshot = self
+            .slow_peer_trackers
+            .entry(peer_id)
+            .or_default()
+            .record(&failed_messages);
+
+        let cached_peer = self.network_state.cached_peer(&peer_id);
+        let peer_state = cached_peer.as_ref().map(|peer| peer.state);
+        let peer_direction = cached_peer.as_ref().map(|peer| peer.direction);
+        let peer_score = cached_peer.as_ref().map(|peer| peer.peer_score);
+        let head_slot = cached_peer
+            .as_ref()
+            .and_then(|peer| peer.head_checkpoint.map(|checkpoint| checkpoint.slot));
+        let finalized_slot = cached_peer
+            .as_ref()
+            .and_then(|peer| peer.finalized_checkpoint.map(|checkpoint| checkpoint.slot));
+        let connected_peer_count = self.network_state.connected_peer_count();
+        let mesh_n_low = self.network_config.gossipsub_config.config.mesh_n_low();
+
+        if snapshot.consecutive_events == 1 {
+            info!(
+                peer = %peer_id,
+                heartbeat_publish_failed = failed_messages.publish,
+                heartbeat_forward_failed = failed_messages.forward,
+                heartbeat_priority_queue_full = failed_messages.priority,
+                heartbeat_non_priority_queue_full = failed_messages.non_priority,
+                heartbeat_timeout = failed_messages.timeout,
+                heartbeat_total_queue_full = failed_messages.total_queue_full(),
+                consecutive_slow_peer_events = snapshot.consecutive_events,
+                total_slow_peer_events = snapshot.total_events,
+                total_publish_failed = snapshot.total_publish_failed,
+                total_forward_failed = snapshot.total_forward_failed,
+                total_priority_queue_full = snapshot.total_priority_queue_full,
+                total_non_priority_queue_full = snapshot.total_non_priority_queue_full,
+                total_timeout = snapshot.total_timeout,
+                peer_score,
+                ?peer_state,
+                ?peer_direction,
+                connected_peer_count,
+                mesh_n_low,
+                head_slot,
+                finalized_slot,
+                "Observed gossipsub queue backpressure for peer"
+            );
+        }
+
+        if should_disconnect_slow_peer(snapshot.consecutive_events, connected_peer_count)
+            && self
+                .slow_peer_trackers
+                .get(&peer_id)
+                .is_some_and(|tracker| !tracker.disconnect_attempted)
+        {
+            if let Some(tracker) = self.slow_peer_trackers.get_mut(&peer_id) {
+                tracker.disconnect_attempted = true;
+            }
+            self.ban_slow_peer(peer_id);
+
+            warn!(
+                peer = %peer_id,
+                consecutive_slow_peer_events = snapshot.consecutive_events,
+                connected_peer_count,
+                disconnect_min_connected_peers = SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT,
+                ban_duration_seconds = SLOW_PEER_BAN_DURATION.as_secs_f64(),
+                mesh_n_low,
+                "Disconnecting consistently slow gossipsub peer and temporarily banning reconnects because connected peer count is above the slow-peer disconnect minimum"
+            );
+
+            if let Err(err) = self.swarm.disconnect_peer_id(peer_id) {
+                warn!(peer = %peer_id, ?err, "Failed to disconnect slow peer");
+                self.unban_slow_peer(&peer_id);
+                if let Some(tracker) = self.slow_peer_trackers.get_mut(&peer_id) {
+                    tracker.disconnect_attempted = false;
+                }
+            }
+        } else if snapshot.consecutive_events >= SLOW_PEER_DISCONNECT_THRESHOLD
+            && connected_peer_count <= SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT
+        {
+            warn!(
+                peer = %peer_id,
+                consecutive_slow_peer_events = snapshot.consecutive_events,
+                connected_peer_count,
+                disconnect_min_connected_peers = SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT,
+                mesh_n_low,
+                "Slow gossipsub peer reached disconnect threshold but connected peer count is at or below the slow-peer disconnect minimum, so the peer will be kept connected"
+            );
+        }
     }
 
     async fn handle_request_response_event(
@@ -739,6 +1090,15 @@ impl LeanNetworkService {
                 .find(|protocol| matches!(protocol, Protocol::P2p(_)))
                 && peer_id != self.local_peer_id()
             {
+                if self.is_slow_peer_banned(&peer_id) {
+                    trace!(
+                        peer = %peer_id,
+                        ban_duration_seconds = SLOW_PEER_BAN_DURATION.as_secs_f64(),
+                        "Skipping dial to temporarily banned slow peer"
+                    );
+                    continue;
+                }
+
                 if let Some(cached_peer) = self.network_state.cached_peer(&peer_id)
                     && matches!(cached_peer.state, ConnectionState::Connected)
                 {
@@ -805,6 +1165,36 @@ impl LeanNetworkService {
         *self.swarm.local_peer_id()
     }
 
+    fn ban_slow_peer(&mut self, peer_id: PeerId) {
+        self.swarm
+            .behaviour_mut()
+            .slow_peer_banlist
+            .ban_peer(peer_id);
+        self.bootnode_retry_state.remove(&peer_id);
+    }
+
+    fn unban_slow_peer(&mut self, peer_id: &PeerId) {
+        self.swarm
+            .behaviour_mut()
+            .slow_peer_banlist
+            .unban_peer(peer_id);
+    }
+
+    fn is_slow_peer_banned(&self, peer_id: &PeerId) -> bool {
+        should_enforce_slow_peer_bans(self.network_state.connected_peer_count())
+            && self.swarm.behaviour().slow_peer_banlist.is_banned(peer_id)
+    }
+
+    fn refresh_slow_peer_ban_enforcement(&mut self) {
+        let connected_peer_count = self.network_state.connected_peer_count();
+        let enforce_bans = should_enforce_slow_peer_bans(connected_peer_count);
+
+        self.swarm
+            .behaviour_mut()
+            .slow_peer_banlist
+            .set_enforcement_enabled(enforce_bans);
+    }
+
     fn dial_peer(&mut self, peer_addr: Multiaddr) -> anyhow::Result<()> {
         self.swarm
             .dial(peer_addr.clone())
@@ -869,7 +1259,10 @@ impl LeanNetworkService {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::Ipv4Addr, time::Duration};
+    use std::{
+        net::Ipv4Addr,
+        time::{Duration, Instant},
+    };
 
     use alloy_primitives::B256;
     use ream_consensus_lean::checkpoint::Checkpoint;
@@ -903,12 +1296,14 @@ mod tests {
 
         let node = LeanNetworkService::new(
             config.clone(),
-            executor,
+            executor.clone(),
             chain_sender,
             outbound_request_receiver,
             Arc::new(NetworkState::new(Default::default(), Default::default())),
         )
         .await?;
+
+        std::mem::forget(executor);
 
         Ok((node, outbound_request_sender, chain_receiver))
     }
@@ -1045,5 +1440,155 @@ mod tests {
         node_2_handle.abort();
 
         Ok(())
+    }
+
+    #[test]
+    fn test_slow_peer_tracker_records_failed_messages() {
+        let mut tracker = SlowPeerTracker::default();
+        let snapshot = tracker.record(&FailedMessages {
+            publish: 1,
+            forward: 2,
+            priority: 3,
+            non_priority: 4,
+            timeout: 5,
+        });
+
+        assert_eq!(snapshot.consecutive_events, 1);
+        assert_eq!(snapshot.total_events, 1);
+        assert_eq!(snapshot.total_publish_failed, 1);
+        assert_eq!(snapshot.total_forward_failed, 2);
+        assert_eq!(snapshot.total_priority_queue_full, 3);
+        assert_eq!(snapshot.total_non_priority_queue_full, 4);
+        assert_eq!(snapshot.total_timeout, 5);
+    }
+
+    #[test]
+    fn test_slow_peer_tracker_tracks_consecutive_heartbeats() {
+        let mut tracker = SlowPeerTracker::default();
+
+        let first = tracker.record(&FailedMessages {
+            publish: 0,
+            forward: 1,
+            priority: 0,
+            non_priority: 2,
+            timeout: 0,
+        });
+        let second = tracker.record(&FailedMessages {
+            publish: 0,
+            forward: 1,
+            priority: 0,
+            non_priority: 2,
+            timeout: 0,
+        });
+
+        assert_eq!(first.consecutive_events, 1);
+        assert_eq!(second.consecutive_events, 2);
+        assert_eq!(second.total_events, 2);
+        assert_eq!(second.total_forward_failed, 2);
+        assert_eq!(second.total_non_priority_queue_full, 4);
+    }
+
+    #[test]
+    fn test_slow_peer_tracker_resets_consecutive_events_after_window() {
+        let mut tracker = SlowPeerTracker::default();
+
+        let first = tracker.record(&FailedMessages {
+            publish: 0,
+            forward: 1,
+            priority: 0,
+            non_priority: 0,
+            timeout: 0,
+        });
+
+        tracker.last_event_at =
+            Some(Instant::now() - SLOW_PEER_CONSECUTIVE_WINDOW - Duration::from_millis(1));
+
+        let second = tracker.record(&FailedMessages {
+            publish: 0,
+            forward: 1,
+            priority: 0,
+            non_priority: 0,
+            timeout: 0,
+        });
+
+        assert_eq!(first.consecutive_events, 1);
+        assert_eq!(second.consecutive_events, 1);
+        assert_eq!(second.total_events, 2);
+    }
+
+    #[tokio::test]
+    async fn test_slow_peer_ban_behaviour_denies_banned_inbound_peer_before_establishment() {
+        let mut behaviour = SlowPeerBanBehaviour::new();
+        let peer_id = PeerId::random();
+        let local_addr = Multiaddr::empty();
+        let remote_addr = Multiaddr::empty();
+
+        behaviour.ban_peer(peer_id);
+        behaviour.set_enforcement_enabled(true);
+
+        assert!(
+            NetworkBehaviour::handle_established_inbound_connection(
+                &mut behaviour,
+                ConnectionId::new_unchecked(1),
+                peer_id,
+                &local_addr,
+                &remote_addr,
+            )
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_slow_peer_ban_behaviour_allows_banned_peer_when_enforcement_disabled() {
+        let mut behaviour = SlowPeerBanBehaviour::new();
+        let peer_id = PeerId::random();
+        let local_addr = Multiaddr::empty();
+        let remote_addr = Multiaddr::empty();
+
+        behaviour.ban_peer(peer_id);
+        behaviour.set_enforcement_enabled(false);
+
+        assert!(
+            NetworkBehaviour::handle_established_inbound_connection(
+                &mut behaviour,
+                ConnectionId::new_unchecked(1),
+                peer_id,
+                &local_addr,
+                &remote_addr,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_should_disconnect_slow_peer_when_connected_peers_exceed_disconnect_minimum() {
+        assert!(should_disconnect_slow_peer(
+            SLOW_PEER_DISCONNECT_THRESHOLD,
+            SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT + 1,
+        ));
+    }
+
+    #[test]
+    fn test_should_not_disconnect_slow_peer_when_connected_peers_do_not_exceed_disconnect_minimum()
+    {
+        assert!(!should_disconnect_slow_peer(
+            SLOW_PEER_DISCONNECT_THRESHOLD,
+            SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT,
+        ));
+    }
+
+    #[test]
+    fn test_should_not_enforce_slow_peer_bans_when_connected_peers_do_not_exceed_disconnect_minimum()
+     {
+        assert!(!should_enforce_slow_peer_bans(
+            SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT,
+        ));
+    }
+
+    #[test]
+    fn test_should_enforce_slow_peer_bans_when_connected_peers_exceed_disconnect_minimum() {
+        assert!(should_enforce_slow_peer_bans(
+            SLOW_PEER_MIN_CONNECTED_PEERS_FOR_DISCONNECT + 1,
+        ));
     }
 }
