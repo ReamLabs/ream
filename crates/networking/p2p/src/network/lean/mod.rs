@@ -296,10 +296,7 @@ impl NetworkBehaviour for SlowPeerBanBehaviour {
 }
 
 fn should_skip_bootnode_dial(state: Option<ConnectionState>) -> bool {
-    matches!(
-        state,
-        Some(ConnectionState::Connected | ConnectionState::Connecting)
-    )
+    matches!(state, Some(ConnectionState::Connected))
 }
 
 fn should_defer_bootnode_retry(state: Option<ConnectionState>) -> bool {
@@ -314,6 +311,45 @@ fn dedupe_retry_addresses(addresses: &mut Vec<Multiaddr>) {
         }
     }
     *addresses = unique;
+}
+
+#[derive(Debug, Default)]
+struct BootnodeRetry {
+    attempts: u32,
+    next_address_index: usize,
+    addresses: Vec<Multiaddr>,
+}
+
+impl BootnodeRetry {
+    fn normalize_addresses(&mut self) {
+        dedupe_retry_addresses(&mut self.addresses);
+        if self.addresses.is_empty() {
+            self.next_address_index = 0;
+        } else {
+            self.next_address_index %= self.addresses.len();
+        }
+    }
+
+    fn record_address(&mut self, address: Multiaddr) {
+        self.normalize_addresses();
+        if !self.addresses.contains(&address) {
+            self.addresses.push(address);
+        }
+        self.normalize_addresses();
+    }
+
+    fn next_address(&mut self) -> Option<Multiaddr> {
+        self.normalize_addresses();
+
+        if self.addresses.is_empty() {
+            return None;
+        }
+
+        let index = self.next_address_index % self.addresses.len();
+        let address = self.addresses[index].clone();
+        self.next_address_index = (index + 1) % self.addresses.len();
+        Some(address)
+    }
 }
 
 #[derive(NetworkBehaviour)]
@@ -344,7 +380,7 @@ pub struct LeanNetworkService {
     chain_message_sender: UnboundedSender<LeanChainServiceMessage>,
     chain_callback_requests: HashMap<u64, (PeerId, mpsc::Sender<ResponseCallback>)>,
     outbound_p2p_request: UnboundedReceiver<LeanP2PRequest>,
-    bootnode_retry_state: HashMapDelay<PeerId, (u32, Vec<Multiaddr>)>,
+    bootnode_retry_state: HashMapDelay<PeerId, BootnodeRetry>,
     request_id: AtomicU64,
     pub network_state: Arc<NetworkState>,
     check_canonical_futures: FuturesUnordered<oneshot::Receiver<(PeerId, bool)>>,
@@ -486,7 +522,7 @@ impl LeanNetworkService {
                 _ = bootnode_redial_interval.tick() => {
                     self.connect_to_multinodes(bootnode_addresses.clone()).await;
                 }
-                Some(Ok((peer_id, (attempts, mut addresses)))) = self.bootnode_retry_state.next() => {
+                Some(Ok((peer_id, mut retry_state))) = self.bootnode_retry_state.next() => {
                     if self.is_slow_peer_banned(&peer_id) {
                         trace!(
                             peer = %peer_id,
@@ -500,23 +536,25 @@ impl LeanNetworkService {
                         continue;
                     }
                     if should_defer_bootnode_retry(peer_state) {
-                        dedupe_retry_addresses(&mut addresses);
-                        self.bootnode_retry_state.insert(peer_id, (attempts, addresses));
+                        retry_state.normalize_addresses();
+                        self.bootnode_retry_state.insert(peer_id, retry_state);
                         continue;
                     }
-                    if attempts >= 8 {
+                    if retry_state.attempts >= 8 {
                         warn!("giving up on {peer_id:?} after 8 attempts");
+                        continue;
+                    }
+                    let Some(address) = retry_state.next_address() else {
+                        warn!(?peer_id, "No bootnode retry addresses available");
                         continue;
                     };
 
-                    dedupe_retry_addresses(&mut addresses);
-                    for address in &addresses {
-                        if let Err(err) = self.dial_peer(address.clone()) {
-                            warn!("retry to peer_id: {peer_id:?}, address: {address} error: {err}");
-                        }
+                    if let Err(err) = self.dial_peer(address.clone()) {
+                        warn!("retry to peer_id: {peer_id:?}, address: {address} error: {err}");
                     }
 
-                    self.bootnode_retry_state.insert(peer_id, (attempts + 1, addresses))
+                    retry_state.attempts = retry_state.attempts.saturating_add(1);
+                    self.bootnode_retry_state.insert(peer_id, retry_state)
                 }
                 _ = status_interval.tick() => {
                     let mut peers_to_ping = Vec::new();
@@ -1128,14 +1166,29 @@ impl LeanNetworkService {
                     continue;
                 }
 
-                if should_skip_bootnode_dial(self.peer_connection_state(&peer_id)) {
-                    trace!("Peer {peer_id} is already connected or connecting, skipping dial.");
+                let peer_state = self.peer_connection_state(&peer_id);
+                if should_skip_bootnode_dial(peer_state) {
+                    trace!("Peer {peer_id} is already connected, skipping dial.");
                     continue;
                 }
 
                 self.record_bootnode_retry_address(peer_id, peer.clone());
 
-                if let Err(err) = self.dial_peer(peer.clone()) {
+                if should_defer_bootnode_retry(peer_state) {
+                    trace!(
+                        "Peer {peer_id} is already connecting, recorded alternate address and skipping additional dial."
+                    );
+                    continue;
+                }
+
+                let Some(address) = self.next_bootnode_retry_address(peer_id) else {
+                    trace!(
+                        "No bootnode retry address available for peer {peer_id}, skipping dial."
+                    );
+                    continue;
+                };
+
+                if let Err(err) = self.dial_peer(address.clone()) {
                     warn!("Failed to dial peer: {err:?}");
                     continue;
                 }
@@ -1143,7 +1196,7 @@ impl LeanNetworkService {
                 info!("Dialing peer: {peer_id:?}");
                 self.network_state.upsert_peer(
                     peer_id,
-                    Some(peer),
+                    Some(address),
                     ConnectionState::Connecting,
                     Direction::Outbound,
                 );
@@ -1220,18 +1273,19 @@ impl LeanNetworkService {
     }
 
     fn record_bootnode_retry_address(&mut self, peer_id: PeerId, address: Multiaddr) {
-        let (attempts, mut addresses) = self
+        let mut retry_state = self
             .bootnode_retry_state
             .remove(&peer_id)
-            .unwrap_or((0, Vec::new()));
+            .unwrap_or_default();
+        retry_state.record_address(address);
+        self.bootnode_retry_state.insert(peer_id, retry_state);
+    }
 
-        dedupe_retry_addresses(&mut addresses);
-        if !addresses.contains(&address) {
-            addresses.push(address);
-        }
-
-        self.bootnode_retry_state
-            .insert(peer_id, (attempts, addresses));
+    fn next_bootnode_retry_address(&mut self, peer_id: PeerId) -> Option<Multiaddr> {
+        let mut retry_state = self.bootnode_retry_state.remove(&peer_id)?;
+        let address = retry_state.next_address();
+        self.bootnode_retry_state.insert(peer_id, retry_state);
+        address
     }
 
     fn handle_outgoing_connection_error(&mut self, peer_id: Option<PeerId>) {
@@ -1684,9 +1738,28 @@ mod tests {
     }
 
     #[test]
-    fn test_should_skip_bootnode_dial_for_connected_and_connecting_states() {
+    fn test_bootnode_retry_rotates_across_unique_addresses() {
+        let peer_id = PeerId::random();
+        let addr_1 = test_multiaddr(peer_id, 9004);
+        let addr_2 = test_multiaddr(peer_id, 9005);
+        let mut retry_state = BootnodeRetry::default();
+
+        retry_state.record_address(addr_1.clone());
+        retry_state.record_address(addr_1.clone());
+        retry_state.record_address(addr_2.clone());
+
+        assert_eq!(retry_state.next_address(), Some(addr_1.clone()));
+        assert_eq!(retry_state.next_address(), Some(addr_2.clone()));
+        assert_eq!(retry_state.next_address(), Some(addr_1));
+        assert_eq!(retry_state.next_address(), Some(addr_2));
+    }
+
+    #[test]
+    fn test_should_skip_bootnode_dial_only_for_connected_state() {
         assert!(should_skip_bootnode_dial(Some(ConnectionState::Connected)));
-        assert!(should_skip_bootnode_dial(Some(ConnectionState::Connecting)));
+        assert!(!should_skip_bootnode_dial(Some(
+            ConnectionState::Connecting
+        )));
         assert!(!should_skip_bootnode_dial(Some(
             ConnectionState::Disconnected
         )));
