@@ -1845,16 +1845,21 @@ impl Store {
     }
 
     pub async fn produce_attestation_data(&self, slot: u64) -> anyhow::Result<AttestationData> {
-        let (head_provider, block_provider, latest_justified_provider) = {
+        let (head_provider, block_provider, state_provider) = {
             let db = self.store.lock().await;
-            (
-                db.head_provider(),
-                db.block_provider(),
-                db.latest_justified_provider(),
-            )
+            (db.head_provider(), db.block_provider(), db.state_provider())
         };
 
         let head_root = head_provider.get()?;
+
+        let head_state = state_provider
+            .get(head_root)?
+            .ok_or_else(|| anyhow!("Failed to get state for head block"))?;
+
+        let mut source = head_state.latest_justified;
+        if head_state.latest_block_header.slot == 0 {
+            source.root = head_root;
+        }
         Ok(AttestationData {
             slot,
             head: Checkpoint {
@@ -1874,7 +1879,7 @@ impl Store {
                     .slot,
             },
             target: self.get_attestation_target().await?,
-            source: latest_justified_provider.get()?,
+            source,
         })
     }
 
