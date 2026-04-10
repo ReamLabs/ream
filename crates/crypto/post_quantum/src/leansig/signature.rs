@@ -36,12 +36,9 @@ impl Signature {
 
     /// Create a mock signature for testing purposes.
     pub fn mock() -> Self {
-        use rand::rng;
-
         use crate::leansig::private_key::PrivateKey;
 
-        let mut rng = rng();
-        let (_, private_key) = PrivateKey::generate_key_pair(&mut rng, 0, 10);
+        let (_, private_key) = PrivateKey::generate_key_pair(0, 10);
         let message = [0u8; 32];
         private_key
             .sign(&message, 0)
@@ -76,18 +73,15 @@ impl Signature {
 
 #[cfg(test)]
 mod tests {
-    use rand::rng;
-
     use crate::leansig::{private_key::PrivateKey, signature::Signature};
 
     #[test]
     fn test_serialization_roundtrip() {
-        let mut rng = rng();
         let activation_epoch = 0;
         let num_active_epochs = 10; // Test for 10 epochs for quick key generation
 
         let (_, private_key) =
-            PrivateKey::generate_key_pair(&mut rng, activation_epoch, num_active_epochs);
+            PrivateKey::generate_key_pair(activation_epoch, num_active_epochs);
 
         let epoch = 5;
 

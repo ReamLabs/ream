@@ -6,7 +6,6 @@ use std::{
 
 use anyhow::ensure;
 use clap::Parser;
-use rand::rng;
 #[cfg(feature = "devnet4")]
 use ream_keystore::lean_keystore::GenesisValidatorEntry;
 use ream_keystore::lean_keystore::{
@@ -39,7 +38,6 @@ pub fn run_generate_validator_registry(
     );
     create_dir_all(&keystore_config.output)?;
 
-    let mut rng = rng();
     let mut validator_registry = HashMap::new();
     let mut validator_index = 0;
     for node_index in 0..keystore_config.number_of_nodes {
@@ -74,7 +72,7 @@ pub fn run_generate_validator_registry(
         #[cfg(feature = "devnet3")]
         {
             let (public_key, private_key) =
-                PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
+                PrivateKey::generate_key_pair(0, NUM_ACTIVE_EPOCHS as usize);
             genesis_validators.push(public_key);
 
             let filename: String = format!("validator_{index}_sk.ssz");
@@ -91,9 +89,9 @@ pub fn run_generate_validator_registry(
         #[cfg(feature = "devnet4")]
         {
             let (attestation_public_key, attestation_private_key) =
-                PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
+                PrivateKey::generate_key_pair(0, NUM_ACTIVE_EPOCHS as usize);
             let (proposal_public_key, proposal_private_key) =
-                PrivateKey::generate_key_pair(&mut rng, 0, NUM_ACTIVE_EPOCHS as usize);
+                PrivateKey::generate_key_pair(0, NUM_ACTIVE_EPOCHS as usize);
 
             genesis_validators.push(GenesisValidatorEntry {
                 attestation_public_key,

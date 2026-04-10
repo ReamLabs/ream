@@ -11,8 +11,6 @@ use alloy_primitives::hex;
 use bip39::Mnemonic;
 use clap::Parser;
 use libp2p_identity::secp256k1;
-use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
 use ream::{
     cli::{
         Cli, Commands,
@@ -680,8 +678,8 @@ pub async fn run_account_manager(config: AccountManagerConfig, ream_dir: PathBuf
             config.passphrase.as_deref().unwrap_or(""),
         );
 
-        let (public_key, _private_key) = LeanSigPrivateKey::generate_key_pair(
-            &mut <ChaCha20Rng as SeedableRng>::from_seed(seed),
+        let (public_key, _private_key) = LeanSigPrivateKey::generate_key_pair_from_seed(
+            seed,
             config.activation_epoch as usize,
             config.num_active_epochs as usize,
         );

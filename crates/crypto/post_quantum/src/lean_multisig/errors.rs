@@ -1,4 +1,4 @@
-use lean_multisig::{ProofError, XmssAggregateError};
+use lean_multisig::ProofError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -21,6 +21,6 @@ pub enum LeanMultisigError {
     #[error("Invalid public key size")]
     InvalidPublicKeySize,
 
-    #[error("Aggregation error: {0:?}")]
-    AggregationError(XmssAggregateError),
+    #[error("Aggregation error: {0}")]
+    AggregationError(anyhow::Error),
 }

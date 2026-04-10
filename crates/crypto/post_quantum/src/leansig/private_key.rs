@@ -7,8 +7,6 @@ use leansig::{
     serialization::Serializable,
     signature::{SignatureScheme, SignatureSchemeSecretKey},
 };
-use rand::Rng;
-
 use super::errors::LeanSigError;
 use crate::leansig::{LeanSigScheme, public_key::PublicKey, signature::Signature};
 
@@ -23,13 +21,32 @@ impl PrivateKey {
         Self { inner }
     }
 
-    pub fn generate_key_pair<R: Rng>(
-        rng: &mut R,
+    /// Generate a key pair from a 32-byte seed for deterministic key generation.
+    pub fn generate_key_pair_from_seed(
+        seed: [u8; 32],
         activation_epoch: usize,
         num_active_epochs: usize,
     ) -> (PublicKey, Self) {
+        use rand_0_10::SeedableRng;
+        let mut rng = rand_0_10::rngs::StdRng::from_seed(seed);
         let (public_key, private_key) =
-            <LeanSigScheme as SignatureScheme>::key_gen(rng, activation_epoch, num_active_epochs);
+            <LeanSigScheme as SignatureScheme>::key_gen(&mut rng, activation_epoch, num_active_epochs);
+
+        (
+            PublicKey::from_lean_sig(public_key)
+                .expect("We are generating this internally so it shouldn't fail"),
+            Self::new(private_key),
+        )
+    }
+
+    /// Generate a key pair using a random seed.
+    pub fn generate_key_pair(
+        activation_epoch: usize,
+        num_active_epochs: usize,
+    ) -> (PublicKey, Self) {
+        let mut rng = rand_0_10::rng();
+        let (public_key, private_key) =
+            <LeanSigScheme as SignatureScheme>::key_gen(&mut rng, activation_epoch, num_active_epochs);
 
         (
             PublicKey::from_lean_sig(public_key)
@@ -105,18 +122,15 @@ impl PartialEq for PrivateKey {
 
 #[cfg(test)]
 mod tests {
-    use rand::rng;
-
     use crate::leansig::private_key::PrivateKey;
 
     #[test]
     fn test_sign_and_verify() {
-        let mut rng = rng();
         let activation_epoch = 0;
         let num_active_epochs = 10; // Test for 10 epochs for quick key generation
 
         let (public_key, private_key) =
-            PrivateKey::generate_key_pair(&mut rng, activation_epoch, num_active_epochs);
+            PrivateKey::generate_key_pair(activation_epoch, num_active_epochs);
 
         let epoch = 5;
 

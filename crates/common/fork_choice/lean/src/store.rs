@@ -1991,7 +1991,7 @@ mod tests {
 
     use alloy_primitives::{B256, FixedBytes};
     use anyhow::ensure;
-    use rand::rng;
+
     #[cfg(feature = "devnet3")]
     use ream_consensus_lean::{
         attestation::{
@@ -2052,10 +2052,9 @@ mod tests {
 
     fn cached_key_pairs() -> &'static Vec<CachedKeyPair> {
         CACHED_KEYS.get_or_init(|| {
-            let mut rng = rng();
             (0..CACHED_KEY_COUNT)
                 .map(|_| {
-                    let (public_key, private_key) = PrivateKey::generate_key_pair(&mut rng, 0, 10);
+                    let (public_key, private_key) = PrivateKey::generate_key_pair(0, 10);
                     (public_key, private_key.to_bytes())
                 })
                 .collect()

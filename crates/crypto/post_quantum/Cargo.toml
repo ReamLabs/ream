@@ -23,6 +23,7 @@ lean-multisig.workspace = true
 leansig.workspace = true
 p3-koala-bear = { git = "https://github.com/TomWambsgans/Plonky3.git", branch = "lean-vm-simple" }
 rand.workspace = true
+rand_0_10 = { package = "rand", version = "0.10" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
