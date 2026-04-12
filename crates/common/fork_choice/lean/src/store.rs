@@ -1991,7 +1991,6 @@ mod tests {
 
     use alloy_primitives::{B256, FixedBytes};
     use anyhow::ensure;
-
     #[cfg(feature = "devnet3")]
     use ream_consensus_lean::{
         attestation::{

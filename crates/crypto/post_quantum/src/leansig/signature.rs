@@ -80,8 +80,7 @@ mod tests {
         let activation_epoch = 0;
         let num_active_epochs = 10; // Test for 10 epochs for quick key generation
 
-        let (_, private_key) =
-            PrivateKey::generate_key_pair(activation_epoch, num_active_epochs);
+        let (_, private_key) = PrivateKey::generate_key_pair(activation_epoch, num_active_epochs);
 
         let epoch = 5;
 
