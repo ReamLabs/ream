@@ -164,8 +164,7 @@ mod tests {
             signatures.push(signature);
         }
 
-        let proof_data =
-            aggregate_signatures(&public_keys, &signatures, &message, epoch).unwrap();
+        let proof_data = aggregate_signatures(&public_keys, &signatures, &message, epoch).unwrap();
 
         verify_aggregate_signature(&public_keys, &message, &proof_data, epoch).unwrap();
     }

@@ -7,6 +7,7 @@ use leansig::{
     serialization::Serializable,
     signature::{SignatureScheme, SignatureSchemeSecretKey},
 };
+
 use super::errors::LeanSigError;
 use crate::leansig::{LeanSigScheme, public_key::PublicKey, signature::Signature};
 
@@ -29,8 +30,11 @@ impl PrivateKey {
     ) -> (PublicKey, Self) {
         use rand_0_10::SeedableRng;
         let mut rng = rand_0_10::rngs::StdRng::from_seed(seed);
-        let (public_key, private_key) =
-            <LeanSigScheme as SignatureScheme>::key_gen(&mut rng, activation_epoch, num_active_epochs);
+        let (public_key, private_key) = <LeanSigScheme as SignatureScheme>::key_gen(
+            &mut rng,
+            activation_epoch,
+            num_active_epochs,
+        );
 
         (
             PublicKey::from_lean_sig(public_key)
@@ -45,8 +49,11 @@ impl PrivateKey {
         num_active_epochs: usize,
     ) -> (PublicKey, Self) {
         let mut rng = rand_0_10::rng();
-        let (public_key, private_key) =
-            <LeanSigScheme as SignatureScheme>::key_gen(&mut rng, activation_epoch, num_active_epochs);
+        let (public_key, private_key) = <LeanSigScheme as SignatureScheme>::key_gen(
+            &mut rng,
+            activation_epoch,
+            num_active_epochs,
+        );
 
         (
             PublicKey::from_lean_sig(public_key)
