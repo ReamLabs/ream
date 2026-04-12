@@ -3846,26 +3846,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "leansig"
-version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanSig.git?rev=5cc7e37480362f94e86695428a9ceb9a96b66b97#5cc7e37480362f94e86695428a9ceb9a96b66b97"
-dependencies = [
- "dashmap",
- "ethereum_ssz",
- "num-bigint",
- "num-traits",
- "p3-baby-bear",
- "p3-field",
- "p3-koala-bear",
- "p3-symmetric",
- "rand 0.10.0",
- "rayon",
- "serde",
- "sha3 0.10.8",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "leansig_fast_keygen"
 version = "0.1.0"
 source = "git+https://github.com/TomWambsgans/leanSig?branch=devnet4-fast-keygen#5b86867a4d3c1d4a8add840f70fa047ea1506188"
@@ -3892,7 +3872,7 @@ source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=703359a8d3bf7
 dependencies = [
  "backend",
  "ethereum_ssz",
- "leansig 0.1.0 (git+https://github.com/leanEthereum/leanSig.git?branch=devnet4)",
+ "leansig",
  "leansig_fast_keygen",
  "p3-field",
  "rand 0.10.0",
@@ -5789,7 +5769,7 @@ dependencies = [
  "discv5",
  "ethereum_ssz",
  "hashbrown 0.16.1",
- "leansig 0.1.0 (git+https://github.com/leanEthereum/leanSig.git?rev=5cc7e37480362f94e86695428a9ceb9a96b66b97)",
+ "leansig",
  "libp2p-identity",
  "prometheus_exporter",
  "rand 0.9.2",
@@ -6261,7 +6241,7 @@ dependencies = [
  "aes",
  "alloy-primitives",
  "anyhow",
- "leansig 0.1.0 (git+https://github.com/leanEthereum/leanSig.git?rev=5cc7e37480362f94e86695428a9ceb9a96b66b97)",
+ "leansig",
  "rand 0.9.2",
  "ream-bls",
  "ream-post-quantum-crypto",
@@ -6485,7 +6465,7 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "lean-multisig",
- "leansig 0.1.0 (git+https://github.com/leanEthereum/leanSig.git?rev=5cc7e37480362f94e86695428a9ceb9a96b66b97)",
+ "leansig",
  "rand 0.10.0",
  "serde",
  "serde_json",
