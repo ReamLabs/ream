@@ -59,11 +59,13 @@ pub fn aggregate_signatures_recursive(
     let raw_xmss: Vec<_> = public_keys
         .iter()
         .zip(signatures.iter())
-        .map(|(pk, sig)| {
+        .map(|(public_key, signature)| {
             Ok((
-                pk.as_lean_sig()
+                public_key
+                    .as_lean_sig()
                     .map_err(|err| anyhow!("Failed to convert public key: {err}"))?,
-                sig.as_lean_sig()
+                signature
+                    .as_lean_sig()
                     .map_err(|err| anyhow!("Failed to convert signature: {err}"))?,
             ))
         })
@@ -76,8 +78,9 @@ pub fn aggregate_signatures_recursive(
             let pubkeys = child
                 .public_keys
                 .iter()
-                .map(|pk| {
-                    pk.as_lean_sig()
+                .map(|public_key| {
+                    public_key
+                        .as_lean_sig()
                         .map_err(|err| anyhow!("Failed to convert child public key: {err}"))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -89,7 +92,9 @@ pub fn aggregate_signatures_recursive(
 
     let child_refs: Vec<(&[_], AggregatedXMSS)> = child_data
         .iter()
-        .map(|(pks, agg)| (pks.as_slice(), agg.clone()))
+        .map(|(public_keys, aggregated_signature)| {
+            (public_keys.as_slice(), aggregated_signature.clone())
+        })
         .collect();
 
     let (_global_pubkeys, aggregated) =
@@ -110,8 +115,9 @@ pub fn verify_aggregate_signature(
 
     let lean_pubkeys: Vec<_> = public_keys
         .iter()
-        .map(|pk| {
-            pk.as_lean_sig()
+        .map(|public_key| {
+            public_key
+                .as_lean_sig()
                 .map_err(|err| anyhow!("Failed to convert public key: {err}"))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -146,21 +152,23 @@ mod tests {
         let mut signatures = Vec::new();
 
         for (activation_epoch, num_active_epochs) in key_configs {
-            let (pub_key, mut priv_key) =
+            let (public_key, mut private_key) =
                 PrivateKey::generate_key_pair(activation_epoch, num_active_epochs);
 
             let mut iterations = 0;
-            while !priv_key.get_prepared_interval().contains(&(epoch as u64))
+            while !private_key
+                .get_prepared_interval()
+                .contains(&(epoch as u64))
                 && iterations < (epoch - activation_epoch as u32)
             {
-                priv_key.prepare_signature();
+                private_key.prepare_signature();
                 iterations += 1;
             }
 
-            let signature = priv_key.sign(&message, epoch).unwrap();
-            assert!(signature.verify(&pub_key, epoch, &message).unwrap());
+            let signature = private_key.sign(&message, epoch).unwrap();
+            assert!(signature.verify(&public_key, epoch, &message).unwrap());
 
-            public_keys.push(pub_key);
+            public_keys.push(public_key);
             signatures.push(signature);
         }
 
