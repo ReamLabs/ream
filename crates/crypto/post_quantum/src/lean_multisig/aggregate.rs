@@ -5,6 +5,9 @@ use lean_multisig::{
 
 use crate::leansig::{public_key::PublicKey, signature::Signature};
 
+/// Default log inverse rate for WHIR (1/4 rate).
+const DEFAULT_LOG_INV_RATE: usize = 2;
+
 /// Setup function for the prover side of XMSS aggregation.
 pub fn aggregation_setup_prover() {
     setup_prover();
@@ -14,9 +17,6 @@ pub fn aggregation_setup_prover() {
 pub fn aggregation_setup_verifier() {
     setup_verifier();
 }
-
-/// Default log inverse rate for WHIR (1/4 rate).
-const DEFAULT_LOG_INV_RATE: usize = 2;
 
 /// Aggregate raw XMSS signatures into a single proof.
 ///
