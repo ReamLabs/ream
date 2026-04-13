@@ -1,28 +1,51 @@
 use anyhow::anyhow;
 use lean_multisig::{
-    Devnet2XmssAggregateSignature, xmss_aggregate_signatures, xmss_aggregation_setup_prover,
-    xmss_aggregation_setup_verifier, xmss_verify_aggregated_signatures,
+    AggregatedXMSS, setup_prover, setup_verifier, xmss_aggregate, xmss_verify_aggregation,
 };
-use ssz::{Decode, Encode};
 
 use crate::leansig::{public_key::PublicKey, signature::Signature};
 
-/// Setup function for the prover side of XMSS aggregation
-pub fn setup_prover() {
-    xmss_aggregation_setup_prover();
+/// Default log inverse rate for WHIR (1/4 rate).
+const DEFAULT_LOG_INV_RATE: usize = 2;
+
+/// Setup function for the prover side of XMSS aggregation.
+pub fn aggregation_setup_prover() {
+    setup_prover();
 }
 
-/// Setup function for the verifier side of XMSS aggregation
-pub fn setup_verifier() {
-    xmss_aggregation_setup_verifier();
+/// Setup function for the verifier side of XMSS aggregation.
+pub fn aggregation_setup_verifier() {
+    setup_verifier();
 }
 
-/// Aggregate multiple leansig signatures into a single proof.
+/// Aggregate raw XMSS signatures into a single proof.
+///
+/// Returns serialized `AggregatedXMSS` proof bytes.
 pub fn aggregate_signatures(
     public_keys: &[PublicKey],
     signatures: &[Signature],
     message: &[u8; 32],
-    epoch: u32,
+    slot: u32,
+) -> anyhow::Result<Vec<u8>> {
+    aggregate_signatures_recursive(&[], public_keys, signatures, message, slot)
+}
+
+/// Represents a child proof for recursive aggregation — an already-aggregated proof
+/// with its associated public keys.
+pub struct ChildProof {
+    pub public_keys: Vec<PublicKey>,
+    pub proof_data: Vec<u8>,
+}
+
+/// Aggregate raw XMSS signatures with recursive child proofs.
+///
+/// Returns serialized `AggregatedXMSS` proof bytes (includes bytecode_point for recursion).
+pub fn aggregate_signatures_recursive(
+    children: &[ChildProof],
+    public_keys: &[PublicKey],
+    signatures: &[Signature],
+    message: &[u8; 32],
+    slot: u32,
 ) -> anyhow::Result<Vec<u8>> {
     if public_keys.len() != signatures.len() {
         return Err(anyhow!(
@@ -32,66 +55,94 @@ pub fn aggregate_signatures(
         ));
     }
 
-    let aggregate_signature = xmss_aggregate_signatures(
-        &public_keys
-            .iter()
-            .map(|public_key| public_key.as_lean_sig())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| anyhow!("Failed to convert public keys: {err}"))?,
-        &signatures
-            .iter()
-            .map(|signature| signature.as_lean_sig())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| anyhow!("Failed to convert signatures: {err}"))?,
-        message,
-        epoch,
-    )
-    .map_err(|err| anyhow!("Failed to aggregate signatures: {err:?}"))?;
+    // Convert raw XMSS key-signature pairs
+    let raw_xmss: Vec<_> = public_keys
+        .iter()
+        .zip(signatures.iter())
+        .map(|(public_key, signature)| {
+            Ok((
+                public_key
+                    .as_lean_sig()
+                    .map_err(|err| anyhow!("Failed to convert public key: {err}"))?,
+                signature
+                    .as_lean_sig()
+                    .map_err(|err| anyhow!("Failed to convert signature: {err}"))?,
+            ))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
 
-    Ok(aggregate_signature.as_ssz_bytes())
+    // Convert child proofs: deserialize proof_data back to AggregatedXMSS + convert pubkeys
+    let child_data: Vec<(Vec<_>, AggregatedXMSS)> = children
+        .iter()
+        .map(|child| {
+            let pubkeys = child
+                .public_keys
+                .iter()
+                .map(|public_key| {
+                    public_key
+                        .as_lean_sig()
+                        .map_err(|err| anyhow!("Failed to convert child public key: {err}"))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            let aggregated = AggregatedXMSS::deserialize(&child.proof_data)
+                .ok_or_else(|| anyhow!("Failed to deserialize child AggregatedXMSS proof"))?;
+            Ok((pubkeys, aggregated))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let child_refs: Vec<(&[_], AggregatedXMSS)> = child_data
+        .iter()
+        .map(|(public_keys, aggregated_signature)| {
+            (public_keys.as_slice(), aggregated_signature.clone())
+        })
+        .collect();
+
+    let (_global_pubkeys, aggregated) =
+        xmss_aggregate(&child_refs, raw_xmss, message, slot, DEFAULT_LOG_INV_RATE);
+
+    Ok(aggregated.serialize())
 }
 
-/// Verify an aggregated signature from SSZ-encoded bytes.
+/// Verify an aggregated signature proof.
 pub fn verify_aggregate_signature(
     public_keys: &[PublicKey],
     message: &[u8; 32],
-    aggregate_signature_bytes: &[u8],
-    epoch: u32,
+    proof_data: &[u8],
+    slot: u32,
 ) -> anyhow::Result<()> {
-    let aggregate_signature =
-        Devnet2XmssAggregateSignature::from_ssz_bytes(aggregate_signature_bytes)
-            .map_err(|err| anyhow!("Failed to decode aggregate signature: {err:?}"))?;
+    let aggregated = AggregatedXMSS::deserialize(proof_data)
+        .ok_or_else(|| anyhow!("Failed to deserialize AggregatedXMSS proof"))?;
 
-    xmss_verify_aggregated_signatures(
-        &public_keys
-            .iter()
-            .map(|public_key| public_key.as_lean_sig())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| anyhow!("Failed to convert public keys: {err}"))?,
-        message,
-        &aggregate_signature,
-        epoch,
-    )
-    .map_err(|err| anyhow!("Failed to verify aggregated signatures: {err}"))
+    let lean_pubkeys: Vec<_> = public_keys
+        .iter()
+        .map(|public_key| {
+            public_key
+                .as_lean_sig()
+                .map_err(|err| anyhow!("Failed to convert public key: {err}"))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    xmss_verify_aggregation(lean_pubkeys, &aggregated, message, slot)
+        .map_err(|err| anyhow!("Aggregated signature verification failed: {err:?}"))?;
+
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use rand::rng;
-
     use crate::{
         lean_multisig::aggregate::{
-            aggregate_signatures, setup_prover, setup_verifier, verify_aggregate_signature,
+            aggregate_signatures, aggregation_setup_prover, aggregation_setup_verifier,
+            verify_aggregate_signature,
         },
         leansig::private_key::PrivateKey,
     };
 
     #[test]
     fn test_aggregate_and_verify() {
-        setup_prover();
-        setup_verifier();
+        aggregation_setup_prover();
+        aggregation_setup_verifier();
 
-        let mut rng = rng();
         let message = [42u8; 32];
         let epoch = 50u32;
 
@@ -101,28 +152,28 @@ mod tests {
         let mut signatures = Vec::new();
 
         for (activation_epoch, num_active_epochs) in key_configs {
-            let (pub_key, mut priv_key) =
-                PrivateKey::generate_key_pair(&mut rng, activation_epoch, num_active_epochs);
+            let (public_key, mut private_key) =
+                PrivateKey::generate_key_pair(activation_epoch, num_active_epochs);
 
             let mut iterations = 0;
-            while !priv_key.get_prepared_interval().contains(&(epoch as u64))
+            while !private_key
+                .get_prepared_interval()
+                .contains(&(epoch as u64))
                 && iterations < (epoch - activation_epoch as u32)
             {
-                priv_key.prepare_signature();
+                private_key.prepare_signature();
                 iterations += 1;
             }
 
-            let signature = priv_key.sign(&message, epoch).unwrap();
-            assert!(signature.verify(&pub_key, epoch, &message).unwrap());
+            let signature = private_key.sign(&message, epoch).unwrap();
+            assert!(signature.verify(&public_key, epoch, &message).unwrap());
 
-            public_keys.push(pub_key);
+            public_keys.push(public_key);
             signatures.push(signature);
         }
 
-        let aggregate_signature_bytes =
-            aggregate_signatures(&public_keys, &signatures, &message, epoch).unwrap();
+        let proof_data = aggregate_signatures(&public_keys, &signatures, &message, epoch).unwrap();
 
-        verify_aggregate_signature(&public_keys, &message, &aggregate_signature_bytes, epoch)
-            .unwrap();
+        verify_aggregate_signature(&public_keys, &message, &proof_data, epoch).unwrap();
     }
 }
