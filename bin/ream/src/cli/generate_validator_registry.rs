@@ -9,7 +9,8 @@ use clap::Parser;
 #[cfg(feature = "devnet4")]
 use ream_keystore::lean_keystore::GenesisValidatorEntry;
 use ream_keystore::lean_keystore::{
-    ConfigFile, ValidatorKeysManifest, ValidatorKeystoreRaw, ValidatorRegistry,
+    AnnotatedValidatorEntry, AnnotatedValidatorRegistry, ConfigFile, ValidatorKeysManifest,
+    ValidatorKeystoreRaw,
 };
 use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
 #[cfg(feature = "devnet3")]
@@ -38,7 +39,8 @@ pub fn run_generate_validator_registry(
     );
     create_dir_all(&keystore_config.output)?;
 
-    let mut validator_registry = HashMap::new();
+    // Track validator indices per node for building the annotated registry
+    let mut node_validator_indices: Vec<(String, Vec<u64>)> = Vec::new();
     let mut validator_index = 0;
     for node_index in 0..keystore_config.number_of_nodes {
         let mut validator_ids = vec![];
@@ -46,18 +48,10 @@ pub fn run_generate_validator_registry(
             validator_ids.push(validator_index);
             validator_index += 1
         }
-        validator_registry.insert(format!("ream_{node_index}"), validator_ids);
+        node_validator_indices.push((format!("ream_{node_index}"), validator_ids));
     }
 
     let mut path = keystore_config.output;
-    path.push("validators.yaml");
-    fs::write(
-        &path,
-        serde_yaml::to_string(&ValidatorRegistry {
-            nodes: validator_registry,
-        })?,
-    )?;
-    path.pop();
 
     path.push("hash-sig-keys");
     create_dir_all(&path)?;
@@ -110,34 +104,72 @@ pub fn run_generate_validator_registry(
 
             validators.push(ValidatorKeystoreRaw {
                 index,
-                attestation_public_key_hex: attestation_public_key,
-                proposal_public_key_hex: proposal_public_key,
-                attestation_private_key_file: attester_secret_key_filename,
-                proposal_private_key_file: proposer_secret_key_filename,
+                attester_key_public_key_hex: attestation_public_key,
+                proposer_key_public_key_hex: proposal_public_key,
+                attester_key_private_key_file: attester_secret_key_filename,
+                proposer_key_private_key_file: proposer_secret_key_filename,
             });
         }
     }
 
-    #[cfg(feature = "devnet3")]
     path.push("validator-keys-manifest.yaml");
-    #[cfg(feature = "devnet4")]
-    path.push("validator-keys-manifest-devnet4.yaml");
     fs::write(
         &path,
         serde_yaml::to_string(&ValidatorKeysManifest {
-            key_scheme: "SIGTopLevelTargetSumLifetime32Dim64Base8".to_string(),
+            key_scheme: "SchemeAbortingTargetSumLifetime32Dim46Base8".to_string(),
             hash_function: "Poseidon2".to_string(),
             encoding: "TargetSum".to_string(),
             lifetime: 4294967296u64,
             log_num_active_epochs: 18,
             num_active_epochs: NUM_ACTIVE_EPOCHS,
             num_validators: validators.len() as u64,
-            validators,
+            validators: validators.clone(),
         })?,
     )?;
 
     path.pop();
     path.pop();
+
+    // Generate annotated_validators.yaml with inline public key/private key metadata
+    let mut annotated_nodes = HashMap::new();
+    for (node_name, indices) in &node_validator_indices {
+        let mut entries = Vec::new();
+        for &index in indices {
+            let validator = &validators[index as usize];
+            #[cfg(feature = "devnet3")]
+            {
+                entries.push(AnnotatedValidatorEntry {
+                    index,
+                    public_key_hex: validator.public_key,
+                    private_key_file: validator.private_key_file.clone(),
+                });
+            }
+            #[cfg(feature = "devnet4")]
+            {
+                entries.push(AnnotatedValidatorEntry {
+                    index,
+                    public_key_hex: validator.attester_key_public_key_hex,
+                    private_key_file: validator.attester_key_private_key_file.clone(),
+                });
+                entries.push(AnnotatedValidatorEntry {
+                    index,
+                    public_key_hex: validator.proposer_key_public_key_hex,
+                    private_key_file: validator.proposer_key_private_key_file.clone(),
+                });
+            }
+        }
+        annotated_nodes.insert(node_name.clone(), entries);
+    }
+
+    path.push("annotated_validators.yaml");
+    fs::write(
+        &path,
+        serde_yaml::to_string(&AnnotatedValidatorRegistry {
+            nodes: annotated_nodes,
+        })?,
+    )?;
+    path.pop();
+
     #[cfg(feature = "devnet3")]
     path.push("config.yaml");
     #[cfg(feature = "devnet4")]

@@ -44,7 +44,7 @@ test: test-devnet3 test-devnet4
 
 .PHONY: test-devnet3
 test-devnet3: # Run all tests for Devnet 3.
-	cargo test --workspace -- --nocapture
+	cargo test --workspace --no-default-features --features "devnet3" -- --nocapture
 
 .PHONY: test-devnet4
 test-devnet4: # Run all tests for Devnet 4.
@@ -77,7 +77,7 @@ fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `ma
 
 .PHONY: clippy
 clippy: # Run `clippy` on the entire workspace.
-	cargo clippy --all --all-targets --features "$(FEATURES)" --no-deps -- --deny warnings
+	cargo clippy --all --all-targets --no-default-features --features "devnet3,$(FEATURES)" --no-deps -- --deny warnings
 	cargo clippy --all --all-targets --no-default-features --features "devnet4,$(FEATURES)" --no-deps -- --deny warnings
 	cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings
 
@@ -109,7 +109,7 @@ update-book-cli: build-debug # Update book cli documentation.
 
 .PHONY: clean-deps
 clean-deps: # Run `cargo udeps` except `ef-tests` directory.
-	cargo +nightly udeps --workspace --tests --all-targets --release --exclude ef-tests
+	cargo +nightly udeps --workspace --tests --all-targets --release --no-default-features --features devnet4 --exclude ef-tests
 
 .PHONY: pr
 pr: lint update-book-cli clean-deps test # Run all checks for a PR.

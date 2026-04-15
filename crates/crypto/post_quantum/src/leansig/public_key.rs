@@ -79,7 +79,8 @@ impl<'de> Deserialize<'de> for PublicKey {
         D: Deserializer<'de>,
     {
         let result: String = Deserialize::deserialize(deserializer)?;
-        let result = hex::decode(&result).map_err(serde::de::Error::custom)?;
+        let hex_str = result.strip_prefix("0x").unwrap_or(&result);
+        let result = hex::decode(hex_str).map_err(serde::de::Error::custom)?;
         Self::from_lean_sig(
             LeanSigPublicKey::from_bytes(&result)
                 .map_err(|err| anyhow!("Convert to error, with error trait implemented {err:?}"))

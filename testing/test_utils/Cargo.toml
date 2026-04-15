@@ -10,7 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet3"]
+default = []
 devnet3 = [
     "ream-consensus-lean/devnet3",
     "ream-fork-choice-lean/devnet3",

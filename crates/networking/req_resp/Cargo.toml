@@ -10,7 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet3"]
+default = []
 devnet3 = ["ream-consensus-lean/devnet3"]
 devnet4 = ["ream-consensus-lean/devnet4"]
 
@@ -39,7 +39,6 @@ tokio.workspace = true
 tokio-io-timeout = "1"
 tokio-util.workspace = true
 tracing = { workspace = true, features = ["log"] }
-tracing-subscriber.workspace = true
 tree_hash.workspace = true
 unsigned-varint = { version = "0.8", features = ["codec"] }
 

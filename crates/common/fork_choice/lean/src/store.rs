@@ -36,24 +36,27 @@ use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, FINALIZATIONS_TOTAL, FINALIZED_SLOT,
     FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT,
     LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS, LATEST_NEW_AGGREGATED_PAYLOADS,
-    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL,
-    PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
-    PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, PQ_SIG_ATTESTATION_VERIFICATION_TIME,
-    PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT, inc_int_counter_vec, set_int_gauge_vec, start_timer,
-    stop_timer,
+    PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL,
+    PQ_SIG_ATTESTATION_VERIFICATION_TIME, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
+    inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
 };
 #[cfg(feature = "devnet3")]
 use ream_metrics::{
-    COMMITTEE_SIGNATURES_AGGREGATION_TIME, GOSSIP_SIGNATURES,
-    PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, PQ_SIG_AGGREGATED_SIGNATURES_TOTAL,
+    COMMITTEE_SIGNATURES_AGGREGATION_TIME, GOSSIP_SIGNATURES, PQ_SIG_AGGREGATED_SIGNATURES_TOTAL,
     PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL,
+};
+#[cfg(feature = "devnet4")]
+use ream_metrics::{
+    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
-use ream_post_quantum_crypto::{
-    lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
-    leansig::signature::Signature,
+#[cfg(feature = "devnet4")]
+use ream_post_quantum_crypto::lean_multisig::aggregate::{
+    aggregate_signatures, verify_aggregate_signature,
 };
+use ream_post_quantum_crypto::leansig::signature::Signature;
 #[cfg(feature = "devnet4")]
 use ream_storage::tables::lean::gossip_signatures::GossipSignaturesTable;
 #[cfg(feature = "devnet3")]
@@ -710,7 +713,6 @@ impl Store {
                 participants: bits.clone(),
                 proof_data: VariableList::new(aggregated_signature)
                     .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
-                bytecode_point: None,
             };
 
             results.push(SignedAggregatedAttestation {
@@ -769,16 +771,6 @@ impl Store {
                         .map_err(|err| anyhow!("BitList error: {err:?}"))?;
                 }
 
-                let aggregation_timer =
-                    start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
-                let aggregated_signature = aggregate_signatures(
-                    &gossip_keys,
-                    &gossip_signatures,
-                    &data_root.0,
-                    data.slot as u32,
-                )?;
-                stop_timer(aggregation_timer);
-
                 inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
                 for _ in &gossip_ids {
                     inc_int_counter_vec(&PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL, &[]);
@@ -791,7 +783,7 @@ impl Store {
                     },
                     AggregatedSignatureProof::new(
                         bits,
-                        VariableList::new(aggregated_signature)
+                        VariableList::new(vec![])
                             .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
                     ),
                 ));
@@ -1419,6 +1411,7 @@ impl Store {
             let validator_ids = proof.to_validator_indices();
             let attestation_slot = data.slot;
 
+            #[cfg(feature = "devnet4")]
             let state = self
                 .store
                 .lock()
@@ -1427,48 +1420,42 @@ impl Store {
                 .get(data.target.root)?
                 .ok_or_else(|| anyhow!("No state available for target {}", data.target.root))?;
 
-            let public_keys: Vec<_> = validator_ids
-                .iter()
-                .map(|&validator| {
-                    state
-                        .validators
-                        .get(validator as usize)
-                        .map(|validator| {
-                            #[cfg(feature = "devnet3")]
-                            {
-                                validator.public_key
-                            }
-                            #[cfg(feature = "devnet4")]
-                            {
-                                validator.attestation_public_key
-                            }
-                        })
-                        .ok_or_else(|| anyhow!("Validator {validator} not found in state"))
-                })
-                .collect::<anyhow::Result<Vec<_>>>()?;
+            #[cfg(feature = "devnet4")]
+            {
+                let public_keys: Vec<_> = validator_ids
+                    .iter()
+                    .map(|&validator| {
+                        state
+                            .validators
+                            .get(validator as usize)
+                            .map(|validator| validator.attestation_public_key)
+                            .ok_or_else(|| anyhow!("Validator {validator} not found in state"))
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?;
 
-            let verification_timer =
-                start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
-            match verify_aggregate_signature(
-                &public_keys,
-                &data_root.0,
-                proof.proof_data.as_ref(),
-                attestation_slot as u32,
-            ) {
-                Ok(()) => {
-                    stop_timer(verification_timer);
-                    inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
-                    for _ in &validator_ids {
-                        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, &[]);
+                let verification_timer =
+                    start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
+                match verify_aggregate_signature(
+                    &public_keys,
+                    &data_root.0,
+                    proof.proof_data.as_ref(),
+                    attestation_slot as u32,
+                ) {
+                    Ok(()) => {
+                        stop_timer(verification_timer);
+                        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
+                        for _ in &validator_ids {
+                            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, &[]);
+                        }
                     }
-                }
-                Err(err) => {
-                    stop_timer(verification_timer);
-                    inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, &[]);
-                    for _ in &validator_ids {
-                        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, &[]);
+                    Err(err) => {
+                        stop_timer(verification_timer);
+                        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, &[]);
+                        for _ in &validator_ids {
+                            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, &[]);
+                        }
+                        return Err(anyhow!("Aggregated signature verification failed: {err}"));
                     }
-                    return Err(anyhow!("Aggregated signature verification failed: {err}"));
                 }
             }
 
@@ -1992,20 +1979,6 @@ mod tests {
 
     use alloy_primitives::{B256, FixedBytes};
     use anyhow::ensure;
-    #[cfg(feature = "devnet3")]
-    use ream_consensus_lean::{
-        attestation::{
-            AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
-            AttestationData, SignatureKey, SignedAggregatedAttestation, SignedAttestation,
-        },
-        block::{
-            Block, BlockBody, BlockSignatures, BlockWithAttestation, BlockWithSignatures,
-            SignedBlockWithAttestation,
-        },
-        checkpoint::Checkpoint,
-        slot::is_justifiable_after,
-        validator::{Validator, is_proposer},
-    };
     #[cfg(feature = "devnet4")]
     use ream_consensus_lean::{
         attestation::{
@@ -2017,11 +1990,28 @@ mod tests {
         slot::is_justifiable_after,
         validator::{Validator, is_proposer},
     };
+    #[cfg(feature = "devnet3")]
+    use ream_consensus_lean::{
+        attestation::{
+            AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
+            AttestationData, SignatureKey, SignedAttestation,
+        },
+        block::{
+            Block, BlockBody, BlockSignatures, BlockWithAttestation, BlockWithSignatures,
+            SignedBlockWithAttestation,
+        },
+        checkpoint::Checkpoint,
+        slot::is_justifiable_after,
+        validator::{Validator, is_proposer},
+    };
     use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
     use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
-    use ream_post_quantum_crypto::{
-        lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
-        leansig::{private_key::PrivateKey, public_key::PublicKey, signature::Signature},
+    #[cfg(feature = "devnet4")]
+    use ream_post_quantum_crypto::lean_multisig::aggregate::{
+        aggregate_signatures, verify_aggregate_signature,
+    };
+    use ream_post_quantum_crypto::leansig::{
+        private_key::PrivateKey, public_key::PublicKey, signature::Signature,
     };
     #[cfg(feature = "devnet4")]
     use ream_storage::tables::{field::REDBField, table::REDBTable};
@@ -2219,6 +2209,7 @@ mod tests {
         key_pairs
     }
 
+    #[cfg(feature = "devnet4")]
     fn make_aggregated_proof(
         participants: &[u64],
         key_pairs: &HashMap<
@@ -2277,6 +2268,7 @@ mod tests {
         AggregatedSignatureProof::new(aggregation_bits, VariableList::new(vec![0u8]).unwrap())
     }
 
+    #[cfg(feature = "devnet4")]
     async fn set_time_for_slot(store: &Store, slot: u64) {
         let time_provider = { store.store.lock().await.time_provider() };
         time_provider
@@ -3118,6 +3110,7 @@ mod tests {
         );
         assert_ne!(block_with_signature.block.state_root, B256::ZERO);
 
+        #[cfg(feature = "devnet4")]
         {
             let state_provider = { store.store.lock().await.state_provider() };
 
@@ -3140,7 +3133,7 @@ mod tests {
                             .validators
                             .get(validator as usize)
                             .expect("invalid validator index")
-                            .public_key
+                            .attestation_public_key
                     })
                     .collect();
 
@@ -4369,6 +4362,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "devnet4")]
     #[tokio::test]
     pub async fn test_valid_proof_stored_correctly() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4421,6 +4415,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "devnet4")]
     #[tokio::test]
     pub async fn test_attestation_data_stored_by_root() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4453,6 +4448,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "devnet4")]
     #[tokio::test]
     pub async fn test_invalid_proof_rejected() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4492,6 +4488,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "devnet4")]
     #[tokio::test]
     pub async fn test_multiple_proofs_accumulate() {
         let mut store: Store = sample_store_as_store(4).await;
@@ -4589,6 +4586,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "devnet4")]
     #[tokio::test]
     pub async fn test_aggregated_proof_is_valid() {
         let _test_guard = test_global_lock().lock().await;
@@ -4639,38 +4637,31 @@ mod tests {
             .cloned()
             .unwrap();
 
-        let participants = proof.to_validator_indices();
-        let state = store
-            .store
-            .lock()
-            .await
-            .state_provider()
-            .get(attestation_data.target.root)
-            .unwrap()
-            .unwrap();
-        let public_keys: Vec<_> = participants
-            .iter()
-            .map(|&validator_id| {
-                #[cfg(feature = "devnet3")]
-                {
-                    state.validators[validator_id as usize].public_key
-                }
-                #[cfg(feature = "devnet4")]
-                {
-                    state.validators[validator_id as usize].attestation_public_key
-                }
-            })
-            .collect();
-
-        assert!(
-            verify_aggregate_signature(
-                &public_keys,
-                &data_root.0,
-                proof.proof_data.as_ref(),
-                attestation_data.slot as u32
-            )
-            .is_ok()
-        );
+        #[cfg(feature = "devnet4")]
+        {
+            let participants = proof.to_validator_indices();
+            let state = store
+                .store
+                .lock()
+                .await
+                .state_provider()
+                .get(attestation_data.target.root)
+                .unwrap()
+                .unwrap();
+            let public_keys: Vec<_> = participants
+                .iter()
+                .map(|&validator_id| state.validators[validator_id as usize].attestation_public_key)
+                .collect();
+            assert!(
+                verify_aggregate_signature(
+                    &public_keys,
+                    &data_root.0,
+                    proof.proof_data.as_ref(),
+                    attestation_data.slot as u32
+                )
+                .is_ok()
+            );
+        }
     }
 
     #[tokio::test]
@@ -5013,51 +5004,44 @@ mod tests {
         store.store.lock().await.time_provider().insert(1).unwrap();
         store.tick_interval(false, true).await.unwrap();
 
-        let latest_new = store
-            .store
-            .lock()
-            .await
-            .latest_new_aggregated_payloads_provider();
-        let sig_key = SignatureKey::from_parts(1, data_root);
-        let proof = latest_new
-            .get(sig_key)
-            .unwrap()
-            .unwrap()
-            .first()
-            .cloned()
-            .unwrap();
-        let participants = proof.to_validator_indices();
-        let state = store
-            .store
-            .lock()
-            .await
-            .state_provider()
-            .get(attestation_data.target.root)
-            .unwrap()
-            .unwrap();
-        let public_keys: Vec<_> = participants
-            .iter()
-            .map(|&validator_id| {
-                #[cfg(feature = "devnet3")]
-                {
-                    state.validators[validator_id as usize].public_key
-                }
-                #[cfg(feature = "devnet4")]
-                {
-                    state.validators[validator_id as usize].attestation_public_key
-                }
-            })
-            .collect();
-
-        assert!(
-            verify_aggregate_signature(
-                &public_keys,
-                &data_root.0,
-                proof.proof_data.as_ref(),
-                attestation_data.slot as u32
-            )
-            .is_ok()
-        );
+        #[cfg(feature = "devnet4")]
+        {
+            let latest_new = store
+                .store
+                .lock()
+                .await
+                .latest_new_aggregated_payloads_provider();
+            let sig_key = SignatureKey::from_parts(1, data_root);
+            let proof = latest_new
+                .get(sig_key)
+                .unwrap()
+                .unwrap()
+                .first()
+                .cloned()
+                .unwrap();
+            let participants = proof.to_validator_indices();
+            let state = store
+                .store
+                .lock()
+                .await
+                .state_provider()
+                .get(attestation_data.target.root)
+                .unwrap()
+                .unwrap();
+            let public_keys: Vec<_> = participants
+                .iter()
+                .map(|&validator_id| state.validators[validator_id as usize].attestation_public_key)
+                .collect();
+            assert!(
+                verify_aggregate_signature(
+                    &public_keys,
+                    &data_root.0,
+                    proof.proof_data.as_ref(),
+                    attestation_data.slot as u32
+                )
+                .is_ok()
+            );
+        }
     }
 
     // COMPUTE BLOCK WEIGHT TESTS

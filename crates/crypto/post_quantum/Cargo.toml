@@ -11,14 +11,14 @@ version.workspace = true
 
 [features]
 devnet3 = []
-devnet4 = []
+devnet4 = ["dep:lean-multisig"]
 
 [dependencies]
 alloy-primitives.workspace = true
 anyhow.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
-lean-multisig.workspace = true
+lean-multisig = { workspace = true, optional = true }
 leansig.workspace = true
 rand_0_10 = { package = "rand", version = "0.10" }
 serde.workspace = true

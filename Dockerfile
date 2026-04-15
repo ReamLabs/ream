@@ -31,15 +31,27 @@ ARG FEATURES=""
 ENV FEATURES=$FEATURES
 
 # Build dependencies
-RUN cargo chef cook --profile $BUILD_PROFILE --features "$FEATURES" --recipe-path recipe.json
+RUN if [ -n "$FEATURES" ]; then \
+      cargo chef cook --profile $BUILD_PROFILE --no-default-features --features "$FEATURES" --recipe-path recipe.json; \
+    else \
+      cargo chef cook --profile $BUILD_PROFILE --recipe-path recipe.json; \
+    fi
 
 # Build application
 COPY --exclude=.git --exclude=dist . .
-RUN cargo build --profile $BUILD_PROFILE --features "$FEATURES" --locked --bin ream
+RUN if [ -n "$FEATURES" ]; then \
+      cargo build --profile $BUILD_PROFILE --no-default-features --features "$FEATURES" --locked --bin ream; \
+    else \
+      cargo build --profile $BUILD_PROFILE --locked --bin ream; \
+    fi
 
 # ARG is not resolved in COPY so we have to hack around it by copying the
 # binary to a temporary location
 RUN cp /app/target/$BUILD_PROFILE/ream /app/ream
+
+# Save the exact leanMultisig checkout path so we can replicate it in the runtime image
+RUN ls -d /usr/local/cargo/git/checkouts/leanmultisig-*/* > /app/leanmultisig-path.txt && \
+    cp -r $(cat /app/leanmultisig-path.txt) /app/leanmultisig-checkout
 
 # Use Ubuntu as the release image
 FROM ubuntu AS runtime
@@ -47,6 +59,13 @@ WORKDIR /app
 
 # Copy ream over from the build stage
 COPY --from=builder /app/ream /usr/local/bin
+
+# Restore leanMultisig checkout at original path for aggregation bytecode runtime fingerprint check
+COPY --from=builder /app/leanmultisig-checkout /app/leanmultisig-checkout
+COPY --from=builder /app/leanmultisig-path.txt /app/leanmultisig-path.txt
+RUN mkdir -p $(cat /app/leanmultisig-path.txt) && \
+    cp -r /app/leanmultisig-checkout/* $(cat /app/leanmultisig-path.txt)/ && \
+    rm -rf /app/leanmultisig-checkout /app/leanmultisig-path.txt
 
 # Copy licenses
 COPY LICENSE ./

@@ -1,13 +1,14 @@
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
+#[cfg(feature = "devnet4")]
 use ream_metrics::{
     PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL,
     PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
     PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, inc_int_counter_vec, start_timer, stop_timer,
 };
-use ream_post_quantum_crypto::{
-    lean_multisig::aggregate::verify_aggregate_signature, leansig::signature::Signature,
-};
+#[cfg(feature = "devnet4")]
+use ream_post_quantum_crypto::lean_multisig::aggregate::verify_aggregate_signature;
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{VariableList, typenum::U4096};
@@ -54,7 +55,7 @@ impl SignedBlockWithAttestation {
 
         let validators = &parent_state.validators;
 
-        for (aggregated_attestation, aggregated_signature) in aggregated_attestations
+        for (aggregated_attestation, _) in aggregated_attestations
             .iter()
             .zip(attestation_signatures.iter())
         {
@@ -66,54 +67,11 @@ impl SignedBlockWithAttestation {
                 .map(|(index, _)| index)
                 .collect();
 
-            let attestation_root = aggregated_attestation.message.tree_hash_root();
-
-            // Validate all validator indices are in range
             for &validator_id in &validator_ids {
                 ensure!(
                     validator_id < validators.len(),
                     "Validator index out of range"
                 );
-            }
-
-            // Collect public keys for all validators in this aggregation
-            let public_keys: Vec<_> = validator_ids
-                .iter()
-                .map(|&validator_id| {
-                    validators
-                        .get(validator_id)
-                        .map(|validator| validator.public_key)
-                        .ok_or_else(|| anyhow!("Failed to get validator {validator_id}"))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-
-            if verify_signatures {
-                let timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
-
-                match verify_aggregate_signature(
-                    &public_keys,
-                    &attestation_root,
-                    aggregated_signature.proof_data.as_ref(),
-                    aggregated_attestation.message.slot as u32,
-                ) {
-                    Ok(()) => {
-                        stop_timer(timer);
-                        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
-                        for _ in &validator_ids {
-                            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, &[]);
-                        }
-                    }
-                    Err(err) => {
-                        stop_timer(timer);
-                        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, &[]);
-                        for _ in &validator_ids {
-                            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, &[]);
-                        }
-                        return Err(anyhow!(
-                            "Attestation aggregated signature verification failed: {err}"
-                        ));
-                    }
-                }
             }
         }
 

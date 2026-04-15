@@ -15,7 +15,7 @@ name = "ream"
 path = "src/main.rs"
 
 [features]
-default = ["devnet3"]
+default = ["devnet4"]
 devnet3 = [
     "ream-chain-lean/devnet3",
     "ream-consensus-lean/devnet3",
@@ -23,6 +23,7 @@ devnet3 = [
     "ream-keystore/devnet3",
     "ream-network-spec/devnet3",
     "ream-p2p/devnet3",
+    "ream-post-quantum-crypto/devnet3",
     "ream-rpc-lean/devnet3",
     "ream-storage/devnet3",
     "ream-validator-lean/devnet3",
@@ -34,6 +35,7 @@ devnet4 = [
     "ream-keystore/devnet4",
     "ream-network-spec/devnet4",
     "ream-p2p/devnet4",
+    "ream-post-quantum-crypto/devnet4",
     "ream-rpc-lean/devnet4",
     "ream-storage/devnet4",
     "ream-validator-lean/devnet4",

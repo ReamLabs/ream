@@ -10,7 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet3"]
+default = []
 devnet3 = ["ream-consensus-lean/devnet3", "ream-p2p/devnet3", "ream-storage/devnet3"]
 devnet4 = ["ream-consensus-lean/devnet4", "ream-p2p/devnet4", "ream-storage/devnet4"]
 

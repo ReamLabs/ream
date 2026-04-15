@@ -13,9 +13,6 @@ use tree_hash_derive::TreeHash;
 
 use crate::checkpoint::Checkpoint;
 
-#[cfg(feature = "devnet4")]
-pub type BytecodePointOption = Option<VariableList<u8, U1048576>>;
-
 /// Key for signature storage, combining validator ID and attestation data root.
 /// Used for both gossip_signatures and aggregated_payloads maps.
 #[derive(
@@ -70,11 +67,10 @@ impl AggregatedSignatureProof {
 }
 
 #[cfg(feature = "devnet4")]
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct AggregatedSignatureProof {
     pub participants: BitList<U4096>,
     pub proof_data: VariableList<u8, U1048576>,
-    pub bytecode_point: BytecodePointOption,
 }
 
 #[cfg(feature = "devnet4")]
@@ -83,19 +79,6 @@ impl AggregatedSignatureProof {
         Self {
             participants,
             proof_data,
-            bytecode_point: None,
-        }
-    }
-
-    pub fn new_recursive(
-        participants: BitList<U4096>,
-        proof_data: VariableList<u8, U1048576>,
-        bytecode_point: VariableList<u8, U1048576>,
-    ) -> Self {
-        Self {
-            participants,
-            proof_data,
-            bytecode_point: Some(bytecode_point),
         }
     }
 
@@ -106,34 +89,6 @@ impl AggregatedSignatureProof {
             .filter(|(_, bit)| *bit)
             .map(|(index, _)| index as u64)
             .collect()
-    }
-}
-
-#[cfg(feature = "devnet4")]
-impl TreeHash for AggregatedSignatureProof {
-    fn tree_hash_type() -> tree_hash::TreeHashType {
-        tree_hash::TreeHashType::Container
-    }
-
-    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
-        unreachable!("Struct should never be packed")
-    }
-
-    fn tree_hash_packing_factor() -> usize {
-        1
-    }
-
-    fn tree_hash_root(&self) -> tree_hash::Hash256 {
-        let bytecode_hash = match &self.bytecode_point {
-            Some(bytes) => bytes.tree_hash_root(),
-            None => tree_hash::Hash256::ZERO,
-        };
-
-        let mut leaves = Vec::with_capacity(3 * 32);
-        leaves.extend_from_slice(self.participants.tree_hash_root().as_slice());
-        leaves.extend_from_slice(self.proof_data.tree_hash_root().as_slice());
-        leaves.extend_from_slice(bytecode_hash.as_slice());
-        tree_hash::merkle_root(&leaves, 0)
     }
 }
 

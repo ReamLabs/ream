@@ -102,7 +102,7 @@ itertools = "0.14"
 jsonwebtoken = "9.3.1"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 lazy_static = "1.5.0"
-lean-multisig = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "703359a8d3bf735c53410280c9efbcaeef02f53e" }
+lean-multisig = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "2eb4b9d983171139af36749f127dd9890c9109e6" }
 leansig = { git = "https://github.com/leanEthereum/leanSig.git", branch = "devnet4" }
 libp2p = { version = "0.56", default-features = false, features = ["identify", "yamux", "noise", "dns", "serde", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
 libp2p-identity = "0.2.12"

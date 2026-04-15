@@ -7,14 +7,18 @@ use tree_hash_derive::TreeHash;
 
 use crate::leansig::{LeanSigScheme, errors::LeanSigError, public_key::PublicKey};
 
+// devnet3 (Dim64Base8) = 3112, devnet4 (Dim46Base8) = 2536
+#[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
 const SIGNATURE_SIZE: usize = 3112;
+#[cfg(feature = "devnet4")]
+const SIGNATURE_SIZE: usize = 2536;
 
 type LeanSigSignature = <LeanSigScheme as SignatureScheme>::Signature;
 
 /// Wrapper around a fixed-size serialized hash-based signature.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Copy)]
 pub struct Signature {
-    pub inner: FixedBytes<SIGNATURE_SIZE>,
+    pub inner: FixedBytes<{ SIGNATURE_SIZE }>,
 }
 
 impl From<&[u8]> for Signature {
@@ -26,7 +30,7 @@ impl From<&[u8]> for Signature {
 }
 
 impl Signature {
-    pub fn new(inner: FixedBytes<SIGNATURE_SIZE>) -> Self {
+    pub fn new(inner: FixedBytes<{ SIGNATURE_SIZE }>) -> Self {
         Self { inner }
     }
 
