@@ -127,6 +127,11 @@ fn main() {
         true => EnvFilter::builder().parse_lossy(cli.verbosity.directive()),
         false => EnvFilter::builder().parse_lossy(rust_log),
     };
+    let env_filter = env_filter.add_directive(
+        "libp2p_gossipsub::behaviour=error"
+            .parse()
+            .expect("valid gossipsub tracing directive"),
+    );
     tracing_subscriber::fmt().with_env_filter(env_filter).init();
     info!("\n{}", startup_message());
 
