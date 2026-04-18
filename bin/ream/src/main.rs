@@ -21,6 +21,7 @@ use ream::{
         import_keystores::{load_keystore_directory, load_password_from_config, process_password},
         lean_node::LeanNodeConfig,
         validator_node::ValidatorNodeConfig,
+        verbosity::Verbosity,
         voluntary_exit::VoluntaryExitConfig,
     },
     startup_message::startup_message,
@@ -106,6 +107,7 @@ use tracing_subscriber::EnvFilter;
 use tree_hash::TreeHash;
 
 pub const APP_NAME: &str = "ream";
+const DEFAULT_QUIET_LOG_TARGETS: &str = "libp2p_gossipsub::behaviour=error";
 
 struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
 
@@ -124,7 +126,18 @@ fn main() {
     // Set the default log level based on verbosity flag or RUST_LOG env var
     let rust_log = env::var(EnvFilter::DEFAULT_ENV).unwrap_or_default();
     let env_filter = match rust_log.is_empty() {
-        true => EnvFilter::builder().parse_lossy(cli.verbosity.directive()),
+        true => {
+            let env_filter = EnvFilter::builder().parse_lossy(cli.verbosity.directive());
+
+            match cli.verbosity {
+                Verbosity::Debug | Verbosity::Trace => env_filter,
+                _ => env_filter.add_directive(
+                    DEFAULT_QUIET_LOG_TARGETS
+                        .parse()
+                        .expect("valid gossipsub tracing directive"),
+                ),
+            }
+        }
         false => EnvFilter::builder().parse_lossy(rust_log),
     };
     tracing_subscriber::fmt().with_env_filter(env_filter).init();
