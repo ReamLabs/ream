@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use ream_network_state_lean::NetworkState;
 use tracing::info;
 
@@ -18,7 +19,7 @@ impl AggregatorController {
     pub fn set_enabled(&self, enabled: bool) -> bool {
         let mut lock = self.network_state.is_aggregator.lock();
         let previous = *lock;
-        
+
         if previous != enabled {
             *lock = enabled;
             info!(
@@ -32,10 +33,12 @@ impl AggregatorController {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ream_network_state_lean::NetworkState;
-    use ream_consensus_lean::checkpoint::Checkpoint;
     use std::sync::Arc;
+
+    use ream_consensus_lean::checkpoint::Checkpoint;
+    use ream_network_state_lean::NetworkState;
+
+    use super::*;
 
     fn setup_controller(initial: bool) -> AggregatorController {
         let network_state = Arc::new(NetworkState::new(
@@ -99,10 +102,10 @@ mod tests {
         let r2 = controller.set_enabled(false);
         let r3 = controller.set_enabled(true);
 
-        assert_eq!(r1, false);
-        assert_eq!(r2, true);
-        assert_eq!(r3, false);
-        
+        assert!(r1);
+        assert!(r2);
+        assert!(r3);
+
         assert!(controller.is_enabled());
         assert!(*controller.network_state.is_aggregator.lock());
     }

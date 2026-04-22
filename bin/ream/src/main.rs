@@ -431,7 +431,13 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let mut http_task = AbortOnDrop(
         executor.spawn(
             async move {
-                ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state, aggregator_controller).await
+                ream_rpc_lean::server::start(
+                    server_config,
+                    lean_chain_reader,
+                    network_state,
+                    aggregator_controller,
+                )
+                .await
             }
             .in_current_span(),
         ),

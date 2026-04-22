@@ -1,7 +1,8 @@
-use actix_web::{get, post, web, HttpResponse, Responder};
-use serde::{Deserialize, Serialize};
-use ream_api_types_common::error::ApiError;
 use std::sync::Arc;
+
+use actix_web::{HttpResponse, Responder, get, post, web};
+use ream_api_types_common::error::ApiError;
+use serde::{Deserialize, Serialize};
 
 use crate::aggregator_controller::AggregatorController;
 
@@ -56,10 +57,11 @@ pub async fn handle_toggle(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use actix_web::{test, App, web::Data};
-    use ream_network_state_lean::NetworkState;
+    use actix_web::{App, test, web::Data};
     use ream_consensus_lean::checkpoint::Checkpoint;
+    use ream_network_state_lean::NetworkState;
+
+    use super::*;
 
     fn setup_test_controller(initial_state: bool) -> Arc<AggregatorController> {
         let network_state = Arc::new(NetworkState::new(
@@ -80,7 +82,9 @@ mod tests {
         )
         .await;
 
-        let request = test::TestRequest::get().uri("/admin/aggregator").to_request();
+        let request = test::TestRequest::get()
+            .uri("/admin/aggregator")
+            .to_request();
         let response: AggregatorStatus = test::call_and_read_body_json(&app, request).await;
 
         assert!(!response.is_aggregator);
@@ -101,21 +105,21 @@ mod tests {
             .uri("/admin/aggregator")
             .set_json(ToggleRequest { enabled: true })
             .to_request();
-        
+
         let response: ToggleResponse = test::call_and_read_body_json(&app, request).await;
         assert!(response.is_aggregator);
         assert!(!response.previous);
 
-        let request = test::TestRequest::get().uri("/admin/aggregator").to_request();
+        let request = test::TestRequest::get()
+            .uri("/admin/aggregator")
+            .to_request();
         let response: AggregatorStatus = test::call_and_read_body_json(&app, request).await;
         assert!(response.is_aggregator);
     }
 
     #[actix_web::test]
     async fn test_handle_toggle_returns_error_when_no_controller() {
-        let app = test::init_service(
-            App::new().service(handle_toggle)
-        ).await;
+        let app = test::init_service(App::new().service(handle_toggle)).await;
 
         let request = test::TestRequest::post()
             .uri("/admin/aggregator")
@@ -123,6 +127,9 @@ mod tests {
             .to_request();
 
         let response = test::call_service(&app, request).await;
-        assert_eq!(response.status(), actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 }
