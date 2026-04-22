@@ -1,3 +1,4 @@
+pub mod aggregator;
 pub mod block;
 pub mod block_header;
 pub mod checkpoint;

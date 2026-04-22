@@ -157,6 +157,7 @@ impl Store {
             network_state: Arc::new(NetworkState::new(
                 justified_checkpoint,
                 finalized_checkpoint,
+                false,
             )),
         })
     }
