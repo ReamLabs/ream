@@ -79,6 +79,7 @@ use ream_post_quantum_crypto::leansig::{
     private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey, signature::Signature,
 };
 use ream_rpc_common::config::RpcServerConfig;
+use ream_rpc_lean::aggregator_controller::AggregatorController;
 use ream_storage::{
     cache::{BeaconCacheDB, LeanCacheDB},
     db::{ReamDB, reset_db},
@@ -357,6 +358,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     let network_state = lean_chain_reader.read().await.network_state.clone();
 
+    let aggregator_controller = Arc::new(AggregatorController::new(network_state.clone()));
+
     // Initialize the lean network service
     let fork = "devnet0".to_string();
 
@@ -428,7 +431,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let mut http_task = AbortOnDrop(
         executor.spawn(
             async move {
-                ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state).await
+                ream_rpc_lean::server::start(server_config, lean_chain_reader, network_state, aggregator_controller).await
             }
             .in_current_span(),
         ),
