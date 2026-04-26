@@ -1001,8 +1001,7 @@ impl Store {
             "Attestation signature groups must match aggregated attestations"
         );
 
-        let mut seen_attestation_data: HashSet<B256> =
-            HashSet::with_capacity(aggregated_attestations.len());
+        let mut seen_attestation_data = HashSet::with_capacity(aggregated_attestations.len());
         for attestation in aggregated_attestations.iter() {
             let data_root = attestation.message.tree_hash_root();
             ensure!(
