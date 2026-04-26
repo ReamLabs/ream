@@ -899,22 +899,13 @@ mod tests {
         let mut validators_yaml = String::new();
         for (i, keys) in VALIDATOR_KEYS.iter().enumerate().take(node_count) {
             validators_yaml.push_str(&format!("node{}:\n", i + 1));
-            #[cfg(feature = "devnet3")]
-            {
-                validators_yaml.push_str(&format!(
-                    "  - index: {i}\n    pubkey_hex: {keys}\n    privkey_file: validator_{i}_sk.ssz\n",
-                ));
-            }
-            #[cfg(feature = "devnet4")]
-            {
-                let (attester_key, proposer_key) = keys;
-                validators_yaml.push_str(&format!(
-                    "  - index: {i}\n    pubkey_hex: {attester_key}\n    privkey_file: validator_{i}_attestation_sk.ssz\n"
-                ));
-                validators_yaml.push_str(&format!(
-                    "  - index: {i}\n    pubkey_hex: {proposer_key}\n    privkey_file: validator_{i}_proposal_sk.ssz\n"
-                ));
-            }
+            let (attester_key, proposer_key) = keys;
+            validators_yaml.push_str(&format!(
+                "  - index: {i}\n    pubkey_hex: {attester_key}\n    privkey_file: validator_{i}_attestation_sk.ssz\n"
+            ));
+            validators_yaml.push_str(&format!(
+                "  - index: {i}\n    pubkey_hex: {proposer_key}\n    privkey_file: validator_{i}_proposal_sk.ssz\n"
+            ));
         }
 
         fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
