@@ -17,6 +17,12 @@ devnet4 = [
     "ream-network-state-lean/devnet4",
     "ream-storage/devnet4",
 ]
+devnet5 = [
+    "ream-consensus-lean/devnet5",
+    "ream-chain-lean/devnet5",
+    "ream-network-state-lean/devnet5",
+    "ream-storage/devnet5",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

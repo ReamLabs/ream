@@ -12,6 +12,7 @@ version.workspace = true
 [features]
 default = ["devnet4"]
 devnet4 = []
+devnet5 = []
 
 [dependencies]
 lazy_static.workspace = true

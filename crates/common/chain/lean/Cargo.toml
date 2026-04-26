@@ -22,6 +22,17 @@ devnet4 = [
     "ream-req-resp/devnet4",
     "ream-sync/devnet4",
 ]
+devnet5 = [
+    "ream-consensus-lean/devnet5",
+    "ream-consensus-misc/devnet5",
+    "ream-fork-choice-lean/devnet5",
+    "ream-network-state-lean/devnet5",
+    "ream-network-spec/devnet5",
+    "ream-storage/devnet5",
+    "ream-test-utils/devnet5",
+    "ream-req-resp/devnet5",
+    "ream-sync/devnet5",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

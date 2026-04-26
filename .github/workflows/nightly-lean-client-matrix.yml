@@ -20,12 +20,15 @@ env:
 jobs:
   build-ream-binary:
     name: Build ream binary (${{ matrix.devnet }})
+    # devnet5 legs are skipped until devnet5 protocol code lands.
+    # Drop the matrix.devnet check or remove `devnet5` from the matrix to disable.
+    if: matrix.devnet != 'devnet5'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        devnet: [devnet4]
+        devnet: [devnet4, devnet5]
 
     steps:
       - name: Checkout ream
@@ -47,6 +50,9 @@ jobs:
             devnet4)
               cargo build --release --package ream --bin ream --no-default-features --features devnet4
               ;;
+            devnet5)
+              cargo build --release --package ream --bin ream --no-default-features --features devnet5
+              ;;
             *)
               echo "Unknown devnet: ${{ matrix.devnet }}" >&2
               exit 1
@@ -63,6 +69,9 @@ jobs:
 
   interop-matrix:
     name: ${{ matrix.devnet }} / ${{ matrix.peer_client }} / ${{ matrix.topology }}
+    # devnet5 legs are skipped until devnet5 protocol code lands.
+    # Drop the matrix.devnet check or remove `devnet5` from the matrix to disable.
+    if: matrix.devnet != 'devnet5'
     runs-on: ubuntu-latest
     needs: [build-ream-binary]
     timeout-minutes: 60
@@ -70,7 +79,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        devnet: [devnet4]
+        devnet: [devnet4, devnet5]
         peer_client: [zeam, qlean, lantern, grandine, ethlambda]
         topology: [peer-peer-ream, peer-ream-ream]
 
@@ -93,6 +102,9 @@ jobs:
           # Skip these matrix legs until the image tags are available again.
           if [ "${{ matrix.peer_client }}" = "grandine" ]; then
             grandine_image="sifrai/lean:devnet-4"
+            if [ "${{ matrix.devnet }}" = "devnet5" ]; then
+              grandine_image="sifrai/lean:devnet-5"
+            fi
 
             if ! docker manifest inspect "$grandine_image" >/dev/null 2>&1; then
               skip_run="true"
@@ -597,6 +609,30 @@ jobs:
           qlean_image="qdrvm/qlean-mini:devnet-4"
           grandine_image="sifrai/lean:devnet-4"
           ethlambda_image="ghcr.io/lambdaclass/ethlambda:devnet4"
+
+          if [ "${{ matrix.devnet }}" = "devnet5" ]; then
+            ream_candidate="ghcr.io/reamlabs/ream:latest-devnet5"
+            zeam_candidate="blockblaz/zeam:devnet5"
+            qlean_candidate="qdrvm/qlean-mini:devnet-5"
+            grandine_candidate="sifrai/lean:devnet-5"
+            ethlambda_candidate="ghcr.io/lambdaclass/ethlambda:devnet5"
+
+            if docker manifest inspect "$ream_candidate" >/dev/null 2>&1; then
+              ream_image="$ream_candidate"
+            fi
+            if docker manifest inspect "$zeam_candidate" >/dev/null 2>&1; then
+              zeam_image="$zeam_candidate"
+            fi
+            if docker manifest inspect "$qlean_candidate" >/dev/null 2>&1; then
+              qlean_image="$qlean_candidate"
+            fi
+            if docker manifest inspect "$grandine_candidate" >/dev/null 2>&1; then
+              grandine_image="$grandine_candidate"
+            fi
+            if docker manifest inspect "$ethlambda_candidate" >/dev/null 2>&1; then
+              ethlambda_image="$ethlambda_candidate"
+            fi
+          fi
 
           echo "REAM_DOCKER_IMAGE=$ream_image" >> "$GITHUB_ENV"
           echo "ZEAM_DOCKER_IMAGE=$zeam_image" >> "$GITHUB_ENV"
