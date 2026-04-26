@@ -113,8 +113,12 @@ pr: lint update-book-cli clean-deps test # Run all checks for a PR.
 build-%:
 	cross build --bin ream --target $* --features "$(FEATURES)" --profile "$(PROFILE)" $(EXTRA_FLAGS)
 
-.PHONY: docker-build-push
-docker-build-push: # Build and push the Ream Docker image.
+docker-build-push:
+	$(MAKE) docker-build-push-default
+	$(MAKE) docker-build-push-devnet5
+
+.PHONY: docker-build-push-default
+docker-build-push-default:
 	$(MAKE) build-x86_64-unknown-linux-gnu
 	mkdir -p $(BIN_DIR)/amd64
 	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
