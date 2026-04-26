@@ -142,8 +142,8 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         match step {
             ForkChoiceStep::Tick { time, interval, .. } => {
                 let tick_time = match (time, interval) {
-                    (Some(t), _) => *t,
-                    (None, Some(i)) => *i,
+                    (Some(tick), _) => *tick,
+                    (None, Some(interval)) => *interval,
                     (None, None) => bail!("Tick step missing both time and interval fields"),
                 };
                 debug!("  Step {index}: Tick to time {tick_time}");
