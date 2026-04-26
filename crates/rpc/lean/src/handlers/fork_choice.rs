@@ -48,29 +48,6 @@ pub async fn get_fork_choice_tree(
         .map(|state| state.validators.len() as u64)
         .unwrap_or(0);
 
-    #[cfg(feature = "devnet3")]
-    let blocks = db
-        .block_provider()
-        .get_all_blocks(finalized_slot)
-        .unwrap_or(vec![])
-        .iter()
-        .map(|block| {
-            let root = block.message.block.tree_hash_root();
-            let weight = weight_map
-                .as_ref()
-                .map(|weight_map| weight_map.get(&root).cloned().unwrap_or(0))
-                .unwrap_or(0);
-            serde_json::json!({
-                "root": root,
-                "slot": block.message.block.slot,
-                "parent_root": block.message.block.parent_root,
-                "proposer_index": block.message.block.proposer_index,
-                "weight": weight,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    #[cfg(feature = "devnet4")]
     let blocks = db
         .block_provider()
         .get_all_blocks(finalized_slot)

@@ -8,22 +8,6 @@
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::{
-    attestation::{
-        AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
-        SignedAttestation,
-    },
-    block::{
-        Block, BlockBody, BlockHeader, BlockSignatures, BlockWithAttestation,
-        SignedBlockWithAttestation,
-    },
-    checkpoint::Checkpoint,
-    config::Config,
-    state::LeanState,
-    validator::Validator,
-};
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
@@ -186,11 +170,7 @@ impl TryFrom<&ValidatorJSON> for Validator {
         );
         let pubkey = PublicKey::from(&bytes[..]);
         Ok(Self {
-            #[cfg(feature = "devnet3")]
-            public_key: pubkey,
-            #[cfg(feature = "devnet4")]
             attestation_public_key: pubkey,
-            #[cfg(feature = "devnet4")]
             proposal_public_key: pubkey,
             index: value.index,
         })
@@ -277,26 +257,6 @@ impl TryFrom<&BlockJSON> for Block {
             parent_root: value.parent_root,
             state_root: value.state_root,
             body: (&value.body).try_into()?,
-        })
-    }
-}
-
-#[cfg(feature = "devnet3")]
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockWithAttestationJSON {
-    pub block: BlockJSON,
-    pub proposer_attestation: AttestationJSON,
-}
-
-#[cfg(feature = "devnet3")]
-impl TryFrom<&BlockWithAttestationJSON> for BlockWithAttestation {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &BlockWithAttestationJSON) -> anyhow::Result<Self> {
-        Ok(Self {
-            block: (&value.block).try_into()?,
-            proposer_attestation: (&value.proposer_attestation).try_into()?,
         })
     }
 }
@@ -401,27 +361,6 @@ impl TryFrom<&BlockSignaturesJSON> for BlockSignatures {
     }
 }
 
-#[cfg(feature = "devnet3")]
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SignedBlockWithAttestationJSON {
-    pub message: BlockWithAttestationJSON,
-    pub signature: BlockSignaturesJSON,
-}
-
-#[cfg(feature = "devnet3")]
-impl TryFrom<&SignedBlockWithAttestationJSON> for SignedBlockWithAttestation {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &SignedBlockWithAttestationJSON) -> anyhow::Result<Self> {
-        Ok(Self {
-            message: (&value.message).try_into()?,
-            signature: (&value.signature).try_into()?,
-        })
-    }
-}
-
-#[cfg(feature = "devnet4")]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedBlockJSON {
@@ -429,7 +368,6 @@ pub struct SignedBlockJSON {
     pub signature: BlockSignaturesJSON,
 }
 
-#[cfg(feature = "devnet4")]
 impl TryFrom<&SignedBlockJSON> for SignedBlock {
     type Error = anyhow::Error;
 
@@ -456,7 +394,6 @@ impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
             participants: bools_to_bitlist(&value.participants.data)?,
             proof_data: VariableList::try_from(decode_hex(&value.proof_data.data)?)
                 .map_err(|err| anyhow!("Failed to convert proof_data: {err}"))?,
-            #[cfg(feature = "devnet4")]
             bytecode_point: None,
         })
     }

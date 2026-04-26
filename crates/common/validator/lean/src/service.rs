@@ -3,17 +3,9 @@ use ream_chain_lean::{
     clock::{create_lean_clock_interval, get_initial_tick_count},
     messages::{LeanChainServiceMessage, ServiceResponse},
 };
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::SignedAttestation,
     block::{BlockSignatures, BlockWithSignatures, SignedBlock},
-};
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::{
-    attestation::{AggregatedAttestations, SignedAttestation},
-    block::{
-        BlockSignatures, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation,
-    },
 };
 use ream_consensus_misc::constants::lean::{ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT};
 use ream_fork_choice_lean::store::compute_subnet_id;
@@ -106,53 +98,11 @@ impl ValidatorService {
                                     keystore.index,
                                 );
 
-                                #[cfg(feature = "devnet3")]
-                                let attestation_data = {
-                                    let (tx, rx) = oneshot::channel();
-                                    self.chain_sender
-                                        .send(LeanChainServiceMessage::BuildAttestationData { slot, sender: tx })
-                                        .expect("Failed to send attestation to LeanChainService");
-
-                                    match rx.await {
-                                        Ok(ServiceResponse::Ok(data)) => data,
-                                        Ok(ServiceResponse::Syncing) => {
-                                            warn!("LeanChainService is syncing, cannot build attestation data for slot {slot}");
-                                            tick_count += 1;
-                                            continue;
-                                        }
-                                        Ok(ServiceResponse::Err(err)) => {
-                                            warn!("Failed to build attestation data for slot {slot}: {err}");
-                                            tick_count += 1;
-                                            continue;
-                                        }
-                                        Err(err) => {
-                                            return Err(anyhow!("Failed to receive attestation data from LeanChainService: {err:?}"));
-                                        }
-                                    }
-                                };
-                                #[cfg(feature = "devnet3")]
-                                let message = AggregatedAttestations { validator_id: keystore.index, data: attestation_data.clone() };
-
                                 let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
-                                #[cfg(feature = "devnet3")]
-                                let proposer_signature = keystore.private_key.sign(&attestation_data.tree_hash_root(), slot as u32)?;
-                                #[cfg(feature = "devnet4")]
                                 let proposer_signature = keystore.proposal_private_key.sign(&block.tree_hash_root(), slot as u32)?;
                                 stop_timer(timer);
                                 inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
 
-                                #[cfg(feature = "devnet3")]
-                                let signed_block_with_attestation = SignedBlockWithAttestation {
-                                    message: BlockWithAttestation {
-                                        block: block.clone(),
-                                        proposer_attestation: message,
-                                    },
-                                    signature: BlockSignatures {
-                                        attestation_signatures: signatures,
-                                        proposer_signature,
-                                    },
-                                };
-                                #[cfg(feature = "devnet4")]
                                 let signed_block = SignedBlock {
                                     block: block.clone(),
                                     signature: BlockSignatures {
@@ -162,11 +112,6 @@ impl ValidatorService {
                                 };
 
                                 // Send block to the LeanChainService.
-                                #[cfg(feature = "devnet3")]
-                                self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation: Box::new(signed_block_with_attestation), need_gossip: true })
-                                    .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
-                                #[cfg(feature = "devnet4")]
                                 self.chain_sender
                                     .send(LeanChainServiceMessage::ProcessBlock { signed_block: Box::new(signed_block), need_gossip: true })
                                     .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
@@ -222,20 +167,11 @@ impl ValidatorService {
                             }
 
                             let mut signed_attestations = vec![];
-                            #[cfg(feature = "devnet3")]
-                            let attestation_keystores = self.keystores.iter().enumerate()
-                                .filter(|(index, _)| *index as u64 != slot % lean_network_spec().num_validators)
-                                .map(|(_, keystore)| keystore)
-                                .collect::<Vec<_>>();
-                            #[cfg(feature = "devnet4")]
                             let attestation_keystores = self.keystores.iter().collect::<Vec<_>>();
                             for keystore in attestation_keystores {
                                 let message = attestation_data.clone();
                                 let message_root = message.tree_hash_root();
                                 let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
-                                #[cfg(feature = "devnet3")]
-                                let signature = keystore.private_key.sign(&message_root, slot as u32)?;
-                                #[cfg(feature = "devnet4")]
                                 let signature = keystore.attestation_private_key.sign(&message_root, slot as u32)?;
                                 stop_timer(timer);
                                 inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);

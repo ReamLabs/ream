@@ -3,11 +3,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-#[cfg(any(feature = "devnet3", feature = "devnet4"))]
 use alloy_primitives::FixedBytes;
-#[cfg(feature = "devnet4")]
-use serde::Serialize;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use tracing::warn;
 
 /// Static specification of the Lean Chain network.
@@ -57,7 +54,6 @@ fn default_seconds_per_slot() -> u64 {
 }
 
 /// A single validator's public keys in the genesis configuration (devnet4).
-#[cfg(feature = "devnet4")]
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Default)]
 pub struct GenesisValidatorEntry {
     pub attestation_public_key: FixedBytes<52>,
@@ -71,11 +67,6 @@ pub struct LeanNetworkSpec {
     #[serde(alias = "VALIDATOR_COUNT")]
     pub num_validators: u64,
 
-    #[cfg(feature = "devnet3")]
-    #[serde(alias = "GENESIS_VALIDATORS")]
-    pub validator_public_keys: Vec<FixedBytes<52>>,
-
-    #[cfg(feature = "devnet4")]
     #[serde(alias = "GENESIS_VALIDATORS")]
     pub genesis_validators: Vec<GenesisValidatorEntry>,
 
@@ -98,11 +89,7 @@ impl LeanNetworkSpec {
             .expect("System time is before UNIX epoch")
             .as_secs();
 
-        #[cfg(feature = "devnet3")]
-        let config: &str = include_str!("../../../../../bin/ream/assets/lean/config.yaml");
-        #[cfg(feature = "devnet4")]
         let config: &str = include_str!("../../../../../bin/ream/assets/lean/config-devnet4.yaml");
-        #[cfg(any(feature = "devnet3", feature = "devnet4"))]
         let config = serde_yaml::from_str::<LeanNetworkSpec>(config)
             .expect("Our sample config should always be correct");
 
@@ -110,13 +97,7 @@ impl LeanNetworkSpec {
             genesis_time: current_timestamp + 10,
             justification_lookback_slots: 3,
             seconds_per_slot: 4,
-            #[cfg(any(feature = "devnet3", feature = "devnet4"))]
             num_validators: config.num_validators,
-            #[cfg(not(any(feature = "devnet3", feature = "devnet4")))]
-            num_validators: 0,
-            #[cfg(feature = "devnet3")]
-            validator_public_keys: config.validator_public_keys,
-            #[cfg(feature = "devnet4")]
             genesis_validators: config.genesis_validators,
             discarded_values: DiscardUnknown,
         }

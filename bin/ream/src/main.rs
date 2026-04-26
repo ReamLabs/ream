@@ -35,14 +35,6 @@ use ream_chain_lean::{
 };
 use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
 use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::{
-    attestation::{AggregatedAttestations, AttestationData},
-    block::{Block, BlockBody, BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
-    checkpoint::Checkpoint,
-    validator::Validator,
-};
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     block::{Block, BlockBody, BlockSignatures, SignedBlock},
     validator::Validator,
@@ -278,18 +270,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         (block, state)
     } else {
-        #[cfg(feature = "devnet3")]
-        let validators = lean_network_spec()
-            .validator_public_keys
-            .iter()
-            .enumerate()
-            .map(|(index, public_key)| Validator {
-                public_key: PublicKey::new(*public_key),
-                index: index as u64,
-            })
-            .collect::<Vec<_>>();
-
-        #[cfg(feature = "devnet4")]
         let validators = lean_network_spec()
             .genesis_validators
             .iter()
@@ -303,42 +283,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         setup_genesis(lean_network_spec().genesis_time, validators)
     };
-    #[cfg(feature = "devnet3")]
-    let attestation_data = AttestationData {
-        slot: anchor_state.slot,
-        head: Checkpoint {
-            root: anchor_state.latest_block_header.tree_hash_root(),
-            slot: anchor_state.slot,
-        },
-        target: anchor_state.latest_finalized,
-        source: anchor_state.latest_justified,
-    };
-
-    #[cfg(feature = "devnet3")]
-    let (lean_chain_writer, lean_chain_reader) = Writer::new(
-        Store::get_forkchoice_store(
-            SignedBlockWithAttestation {
-                message: BlockWithAttestation {
-                    block: anchor_block,
-                    proposer_attestation: AggregatedAttestations {
-                        validator_id: 0,
-                        data: attestation_data,
-                    },
-                },
-                signature: BlockSignatures {
-                    attestation_signatures: VariableList::default(),
-                    proposer_signature: Signature::blank(),
-                },
-            },
-            anchor_state,
-            lean_db,
-            None,
-            keystores.first().map(|keystore| keystore.index),
-        )
-        .expect("Could not get forkchoice store"),
-    );
-
-    #[cfg(feature = "devnet4")]
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
             SignedBlock {
@@ -898,14 +842,6 @@ mod tests {
 
     use crate::{APP_NAME, run_lean_node};
 
-    #[cfg(feature = "devnet3")]
-    const VALIDATOR_KEYS: [&str; 3] = [
-        "0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65ec589c858b9c7980b276ebe550056b23f0bdc3b5a",
-        "0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e377237595d9a27887421b5233d09a50832db2f303d",
-        "0xd4355005bc37f76f390dcd2bcc51677d8c6ab44e0cc64913fb84ad459789a31105bd9a69afd2690ffd737d22ec6e3b31d47a642f",
-    ];
-
-    #[cfg(feature = "devnet4")]
     const VALIDATOR_KEYS: [(&str, &str); 3] = [
         (
             "0xa082964b6fc8f6071b30fc1cdc471101ee911b65638a29017fafed61da16310ad145ae7ceb6339468cc38607357f4870d7cb215d",
@@ -1363,13 +1299,6 @@ mod tests {
             .as_secs()
             + 10;
 
-        #[cfg(feature = "devnet3")]
-        let validators: String = VALIDATOR_KEYS[..num_validators]
-            .iter()
-            .map(|k| format!("- {k}\n"))
-            .collect();
-
-        #[cfg(feature = "devnet4")]
         let validators: String = VALIDATOR_KEYS[..num_validators]
             .iter()
             .map(|(att, prop)| {
@@ -2043,10 +1972,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_lean_node_checkpoint_sync_from_running_node() {
-        #[cfg(feature = "devnet4")]
         let test_duration_secs = 240;
-        #[cfg(not(feature = "devnet4"))]
-        let test_duration_secs = 180;
 
         run_checkpoint_sync_scenario(CheckpointSyncScenario {
             test_name: "checkpoint_sync_late_joiner",

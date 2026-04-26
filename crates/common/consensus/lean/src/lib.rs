@@ -1,7 +1,9 @@
-// Ensure exactly one of devnet3 or devnet4 is enabled
+#[cfg(all(feature = "devnet4", feature = "devnet5"))]
+compile_error!("Features 'devnet4' and 'devnet5' are mutually exclusive.");
 
-#[cfg(not(any(feature = "devnet3", feature = "devnet4")))]
-compile_error!("Either 'devnet3' or 'devnet4' feature must be enabled.");
+#[cfg(not(any(feature = "devnet4", feature = "devnet5")))]
+compile_error!("Either 'devnet4' or 'devnet5' feature must be enabled.");
+
 pub mod attestation;
 pub mod block;
 pub mod checkpoint;

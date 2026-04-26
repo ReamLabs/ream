@@ -2,22 +2,6 @@ use std::path::Path;
 
 use alloy_primitives::hex;
 use anyhow::{Context, bail};
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::{
-    attestation::{
-        AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
-        SignedAttestation,
-    },
-    block::{
-        Block, BlockBody, BlockHeader, BlockSignatures, BlockWithAttestation,
-        SignedBlockWithAttestation,
-    },
-    checkpoint::Checkpoint,
-    config::Config,
-    state::LeanState,
-    validator::Validator,
-};
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
@@ -33,18 +17,6 @@ use ream_post_quantum_crypto::leansig::{public_key::PublicKey, signature::Signat
 use ssz::Encode;
 use tracing::{debug, info, warn};
 
-#[cfg(feature = "devnet3")]
-use crate::types::{
-    TestFixture,
-    ssz_test::{
-        AggregatedAttestationJSON, AggregatedSignatureProofJSON, AttestationDataJSON,
-        AttestationJSON, BlockBodyJSON, BlockHeaderJSON, BlockJSON, BlockSignaturesJSON,
-        BlockWithAttestationJSON, BlocksByRootRequestJSON, BlocksByRootRequestSSZ, CheckpointJSON,
-        ConfigJSON, PublicKeyJSON, SSZTest, SignatureJSON, SignedAttestationJSON,
-        SignedBlockWithAttestationJSON, StateJSON, StatusJSON, ValidatorJSON,
-    },
-};
-#[cfg(feature = "devnet4")]
 use crate::types::{
     TestFixture,
     ssz_test::{
@@ -91,23 +63,12 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
         "Config" => run_test::<ConfigJSON, Config>(&test.value, &expected_ssz),
         "Validator" => run_test::<ValidatorJSON, Validator>(&test.value, &expected_ssz),
         "State" => run_test::<StateJSON, LeanState>(&test.value, &expected_ssz),
-        #[cfg(feature = "devnet3")]
-        "BlockWithAttestation" => {
-            run_test::<BlockWithAttestationJSON, BlockWithAttestation>(&test.value, &expected_ssz)
-        }
         "SignedAttestation" => {
             run_test::<SignedAttestationJSON, SignedAttestation>(&test.value, &expected_ssz)
         }
         "BlockSignatures" => {
             run_test::<BlockSignaturesJSON, BlockSignatures>(&test.value, &expected_ssz)
         }
-        #[cfg(feature = "devnet3")]
-        "SignedBlockWithAttestation" => run_test::<
-            SignedBlockWithAttestationJSON,
-            SignedBlockWithAttestation,
-        >(&test.value, &expected_ssz),
-
-        #[cfg(feature = "devnet4")]
         "SignedBlock" => run_test::<SignedBlockJSON, SignedBlock>(&test.value, &expected_ssz),
         // Networking containers
         "Status" => run_test::<StatusJSON, StatusJSON>(&test.value, &expected_ssz),

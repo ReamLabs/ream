@@ -6,14 +6,11 @@ use std::{
 
 use anyhow::ensure;
 use clap::Parser;
-#[cfg(feature = "devnet4")]
-use ream_keystore::lean_keystore::GenesisValidatorEntry;
 use ream_keystore::lean_keystore::{
-    ConfigFile, ValidatorKeysManifest, ValidatorKeystoreRaw, ValidatorRegistry,
+    ConfigFile, GenesisValidatorEntry, ValidatorKeysManifest, ValidatorKeystoreRaw,
+    ValidatorRegistry,
 };
 use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
-#[cfg(feature = "devnet3")]
-use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 
 const NUM_ACTIVE_EPOCHS: u64 = 262144;
 
@@ -62,65 +59,39 @@ pub fn run_generate_validator_registry(
     path.push("hash-sig-keys");
     create_dir_all(&path)?;
     let mut validators: Vec<ValidatorKeystoreRaw> = Vec::new();
-    #[cfg(feature = "devnet3")]
-    let mut genesis_validators: Vec<PublicKey> = vec![];
-    #[cfg(feature = "devnet4")]
     let mut genesis_validators: Vec<GenesisValidatorEntry> = vec![];
     for index in
         0..(keystore_config.number_of_nodes * keystore_config.number_of_validators_per_node)
     {
-        #[cfg(feature = "devnet3")]
-        {
-            let (public_key, private_key) =
-                PrivateKey::generate_key_pair(0, NUM_ACTIVE_EPOCHS as usize);
-            genesis_validators.push(public_key);
+        let (attestation_public_key, attestation_private_key) =
+            PrivateKey::generate_key_pair(0, NUM_ACTIVE_EPOCHS as usize);
+        let (proposal_public_key, proposal_private_key) =
+            PrivateKey::generate_key_pair(0, NUM_ACTIVE_EPOCHS as usize);
 
-            let filename: String = format!("validator_{index}_sk.ssz");
-            path.push(&filename);
-            fs::write(&path, private_key.to_bytes())?;
-            path.pop();
+        genesis_validators.push(GenesisValidatorEntry {
+            attestation_public_key,
+            proposal_public_key,
+        });
 
-            validators.push(ValidatorKeystoreRaw {
-                index,
-                public_key,
-                private_key_file: filename,
-            });
-        }
-        #[cfg(feature = "devnet4")]
-        {
-            let (attestation_public_key, attestation_private_key) =
-                PrivateKey::generate_key_pair(0, NUM_ACTIVE_EPOCHS as usize);
-            let (proposal_public_key, proposal_private_key) =
-                PrivateKey::generate_key_pair(0, NUM_ACTIVE_EPOCHS as usize);
+        let attester_secret_key_filename = format!("validator_{index}_attestation_sk.ssz");
+        path.push(&attester_secret_key_filename);
+        fs::write(&path, attestation_private_key.to_bytes())?;
+        path.pop();
 
-            genesis_validators.push(GenesisValidatorEntry {
-                attestation_public_key,
-                proposal_public_key,
-            });
+        let proposer_secret_key_filename = format!("validator_{index}_proposal_sk.ssz");
+        path.push(&proposer_secret_key_filename);
+        fs::write(&path, proposal_private_key.to_bytes())?;
+        path.pop();
 
-            let attester_secret_key_filename = format!("validator_{index}_attestation_sk.ssz");
-            path.push(&attester_secret_key_filename);
-            fs::write(&path, attestation_private_key.to_bytes())?;
-            path.pop();
-
-            let proposer_secret_key_filename = format!("validator_{index}_proposal_sk.ssz");
-            path.push(&proposer_secret_key_filename);
-            fs::write(&path, proposal_private_key.to_bytes())?;
-            path.pop();
-
-            validators.push(ValidatorKeystoreRaw {
-                index,
-                attestation_public_key_hex: attestation_public_key,
-                proposal_public_key_hex: proposal_public_key,
-                attestation_private_key_file: attester_secret_key_filename,
-                proposal_private_key_file: proposer_secret_key_filename,
-            });
-        }
+        validators.push(ValidatorKeystoreRaw {
+            index,
+            attestation_public_key_hex: attestation_public_key,
+            proposal_public_key_hex: proposal_public_key,
+            attestation_private_key_file: attester_secret_key_filename,
+            proposal_private_key_file: proposer_secret_key_filename,
+        });
     }
 
-    #[cfg(feature = "devnet3")]
-    path.push("validator-keys-manifest.yaml");
-    #[cfg(feature = "devnet4")]
     path.push("validator-keys-manifest-devnet4.yaml");
     fs::write(
         &path,
@@ -138,9 +109,6 @@ pub fn run_generate_validator_registry(
 
     path.pop();
     path.pop();
-    #[cfg(feature = "devnet3")]
-    path.push("config.yaml");
-    #[cfg(feature = "devnet4")]
     path.push("config-devnet4.yaml");
     fs::write(
         &path,

@@ -1,11 +1,3 @@
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::{
-    attestation::{AggregatedAttestations, AttestationData},
-    block::{BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
-    checkpoint::Checkpoint,
-    utils::generate_default_validators,
-};
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     block::{BlockSignatures, SignedBlock},
     utils::generate_default_validators,
@@ -15,8 +7,6 @@ use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_n
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::db::ReamDB;
 use ssz_types::VariableList;
-#[cfg(feature = "devnet3")]
-use tree_hash::TreeHash;
 
 pub async fn sample_store(no_of_validators: usize) -> Store {
     set_lean_network_spec(LeanNetworkSpec::ephemery().into());
@@ -25,32 +15,6 @@ pub async fn sample_store(no_of_validators: usize) -> Store {
         generate_default_validators(no_of_validators),
     );
 
-    #[cfg(feature = "devnet3")]
-    let checkpoint = Checkpoint {
-        slot: genesis_block.slot,
-        root: genesis_block.tree_hash_root(),
-    };
-    #[cfg(feature = "devnet3")]
-    let signed_genesis_block = SignedBlockWithAttestation {
-        message: BlockWithAttestation {
-            proposer_attestation: AggregatedAttestations {
-                validator_id: genesis_block.proposer_index,
-                data: AttestationData {
-                    slot: genesis_block.slot,
-                    head: checkpoint,
-                    target: checkpoint,
-                    source: checkpoint,
-                },
-            },
-            block: genesis_block,
-        },
-        signature: BlockSignatures {
-            attestation_signatures: VariableList::default(),
-            proposer_signature: Signature::blank(),
-        },
-    };
-
-    #[cfg(feature = "devnet4")]
     let signed_genesis_block = SignedBlock {
         block: genesis_block,
         signature: BlockSignatures {

@@ -12,8 +12,8 @@ version.workspace = true
 
 [features]
 default = []
-devnet3 = []
 devnet4 = []
+devnet5 = []
 
 [dependencies]
 tokio.workspace = true

@@ -11,16 +11,9 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use libp2p_identity::PeerId;
 use libp2p_swarm::ConnectionId;
 use rand::seq::IndexedRandom;
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{BlockWithSignatures, SignedBlock},
-    checkpoint::Checkpoint,
-};
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::{
-    attestation::{AttestationData, SignedAttestation},
-    block::{BlockWithSignatures, SignedBlockWithAttestation},
     checkpoint::Checkpoint,
 };
 use ream_consensus_misc::constants::lean::{ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT};
@@ -407,48 +400,6 @@ impl LeanChainService {
                                 error!("Failed to handle build attestation data message: {err:?}");
                             }
                         }
-                        #[cfg(feature = "devnet3")]
-                        LeanChainServiceMessage::ProcessBlock { signed_block_with_attestation, need_gossip } => {
-                            if self.sync_status != SyncStatus::Synced {
-                                if let Err(err) = self
-                                    .handle_syncing_process_block(&signed_block_with_attestation)
-                                    .await
-                                {
-                                    warn!(
-                                        "Failed to handle ProcessBlock while backfill syncing: {err:?}"
-                                    );
-                                }
-                                continue;
-                            }
-
-                            if enabled!(Level::DEBUG) {
-                                debug!(
-                                    slot = signed_block_with_attestation.message.block.slot,
-                                    block_root = ?signed_block_with_attestation.message.block.tree_hash_root(),
-                                    parent_root = ?signed_block_with_attestation.message.block.parent_root,
-                                    state_root = ?signed_block_with_attestation.message.block.state_root,
-                                    attestations_length = signed_block_with_attestation.message.block.body.attestations.len(),
-                                    "Processing block built by Validator {}",
-                                    signed_block_with_attestation.message.block.proposer_index,
-                                );
-                            } else {
-                                info!(
-                                    slot = signed_block_with_attestation.message.block.slot,
-                                    block_root = ?signed_block_with_attestation.message.block.tree_hash_root(),
-                                    "Processing block built by Validator {}",
-                                    signed_block_with_attestation.message.block.proposer_index,
-                                );
-                            }
-
-                            if let Err(err) = self.handle_process_block(&signed_block_with_attestation).await {
-                                warn!("Failed to handle process block message: {err:?}");
-                            }
-
-                            if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipBlock(signed_block_with_attestation)) {
-                                warn!("Failed to send item to outbound gossip channel: {err:?}");
-                            }
-                        }
-                        #[cfg(feature = "devnet4")]
                         LeanChainServiceMessage::ProcessBlock { signed_block, need_gossip } => {
                             if self.sync_status != SyncStatus::Synced {
                                 if let Err(err) = self
@@ -638,7 +589,7 @@ impl LeanChainService {
                 }
             }
             3 => {
-                // Fourth tick (devnet3): Compute the safe target.
+                // Fourth tick: Compute the safe target.
                 info!(
                     slot = get_current_slot(),
                     tick = tick_count,
@@ -652,7 +603,7 @@ impl LeanChainService {
                     .expect("Failed to update safe target");
             }
             4 => {
-                // Fifth tick (devnet3): Accept new attestations.
+                // Fifth tick: Accept new attestations.
                 info!(
                     slot = get_current_slot(),
                     tick = tick_count,
@@ -1063,12 +1014,6 @@ impl LeanChainService {
                 Ok(head) => head,
                 Err(_) => return 0,
             };
-            #[cfg(feature = "devnet3")]
-            match store.block_provider().get(head) {
-                Ok(Some(block)) => block.message.block.slot,
-                _ => return 0,
-            }
-            #[cfg(feature = "devnet4")]
             match store.block_provider().get(head) {
                 Ok(Some(block)) => block.block.slot,
                 _ => return 0,
@@ -1095,14 +1040,6 @@ impl LeanChainService {
                 !store.pending_blocks_provider().is_empty(),
             )
         };
-        #[cfg(feature = "devnet3")]
-        let current_head_slot = block_provider
-            .get(head)?
-            .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
-            .message
-            .block
-            .slot;
-        #[cfg(feature = "devnet4")]
         let current_head_slot = block_provider
             .get(head)?
             .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
@@ -1239,20 +1176,11 @@ impl LeanChainService {
             let store = fork_choice.store.lock().await;
             let head = store.head_provider().get()?;
             let block_provider = store.block_provider();
-            #[cfg(feature = "devnet3")]
-            let current_head_slot = block_provider
-                .get(head)?
-                .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
-                .message
-                .block
-                .slot;
-            #[cfg(feature = "devnet4")]
-            let current_head_slot = block_provider
+            block_provider
                 .get(head)?
                 .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
                 .block
-                .slot;
-            current_head_slot
+                .slot
         };
         let network_finalized_slot = self
             .network_state
@@ -1272,14 +1200,6 @@ impl LeanChainService {
         let local_head = store.head_provider().get()?;
         let block_provider = store.block_provider();
         let pending_blocks_provider = store.pending_blocks_provider();
-        #[cfg(feature = "devnet3")]
-        let current_head_slot = block_provider
-            .get(local_head)?
-            .ok_or_else(|| anyhow!("Block not found for head: {local_head}"))?
-            .message
-            .block
-            .slot;
-        #[cfg(feature = "devnet4")]
         let current_head_slot = block_provider
             .get(local_head)?
             .ok_or_else(|| anyhow!("Block not found for head: {local_head}"))?
@@ -2236,45 +2156,6 @@ impl LeanChainService {
         message: Arc<LeanResponseMessage>,
     ) -> anyhow::Result<()> {
         match &*message {
-            #[cfg(feature = "devnet3")]
-            LeanResponseMessage::BlocksByRoot(signed_block_with_attestation) => {
-                let block_root = signed_block_with_attestation.message.block.tree_hash_root();
-                if !self.telemetry.inflight_roots.contains_key(&block_root)
-                    && !self.backfill_state.contains_job_root(block_root)
-                {
-                    trace!(
-                        peer_id = ?peer_id,
-                        block_root = ?block_root,
-                        "Ignoring stale backfill callback for completed root"
-                    );
-                    return Ok(());
-                }
-                if !self.callback_matches_current_assignment(peer_id, block_root) {
-                    trace!(
-                        peer_id = ?peer_id,
-                        block_root = ?block_root,
-                        current_job_peer_id = ?self.backfill_state.peer_for_job_root(block_root),
-                        "Accepting late backfill callback for unresolved root from non-assigned peer",
-                    );
-                }
-                if self.should_drop_callback_response(block_root) {
-                    self.telemetry.backfill_telemetry.callbacks_dropped += 1;
-                    warn!(
-                        peer_id = ?peer_id,
-                        block_root = ?block_root,
-                        callback_loss_mode = ?self.telemetry.callback_loss_mode,
-                        "Dropping req/resp block callback to simulate packet loss"
-                    );
-                    return Ok(());
-                }
-                self.handle_backfill_block(
-                    Some(peer_id),
-                    signed_block_with_attestation.as_ref().clone(),
-                    SyncBlockSource::ReqResp,
-                )
-                .await?;
-            }
-            #[cfg(feature = "devnet4")]
             LeanResponseMessage::BlocksByRoot(signed_block) => {
                 let block_root = signed_block.block.tree_hash_root();
                 if !self.telemetry.inflight_roots.contains_key(&block_root)
@@ -2328,25 +2209,6 @@ impl LeanChainService {
             }
         }
     }
-    #[cfg(feature = "devnet3")]
-    async fn handle_syncing_process_block(
-        &mut self,
-        signed_block_with_attestation: &SignedBlockWithAttestation,
-    ) -> anyhow::Result<()> {
-        let root = signed_block_with_attestation.message.block.tree_hash_root();
-        trace!(
-            root = ?root,
-            slot = signed_block_with_attestation.message.block.slot,
-            "Received gossiped block while backfill syncing"
-        );
-        self.handle_backfill_block(
-            None,
-            signed_block_with_attestation.clone(),
-            SyncBlockSource::Gossip,
-        )
-        .await
-    }
-    #[cfg(feature = "devnet4")]
     async fn handle_syncing_process_block(
         &mut self,
         signed_block: &SignedBlock,
@@ -2389,109 +2251,6 @@ impl LeanChainService {
         Ok(false)
     }
 
-    #[cfg(feature = "devnet3")]
-    async fn handle_backfill_block(
-        &mut self,
-        source_peer_id: Option<PeerId>,
-        signed_block_with_attestation: SignedBlockWithAttestation,
-        source: SyncBlockSource,
-    ) -> anyhow::Result<()> {
-        let last_root = signed_block_with_attestation.message.block.tree_hash_root();
-        let parent_root = signed_block_with_attestation.message.block.parent_root;
-        let slot = signed_block_with_attestation.message.block.slot;
-        self.telemetry.inflight_roots.remove(&last_root);
-        let mut request_latency_ms: Option<f64> = None;
-        if source == SyncBlockSource::ReqResp {
-            self.telemetry.backfill_telemetry.callbacks_processed += 1;
-            if let Some(latency) = self.backfill_state.request_latency_for_root(last_root) {
-                self.telemetry.backfill_telemetry.callback_latency_ms_total += latency.as_millis();
-                self.telemetry.backfill_telemetry.callback_latency_samples += 1;
-                request_latency_ms = Some(latency.as_secs_f64() * 1_000.0);
-            }
-        }
-        let job_peer_id = self.backfill_state.peer_for_job_root(last_root);
-        let (head, pending_blocks_provider) = {
-            let fork_choice = self.store.read().await;
-            let store = fork_choice.store.lock().await;
-            (
-                store.head_provider().get()?,
-                store.pending_blocks_provider(),
-            )
-        };
-        pending_blocks_provider.insert(last_root, signed_block_with_attestation)?;
-        self.clear_backfill_arrival_state(last_root);
-        self.record_recent_sync_block(parent_root, slot, source);
-
-        if let Some(job_peer_id) = job_peer_id {
-            self.peers_in_use.remove(&job_peer_id);
-        }
-
-        if let Some(peer_id) = source_peer_id {
-            self.network_state.successful_response_from_peer(peer_id);
-            if let Some(latency_ms) = request_latency_ms {
-                self.telemetry
-                    .peer_avg_latency_ms
-                    .entry(peer_id)
-                    .and_modify(|avg_ms| *avg_ms = (*avg_ms * 0.8) + (latency_ms * 0.2))
-                    .or_insert(latency_ms);
-            }
-            self.peers_in_use.remove(&peer_id);
-        }
-
-        let parent_root_is_start_of_any_queue =
-            self.backfill_state.is_root_start_of_any_queue(&parent_root);
-        if parent_root_is_start_of_any_queue
-            && let Some(absorption) =
-                self.backfill_state
-                    .absorb_queue_frontier(last_root, slot, parent_root)
-        {
-            info!(
-                completed_root = ?last_root,
-                completed_slot = slot,
-                absorbed_queue_root = ?absorption.absorbed_starting_root,
-                absorbed_queue_slot = absorption.absorbed_starting_slot,
-                merged_job_count = absorption.merged_job_count,
-                "Absorbed older backfill queue frontier into newer queue",
-            );
-            self.queue_pending_job_requests().await?;
-            return Ok(());
-        }
-
-        let parent_resolution = if parent_root_is_start_of_any_queue {
-            BackfillParentResolution::Complete {
-                completion_root: parent_root,
-            }
-        } else {
-            self.resolve_backfill_parent_resolution(head, parent_root, slot)
-                .await?
-        };
-
-        match parent_resolution {
-            BackfillParentResolution::Complete { completion_root } => {
-                trace!(
-                    root = ?last_root,
-                    parent_root = ?parent_root,
-                    completion_root = ?completion_root,
-                    "Marking backfill queue as complete"
-                );
-                self.backfill_state
-                    .mark_job_queue_as_complete_at(last_root, Some(completion_root));
-            }
-            BackfillParentResolution::NeedsRequest {
-                request_slot,
-                missing_root,
-            } => {
-                if self.backfill_state.contains_job_root(last_root) {
-                    self.queue_pending_initial(last_root, request_slot, missing_root);
-                    self.queue_pending_job_requests().await?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    #[cfg(feature = "devnet4")]
     async fn handle_backfill_block(
         &mut self,
         source_peer_id: Option<PeerId>,
@@ -2710,15 +2469,6 @@ impl LeanChainService {
             )
         };
 
-        #[cfg(feature = "devnet3")]
-        let head_slot = block_provider
-            .get(head)?
-            .ok_or_else(|| anyhow!("State not found for head: {head}"))?
-            .message
-            .block
-            .slot;
-
-        #[cfg(feature = "devnet4")]
         let head_slot = block_provider
             .get(head)?
             .ok_or_else(|| anyhow!("State not found for head: {head}"))?
@@ -2802,37 +2552,6 @@ impl LeanChainService {
 
         Ok(())
     }
-    #[cfg(feature = "devnet3")]
-    async fn handle_process_block(
-        &mut self,
-        signed_block_with_attestation: &SignedBlockWithAttestation,
-    ) -> anyhow::Result<()> {
-        let parent_root = signed_block_with_attestation.message.block.parent_root;
-        let has_parent_state = {
-            let fork_choice = self.store.read().await;
-            let store = fork_choice.store.lock().await;
-            store.state_provider().get(parent_root)?.is_some()
-        };
-        if !has_parent_state {
-            warn!(
-                root = ?signed_block_with_attestation.message.block.tree_hash_root(),
-                parent_root = ?parent_root,
-                "Missing parent state while processing synced block; routing block to backfill path"
-            );
-            return self
-                .handle_syncing_process_block(signed_block_with_attestation)
-                .await;
-        }
-
-        self.store
-            .write()
-            .await
-            .on_block(signed_block_with_attestation, true)
-            .await?;
-
-        Ok(())
-    }
-    #[cfg(feature = "devnet4")]
     async fn handle_process_block(&mut self, signed_block: &SignedBlock) -> anyhow::Result<()> {
         let parent_root = signed_block.block.parent_root;
         let has_parent_state = {
@@ -2882,22 +2601,10 @@ impl LeanChainService {
     }
 }
 
-#[cfg(feature = "devnet3")]
-fn pending_block_slot(block: &SignedBlockWithAttestation) -> u64 {
-    block.message.block.slot
-}
-
-#[cfg(feature = "devnet4")]
 fn pending_block_slot(block: &SignedBlock) -> u64 {
     block.block.slot
 }
 
-#[cfg(feature = "devnet3")]
-fn pending_block_parent_root(block: &SignedBlockWithAttestation) -> B256 {
-    block.message.block.parent_root
-}
-
-#[cfg(feature = "devnet4")]
 fn pending_block_parent_root(block: &SignedBlock) -> B256 {
     block.block.parent_root
 }
@@ -2911,15 +2618,9 @@ mod tests {
 
     use alloy_primitives::B256;
     use libp2p_identity::PeerId;
-    #[cfg(feature = "devnet4")]
-    use ream_consensus_lean::block::{BlockSignatures, BlockWithSignatures, SignedBlock};
-    use ream_consensus_lean::checkpoint::Checkpoint;
-    #[cfg(feature = "devnet3")]
     use ream_consensus_lean::{
-        attestation::AggregatedAttestations,
-        block::{
-            BlockSignatures, BlockWithAttestation, BlockWithSignatures, SignedBlockWithAttestation,
-        },
+        block::{BlockSignatures, BlockWithSignatures, SignedBlock},
+        checkpoint::Checkpoint,
     };
     use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
@@ -2945,27 +2646,10 @@ mod tests {
     async fn advance_store_to_slot(store: &mut Store, target_slot: u64, validator_count: u64) {
         for slot in 1..=target_slot {
             let proposer_index = slot % validator_count;
-            #[cfg(feature = "devnet3")]
-            let attestation = store.produce_attestation_data(slot).await.unwrap();
             let block = store
                 .produce_block_with_signatures(slot, proposer_index)
                 .await
                 .unwrap();
-            #[cfg(feature = "devnet3")]
-            let signed_block = SignedBlockWithAttestation {
-                message: BlockWithAttestation {
-                    block: block.block,
-                    proposer_attestation: AggregatedAttestations {
-                        validator_id: proposer_index,
-                        data: attestation,
-                    },
-                },
-                signature: BlockSignatures {
-                    attestation_signatures: block.signatures,
-                    proposer_signature: Signature::blank(),
-                },
-            };
-            #[cfg(feature = "devnet4")]
             let signed_block = SignedBlock {
                 block: block.block,
                 signature: BlockSignatures {
@@ -3432,24 +3116,7 @@ complete(start=60, fetched_through=57, jobs=0)"
         let mut store = sample_store(10).await;
         advance_store_to_slot(&mut store, 3, 10).await;
 
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(4).await.unwrap();
         let block = store.produce_block_with_signatures(4, 4).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let signed_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 4,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::blank(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3457,9 +3124,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::blank(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        let checkpoint_root = signed_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let checkpoint_root = signed_block.block.tree_hash_root();
 
         // Insert a newer canonical block without updating the head provider.
@@ -3502,24 +3166,7 @@ complete(start=60, fetched_through=57, jobs=0)"
         let mut store = sample_store(10).await;
         advance_store_to_slot(&mut store, 3, 10).await;
 
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(4).await.unwrap();
         let block = store.produce_block_with_signatures(4, 4).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let signed_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 4,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::blank(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3527,9 +3174,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::blank(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        let pending_root = signed_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let pending_root = signed_block.block.tree_hash_root();
         store
             .store
@@ -3895,24 +3539,7 @@ complete(start=60, fetched_through=57, jobs=0)"
     #[tokio::test]
     async fn test_update_sync_status_stays_syncing_while_orphaned_pending_blocks_exist() {
         let mut store = sample_store(10).await;
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(1).await.unwrap();
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let mut pending_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 1,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3920,12 +3547,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        let pending_root = {
-            pending_block.message.block.parent_root = B256::repeat_byte(0x88);
-            pending_block.message.block.tree_hash_root()
-        };
-        #[cfg(feature = "devnet4")]
         let pending_root = {
             pending_block.block.parent_root = B256::repeat_byte(0x88);
             pending_block.block.tree_hash_root()
@@ -3955,24 +3576,7 @@ complete(start=60, fetched_through=57, jobs=0)"
     #[tokio::test]
     async fn test_update_sync_status_stays_synced_with_only_orphaned_pending_blocks() {
         let mut store = sample_store(10).await;
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(1).await.unwrap();
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let mut pending_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 1,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3980,12 +3584,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        let pending_root = {
-            pending_block.message.block.parent_root = B256::repeat_byte(0x99);
-            pending_block.message.block.tree_hash_root()
-        };
-        #[cfg(feature = "devnet4")]
         let pending_root = {
             pending_block.block.parent_root = B256::repeat_byte(0x99);
             pending_block.block.tree_hash_root()
@@ -4042,24 +3640,7 @@ complete(start=60, fetched_through=57, jobs=0)"
     #[tokio::test]
     async fn test_handle_forward_sync_root_mismatch_requeues_before_network_finalized() {
         let mut store = sample_store(10).await;
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(1).await.unwrap();
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let pending_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 1,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4067,9 +3648,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        let actual_root = pending_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let actual_root = pending_block.block.tree_hash_root();
         let bad_root = B256::repeat_byte(0xab);
         store
@@ -4131,24 +3709,7 @@ complete(start=60, fetched_through=57, jobs=0)"
     #[tokio::test]
     async fn test_handle_forward_sync_root_mismatch_drops_after_network_finalized() {
         let mut store = sample_store(10).await;
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(1).await.unwrap();
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let pending_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 1,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4156,9 +3717,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        let actual_root = pending_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let actual_root = pending_block.block.tree_hash_root();
         let bad_root = B256::repeat_byte(0xcd);
         store
@@ -4209,24 +3767,7 @@ complete(start=60, fetched_through=57, jobs=0)"
     #[tokio::test]
     async fn test_try_advance_job_with_cached_block_skips_suppressed_root() {
         let mut store = sample_store(10).await;
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(1).await.unwrap();
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let pending_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 1,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4234,9 +3775,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        let pending_root = pending_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let pending_root = pending_block.block.tree_hash_root();
         store
             .store
@@ -4278,24 +3816,7 @@ complete(start=60, fetched_through=57, jobs=0)"
             let db = store.store.lock().await;
             db.slot_index_provider().get(1).unwrap().unwrap()
         };
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(3).await.unwrap();
         let block = store.produce_block_with_signatures(3, 3).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let mut signed_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 3,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let mut signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4303,24 +3824,10 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        {
-            signed_block.message.block.parent_root = suppressed_parent_root;
-        }
-        #[cfg(feature = "devnet4")]
         {
             signed_block.block.parent_root = suppressed_parent_root;
         }
-        #[cfg(feature = "devnet3")]
-        let last_root = signed_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let last_root = signed_block.block.tree_hash_root();
-        #[cfg(feature = "devnet3")]
-        assert_eq!(
-            signed_block.message.block.parent_root,
-            suppressed_parent_root
-        );
-        #[cfg(feature = "devnet4")]
         assert_eq!(signed_block.block.parent_root, suppressed_parent_root);
 
         let (writer, _reader) = Writer::new(store);
@@ -4361,24 +3868,7 @@ complete(start=60, fetched_through=57, jobs=0)"
             db.slot_index_provider().get(1).unwrap().unwrap()
         };
 
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(3).await.unwrap();
         let block = store.produce_block_with_signatures(3, 3).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let mut pending_parent = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block.clone(),
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 3,
-                    data: attestation.clone(),
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures.clone(),
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let mut pending_parent = SignedBlock {
             block: block.block.clone(),
             signature: BlockSignatures {
@@ -4386,17 +3876,9 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        {
-            pending_parent.message.block.parent_root = canonical_completion_root;
-        }
-        #[cfg(feature = "devnet4")]
         {
             pending_parent.block.parent_root = canonical_completion_root;
         }
-        #[cfg(feature = "devnet3")]
-        let pending_parent_root = pending_parent.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let pending_parent_root = pending_parent.block.tree_hash_root();
         store
             .store
@@ -4406,21 +3888,6 @@ complete(start=60, fetched_through=57, jobs=0)"
             .insert(pending_parent_root, pending_parent)
             .unwrap();
 
-        #[cfg(feature = "devnet3")]
-        let mut signed_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 3,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let mut signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4428,19 +3895,10 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        {
-            signed_block.message.block.slot = 4;
-            signed_block.message.block.parent_root = pending_parent_root;
-        }
-        #[cfg(feature = "devnet4")]
         {
             signed_block.block.slot = 4;
             signed_block.block.parent_root = pending_parent_root;
         }
-        #[cfg(feature = "devnet3")]
-        let last_root = signed_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let last_root = signed_block.block.tree_hash_root();
 
         let (writer, _reader) = Writer::new(store);
@@ -4471,24 +3929,7 @@ complete(start=60, fetched_through=57, jobs=0)"
         let mut store = sample_store(10).await;
         let missing_root = B256::repeat_byte(0x66);
 
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(3).await.unwrap();
         let block = store.produce_block_with_signatures(3, 3).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let mut pending_parent = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block.clone(),
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 3,
-                    data: attestation.clone(),
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures.clone(),
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let mut pending_parent = SignedBlock {
             block: block.block.clone(),
             signature: BlockSignatures {
@@ -4496,17 +3937,9 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        {
-            pending_parent.message.block.parent_root = missing_root;
-        }
-        #[cfg(feature = "devnet4")]
         {
             pending_parent.block.parent_root = missing_root;
         }
-        #[cfg(feature = "devnet3")]
-        let pending_parent_root = pending_parent.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let pending_parent_root = pending_parent.block.tree_hash_root();
         store
             .store
@@ -4516,21 +3949,6 @@ complete(start=60, fetched_through=57, jobs=0)"
             .insert(pending_parent_root, pending_parent)
             .unwrap();
 
-        #[cfg(feature = "devnet3")]
-        let mut signed_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 3,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let mut signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4538,19 +3956,10 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        {
-            signed_block.message.block.slot = 4;
-            signed_block.message.block.parent_root = pending_parent_root;
-        }
-        #[cfg(feature = "devnet4")]
         {
             signed_block.block.slot = 4;
             signed_block.block.parent_root = pending_parent_root;
         }
-        #[cfg(feature = "devnet3")]
-        let last_root = signed_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let last_root = signed_block.block.tree_hash_root();
 
         let (writer, _reader) = Writer::new(store);
@@ -4583,24 +3992,7 @@ complete(start=60, fetched_through=57, jobs=0)"
     #[tokio::test]
     async fn test_prune_stale_pending_blocks_removes_finalized_orphans() {
         let mut store = sample_store(10).await;
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(1).await.unwrap();
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let mut pending_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 1,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4608,17 +4000,9 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        {
-            pending_block.message.block.parent_root = B256::repeat_byte(0x77);
-        }
-        #[cfg(feature = "devnet4")]
         {
             pending_block.block.parent_root = B256::repeat_byte(0x77);
         }
-        #[cfg(feature = "devnet3")]
-        let pending_root = pending_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let pending_root = pending_block.block.tree_hash_root();
         store
             .store
@@ -4652,27 +4036,10 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_handle_process_block_routes_missing_parent_to_backfill_path() {
         let mut target_store = sample_store(10).await;
 
-        #[cfg(feature = "devnet3")]
-        let attestation = target_store.produce_attestation_data(1).await.unwrap();
         let block = target_store
             .produce_block_with_signatures(1, 1)
             .await
             .unwrap();
-        #[cfg(feature = "devnet3")]
-        let mut signed_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 1,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let mut signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4680,17 +4047,9 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        {
-            signed_block.message.block.parent_root = B256::repeat_byte(0x99);
-        }
-        #[cfg(feature = "devnet4")]
         {
             signed_block.block.parent_root = B256::repeat_byte(0x99);
         }
-        #[cfg(feature = "devnet3")]
-        let block_root = signed_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let block_root = signed_block.block.tree_hash_root();
         let (writer, _reader) = Writer::new(target_store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
@@ -4755,28 +4114,6 @@ complete(start=60, fetched_through=57, jobs=0)"
         let old_frontier = B256::repeat_byte(0x12);
         let new_root = B256::repeat_byte(0x21);
 
-        #[cfg(feature = "devnet3")]
-        let signed_block = {
-            let attestation = store.produce_attestation_data(1).await.unwrap();
-            let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-            let mut signed_block = SignedBlockWithAttestation {
-                message: BlockWithAttestation {
-                    block: block.block,
-                    proposer_attestation: AggregatedAttestations {
-                        validator_id: 1,
-                        data: attestation,
-                    },
-                },
-                signature: BlockSignatures {
-                    attestation_signatures: block.signatures,
-                    proposer_signature: Signature::mock(),
-                },
-            };
-            signed_block.message.block.slot = 101;
-            signed_block.message.block.parent_root = old_root;
-            signed_block
-        };
-        #[cfg(feature = "devnet4")]
         let signed_block = {
             let block = store.produce_block_with_signatures(1, 1).await.unwrap();
             let mut signed_block = SignedBlock {
@@ -4822,9 +4159,6 @@ complete(start=60, fetched_through=57, jobs=0)"
             JobRequest::new(peer_new, new_root),
             false,
         );
-        #[cfg(feature = "devnet3")]
-        let new_frontier = signed_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let new_frontier = signed_block.block.tree_hash_root();
         service.backfill_state.replace_job_with_next_job(
             new_root,
@@ -4850,24 +4184,7 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_handle_backfill_block_clears_quarantine_for_arrived_root_but_preserves_attempts()
     {
         let mut store = sample_store(10).await;
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(1).await.unwrap();
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let signed_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 1,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4875,9 +4192,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        let root = signed_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let root = signed_block.block.tree_hash_root();
 
         let (writer, _reader) = Writer::new(store);
@@ -4948,24 +4262,7 @@ complete(start=60, fetched_through=57, jobs=0)"
     #[tokio::test]
     async fn test_prune_stale_pending_blocks_preserves_roots_still_referenced_by_backfill() {
         let mut store = sample_store(10).await;
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(1).await.unwrap();
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let mut pending_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 1,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
-        #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4973,19 +4270,10 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet3")]
-        {
-            pending_block.message.block.slot = 0;
-            pending_block.message.block.parent_root = B256::ZERO;
-        }
-        #[cfg(feature = "devnet4")]
         {
             pending_block.block.slot = 0;
             pending_block.block.parent_root = B256::ZERO;
         }
-        #[cfg(feature = "devnet3")]
-        let pending_root = pending_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let pending_root = pending_block.block.tree_hash_root();
         store
             .store
@@ -5026,25 +4314,6 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_handle_callback_response_accepts_late_reassigned_peer_callback() {
         let mut store = sample_store(10).await;
 
-        #[cfg(feature = "devnet3")]
-        let signed_block = {
-            let attestation = store.produce_attestation_data(1).await.unwrap();
-            let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-            SignedBlockWithAttestation {
-                message: BlockWithAttestation {
-                    block: block.block,
-                    proposer_attestation: AggregatedAttestations {
-                        validator_id: 1,
-                        data: attestation,
-                    },
-                },
-                signature: BlockSignatures {
-                    attestation_signatures: block.signatures,
-                    proposer_signature: Signature::mock(),
-                },
-            }
-        };
-        #[cfg(feature = "devnet4")]
         let signed_block = {
             let block = store.produce_block_with_signatures(1, 1).await.unwrap();
             SignedBlock {
@@ -5056,9 +4325,6 @@ complete(start=60, fetched_through=57, jobs=0)"
             }
         };
 
-        #[cfg(feature = "devnet3")]
-        let block_root = signed_block.message.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         let block_root = signed_block.block.tree_hash_root();
 
         let (writer, _reader) = Writer::new(store);

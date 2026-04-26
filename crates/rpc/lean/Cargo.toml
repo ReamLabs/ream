@@ -10,20 +10,20 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet3"]
-devnet3 = [
-    "ream-consensus-lean/devnet3",
-    "ream-fork-choice-lean/devnet3",
-    "ream-network-state-lean/devnet3",
-    "ream-storage/devnet3",
-    "ream-test-utils/devnet3",
-]
+default = ["devnet4"]
 devnet4 = [
     "ream-consensus-lean/devnet4",
     "ream-fork-choice-lean/devnet4",
     "ream-network-state-lean/devnet4",
     "ream-storage/devnet4",
     "ream-test-utils/devnet4",
+]
+devnet5 = [
+    "ream-consensus-lean/devnet5",
+    "ream-fork-choice-lean/devnet5",
+    "ream-network-state-lean/devnet5",
+    "ream-storage/devnet5",
+    "ream-test-utils/devnet5",
 ]
 
 [dependencies]

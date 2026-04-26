@@ -40,15 +40,15 @@ install: # Build and install the Ream binary under `~/.cargo/bin`.
 ##@ Testing and Linting
 
 .PHONY: test
-test: test-devnet3 test-devnet4
-
-.PHONY: test-devnet3
-test-devnet3: # Run all tests for Devnet 3.
-	cargo test --workspace -- --nocapture
+test: test-devnet4 test-devnet5
 
 .PHONY: test-devnet4
-test-devnet4: # Run all tests for Devnet 4.
-	cargo test --workspace --no-default-features --features "devnet4" -- --nocapture
+test-devnet4:
+	cargo test --workspace -- --nocapture
+
+.PHONY: test-devnet5
+test-devnet5:
+	cargo test --workspace --no-default-features --features "devnet5" -- --nocapture
 
 .PHONY: fmt
 fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `map_err` to be `err`
@@ -78,12 +78,11 @@ fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `ma
 .PHONY: clippy
 clippy: # Run `clippy` on the entire workspace.
 	cargo clippy --all --all-targets --features "$(FEATURES)" --no-deps -- --deny warnings
-	cargo clippy --all --all-targets --no-default-features --features "devnet4,$(FEATURES)" --no-deps -- --deny warnings
 	cargo clippy --package ream-bls --all-targets --features "supranational" --no-deps -- --deny warnings
 
-.PHONY: clippy-devnet4
-clippy-devnet4: # Run `clippy` for Devnet 4.
-	cargo clippy --workspace --all-targets --no-default-features --features "devnet4" --no-deps -- --deny warnings
+.PHONY: clippy-devnet5
+clippy-devnet5:
+	cargo clippy --workspace --all-targets --no-default-features --features "devnet5" --no-deps -- --deny warnings
 
 .PHONY: sort
 sort: # Run `cargo sort` on the entire workspace.
@@ -120,7 +119,7 @@ build-%:
 .PHONY: docker-build-push
 docker-build-push:
 	$(MAKE) docker-build-push-default
-	$(MAKE) docker-build-push-devnet4
+	$(MAKE) docker-build-push-devnet5
 
 .PHONY: docker-build-push-default
 docker-build-push-default:
@@ -135,26 +134,26 @@ docker-build-push-default:
 	docker buildx build --file ./Dockerfile.cross . \
 		--platform linux/amd64,linux/arm64 \
 		--tag ghcr.io/reamlabs/ream:latest \
-		--tag ghcr.io/reamlabs/ream:latest-devnet3 \
+		--tag ghcr.io/reamlabs/ream:latest-devnet4 \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		--provenance=false \
 		--push
 
-.PHONY: docker-build-push-devnet4
-docker-build-push-devnet4:
-	$(MAKE) build-x86_64-unknown-linux-gnu FEATURES="devnet4" EXTRA_FLAGS="--no-default-features"
+.PHONY: docker-build-push-devnet5
+docker-build-push-devnet5:
+	$(MAKE) build-x86_64-unknown-linux-gnu FEATURES="devnet5" EXTRA_FLAGS="--no-default-features"
 	mkdir -p $(BIN_DIR)/amd64
 	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
 
-	$(MAKE) build-aarch64-unknown-linux-gnu FEATURES="devnet4" EXTRA_FLAGS="--no-default-features"
+	$(MAKE) build-aarch64-unknown-linux-gnu FEATURES="devnet5" EXTRA_FLAGS="--no-default-features"
 	mkdir -p $(BIN_DIR)/arm64
 	cp $(CARGO_TARGET_DIR)/aarch64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/arm64/ream
 
 	docker buildx build --file ./Dockerfile.cross . \
 		--platform linux/amd64,linux/arm64 \
-		--tag ghcr.io/reamlabs/ream:latest-devnet4 \
+		--tag ghcr.io/reamlabs/ream:latest-devnet5 \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \

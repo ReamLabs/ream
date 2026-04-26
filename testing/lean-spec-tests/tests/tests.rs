@@ -50,7 +50,7 @@ fn test_all_state_transition_fixtures() {
         warn!("Failed to initialize tracing subscriber: {err}");
     }
 
-    let fixtures = find_json_files("fixtures/devnet3/state_transition");
+    let fixtures = find_json_files("fixtures/devnet4/state_transition");
 
     if fixtures.is_empty() {
         info!(
@@ -114,7 +114,7 @@ fn test_all_ssz_fixtures() {
         warn!("Failed to initialize tracing subscriber: {err}");
     }
 
-    let fixtures = find_json_files("fixtures/devnet3/ssz/devnet");
+    let fixtures = find_json_files("fixtures/devnet4/ssz/devnet");
 
     if fixtures.is_empty() {
         info!(
@@ -184,7 +184,7 @@ async fn test_all_fork_choice_fixtures() {
         warn!("Failed to initialize tracing subscriber: {err}");
     }
 
-    let fixtures = find_json_files("fixtures/devnet3/fork_choice");
+    let fixtures = find_json_files("fixtures/devnet4/fork_choice");
 
     if fixtures.is_empty() {
         info!(
