@@ -114,7 +114,7 @@ build-%:
 	cross build --bin ream --target $* --features "$(FEATURES)" --profile "$(PROFILE)" $(EXTRA_FLAGS)
 
 .PHONY: docker-build-push
-docker-build-push: # Build and push the Ream Docker image (devnet4, the default).
+docker-build-push: # Build and push the Ream Docker image.
 	$(MAKE) build-x86_64-unknown-linux-gnu
 	mkdir -p $(BIN_DIR)/amd64
 	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
