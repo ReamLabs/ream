@@ -113,6 +113,7 @@ pr: lint update-book-cli clean-deps test # Run all checks for a PR.
 build-%:
 	cross build --bin ream --target $* --features "$(FEATURES)" --profile "$(PROFILE)" $(EXTRA_FLAGS)
 
+.PHONY: docker-build-push
 docker-build-push:
 	$(MAKE) docker-build-push-default
 	$(MAKE) docker-build-push-devnet5
