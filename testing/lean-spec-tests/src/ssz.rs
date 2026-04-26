@@ -19,7 +19,7 @@ use tracing::{debug, info, warn};
 
 use crate::types::{
     TestFixture,
-    ssz_test::{
+    ssz::{
         AggregatedAttestationJSON, AggregatedSignatureProofJSON, AttestationDataJSON,
         AttestationJSON, BlockBodyJSON, BlockHeaderJSON, BlockJSON, BlockSignaturesJSON,
         BlocksByRootRequestJSON, BlocksByRootRequestSSZ, CheckpointJSON, ConfigJSON, PublicKeyJSON,

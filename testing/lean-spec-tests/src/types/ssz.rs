@@ -46,10 +46,12 @@ fn bools_to_bitlist<N: ssz_types::typenum::Unsigned>(bools: &[bool]) -> anyhow::
 }
 
 fn decode_signature(hex: &str) -> anyhow::Result<Signature> {
+    // Must match `ream_post_quantum_crypto::leansig::signature::SIGNATURE_SIZE`.
+    const SIGNATURE_SIZE: usize = 2536;
     let bytes = decode_hex(hex)?;
     ensure!(
-        bytes.len() == 3112,
-        "Expected 3112-byte signature, got {} bytes",
+        bytes.len() == SIGNATURE_SIZE,
+        "Expected {SIGNATURE_SIZE}-byte signature, got {} bytes",
         bytes.len()
     );
     Ok(Signature::from(&bytes[..]))
@@ -154,7 +156,8 @@ impl TryFrom<&BlockHeaderJSON> for BlockHeader {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidatorJSON {
-    pub pubkey: String,
+    pub attestation_pubkey: String,
+    pub proposal_pubkey: String,
     pub index: u64,
 }
 
@@ -162,19 +165,22 @@ impl TryFrom<&ValidatorJSON> for Validator {
     type Error = anyhow::Error;
 
     fn try_from(value: &ValidatorJSON) -> anyhow::Result<Self> {
-        let bytes = decode_hex(&value.pubkey)?;
-        ensure!(
-            bytes.len() == 52,
-            "Expected 52-byte pubkey, got {}",
-            bytes.len()
-        );
-        let pubkey = PublicKey::from(&bytes[..]);
         Ok(Self {
-            attestation_public_key: pubkey,
-            proposal_public_key: pubkey,
+            attestation_public_key: decode_pubkey(&value.attestation_pubkey)?,
+            proposal_public_key: decode_pubkey(&value.proposal_pubkey)?,
             index: value.index,
         })
     }
+}
+
+fn decode_pubkey(hex: &str) -> anyhow::Result<PublicKey> {
+    let bytes = decode_hex(hex)?;
+    ensure!(
+        bytes.len() == 52,
+        "Expected 52-byte pubkey, got {}",
+        bytes.len()
+    );
+    Ok(PublicKey::from(&bytes[..]))
 }
 
 #[derive(Debug, Deserialize, Clone)]

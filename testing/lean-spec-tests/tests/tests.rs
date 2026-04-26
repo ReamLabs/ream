@@ -2,8 +2,12 @@ use std::{env, fs, path::PathBuf};
 
 use lean_spec_tests::{
     fork_choice::{load_fork_choice_test, run_fork_choice_test},
-    ssz_test::{load_ssz_test, run_ssz_test},
+    justifiability::{load_justifiability_test, run_justifiability_test},
+    slot_clock::{load_slot_clock_test, run_slot_clock_test},
+    ssz::{load_ssz_test, run_ssz_test},
     state_transition::{load_state_transition_test, run_state_transition_test},
+    sync::{load_sync_test, run_sync_test},
+    verify_signatures::{load_verify_signatures_test, run_verify_signatures_test},
 };
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -36,9 +40,7 @@ fn find_json_files(dir: &str) -> Vec<PathBuf> {
     files
 }
 
-#[test]
-fn test_all_state_transition_fixtures() {
-    // Initialize tracing subscriber for test output
+fn init_tracing() {
     let env_filter = match env::var(EnvFilter::DEFAULT_ENV) {
         Ok(filter) => EnvFilter::builder().parse_lossy(filter),
         Err(_) => EnvFilter::new("info"),
@@ -49,8 +51,13 @@ fn test_all_state_transition_fixtures() {
     {
         warn!("Failed to initialize tracing subscriber: {err}");
     }
+}
 
-    let fixtures = find_json_files("fixtures/devnet4/state_transition");
+#[test]
+fn test_all_state_transition_fixtures() {
+    init_tracing();
+
+    let fixtures = find_json_files("fixtures/consensus/state_transition/devnet");
 
     if fixtures.is_empty() {
         info!(
@@ -102,19 +109,9 @@ fn test_all_state_transition_fixtures() {
 
 #[test]
 fn test_all_ssz_fixtures() {
-    // Initialize tracing subscriber for test output
-    let env_filter = match env::var(EnvFilter::DEFAULT_ENV) {
-        Ok(filter) => EnvFilter::builder().parse_lossy(filter),
-        Err(_) => EnvFilter::new("info"),
-    };
-    if let Err(err) = tracing_subscriber::fmt()
-        .with_env_filter(env_filter)
-        .try_init()
-    {
-        warn!("Failed to initialize tracing subscriber: {err}");
-    }
+    init_tracing();
 
-    let fixtures = find_json_files("fixtures/devnet4/ssz/devnet");
+    let fixtures = find_json_files("fixtures/consensus/ssz/devnet");
 
     if fixtures.is_empty() {
         info!(
@@ -172,19 +169,9 @@ fn test_all_ssz_fixtures() {
 
 #[tokio::test]
 async fn test_all_fork_choice_fixtures() {
-    // Initialize tracing subscriber for test output
-    let env_filter = match env::var(EnvFilter::DEFAULT_ENV) {
-        Ok(filter) => EnvFilter::builder().parse_lossy(filter),
-        Err(_) => EnvFilter::new("info"),
-    };
-    if let Err(err) = tracing_subscriber::fmt()
-        .with_env_filter(env_filter)
-        .try_init()
-    {
-        warn!("Failed to initialize tracing subscriber: {err}");
-    }
+    init_tracing();
 
-    let fixtures = find_json_files("fixtures/devnet4/fork_choice");
+    let fixtures = find_json_files("fixtures/consensus/fork_choice/devnet");
 
     if fixtures.is_empty() {
         info!(
@@ -232,4 +219,220 @@ async fn test_all_fork_choice_fixtures() {
     info!("Failed: {failed}");
 
     assert_eq!(failed, 0, "Some fork choice tests failed");
+}
+
+#[test]
+fn test_all_justifiability_fixtures() {
+    init_tracing();
+
+    let fixtures = find_json_files("fixtures/consensus/justifiability/devnet");
+
+    if fixtures.is_empty() {
+        info!(
+            "No justifiability fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
+        );
+        return;
+    }
+
+    info!("Found {} justifiability test fixtures", fixtures.len());
+
+    let mut total_tests = 0;
+    let mut passed = 0;
+    let mut failed = 0;
+
+    for fixture_path in fixtures {
+        debug!("\n=== Loading fixture: {:?} ===", fixture_path.file_name());
+
+        match load_justifiability_test(&fixture_path) {
+            Ok(fixture) => {
+                for (test_name, test) in &fixture {
+                    total_tests += 1;
+                    info!("Starting test: {test_name}");
+                    match run_justifiability_test(test_name, test) {
+                        Ok(_) => {
+                            passed += 1;
+                            info!("PASSED: {test_name}");
+                        }
+                        Err(err) => {
+                            failed += 1;
+                            error!("FAILED: {test_name} - {err:?}");
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                error!("Failed to load fixture {fixture_path:?}: {err:?}");
+                failed += 1;
+            }
+        }
+    }
+
+    info!("\n=== Justifiability Test Summary ===");
+    info!("Total tests: {total_tests}");
+    info!("Passed: {passed}");
+    info!("Failed: {failed}");
+
+    assert_eq!(failed, 0, "Some justifiability tests failed");
+}
+
+#[test]
+fn test_all_slot_clock_fixtures() {
+    init_tracing();
+
+    let fixtures = find_json_files("fixtures/consensus/slot_clock/devnet");
+
+    if fixtures.is_empty() {
+        info!(
+            "No slot_clock fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
+        );
+        return;
+    }
+
+    info!("Found {} slot_clock test fixtures", fixtures.len());
+
+    let mut total_tests = 0;
+    let mut passed = 0;
+    let mut failed = 0;
+
+    for fixture_path in fixtures {
+        debug!("\n=== Loading fixture: {:?} ===", fixture_path.file_name());
+
+        match load_slot_clock_test(&fixture_path) {
+            Ok(fixture) => {
+                for (test_name, test) in &fixture {
+                    total_tests += 1;
+                    info!("Starting test: {test_name}");
+                    match run_slot_clock_test(test_name, test) {
+                        Ok(_) => {
+                            passed += 1;
+                            info!("PASSED: {test_name}");
+                        }
+                        Err(err) => {
+                            failed += 1;
+                            error!("FAILED: {test_name} - {err:?}");
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                error!("Failed to load fixture {fixture_path:?}: {err:?}");
+                failed += 1;
+            }
+        }
+    }
+
+    info!("\n=== Slot Clock Test Summary ===");
+    info!("Total tests: {total_tests}");
+    info!("Passed: {passed}");
+    info!("Failed: {failed}");
+
+    assert_eq!(failed, 0, "Some slot_clock tests failed");
+}
+
+#[test]
+fn test_all_verify_signatures_fixtures() {
+    init_tracing();
+
+    let fixtures = find_json_files("fixtures/consensus/verify_signatures/devnet");
+
+    if fixtures.is_empty() {
+        info!(
+            "No verify_signatures fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
+        );
+        return;
+    }
+
+    info!("Found {} verify_signatures test fixtures", fixtures.len());
+
+    let mut total_tests = 0;
+    let mut passed = 0;
+    let mut failed = 0;
+
+    for fixture_path in fixtures {
+        debug!("\n=== Loading fixture: {:?} ===", fixture_path.file_name());
+
+        match load_verify_signatures_test(&fixture_path) {
+            Ok(fixture) => {
+                for (test_name, test) in &fixture {
+                    total_tests += 1;
+                    info!("Starting test: {test_name}");
+                    match run_verify_signatures_test(test_name, test) {
+                        Ok(_) => {
+                            passed += 1;
+                            info!("PASSED: {test_name}");
+                        }
+                        Err(err) => {
+                            failed += 1;
+                            error!("FAILED: {test_name} - {err:?}");
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                error!("Failed to load fixture {fixture_path:?}: {err:?}");
+                failed += 1;
+            }
+        }
+    }
+
+    info!("\n=== Verify Signatures Test Summary ===");
+    info!("Total tests: {total_tests}");
+    info!("Passed: {passed}");
+    info!("Failed: {failed}");
+
+    assert_eq!(failed, 0, "Some verify_signatures tests failed");
+}
+
+#[test]
+fn test_all_sync_fixtures() {
+    init_tracing();
+
+    let fixtures = find_json_files("fixtures/consensus/sync/devnet");
+
+    if fixtures.is_empty() {
+        info!(
+            "No sync fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
+        );
+        return;
+    }
+
+    info!("Found {} sync test fixtures", fixtures.len());
+
+    let mut total_tests = 0;
+    let mut passed = 0;
+    let mut failed = 0;
+
+    for fixture_path in fixtures {
+        debug!("\n=== Loading fixture: {:?} ===", fixture_path.file_name());
+
+        match load_sync_test(&fixture_path) {
+            Ok(fixture) => {
+                for (test_name, test) in &fixture {
+                    total_tests += 1;
+                    info!("Starting test: {test_name}");
+                    match run_sync_test(test_name, test) {
+                        Ok(_) => {
+                            passed += 1;
+                            info!("PASSED: {test_name}");
+                        }
+                        Err(err) => {
+                            failed += 1;
+                            error!("FAILED: {test_name} - {err:?}");
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                error!("Failed to load fixture {fixture_path:?}: {err:?}");
+                failed += 1;
+            }
+        }
+    }
+
+    info!("\n=== Sync Test Summary ===");
+    info!("Total tests: {total_tests}");
+    info!("Passed: {passed}");
+    info!("Failed: {failed}");
+
+    assert_eq!(failed, 0, "Some sync tests failed");
 }

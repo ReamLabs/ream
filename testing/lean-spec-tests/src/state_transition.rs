@@ -80,6 +80,18 @@ pub fn run_state_transition_test(
         }
     }
 
+    // For "process_slots" property tests there are no blocks; the test asserts that
+    // calling `process_slots(state.slot)` fails because the target must be strictly
+    // in the future. Trigger that path explicitly so the expected exception fires.
+    if result.is_ok() && test.blocks.is_empty() && expect_exception {
+        let target_slot = state.slot;
+        if let Err(err) = state.process_slots(target_slot) {
+            result = Err(anyhow!(
+                "process_slots({target_slot}) on state at slot {target_slot}: {err}"
+            ));
+        }
+    }
+
     // Check if the result matches expectations
     match (result, expect_exception) {
         (Ok(_), true) => {
