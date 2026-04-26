@@ -897,8 +897,24 @@ mod tests {
             assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
 
         let mut validators_yaml = String::new();
-        for i in 0..node_count {
-            validators_yaml.push_str(&format!("node{}:\n  - {i}\n", i + 1));
+        for (i, keys) in VALIDATOR_KEYS.iter().enumerate().take(node_count) {
+            validators_yaml.push_str(&format!("node{}:\n", i + 1));
+            #[cfg(feature = "devnet3")]
+            {
+                validators_yaml.push_str(&format!(
+                    "  - index: {i}\n    pubkey_hex: {keys}\n    privkey_file: validator_{i}_sk.ssz\n",
+                ));
+            }
+            #[cfg(feature = "devnet4")]
+            {
+                let (attester_key, proposer_key) = keys;
+                validators_yaml.push_str(&format!(
+                    "  - index: {i}\n    pubkey_hex: {attester_key}\n    privkey_file: validator_{i}_attestation_sk.ssz\n"
+                ));
+                validators_yaml.push_str(&format!(
+                    "  - index: {i}\n    pubkey_hex: {proposer_key}\n    privkey_file: validator_{i}_proposal_sk.ssz\n"
+                ));
+            }
         }
 
         fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
@@ -1323,7 +1339,7 @@ mod tests {
             "--network",
             "ephemery",
             "--validator-registry-path",
-            "./assets/lean/validators.yaml",
+            "./assets/lean/annotated_validators.yaml",
             "--is-aggregator",
         ]);
 
@@ -1375,7 +1391,7 @@ mod tests {
             "--network",
             "ephemery",
             "--validator-registry-path",
-            "./assets/lean/validators.yaml",
+            "./assets/lean/annotated_validators.yaml",
             "--socket-port",
             "9001",
             "--http-port",
@@ -1509,15 +1525,7 @@ mod tests {
             .canonicalize()
             .expect("Failed to canonicalize assets path");
 
-        let registry_path =
-            assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
-
-        let mut validators_yaml = String::new();
-        for i in 0..node_count {
-            validators_yaml.push_str(&format!("node{}:\n  - {i}\n", i + 1));
-        }
-
-        fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
+        let registry_path = write_test_validator_registry(&assets_directory, test_name, node_count);
         let registry_path_string = registry_path.to_string_lossy().to_string();
 
         let network_config_path = create_test_network_config(test_name, 3);
@@ -1720,19 +1728,11 @@ mod tests {
             .canonicalize()
             .expect("Failed to canonicalize assets path");
 
-        let registry_path =
-            assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
+        let registry_path = write_test_validator_registry(&assets_directory, test_name, node_count);
+        let registry_path_string = registry_path.to_string_lossy().to_string();
 
         let network_config_path = create_test_network_config(test_name, 3);
         let network_config_path_string = network_config_path.to_string_lossy().to_string();
-
-        let mut validators_yaml = String::new();
-        for i in 0..node_count {
-            validators_yaml.push_str(&format!("node{}:\n  - {i}\n", i + 1));
-        }
-
-        fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
-        let registry_path_string = registry_path.to_string_lossy().to_string();
 
         let executor = ReamExecutor::new().unwrap();
         executor.clone().runtime().block_on(async move {
@@ -2063,11 +2063,7 @@ mod tests {
             .canonicalize()
             .expect("Failed to canonicalize assets path");
 
-        let registry_path =
-            assets_directory.join(format!("test_multi_node_registry_{test_name}.yaml"));
-
-        let validators_yaml = "node1:\n  - 0\nnode2:\n  - 1\n";
-        fs::write(&registry_path, validators_yaml).expect("Failed to write temp registry");
+        let registry_path = write_test_validator_registry(&assets_directory, test_name, node_count);
         let registry_path_string = registry_path.to_string_lossy().to_string();
 
         let network_config_path = create_test_network_config(test_name, 2);
