@@ -8,12 +8,6 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlock},
     checkpoint::Checkpoint,
 };
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::{
-    attestation::{AttestationData, SignedAggregatedAttestation, SignedAttestation},
-    block::{BlockWithSignatures, SignedBlockWithAttestation},
-    checkpoint::Checkpoint,
-};
 use ream_req_resp::lean::NetworkEvent;
 use tokio::sync::oneshot;
 
@@ -38,8 +32,6 @@ pub enum LeanChainServiceMessage {
 
     // Processors
     ProcessBlock {
-        #[cfg(feature = "devnet3")]
-        signed_block_with_attestation: Box<SignedBlockWithAttestation>,
         #[cfg(feature = "devnet4")]
         signed_block: Box<SignedBlock>,
         need_gossip: bool,
@@ -60,8 +52,6 @@ pub enum LeanChainServiceMessage {
     },
     GetBlocksByRoot {
         roots: Vec<B256>,
-        #[cfg(feature = "devnet3")]
-        sender: oneshot::Sender<Vec<Arc<SignedBlockWithAttestation>>>,
         #[cfg(feature = "devnet4")]
         sender: oneshot::Sender<Vec<Arc<SignedBlock>>>,
     },

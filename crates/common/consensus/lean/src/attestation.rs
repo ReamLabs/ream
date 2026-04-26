@@ -42,33 +42,6 @@ impl SignatureKey {
     }
 }
 
-#[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct AggregatedSignatureProof {
-    pub participants: BitList<U4096>,
-    pub proof_data: VariableList<u8, U1048576>,
-}
-
-#[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
-impl AggregatedSignatureProof {
-    pub fn new(participants: BitList<U4096>, proof_data: VariableList<u8, U1048576>) -> Self {
-        Self {
-            participants,
-            proof_data,
-        }
-    }
-
-    /// Get the validator IDs covered by this proof
-    pub fn to_validator_indices(&self) -> Vec<u64> {
-        self.participants
-            .iter()
-            .enumerate()
-            .filter(|(_, bit)| *bit)
-            .map(|(index, _)| index as u64)
-            .collect()
-    }
-}
-
 #[cfg(feature = "devnet4")]
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode)]
 pub struct AggregatedSignatureProof {

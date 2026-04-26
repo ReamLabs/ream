@@ -114,13 +114,6 @@ impl LeanDB {
         }
     }
 
-    #[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
-    pub fn gossip_signatures_provider(&self) -> GossipSignaturesTable {
-        GossipSignaturesTable {
-            db: self.db.clone(),
-        }
-    }
-
     #[cfg(feature = "devnet4")]
     pub fn attestation_signatures_provider(&self) -> GossipSignaturesTable {
         GossipSignaturesTable {

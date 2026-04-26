@@ -29,8 +29,6 @@ pub fn setup_genesis(genesis_time: u64, validators: Vec<Validator>) -> (Block, L
 #[cfg(test)]
 mod test {
     use alloy_primitives::FixedBytes;
-    #[cfg(feature = "devnet3")]
-    use alloy_primitives::hex::ToHexExt;
     use ream_consensus_lean::validator::Validator;
     use ream_post_quantum_crypto::leansig::public_key::PublicKey;
     use tree_hash::TreeHash;
@@ -38,13 +36,6 @@ mod test {
     use crate::genesis::setup_genesis;
 
     fn make_test_validator(index: u8) -> Validator {
-        #[cfg(feature = "devnet3")]
-        {
-            Validator {
-                public_key: PublicKey::new(FixedBytes::from_slice(&[index; 52])),
-                index: (index - 1) as u64,
-            }
-        }
         #[cfg(feature = "devnet4")]
         {
             Validator {
@@ -74,22 +65,5 @@ mod test {
 
         let (block_3, _) = setup_genesis(2000, public_keys_1.clone());
         assert_ne!(block_1.tree_hash_root(), block_3.tree_hash_root());
-
-        // Hash values differ between devnet3 and devnet4 due to different Validator struct layout
-        #[cfg(feature = "devnet3")]
-        {
-            assert_eq!(
-                block_1.tree_hash_root().encode_hex(),
-                "cc03f11dd80dd79a4add86265fad0a141d0a553812d43b8f2c03aa43e4b002e3"
-            );
-            assert_eq!(
-                block_2.tree_hash_root().encode_hex(),
-                "cad1ca340fd23738541ee49ded6e28aa422e6328af56e7445c1a7cd1bf83f2ee"
-            );
-            assert_eq!(
-                block_3.tree_hash_root().encode_hex(),
-                "ce48a709189aa2b23b6858800996176dc13eb49c0c95d717c39e60042de1ac91"
-            );
-        }
     }
 }

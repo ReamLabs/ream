@@ -44,8 +44,6 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
         .get(node_id)
         .ok_or_else(|| anyhow!("Failed to get validator indexes for given node ID {node_id}"))?
     {
-        #[cfg(feature = "devnet3")]
-        path.push("validator-keys-manifest.yaml");
         #[cfg(feature = "devnet4")]
         path.push("validator-keys-manifest-devnet4.yaml");
 
@@ -60,20 +58,6 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
             .validators
             .get(*ream_validator_index as usize)
             .expect("Failed to get ream validator index");
-
-        #[cfg(feature = "devnet3")]
-        {
-            path.pop();
-            path.push(validator.private_key_file.clone());
-            let private_key = load_private_key(&path)?;
-
-            validator_keystores.push(ValidatorKeystore {
-                index: *ream_validator_index,
-                public_key: validator.public_key,
-                private_key,
-            });
-            path.pop();
-        }
 
         #[cfg(feature = "devnet4")]
         {

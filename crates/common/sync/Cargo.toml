@@ -12,7 +12,6 @@ version.workspace = true
 
 [features]
 default = []
-devnet3 = []
 devnet4 = []
 
 [dependencies]

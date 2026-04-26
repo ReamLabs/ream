@@ -6,18 +6,11 @@ use ream_consensus_lean::{
     attestation::{SignedAggregatedAttestation, SignedAttestation},
     block::SignedBlock,
 };
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::{
-    attestation::{SignedAggregatedAttestation, SignedAttestation},
-    block::SignedBlockWithAttestation,
-};
 use ream_req_resp::lean::{ResponseCallback, messages::LeanResponseMessage};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub enum LeanP2PRequest {
-    #[cfg(feature = "devnet3")]
-    GossipBlock(Box<SignedBlockWithAttestation>),
     #[cfg(feature = "devnet4")]
     GossipBlock(Box<SignedBlock>),
     GossipAttestation {

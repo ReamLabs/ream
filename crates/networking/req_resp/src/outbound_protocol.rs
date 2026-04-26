@@ -19,8 +19,6 @@ use ream_consensus_beacon::{
 };
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::SignedBlock as ActiveBlock;
-#[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
-use ream_consensus_lean::block::SignedBlockWithAttestation as ActiveBlock;
 use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
 use ream_network_spec::networks::beacon_network_spec;
 use snap::{read::FrameDecoder, write::FrameEncoder};

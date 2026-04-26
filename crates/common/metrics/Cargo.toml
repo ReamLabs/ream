@@ -10,8 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet3"]
-devnet3 = []
+default = ["devnet4"]
 devnet4 = []
 
 [dependencies]

@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        devnet: [devnet3, devnet4]
+        devnet: [devnet4]
 
     steps:
       - name: Checkout ream
@@ -44,9 +44,6 @@ jobs:
           set -euo pipefail
 
           case "${{ matrix.devnet }}" in
-            devnet3)
-              cargo build --release --package ream --bin ream --no-default-features --features devnet3
-              ;;
             devnet4)
               cargo build --release --package ream --bin ream --no-default-features --features devnet4
               ;;
@@ -73,7 +70,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        devnet: [devnet3, devnet4]
+        devnet: [devnet4]
         peer_client: [zeam, qlean, lantern, grandine, ethlambda]
         topology: [peer-peer-ream, peer-ream-ream]
 
@@ -95,10 +92,7 @@ jobs:
           # Grandine lean devnet images are intermittently unpublished.
           # Skip these matrix legs until the image tags are available again.
           if [ "${{ matrix.peer_client }}" = "grandine" ]; then
-            grandine_image="sifrai/lean:devnet-3"
-            if [ "${{ matrix.devnet }}" = "devnet4" ]; then
-              grandine_image="sifrai/lean:devnet-4"
-            fi
+            grandine_image="sifrai/lean:devnet-4"
 
             if ! docker manifest inspect "$grandine_image" >/dev/null 2>&1; then
               skip_run="true"
@@ -178,7 +172,7 @@ jobs:
                   $aggregator_flag \
                   $checkpoint_sync_flag"
 
-          node_docker="${REAM_DOCKER_IMAGE:-ghcr.io/reamlabs/ream:latest-devnet3} --data-dir /data \
+          node_docker="${REAM_DOCKER_IMAGE:-ghcr.io/reamlabs/ream:latest-devnet4} --data-dir /data \
                   lean_node \
                   --network /config/config.yaml \
                   --validator-registry-path /config/validators.yaml \
@@ -232,7 +226,7 @@ jobs:
                 $aggregator_flag \
                 $checkpoint_sync_flag"
 
-          node_docker="--security-opt seccomp=unconfined ${ZEAM_DOCKER_IMAGE:-blockblaz/zeam:devnet3} node \
+          node_docker="--security-opt seccomp=unconfined ${ZEAM_DOCKER_IMAGE:-blockblaz/zeam:devnet4} node \
                 --custom_genesis /config \
                 --validator_config $validatorConfig \
                 --data-dir /data \
@@ -282,7 +276,7 @@ jobs:
                 $checkpoint_sync_flag \
                 -linfo"
 
-          node_docker="--security-opt seccomp=unconfined ${QLEAN_DOCKER_IMAGE:-qdrvm/qlean-mini:devnet-3} \
+          node_docker="--security-opt seccomp=unconfined ${QLEAN_DOCKER_IMAGE:-qdrvm/qlean-mini:devnet-4} \
                 --genesis /config/config.yaml \
                 --validator-registry-path /config/validators.yaml \
                 --validator-keys-manifest /config/hash-sig-keys/validator-keys-manifest.yaml \
@@ -378,7 +372,7 @@ jobs:
 
           #-----------------------grandine setup----------------------
           grandine_bin="${GRANDINE_BINARY_PATH:-$scriptDir/grandine/target/release/grandine}"
-          GRANDINE_IMAGE="${GRANDINE_DOCKER_IMAGE:-sifrai/lean:devnet-3}"
+          GRANDINE_IMAGE="${GRANDINE_DOCKER_IMAGE:-sifrai/lean:devnet-4}"
 
           # Set aggregator flag based on isAggregator value
           aggregator_flag=""
@@ -478,7 +472,7 @@ jobs:
             $aggregator_flag \
             $checkpoint_sync_flag"
 
-          node_docker="${ETHLAMBDA_DOCKER_IMAGE:-ghcr.io/lambdaclass/ethlambda:devnet3} \
+          node_docker="${ETHLAMBDA_DOCKER_IMAGE:-ghcr.io/lambdaclass/ethlambda:devnet4} \
             --custom-network-config-dir /config \
             --gossipsub-port $quicPort \
             --node-id $item \
@@ -598,31 +592,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          ream_image="ghcr.io/reamlabs/ream:latest-devnet3"
-          zeam_image="blockblaz/zeam:devnet3"
-          qlean_image="qdrvm/qlean-mini:devnet-3"
-          grandine_image="sifrai/lean:devnet-3"
-          ethlambda_image="ghcr.io/lambdaclass/ethlambda:devnet3"
-
-          if [ "${{ matrix.devnet }}" = "devnet4" ]; then
-            ream_candidate="ghcr.io/reamlabs/ream:latest-devnet4"
-            zeam_candidate="blockblaz/zeam:devnet4"
-            qlean_candidate="qdrvm/qlean-mini:devnet-4"
-            grandine_candidate="sifrai/lean:devnet-4"
-
-            if docker manifest inspect "$ream_candidate" >/dev/null 2>&1; then
-              ream_image="$ream_candidate"
-            fi
-            if docker manifest inspect "$zeam_candidate" >/dev/null 2>&1; then
-              zeam_image="$zeam_candidate"
-            fi
-            if docker manifest inspect "$qlean_candidate" >/dev/null 2>&1; then
-              qlean_image="$qlean_candidate"
-            fi
-            if docker manifest inspect "$grandine_candidate" >/dev/null 2>&1; then
-              grandine_image="$grandine_candidate"
-            fi
-          fi
+          ream_image="ghcr.io/reamlabs/ream:latest-devnet4"
+          zeam_image="blockblaz/zeam:devnet4"
+          qlean_image="qdrvm/qlean-mini:devnet-4"
+          grandine_image="sifrai/lean:devnet-4"
+          ethlambda_image="ghcr.io/lambdaclass/ethlambda:devnet4"
 
           echo "REAM_DOCKER_IMAGE=$ream_image" >> "$GITHUB_ENV"
           echo "ZEAM_DOCKER_IMAGE=$zeam_image" >> "$GITHUB_ENV"

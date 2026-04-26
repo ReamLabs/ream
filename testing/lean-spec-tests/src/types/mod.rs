@@ -188,8 +188,6 @@ impl TryFrom<&Validator> for ReamValidator {
 
         let pubkey = PublicKey::from(&pubkey_bytes[..]);
         Ok(ReamValidator {
-            #[cfg(feature = "devnet3")]
-            public_key: pubkey,
             #[cfg(feature = "devnet4")]
             attestation_public_key: pubkey,
             #[cfg(feature = "devnet4")]

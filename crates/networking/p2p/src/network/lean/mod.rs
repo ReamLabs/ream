@@ -584,8 +584,6 @@ impl LeanNetworkService {
                             self.publish_gossip(
                                 |topic| matches!(topic, LeanGossipTopicKind::Block),
                                 block.as_ssz_bytes(),
-                                #[cfg(feature = "devnet3")]
-                                block.message.block.slot,
                                 #[cfg(feature = "devnet4")]
                                 block.block.slot,
                                 "block"
@@ -866,20 +864,6 @@ impl LeanNetworkService {
         match event {
             GossipsubEvent::Message { message, .. } => {
                 match LeanGossipsubMessage::decode(&message.topic, &message.data) {
-                    #[cfg(feature = "devnet3")]
-                    Ok(LeanGossipsubMessage::Block(signed_block_with_attestation)) => {
-                        let slot = signed_block_with_attestation.message.block.slot;
-
-                        if let Err(err) =
-                            self.chain_message_sender
-                                .send(LeanChainServiceMessage::ProcessBlock {
-                                    signed_block_with_attestation,
-                                    need_gossip: false,
-                                })
-                        {
-                            warn!("failed to send block for slot {slot} item to chain: {err:?}");
-                        }
-                    }
                     #[cfg(feature = "devnet4")]
                     Ok(LeanGossipsubMessage::Block(signed_block)) => {
                         let slot = signed_block.block.slot;

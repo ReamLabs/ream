@@ -12,8 +12,6 @@ use ream_keystore::lean_keystore::{
     ConfigFile, ValidatorKeysManifest, ValidatorKeystoreRaw, ValidatorRegistry,
 };
 use ream_post_quantum_crypto::leansig::private_key::PrivateKey;
-#[cfg(feature = "devnet3")]
-use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 
 const NUM_ACTIVE_EPOCHS: u64 = 262144;
 
@@ -62,30 +60,11 @@ pub fn run_generate_validator_registry(
     path.push("hash-sig-keys");
     create_dir_all(&path)?;
     let mut validators: Vec<ValidatorKeystoreRaw> = Vec::new();
-    #[cfg(feature = "devnet3")]
-    let mut genesis_validators: Vec<PublicKey> = vec![];
     #[cfg(feature = "devnet4")]
     let mut genesis_validators: Vec<GenesisValidatorEntry> = vec![];
     for index in
         0..(keystore_config.number_of_nodes * keystore_config.number_of_validators_per_node)
     {
-        #[cfg(feature = "devnet3")]
-        {
-            let (public_key, private_key) =
-                PrivateKey::generate_key_pair(0, NUM_ACTIVE_EPOCHS as usize);
-            genesis_validators.push(public_key);
-
-            let filename: String = format!("validator_{index}_sk.ssz");
-            path.push(&filename);
-            fs::write(&path, private_key.to_bytes())?;
-            path.pop();
-
-            validators.push(ValidatorKeystoreRaw {
-                index,
-                public_key,
-                private_key_file: filename,
-            });
-        }
         #[cfg(feature = "devnet4")]
         {
             let (attestation_public_key, attestation_private_key) =
@@ -118,8 +97,6 @@ pub fn run_generate_validator_registry(
         }
     }
 
-    #[cfg(feature = "devnet3")]
-    path.push("validator-keys-manifest.yaml");
     #[cfg(feature = "devnet4")]
     path.push("validator-keys-manifest-devnet4.yaml");
     fs::write(
@@ -138,8 +115,6 @@ pub fn run_generate_validator_registry(
 
     path.pop();
     path.pop();
-    #[cfg(feature = "devnet3")]
-    path.push("config.yaml");
     #[cfg(feature = "devnet4")]
     path.push("config-devnet4.yaml");
     fs::write(

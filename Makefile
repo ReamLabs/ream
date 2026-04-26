@@ -40,11 +40,7 @@ install: # Build and install the Ream binary under `~/.cargo/bin`.
 ##@ Testing and Linting
 
 .PHONY: test
-test: test-devnet3 test-devnet4
-
-.PHONY: test-devnet3
-test-devnet3: # Run all tests for Devnet 3.
-	cargo test --workspace -- --nocapture
+test: test-devnet4
 
 .PHONY: test-devnet4
 test-devnet4: # Run all tests for Devnet 4.
@@ -135,7 +131,6 @@ docker-build-push-default:
 	docker buildx build --file ./Dockerfile.cross . \
 		--platform linux/amd64,linux/arm64 \
 		--tag ghcr.io/reamlabs/ream:latest \
-		--tag ghcr.io/reamlabs/ream:latest-devnet3 \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \

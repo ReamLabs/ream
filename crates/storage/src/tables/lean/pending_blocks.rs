@@ -3,8 +3,6 @@ use std::sync::Arc;
 use alloy_primitives::B256;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::SignedBlock;
-#[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
-use ream_consensus_lean::block::SignedBlockWithAttestation;
 use redb::{Database, Durability, ReadableDatabase, ReadableTableMetadata, TableDefinition};
 
 use crate::{
@@ -21,28 +19,7 @@ pub struct LeanPendingBlocksTable {
 /// Table definition for the Lean Block table
 ///
 /// Key: block_root
-/// Value: [SignedBlockWithAttestation]
-#[cfg(all(feature = "devnet3", not(feature = "devnet4")))]
-impl REDBTable for LeanPendingBlocksTable {
-    const TABLE_DEFINITION: TableDefinition<
-        '_,
-        SSZEncoding<B256>,
-        SSZEncoding<SignedBlockWithAttestation>,
-    > = TableDefinition::new("lean_pending_blocks");
-
-    type Key = B256;
-
-    type KeyTableDefinition = SSZEncoding<B256>;
-
-    type Value = SignedBlockWithAttestation;
-
-    type ValueTableDefinition = SSZEncoding<SignedBlockWithAttestation>;
-
-    fn database(&self) -> Arc<Database> {
-        self.db.clone()
-    }
-}
-
+/// Value: [SignedBlock]
 #[cfg(feature = "devnet4")]
 impl REDBTable for LeanPendingBlocksTable {
     const TABLE_DEFINITION: TableDefinition<'_, SSZEncoding<B256>, SSZEncoding<SignedBlock>> =

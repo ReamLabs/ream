@@ -4,8 +4,6 @@ use alloy_primitives::B256;
 use anyhow::anyhow;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::{block::SignedBlock, checkpoint::Checkpoint};
-#[cfg(feature = "devnet3")]
-use ream_consensus_lean::{block::SignedBlockWithAttestation, checkpoint::Checkpoint};
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -51,54 +49,9 @@ impl ForwardBackgroundSyncer {
             .map(|checkpoint| checkpoint.slot)
             .unwrap_or(0);
         let mut next_root = self.job_queue.starting_root;
-        #[cfg(feature = "devnet3")]
-        let mut last_block: Option<SignedBlockWithAttestation> = None;
         #[cfg(feature = "devnet4")]
         let mut last_block: Option<SignedBlock> = None;
         let mut chained_roots = vec![];
-        #[cfg(feature = "devnet3")]
-        while next_root != stop_root && next_root != B256::ZERO {
-            let current_block = match pending_blocks_provider.get(next_root)? {
-                Some(block) => block,
-                None => match block_provider.get(next_root)? {
-                    Some(block) => block,
-                    None => {
-                        return Ok(ForwardSyncResults::ChainIncomplete {
-                            prevous_queue: self.job_queue.clone(),
-                            checkpoint_for_new_queue: Checkpoint {
-                                root: next_root,
-                                slot: last_block
-                                    .as_ref()
-                                    .map(|last_block| {
-                                        last_block.message.block.slot.saturating_sub(1)
-                                    })
-                                    .unwrap_or(self.job_queue.starting_slot),
-                            },
-                        });
-                    }
-                },
-            };
-            if current_block.message.block.tree_hash_root() != next_root {
-                let bad_slot = current_block.message.block.slot;
-                return Ok(ForwardSyncResults::RootMismatch {
-                    previous_queue: self.job_queue.clone(),
-                    checkpoint_for_new_queue: (bad_slot > network_finalized_slot).then_some(
-                        Checkpoint {
-                            root: next_root,
-                            slot: bad_slot,
-                        },
-                    ),
-                    bad_root: next_root,
-                    bad_slot,
-                    actual_root: current_block.message.block.tree_hash_root(),
-                    network_finalized_slot,
-                });
-            }
-            chained_roots.push(next_root);
-            next_root = current_block.message.block.parent_root;
-            last_block = Some(current_block.clone());
-        }
-
         #[cfg(feature = "devnet4")]
         while next_root != stop_root && next_root != B256::ZERO {
             let current_block = match pending_blocks_provider.get(next_root)? {
@@ -157,14 +110,9 @@ impl ForwardBackgroundSyncer {
                     "Failed to find block with root {root:?} in pending blocks during insertion"
                 )
             })?;
-            #[cfg(feature = "devnet3")]
-            let time = lean_network_spec().genesis_time
-                + (block.message.block.slot * lean_network_spec().seconds_per_slot);
             #[cfg(feature = "devnet4")]
             let time = lean_network_spec().genesis_time
                 + (block.block.slot * lean_network_spec().seconds_per_slot);
-            #[cfg(feature = "devnet3")]
-            let block_slot = block.message.block.slot;
             #[cfg(feature = "devnet4")]
             let block_slot = block.block.slot;
             store_writer.on_tick(time, false, true).await?;
@@ -221,11 +169,6 @@ mod tests {
     use libp2p_identity::PeerId;
     #[cfg(feature = "devnet4")]
     use ream_consensus_lean::block::{BlockSignatures, SignedBlock};
-    #[cfg(feature = "devnet3")]
-    use ream_consensus_lean::{
-        attestation::AggregatedAttestations,
-        block::{BlockSignatures, BlockWithAttestation, SignedBlockWithAttestation},
-    };
     use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
     use ream_post_quantum_crypto::leansig::signature::Signature;
@@ -237,26 +180,10 @@ mod tests {
     async fn advance_store_to_slot(store: &mut Store, target_slot: u64, validator_count: u64) {
         for slot in 1..=target_slot {
             let proposer_index = slot % validator_count;
-            #[cfg(feature = "devnet3")]
-            let attestation = store.produce_attestation_data(slot).await.unwrap();
             let block = store
                 .produce_block_with_signatures(slot, proposer_index)
                 .await
                 .unwrap();
-            #[cfg(feature = "devnet3")]
-            let signed_block = SignedBlockWithAttestation {
-                message: BlockWithAttestation {
-                    block: block.block,
-                    proposer_attestation: AggregatedAttestations {
-                        validator_id: proposer_index,
-                        data: attestation,
-                    },
-                },
-                signature: BlockSignatures {
-                    attestation_signatures: block.signatures,
-                    proposer_signature: Signature::blank(),
-                },
-            };
             #[cfg(feature = "devnet4")]
             let signed_block = SignedBlock {
                 block: block.block,
@@ -271,23 +198,7 @@ mod tests {
 
     async fn root_mismatch_result(network_finalized_slot: u64) -> ForwardSyncResults {
         let mut store = sample_store(10).await;
-        #[cfg(feature = "devnet3")]
-        let attestation = store.produce_attestation_data(1).await.unwrap();
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet3")]
-        let pending_block = SignedBlockWithAttestation {
-            message: BlockWithAttestation {
-                block: block.block,
-                proposer_attestation: AggregatedAttestations {
-                    validator_id: 1,
-                    data: attestation,
-                },
-            },
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
-        };
         #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
             block: block.block,
