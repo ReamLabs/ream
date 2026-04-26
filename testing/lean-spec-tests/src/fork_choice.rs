@@ -138,9 +138,18 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     // Process each step
     for (index, step) in test.steps.iter().enumerate() {
         match step {
-            ForkChoiceStep::Tick { time, .. } => {
-                debug!("  Step {index}: Tick to time {time}");
-                store.on_tick(*time, false, true).await?;
+            ForkChoiceStep::Tick { time, interval, .. } => {
+                let tick_time = match (time, interval) {
+                    (Some(t), _) => *t,
+                    (None, Some(i)) => *i,
+                    (None, None) => bail!("Tick step missing both time and interval fields"),
+                };
+                debug!("  Step {index}: Tick to time {tick_time}");
+                store.on_tick(tick_time, false, true).await?;
+            }
+
+            ForkChoiceStep::GossipAggregatedAttestation { .. } => {
+                debug!("  Step {index}: GossipAggregatedAttestation (skipped)");
             }
 
             ForkChoiceStep::Block {
@@ -150,10 +159,10 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
             } => {
                 debug!(
                     "  Step {index}: Block at slot {} (expect valid: {valid})",
-                    block.block.slot
+                    block.slot
                 );
 
-                let ream_block = Block::try_from(&block.block)
+                let ream_block = Block::try_from(block)
                     .map_err(|err| anyhow!("Failed to convert block: {err}"))?;
 
                 // Advance time to the block's slot before processing
@@ -236,12 +245,12 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 if *valid {
                     result.map_err(|err| {
-                        anyhow!("Block at slot {} should be valid: {err}", block.block.slot)
+                        anyhow!("Block at slot {} should be valid: {err}", block.slot)
                     })?;
                 } else if result.is_ok() {
                     bail!(
                         "Block at slot {} should be invalid but was accepted",
-                        block.block.slot
+                        block.slot
                     );
                 }
 
