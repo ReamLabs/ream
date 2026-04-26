@@ -225,7 +225,6 @@ impl Store {
             latest_justified_provider,
             safe_target_provider,
             latest_new_aggregated_payloads_provider,
-            latest_known_aggregated_payloads_provider,
         ) = {
             let db = self.store.lock().await;
             (
@@ -234,7 +233,6 @@ impl Store {
                 db.latest_justified_provider(),
                 db.safe_target_provider(),
                 db.latest_new_aggregated_payloads_provider(),
-                db.latest_known_aggregated_payloads_provider(),
             )
         };
 
@@ -246,22 +244,12 @@ impl Store {
         let latest_justified_root = latest_justified_provider.get()?.root;
 
         let attestations = {
-            let mut all_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>> =
-                latest_known_aggregated_payloads_provider
-                    .iter()?
-                    .into_iter()
-                    .collect();
+            let new_payloads = latest_new_aggregated_payloads_provider
+                .iter()?
+                .into_iter()
+                .collect();
 
-            for (signature_key, proofs) in latest_new_aggregated_payloads_provider.iter()? {
-                let mut existing_proofs = all_payloads
-                    .get(&signature_key)
-                    .cloned()
-                    .unwrap_or_default();
-
-                existing_proofs.extend(proofs);
-                all_payloads.insert(signature_key, existing_proofs);
-            }
-            self.extract_attestations_from_aggregated_payloads(&all_payloads)
+            self.extract_attestations_from_aggregated_payloads(&new_payloads)
                 .await?
         };
 
