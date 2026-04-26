@@ -23,9 +23,6 @@ impl TryFrom<&str> for PrivateKeyFormat {
 
 /// Load validator registry from annotated validators YAML file for a specific node.
 ///
-/// The annotated format includes public key and private key file references inline,
-/// eliminating the need for a separate validator-keys-manifest.yaml lookup.
-///
 /// # Arguments
 /// * `path` - Path to the annotated validators YAML file
 /// * `node_id` - Node identifier (e.g., "ream_0", "zeam_0")

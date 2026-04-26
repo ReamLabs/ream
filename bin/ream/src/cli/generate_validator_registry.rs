@@ -102,9 +102,6 @@ pub fn run_generate_validator_registry(
     path.pop();
     path.pop();
 
-    // Generate annotated_validators.yaml with inline public key/private key metadata.
-    // For devnet4 dual-key mode, each validator emits two consecutive entries:
-    // first the attester key, then the proposer key.
     let mut annotated_nodes = HashMap::new();
     for (node_name, indices) in &node_validator_indices {
         let mut entries = Vec::new();
