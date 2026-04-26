@@ -19,7 +19,10 @@ use ream_consensus_lean::{
     state::LeanState,
     validator::Validator,
 };
-use ream_post_quantum_crypto::leansig::{public_key::PublicKey, signature::Signature};
+use ream_post_quantum_crypto::leansig::{
+    public_key::PublicKey,
+    signature::{SIGNATURE_SIZE, Signature},
+};
 use serde::Deserialize;
 use ssz_types::{
     BitList, VariableList,
@@ -46,8 +49,6 @@ fn bools_to_bitlist<N: ssz_types::typenum::Unsigned>(bools: &[bool]) -> anyhow::
 }
 
 fn decode_signature(hex: &str) -> anyhow::Result<Signature> {
-    // Must match `ream_post_quantum_crypto::leansig::signature::SIGNATURE_SIZE`.
-    const SIGNATURE_SIZE: usize = 2536;
     let bytes = decode_hex(hex)?;
     ensure!(
         bytes.len() == SIGNATURE_SIZE,
