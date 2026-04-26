@@ -7,7 +7,7 @@ use ream_consensus_lean::{
 use serde::Deserialize;
 use ssz_types::VariableList;
 
-use crate::types::{Attestation, Block, Checkpoint, State};
+use crate::types::{Attestation, Block, Checkpoint, GossipAggregatedAttestationStep, State};
 
 /// Fork choice test case
 #[derive(Debug, Deserialize)]
@@ -21,34 +21,38 @@ pub struct ForkChoiceTest {
 
 /// Fork choice step - can be tick, block, attestation, or checks
 #[derive(Debug, Deserialize)]
-#[serde(tag = "stepType", rename_all = "lowercase")]
+#[serde(tag = "stepType", rename_all = "camelCase")]
 pub enum ForkChoiceStep {
     Tick {
         #[serde(default)]
         valid: Option<bool>,
-        time: u64,
+        #[serde(default)]
+        time: Option<u64>,
+        #[serde(default)]
+        interval: Option<u64>,
+        #[serde(default)]
+        has_proposal: Option<bool>,
     },
     Block {
         valid: bool,
         checks: Option<StoreChecks>,
-        block: BlockWithProposerAttestation,
+        block: Block,
     },
     Attestation {
         valid: bool,
         checks: Option<StoreChecks>,
         attestation: Attestation,
     },
+    GossipAggregatedAttestation {
+        #[serde(default)]
+        valid: Option<bool>,
+        checks: Option<StoreChecks>,
+        #[serde(default)]
+        attestation: Option<GossipAggregatedAttestationStep>,
+    },
     Checks {
         checks: StoreChecks,
     },
-}
-
-/// Block wrapper containing the block and its proposer attestation
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockWithProposerAttestation {
-    pub block: Block,
-    pub proposer_attestation: Attestation,
 }
 
 /// Store checks for fork choice validation
@@ -70,7 +74,7 @@ pub struct StoreChecks {
 #[serde(rename_all = "camelCase")]
 pub struct AttestationCheck {
     pub validator: u64,
-    pub attestation_slot: u64,
+    pub source_slot: Option<u64>,
     pub target_slot: Option<u64>,
     pub location: String,
 }
@@ -94,35 +98,20 @@ impl TryFrom<State> for LeanState {
                 anyhow!("Failed to create historical_block_hashes VariableList: {err}")
             })?;
 
-        // Convert justified_slots - this is a BitList in ream but Vec<u64> in leanSpec
         let justified_slots = {
-            if state.justified_slots.data.is_empty() {
-                // Empty BitList if no justified slots
-                ssz_types::BitList::with_capacity(0)
-                    .map_err(|err| anyhow!("Failed to create empty BitList: {err:?}"))?
-            } else {
-                let max_slot = state
-                    .justified_slots
-                    .data
-                    .iter()
-                    .max()
-                    .copied()
-                    .expect("Failed to get max slot");
-                let mut bitlist = ssz_types::BitList::with_capacity(max_slot as usize + 1)
-                    .map_err(|err| {
-                        anyhow!(
-                            "Failed to create BitList with capacity {}: {err:?}",
-                            max_slot + 1
-                        )
-                    })?;
-
-                for &slot in &state.justified_slots.data {
-                    bitlist
-                        .set(slot as usize, true)
-                        .map_err(|err| anyhow!("Failed to set bit at index {slot}: {err:?}"))?;
-                }
+            let bits = &state.justified_slots.data;
+            let mut bitlist = ssz_types::BitList::with_capacity(bits.len()).map_err(|err| {
+                anyhow!(
+                    "Failed to create BitList with capacity {}: {err:?}",
+                    bits.len()
+                )
+            })?;
+            for (index, &bit) in bits.iter().enumerate() {
                 bitlist
+                    .set(index, bit)
+                    .map_err(|err| anyhow!("Failed to set bit at index {index}: {err:?}"))?;
             }
+            bitlist
         };
 
         let justifications_roots = VariableList::try_from(state.justifications_roots.data.clone())

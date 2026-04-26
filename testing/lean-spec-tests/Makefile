@@ -3,7 +3,10 @@ REPO_URL = https://github.com/ReamLabs/lean-spec-tests.git
 KEYS_DIR = fixtures/keys/prod_scheme
 KEYS_URL = https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-bbbbf62/prod_scheme.tar.gz
 
-.PHONY: all clean test
+FIXTURES := state_transition ssz fork_choice justifiability slot_clock sync verify_signatures
+SELECTED := $(filter $(FIXTURES),$(MAKECMDGOALS))
+
+.PHONY: all clean test $(FIXTURES)
 
 all: test
 
@@ -28,8 +31,16 @@ $(KEYS_DIR):
 
 test: $(EXTRACT_DIR) $(KEYS_DIR)
 	@echo "Running lean-spec tests..."
+ifeq ($(SELECTED),)
 	@cargo test --release --features lean-spec-tests
+else
+	@cargo test --release --features lean-spec-tests --test tests -- \
+		--exact $(addprefix test_all_,$(addsuffix _fixtures,$(SELECTED))) --nocapture
+endif
 	@echo "Tests complete."
+
+$(FIXTURES):
+	@:
 
 clean:
 	@echo "Cleaning up downloaded fixtures and keys..."

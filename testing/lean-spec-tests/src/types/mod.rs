@@ -1,6 +1,10 @@
 pub mod fork_choice;
-pub mod ssz_test;
+pub mod justifiability;
+pub mod slot_clock;
+pub mod ssz;
 pub mod state_transition;
+pub mod sync;
+pub mod verify_signatures;
 
 use std::collections::HashMap;
 
@@ -57,8 +61,10 @@ pub struct Checkpoint {
 
 /// Validator
 #[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Validator {
-    pub pubkey: String,
+    pub attestation_pubkey: String,
+    pub proposal_pubkey: String,
     pub index: u64,
 }
 
@@ -107,6 +113,30 @@ pub struct Attestation {
     #[serde(alias = "validatorId")]
     pub validator_id: u64,
     pub data: AttestationData,
+    #[serde(default)]
+    pub signature: Option<String>,
+}
+
+/// Aggregated attestation used in `gossipAggregatedAttestation` steps.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GossipAggregatedAttestationStep {
+    pub data: AttestationData,
+    pub proof: GossipProofJSON,
+}
+
+/// Proof bundle attached to a gossip aggregated attestation fixture step.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GossipProofJSON {
+    pub participants: AggregationBitsJSON,
+    pub proof_data: HexBytesJSON,
+}
+
+/// Wrapper around hex-encoded bytes serialized as `{"data": "0x..."}`.
+#[derive(Debug, Deserialize, Clone)]
+pub struct HexBytesJSON {
+    pub data: String,
 }
 
 /// Generic data list wrapper
@@ -125,7 +155,7 @@ pub struct State {
     pub latest_justified: Checkpoint,
     pub latest_finalized: Checkpoint,
     pub historical_block_hashes: DataList<B256>,
-    pub justified_slots: DataList<u64>,
+    pub justified_slots: DataList<bool>,
     pub validators: DataList<Validator>,
     pub justifications_roots: DataList<B256>,
     pub justifications_validators: DataList<Vec<u64>>,
@@ -176,23 +206,27 @@ impl TryFrom<&Validator> for ReamValidator {
     type Error = anyhow::Error;
 
     fn try_from(validator: &Validator) -> anyhow::Result<Self> {
-        // Parse hex pubkey string
-        let pubkey_hex = validator.pubkey.trim_start_matches("0x");
-        let pubkey_bytes = hex::decode(pubkey_hex)
-            .map_err(|err| anyhow!("Failed to decode validator pubkey hex: {err}"))?;
-
-        // LeanSpec uses 52-byte XMSS public keys - verify the size
-        if pubkey_bytes.len() != 52 {
-            bail!("Expected 52-byte pubkey, got {} bytes", pubkey_bytes.len());
-        }
-
-        let pubkey = PublicKey::from(&pubkey_bytes[..]);
+        let attestation_public_key = decode_xmss_pubkey(&validator.attestation_pubkey)?;
+        let proposal_public_key = decode_xmss_pubkey(&validator.proposal_pubkey)?;
         Ok(ReamValidator {
-            attestation_public_key: pubkey,
-            proposal_public_key: pubkey,
+            attestation_public_key,
+            proposal_public_key,
             index: validator.index,
         })
     }
+}
+
+fn decode_xmss_pubkey(pubkey: &str) -> anyhow::Result<PublicKey> {
+    let pubkey_hex = pubkey.trim_start_matches("0x");
+    let pubkey_bytes = hex::decode(pubkey_hex)
+        .map_err(|err| anyhow!("Failed to decode validator pubkey hex: {err}"))?;
+
+    // LeanSpec uses 52-byte XMSS public keys - verify the size
+    if pubkey_bytes.len() != 52 {
+        bail!("Expected 52-byte pubkey, got {} bytes", pubkey_bytes.len());
+    }
+
+    Ok(PublicKey::from(&pubkey_bytes[..]))
 }
 
 impl From<&Attestation> for ReamAttestation {

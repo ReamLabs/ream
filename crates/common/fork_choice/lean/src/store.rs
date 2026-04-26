@@ -18,7 +18,9 @@ use ream_consensus_lean::{
     state::LeanState,
     validator::is_proposer,
 };
-use ream_consensus_misc::constants::lean::{ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT};
+use ream_consensus_misc::constants::lean::{
+    ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT, MAX_ATTESTATIONS_DATA,
+};
 use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, FINALIZATIONS_TOTAL, FINALIZED_SLOT,
     FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT,
@@ -595,7 +597,6 @@ impl Store {
                 participants: bits.clone(),
                 proof_data: VariableList::new(aggregated_signature)
                     .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
-                bytecode_point: None,
             };
 
             results.push(SignedAggregatedAttestation {
@@ -997,6 +998,22 @@ impl Store {
         ensure!(
             aggregated_attestations.len() == attestation_signatures.len(),
             "Attestation signature groups must match aggregated attestations"
+        );
+
+        let mut seen_attestation_data = HashSet::with_capacity(aggregated_attestations.len());
+        for attestation in aggregated_attestations.iter() {
+            let data_root = attestation.message.tree_hash_root();
+            ensure!(
+                seen_attestation_data.insert(data_root),
+                "Block contains duplicate AttestationData entries; \
+                 each AttestationData must appear at most once",
+            );
+        }
+        let distinct_attestation_data = seen_attestation_data.len();
+        ensure!(
+            distinct_attestation_data as u64 <= MAX_ATTESTATIONS_DATA,
+            "Block contains {distinct_attestation_data} distinct AttestationData entries; \
+             maximum is {MAX_ATTESTATIONS_DATA}",
         );
 
         for (attestation, proof) in aggregated_attestations
