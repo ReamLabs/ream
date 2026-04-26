@@ -60,8 +60,7 @@ jobs:
             --features devnet4 \
             -- --nocapture
 
-  # devnet5 scaffolding — disabled until devnet5 protocol code lands.
-  # Flip `if: false` to `if: true` (or remove) when ready to enable.
+  # devnet5 scaffolding — disabled until devnet5 code lands.
   devnet5-known-good-vs-current-pr:
     if: false
     name: devnet5 known-good vs current pr

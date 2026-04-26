@@ -20,8 +20,7 @@ env:
 jobs:
   build-ream-binary:
     name: Build ream binary (${{ matrix.devnet }})
-    # devnet5 legs are skipped until devnet5 protocol code lands.
-    # Drop the matrix.devnet check or remove `devnet5` from the matrix to disable.
+    # devnet5 legs are skipped until devnet5 code lands.
     if: matrix.devnet != 'devnet5'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -69,8 +68,7 @@ jobs:
 
   interop-matrix:
     name: ${{ matrix.devnet }} / ${{ matrix.peer_client }} / ${{ matrix.topology }}
-    # devnet5 legs are skipped until devnet5 protocol code lands.
-    # Drop the matrix.devnet check or remove `devnet5` from the matrix to disable.
+    # devnet5 legs are skipped until devnet5 code lands.
     if: matrix.devnet != 'devnet5'
     runs-on: ubuntu-latest
     needs: [build-ream-binary]
