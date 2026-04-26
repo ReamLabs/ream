@@ -87,7 +87,7 @@ jobs:
     with:
       network: devnet4
 
-  # devnet5 scaffolding — disabled until devnet5 protocol code lands.
+  # devnet5 scaffolding — disabled.
   test-devnet5:
     if: false
     name: test devnet5
