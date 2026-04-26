@@ -1010,11 +1010,11 @@ impl Store {
                  each AttestationData must appear at most once",
             );
         }
+        let distinct_attestation_data = seen_attestation_data.len();
         ensure!(
-            seen_attestation_data.len() as u64 <= MAX_ATTESTATIONS_DATA,
-            "Block contains {} distinct AttestationData entries; maximum is {}",
-            seen_attestation_data.len(),
-            MAX_ATTESTATIONS_DATA,
+            distinct_attestation_data as u64 <= MAX_ATTESTATIONS_DATA,
+            "Block contains {distinct_attestation_data} distinct AttestationData entries; \
+             maximum is {MAX_ATTESTATIONS_DATA}",
         );
 
         for (attestation, proof) in aggregated_attestations

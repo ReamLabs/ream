@@ -164,13 +164,11 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 let mut participants =
                     BitList::<U4096>::with_capacity(attestation.proof.participants.data.len())
-                        .map_err(|err| {
-                            anyhow!("Failed to create participants BitList: {err:?}")
-                        })?;
+                        .map_err(|err| anyhow!("Failed to create participants BitList: {err:?}"))?;
                 for (index, &bit) in attestation.proof.participants.data.iter().enumerate() {
-                    participants.set(index, bit).map_err(|err| {
-                        anyhow!("Failed to set participant bit {index}: {err:?}")
-                    })?;
+                    participants
+                        .set(index, bit)
+                        .map_err(|err| anyhow!("Failed to set participant bit {index}: {err:?}"))?;
                 }
 
                 let proof_bytes = decode_hex_bytes(&attestation.proof.proof_data.data)?;
