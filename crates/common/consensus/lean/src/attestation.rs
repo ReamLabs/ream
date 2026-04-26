@@ -39,9 +39,7 @@ impl SignatureKey {
     }
 }
 
-#[derive(
-    Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash,
-)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct AggregatedSignatureProof {
     pub participants: BitList<U4096>,
     pub proof_data: VariableList<u8, U1048576>,
