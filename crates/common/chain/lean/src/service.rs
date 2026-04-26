@@ -1176,12 +1176,11 @@ impl LeanChainService {
             let store = fork_choice.store.lock().await;
             let head = store.head_provider().get()?;
             let block_provider = store.block_provider();
-            let current_head_slot = block_provider
+            block_provider
                 .get(head)?
                 .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
                 .block
-                .slot;
-            current_head_slot
+                .slot
         };
         let network_finalized_slot = self
             .network_state
