@@ -77,10 +77,10 @@ pub fn run_generate_validator_registry(
 
         validators.push(ValidatorKeystoreRaw {
             index,
-            attester_key_public_key_hex: attestation_public_key,
-            proposer_key_public_key_hex: proposal_public_key,
-            attester_key_private_key_file: attester_secret_key_filename,
-            proposer_key_private_key_file: proposer_secret_key_filename,
+            attestation_public_key_hex: attestation_public_key,
+            proposal_public_key_hex: proposal_public_key,
+            attestation_private_key_file: attester_secret_key_filename,
+            proposal_private_key_file: proposer_secret_key_filename,
         });
     }
 
@@ -109,13 +109,13 @@ pub fn run_generate_validator_registry(
             let validator = &validators[index as usize];
             entries.push(AnnotatedValidatorEntry {
                 index,
-                public_key_hex: validator.attester_key_public_key_hex,
-                private_key_file: validator.attester_key_private_key_file.clone(),
+                public_key_hex: validator.attestation_public_key_hex,
+                private_key_file: validator.attestation_private_key_file.clone(),
             });
             entries.push(AnnotatedValidatorEntry {
                 index,
-                public_key_hex: validator.proposer_key_public_key_hex,
-                private_key_file: validator.proposer_key_private_key_file.clone(),
+                public_key_hex: validator.proposal_public_key_hex,
+                private_key_file: validator.proposal_private_key_file.clone(),
             });
         }
         annotated_nodes.insert(node_name.clone(), entries);

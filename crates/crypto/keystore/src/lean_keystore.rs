@@ -20,23 +20,10 @@ pub struct ValidatorKeysManifest {
 #[serde(rename_all = "snake_case")]
 pub struct ValidatorKeystoreRaw {
     pub index: u64,
-    #[serde(
-        rename = "attester_key_pubkey_hex",
-        alias = "attestation_public_key_hex"
-    )]
-    pub attester_key_public_key_hex: PublicKey,
-    #[serde(rename = "proposer_key_pubkey_hex", alias = "proposal_public_key_hex")]
-    pub proposer_key_public_key_hex: PublicKey,
-    #[serde(
-        rename = "attester_key_privkey_file",
-        alias = "attestation_private_key_file"
-    )]
-    pub attester_key_private_key_file: String,
-    #[serde(
-        rename = "proposer_key_privkey_file",
-        alias = "proposal_private_key_file"
-    )]
-    pub proposer_key_private_key_file: String,
+    pub attestation_public_key_hex: PublicKey,
+    pub proposal_public_key_hex: PublicKey,
+    pub attestation_private_key_file: String,
+    pub proposal_private_key_file: String,
 }
 
 #[derive(Debug, PartialEq)]
