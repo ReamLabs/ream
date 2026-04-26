@@ -597,7 +597,6 @@ impl Store {
                 participants: bits.clone(),
                 proof_data: VariableList::new(aggregated_signature)
                     .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
-                bytecode_point: None,
             };
 
             results.push(SignedAggregatedAttestation {

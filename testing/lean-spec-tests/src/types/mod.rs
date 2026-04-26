@@ -131,8 +131,6 @@ pub struct GossipAggregatedAttestationStep {
 pub struct GossipProofJSON {
     pub participants: AggregationBitsJSON,
     pub proof_data: HexBytesJSON,
-    #[serde(default)]
-    pub bytecode_point: Option<HexBytesJSON>,
 }
 
 /// Wrapper around hex-encoded bytes serialized as `{"data": "0x..."}`.

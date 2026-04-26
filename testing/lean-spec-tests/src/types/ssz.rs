@@ -401,7 +401,6 @@ impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
             participants: bools_to_bitlist(&value.participants.data)?,
             proof_data: VariableList::try_from(decode_hex(&value.proof_data.data)?)
                 .map_err(|err| anyhow!("Failed to convert proof_data: {err}"))?,
-            bytecode_point: None,
         })
     }
 }
