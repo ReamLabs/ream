@@ -321,7 +321,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let aggregator_controller = Arc::new(AggregatorController::new(network_state.clone()));
 
     // Initialize the lean network service
-    let fork = "devnet0".to_string();
+    let fork = "12345678".to_string();
 
     let topics: Vec<LeanGossipTopic> = {
         let mut topics = vec![
