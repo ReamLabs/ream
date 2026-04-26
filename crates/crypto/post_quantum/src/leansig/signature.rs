@@ -7,7 +7,7 @@ use tree_hash_derive::TreeHash;
 
 use crate::leansig::{LeanSigScheme, errors::LeanSigError, public_key::PublicKey};
 
-const SIGNATURE_SIZE: usize = 3112;
+const SIGNATURE_SIZE: usize = 2536;
 
 type LeanSigSignature = <LeanSigScheme as SignatureScheme>::Signature;
 
