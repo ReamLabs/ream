@@ -67,8 +67,11 @@ use ream_p2p::{
     },
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
-use ream_post_quantum_crypto::leansig::{
-    private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey, signature::Signature,
+use ream_post_quantum_crypto::{
+    lean_multisig::aggregate::{aggregation_setup_prover, aggregation_setup_verifier},
+    leansig::{
+        private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey, signature::Signature,
+    },
 };
 use ream_rpc_common::config::RpcServerConfig;
 use ream_rpc_lean::aggregator_controller::AggregatorController;
@@ -232,6 +235,19 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             compute_subnet_id(keystore.index, ATTESTATION_COMMITTEE_COUNT) as i64,
             &[],
         );
+    }
+
+    // Initialize aggregation verifier bytecode — all nodes need this to verify
+    // aggregate signatures when processing blocks during sync.
+    info!("Initializing aggregation verifier bytecode...");
+    aggregation_setup_verifier();
+    info!("Aggregation verifier bytecode initialized");
+
+    // Initialize aggregation prover bytecode only if this node is an aggregator.
+    if config.is_aggregator {
+        info!("Initializing aggregation prover bytecode for aggregator mode...");
+        aggregation_setup_prover();
+        info!("Aggregation prover bytecode initialized");
     }
 
     // Fill in which devnet we are running
@@ -844,16 +860,16 @@ mod tests {
 
     const VALIDATOR_KEYS: [(&str, &str); 3] = [
         (
-            "0xa082964b6fc8f6071b30fc1cdc471101ee911b65638a29017fafed61da16310ad145ae7ceb6339468cc38607357f4870d7cb215d",
-            "0x4d2f4a47c58fda1202375b0f7ad5c83923bc4838eb7ad2317a545926b2f2021e5768d91569bd1217b00a7b4edbda9075f19dcd5a",
+            "0x9eb14868923a923291404c6a82030e19ba0e3004b9e5b64d2419b8591657f9104298d77399350c43082a6023e812e433bfcdaa4e",
+            "0xd80efa199a42987324e182419b07e4758b411d5d990f83681e0c6154f8f4af2fe5a8be4a30a25414f7f504117d95a055dc66b019",
         ),
         (
-            "0x589462678a7f291069410e5804a67c4131af504f256feb2d8f47941353ef5935a874b245f1eb27027e0a9518eebd3468b45eb176",
-            "0x4a06040a6eba2b27466bb67be04e314806a04d36b6938d301a9f321f123bfc23d47803149842ff7727e2a646b8873a28771bc718",
+            "0x642f406d99565363657436379118ef657efd6543f2607d45e3ce565709d271339c6d9403a7d8053200b1f63c084acb6466f87b16",
+            "0x789edd4c2806222f9ae35926d66c2f127192ec2d4e4cfb79e8141d6aae34a01a135f571815b7987b76c6ef3df4fa8a01fcc9785e",
         ),
         (
-            "0x39d3b50d3f9f940afc52054cb659340e2d0778509feed54f6083d65d55e94978820a734803ca12376d64b21bf31e5711739d536f",
-            "0xbfe37b073b685d294f01b25dbf8d74449e84a130898b33497a6e13503a856700db03dc206f2f0a46cbd0981f96bc626d8a6d7037",
+            "0x82d7be67ecfeec6683466605c8e2c21b217e07203b83de02fec2e62be476420c34cb64575dfa65296a01fe1df3c18557f8f8402a",
+            "0xc610cc66f323a363e5ec55443e1383688a7e0a6ee9ef496b7979bf40d613e84694b3b8547690ca72e320543f3e110556c919da09",
         ),
     ];
 
