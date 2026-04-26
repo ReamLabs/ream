@@ -35,7 +35,6 @@ pub fn run_generate_validator_registry(
     );
     create_dir_all(&keystore_config.output)?;
 
-    // Track validator indices per node for building the annotated registry
     let mut node_validator_indices: Vec<(String, Vec<u64>)> = Vec::new();
     let mut validator_index = 0;
     for node_index in 0..keystore_config.number_of_nodes {
