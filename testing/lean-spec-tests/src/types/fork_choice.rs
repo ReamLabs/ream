@@ -7,7 +7,7 @@ use ream_consensus_lean::{
 use serde::Deserialize;
 use ssz_types::VariableList;
 
-use crate::types::{Attestation, Block, Checkpoint, State};
+use crate::types::{Attestation, Block, Checkpoint, GossipAggregatedAttestationStep, State};
 
 /// Fork choice test case
 #[derive(Debug, Deserialize)]
@@ -47,6 +47,8 @@ pub enum ForkChoiceStep {
         #[serde(default)]
         valid: Option<bool>,
         checks: Option<StoreChecks>,
+        #[serde(default)]
+        attestation: Option<GossipAggregatedAttestationStep>,
     },
     Checks {
         checks: StoreChecks,

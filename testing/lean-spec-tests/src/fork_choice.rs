@@ -6,7 +6,9 @@ use std::{
 use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
 use ream_consensus_lean::{
-    attestation::{AggregatedSignatureProof, AttestationData, SignedAttestation},
+    attestation::{
+        AggregatedSignatureProof, AttestationData, SignedAggregatedAttestation, SignedAttestation,
+    },
     block::{Block, BlockSignatures, SignedBlock},
     checkpoint::Checkpoint,
     state::LeanState,
@@ -148,8 +150,70 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 store.on_tick(tick_time, false, true).await?;
             }
 
-            ForkChoiceStep::GossipAggregatedAttestation { .. } => {
-                debug!("  Step {index}: GossipAggregatedAttestation (skipped)");
+            ForkChoiceStep::GossipAggregatedAttestation {
+                valid,
+                checks,
+                attestation,
+            } => {
+                debug!("  Step {index}: GossipAggregatedAttestation");
+
+                let Some(attestation) = attestation else {
+                    debug!("    No attestation payload, skipping");
+                    continue;
+                };
+
+                let mut participants =
+                    BitList::<U4096>::with_capacity(attestation.proof.participants.data.len())
+                        .map_err(|err| {
+                            anyhow!("Failed to create participants BitList: {err:?}")
+                        })?;
+                for (index, &bit) in attestation.proof.participants.data.iter().enumerate() {
+                    participants.set(index, bit).map_err(|err| {
+                        anyhow!("Failed to set participant bit {index}: {err:?}")
+                    })?;
+                }
+
+                let proof_bytes = decode_hex_bytes(&attestation.proof.proof_data.data)?;
+                let proof_data = VariableList::<u8, U1048576>::new(proof_bytes)
+                    .map_err(|err| anyhow!("Failed to build proof_data list: {err:?}"))?;
+
+                let proof = AggregatedSignatureProof::new(participants, proof_data);
+
+                let signed = SignedAggregatedAttestation {
+                    data: attestation.data.clone(),
+                    proof,
+                };
+
+                let result = store
+                    .validate_attestation(&SignedAttestation {
+                        validator_id: 0,
+                        message: signed.data.clone(),
+                        signature: Signature::blank(),
+                    })
+                    .await;
+
+                match valid {
+                    Some(false) => {
+                        if result.is_ok() {
+                            bail!(
+                                "Aggregated attestation at slot {} should be invalid but was accepted",
+                                signed.data.slot
+                            );
+                        }
+                    }
+                    _ => {
+                        result.map_err(|err| {
+                            anyhow!(
+                                "Aggregated attestation at slot {} should be valid: {err}",
+                                signed.data.slot
+                            )
+                        })?;
+                    }
+                }
+
+                if let Some(checks) = checks {
+                    validate_checks(&store, checks).await?;
+                }
             }
 
             ForkChoiceStep::Block {
@@ -184,23 +248,32 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 drop(db);
 
-                // Create blank signatures for block body attestations
+                // Build attestation_signatures with `participants` mirroring each
+                // body attestation's `aggregation_bits`. The proof_data is left
+                // empty because tests run with signature verification disabled,
+                // but participants must be populated so fork choice attributes
+                // votes to the correct validators.
                 let signatures = {
-                    let num_signatures = ream_block.body.attestations.len();
-                    let empty_proof = || {
-                        AggregatedSignatureProof::new(
-                            BitList::<U4096>::with_capacity(0)
-                                .expect("Failed to create empty BitList"),
+                    let mut proofs = Vec::with_capacity(ream_block.body.attestations.len());
+                    for attestation in ream_block.body.attestations.iter() {
+                        let mut participants =
+                            BitList::<U4096>::with_capacity(attestation.aggregation_bits.len())
+                                .map_err(|err| {
+                                    anyhow!("Failed to create participants BitList: {err:?}")
+                                })?;
+                        for (index, bit) in attestation.aggregation_bits.iter().enumerate() {
+                            participants.set(index, bit).map_err(|err| {
+                                anyhow!("Failed to set participant bit {index}: {err:?}")
+                            })?;
+                        }
+                        proofs.push(AggregatedSignatureProof::new(
+                            participants,
                             VariableList::<u8, U1048576>::new(vec![])
                                 .expect("Failed to create empty proof_data"),
-                        )
-                    };
-                    VariableList::try_from(
-                        (0..num_signatures)
-                            .map(|_| empty_proof())
-                            .collect::<Vec<_>>(),
-                    )
-                    .map_err(|err| anyhow!("Failed to create signatures VariableList: {err}"))?
+                        ));
+                    }
+                    VariableList::try_from(proofs)
+                        .map_err(|err| anyhow!("Failed to create signatures VariableList: {err}"))?
                 };
 
                 // Build proposer attestation data and sign with real key
@@ -270,22 +343,27 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     attestation.validator_id
                 );
 
-                let signed_attestation = SignedAttestation {
-                    message: AttestationData {
-                        slot: 0,
-                        head: Checkpoint::default(),
-                        target: Checkpoint::default(),
-                        source: Checkpoint::default(),
-                    },
-                    signature: Signature::blank(),
-                    validator_id: 0,
+                // Build the SignedAttestation from fixture data, including a real
+                // signature when one is provided; otherwise use a blank signature.
+                let signature = match attestation.signature.as_deref() {
+                    Some(sig_hex) => {
+                        let bytes = decode_hex_bytes(sig_hex)?;
+                        Signature::from(bytes.as_slice())
+                    }
+                    None => Signature::blank(),
                 };
 
-                // Add attestation to new attestations
-                let db = store.store.lock().await;
-                let result = db
-                    .latest_new_attestations_provider()
-                    .insert(signed_attestation.validator_id, signed_attestation);
+                let signed_attestation = SignedAttestation {
+                    validator_id: attestation.validator_id,
+                    message: attestation.data.clone(),
+                    signature,
+                };
+
+                // Run the full gossip pipeline so the test exercises the same
+                // validity checks the spec specifies for `on_gossip_attestation`:
+                // (1) attestation-data validation, (2) validator-id range check,
+                // (3) signature verification.
+                let result = run_attestation_pipeline(&mut store, &signed_attestation).await;
 
                 if *valid {
                     result.map_err(|err| {
@@ -373,6 +451,53 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
         );
         debug!("Finalized checkpoint: slot {}", actual_finalized.slot);
     }
+
+    Ok(())
+}
+
+/// Decode a `0x`-prefixed hex string, accepting an optional `0x` prefix.
+fn decode_hex_bytes(value: &str) -> anyhow::Result<Vec<u8>> {
+    hex::decode(value.trim_start_matches("0x"))
+        .map_err(|err| anyhow!("Failed to decode hex bytes: {err}"))
+}
+
+/// Run the validation portion of `on_gossip_attestation` so the runner can
+/// distinguish accepted vs rejected attestations:
+///   1. attestation-data validation
+///   2. validator-id range check
+///   3. signature verification (using the attestation public key)
+async fn run_attestation_pipeline(
+    store: &mut Store,
+    signed_attestation: &SignedAttestation,
+) -> anyhow::Result<()> {
+    store.validate_attestation(signed_attestation).await?;
+
+    let key_state = {
+        let db = store.store.lock().await;
+        db.state_provider()
+            .get(signed_attestation.message.target.root)?
+    }
+    .ok_or_else(|| {
+        anyhow!(
+            "No state available to verify attestation signature for target {}",
+            signed_attestation.message.target.root
+        )
+    })?;
+
+    ensure!(
+        signed_attestation.validator_id < key_state.validators.len() as u64,
+        "Validator {} not found in state",
+        signed_attestation.validator_id,
+    );
+
+    let attestation_key =
+        key_state.validators[signed_attestation.validator_id as usize].attestation_public_key;
+    let signature_valid = signed_attestation.signature.verify(
+        &attestation_key,
+        signed_attestation.message.slot as u32,
+        &signed_attestation.message.tree_hash_root(),
+    )?;
+    ensure!(signature_valid, "Signature verification failed");
 
     Ok(())
 }

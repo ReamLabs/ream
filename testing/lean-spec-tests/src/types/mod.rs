@@ -113,6 +113,32 @@ pub struct Attestation {
     #[serde(alias = "validatorId")]
     pub validator_id: u64,
     pub data: AttestationData,
+    #[serde(default)]
+    pub signature: Option<String>,
+}
+
+/// Aggregated attestation used in `gossipAggregatedAttestation` steps.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GossipAggregatedAttestationStep {
+    pub data: AttestationData,
+    pub proof: GossipProofJSON,
+}
+
+/// Proof bundle attached to a gossip aggregated attestation fixture step.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GossipProofJSON {
+    pub participants: AggregationBitsJSON,
+    pub proof_data: HexBytesJSON,
+    #[serde(default)]
+    pub bytecode_point: Option<HexBytesJSON>,
+}
+
+/// Wrapper around hex-encoded bytes serialized as `{"data": "0x..."}`.
+#[derive(Debug, Deserialize, Clone)]
+pub struct HexBytesJSON {
+    pub data: String,
 }
 
 /// Generic data list wrapper
