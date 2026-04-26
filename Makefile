@@ -40,7 +40,7 @@ install: # Build and install the Ream binary under `~/.cargo/bin`.
 ##@ Testing and Linting
 
 .PHONY: test
-test:
+test: test-devnet4
 	cargo test --workspace -- --nocapture
 
 .PHONY: test-devnet5
