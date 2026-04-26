@@ -1,4 +1,3 @@
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     block::{BlockSignatures, SignedBlock},
     utils::generate_default_validators,
@@ -16,7 +15,6 @@ pub async fn sample_store(no_of_validators: usize) -> Store {
         generate_default_validators(no_of_validators),
     );
 
-    #[cfg(feature = "devnet4")]
     let signed_genesis_block = SignedBlock {
         block: genesis_block,
         signature: BlockSignatures {

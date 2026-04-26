@@ -584,7 +584,6 @@ impl LeanNetworkService {
                             self.publish_gossip(
                                 |topic| matches!(topic, LeanGossipTopicKind::Block),
                                 block.as_ssz_bytes(),
-                                #[cfg(feature = "devnet4")]
                                 block.block.slot,
                                 "block"
                             );
@@ -864,7 +863,6 @@ impl LeanNetworkService {
         match event {
             GossipsubEvent::Message { message, .. } => {
                 match LeanGossipsubMessage::decode(&message.topic, &message.data) {
-                    #[cfg(feature = "devnet4")]
                     Ok(LeanGossipsubMessage::Block(signed_block)) => {
                         let slot = signed_block.block.slot;
 

@@ -35,7 +35,6 @@ use ream_chain_lean::{
 };
 use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
 use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     block::{Block, BlockBody, BlockSignatures, SignedBlock},
     validator::Validator,
@@ -271,7 +270,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         (block, state)
     } else {
-        #[cfg(feature = "devnet4")]
         let validators = lean_network_spec()
             .genesis_validators
             .iter()
@@ -285,7 +283,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         setup_genesis(lean_network_spec().genesis_time, validators)
     };
-    #[cfg(feature = "devnet4")]
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
             SignedBlock {
@@ -845,7 +842,6 @@ mod tests {
 
     use crate::{APP_NAME, run_lean_node};
 
-    #[cfg(feature = "devnet4")]
     const VALIDATOR_KEYS: [(&str, &str); 3] = [
         (
             "0xa082964b6fc8f6071b30fc1cdc471101ee911b65638a29017fafed61da16310ad145ae7ceb6339468cc38607357f4870d7cb215d",
@@ -1303,7 +1299,6 @@ mod tests {
             .as_secs()
             + 10;
 
-        #[cfg(feature = "devnet4")]
         let validators: String = VALIDATOR_KEYS[..num_validators]
             .iter()
             .map(|(att, prop)| {
@@ -1977,10 +1972,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_lean_node_checkpoint_sync_from_running_node() {
-        #[cfg(feature = "devnet4")]
         let test_duration_secs = 240;
-        #[cfg(not(feature = "devnet4"))]
-        let test_duration_secs = 180;
 
         run_checkpoint_sync_scenario(CheckpointSyncScenario {
             test_name: "checkpoint_sync_late_joiner",

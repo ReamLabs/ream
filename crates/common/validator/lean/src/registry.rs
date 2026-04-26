@@ -44,7 +44,6 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
         .get(node_id)
         .ok_or_else(|| anyhow!("Failed to get validator indexes for given node ID {node_id}"))?
     {
-        #[cfg(feature = "devnet4")]
         path.push("validator-keys-manifest-devnet4.yaml");
 
         let validator_keys_manifest_yaml = fs::read_to_string(&path)
@@ -59,25 +58,22 @@ pub fn load_validator_registry<P: AsRef<Path> + std::fmt::Debug>(
             .get(*ream_validator_index as usize)
             .expect("Failed to get ream validator index");
 
-        #[cfg(feature = "devnet4")]
-        {
-            path.pop();
-            path.push(validator.attestation_private_key_file.clone());
-            let attestation_private_key = load_private_key(&path)?;
-            path.pop();
+        path.pop();
+        path.push(validator.attestation_private_key_file.clone());
+        let attestation_private_key = load_private_key(&path)?;
+        path.pop();
 
-            path.push(validator.proposal_private_key_file.clone());
-            let proposal_private_key = load_private_key(&path)?;
-            path.pop();
+        path.push(validator.proposal_private_key_file.clone());
+        let proposal_private_key = load_private_key(&path)?;
+        path.pop();
 
-            validator_keystores.push(ValidatorKeystore {
-                index: *ream_validator_index,
-                attestation_public_key: validator.attestation_public_key_hex,
-                proposal_public_key: validator.proposal_public_key_hex,
-                attestation_private_key,
-                proposal_private_key,
-            });
-        }
+        validator_keystores.push(ValidatorKeystore {
+            index: *ream_validator_index,
+            attestation_public_key: validator.attestation_public_key_hex,
+            proposal_public_key: validator.proposal_public_key_hex,
+            attestation_private_key,
+            proposal_private_key,
+        });
     }
     Ok(validator_keystores)
 }

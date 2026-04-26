@@ -2,7 +2,6 @@ use std::{sync::Arc, time::Instant};
 
 use alloy_primitives::B256;
 use anyhow::anyhow;
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{block::SignedBlock, checkpoint::Checkpoint};
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_network_spec::networks::lean_network_spec;
@@ -49,10 +48,8 @@ impl ForwardBackgroundSyncer {
             .map(|checkpoint| checkpoint.slot)
             .unwrap_or(0);
         let mut next_root = self.job_queue.starting_root;
-        #[cfg(feature = "devnet4")]
         let mut last_block: Option<SignedBlock> = None;
         let mut chained_roots = vec![];
-        #[cfg(feature = "devnet4")]
         while next_root != stop_root && next_root != B256::ZERO {
             let current_block = match pending_blocks_provider.get(next_root)? {
                 Some(block) => block,
@@ -110,10 +107,8 @@ impl ForwardBackgroundSyncer {
                     "Failed to find block with root {root:?} in pending blocks during insertion"
                 )
             })?;
-            #[cfg(feature = "devnet4")]
             let time = lean_network_spec().genesis_time
                 + (block.block.slot * lean_network_spec().seconds_per_slot);
-            #[cfg(feature = "devnet4")]
             let block_slot = block.block.slot;
             store_writer.on_tick(time, false, true).await?;
             store_writer.on_block(&block, true).await?;
@@ -167,7 +162,6 @@ mod tests {
     use std::sync::Arc;
 
     use libp2p_identity::PeerId;
-    #[cfg(feature = "devnet4")]
     use ream_consensus_lean::block::{BlockSignatures, SignedBlock};
     use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
@@ -184,7 +178,6 @@ mod tests {
                 .produce_block_with_signatures(slot, proposer_index)
                 .await
                 .unwrap();
-            #[cfg(feature = "devnet4")]
             let signed_block = SignedBlock {
                 block: block.block,
                 signature: BlockSignatures {
@@ -199,7 +192,6 @@ mod tests {
     async fn root_mismatch_result(network_finalized_slot: u64) -> ForwardSyncResults {
         let mut store = sample_store(10).await;
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {

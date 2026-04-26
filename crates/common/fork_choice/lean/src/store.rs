@@ -7,7 +7,6 @@ use std::{
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
@@ -36,11 +35,9 @@ use ream_post_quantum_crypto::{
     lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
     leansig::signature::Signature,
 };
-#[cfg(feature = "devnet4")]
-use ream_storage::tables::lean::gossip_signatures::GossipSignaturesTable;
 use ream_storage::{
     db::lean::LeanDB,
-    tables::{field::REDBField, table::REDBTable},
+    tables::{field::REDBField, lean::gossip_signatures::GossipSignaturesTable, table::REDBTable},
 };
 use ream_sync::rwlock::{Reader, Writer};
 use ssz_types::{BitList, VariableList, typenum::U4096};
@@ -62,13 +59,12 @@ pub struct Store {
 impl Store {
     /// Initialize forkchoice store from an anchor state and anchor block.
     pub fn get_forkchoice_store(
-        #[cfg(feature = "devnet4")] anchor_block: SignedBlock,
+        anchor_block: SignedBlock,
         anchor_state: LeanState,
         db: LeanDB,
         time: Option<u64>,
         validator_id: Option<u64>,
     ) -> anyhow::Result<Store> {
-        #[cfg(feature = "devnet4")]
         ensure!(
             anchor_block.block.state_root == anchor_state.tree_hash_root(),
             "Anchor block state root must match anchor state hash"
@@ -81,7 +77,6 @@ impl Store {
             }
             header.tree_hash_root()
         };
-        #[cfg(feature = "devnet4")]
         let anchor_slot = anchor_block.block.slot;
 
         let justified_checkpoint = Checkpoint {
@@ -155,7 +150,6 @@ impl Store {
                 .get_oldest_root()?
                 .ok_or(anyhow!("No blocks found to calculate fork choice"))?;
         }
-        #[cfg(feature = "devnet4")]
         let start_slot = block_provider
             .get(root)?
             .ok_or(anyhow!("Failed to get block for root {root:?}"))?
@@ -170,7 +164,6 @@ impl Store {
             let mut current_root = attestation.message.head.root;
 
             while let Some(block) = block_provider.get(current_root)? {
-                #[cfg(feature = "devnet4")]
                 let block = block.block;
 
                 if block.slot <= start_slot {
@@ -196,7 +189,6 @@ impl Store {
                 .iter()
                 .map(|child_hash| {
                     let vote_weight = *weights.get(child_hash).unwrap_or(&0);
-                    #[cfg(feature = "devnet4")]
                     let slot = block_provider
                         .get(*child_hash)
                         .ok()
@@ -347,7 +339,6 @@ impl Store {
         } else if current_interval == 2 {
             // Interval 2: Only aggregate signatures if aggregator
             if is_aggregator {
-                #[cfg(feature = "devnet4")]
                 self.aggregate().await?;
             }
         } else if current_interval == 3 {
@@ -442,7 +433,6 @@ impl Store {
         let mut target_block_root = head_provider.get()?;
 
         for _ in 0..JUSTIFICATION_LOOKBACK_SLOTS {
-            #[cfg(feature = "devnet4")]
             if block_provider
                 .get(target_block_root)?
                 .ok_or(anyhow!("Block not found for target block root"))?
@@ -465,7 +455,6 @@ impl Store {
         }
 
         let latest_finalized_slot = latest_finalized_provider.get()?.slot;
-        #[cfg(feature = "devnet4")]
         while !is_justifiable_after(
             block_provider
                 .get(target_block_root)?
@@ -487,7 +476,6 @@ impl Store {
 
         Ok(Checkpoint {
             root: target_block_root,
-            #[cfg(feature = "devnet4")]
             slot: target_block.block.slot,
         })
     }
@@ -502,7 +490,6 @@ impl Store {
         Ok(self.store.lock().await.head_provider().get()?)
     }
 
-    #[cfg(feature = "devnet4")]
     fn state_aggregate(
         &self,
         head_state: &LeanState,
@@ -948,12 +935,11 @@ impl Store {
 
     pub async fn on_block(
         &mut self,
-        #[cfg(feature = "devnet4")] signed_block: &SignedBlock,
+        signed_block: &SignedBlock,
         verify_signatures: bool,
     ) -> anyhow::Result<()> {
         let block_processing_timer = start_timer(&FORK_CHOICE_BLOCK_PROCESSING_TIME, &[]);
 
-        #[cfg(feature = "devnet4")]
         let (
             state_provider,
             block_provider,
@@ -973,7 +959,6 @@ impl Store {
             )
         };
 
-        #[cfg(feature = "devnet4")]
         let block = &signed_block.block;
         let block_root = block.tree_hash_root();
 
@@ -987,7 +972,6 @@ impl Store {
             .get(block.parent_root)?
             .ok_or(anyhow!("State not found for parent root"))?;
 
-        #[cfg(feature = "devnet4")]
         signed_block.verify_signatures(&parent_state, verify_signatures)?;
         parent_state.state_transition(block, true)?;
 
@@ -1014,15 +998,12 @@ impl Store {
         set_int_gauge_vec(&FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
         set_int_gauge_vec(&LATEST_JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
         set_int_gauge_vec(&LATEST_FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
-        #[cfg(feature = "devnet4")]
         block_provider.insert(block_root, signed_block.clone())?;
         state_provider.insert(block_root, parent_state)?;
         latest_justified_provider.insert(latest_justified)?;
         latest_finalized_provider.insert(latest_finalized)?;
         *self.network_state.finalized_checkpoint.write() = latest_finalized;
-        #[cfg(feature = "devnet4")]
         let aggregated_attestations = &block.body.attestations;
-        #[cfg(feature = "devnet4")]
         let attestation_signatures = &signed_block.signature.attestation_signatures;
 
         ensure!(
@@ -1107,17 +1088,14 @@ impl Store {
         let head_block = block_provider
             .get(data.head.root)?
             .ok_or(anyhow!("Failed to get head block"))?;
-        #[cfg(feature = "devnet4")]
         ensure!(
             source_block.block.slot == data.source.slot,
             "Source checkpoint slot mismatch"
         );
-        #[cfg(feature = "devnet4")]
         ensure!(
             target_block.block.slot == data.target.slot,
             "Target checkpoint slot mismatch"
         );
-        #[cfg(feature = "devnet4")]
         ensure!(
             head_block.block.slot == data.head.slot,
             "Head checkpoint slot mismatch"
@@ -1173,12 +1151,7 @@ impl Store {
                     state
                         .validators
                         .get(validator as usize)
-                        .map(|validator| {
-                            #[cfg(feature = "devnet4")]
-                            {
-                                validator.attestation_public_key
-                            }
-                        })
+                        .map(|validator| validator.attestation_public_key)
                         .ok_or_else(|| anyhow!("Validator {validator} not found in state"))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1263,7 +1236,6 @@ impl Store {
         Ok(attestations)
     }
 
-    #[cfg(feature = "devnet4")]
     pub async fn aggregate(&mut self) -> anyhow::Result<Vec<SignedAggregatedAttestation>> {
         let (
             state_provider,
@@ -1386,7 +1358,6 @@ impl Store {
 
         for attestation_data in attestations.values() {
             let mut current_root = attestation_data.head.root;
-            #[cfg(feature = "devnet4")]
             while let Some(block) = block_provider.get(current_root).ok().flatten() {
                 if block.block.slot <= start_slot {
                     break;
@@ -1412,7 +1383,6 @@ impl Store {
         let validator_id = signed_attestation.validator_id;
         let attestation_data = &signed_attestation.message;
         let signature = signed_attestation.signature;
-        #[cfg(feature = "devnet4")]
         let (
             attestation_data_by_root_provider,
             validator_id_provider,
@@ -1440,7 +1410,6 @@ impl Store {
         );
 
         let verification_timer = start_timer(&PQ_SIG_ATTESTATION_VERIFICATION_TIME, &[]);
-        #[cfg(feature = "devnet4")]
         let attestation_key = key_state.validators[validator_id as usize].attestation_public_key;
         let signature_valid = signature.verify(
             &attestation_key,
@@ -1471,7 +1440,6 @@ impl Store {
                 compute_subnet_id(validator_id, effective_attestation_committee_count());
 
             if current_validator_subnet == attester_subnet {
-                #[cfg(feature = "devnet4")]
                 attestation_signatures_provider
                     .insert(SignatureKey::new(validator_id, attestation_data), signature)?;
             }
@@ -1502,7 +1470,6 @@ impl Store {
             slot,
             head: Checkpoint {
                 root: head_root,
-                #[cfg(feature = "devnet4")]
                 slot: block_provider
                     .get(head_root)?
                     .ok_or(anyhow!("Failed to get head block"))?
@@ -1515,7 +1482,6 @@ impl Store {
     }
 
     pub async fn prune_stale_attestation_data(&mut self) -> anyhow::Result<()> {
-        #[cfg(feature = "devnet4")]
         let (
             latest_finalized_provider,
             attestation_signatures_provider,
@@ -1553,7 +1519,6 @@ impl Store {
         latest_known_aggregated_payloads_provider
             .retain(|key, _| !stale_roots.contains(&key.data_root))?;
 
-        #[cfg(feature = "devnet4")]
         attestation_signatures_provider.retain(|key| !stale_roots.contains(&key.data_root))?;
 
         Ok(())
@@ -1586,7 +1551,6 @@ fn swap_test_attestation_committee_count(new_value: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "devnet4")]
     use std::{
         collections::{HashMap, HashSet},
         sync::OnceLock,
@@ -1595,7 +1559,6 @@ mod tests {
 
     use alloy_primitives::{B256, FixedBytes};
     use anyhow::ensure;
-    #[cfg(feature = "devnet4")]
     use ream_consensus_lean::{
         attestation::{
             AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof,
@@ -1612,7 +1575,6 @@ mod tests {
         lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
         leansig::{private_key::PrivateKey, public_key::PublicKey, signature::Signature},
     };
-    #[cfg(feature = "devnet4")]
     use ream_storage::tables::{field::REDBField, table::REDBTable};
     use ream_test_utils::store::sample_store;
     use ssz_types::{BitList, VariableList, typenum::U4096};
@@ -1670,7 +1632,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "devnet4")]
     fn build_signed_block(block_with_signatures: BlockWithSignatures) -> SignedBlock {
         SignedBlock {
             block: block_with_signatures.block,
@@ -1732,7 +1693,6 @@ mod tests {
 
             let mut validators: Vec<Validator> = state.validators.iter().cloned().collect();
             for (validator_id, (public_key, _)) in &key_pairs {
-                #[cfg(feature = "devnet4")]
                 {
                     validators[*validator_id as usize].attestation_public_key = *public_key;
                     validators[*validator_id as usize].proposal_public_key = *public_key;
@@ -1818,7 +1778,6 @@ mod tests {
         let block_with_signatures = store
             .produce_block_with_signatures(slot, proposer_index)
             .await?;
-        #[cfg(feature = "devnet4")]
         let signed_block = build_signed_block(block_with_signatures);
         store.on_block(&signed_block, false).await?;
         Ok(())
@@ -2044,7 +2003,6 @@ mod tests {
                     slot: 5,
                 })
                 .unwrap();
-            #[cfg(feature = "devnet4")]
             db.attestation_signatures_provider()
                 .insert(sig_key.clone(), Signature::blank())
                 .unwrap();
@@ -2053,7 +2011,6 @@ mod tests {
         ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         {
             let db = store.store.lock().await;
-            #[cfg(feature = "devnet4")]
             ensure!(
                 db.attestation_signatures_provider()
                     .get(sig_key.clone())
@@ -2066,7 +2023,6 @@ mod tests {
 
         ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
         let db = store.store.lock().await;
-        #[cfg(feature = "devnet4")]
         ensure!(
             db.attestation_signatures_provider()
                 .get(sig_key)
@@ -2094,7 +2050,6 @@ mod tests {
                     slot: 5,
                 })
                 .unwrap();
-            #[cfg(feature = "devnet4")]
             db.attestation_signatures_provider()
                 .insert(sig_key.clone(), Signature::blank())
                 .unwrap();
@@ -2105,7 +2060,6 @@ mod tests {
 
         ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
         let db = store.store.lock().await;
-        #[cfg(feature = "devnet4")]
         ensure!(
             db.attestation_signatures_provider()
                 .get(sig_key)
@@ -2133,7 +2087,6 @@ mod tests {
                     slot: 5,
                 })
                 .unwrap();
-            #[cfg(feature = "devnet4")]
             db.attestation_signatures_provider()
                 .insert(sig_key.clone(), Signature::blank())
                 .unwrap();
@@ -2145,7 +2098,6 @@ mod tests {
         ensure!(attestation_data_by_root_provider.contains_key(&data_root));
         ensure!(attestation_data_by_root_provider.get(data_root)?.unwrap() == attestation_data);
         let db = store.store.lock().await;
-        #[cfg(feature = "devnet4")]
         ensure!(
             db.attestation_signatures_provider()
                 .get(sig_key)
@@ -2206,11 +2158,9 @@ mod tests {
                     slot: 5,
                 })
                 .unwrap();
-            #[cfg(feature = "devnet4")]
             db.attestation_signatures_provider()
                 .insert(stale_key.clone(), Signature::blank())
                 .unwrap();
-            #[cfg(feature = "devnet4")]
             db.attestation_signatures_provider()
                 .insert(fresh_key.clone(), Signature::blank())
                 .unwrap();
@@ -2230,14 +2180,12 @@ mod tests {
         ensure!(latest_new_aggregated_payloads_provider.contains_key(&fresh_key));
 
         let db = store.store.lock().await;
-        #[cfg(feature = "devnet4")]
         ensure!(
             db.attestation_signatures_provider()
                 .get(stale_key)
                 .unwrap()
                 .is_none()
         );
-        #[cfg(feature = "devnet4")]
         ensure!(
             db.attestation_signatures_provider()
                 .get(fresh_key)
@@ -2314,7 +2262,6 @@ mod tests {
                 })
                 .unwrap();
 
-            #[cfg(feature = "devnet4")]
             let gossip = db.attestation_signatures_provider();
             gossip
                 .insert(sig_key_1.clone(), Signature::blank())
@@ -2329,14 +2276,12 @@ mod tests {
 
         ensure!(!attestation_data_by_root_provider.contains_key(&data_root));
         let db = store.store.lock().await;
-        #[cfg(feature = "devnet4")]
         ensure!(
             db.attestation_signatures_provider()
                 .get(sig_key_1)
                 .unwrap()
                 .is_none()
         );
-        #[cfg(feature = "devnet4")]
         ensure!(
             db.attestation_signatures_provider()
                 .get(sig_key_2)
@@ -2359,7 +2304,6 @@ mod tests {
                     slot: 5,
                 })
                 .unwrap();
-            #[cfg(feature = "devnet4")]
             let gossip = db.attestation_signatures_provider();
 
             for i in 1..=10 {
@@ -2563,7 +2507,6 @@ mod tests {
         assert_eq!(attestation.data.head.root, head);
 
         let head_block = block_provider.get(head).unwrap().unwrap();
-        #[cfg(feature = "devnet4")]
         assert_eq!(attestation.data.head.slot, head_block.block.slot);
     }
 
@@ -2731,7 +2674,6 @@ mod tests {
 
         let time = time_provider.get().unwrap();
         let genesis_hash = head_provider.get().unwrap();
-        #[cfg(feature = "devnet4")]
         let genesis_block = block_provider.get(genesis_hash).unwrap().unwrap().block;
 
         assert!(time == lean_network_spec().seconds_per_slot * genesis_block.slot);
@@ -3176,7 +3118,6 @@ mod tests {
             .produce_block_with_signatures(attestation_slot, proposer_index)
             .await
             .unwrap();
-        #[cfg(feature = "devnet4")]
         let signed_block = build_signed_block(block_with_signatures);
 
         store.on_block(&signed_block, false).await.unwrap();
@@ -3237,7 +3178,6 @@ mod tests {
         };
 
         let sig_key = SignatureKey::new(attestor_validator, &attestation_data);
-        #[cfg(feature = "devnet4")]
         assert!(
             store
                 .store
@@ -3254,7 +3194,6 @@ mod tests {
             .await
             .unwrap();
 
-        #[cfg(feature = "devnet4")]
         assert!(
             store
                 .store
@@ -3307,7 +3246,6 @@ mod tests {
             .unwrap();
 
         let sig_key = SignatureKey::new(attestor_validator, &attestation_data);
-        #[cfg(feature = "devnet4")]
         assert!(
             store
                 .store
@@ -3354,7 +3292,6 @@ mod tests {
 
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::from_parts(4, data_root);
-        #[cfg(feature = "devnet4")]
         assert!(
             store
                 .store
@@ -3420,7 +3357,6 @@ mod tests {
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::from_parts(attestor_validator, data_root);
 
-        #[cfg(feature = "devnet4")]
         assert!(
             store
                 .store
@@ -3645,7 +3581,6 @@ mod tests {
                 .unwrap();
         }
 
-        #[cfg(feature = "devnet4")]
         store.aggregate().await.unwrap();
 
         let latest_new = store
@@ -3694,7 +3629,6 @@ mod tests {
                 .unwrap();
         }
 
-        #[cfg(feature = "devnet4")]
         store.aggregate().await.unwrap();
 
         let proof = store
@@ -3720,12 +3654,7 @@ mod tests {
             .unwrap();
         let public_keys: Vec<_> = participants
             .iter()
-            .map(|&validator_id| {
-                #[cfg(feature = "devnet4")]
-                {
-                    state.validators[validator_id as usize].attestation_public_key
-                }
-            })
+            .map(|&validator_id| state.validators[validator_id as usize].attestation_public_key)
             .collect();
 
         assert!(
@@ -3742,7 +3671,6 @@ mod tests {
     #[tokio::test]
     pub async fn test_empty_gossip_signatures_produces_no_proofs() {
         let mut store: Store = sample_store_as_store(4).await;
-        #[cfg(feature = "devnet4")]
         store.aggregate().await.unwrap();
 
         let is_empty = store
@@ -3792,7 +3720,6 @@ mod tests {
         {
             let db = store.store.lock().await;
             let attestation_data_by_root = db.attestation_data_by_root_provider();
-            #[cfg(feature = "devnet4")]
             let gossip_signatures = db.attestation_signatures_provider();
 
             attestation_data_by_root
@@ -3816,7 +3743,6 @@ mod tests {
                 .unwrap();
         }
 
-        #[cfg(feature = "devnet4")]
         store.aggregate().await.unwrap();
 
         let latest_new = store
@@ -4046,7 +3972,6 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            #[cfg(feature = "devnet4")]
             assert!(
                 store
                     .store
@@ -4086,12 +4011,7 @@ mod tests {
             .unwrap();
         let public_keys: Vec<_> = participants
             .iter()
-            .map(|&validator_id| {
-                #[cfg(feature = "devnet4")]
-                {
-                    state.validators[validator_id as usize].attestation_public_key
-                }
-            })
+            .map(|&validator_id| state.validators[validator_id as usize].attestation_public_key)
             .collect();
 
         assert!(
@@ -4131,7 +4051,6 @@ mod tests {
         let genesis_block = block_provider.get(genesis_root).unwrap().unwrap();
 
         assert_eq!(target.root, genesis_root);
-        #[cfg(feature = "devnet4")]
         assert_eq!(target.slot, genesis_block.block.slot);
     }
 
@@ -4144,7 +4063,6 @@ mod tests {
         let target_block = block_provider.get(target.root).unwrap();
 
         assert!(target_block.is_some());
-        #[cfg(feature = "devnet4")]
         assert_eq!(target.slot, target_block.unwrap().block.slot);
     }
 
@@ -4167,11 +4085,9 @@ mod tests {
             )
         };
         let head_root = head_provider.get().unwrap();
-        #[cfg(feature = "devnet4")]
         let head_slot = block_provider.get(head_root).unwrap().unwrap().block.slot;
 
         let safe_target_root = safe_target_provider.get().unwrap();
-        #[cfg(feature = "devnet4")]
         let safe_target_slot = block_provider
             .get(safe_target_root)
             .unwrap()
@@ -4229,7 +4145,6 @@ mod tests {
         let mut current_root = head_provider.get().unwrap();
         let mut found_target = false;
 
-        #[cfg(feature = "devnet4")]
         while current_root != B256::ZERO {
             if current_root == target.root {
                 found_target = true;
@@ -4312,7 +4227,6 @@ mod tests {
                 .unwrap();
         }
 
-        #[cfg(feature = "devnet4")]
         store.aggregate().await.unwrap();
         store.update_safe_target().await.unwrap();
 
@@ -4320,7 +4234,6 @@ mod tests {
             let db = store.store.lock().await;
             (db.safe_target_provider(), db.block_provider())
         };
-        #[cfg(feature = "devnet4")]
         let safe_target_slot = block_provider
             .get(safe_target_provider.get().unwrap())
             .unwrap()
@@ -4398,7 +4311,6 @@ mod tests {
                 .unwrap();
         }
 
-        #[cfg(feature = "devnet4")]
         store.aggregate().await.unwrap();
         store.update_safe_target().await.unwrap();
 
@@ -4406,7 +4318,6 @@ mod tests {
             let db = store.store.lock().await;
             (db.safe_target_provider(), db.block_provider())
         };
-        #[cfg(feature = "devnet4")]
         let safe_target_slot = block_provider
             .get(safe_target_provider.get().unwrap())
             .unwrap()
@@ -4483,7 +4394,6 @@ mod tests {
                 .unwrap();
         }
 
-        #[cfg(feature = "devnet4")]
         store.aggregate().await.unwrap();
         let has_new_payloads = {
             let db = store.store.lock().await;
@@ -4498,7 +4408,6 @@ mod tests {
             let db = store.store.lock().await;
             (db.safe_target_provider(), db.block_provider())
         };
-        #[cfg(feature = "devnet4")]
         let safe_target_slot = block_provider
             .get(safe_target_provider.get().unwrap())
             .unwrap()
@@ -4525,7 +4434,6 @@ mod tests {
             .produce_block_with_signatures(slot_1, proposer_index_1)
             .await
             .unwrap();
-        #[cfg(feature = "devnet4")]
         let signed_block_1 = build_signed_block(block_1_with_signatures);
         store.on_block(&signed_block_1, false).await.unwrap();
         set_validator_id(&store, Some(0)).await;
@@ -4586,7 +4494,6 @@ mod tests {
                 .unwrap();
         }
 
-        #[cfg(feature = "devnet4")]
         store.aggregate().await.unwrap();
         {
             let db = store.store.lock().await;
@@ -4644,7 +4551,6 @@ mod tests {
             .produce_block_with_signatures(slot, proposer_index)
             .await
             .unwrap();
-        #[cfg(feature = "devnet4")]
         let signed_block_1 = build_signed_block(block_1_with_signatures);
         store.on_block(&signed_block_1, false).await.unwrap();
 
@@ -4653,7 +4559,6 @@ mod tests {
             (db.head_provider(), db.block_provider())
         };
         let block_root = head_provider.get().unwrap();
-        #[cfg(feature = "devnet4")]
         let block_slot = block_provider.get(block_root).unwrap().unwrap().block.slot;
 
         let attestation = SignedAttestation {
@@ -4698,7 +4603,6 @@ mod tests {
                 .produce_block_with_signatures(slot_num, slot_num)
                 .await
                 .unwrap();
-            #[cfg(feature = "devnet4")]
             let signed_block = build_signed_block(block_with_signatures);
             store.on_block(&signed_block, false).await.unwrap();
         }
@@ -4710,7 +4614,6 @@ mod tests {
         };
         let head_root = head_provider.get().unwrap();
         let head_block = block_provider.get(head_root).unwrap().unwrap();
-        #[cfg(feature = "devnet4")]
         let head_slot = head_block.block.slot;
         let num_validators = state_provider
             .get(head_root)
@@ -4745,7 +4648,6 @@ mod tests {
                 .unwrap();
         }
 
-        #[cfg(feature = "devnet4")]
         store.aggregate().await.unwrap();
         store.update_safe_target().await.unwrap();
 
@@ -4808,7 +4710,6 @@ mod tests {
                 };
                 let prev_head = head_provider.get().unwrap();
                 let prev_block = block_provider.get(prev_head).unwrap().unwrap();
-                #[cfg(feature = "devnet4")]
                 let prev_slot = prev_block.block.slot;
 
                 let attestation_data = AttestationData {
@@ -4846,7 +4747,6 @@ mod tests {
                         .unwrap();
                 }
 
-                #[cfg(feature = "devnet4")]
                 store.aggregate().await.unwrap();
             }
 
@@ -4926,7 +4826,6 @@ mod tests {
             (db.head_provider(), db.block_provider())
         };
 
-        #[cfg(feature = "devnet4")]
         let head_slot = block_provider
             .get(head_provider.get().unwrap())
             .unwrap()
@@ -4989,7 +4888,6 @@ mod tests {
                 .unwrap();
         }
 
-        #[cfg(feature = "devnet4")]
         store.aggregate().await.unwrap();
         store.update_safe_target().await.unwrap();
 
@@ -5004,7 +4902,6 @@ mod tests {
             (db.safe_target_provider(), db.block_provider())
         };
 
-        #[cfg(feature = "devnet4")]
         let safe_target_slot = block_provider
             .get(safe_target_provider.get().unwrap())
             .unwrap()
@@ -5027,7 +4924,6 @@ mod tests {
             .produce_block_with_signatures(slot_1, proposer_1)
             .await
             .unwrap();
-        #[cfg(feature = "devnet4")]
         let signed_block = build_signed_block(block_with_signatures);
 
         let target_time =

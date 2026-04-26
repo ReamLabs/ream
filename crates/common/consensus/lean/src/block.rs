@@ -26,14 +26,12 @@ pub struct BlockSignatures {
 }
 
 /// Envelope carrying a block, an attestation from proposer, and aggregated signatures.
-#[cfg(feature = "devnet4")]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct SignedBlock {
     pub block: Block,
     pub signature: BlockSignatures,
 }
 
-#[cfg(feature = "devnet4")]
 impl SignedBlock {
     pub fn verify_signatures(
         &self,

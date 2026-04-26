@@ -3,7 +3,6 @@ use ream_chain_lean::{
     clock::{create_lean_clock_interval, get_initial_tick_count},
     messages::{LeanChainServiceMessage, ServiceResponse},
 };
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::SignedAttestation,
     block::{BlockSignatures, BlockWithSignatures, SignedBlock},
@@ -100,12 +99,10 @@ impl ValidatorService {
                                 );
 
                                 let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
-                                #[cfg(feature = "devnet4")]
                                 let proposer_signature = keystore.proposal_private_key.sign(&block.tree_hash_root(), slot as u32)?;
                                 stop_timer(timer);
                                 inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
 
-                                #[cfg(feature = "devnet4")]
                                 let signed_block = SignedBlock {
                                     block: block.clone(),
                                     signature: BlockSignatures {
@@ -115,7 +112,6 @@ impl ValidatorService {
                                 };
 
                                 // Send block to the LeanChainService.
-                                #[cfg(feature = "devnet4")]
                                 self.chain_sender
                                     .send(LeanChainServiceMessage::ProcessBlock { signed_block: Box::new(signed_block), need_gossip: true })
                                     .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
@@ -171,13 +167,11 @@ impl ValidatorService {
                             }
 
                             let mut signed_attestations = vec![];
-                            #[cfg(feature = "devnet4")]
                             let attestation_keystores = self.keystores.iter().collect::<Vec<_>>();
                             for keystore in attestation_keystores {
                                 let message = attestation_data.clone();
                                 let message_root = message.tree_hash_root();
                                 let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
-                                #[cfg(feature = "devnet4")]
                                 let signature = keystore.attestation_private_key.sign(&message_root, slot as u32)?;
                                 stop_timer(timer);
                                 inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);

@@ -21,7 +21,6 @@ pub async fn get_block(
 }
 
 // Retrieve a block from the lean chain by its block ID.
-#[cfg(feature = "devnet4")]
 pub async fn get_block_by_id(
     block_id: ID,
     lean_chain: Data<LeanStoreReader>,

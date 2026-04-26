@@ -104,7 +104,6 @@ mod tests {
             "5",
             "lean_node",
             "--network",
-            #[cfg(feature = "devnet4")]
             "./assets/lean/config-devnet4.yaml",
             "--validator-registry-path",
             "./assets/lean/validator_registry.yml",

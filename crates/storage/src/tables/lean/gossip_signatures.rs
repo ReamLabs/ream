@@ -17,7 +17,6 @@ pub struct GossipSignaturesTable {
 }
 
 impl REDBTable for GossipSignaturesTable {
-    #[cfg(feature = "devnet4")]
     const TABLE_DEFINITION: TableDefinition<'_, SSZEncoding<SignatureKey>, SSZEncoding<Signature>> =
         TableDefinition::new("attestation_signatures");
 

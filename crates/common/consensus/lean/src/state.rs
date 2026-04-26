@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-#[cfg(feature = "devnet4")]
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
@@ -21,10 +19,8 @@ use tracing::info;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-#[cfg(feature = "devnet4")]
-use crate::attestation::AggregatedSignatureProof;
 use crate::{
-    attestation::AggregatedAttestation,
+    attestation::{AggregatedAttestation, AggregatedSignatureProof},
     block::{Block, BlockBody, BlockHeader},
     checkpoint::Checkpoint,
     config::Config,
@@ -143,7 +139,6 @@ impl LeanState {
         is_proposer(validator_index, self.slot, self.validators.len() as u64)
     }
 
-    #[cfg(feature = "devnet4")]
     pub fn extend_proofs_greedily(
         &self,
         proofs: Option<&HashSet<AggregatedSignatureProof>>,

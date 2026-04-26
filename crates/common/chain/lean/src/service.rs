@@ -11,7 +11,6 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use libp2p_identity::PeerId;
 use libp2p_swarm::ConnectionId;
 use rand::seq::IndexedRandom;
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{BlockWithSignatures, SignedBlock},
@@ -401,7 +400,6 @@ impl LeanChainService {
                                 error!("Failed to handle build attestation data message: {err:?}");
                             }
                         }
-                        #[cfg(feature = "devnet4")]
                         LeanChainServiceMessage::ProcessBlock { signed_block, need_gossip } => {
                             if self.sync_status != SyncStatus::Synced {
                                 if let Err(err) = self
@@ -1016,7 +1014,6 @@ impl LeanChainService {
                 Ok(head) => head,
                 Err(_) => return 0,
             };
-            #[cfg(feature = "devnet4")]
             match store.block_provider().get(head) {
                 Ok(Some(block)) => block.block.slot,
                 _ => return 0,
@@ -1043,7 +1040,6 @@ impl LeanChainService {
                 !store.pending_blocks_provider().is_empty(),
             )
         };
-        #[cfg(feature = "devnet4")]
         let current_head_slot = block_provider
             .get(head)?
             .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
@@ -1180,7 +1176,6 @@ impl LeanChainService {
             let store = fork_choice.store.lock().await;
             let head = store.head_provider().get()?;
             let block_provider = store.block_provider();
-            #[cfg(feature = "devnet4")]
             let current_head_slot = block_provider
                 .get(head)?
                 .ok_or_else(|| anyhow!("Block not found for head: {head}"))?
@@ -1206,7 +1201,6 @@ impl LeanChainService {
         let local_head = store.head_provider().get()?;
         let block_provider = store.block_provider();
         let pending_blocks_provider = store.pending_blocks_provider();
-        #[cfg(feature = "devnet4")]
         let current_head_slot = block_provider
             .get(local_head)?
             .ok_or_else(|| anyhow!("Block not found for head: {local_head}"))?
@@ -2163,7 +2157,6 @@ impl LeanChainService {
         message: Arc<LeanResponseMessage>,
     ) -> anyhow::Result<()> {
         match &*message {
-            #[cfg(feature = "devnet4")]
             LeanResponseMessage::BlocksByRoot(signed_block) => {
                 let block_root = signed_block.block.tree_hash_root();
                 if !self.telemetry.inflight_roots.contains_key(&block_root)
@@ -2217,7 +2210,6 @@ impl LeanChainService {
             }
         }
     }
-    #[cfg(feature = "devnet4")]
     async fn handle_syncing_process_block(
         &mut self,
         signed_block: &SignedBlock,
@@ -2260,7 +2252,6 @@ impl LeanChainService {
         Ok(false)
     }
 
-    #[cfg(feature = "devnet4")]
     async fn handle_backfill_block(
         &mut self,
         source_peer_id: Option<PeerId>,
@@ -2479,7 +2470,6 @@ impl LeanChainService {
             )
         };
 
-        #[cfg(feature = "devnet4")]
         let head_slot = block_provider
             .get(head)?
             .ok_or_else(|| anyhow!("State not found for head: {head}"))?
@@ -2563,7 +2553,6 @@ impl LeanChainService {
 
         Ok(())
     }
-    #[cfg(feature = "devnet4")]
     async fn handle_process_block(&mut self, signed_block: &SignedBlock) -> anyhow::Result<()> {
         let parent_root = signed_block.block.parent_root;
         let has_parent_state = {
@@ -2613,12 +2602,10 @@ impl LeanChainService {
     }
 }
 
-#[cfg(feature = "devnet4")]
 fn pending_block_slot(block: &SignedBlock) -> u64 {
     block.block.slot
 }
 
-#[cfg(feature = "devnet4")]
 fn pending_block_parent_root(block: &SignedBlock) -> B256 {
     block.block.parent_root
 }
@@ -2632,9 +2619,10 @@ mod tests {
 
     use alloy_primitives::B256;
     use libp2p_identity::PeerId;
-    #[cfg(feature = "devnet4")]
-    use ream_consensus_lean::block::{BlockSignatures, BlockWithSignatures, SignedBlock};
-    use ream_consensus_lean::checkpoint::Checkpoint;
+    use ream_consensus_lean::{
+        block::{BlockSignatures, BlockWithSignatures, SignedBlock},
+        checkpoint::Checkpoint,
+    };
     use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
     use ream_post_quantum_crypto::leansig::signature::Signature;
@@ -2663,7 +2651,6 @@ mod tests {
                 .produce_block_with_signatures(slot, proposer_index)
                 .await
                 .unwrap();
-            #[cfg(feature = "devnet4")]
             let signed_block = SignedBlock {
                 block: block.block,
                 signature: BlockSignatures {
@@ -3131,7 +3118,6 @@ complete(start=60, fetched_through=57, jobs=0)"
         advance_store_to_slot(&mut store, 3, 10).await;
 
         let block = store.produce_block_with_signatures(4, 4).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3139,7 +3125,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::blank(),
             },
         };
-        #[cfg(feature = "devnet4")]
         let checkpoint_root = signed_block.block.tree_hash_root();
 
         // Insert a newer canonical block without updating the head provider.
@@ -3183,7 +3168,6 @@ complete(start=60, fetched_through=57, jobs=0)"
         advance_store_to_slot(&mut store, 3, 10).await;
 
         let block = store.produce_block_with_signatures(4, 4).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3191,7 +3175,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::blank(),
             },
         };
-        #[cfg(feature = "devnet4")]
         let pending_root = signed_block.block.tree_hash_root();
         store
             .store
@@ -3558,7 +3541,6 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_update_sync_status_stays_syncing_while_orphaned_pending_blocks_exist() {
         let mut store = sample_store(10).await;
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3566,7 +3548,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         let pending_root = {
             pending_block.block.parent_root = B256::repeat_byte(0x88);
             pending_block.block.tree_hash_root()
@@ -3597,7 +3578,6 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_update_sync_status_stays_synced_with_only_orphaned_pending_blocks() {
         let mut store = sample_store(10).await;
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3605,7 +3585,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         let pending_root = {
             pending_block.block.parent_root = B256::repeat_byte(0x99);
             pending_block.block.tree_hash_root()
@@ -3663,7 +3642,6 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_handle_forward_sync_root_mismatch_requeues_before_network_finalized() {
         let mut store = sample_store(10).await;
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3671,7 +3649,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         let actual_root = pending_block.block.tree_hash_root();
         let bad_root = B256::repeat_byte(0xab);
         store
@@ -3734,7 +3711,6 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_handle_forward_sync_root_mismatch_drops_after_network_finalized() {
         let mut store = sample_store(10).await;
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3742,7 +3718,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         let actual_root = pending_block.block.tree_hash_root();
         let bad_root = B256::repeat_byte(0xcd);
         store
@@ -3794,7 +3769,6 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_try_advance_job_with_cached_block_skips_suppressed_root() {
         let mut store = sample_store(10).await;
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3802,7 +3776,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         let pending_root = pending_block.block.tree_hash_root();
         store
             .store
@@ -3845,7 +3818,6 @@ complete(start=60, fetched_through=57, jobs=0)"
             db.slot_index_provider().get(1).unwrap().unwrap()
         };
         let block = store.produce_block_with_signatures(3, 3).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let mut signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3853,13 +3825,10 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         {
             signed_block.block.parent_root = suppressed_parent_root;
         }
-        #[cfg(feature = "devnet4")]
         let last_root = signed_block.block.tree_hash_root();
-        #[cfg(feature = "devnet4")]
         assert_eq!(signed_block.block.parent_root, suppressed_parent_root);
 
         let (writer, _reader) = Writer::new(store);
@@ -3901,7 +3870,6 @@ complete(start=60, fetched_through=57, jobs=0)"
         };
 
         let block = store.produce_block_with_signatures(3, 3).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let mut pending_parent = SignedBlock {
             block: block.block.clone(),
             signature: BlockSignatures {
@@ -3909,11 +3877,9 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         {
             pending_parent.block.parent_root = canonical_completion_root;
         }
-        #[cfg(feature = "devnet4")]
         let pending_parent_root = pending_parent.block.tree_hash_root();
         store
             .store
@@ -3923,7 +3889,6 @@ complete(start=60, fetched_through=57, jobs=0)"
             .insert(pending_parent_root, pending_parent)
             .unwrap();
 
-        #[cfg(feature = "devnet4")]
         let mut signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3931,12 +3896,10 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         {
             signed_block.block.slot = 4;
             signed_block.block.parent_root = pending_parent_root;
         }
-        #[cfg(feature = "devnet4")]
         let last_root = signed_block.block.tree_hash_root();
 
         let (writer, _reader) = Writer::new(store);
@@ -3968,7 +3931,6 @@ complete(start=60, fetched_through=57, jobs=0)"
         let missing_root = B256::repeat_byte(0x66);
 
         let block = store.produce_block_with_signatures(3, 3).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let mut pending_parent = SignedBlock {
             block: block.block.clone(),
             signature: BlockSignatures {
@@ -3976,11 +3938,9 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         {
             pending_parent.block.parent_root = missing_root;
         }
-        #[cfg(feature = "devnet4")]
         let pending_parent_root = pending_parent.block.tree_hash_root();
         store
             .store
@@ -3990,7 +3950,6 @@ complete(start=60, fetched_through=57, jobs=0)"
             .insert(pending_parent_root, pending_parent)
             .unwrap();
 
-        #[cfg(feature = "devnet4")]
         let mut signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -3998,12 +3957,10 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         {
             signed_block.block.slot = 4;
             signed_block.block.parent_root = pending_parent_root;
         }
-        #[cfg(feature = "devnet4")]
         let last_root = signed_block.block.tree_hash_root();
 
         let (writer, _reader) = Writer::new(store);
@@ -4037,7 +3994,6 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_prune_stale_pending_blocks_removes_finalized_orphans() {
         let mut store = sample_store(10).await;
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4045,11 +4001,9 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         {
             pending_block.block.parent_root = B256::repeat_byte(0x77);
         }
-        #[cfg(feature = "devnet4")]
         let pending_root = pending_block.block.tree_hash_root();
         store
             .store
@@ -4087,7 +4041,6 @@ complete(start=60, fetched_through=57, jobs=0)"
             .produce_block_with_signatures(1, 1)
             .await
             .unwrap();
-        #[cfg(feature = "devnet4")]
         let mut signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4095,11 +4048,9 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         {
             signed_block.block.parent_root = B256::repeat_byte(0x99);
         }
-        #[cfg(feature = "devnet4")]
         let block_root = signed_block.block.tree_hash_root();
         let (writer, _reader) = Writer::new(target_store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
@@ -4164,7 +4115,6 @@ complete(start=60, fetched_through=57, jobs=0)"
         let old_frontier = B256::repeat_byte(0x12);
         let new_root = B256::repeat_byte(0x21);
 
-        #[cfg(feature = "devnet4")]
         let signed_block = {
             let block = store.produce_block_with_signatures(1, 1).await.unwrap();
             let mut signed_block = SignedBlock {
@@ -4210,7 +4160,6 @@ complete(start=60, fetched_through=57, jobs=0)"
             JobRequest::new(peer_new, new_root),
             false,
         );
-        #[cfg(feature = "devnet4")]
         let new_frontier = signed_block.block.tree_hash_root();
         service.backfill_state.replace_job_with_next_job(
             new_root,
@@ -4237,7 +4186,6 @@ complete(start=60, fetched_through=57, jobs=0)"
     {
         let mut store = sample_store(10).await;
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let signed_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4245,7 +4193,6 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         let root = signed_block.block.tree_hash_root();
 
         let (writer, _reader) = Writer::new(store);
@@ -4317,7 +4264,6 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_prune_stale_pending_blocks_preserves_roots_still_referenced_by_backfill() {
         let mut store = sample_store(10).await;
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
-        #[cfg(feature = "devnet4")]
         let mut pending_block = SignedBlock {
             block: block.block,
             signature: BlockSignatures {
@@ -4325,12 +4271,10 @@ complete(start=60, fetched_through=57, jobs=0)"
                 proposer_signature: Signature::mock(),
             },
         };
-        #[cfg(feature = "devnet4")]
         {
             pending_block.block.slot = 0;
             pending_block.block.parent_root = B256::ZERO;
         }
-        #[cfg(feature = "devnet4")]
         let pending_root = pending_block.block.tree_hash_root();
         store
             .store
@@ -4371,7 +4315,6 @@ complete(start=60, fetched_through=57, jobs=0)"
     async fn test_handle_callback_response_accepts_late_reassigned_peer_callback() {
         let mut store = sample_store(10).await;
 
-        #[cfg(feature = "devnet4")]
         let signed_block = {
             let block = store.produce_block_with_signatures(1, 1).await.unwrap();
             SignedBlock {
@@ -4383,7 +4326,6 @@ complete(start=60, fetched_through=57, jobs=0)"
             }
         };
 
-        #[cfg(feature = "devnet4")]
         let block_root = signed_block.block.tree_hash_root();
 
         let (writer, _reader) = Writer::new(store);

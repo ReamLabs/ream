@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
-#[cfg(feature = "devnet4")]
 use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, public_key::PublicKey};
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "devnet4")]
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct ValidatorKeysManifest {
@@ -18,7 +16,6 @@ pub struct ValidatorKeysManifest {
     pub validators: Vec<ValidatorKeystoreRaw>,
 }
 
-#[cfg(feature = "devnet4")]
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct ValidatorKeystoreRaw {
@@ -29,7 +26,6 @@ pub struct ValidatorKeystoreRaw {
     pub proposal_private_key_file: String,
 }
 
-#[cfg(feature = "devnet4")]
 #[derive(Debug, PartialEq)]
 pub struct ValidatorKeystore {
     pub index: u64,
@@ -46,7 +42,6 @@ pub struct ValidatorRegistry {
     pub nodes: HashMap<String, Vec<u64>>,
 }
 
-#[cfg(feature = "devnet4")]
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "UPPERCASE")]
 pub struct ConfigFile {
@@ -56,7 +51,6 @@ pub struct ConfigFile {
 }
 
 /// A single validator's public keys in the genesis configuration.
-#[cfg(feature = "devnet4")]
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct GenesisValidatorEntry {
     pub attestation_public_key: PublicKey,

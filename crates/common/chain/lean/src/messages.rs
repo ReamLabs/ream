@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use libp2p_identity::PeerId;
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAggregatedAttestation, SignedAttestation},
     block::{BlockWithSignatures, SignedBlock},
@@ -32,7 +31,6 @@ pub enum LeanChainServiceMessage {
 
     // Processors
     ProcessBlock {
-        #[cfg(feature = "devnet4")]
         signed_block: Box<SignedBlock>,
         need_gossip: bool,
     },
@@ -52,7 +50,6 @@ pub enum LeanChainServiceMessage {
     },
     GetBlocksByRoot {
         roots: Vec<B256>,
-        #[cfg(feature = "devnet4")]
         sender: oneshot::Sender<Vec<Arc<SignedBlock>>>,
     },
     NetworkEvent(NetworkEvent),

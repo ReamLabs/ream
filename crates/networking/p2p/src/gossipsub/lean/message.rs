@@ -1,5 +1,4 @@
 use libp2p::gossipsub::TopicHash;
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{SignedAggregatedAttestation, SignedAttestation},
     block::SignedBlock,
@@ -11,7 +10,6 @@ use crate::gossipsub::error::GossipsubError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LeanGossipsubMessage {
-    #[cfg(feature = "devnet4")]
     Block(Box<SignedBlock>),
     Attestation {
         subnet_id: u64,
@@ -23,7 +21,6 @@ pub enum LeanGossipsubMessage {
 impl LeanGossipsubMessage {
     pub fn decode(topic: &TopicHash, data: &[u8]) -> Result<Self, GossipsubError> {
         match LeanGossipTopic::from_topic_hash(topic)?.kind {
-            #[cfg(feature = "devnet4")]
             LeanGossipTopicKind::Block => {
                 Ok(Self::Block(Box::new(SignedBlock::from_ssz_bytes(data)?)))
             }

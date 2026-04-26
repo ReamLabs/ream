@@ -48,7 +48,6 @@ pub async fn get_fork_choice_tree(
         .map(|state| state.validators.len() as u64)
         .unwrap_or(0);
 
-    #[cfg(feature = "devnet4")]
     let blocks = db
         .block_provider()
         .get_all_blocks(finalized_slot)

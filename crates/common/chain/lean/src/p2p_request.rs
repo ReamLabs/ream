@@ -1,7 +1,6 @@
 use alloy_primitives::B256;
 use libp2p_identity::PeerId;
 use libp2p_swarm::ConnectionId;
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{SignedAggregatedAttestation, SignedAttestation},
     block::SignedBlock,
@@ -11,7 +10,6 @@ use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub enum LeanP2PRequest {
-    #[cfg(feature = "devnet4")]
     GossipBlock(Box<SignedBlock>),
     GossipAttestation {
         subnet_id: u64,

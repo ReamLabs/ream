@@ -2,7 +2,6 @@ pub mod blocks;
 pub mod status;
 use std::sync::Arc;
 
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::SignedBlock as ActiveBlock;
 use ssz_derive::{Decode, Encode};
 
@@ -41,7 +40,6 @@ impl LeanRequestMessage {
     }
 }
 
-#[cfg(feature = "devnet4")]
 pub type ActiveSignedBlock = ream_consensus_lean::block::SignedBlock;
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]

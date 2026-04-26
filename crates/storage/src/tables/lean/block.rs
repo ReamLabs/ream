@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::SignedBlock;
 use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 use tree_hash::TreeHash;
@@ -22,7 +21,6 @@ pub struct LeanBlockTable {
 ///
 /// Key: block_root
 /// Value: [SignedBlock]
-#[cfg(feature = "devnet4")]
 impl REDBTable for LeanBlockTable {
     const TABLE_DEFINITION: TableDefinition<'_, SSZEncoding<B256>, SSZEncoding<SignedBlock>> =
         TableDefinition::new("lean_block");
@@ -141,7 +139,6 @@ impl LeanBlockTable {
             let (hash_entry, block_entry) = entry?;
             let root: B256 = hash_entry.value();
 
-            #[cfg(feature = "devnet4")]
             let parent_root = block_entry.value().block.parent_root;
 
             if parent_root == B256::ZERO {
@@ -157,7 +154,6 @@ impl LeanBlockTable {
         Ok(children_map)
     }
 
-    #[cfg(feature = "devnet4")]
     pub fn get_all_blocks(&self, min_slot: u64) -> Result<Vec<SignedBlock>, StoreError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(Self::TABLE_DEFINITION)?;

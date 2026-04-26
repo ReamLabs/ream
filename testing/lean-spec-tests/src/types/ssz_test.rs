@@ -8,7 +8,6 @@
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
@@ -171,9 +170,7 @@ impl TryFrom<&ValidatorJSON> for Validator {
         );
         let pubkey = PublicKey::from(&bytes[..]);
         Ok(Self {
-            #[cfg(feature = "devnet4")]
             attestation_public_key: pubkey,
-            #[cfg(feature = "devnet4")]
             proposal_public_key: pubkey,
             index: value.index,
         })
@@ -364,7 +361,6 @@ impl TryFrom<&BlockSignaturesJSON> for BlockSignatures {
     }
 }
 
-#[cfg(feature = "devnet4")]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedBlockJSON {
@@ -372,7 +368,6 @@ pub struct SignedBlockJSON {
     pub signature: BlockSignaturesJSON,
 }
 
-#[cfg(feature = "devnet4")]
 impl TryFrom<&SignedBlockJSON> for SignedBlock {
     type Error = anyhow::Error;
 
@@ -399,7 +394,6 @@ impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
             participants: bools_to_bitlist(&value.participants.data)?,
             proof_data: VariableList::try_from(decode_hex(&value.proof_data.data)?)
                 .map_err(|err| anyhow!("Failed to convert proof_data: {err}"))?,
-            #[cfg(feature = "devnet4")]
             bytecode_point: None,
         })
     }

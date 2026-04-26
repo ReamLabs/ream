@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::SignedBlock;
 use redb::{Database, Durability, ReadableDatabase, ReadableTableMetadata, TableDefinition};
 
@@ -20,7 +19,6 @@ pub struct LeanPendingBlocksTable {
 ///
 /// Key: block_root
 /// Value: [SignedBlock]
-#[cfg(feature = "devnet4")]
 impl REDBTable for LeanPendingBlocksTable {
     const TABLE_DEFINITION: TableDefinition<'_, SSZEncoding<B256>, SSZEncoding<SignedBlock>> =
         TableDefinition::new("lean_pending_blocks");

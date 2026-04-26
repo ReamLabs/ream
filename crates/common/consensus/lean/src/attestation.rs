@@ -13,7 +13,6 @@ use tree_hash_derive::TreeHash;
 
 use crate::checkpoint::Checkpoint;
 
-#[cfg(feature = "devnet4")]
 pub type BytecodePointOption = Option<VariableList<u8, U1048576>>;
 
 /// Key for signature storage, combining validator ID and attestation data root.
@@ -42,7 +41,6 @@ impl SignatureKey {
     }
 }
 
-#[cfg(feature = "devnet4")]
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode)]
 pub struct AggregatedSignatureProof {
     pub participants: BitList<U4096>,
@@ -50,7 +48,6 @@ pub struct AggregatedSignatureProof {
     pub bytecode_point: BytecodePointOption,
 }
 
-#[cfg(feature = "devnet4")]
 impl AggregatedSignatureProof {
     pub fn new(participants: BitList<U4096>, proof_data: VariableList<u8, U1048576>) -> Self {
         Self {
@@ -82,7 +79,6 @@ impl AggregatedSignatureProof {
     }
 }
 
-#[cfg(feature = "devnet4")]
 impl TreeHash for AggregatedSignatureProof {
     fn tree_hash_type() -> tree_hash::TreeHashType {
         tree_hash::TreeHashType::Container

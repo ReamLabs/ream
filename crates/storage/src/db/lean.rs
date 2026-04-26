@@ -114,7 +114,6 @@ impl LeanDB {
         }
     }
 
-    #[cfg(feature = "devnet4")]
     pub fn attestation_signatures_provider(&self) -> GossipSignaturesTable {
         GossipSignaturesTable {
             db: self.db.clone(),

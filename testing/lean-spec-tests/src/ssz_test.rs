@@ -2,7 +2,6 @@ use std::path::Path;
 
 use alloy_primitives::hex;
 use anyhow::{Context, bail};
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
@@ -18,7 +17,6 @@ use ream_post_quantum_crypto::leansig::{public_key::PublicKey, signature::Signat
 use ssz::Encode;
 use tracing::{debug, info, warn};
 
-#[cfg(feature = "devnet4")]
 use crate::types::{
     TestFixture,
     ssz_test::{
@@ -71,7 +69,6 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
         "BlockSignatures" => {
             run_test::<BlockSignaturesJSON, BlockSignatures>(&test.value, &expected_ssz)
         }
-        #[cfg(feature = "devnet4")]
         "SignedBlock" => run_test::<SignedBlockJSON, SignedBlock>(&test.value, &expected_ssz),
         // Networking containers
         "Status" => run_test::<StatusJSON, StatusJSON>(&test.value, &expected_ssz),

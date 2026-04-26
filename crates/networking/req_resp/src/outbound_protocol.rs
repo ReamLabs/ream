@@ -17,7 +17,6 @@ use ream_consensus_beacon::{
     blob_sidecar::BlobSidecar, data_column_sidecar::DataColumnSidecar,
     electra::beacon_block::SignedBeaconBlock,
 };
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::SignedBlock as ActiveBlock;
 use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators_root};
 use ream_network_spec::networks::beacon_network_spec;

@@ -4,7 +4,6 @@ use ssz_derive::{Decode, Encode};
 use tree_hash_derive::TreeHash;
 
 /// Represents a validator entry in the Lean chain with dual XMSS key pairs.
-#[cfg(feature = "devnet4")]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct Validator {
     /// XMSS public key for signing attestations.

@@ -36,7 +36,6 @@ mod test {
     use crate::genesis::setup_genesis;
 
     fn make_test_validator(index: u8) -> Validator {
-        #[cfg(feature = "devnet4")]
         {
             Validator {
                 attestation_public_key: PublicKey::new(FixedBytes::from_slice(&[index; 52])),

@@ -5,7 +5,6 @@ use std::{
 
 use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::{
     attestation::{AggregatedSignatureProof, AttestationData, SignedAttestation},
     block::{Block, BlockSignatures, SignedBlock},
@@ -117,7 +116,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         .map_err(|err| anyhow!("Failed to initialize LeanDB: {err}"))?;
 
     // Initialize store with anchor state and block
-    #[cfg(feature = "devnet4")]
     let mut store = Store::get_forkchoice_store(
         SignedBlock {
             block,
@@ -164,7 +162,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 // Get the parent state and parent block to extract the correct checkpoints
                 let db = store.store.lock().await;
-                #[cfg(feature = "devnet4")]
                 let parent_block = db
                     .block_provider()
                     .get(ream_block.parent_root)?
@@ -174,7 +171,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                             ream_block.parent_root
                         )
                     })?;
-                #[cfg(feature = "devnet4")]
                 let parent_slot = parent_block.block.slot;
 
                 drop(db);
@@ -225,7 +221,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                         .map_err(|err| anyhow!("Failed to sign proposer attestation: {err}"))?
                 };
 
-                #[cfg(feature = "devnet4")]
                 let result = store
                     .on_block(
                         &SignedBlock {
@@ -322,7 +317,6 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
             .block_provider()
             .get(head_root)?
             .ok_or_else(|| anyhow!("Head block not found"))?;
-        #[cfg(feature = "devnet4")]
         let actual_slot = head_block.block.slot;
 
         ensure!(
