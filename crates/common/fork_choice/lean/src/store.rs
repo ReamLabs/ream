@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
+    time::Instant,
 };
 
 use alloy_primitives::B256;
@@ -44,6 +45,7 @@ use ream_storage::{
 use ream_sync::rwlock::{Reader, Writer};
 use ssz_types::{BitList, VariableList, typenum::U4096};
 use tokio::sync::Mutex;
+use tracing::info;
 use tree_hash::TreeHash;
 
 use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
@@ -590,8 +592,16 @@ impl Store {
             let xmss_keys: Vec<_> = raw_entries.iter().map(|err| err.1).collect();
             let xmss_sigs: Vec<_> = raw_entries.iter().map(|err| err.2).collect();
 
+            let stark_start = Instant::now();
             let aggregated_signature =
                 aggregate_signatures(&xmss_keys, &xmss_sigs, &data_root.0, data.slot as u32)?;
+            info!(
+                slot = data.slot,
+                num_sigs = xmss_sigs.len(),
+                child_proofs = child_proofs.len(),
+                elapsed_ms = stark_start.elapsed().as_millis() as u64,
+                "DIAG aggregate_signatures (STARK proving) finished",
+            );
 
             let proof = AggregatedSignatureProof {
                 participants: bits.clone(),
@@ -1242,6 +1252,7 @@ impl Store {
     }
 
     pub async fn aggregate(&mut self) -> anyhow::Result<Vec<SignedAggregatedAttestation>> {
+        let aggregate_start = Instant::now();
         let (
             state_provider,
             attestation_signatures_provider,
@@ -1335,6 +1346,13 @@ impl Store {
 
         attestation_signatures_provider
             .retain(|key| !aggregated_data_roots.contains(&key.data_root))?;
+
+        info!(
+            attestations = attestation_signatures.len(),
+            new_groups = signed_attestations.len(),
+            elapsed_ms = aggregate_start.elapsed().as_millis() as u64,
+            "DIAG aggregate() total finished",
+        );
 
         Ok(signed_attestations)
     }

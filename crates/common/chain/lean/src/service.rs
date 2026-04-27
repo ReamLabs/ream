@@ -316,7 +316,19 @@ impl LeanChainService {
                         self.sync_status = self.update_sync_status().await?;
                     }
                     if self.sync_status == SyncStatus::Synced {
+                        let tick_start = Instant::now();
                         self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), self.is_aggregator).await.expect("Failed to tick interval");
+                        let tick_elapsed = tick_start.elapsed();
+                        if tick_elapsed > Duration::from_millis(200) {
+                            info!(
+                                tick_count,
+                                interval = tick_count % INTERVALS_PER_SLOT,
+                                slot = tick_count / INTERVALS_PER_SLOT,
+                                is_aggregator = self.is_aggregator,
+                                elapsed_ms = tick_elapsed.as_millis() as u64,
+                                "DIAG tick_interval slow",
+                            );
+                        }
                         self.step_head_sync(tick_count).await?;
                     }
 
@@ -2501,15 +2513,22 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
-        let block_with_signatures = match self
-            .store
-            .write()
-            .await
+        let lock_acq_start = Instant::now();
+        let mut store_guard = self.store.write().await;
+        let lock_acq_elapsed = lock_acq_start.elapsed();
+        let produce_start = Instant::now();
+        let block_with_signatures = match store_guard
             .produce_block_with_signatures(slot, slot % lean_network_spec().num_validators)
             .await
         {
             Ok(block) => block,
             Err(err) => {
+                info!(
+                    slot,
+                    lock_wait_ms = lock_acq_elapsed.as_millis() as u64,
+                    produce_ms = produce_start.elapsed().as_millis() as u64,
+                    "DIAG handle_produce_block FAILED",
+                );
                 warn!("Failed to produce block for slot {slot}: {err}");
                 if let Err(err) = response.send(ServiceResponse::Err(err)) {
                     warn!("Failed to send error response for ProduceBlock: {err:?}");
@@ -2517,6 +2536,12 @@ impl LeanChainService {
                 return Ok(());
             }
         };
+        info!(
+            slot,
+            lock_wait_ms = lock_acq_elapsed.as_millis() as u64,
+            produce_ms = produce_start.elapsed().as_millis() as u64,
+            "DIAG handle_produce_block ok",
+        );
 
         response
             .send(ServiceResponse::Ok(block_with_signatures))
