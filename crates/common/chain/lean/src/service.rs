@@ -16,7 +16,7 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlock},
     checkpoint::Checkpoint,
 };
-use ream_consensus_misc::constants::lean::{ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT};
+use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_committee_count};
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_COUNT as ATTESTATION_COMMITTEE_COUNT_METRIC, CURRENT_SLOT, IS_AGGREGATOR,
@@ -268,7 +268,7 @@ impl LeanChainService {
         set_int_gauge_vec(&IS_AGGREGATOR, self.is_aggregator as i64, &[]);
         set_int_gauge_vec(
             &ATTESTATION_COMMITTEE_COUNT_METRIC,
-            ATTESTATION_COMMITTEE_COUNT as i64,
+            attestation_committee_count() as i64,
             &[],
         );
 

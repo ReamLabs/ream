@@ -40,7 +40,10 @@ use ream_consensus_lean::{
     validator::Validator,
 };
 use ream_consensus_misc::{
-    constants::{beacon::set_genesis_validator_root, lean::ATTESTATION_COMMITTEE_COUNT},
+    constants::{
+        beacon::set_genesis_validator_root,
+        lean::{attestation_committee_count, set_attestation_committee_count},
+    },
     misc::compute_epoch_at_slot,
 };
 use ream_events_beacon::BeaconEvent;
@@ -98,7 +101,7 @@ use tokio::{
     time,
     time::Instant,
 };
-use tracing::{Instrument, error, info};
+use tracing::{Instrument, error, info, warn};
 use tracing_subscriber::EnvFilter;
 use tree_hash::TreeHash;
 
@@ -226,13 +229,15 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         );
     }
 
+    set_attestation_committee_count(config.attestation_committee_count);
+
     let keystores = load_validator_registry(&config.validator_registry_path, &config.node_id)
         .expect("Failed to load validator registry");
 
     if let Some(keystore) = keystores.first() {
         set_int_gauge_vec(
             &ATTESTATION_COMMITTEE_SUBNET,
-            compute_subnet_id(keystore.index, ATTESTATION_COMMITTEE_COUNT) as i64,
+            compute_subnet_id(keystore.index, attestation_committee_count()) as i64,
             &[],
         );
     }
@@ -342,6 +347,40 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // Initialize the lean network service
     let fork = "12345678".to_string();
 
+    // Per leanSpec, a validator subscribes to its assigned attestation subnet
+    // (`validator_id % attestation_committee_count`). An aggregator additionally
+    // subscribes to `--aggregate-subnet-ids`. If the node is an aggregator with
+    // no validators and no explicit subnet list, fall back to subnet 0 so the
+    // network always has at least one aggregator on the only required subnet.
+    let committee_count = attestation_committee_count();
+    let subscribed_subnets: std::collections::BTreeSet<u64> = {
+        let mut set: std::collections::BTreeSet<u64> = keystores
+            .iter()
+            .map(|keystore| keystore.index % committee_count)
+            .collect();
+
+        if config.is_aggregator {
+            for subnet_id in &config.aggregate_subnet_ids {
+                if *subnet_id >= committee_count {
+                    panic!(
+                        "--aggregate-subnet-ids contains {subnet_id}, but only {committee_count} attestation subnets exist"
+                    );
+                }
+                set.insert(*subnet_id);
+            }
+
+            if set.is_empty() {
+                set.insert(0);
+            }
+        } else if !config.aggregate_subnet_ids.is_empty() {
+            warn!(
+                "--aggregate-subnet-ids was provided but --is-aggregator is not set; ignoring extra subnet subscriptions"
+            );
+        }
+
+        set
+    };
+
     let topics: Vec<LeanGossipTopic> = {
         let mut topics = vec![
             LeanGossipTopic {
@@ -353,15 +392,21 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                 kind: LeanGossipTopicKind::AggregatedAttestation,
             },
         ];
-        // Create attestation subnet topics for each committee
-        for subnet_id in 0..ATTESTATION_COMMITTEE_COUNT {
+        for subnet_id in &subscribed_subnets {
             topics.push(LeanGossipTopic {
                 fork: fork.clone(),
-                kind: LeanGossipTopicKind::AttestationSubnet(subnet_id),
+                kind: LeanGossipTopicKind::AttestationSubnet(*subnet_id),
             });
         }
         topics
     };
+
+    info!(
+        is_aggregator = config.is_aggregator,
+        subscribed_subnets = ?subscribed_subnets,
+        attestation_committee_count = committee_count,
+        "Computed attestation subnet subscriptions"
+    );
 
     let mut network_service = LeanNetworkService::new(
         Arc::new(LeanNetworkConfig {

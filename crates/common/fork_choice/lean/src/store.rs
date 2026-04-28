@@ -1,5 +1,3 @@
-#[cfg(test)]
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -19,8 +17,8 @@ use ream_consensus_lean::{
     validator::{Validator, is_proposer},
 };
 use ream_consensus_misc::constants::lean::{
-    ATTESTATION_COMMITTEE_COUNT, GOSSIP_DISPARITY_INTERVALS, INTERVALS_PER_SLOT,
-    MAX_ATTESTATIONS_DATA,
+    GOSSIP_DISPARITY_INTERVALS, INTERVALS_PER_SLOT, MAX_ATTESTATIONS_DATA,
+    attestation_committee_count,
 };
 use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, FINALIZATIONS_TOTAL, FINALIZED_SLOT,
@@ -1483,14 +1481,14 @@ impl Store {
 
         if is_aggregator && let Ok(Some(current_id)) = validator_id_provider.get() {
             let current_validator_subnet =
-                compute_subnet_id(current_id, effective_attestation_committee_count());
+                compute_subnet_id(current_id, attestation_committee_count());
             set_int_gauge_vec(
                 &ATTESTATION_COMMITTEE_SUBNET,
                 current_validator_subnet as i64,
                 &[],
             );
             let attester_subnet =
-                compute_subnet_id(validator_id, effective_attestation_committee_count());
+                compute_subnet_id(validator_id, attestation_committee_count());
 
             if current_validator_subnet == attester_subnet {
                 attestation_signatures_provider
@@ -1580,26 +1578,6 @@ impl Store {
 
 pub fn compute_subnet_id(validator_id: u64, num_committees: u64) -> u64 {
     validator_id % num_committees
-}
-
-fn effective_attestation_committee_count() -> u64 {
-    #[cfg(test)]
-    {
-        TEST_ATTESTATION_COMMITTEE_COUNT.load(Ordering::Relaxed)
-    }
-
-    #[cfg(not(test))]
-    {
-        ATTESTATION_COMMITTEE_COUNT
-    }
-}
-
-#[cfg(test)]
-static TEST_ATTESTATION_COMMITTEE_COUNT: AtomicU64 = AtomicU64::new(ATTESTATION_COMMITTEE_COUNT);
-
-#[cfg(test)]
-fn swap_test_attestation_committee_count(new_value: u64) -> u64 {
-    TEST_ATTESTATION_COMMITTEE_COUNT.swap(new_value, Ordering::Relaxed)
 }
 
 fn compact_aggregated_proofs(
@@ -1773,7 +1751,9 @@ mod tests {
     use tokio::sync::Mutex as AsyncMutex;
     use tree_hash::TreeHash;
 
-    use super::{Store, compute_subnet_id, swap_test_attestation_committee_count};
+    use ream_consensus_misc::constants::lean::set_attestation_committee_count;
+
+    use super::{Store, compute_subnet_id};
     use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 
     static TEST_GLOBAL_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
@@ -1813,14 +1793,14 @@ mod tests {
 
     impl CommitteeCountOverride {
         fn new(value: u64) -> Self {
-            let previous = swap_test_attestation_committee_count(value);
+            let previous = set_attestation_committee_count(value);
             Self { previous }
         }
     }
 
     impl Drop for CommitteeCountOverride {
         fn drop(&mut self) {
-            swap_test_attestation_committee_count(self.previous);
+            set_attestation_committee_count(self.previous);
         }
     }
 

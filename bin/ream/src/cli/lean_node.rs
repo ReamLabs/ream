@@ -1,6 +1,7 @@
 use std::{net::IpAddr, path::PathBuf};
 
 use clap::Parser;
+use ream_consensus_misc::constants::lean::ATTESTATION_COMMITTEE_COUNT_DEFAULT;
 use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
 use url::Url;
@@ -76,4 +77,19 @@ pub struct LeanNodeConfig {
         default_value_t = false
     )]
     pub is_aggregator: bool,
+
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Additional attestation subnet ids to subscribe to and aggregate from (comma-separated, e.g. '0,3,7'). Only meaningful when --is-aggregator is set."
+    )]
+    pub aggregate_subnet_ids: Vec<u64>,
+
+    #[arg(
+        long,
+        default_value_t = ATTESTATION_COMMITTEE_COUNT_DEFAULT,
+        value_parser = clap::value_parser!(u64).range(1..),
+        help = "Number of attestation committees (subnets). Each validator's subnet is `validator_id % count`."
+    )]
+    pub attestation_committee_count: u64,
 }
