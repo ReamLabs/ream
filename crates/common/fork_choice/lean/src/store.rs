@@ -81,13 +81,9 @@ impl Store {
         };
         let anchor_slot = anchor_block.block.slot;
 
-        let justified_checkpoint = Checkpoint {
+        let anchor_checkpoint = Checkpoint {
             root: anchor_root,
-            slot: anchor_state.latest_justified.slot,
-        };
-        let finalized_checkpoint = Checkpoint {
-            root: anchor_root,
-            slot: anchor_state.latest_finalized.slot,
+            slot: anchor_slot,
         };
 
         db.time_provider()
@@ -103,10 +99,10 @@ impl Store {
             .insert(anchor_state.tree_hash_root(), anchor_root)
             .expect("Failed to overwrite anchor state root index");
         db.latest_finalized_provider()
-            .insert(finalized_checkpoint)
+            .insert(anchor_checkpoint)
             .expect("Failed to insert latest finalized checkpoint");
         db.latest_justified_provider()
-            .insert(justified_checkpoint)
+            .insert(anchor_checkpoint)
             .expect("Failed to insert latest justified checkpoint");
         db.state_provider()
             .insert(anchor_root, anchor_state)
@@ -124,8 +120,8 @@ impl Store {
         Ok(Store {
             store: Arc::new(Mutex::new(db)),
             network_state: Arc::new(NetworkState::new(
-                justified_checkpoint,
-                finalized_checkpoint,
+                anchor_checkpoint,
+                anchor_checkpoint,
                 false,
             )),
         })
