@@ -110,7 +110,7 @@ impl ForwardBackgroundSyncer {
             let time = lean_network_spec().genesis_time
                 + (block.block.slot * lean_network_spec().seconds_per_slot);
             let block_slot = block.block.slot;
-            store_writer.on_tick(time, false, true).await?;
+            store_writer.on_tick(time, false, false).await?;
             store_writer.on_block(&block, true).await?;
             blocks_synced += 1;
             if imported_start_slot.is_none() {
