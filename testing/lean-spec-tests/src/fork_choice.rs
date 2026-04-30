@@ -143,7 +143,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         match step {
             ForkChoiceStep::Tick { time, interval, .. } => {
                 let tick_time = match (time, interval) {
-                    (Some(tick), _) => *tick,
+                    (Some(tick), _) => *tick * INTERVALS_PER_SLOT / network_spec.seconds_per_slot,
                     (None, Some(interval)) => *interval,
                     (None, None) => bail!("Tick step missing both time and interval fields"),
                 };
@@ -229,7 +229,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     .map_err(|err| anyhow!("Failed to convert block: {err}"))?;
 
                 // Advance time to the block's slot before processing
-                let time = ream_block.slot * INTERVALS_PER_SLOT;
+                let time = ream_block.slot * network_spec.seconds_per_slot;
                 store.on_tick(time, true, true).await?;
 
                 // Get the parent state and parent block to extract the correct checkpoints
