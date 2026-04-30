@@ -19,7 +19,8 @@ use ream_consensus_lean::{
     validator::is_proposer,
 };
 use ream_consensus_misc::constants::lean::{
-    ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT, MAX_ATTESTATIONS_DATA,
+    ATTESTATION_COMMITTEE_COUNT, GOSSIP_DISPARITY_INTERVALS, INTERVALS_PER_SLOT,
+    MAX_ATTESTATIONS_DATA,
 };
 use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, FINALIZATIONS_TOTAL, FINALIZED_SLOT,
@@ -1102,12 +1103,12 @@ impl Store {
             "Head checkpoint slot mismatch"
         );
 
-        let current_slot = time_provider.get()? / INTERVALS_PER_SLOT;
+        let current_time = time_provider.get()?;
+        let attestation_start_interval = data.slot * INTERVALS_PER_SLOT;
+
         ensure!(
-            data.slot <= current_slot + 1,
-            "Attestation too far in future expected slot: {} <= {}",
-            data.slot,
-            current_slot + 1,
+            attestation_start_interval <= current_time + GOSSIP_DISPARITY_INTERVALS,
+            "Attestation too far in future"
         );
 
         Ok(())

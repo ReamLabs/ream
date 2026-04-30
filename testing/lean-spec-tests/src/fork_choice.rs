@@ -13,6 +13,7 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     state::LeanState,
 };
+use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_fork_choice_lean::store::Store;
 use ream_network_spec::networks::LeanNetworkSpec;
 use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, signature::Signature};
@@ -228,7 +229,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     .map_err(|err| anyhow!("Failed to convert block: {err}"))?;
 
                 // Advance time to the block's slot before processing
-                let time = ream_block.slot * network_spec.seconds_per_slot;
+                let time = ream_block.slot * INTERVALS_PER_SLOT;
                 store.on_tick(time, true, true).await?;
 
                 // Get the parent state and parent block to extract the correct checkpoints
