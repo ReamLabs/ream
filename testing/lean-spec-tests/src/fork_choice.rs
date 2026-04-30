@@ -13,6 +13,7 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     state::LeanState,
 };
+use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_fork_choice_lean::store::Store;
 use ream_network_spec::networks::LeanNetworkSpec;
 use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, signature::Signature};
@@ -142,7 +143,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         match step {
             ForkChoiceStep::Tick { time, interval, .. } => {
                 let tick_time = match (time, interval) {
-                    (Some(tick), _) => *tick,
+                    (Some(tick), _) => *tick * INTERVALS_PER_SLOT / network_spec.seconds_per_slot,
                     (None, Some(interval)) => *interval,
                     (None, None) => bail!("Tick step missing both time and interval fields"),
                 };
