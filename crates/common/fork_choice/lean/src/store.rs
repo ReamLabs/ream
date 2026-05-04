@@ -16,7 +16,7 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     slot::is_justifiable_after,
     state::LeanState,
-    validator::is_proposer,
+    validator::{Validator, is_proposer},
 };
 use ream_consensus_misc::constants::lean::{
     ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT, MAX_ATTESTATIONS_DATA,
@@ -34,7 +34,10 @@ use ream_metrics::{
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 use ream_post_quantum_crypto::{
-    lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
+    lean_multisig::aggregate::{
+        ChildProof, aggregate_signatures, aggregate_signatures_recursive,
+        verify_aggregate_signature,
+    },
     leansig::signature::Signature,
 };
 use ream_storage::{
@@ -808,6 +811,12 @@ impl Store {
         let (aggregated_attestations, aggregated_proofs) =
             self.select_aggregated_proofs(&attestations_vec).await?;
 
+        let (aggregated_attestations, aggregated_proofs) = compact_aggregated_proofs(
+            aggregated_attestations,
+            aggregated_proofs,
+            &head_state.validators,
+        )?;
+
         let attestations_list =
             VariableList::new(aggregated_attestations).map_err(|err| anyhow!("{err:?}"))?;
 
@@ -1548,6 +1557,128 @@ static TEST_ATTESTATION_COMMITTEE_COUNT: AtomicU64 = AtomicU64::new(ATTESTATION_
 #[cfg(test)]
 fn swap_test_attestation_committee_count(new_value: u64) -> u64 {
     TEST_ATTESTATION_COMMITTEE_COUNT.swap(new_value, Ordering::Relaxed)
+}
+
+fn compact_aggregated_proofs(
+    attestations: Vec<AggregatedAttestation>,
+    proofs: Vec<AggregatedSignatureProof>,
+    validators: &VariableList<Validator, U4096>,
+) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<AggregatedSignatureProof>)> {
+    ensure!(
+        attestations.len() == proofs.len(),
+        "Mismatched attestations ({}) and proofs ({}) lengths",
+        attestations.len(),
+        proofs.len(),
+    );
+
+    if attestations.len() <= 1 {
+        return Ok((attestations, proofs));
+    }
+
+    let mut order = Vec::new();
+    let mut group_index: HashMap<AttestationData, usize> = HashMap::new();
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for (attestation_index, attestation) in attestations.iter().enumerate() {
+        match group_index.get(&attestation.message) {
+            Some(&index) => groups[index].push(attestation_index),
+            None => {
+                group_index.insert(attestation.message.clone(), groups.len());
+                order.push(attestation.message.clone());
+                groups.push(vec![attestation_index]);
+            }
+        }
+    }
+
+    if order.len() == attestations.len() {
+        return Ok((attestations, proofs));
+    }
+
+    let mut remaining_attestations: Vec<_> = attestations.into_iter().map(Some).collect();
+    let mut remaining_proofs: Vec<_> = proofs.into_iter().map(Some).collect();
+
+    let mut out_attestations = Vec::with_capacity(order.len());
+    let mut out_proofs = Vec::with_capacity(order.len());
+
+    for (data, indices) in order.into_iter().zip(groups.into_iter()) {
+        if indices.len() == 1 {
+            out_attestations.push(
+                remaining_attestations[indices[0]]
+                    .take()
+                    .expect("index used once"),
+            );
+            out_proofs.push(
+                remaining_proofs[indices[0]]
+                    .take()
+                    .expect("index used once"),
+            );
+            continue;
+        }
+
+        let group_proofs: Vec<_> = indices
+            .iter()
+            .map(|&index| remaining_proofs[index].take().expect("index used once"))
+            .collect();
+        for &index in &indices {
+            remaining_attestations[index].take();
+        }
+
+        let mut merged_bits = group_proofs[0].participants.clone();
+        for proof in &group_proofs[1..] {
+            for (index, bit) in proof.participants.iter().enumerate() {
+                if bit {
+                    merged_bits
+                        .set(index, true)
+                        .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+                }
+            }
+        }
+
+        let children = group_proofs
+            .iter()
+            .map(|proof| {
+                let public_keys = proof
+                    .to_validator_indices()
+                    .into_iter()
+                    .map(|validator_index| {
+                        validators
+                            .get(validator_index as usize)
+                            .map(|validator| validator.attestation_public_key)
+                            .ok_or_else(|| {
+                                anyhow!(
+                                    "Validator index {validator_index} out of range during compaction"
+                                )
+                            })
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                Ok(ChildProof {
+                    public_keys,
+                    proof_data: proof.proof_data.to_vec(),
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        let merged_proof_data = aggregate_signatures_recursive(
+            &children,
+            &[],
+            &[],
+            &data.tree_hash_root().0,
+            data.slot as u32,
+        )?;
+
+        let merged_proof = AggregatedSignatureProof::new(
+            merged_bits.clone(),
+            VariableList::new(merged_proof_data)
+                .map_err(|err| anyhow!("Merged proof exceeds size limit: {err:?}"))?,
+        );
+
+        out_attestations.push(AggregatedAttestation {
+            aggregation_bits: merged_bits,
+            message: data,
+        });
+        out_proofs.push(merged_proof);
+    }
+
+    Ok((out_attestations, out_proofs))
 }
 
 #[cfg(test)]
