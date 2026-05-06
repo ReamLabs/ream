@@ -1580,7 +1580,10 @@ fn compact_aggregated_proofs(
     let mut groups: Vec<Vec<usize>> = Vec::new();
     for (attestation_index, attestation) in attestations.iter().enumerate() {
         match group_index.get(&attestation.message) {
-            Some(&index) => groups[index].push(attestation_index),
+            Some(&index) => groups
+                .get_mut(index)
+                .ok_or_else(|| anyhow!("group_index pointed to missing group at {index}"))?
+                .push(attestation_index),
             None => {
                 group_index.insert(attestation.message.clone(), groups.len());
                 order.push(attestation.message.clone());
@@ -1600,30 +1603,47 @@ fn compact_aggregated_proofs(
     let mut out_proofs = Vec::with_capacity(order.len());
 
     for (data, indices) in order.into_iter().zip(groups.into_iter()) {
-        if indices.len() == 1 {
+        if let [single_index] = indices.as_slice() {
             out_attestations.push(
-                remaining_attestations[indices[0]]
-                    .take()
-                    .expect("index used once"),
+                remaining_attestations
+                    .get_mut(*single_index)
+                    .and_then(Option::take)
+                    .ok_or_else(|| {
+                        anyhow!("attestation slot {single_index} missing or already taken")
+                    })?,
             );
             out_proofs.push(
-                remaining_proofs[indices[0]]
-                    .take()
-                    .expect("index used once"),
+                remaining_proofs
+                    .get_mut(*single_index)
+                    .and_then(Option::take)
+                    .ok_or_else(|| {
+                        anyhow!("proof slot {single_index} missing or already taken")
+                    })?,
             );
             continue;
         }
 
-        let group_proofs: Vec<_> = indices
+        let group_proofs = indices
             .iter()
-            .map(|&index| remaining_proofs[index].take().expect("index used once"))
-            .collect();
+            .map(|&index| {
+                remaining_proofs
+                    .get_mut(index)
+                    .and_then(Option::take)
+                    .ok_or_else(|| anyhow!("proof slot {index} missing or already taken"))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
         for &index in &indices {
-            remaining_attestations[index].take();
+            if let Some(slot) = remaining_attestations.get_mut(index) {
+                slot.take();
+            }
         }
 
-        let mut merged_bits = group_proofs[0].participants.clone();
-        for proof in &group_proofs[1..] {
+        let mut merged_bits = group_proofs
+            .first()
+            .ok_or_else(|| anyhow!("multi-index group produced no proofs"))?
+            .participants
+            .clone();
+        for proof in group_proofs.iter().skip(1) {
             for (index, bit) in proof.participants.iter().enumerate() {
                 if bit {
                     merged_bits
