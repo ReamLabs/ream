@@ -7,7 +7,10 @@ use ssz_derive::{Decode, Encode};
 
 use super::protocol_id::LeanSupportedProtocol;
 use crate::{
-    lean::messages::{blocks::BlocksByRootV1Request, status::Status},
+    lean::messages::{
+        blocks::{BlocksByRangeV1Request, BlocksByRootV1Request},
+        status::Status,
+    },
     protocol_id::{ProtocolId, SupportedProtocol},
 };
 
@@ -16,6 +19,7 @@ use crate::{
 pub enum LeanRequestMessage {
     Status(Status),
     BlocksByRoot(BlocksByRootV1Request),
+    BlocksByRange(BlocksByRangeV1Request),
 }
 
 impl LeanRequestMessage {
@@ -29,6 +33,11 @@ impl LeanRequestMessage {
                     LeanSupportedProtocol::BlocksByRootV1,
                 ))]
             }
+            LeanRequestMessage::BlocksByRange(_) => {
+                vec![ProtocolId::new(SupportedProtocol::Lean(
+                    LeanSupportedProtocol::BlocksByRangeV1,
+                ))]
+            }
         }
     }
 
@@ -36,6 +45,7 @@ impl LeanRequestMessage {
         match self {
             LeanRequestMessage::Status(_) => 1,
             LeanRequestMessage::BlocksByRoot(req) => req.roots.len() as u64,
+            LeanRequestMessage::BlocksByRange(req) => req.count,
         }
     }
 }
@@ -47,4 +57,5 @@ pub type ActiveSignedBlock = ream_consensus_lean::block::SignedBlock;
 pub enum LeanResponseMessage {
     Status(Status),
     BlocksByRoot(Arc<ActiveBlock>),
+    BlocksByRange(Arc<ActiveBlock>),
 }
