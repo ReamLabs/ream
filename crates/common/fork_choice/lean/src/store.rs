@@ -1616,9 +1616,7 @@ fn compact_aggregated_proofs(
                 remaining_proofs
                     .get_mut(*single_index)
                     .and_then(Option::take)
-                    .ok_or_else(|| {
-                        anyhow!("proof slot {single_index} missing or already taken")
-                    })?,
+                    .ok_or_else(|| anyhow!("proof slot {single_index} missing or already taken"))?,
             );
             continue;
         }
