@@ -504,15 +504,21 @@ impl LeanChainService {
                                 warn!("Failed to send canonical checkpoint response: {err:?}");
                             }
                         }
-                        LeanChainServiceMessage::GetBlocksByRange { start_slot, count, step, sender } => {
+                        LeanChainServiceMessage::GetBlocksByRange { start_slot, count, step, sender} => {
+                            if start_slot.checked_add(count).is_none() {
+                                warn!("Failed to send end of stream for overflowed range to peer");
+                                return Ok(());
+                            }
                             let (slot_index_provider, block_provider) = {
                                 let fork_choice = self.store.read().await;
                                 let store = fork_choice.store.lock().await;
                                 (store.slot_index_provider(), store.block_provider())
                             };
 
-                            for i in 0..count {
-                                let slot = start_slot + (i * step);
+                            for slot in (start_slot..)
+                                .step_by(step as usize)
+                                .take(count as usize)
+                            {
                                 if let Ok(Some(root)) = slot_index_provider.get(slot)
                                     && let Ok(Some(block)) = block_provider.get(root)
                                         && (sender.send(Arc::new(block)).await).is_err() {
@@ -2138,23 +2144,38 @@ impl LeanChainService {
                 }
             }
             LeanRequestMessage::BlocksByRange(req) => {
+                if req.start_slot.checked_add(req.count).is_none() {
+                    if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::EndOfStream {
+                        peer_id,
+                        stream_id,
+                        connection_id,
+                    }) {
+                        warn!(
+                            "Failed to send end of stream for overflowed range to peer {peer_id}: {err:?}"
+                        );
+                    }
+                    return Ok(());
+                }
                 let (slot_index_provider, block_provider) = {
                     let fork_choice = self.store.read().await;
                     let store = fork_choice.store.lock().await;
                     (store.slot_index_provider(), store.block_provider())
                 };
 
-                for i in 0..req.count {
-                    let slot = req.start_slot + (i * req.step);
+                for slot in (req.start_slot..)
+                    .step_by(req.step as usize)
+                    .take(req.count as usize)
+                {
                     if let Ok(Some(root)) = slot_index_provider.get(slot)
                         && let Ok(Some(block)) = block_provider.get(root)
-                    {
-                        let _ = self.outbound_p2p.send(LeanP2PRequest::Response {
+                        && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::Response {
                             peer_id,
                             stream_id,
                             connection_id,
                             message: LeanResponseMessage::BlocksByRange(Arc::new(block)),
-                        });
+                        })
+                    {
+                        warn!("Failed to send block to peer {peer_id}: {err:?}");
                     }
                 }
                 if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::EndOfStream {
