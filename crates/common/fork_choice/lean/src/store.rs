@@ -1621,7 +1621,7 @@ fn compact_aggregated_proofs(
             continue;
         }
 
-        let group_proofs = indices
+        let mut group_proofs = indices
             .iter()
             .map(|&index| {
                 remaining_proofs
@@ -1630,18 +1630,17 @@ fn compact_aggregated_proofs(
                     .ok_or_else(|| anyhow!("proof slot {index} missing or already taken"))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
+        group_proofs.sort_by_key(|proof| proof.to_validator_indices());
+
         for &index in &indices {
             if let Some(slot) = remaining_attestations.get_mut(index) {
                 slot.take();
             }
         }
 
-        let mut merged_bits = group_proofs
-            .first()
-            .ok_or_else(|| anyhow!("multi-index group produced no proofs"))?
-            .participants
-            .clone();
-        for proof in group_proofs.iter().skip(1) {
+        let mut merged_bits = BitList::<U4096>::with_capacity(validators.len())
+            .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+        for proof in &group_proofs {
             for (index, bit) in proof.participants.iter().enumerate() {
                 if bit {
                     merged_bits
