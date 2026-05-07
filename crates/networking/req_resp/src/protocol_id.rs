@@ -92,6 +92,7 @@ impl SupportedProtocol {
             .map(ProtocolId::new)
             .collect(),
             Chain::Lean => vec![
+                LeanSupportedProtocol::BlocksByRangeV1,
                 LeanSupportedProtocol::BlocksByRootV1,
                 LeanSupportedProtocol::StatusV1,
             ]

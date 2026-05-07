@@ -272,6 +272,12 @@ impl Decoder for OutboundSSZSnappyCodec {
                                             .map_err(ReqRespError::from)?,
                                     ))
                                 }
+                                LeanSupportedProtocol::BlocksByRangeV1 => {
+                                    LeanResponseMessage::BlocksByRange(Arc::new(
+                                        ActiveBlock::from_ssz_bytes(&buf)
+                                            .map_err(ReqRespError::from)?,
+                                    ))
+                                }
                             };
                             Ok(Some(RespMessage::Response(Box::new(
                                 ResponseMessage::Lean(Arc::new(response_message)),

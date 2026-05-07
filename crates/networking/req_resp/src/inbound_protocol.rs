@@ -52,7 +52,8 @@ use crate::{
     error::ReqRespError,
     lean::{
         messages::{
-            LeanRequestMessage, blocks::BlocksByRootV1Request as LeanBlocksByRootV1Request,
+            LeanRequestMessage,
+            blocks::{BlocksByRangeV1Request, BlocksByRootV1Request as LeanBlocksByRootV1Request},
             status::Status as LeanStatus,
         },
         protocol_id::LeanSupportedProtocol,
@@ -275,6 +276,12 @@ impl Decoder for InboundSSZSnappyCodec {
                             LeanSupportedProtocol::BlocksByRootV1 => {
                                 LeanRequestMessage::BlocksByRoot(
                                     LeanBlocksByRootV1Request::from_ssz_bytes(&buf)
+                                        .map_err(ReqRespError::from)?,
+                                )
+                            }
+                            LeanSupportedProtocol::BlocksByRangeV1 => {
+                                LeanRequestMessage::BlocksByRange(
+                                    BlocksByRangeV1Request::from_ssz_bytes(&buf)
                                         .map_err(ReqRespError::from)?,
                                 )
                             }

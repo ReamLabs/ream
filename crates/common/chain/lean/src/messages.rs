@@ -48,6 +48,12 @@ pub enum LeanChainServiceMessage {
         checkpoint: Checkpoint,
         sender: oneshot::Sender<(PeerId, bool)>,
     },
+    GetBlocksByRange {
+        start_slot: u64,
+        count: u64,
+        step: u64,
+        sender: tokio::sync::mpsc::Sender<Arc<SignedBlock>>,
+    },
     GetBlocksByRoot {
         roots: Vec<B256>,
         sender: oneshot::Sender<Vec<Arc<SignedBlock>>>,

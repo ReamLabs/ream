@@ -504,6 +504,28 @@ impl LeanChainService {
                                 warn!("Failed to send canonical checkpoint response: {err:?}");
                             }
                         }
+                        LeanChainServiceMessage::GetBlocksByRange { start_slot, count, step, sender} => {
+                            if start_slot.checked_add(count).is_none() {
+                                warn!("Failed to send end of stream for overflowed range to peer");
+                                return Ok(());
+                            }
+                            let (slot_index_provider, block_provider) = {
+                                let fork_choice = self.store.read().await;
+                                let store = fork_choice.store.lock().await;
+                                (store.slot_index_provider(), store.block_provider())
+                            };
+
+                            for slot in (start_slot..)
+                                .step_by(step as usize)
+                                .take(count as usize)
+                            {
+                                if let Ok(Some(root)) = slot_index_provider.get(slot)
+                                    && let Ok(Some(block)) = block_provider.get(root)
+                                        && (sender.send(Arc::new(block)).await).is_err() {
+                                            break;
+                                        }
+                            }
+                        }
                         LeanChainServiceMessage::GetBlocksByRoot { roots, sender } => {
                             let block_provider = {
                                 let fork_choice = self.store.read().await;
@@ -2121,6 +2143,49 @@ impl LeanChainService {
                     warn!("Failed to send end of stream: {err:?}");
                 }
             }
+            LeanRequestMessage::BlocksByRange(req) => {
+                if req.start_slot.checked_add(req.count).is_none() {
+                    if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::EndOfStream {
+                        peer_id,
+                        stream_id,
+                        connection_id,
+                    }) {
+                        warn!(
+                            "Failed to send end of stream for overflowed range to peer {peer_id}: {err:?}"
+                        );
+                    }
+                    return Ok(());
+                }
+                let (slot_index_provider, block_provider) = {
+                    let fork_choice = self.store.read().await;
+                    let store = fork_choice.store.lock().await;
+                    (store.slot_index_provider(), store.block_provider())
+                };
+
+                for slot in (req.start_slot..)
+                    .step_by(req.step as usize)
+                    .take(req.count as usize)
+                {
+                    if let Ok(Some(root)) = slot_index_provider.get(slot)
+                        && let Ok(Some(block)) = block_provider.get(root)
+                        && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::Response {
+                            peer_id,
+                            stream_id,
+                            connection_id,
+                            message: LeanResponseMessage::BlocksByRange(Arc::new(block)),
+                        })
+                    {
+                        warn!("Failed to send block to peer {peer_id}: {err:?}");
+                    }
+                }
+                if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::EndOfStream {
+                    peer_id,
+                    stream_id,
+                    connection_id,
+                }) {
+                    warn!("Failed to send end of stream: {err:?}");
+                }
+            }
             _ => warn!(
                 "We handle these messages elsewhere, received unexpected LeanRequestMessage: {:?}",
                 message
@@ -2156,7 +2221,8 @@ impl LeanChainService {
         message: Arc<LeanResponseMessage>,
     ) -> anyhow::Result<()> {
         match &*message {
-            LeanResponseMessage::BlocksByRoot(signed_block) => {
+            LeanResponseMessage::BlocksByRoot(signed_block)
+            | LeanResponseMessage::BlocksByRange(signed_block) => {
                 let block_root = signed_block.block.tree_hash_root();
                 if !self.telemetry.inflight_roots.contains_key(&block_root)
                     && !self.backfill_state.contains_job_root(block_root)
@@ -2194,8 +2260,8 @@ impl LeanChainService {
                 .await?;
             }
             _ => warn!(
-                "We handle these messages elsewhere, received unexpected LeanRequestMessage: {:?}",
-                message
+                "We handle these messages elsewhere, received unexpected LeanRequestMessage: {:?}: {:?}",
+                peer_id, message
             ),
         }
         Ok(())
