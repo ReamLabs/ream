@@ -12,6 +12,20 @@ pub fn get_v0_routes(config: &mut ServiceConfig) {
     );
 }
 
+pub fn get_test_driver_v0_routes(config: &mut ServiceConfig) {
+    config.service(
+        scope("/lean/v0")
+            .configure(lean::register_test_driver_lean_routes)
+            .configure(node::register_node_routes),
+    );
+}
+
 pub fn register_routers(config: &mut ServiceConfig) {
     config.configure(get_v0_routes).service(get_health);
+}
+
+pub fn register_test_driver_routers(config: &mut ServiceConfig) {
+    config
+        .configure(get_test_driver_v0_routes)
+        .service(get_health);
 }

@@ -316,9 +316,28 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         .expect("Could not get forkchoice store"),
     );
 
+    let test_driver_enabled = ream_rpc_lean::handlers::test_driver::test_driver_enabled();
     let network_state = lean_chain_reader.read().await.network_state.clone();
 
     let aggregator_controller = Arc::new(AggregatorController::new(network_state.clone()));
+
+    if test_driver_enabled {
+        let server_config = RpcServerConfig::new(
+            config.http_address,
+            config.http_port,
+            config.http_allow_origin,
+        );
+        ream_rpc_lean::server::start_test_driver(
+            server_config,
+            lean_chain_reader,
+            lean_chain_writer,
+            network_state,
+            aggregator_controller,
+        )
+        .await
+        .expect("Lean test-driver RPC service stopped unexpectedly");
+        return;
+    }
 
     // Initialize the lean network service
     let fork = "12345678".to_string();

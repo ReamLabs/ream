@@ -216,6 +216,17 @@ impl Store {
             .ok_or_else(|| anyhow!("Block not found in chain for slot: {slot}"))
     }
 
+    async fn genesis_time(&self) -> anyhow::Result<u64> {
+        let db = self.store.lock().await;
+        let head_root = db.head_provider().get()?;
+        let head_state = db
+            .state_provider()
+            .get(head_root)?
+            .ok_or_else(|| anyhow!("Head state not found while reading genesis time"))?;
+
+        Ok(head_state.config.genesis_time)
+    }
+
     /// Compute the latest block that the validator is allowed to choose as the target
     /// and update as a safe target.
     pub async fn update_safe_target(&self) -> anyhow::Result<()> {
@@ -348,7 +359,11 @@ impl Store {
         has_proposal: bool,
         is_aggregator: bool,
     ) -> anyhow::Result<()> {
-        let time_delta_ms = (time - lean_network_spec().genesis_time) * 1000;
+        let genesis_time = self.genesis_time().await?;
+        let Some(seconds_since_genesis) = time.checked_sub(genesis_time) else {
+            return Ok(());
+        };
+        let time_delta_ms = seconds_since_genesis * 1000;
         let tick_interval_time =
             time_delta_ms * INTERVALS_PER_SLOT / (lean_network_spec().seconds_per_slot * 1000);
 
@@ -1116,8 +1131,7 @@ impl Store {
         let attestation_start_interval = data.slot * INTERVALS_PER_SLOT;
 
         ensure!(
-            attestation_start_interval
-                <= current_time + GOSSIP_DISPARITY_INTERVALS + INTERVALS_PER_SLOT,
+            attestation_start_interval <= current_time + GOSSIP_DISPARITY_INTERVALS,
             "Attestation too far in future"
         );
 
@@ -1128,16 +1142,23 @@ impl Store {
         &mut self,
         signed_attestation: SignedAggregatedAttestation,
     ) -> anyhow::Result<()> {
+        self.validate_attestation(&SignedAttestation {
+            validator_id: 0,
+            message: signed_attestation.data.clone(),
+            signature: Signature::blank(),
+        })
+        .await?;
+
         let (
-            time_provider,
             attestation_data_by_root_provider,
             latest_new_aggregated_payloads_provider,
+            latest_known_aggregated_payloads_provider,
         ) = {
             let db = self.store.lock().await;
             (
-                db.time_provider(),
                 db.attestation_data_by_root_provider(),
                 db.latest_new_aggregated_payloads_provider(),
+                db.latest_known_aggregated_payloads_provider(),
             )
         };
 
@@ -1196,6 +1217,32 @@ impl Store {
             attestation_data_by_root_provider.insert(data_root, data.clone())?;
 
             for &validator in &validator_ids {
+                let mut already_voted_this_slot = false;
+                for (key, _) in latest_new_aggregated_payloads_provider
+                    .iter()?
+                    .into_iter()
+                    .chain(
+                        latest_known_aggregated_payloads_provider
+                            .iter()?
+                            .into_iter(),
+                    )
+                {
+                    if key.validator_id != validator || key.data_root == data_root {
+                        continue;
+                    }
+                    if attestation_data_by_root_provider
+                        .get(key.data_root)?
+                        .is_some_and(|existing_data| existing_data.slot == data.slot)
+                    {
+                        already_voted_this_slot = true;
+                        break;
+                    }
+                }
+
+                if already_voted_this_slot {
+                    continue;
+                }
+
                 let key = SignatureKey::from_parts(validator, data_root);
 
                 let mut proofs = latest_new_aggregated_payloads_provider
@@ -1206,12 +1253,6 @@ impl Store {
 
                 latest_new_aggregated_payloads_provider.insert(key, proofs)?;
             }
-
-            let time_slots = time_provider.get()? / lean_network_spec().seconds_per_slot;
-            ensure!(
-                attestation_slot <= time_slots,
-                "Attestation from future slot {attestation_slot} <= {time_slots}"
-            );
         }
 
         Ok(())
@@ -1232,17 +1273,17 @@ impl Store {
                 None => continue,
             };
 
-            for proof in proofs {
-                let validator_ids = proof.to_validator_indices();
-                for validator in validator_ids {
-                    let is_newer = attestations
-                        .get(&validator)
-                        .is_none_or(|existing| existing.slot < attestation_data.slot);
+            if proofs.is_empty() {
+                continue;
+            }
 
-                    if is_newer {
-                        attestations.insert(validator, attestation_data.clone());
-                    }
-                }
+            let validator = signature_key.validator_id;
+            let is_newer = attestations
+                .get(&validator)
+                .is_none_or(|existing| existing.slot < attestation_data.slot);
+
+            if is_newer {
+                attestations.insert(validator, attestation_data.clone());
             }
         }
         Ok(attestations)
