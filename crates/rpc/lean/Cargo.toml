@@ -12,6 +12,7 @@ version.workspace = true
 [features]
 default = ["devnet4"]
 devnet4 = [
+    "lean-spec-tests/devnet4",
     "ream-consensus-lean/devnet4",
     "ream-fork-choice-lean/devnet4",
     "ream-network-state-lean/devnet4",
@@ -19,6 +20,7 @@ devnet4 = [
     "ream-test-utils/devnet4",
 ]
 devnet5 = [
+    "lean-spec-tests/devnet5",
     "ream-consensus-lean/devnet5",
     "ream-fork-choice-lean/devnet5",
     "ream-network-state-lean/devnet5",

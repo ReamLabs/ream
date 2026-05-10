@@ -103,7 +103,6 @@ jsonwebtoken = "9.3.1"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 lazy_static = "1.5.0"
 lean-multisig = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "d853f1ce821e40b5b5d1fe4e9cca655d24938ceb" }
-lean-spec-tests = { path = "testing/lean-spec-tests" }
 leansig = { git = "https://github.com/leanEthereum/leanSig.git", branch = "devnet4" }
 libp2p = { version = "0.56", default-features = false, features = ["identify", "yamux", "noise", "dns", "serde", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
 libp2p-identity = "0.2.12"
@@ -139,6 +138,7 @@ unicode-normalization = "0.1.24"
 url = "2.5.7"
 
 # ream dependencies
+lean-spec-tests = { path = "testing/lean-spec-tests", default-features = false }
 ream-account-manager = { path = "crates/common/account_manager" }
 ream-api-types-beacon = { path = "crates/common/api_types/beacon" }
 ream-api-types-common = { path = "crates/common/api_types/common" }
