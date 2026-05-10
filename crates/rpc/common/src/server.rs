@@ -54,6 +54,18 @@ impl RpcServerBuilder {
         self
     }
 
+    /// Add prebuilt app data to the ServiceConfig.
+    pub fn with_app_data<T>(mut self, value: Data<T>) -> Self
+    where
+        T: Send + Sync + 'static,
+    {
+        self.configurators
+            .push(Arc::new(move |config: &mut ServiceConfig| {
+                config.app_data(value.clone());
+            }));
+        self
+    }
+
     /// Start the RPC server by applying all configurations.
     pub async fn start(self) -> Result<()> {
         let configurators = self.configurators.clone();

@@ -29,7 +29,9 @@ devnet5 = [
 [dependencies]
 actix-web.workspace = true
 alloy-primitives.workspace = true
+anyhow.workspace = true
 ethereum_ssz.workspace = true
+lean-spec-tests.workspace = true
 libp2p.workspace = true
 parking_lot.workspace = true
 serde.workspace = true

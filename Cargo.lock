@@ -6563,7 +6563,9 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "alloy-primitives",
+ "anyhow",
  "ethereum_ssz",
+ "lean-spec-tests",
  "libp2p",
  "parking_lot",
  "ream-api-types-common",
