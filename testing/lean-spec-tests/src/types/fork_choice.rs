@@ -9,6 +9,10 @@ use ssz_types::VariableList;
 
 use crate::types::{Attestation, Block, Checkpoint, GossipAggregatedAttestationStep, State};
 
+fn default_true() -> bool {
+    true
+}
+
 /// Fork choice test case
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +20,8 @@ pub struct ForkChoiceTest {
     pub network: String,
     pub anchor_state: State,
     pub anchor_block: Block,
+    #[serde(default = "default_true")]
+    pub anchor_valid: bool,
     pub steps: Vec<ForkChoiceStep>,
 }
 

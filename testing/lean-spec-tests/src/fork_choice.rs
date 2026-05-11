@@ -13,6 +13,7 @@ use ream_consensus_lean::{
     checkpoint::Checkpoint,
     state::LeanState,
 };
+use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_fork_choice_lean::store::Store;
 use ream_network_spec::networks::LeanNetworkSpec;
 use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, signature::Signature};
@@ -118,7 +119,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         .map_err(|err| anyhow!("Failed to initialize LeanDB: {err}"))?;
 
     // Initialize store with anchor state and block
-    let mut store = Store::get_forkchoice_store(
+    let store = Store::get_forkchoice_store(
         SignedBlock {
             block,
             signature: BlockSignatures {
@@ -130,7 +131,18 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         db,
         None,
         None,
-    )?;
+    );
+
+    // Current fixtures encode invalid-anchor checks as step-less tests. Treat
+    // those as initialization assertions so they cannot silently pass.
+    let anchor_valid = test.anchor_valid && !test.steps.is_empty();
+
+    let mut store = match (anchor_valid, store) {
+        (true, Ok(store)) => store,
+        (true, Err(err)) => return Err(err),
+        (false, Ok(_)) => bail!("Anchor was expected to be invalid but store initialized"),
+        (false, Err(_)) => return Ok(()),
+    };
 
     info!("  Network: {}", test.network);
     info!("  Anchor state slot: {}", anchor_state_slot);
@@ -143,7 +155,11 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
             ForkChoiceStep::Tick { time, interval, .. } => {
                 let tick_time = match (time, interval) {
                     (Some(tick), _) => *tick,
-                    (None, Some(interval)) => *interval,
+                    (None, Some(interval)) => {
+                        network_spec.genesis_time
+                            + (interval * network_spec.seconds_per_slot)
+                                .div_ceil(INTERVALS_PER_SLOT)
+                    }
                     (None, None) => bail!("Tick step missing both time and interval fields"),
                 };
                 debug!("  Step {index}: Tick to time {tick_time}");

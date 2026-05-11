@@ -12,6 +12,8 @@ use lean_spec_tests::{
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
+const FIXTURE_PROFILE: &str = "lstar";
+
 /// Helper to find all JSON files in a directory recursively
 fn find_json_files(dir: &str) -> Vec<PathBuf> {
     let mut files = Vec::new();
@@ -40,6 +42,27 @@ fn find_json_files(dir: &str) -> Vec<PathBuf> {
     files
 }
 
+fn find_fixture_files(suite: &str) -> Vec<PathBuf> {
+    find_json_files(&format!("fixtures/consensus/{suite}/{FIXTURE_PROFILE}"))
+}
+
+fn should_run_fixture_suite(suite: &str, fixtures: &[PathBuf]) -> bool {
+    if !fixtures.is_empty() {
+        return true;
+    }
+
+    let message = format!(
+        "No {suite} fixtures found for {FIXTURE_PROFILE}. Run 'make test' in lean-spec-tests to download fixtures."
+    );
+
+    if cfg!(feature = "lean-spec-tests") {
+        panic!("{message}");
+    }
+
+    info!("{message} Skipping tests.");
+    false
+}
+
 fn init_tracing() {
     let env_filter = match env::var(EnvFilter::DEFAULT_ENV) {
         Ok(filter) => EnvFilter::builder().parse_lossy(filter),
@@ -57,12 +80,9 @@ fn init_tracing() {
 fn test_all_state_transition_fixtures() {
     init_tracing();
 
-    let fixtures = find_json_files("fixtures/consensus/state_transition/devnet");
+    let fixtures = find_fixture_files("state_transition");
 
-    if fixtures.is_empty() {
-        info!(
-            "No state transition fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
-        );
+    if !should_run_fixture_suite("state_transition", &fixtures) {
         return;
     }
 
@@ -111,12 +131,9 @@ fn test_all_state_transition_fixtures() {
 fn test_all_ssz_fixtures() {
     init_tracing();
 
-    let fixtures = find_json_files("fixtures/consensus/ssz/devnet");
+    let fixtures = find_fixture_files("ssz");
 
-    if fixtures.is_empty() {
-        info!(
-            "No SSZ fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
-        );
+    if !should_run_fixture_suite("ssz", &fixtures) {
         return;
     }
 
@@ -171,12 +188,9 @@ fn test_all_ssz_fixtures() {
 async fn test_all_fork_choice_fixtures() {
     init_tracing();
 
-    let fixtures = find_json_files("fixtures/consensus/fork_choice/devnet");
+    let fixtures = find_fixture_files("fork_choice");
 
-    if fixtures.is_empty() {
-        info!(
-            "No fork choice fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
-        );
+    if !should_run_fixture_suite("fork_choice", &fixtures) {
         return;
     }
 
@@ -225,12 +239,9 @@ async fn test_all_fork_choice_fixtures() {
 fn test_all_justifiability_fixtures() {
     init_tracing();
 
-    let fixtures = find_json_files("fixtures/consensus/justifiability/devnet");
+    let fixtures = find_fixture_files("justifiability");
 
-    if fixtures.is_empty() {
-        info!(
-            "No justifiability fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
-        );
+    if !should_run_fixture_suite("justifiability", &fixtures) {
         return;
     }
 
@@ -279,12 +290,9 @@ fn test_all_justifiability_fixtures() {
 fn test_all_slot_clock_fixtures() {
     init_tracing();
 
-    let fixtures = find_json_files("fixtures/consensus/slot_clock/devnet");
+    let fixtures = find_fixture_files("slot_clock");
 
-    if fixtures.is_empty() {
-        info!(
-            "No slot_clock fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
-        );
+    if !should_run_fixture_suite("slot_clock", &fixtures) {
         return;
     }
 
@@ -333,12 +341,9 @@ fn test_all_slot_clock_fixtures() {
 fn test_all_verify_signatures_fixtures() {
     init_tracing();
 
-    let fixtures = find_json_files("fixtures/consensus/verify_signatures/devnet");
+    let fixtures = find_fixture_files("verify_signatures");
 
-    if fixtures.is_empty() {
-        info!(
-            "No verify_signatures fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
-        );
+    if !should_run_fixture_suite("verify_signatures", &fixtures) {
         return;
     }
 
@@ -387,12 +392,9 @@ fn test_all_verify_signatures_fixtures() {
 fn test_all_sync_fixtures() {
     init_tracing();
 
-    let fixtures = find_json_files("fixtures/consensus/sync/devnet");
+    let fixtures = find_fixture_files("sync");
 
-    if fixtures.is_empty() {
-        info!(
-            "No sync fixtures found. Skipping tests. Run 'make test' in lean-spec-tests to download fixtures."
-        );
+    if !should_run_fixture_suite("sync", &fixtures) {
         return;
     }
 
