@@ -373,12 +373,6 @@ lazy_static::lazy_static! {
     ).expect("failed to create LEAN_GOSSIP_MESH_PEERS int gauge vec");
 }
 
-pub fn update_gossip_mesh_peers(total_count: usize) {
-    LEAN_GOSSIP_MESH_PEERS
-        .with_label_values(&["total"])
-        .set(total_count as i64);
-}
-
 /// Set the value of a gauge metric
 pub fn set_int_gauge_vec(gauge_vec: &IntGaugeVec, value: i64, label_values: &[&str]) {
     gauge_vec.with_label_values(label_values).set(value);

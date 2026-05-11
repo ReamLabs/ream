@@ -40,8 +40,8 @@ use ream_chain_lean::{
 };
 use ream_executor::ReamExecutor;
 use ream_metrics::{
-    LEAN_CONNECTION_EVENT_TOTAL, LEAN_DISCONNECTION_EVENT_TOTAL, LEAN_PEER_COUNT,
-    inc_int_counter_vec, set_int_gauge_vec, update_gossip_mesh_peers,
+    LEAN_CONNECTION_EVENT_TOTAL, LEAN_DISCONNECTION_EVENT_TOTAL, LEAN_GOSSIP_MESH_PEERS,
+    LEAN_PEER_COUNT, inc_int_counter_vec, set_int_gauge_vec,
 };
 use ream_network_state_lean::{NetworkState, cached_peer::CachedPeer};
 use ream_peer::{ConnectionState, Direction};
@@ -862,8 +862,9 @@ impl LeanNetworkService {
     fn handle_gossipsub_event(&mut self, event: GossipsubEvent) -> Option<ReamNetworkEvent> {
         match event {
             GossipsubEvent::Subscribed { .. } | GossipsubEvent::Unsubscribed { .. } => {
-                let mesh_peer_count = self.swarm.behaviour().gossipsub.all_mesh_peers().count();
-                update_gossip_mesh_peers(mesh_peer_count);
+                LEAN_GOSSIP_MESH_PEERS
+                    .with_label_values(&["total"])
+                    .set(self.swarm.behaviour().gossipsub.all_mesh_peers().count() as i64);
             }
             GossipsubEvent::Message { message, .. } => {
                 match LeanGossipsubMessage::decode(&message.topic, &message.data) {
