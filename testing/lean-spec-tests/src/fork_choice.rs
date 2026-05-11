@@ -135,7 +135,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
     // Current fixtures encode invalid-anchor checks as step-less tests. Treat
     // those as initialization assertions so they cannot silently pass.
-    let anchor_valid = test.anchor_valid && !test.steps.is_empty();
+    let anchor_valid = test.anchor_valid.unwrap_or(!test.steps.is_empty());
 
     let mut store = match (anchor_valid, store) {
         (true, Ok(store)) => store,
