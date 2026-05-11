@@ -9,7 +9,6 @@ use std::{
 
 use alloy_primitives::hex;
 use bip39::Mnemonic;
-use clap::Parser;
 use libp2p_identity::secp256k1;
 use ream::{
     cli::{
@@ -120,7 +119,7 @@ impl<T> Drop for AbortOnDrop<T> {
 /// appropriate node type (beacon node, validator node, or account manager) based on the command
 /// line arguments. Handles graceful shutdown on Ctrl-C.
 fn main() {
-    let cli = Cli::parse();
+    let cli = Cli::parse_validated();
 
     // Set the default log level based on verbosity flag or RUST_LOG env var
     let rust_log = env::var(EnvFilter::DEFAULT_ENV).unwrap_or_default();
@@ -356,10 +355,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         if config.is_aggregator {
             for subnet_id in &config.aggregate_subnet_ids {
-                assert!(
-                    *subnet_id < committee_count,
-                    "--aggregate-subnet-ids contains {subnet_id}, but only {committee_count} attestation subnets exist"
-                );
                 set.insert(*subnet_id);
             }
 

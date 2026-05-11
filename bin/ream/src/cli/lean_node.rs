@@ -1,6 +1,6 @@
 use std::{net::IpAddr, path::PathBuf};
 
-use clap::Parser;
+use clap::{Parser, error::ErrorKind};
 use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
 use url::Url;
@@ -92,4 +92,22 @@ pub struct LeanNodeConfig {
         help = "Number of attestation committees (subnets). Each validator's subnet is `validator_id % count`."
     )]
     pub attestation_committee_count: u64,
+}
+
+impl LeanNodeConfig {
+    pub fn validate(&self) -> Result<(), clap::Error> {
+        for subnet_id in &self.aggregate_subnet_ids {
+            if *subnet_id >= self.attestation_committee_count {
+                return Err(clap::Error::raw(
+                    ErrorKind::ValueValidation,
+                    format!(
+                        "--aggregate-subnet-ids contains {subnet_id}, but only {} attestation subnets exist",
+                        self.attestation_committee_count
+                    ),
+                ));
+            }
+        }
+
+        Ok(())
+    }
 }
