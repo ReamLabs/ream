@@ -1,8 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const ATTESTATION_COMMITTEE_COUNT_DEFAULT: u64 = 1;
-
-static ATTESTATION_COMMITTEE_COUNT: AtomicU64 = AtomicU64::new(ATTESTATION_COMMITTEE_COUNT_DEFAULT);
+static ATTESTATION_COMMITTEE_COUNT: AtomicU64 = AtomicU64::new(1);
 
 pub fn attestation_committee_count() -> u64 {
     ATTESTATION_COMMITTEE_COUNT.load(Ordering::Relaxed)

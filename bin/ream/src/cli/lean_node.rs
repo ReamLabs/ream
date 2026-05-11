@@ -1,7 +1,6 @@
 use std::{net::IpAddr, path::PathBuf};
 
 use clap::Parser;
-use ream_consensus_misc::constants::lean::ATTESTATION_COMMITTEE_COUNT_DEFAULT;
 use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
 use url::Url;
@@ -87,7 +86,7 @@ pub struct LeanNodeConfig {
 
     #[arg(
         long,
-        default_value_t = ATTESTATION_COMMITTEE_COUNT_DEFAULT,
+        default_value_t = 1,
         value_parser = clap::value_parser!(u64).range(1..),
         help = "Number of attestation committees (subnets). Each validator's subnet is `validator_id % count`."
     )]
