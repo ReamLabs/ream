@@ -347,11 +347,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // Initialize the lean network service
     let fork = "12345678".to_string();
 
-    // Per leanSpec, a validator subscribes to its assigned attestation subnet
-    // (`validator_id % attestation_committee_count`). An aggregator additionally
-    // subscribes to `--aggregate-subnet-ids`. If the node is an aggregator with
-    // no validators and no explicit subnet list, fall back to subnet 0 so the
-    // network always has at least one aggregator on the only required subnet.
     let committee_count = attestation_committee_count();
     let subscribed_subnets: std::collections::BTreeSet<u64> = {
         let mut set: std::collections::BTreeSet<u64> = keystores
