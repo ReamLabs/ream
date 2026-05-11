@@ -16,6 +16,8 @@ pub struct ForkChoiceTest {
     pub network: String,
     pub anchor_state: State,
     pub anchor_block: Block,
+    #[serde(default)]
+    pub anchor_valid: Option<bool>,
     pub steps: Vec<ForkChoiceStep>,
 }
 
