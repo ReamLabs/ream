@@ -40,7 +40,7 @@ Options:
       --is-aggregator
           Set node as aggregator for committee signature aggregation
       --aggregate-subnet-ids <AGGREGATE_SUBNET_IDS>
-          Additional attestation subnet ids to subscribe to and aggregate from (comma-separated, e.g. '0,3,7'). Only meaningful when --is-aggregator is set.
+          Additional attestation subnet ids to subscribe to and aggregate from (comma-separated, e.g. '0,3,7'). Requires --is-aggregator.
       --attestation-committee-count <ATTESTATION_COMMITTEE_COUNT>
           Number of attestation committees (subnets). Each validator's subnet is `validator_id % count`. [default: 1]
   -h, --help
