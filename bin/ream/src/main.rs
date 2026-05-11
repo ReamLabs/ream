@@ -348,7 +348,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let fork = "12345678".to_string();
 
     let committee_count = attestation_committee_count();
-    let subscribed_subnets: std::collections::BTreeSet<u64> = {
+    let subscribed_subnets = {
         let mut set: std::collections::BTreeSet<u64> = keystores
             .iter()
             .map(|keystore| keystore.index % committee_count)
