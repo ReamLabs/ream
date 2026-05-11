@@ -76,4 +76,20 @@ pub struct LeanNodeConfig {
         default_value_t = false
     )]
     pub is_aggregator: bool,
+
+    #[arg(
+        long,
+        value_delimiter = ',',
+        requires = "is_aggregator",
+        help = "Additional attestation subnet ids to subscribe to and aggregate from (comma-separated, e.g. '0,3,7'). Requires --is-aggregator."
+    )]
+    pub aggregate_subnet_ids: Vec<u64>,
+
+    #[arg(
+        long,
+        default_value_t = 1,
+        value_parser = clap::value_parser!(u64).range(1..),
+        help = "Number of attestation committees (subnets). Each validator's subnet is `validator_id % count`."
+    )]
+    pub attestation_committee_count: u64,
 }
