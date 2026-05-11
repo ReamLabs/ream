@@ -363,6 +363,20 @@ lazy_static::lazy_static! {
         &[],
         default_registry()
     ).expect("failed to create IS_AGGREGATOR int gauge vec");
+
+    // Gossip Mesh Peers Metrics
+    pub static ref LEAN_GOSSIP_MESH_PEERS: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_gossip_mesh_peers",
+        "Number of peers in the gossipsub mesh",
+        &["client"],
+        default_registry()
+    ).expect("failed to create LEAN_GOSSIP_MESH_PEERS int gauge vec");
+}
+
+pub fn update_gossip_mesh_peers(total_count: usize) {
+    LEAN_GOSSIP_MESH_PEERS
+        .with_label_values(&["total"])
+        .set(total_count as i64);
 }
 
 /// Set the value of a gauge metric
