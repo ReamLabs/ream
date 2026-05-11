@@ -1487,8 +1487,7 @@ impl Store {
                 current_validator_subnet as i64,
                 &[],
             );
-            let attester_subnet =
-                compute_subnet_id(validator_id, attestation_committee_count());
+            let attester_subnet = compute_subnet_id(validator_id, attestation_committee_count());
 
             if current_validator_subnet == attester_subnet {
                 attestation_signatures_provider
@@ -1739,7 +1738,9 @@ mod tests {
         slot::is_justifiable_after,
         validator::{Validator, is_proposer},
     };
-    use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
+    use ream_consensus_misc::constants::lean::{
+        INTERVALS_PER_SLOT, set_attestation_committee_count,
+    };
     use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
     use ream_post_quantum_crypto::{
         lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
@@ -1750,8 +1751,6 @@ mod tests {
     use ssz_types::{BitList, VariableList, typenum::U4096};
     use tokio::sync::Mutex as AsyncMutex;
     use tree_hash::TreeHash;
-
-    use ream_consensus_misc::constants::lean::set_attestation_committee_count;
 
     use super::{Store, compute_subnet_id};
     use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
