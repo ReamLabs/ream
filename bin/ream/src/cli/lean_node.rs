@@ -72,15 +72,15 @@ pub struct LeanNodeConfig {
 
     #[arg(
         long,
-        help = "Set node as aggregator for committee signature aggregation",
-        default_value_t = false
+        help = "Set node as aggregator for committee signature aggregation"
     )]
     pub is_aggregator: bool,
 
     #[arg(
         long,
         value_delimiter = ',',
-        help = "Additional attestation subnet ids to subscribe to and aggregate from (comma-separated, e.g. '0,3,7'). Only meaningful when --is-aggregator is set."
+        requires = "is_aggregator",
+        help = "Additional attestation subnet ids to subscribe to and aggregate from (comma-separated, e.g. '0,3,7'). Requires --is-aggregator."
     )]
     pub aggregate_subnet_ids: Vec<u64>,
 

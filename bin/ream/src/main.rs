@@ -101,7 +101,7 @@ use tokio::{
     time,
     time::Instant,
 };
-use tracing::{Instrument, error, info, warn};
+use tracing::{Instrument, error, info};
 use tracing_subscriber::EnvFilter;
 use tree_hash::TreeHash;
 
@@ -356,21 +356,16 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         if config.is_aggregator {
             for subnet_id in &config.aggregate_subnet_ids {
-                if *subnet_id >= committee_count {
-                    panic!(
-                        "--aggregate-subnet-ids contains {subnet_id}, but only {committee_count} attestation subnets exist"
-                    );
-                }
+                assert!(
+                    *subnet_id < committee_count,
+                    "--aggregate-subnet-ids contains {subnet_id}, but only {committee_count} attestation subnets exist"
+                );
                 set.insert(*subnet_id);
             }
 
             if set.is_empty() {
                 set.insert(0);
             }
-        } else if !config.aggregate_subnet_ids.is_empty() {
-            warn!(
-                "--aggregate-subnet-ids was provided but --is-aggregator is not set; ignoring extra subnet subscriptions"
-            );
         }
 
         set
