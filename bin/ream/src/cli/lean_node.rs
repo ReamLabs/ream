@@ -72,7 +72,8 @@ pub struct LeanNodeConfig {
 
     #[arg(
         long,
-        help = "Set node as aggregator for committee signature aggregation"
+        help = "Set node as aggregator for committee signature aggregation",
+        default_value_t = false
     )]
     pub is_aggregator: bool,
 
