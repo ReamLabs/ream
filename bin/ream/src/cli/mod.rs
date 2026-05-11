@@ -52,6 +52,21 @@ pub struct Cli {
     pub purge_db: bool,
 }
 
+impl Cli {
+    pub fn parse_validated() -> Self {
+        let cli = Self::parse();
+        cli.validate().unwrap_or_else(|err| err.exit());
+        cli
+    }
+
+    pub fn validate(&self) -> Result<(), clap::Error> {
+        match &self.command {
+            Commands::LeanNode(config) => config.validate(),
+            _ => Ok(()),
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Start the lean node
@@ -134,6 +149,27 @@ mod tests {
             }
             _ => unreachable!("This test should only validate the lean node cli"),
         }
+    }
+
+    #[test]
+    fn test_cli_lean_node_rejects_out_of_range_aggregate_subnet() {
+        let err = Cli::try_parse_from([
+            "program",
+            "lean_node",
+            "--network",
+            "./assets/lean/config-devnet4.yaml",
+            "--validator-registry-path",
+            "./assets/lean/validator_registry.yml",
+            "--is-aggregator",
+            "--attestation-committee-count",
+            "2",
+            "--aggregate-subnet-ids",
+            "2",
+        ])
+        .and_then(|cli| cli.validate())
+        .unwrap_err();
+
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
     }
 
     #[test]
