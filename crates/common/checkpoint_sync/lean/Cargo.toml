@@ -29,6 +29,7 @@ ream-consensus-misc.workspace = true
 
 [dev-dependencies]
 actix-web.workspace = true
+ream-post-quantum-crypto.workspace = true
 ssz_types.workspace = true
 
 [lints]

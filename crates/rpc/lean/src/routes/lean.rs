@@ -2,7 +2,7 @@ use actix_web::web::ServiceConfig;
 
 use crate::handlers::{
     aggregator::{handle_status, handle_toggle},
-    block::get_block,
+    block::{get_block, get_finalized_signed_block},
     block_header::get_block_header,
     checkpoint::get_justified_checkpoint,
     fork_choice::get_fork_choice_tree,
@@ -18,6 +18,9 @@ use crate::handlers::{
 /// Creates and returns all `/lean` routes.
 pub fn register_lean_routes(cfg: &mut ServiceConfig) {
     cfg.service(get_head)
+        // Must be registered before `get_block` so the literal `/blocks/finalized`
+        // path wins over the `/blocks/{block_id}` param route.
+        .service(get_finalized_signed_block)
         .service(get_block)
         .service(get_block_header)
         .service(get_fork_choice_tree)
