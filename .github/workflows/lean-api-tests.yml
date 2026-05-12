@@ -25,6 +25,8 @@ jobs:
   api-conformance:
     name: api-spec-tests
     runs-on: ubuntu-latest
+    env:
+      LEAN_ENV: prod
 
     steps:
       - name: Checkout ream
@@ -59,18 +61,11 @@ jobs:
         working-directory: leanSpec
         run: uv sync
 
-      - name: Generate devnet4 validator registry
-        run: |
-          ./target/release/ream generate_validator_registry \
-            --output ./devnet4-config \
-            --number-of-nodes 1 \
-            --number-of-validators-per-node 3
-
       - name: Start ream in background
         run: |
           ./target/release/ream --ephemeral lean_node \
             --network ephemery \
-            --validator-registry-path ./devnet4-config/validators.yaml \
+            --validator-registry-path ./bin/ream/assets/lean/annotated_validators.yaml \
             --bootnodes none \
             &
           echo $! > /tmp/ream.pid

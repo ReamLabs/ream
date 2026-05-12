@@ -1,7 +1,7 @@
 use actix_web::web::ServiceConfig;
 
 use crate::handlers::{
-    aggregator::{handle_status, handle_toggle},
+    aggregator::{handle_delete, handle_status, handle_toggle},
     block::{get_block, get_finalized_signed_block},
     block_header::get_block_header,
     checkpoint::get_justified_checkpoint,
@@ -26,7 +26,8 @@ pub fn register_lean_routes(cfg: &mut ServiceConfig) {
         .service(get_state)
         .service(get_health)
         .service(handle_status)
-        .service(handle_toggle);
+        .service(handle_toggle)
+        .service(handle_delete);
 }
 
 /// Creates and returns all `/lean` routes for the Hive test-driver mode.
