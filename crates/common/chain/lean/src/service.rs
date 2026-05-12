@@ -334,6 +334,7 @@ impl LeanChainService {
                         std::future::pending().await
                     }
                 }, if self.forward_syncer.is_some() => {
+                    self.forward_syncer = None;
                     let forward_syncer = match forward_syncer {
                         Ok(forward_syncer) => forward_syncer,
                         Err(err) => {
@@ -341,7 +342,6 @@ impl LeanChainService {
                             continue;
                         },
                     };
-                    self.forward_syncer = None;
 
                     let forward_syncer = match forward_syncer {
                         Ok(forward_syncer) => forward_syncer,
