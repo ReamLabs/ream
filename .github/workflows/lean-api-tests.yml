@@ -25,6 +25,8 @@ jobs:
   api-conformance:
     name: api-spec-tests
     runs-on: ubuntu-latest
+    env:
+      LEAN_ENV: prod
 
     steps:
       - name: Checkout ream
