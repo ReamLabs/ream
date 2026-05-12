@@ -4,7 +4,7 @@ use actix_web::{
     web::{Data, Path},
 };
 use ream_api_types_common::{
-    content_type::{ContentType, JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE},
+    content_type::{JSON_CONTENT_TYPE, SSZ_CONTENT_TYPE},
     error::ApiError,
     id::ID,
 };
@@ -34,14 +34,28 @@ pub async fn get_finalized_signed_block(
 ) -> Result<impl Responder, ApiError> {
     let signed_block = get_finalized_signed_block_inner(lean_chain).await?;
 
-    match ContentType::from(http_request.headers().get(header::ACCEPT)) {
-        ContentType::Ssz => Ok(HttpResponse::Ok()
-            .content_type(SSZ_CONTENT_TYPE)
-            .body(signed_block.as_ssz_bytes())),
-        ContentType::Json => Ok(HttpResponse::Ok()
+    if accepts_json(&http_request) {
+        return Ok(HttpResponse::Ok()
             .content_type(JSON_CONTENT_TYPE)
-            .json(signed_block.block)),
+            .json(signed_block.block));
     }
+
+    Ok(HttpResponse::Ok()
+        .content_type(SSZ_CONTENT_TYPE)
+        .body(signed_block.as_ssz_bytes()))
+}
+
+fn accepts_json(http_request: &HttpRequest) -> bool {
+    http_request
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(|accept| {
+            accept
+                .split(',')
+                .any(|part| part.split(';').next().map(str::trim) == Some(JSON_CONTENT_TYPE))
+        })
+        .unwrap_or(false)
 }
 
 async fn get_finalized_signed_block_inner(
@@ -149,6 +163,61 @@ mod tests {
 
         let body = test::read_body(resp).await;
         SignedBlock::from_ssz_bytes(&body).expect("Failed to decode SSZ SignedBlock");
+    }
+
+    #[tokio::test]
+    async fn test_get_finalized_signed_block_defaults_to_ssz() {
+        let store = sample_store(10).await;
+        let (_writer, reader) = Writer::new(store);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::new(reader))
+                .service(get_finalized_signed_block),
+        )
+        .await;
+
+        let req = test::TestRequest::get()
+            .uri("/blocks/finalized")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/octet-stream"
+        );
+
+        let body = test::read_body(resp).await;
+        SignedBlock::from_ssz_bytes(&body).expect("Failed to decode SSZ SignedBlock");
+    }
+
+    #[tokio::test]
+    async fn test_get_finalized_signed_block_returns_json_when_requested() {
+        let store = sample_store(10).await;
+        let (_writer, reader) = Writer::new(store);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::new(reader))
+                .service(get_finalized_signed_block),
+        )
+        .await;
+
+        let req = test::TestRequest::get()
+            .uri("/blocks/finalized")
+            .insert_header(("Accept", "application/json"))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+
+        let body = test::read_body(resp).await;
+        serde_json::from_slice::<serde_json::Value>(&body).expect("Failed to decode JSON block");
     }
 
     #[tokio::test]
