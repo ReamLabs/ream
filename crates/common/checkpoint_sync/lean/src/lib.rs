@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use ream_consensus_lean::{block::SignedBlock, state::LeanState};
 use ream_consensus_misc::constants::lean::VALIDATOR_REGISTRY_LIMIT;
 use reqwest::{Client, StatusCode, Url};
@@ -31,11 +31,11 @@ impl LeanCheckpointClient {
             .await?;
 
         if response.status() != StatusCode::OK {
-            return Err(anyhow!(
+            bail!(
                 "HTTP error {}: {}",
                 response.status(),
                 response.text().await?
-            ));
+            );
         }
 
         LeanState::from_ssz_bytes(&response.bytes().await?)
@@ -53,11 +53,11 @@ impl LeanCheckpointClient {
             .await?;
 
         if response.status() != StatusCode::OK {
-            return Err(anyhow!(
+            bail!(
                 "HTTP error {}: {}",
                 response.status(),
                 response.text().await?
-            ));
+            );
         }
 
         SignedBlock::from_ssz_bytes(&response.bytes().await?)
@@ -70,13 +70,12 @@ impl LeanCheckpointClient {
 
         let expected_state_root = state.tree_hash_root();
         if signed_block.block.state_root != expected_state_root {
-            return Err(anyhow!(
+            bail!(
                 "Anchor block / state mismatch: signed_block.block.state_root={:?} \
-                 hash_tree_root(state)={:?}. Server may have advanced finalization \
-                 between requests; retry.",
+                 hash_tree_root(state)={expected_state_root:?}. Server may have advanced \
+                 finalization between requests; retry.",
                 signed_block.block.state_root,
-                expected_state_root,
-            ));
+            );
         }
 
         Ok((state, signed_block))
