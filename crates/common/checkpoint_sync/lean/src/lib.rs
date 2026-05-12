@@ -1,9 +1,10 @@
-use anyhow::{Result, anyhow};
-use ream_consensus_lean::state::LeanState;
+use anyhow::{Result, anyhow, bail};
+use ream_consensus_lean::{block::SignedBlock, state::LeanState};
 use ream_consensus_misc::constants::lean::VALIDATOR_REGISTRY_LIMIT;
 use reqwest::{Client, StatusCode, Url};
 use ssz::Decode;
 use tracing::warn;
+use tree_hash::TreeHash;
 
 #[derive(Default)]
 pub struct LeanCheckpointClient {
@@ -30,15 +31,54 @@ impl LeanCheckpointClient {
             .await?;
 
         if response.status() != StatusCode::OK {
-            return Err(anyhow!(
+            bail!(
                 "HTTP error {}: {}",
                 response.status(),
                 response.text().await?
-            ));
+            );
         }
 
         LeanState::from_ssz_bytes(&response.bytes().await?)
             .map_err(|err| anyhow!("SSZ decode failed: {err:?}"))
+    }
+
+    pub async fn fetch_finalized_block(&self, url: &Url) -> Result<SignedBlock> {
+        let url = url.join("/lean/v0/blocks/finalized")?;
+
+        let response = self
+            .http
+            .get(url)
+            .header("Accept", "application/octet-stream")
+            .send()
+            .await?;
+
+        if response.status() != StatusCode::OK {
+            bail!(
+                "HTTP error {}: {}",
+                response.status(),
+                response.text().await?
+            );
+        }
+
+        SignedBlock::from_ssz_bytes(&response.bytes().await?)
+            .map_err(|err| anyhow!("SSZ decode failed: {err:?}"))
+    }
+
+    pub async fn fetch_finalized_anchor(&self, url: &Url) -> Result<(LeanState, SignedBlock)> {
+        let state = self.fetch_finalized_state(url).await?;
+        let signed_block = self.fetch_finalized_block(url).await?;
+
+        let expected_state_root = state.tree_hash_root();
+        if signed_block.block.state_root != expected_state_root {
+            bail!(
+                "Anchor block / state mismatch: signed_block.block.state_root={:?} \
+                 hash_tree_root(state)={expected_state_root:?}. Server may have advanced \
+                 finalization between requests; retry.",
+                signed_block.block.state_root,
+            );
+        }
+
+        Ok((state, signed_block))
     }
 }
 
@@ -74,16 +114,22 @@ mod tests {
         http::{StatusCode, header},
         web::{self, Data},
     };
+    use alloy_primitives::B256;
     use ream_consensus_lean::{
-        state::LeanState, utils::generate_default_validators, validator::Validator,
+        block::{Block, BlockBody, BlockSignatures, SignedBlock},
+        state::LeanState,
+        utils::generate_default_validators,
+        validator::Validator,
     };
     use ream_consensus_misc::constants::lean::VALIDATOR_REGISTRY_LIMIT;
+    use ream_post_quantum_crypto::leansig::signature::Signature;
     use reqwest::Url;
     use ssz::Encode;
     use ssz_types::{
         VariableList,
         typenum::{U4096, U8192},
     };
+    use tree_hash::TreeHash;
 
     use super::{LeanCheckpointClient, verify_checkpoint_state};
 
@@ -441,5 +487,209 @@ mod tests {
                 VALIDATOR_REGISTRY_LIMIT + 1,
             )
         );
+    }
+
+    fn make_anchor_signed_block(state: &LeanState) -> SignedBlock {
+        let block = Block {
+            slot: state.slot,
+            proposer_index: state.latest_block_header.proposer_index,
+            parent_root: state.latest_block_header.parent_root,
+            state_root: state.tree_hash_root(),
+            body: BlockBody {
+                attestations: Default::default(),
+            },
+        };
+        SignedBlock {
+            block,
+            signature: BlockSignatures {
+                attestation_signatures: VariableList::default(),
+                proposer_signature: Signature::blank(),
+            },
+        }
+    }
+
+    fn spawn_anchor_server(
+        state: LeanState,
+        signed_block: SignedBlock,
+    ) -> (Url, actix_web::dev::ServerHandle) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind address");
+        let addr = listener.local_addr().expect("Failed to get local addr");
+
+        let server = HttpServer::new(move || {
+            let state = state.clone();
+            let signed_block = signed_block.clone();
+            App::new().service(
+                web::scope("/lean/v0")
+                    .route(
+                        "/states/finalized",
+                        web::get().to(move || {
+                            let state = state.clone();
+                            async move {
+                                HttpResponse::Ok()
+                                    .content_type("application/octet-stream")
+                                    .body(state.as_ssz_bytes())
+                            }
+                        }),
+                    )
+                    .route(
+                        "/blocks/finalized",
+                        web::get().to(move || {
+                            let signed_block = signed_block.clone();
+                            async move {
+                                HttpResponse::Ok()
+                                    .content_type("application/octet-stream")
+                                    .body(signed_block.as_ssz_bytes())
+                            }
+                        }),
+                    ),
+            )
+        })
+        .listen(listener)
+        .expect("Failed to attach listener")
+        .run();
+
+        let server_handle = server.handle();
+        tokio::spawn(server);
+
+        (
+            Url::parse(&format!("http://{addr}")).expect("Failed to parse base URL"),
+            server_handle,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_client_fetches_finalized_signed_block() {
+        let state = make_state(10);
+        let expected_signed_block = make_anchor_signed_block(&state);
+
+        let (base_url, server_handle) =
+            spawn_anchor_server(state.clone(), expected_signed_block.clone());
+
+        let signed_block = LeanCheckpointClient::new()
+            .fetch_finalized_block(&base_url)
+            .await
+            .expect("Client failed to fetch finalized signed block");
+
+        assert_eq!(signed_block, expected_signed_block);
+
+        server_handle.stop(true).await;
+    }
+
+    #[tokio::test]
+    async fn test_client_finalized_block_returns_http_error_context() {
+        // Spawn a server that returns 404 on /blocks/finalized but a valid state.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind address");
+        let addr = listener.local_addr().expect("Failed to get local addr");
+
+        let server = HttpServer::new(move || {
+            App::new().service(web::scope("/lean/v0").route(
+                "/blocks/finalized",
+                web::get().to(|| async {
+                    HttpResponse::NotFound().body("anchor block missing".to_string())
+                }),
+            ))
+        })
+        .listen(listener)
+        .expect("Failed to attach listener")
+        .run();
+
+        let server_handle = server.handle();
+        tokio::spawn(server);
+
+        let base_url = Url::parse(&format!("http://{addr}")).expect("Failed to parse base URL");
+
+        let err = LeanCheckpointClient::new()
+            .fetch_finalized_block(&base_url)
+            .await
+            .expect_err("Expected finalized block fetch to fail");
+
+        let err = err.to_string();
+        assert!(err.contains("HTTP error 404"));
+        assert!(err.contains("anchor block missing"));
+
+        server_handle.stop(true).await;
+    }
+
+    #[tokio::test]
+    async fn test_client_finalized_block_returns_decode_error_for_malformed_ssz() {
+        // Spawn a server that returns garbage bytes on /blocks/finalized.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind address");
+        let addr = listener.local_addr().expect("Failed to get local addr");
+
+        let server = HttpServer::new(move || {
+            App::new().service(web::scope("/lean/v0").route(
+                "/blocks/finalized",
+                web::get().to(|| async {
+                    HttpResponse::Ok()
+                        .content_type("application/octet-stream")
+                        .body(vec![0xffu8, 0xfe, 0x00])
+                }),
+            ))
+        })
+        .listen(listener)
+        .expect("Failed to attach listener")
+        .run();
+
+        let server_handle = server.handle();
+        tokio::spawn(server);
+
+        let base_url = Url::parse(&format!("http://{addr}")).expect("Failed to parse base URL");
+
+        let err = LeanCheckpointClient::new()
+            .fetch_finalized_block(&base_url)
+            .await
+            .expect_err("Expected SignedBlock decode to fail on garbage bytes");
+
+        assert!(err.to_string().contains("SSZ decode failed"));
+
+        server_handle.stop(true).await;
+    }
+
+    #[tokio::test]
+    async fn test_client_fetches_anchor_pair() {
+        let state = make_state(10);
+        let expected_signed_block = make_anchor_signed_block(&state);
+
+        let (base_url, server_handle) =
+            spawn_anchor_server(state.clone(), expected_signed_block.clone());
+
+        let (fetched_state, fetched_signed_block) = LeanCheckpointClient::new()
+            .fetch_finalized_anchor(&base_url)
+            .await
+            .expect("Client failed to fetch anchor pair");
+
+        assert_eq!(fetched_state, state);
+        assert_eq!(fetched_signed_block, expected_signed_block);
+        assert_eq!(
+            fetched_signed_block.block.state_root,
+            fetched_state.tree_hash_root()
+        );
+
+        server_handle.stop(true).await;
+    }
+
+    #[tokio::test]
+    async fn test_client_anchor_pair_rejects_state_root_mismatch() {
+        // Simulates a server that advanced finalization between the state and
+        // block fetches: the served block's `state_root` does not match
+        // `hash_tree_root(state)`.
+        let state = make_state(10);
+        let mut mismatched_signed_block = make_anchor_signed_block(&state);
+        mismatched_signed_block.block.state_root = B256::repeat_byte(0x01);
+
+        let (base_url, server_handle) =
+            spawn_anchor_server(state.clone(), mismatched_signed_block.clone());
+
+        let err = LeanCheckpointClient::new()
+            .fetch_finalized_anchor(&base_url)
+            .await
+            .expect_err("Expected mismatched anchor pair to fail");
+
+        assert!(
+            err.to_string().contains("Anchor block / state mismatch"),
+            "unexpected error: {err}"
+        );
+
+        server_handle.stop(true).await;
     }
 }

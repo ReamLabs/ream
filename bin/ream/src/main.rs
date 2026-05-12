@@ -35,7 +35,7 @@ use ream_chain_lean::{
 use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
 use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
 use ream_consensus_lean::{
-    block::{Block, BlockBody, BlockSignatures, SignedBlock},
+    block::{BlockSignatures, SignedBlock},
     validator::Validator,
 };
 use ream_consensus_misc::{
@@ -102,7 +102,6 @@ use tokio::{
 };
 use tracing::{Instrument, error, info};
 use tracing_subscriber::EnvFilter;
-use tree_hash::TreeHash;
 
 pub const APP_NAME: &str = "ream";
 const DEFAULT_QUIET_LOG_TARGETS: &str = "libp2p_gossipsub::behaviour=error";
@@ -270,25 +269,16 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
     let (outbound_p2p_sender, outbound_p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
-    let (anchor_block, anchor_state) = if let Some(url) = config.checkpoint_sync_url.clone() {
-        let state = LeanCheckpointClient::new()
-            .fetch_finalized_state(&url)
+    let (anchor_signed_block, anchor_state) = if let Some(url) = config.checkpoint_sync_url.clone()
+    {
+        let (state, signed_block) = LeanCheckpointClient::new()
+            .fetch_finalized_anchor(&url)
             .await
-            .expect("Failed to fetch checkpoint state");
+            .expect("Failed to fetch checkpoint anchor");
 
         verify_checkpoint_state(&state).expect("Downloaded checkpoint state failed to verify");
 
-        let block = Block {
-            slot: state.slot,
-            proposer_index: state.latest_block_header.proposer_index,
-            parent_root: state.latest_block_header.parent_root,
-            state_root: state.tree_hash_root(),
-            body: BlockBody {
-                attestations: Default::default(),
-            },
-        };
-
-        (block, state)
+        (signed_block, state)
     } else {
         let validators = lean_network_spec()
             .genesis_validators
@@ -301,17 +291,20 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             })
             .collect::<Vec<_>>();
 
-        setup_genesis(lean_network_spec().genesis_time, validators)
+        let (genesis_block, genesis_state) =
+            setup_genesis(lean_network_spec().genesis_time, validators);
+        let signed_genesis = SignedBlock {
+            block: genesis_block,
+            signature: BlockSignatures {
+                attestation_signatures: VariableList::default(),
+                proposer_signature: Signature::blank(),
+            },
+        };
+        (signed_genesis, genesis_state)
     };
     let (lean_chain_writer, lean_chain_reader) = Writer::new(
         Store::get_forkchoice_store(
-            SignedBlock {
-                block: anchor_block,
-                signature: BlockSignatures {
-                    attestation_signatures: VariableList::default(),
-                    proposer_signature: Signature::blank(),
-                },
-            },
+            anchor_signed_block,
             anchor_state,
             lean_db,
             None,
