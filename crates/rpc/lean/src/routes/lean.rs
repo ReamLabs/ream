@@ -18,8 +18,6 @@ use crate::handlers::{
 /// Creates and returns all `/lean` routes.
 pub fn register_lean_routes(cfg: &mut ServiceConfig) {
     cfg.service(get_head)
-        // Must be registered before `get_block` so the literal `/blocks/finalized`
-        // path wins over the `/blocks/{block_id}` param route.
         .service(get_finalized_signed_block)
         .service(get_block)
         .service(get_block_header)

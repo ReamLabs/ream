@@ -42,12 +42,6 @@ impl LeanCheckpointClient {
             .map_err(|err| anyhow!("SSZ decode failed: {err:?}"))
     }
 
-    /// Fetch the [`SignedBlock`] matching the finalized state via checkpoint sync.
-    ///
-    /// The caller is responsible for verifying that
-    /// `signed_block.block.state_root == hash_tree_root(state)` before using
-    /// the pair as a fork-choice anchor; [`fetch_finalized_anchor`] wraps both
-    /// fetches with that check.
     pub async fn fetch_finalized_block(&self, url: &Url) -> Result<SignedBlock> {
         let url = url.join("/lean/v0/blocks/finalized")?;
 
@@ -70,18 +64,7 @@ impl LeanCheckpointClient {
             .map_err(|err| anyhow!("SSZ decode failed: {err:?}"))
     }
 
-    /// Fetch the `(state, signed_block)` pair required to bootstrap fork choice
-    /// from a finalized checkpoint.
-    ///
-    /// Issues two sequential requests against the same source node. Both
-    /// endpoints serve the snapshot at `store.latest_finalized.root`; on the
-    /// server side these reads are expected to be consistent against a single
-    /// finalized checkpoint. The pairing assertion will fail if the server
-    /// advanced finalization between the two requests — callers should retry.
-    pub async fn fetch_finalized_anchor(
-        &self,
-        url: &Url,
-    ) -> Result<(LeanState, SignedBlock)> {
+    pub async fn fetch_finalized_anchor(&self, url: &Url) -> Result<(LeanState, SignedBlock)> {
         let state = self.fetch_finalized_state(url).await?;
         let signed_block = self.fetch_finalized_block(url).await?;
 
@@ -600,14 +583,12 @@ mod tests {
         let addr = listener.local_addr().expect("Failed to get local addr");
 
         let server = HttpServer::new(move || {
-            App::new().service(
-                web::scope("/lean/v0").route(
-                    "/blocks/finalized",
-                    web::get().to(|| async {
-                        HttpResponse::NotFound().body("anchor block missing".to_string())
-                    }),
-                ),
-            )
+            App::new().service(web::scope("/lean/v0").route(
+                "/blocks/finalized",
+                web::get().to(|| async {
+                    HttpResponse::NotFound().body("anchor block missing".to_string())
+                }),
+            ))
         })
         .listen(listener)
         .expect("Failed to attach listener")
@@ -637,16 +618,14 @@ mod tests {
         let addr = listener.local_addr().expect("Failed to get local addr");
 
         let server = HttpServer::new(move || {
-            App::new().service(
-                web::scope("/lean/v0").route(
-                    "/blocks/finalized",
-                    web::get().to(|| async {
-                        HttpResponse::Ok()
-                            .content_type("application/octet-stream")
-                            .body(vec![0xffu8, 0xfe, 0x00])
-                    }),
-                ),
-            )
+            App::new().service(web::scope("/lean/v0").route(
+                "/blocks/finalized",
+                web::get().to(|| async {
+                    HttpResponse::Ok()
+                        .content_type("application/octet-stream")
+                        .body(vec![0xffu8, 0xfe, 0x00])
+                }),
+            ))
         })
         .listen(listener)
         .expect("Failed to attach listener")

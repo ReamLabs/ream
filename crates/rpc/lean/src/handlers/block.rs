@@ -27,13 +27,6 @@ pub async fn get_block(
 }
 
 // GET /lean/v0/blocks/finalized
-//
-// Returns the [SignedBlock] matching `store.latest_finalized.root` as raw SSZ
-// bytes (not snappy compressed). Together with `/lean/v0/states/finalized` this
-// lets a checkpoint-syncing node obtain the `(state, signed_block)` pair
-// required by [`Store::get_forkchoice_store`] (which asserts
-// `anchor_block.state_root == hash_tree_root(state)` and seeds
-// `store.blocks[anchor_root] = anchor_block`).
 #[get("/blocks/finalized")]
 pub async fn get_finalized_signed_block(
     http_request: HttpRequest,
