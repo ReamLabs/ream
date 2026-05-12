@@ -9,7 +9,7 @@ use crate::leansig::{LeanSigScheme, errors::LeanSigError, public_key::PublicKey}
 
 pub const SIGNATURE_SIZE: usize = 2536;
 const SIGNATURE_PATH_OFFSET: u32 = 36;
-const SIGNATURE_HASHES_OFFSET: u32 = 1064;
+const SIGNATURE_HASHES_OFFSET: u32 = 40;
 const SIGNATURE_PATH_SIBLINGS_OFFSET: u32 = 4;
 
 type LeanSigSignature = <LeanSigScheme as SignatureScheme>::Signature;
@@ -39,7 +39,7 @@ impl Signature {
         // Structurally valid zero-valued XMSS Signature SSZ:
         // Signature { path: HashTreeOpening { siblings }, rho, hashes }.
         // Parent containers treat this as an opaque fixed-size byte blob, while
-        // leanSpec can still decode it as a Signature when validating API output.
+        // leanSpec can still decode the prefix as a Signature when validating API output.
         inner[..4].copy_from_slice(&SIGNATURE_PATH_OFFSET.to_le_bytes());
         inner[32..36].copy_from_slice(&SIGNATURE_HASHES_OFFSET.to_le_bytes());
         inner[36..40].copy_from_slice(&SIGNATURE_PATH_SIBLINGS_OFFSET.to_le_bytes());
@@ -121,7 +121,7 @@ mod tests {
         let signature = Signature::blank();
 
         assert_eq!(&signature.inner[..4], 36u32.to_le_bytes().as_slice());
-        assert_eq!(&signature.inner[32..36], 1064u32.to_le_bytes().as_slice());
+        assert_eq!(&signature.inner[32..36], 40u32.to_le_bytes().as_slice());
         assert_eq!(&signature.inner[36..40], 4u32.to_le_bytes().as_slice());
     }
 }
