@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use actix_web::{HttpResponse, Responder, get, post, web};
+use actix_web::{HttpResponse, Responder, delete, get, post, web};
 use ream_api_types_common::error::ApiError;
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +53,12 @@ pub async fn handle_toggle(
         is_aggregator: enabled,
         previous,
     }))
+}
+
+/// DELETE /lean/v0/admin/aggregator
+#[delete("/admin/aggregator")]
+pub async fn handle_delete() -> impl Responder {
+    HttpResponse::MethodNotAllowed().finish()
 }
 
 #[cfg(test)]
@@ -130,6 +136,21 @@ mod tests {
         assert_eq!(
             response.status(),
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[actix_web::test]
+    async fn test_handle_delete_returns_method_not_allowed() {
+        let app = test::init_service(App::new().service(handle_delete)).await;
+
+        let request = test::TestRequest::delete()
+            .uri("/admin/aggregator")
+            .to_request();
+        let response = test::call_service(&app, request).await;
+
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::METHOD_NOT_ALLOWED
         );
     }
 }
