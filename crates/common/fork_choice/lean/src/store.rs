@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
+    time::Instant,
 };
 
 use alloy_primitives::B256;
@@ -24,11 +25,11 @@ use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, FINALIZATIONS_TOTAL, FINALIZED_SLOT,
     FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT,
     LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS, LATEST_NEW_AGGREGATED_PAYLOADS,
-    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL,
-    PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
-    PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, PQ_SIG_ATTESTATION_VERIFICATION_TIME,
-    PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT, inc_int_counter_vec, set_int_gauge_vec, start_timer,
-    stop_timer,
+    LEAN_TICK_INTERVAL_DURATION_SECONDS, PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME,
+    PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL,
+    PQ_SIG_ATTESTATION_VERIFICATION_TIME, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
+    inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -58,6 +59,7 @@ pub type LeanStoreReader = Reader<Store>;
 pub struct Store {
     pub store: Arc<Mutex<LeanDB>>,
     pub network_state: Arc<NetworkState>,
+    pub tick_interval_duration: Option<Instant>,
 }
 
 impl Store {
@@ -126,6 +128,7 @@ impl Store {
                 anchor_checkpoint,
                 false,
             )),
+            tick_interval_duration: None,
         })
     }
 
@@ -357,6 +360,13 @@ impl Store {
         has_proposal: bool,
         is_aggregator: bool,
     ) -> anyhow::Result<()> {
+        if let Some(instant) = self.tick_interval_duration {
+            LEAN_TICK_INTERVAL_DURATION_SECONDS
+                .with_label_values(&[])
+                .observe(instant.elapsed().as_secs_f64());
+        }
+        self.tick_interval_duration = Some(Instant::now());
+
         let genesis_time = self.genesis_time().await?;
         let Some(seconds_since_genesis) = time.checked_sub(genesis_time) else {
             return Ok(());
@@ -1783,6 +1793,7 @@ mod tests {
         Store {
             store: test_store.store,
             network_state: test_store.network_state,
+            tick_interval_duration: None,
         }
     }
 
