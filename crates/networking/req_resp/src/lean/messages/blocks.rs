@@ -20,15 +20,10 @@ impl BlocksByRootV1Request {
 pub struct BlocksByRangeV1Request {
     pub start_slot: u64,
     pub count: u64,
-    pub step: u64,
 }
 
 impl BlocksByRangeV1Request {
-    pub fn new(start_slot: u64, count: u64, step: u64) -> Self {
-        Self {
-            start_slot,
-            count,
-            step,
-        }
+    pub fn new(start_slot: u64, count: u64) -> Self {
+        Self { start_slot, count }
     }
 }

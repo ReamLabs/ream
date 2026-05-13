@@ -51,7 +51,6 @@ pub enum LeanChainServiceMessage {
     GetBlocksByRange {
         start_slot: u64,
         count: u64,
-        step: u64,
         sender: tokio::sync::mpsc::Sender<Arc<SignedBlock>>,
     },
     GetBlocksByRoot {

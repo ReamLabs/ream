@@ -24,9 +24,12 @@ use ream_metrics::{
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
-use ream_req_resp::lean::{
-    NetworkEvent, ResponseCallback,
-    messages::{LeanRequestMessage, LeanResponseMessage},
+use ream_req_resp::{
+    constants::MAX_REQUEST_BLOCKS,
+    lean::{
+        NetworkEvent, ResponseCallback,
+        messages::{LeanRequestMessage, LeanResponseMessage},
+    },
 };
 use ream_storage::tables::{field::REDBField, table::REDBTable};
 use tokio::{
@@ -504,8 +507,15 @@ impl LeanChainService {
                                 warn!("Failed to send canonical checkpoint response: {err:?}");
                             }
                         }
-                        LeanChainServiceMessage::GetBlocksByRange { start_slot, count, step, sender} => {
-                            if start_slot.checked_add(count).is_none() {
+                        LeanChainServiceMessage::GetBlocksByRange {
+                            start_slot,
+                            count,
+                            sender,
+                        } => {
+                            if count == 0
+                                || count > MAX_REQUEST_BLOCKS
+                                || start_slot.checked_add(count).is_none()
+                            {
                                 warn!("Failed to send end of stream for overflowed range to peer");
                                 return Ok(());
                             }
@@ -515,15 +525,13 @@ impl LeanChainService {
                                 (store.slot_index_provider(), store.block_provider())
                             };
 
-                            for slot in (start_slot..)
-                                .step_by(step as usize)
-                                .take(count as usize)
-                            {
+                            for slot in (start_slot..).take(count as usize) {
                                 if let Ok(Some(root)) = slot_index_provider.get(slot)
                                     && let Ok(Some(block)) = block_provider.get(root)
-                                        && (sender.send(Arc::new(block)).await).is_err() {
-                                            break;
-                                        }
+                                    && (sender.send(Arc::new(block)).await).is_err()
+                                {
+                                    break;
+                                }
                             }
                         }
                         LeanChainServiceMessage::GetBlocksByRoot { roots, sender } => {
@@ -2144,14 +2152,21 @@ impl LeanChainService {
                 }
             }
             LeanRequestMessage::BlocksByRange(req) => {
-                if req.start_slot.checked_add(req.count).is_none() {
-                    if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::EndOfStream {
+                if req.count == 0
+                    || req.count > MAX_REQUEST_BLOCKS
+                    || req.start_slot.checked_add(req.count).is_none()
+                {
+                    if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::InvalidRequest {
                         peer_id,
                         stream_id,
                         connection_id,
+                        reason: format!(
+                            "invalid BlocksByRange count {} from start_slot {}",
+                            req.count, req.start_slot
+                        ),
                     }) {
                         warn!(
-                            "Failed to send end of stream for overflowed range to peer {peer_id}: {err:?}"
+                            "Failed to send invalid BlocksByRange response to peer {peer_id}: {err:?}"
                         );
                     }
                     return Ok(());
@@ -2162,10 +2177,7 @@ impl LeanChainService {
                     (store.slot_index_provider(), store.block_provider())
                 };
 
-                for slot in (req.start_slot..)
-                    .step_by(req.step as usize)
-                    .take(req.count as usize)
-                {
+                for slot in (req.start_slot..).take(req.count as usize) {
                     if let Ok(Some(root)) = slot_index_provider.get(slot)
                         && let Ok(Some(block)) = block_provider.get(root)
                         && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::Response {
