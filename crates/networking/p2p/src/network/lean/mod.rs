@@ -47,6 +47,7 @@ use ream_network_state_lean::{NetworkState, cached_peer::CachedPeer};
 use ream_peer::{ConnectionState, Direction};
 use ream_req_resp::{
     Chain, ReqResp, ReqRespMessage,
+    error::ReqRespError,
     handler::{ReqRespMessageReceived, RespMessage},
     lean::{
         NetworkEvent, ReamNetworkEvent, ResponseCallback,
@@ -628,6 +629,9 @@ impl LeanNetworkService {
                         }
                         LeanP2PRequest::Response { peer_id, stream_id, connection_id, message } => {
                             self.send_response(peer_id, connection_id, stream_id, message);
+                        }
+                        LeanP2PRequest::InvalidRequest { peer_id, stream_id, connection_id, reason } => {
+                            self.send_invalid_request(peer_id, connection_id, stream_id, reason);
                         }
                         LeanP2PRequest::EndOfStream { peer_id, stream_id, connection_id } => {
                             self.send_end_of_stream(peer_id, connection_id, stream_id);
@@ -1338,6 +1342,21 @@ impl LeanNetworkService {
             connection_id,
             stream_id,
             RespMessage::Response(Box::new(ResponseMessage::Lean(message.into()))),
+        );
+    }
+
+    fn send_invalid_request(
+        &mut self,
+        peer_id: PeerId,
+        connection_id: ConnectionId,
+        stream_id: u64,
+        reason: String,
+    ) {
+        self.swarm.behaviour_mut().req_resp.send_response(
+            peer_id,
+            connection_id,
+            stream_id,
+            RespMessage::Error(ReqRespError::InvalidData(reason)),
         );
     }
 
