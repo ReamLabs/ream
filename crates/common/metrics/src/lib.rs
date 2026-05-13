@@ -371,6 +371,19 @@ lazy_static::lazy_static! {
         &["client"],
         default_registry()
     ).expect("failed to create LEAN_GOSSIP_MESH_PEERS int gauge vec");
+
+    // Tick Interval Duration Metrics
+    pub static ref LEAN_TICK_INTERVAL_DURATION_SECONDS: HistogramVec = {
+        let histogram_opts = HistogramOpts::new(
+            "lean_tick_interval_duration_seconds",
+            "Tracks elapsed time between clock ticks in seconds"
+        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]);
+        register_histogram_vec_with_registry!(
+            histogram_opts,
+            &[],
+            default_registry()
+        ).expect("failed to create LEAN_TICK_INTERVAL_DURATION_SECONDS histogram vec")
+    };
 }
 
 /// Set the value of a gauge metric
