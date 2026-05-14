@@ -81,5 +81,44 @@ pub enum RequestResult<T> {
 pub enum ServiceResponse<T> {
     Ok(T),
     Syncing,
+    /// The local view is too far behind wall-clock to safely sign this duty.
+    /// Carries the snapshot that drove the decision for log/metric attribution.
+    SyncLagGated {
+        head_slot: u64,
+        lag: u64,
+        max_seen_slot: u64,
+    },
     Err(anyhow::Error),
+}
+
+/// Tag identifying which validator duty is asking the sync-lag gate for a
+/// decision. Used only for structured logging and counter attribution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DutyKind {
+    Block,
+    Attestation,
+}
+
+impl DutyKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DutyKind::Block => "block",
+            DutyKind::Attestation => "attestation",
+        }
+    }
+}
+
+/// Outcome of consulting the sync-lag duty gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DutyGateDecision {
+    /// Duties may run for this slot.
+    Allowed,
+    /// Duties must be silenced. The snapshot is carried so the call site can
+    /// fill the matching `ServiceResponse::SyncLagGated` and increment the
+    /// duty-specific counter.
+    Gated {
+        head_slot: u64,
+        lag: u64,
+        max_seen_slot: u64,
+    },
 }
