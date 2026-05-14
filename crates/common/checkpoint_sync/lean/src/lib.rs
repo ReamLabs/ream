@@ -185,7 +185,7 @@ mod tests {
 
     fn spawn_checkpoint_server(mode: ResponseMode) -> (Url, actix_web::dev::ServerHandle) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind address");
-        let addr = listener.local_addr().expect("Failed to get local addr");
+        let address = listener.local_addr().expect("Failed to get local address");
 
         let server = HttpServer::new(move || {
             App::new().app_data(Data::new(mode.clone())).service(
@@ -201,15 +201,15 @@ mod tests {
         tokio::spawn(server);
 
         (
-            Url::parse(&format!("http://{addr}")).expect("Failed to parse base URL"),
+            Url::parse(&format!("http://{address}")).expect("Failed to parse base URL"),
             server_handle,
         )
     }
 
     fn spawn_redirect_checkpoint_server(state: LeanState) -> (Url, actix_web::dev::ServerHandle) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind address");
-        let addr = listener.local_addr().expect("Failed to get local addr");
-        let redirect_target = format!("http://{addr}/redirected-finalized");
+        let address = listener.local_addr().expect("Failed to get local address");
+        let redirect_target = format!("http://{address}/redirected-finalized");
 
         let server = HttpServer::new(move || {
             let state = state.clone();
@@ -247,7 +247,7 @@ mod tests {
         tokio::spawn(server);
 
         (
-            Url::parse(&format!("http://{addr}")).expect("Failed to parse base URL"),
+            Url::parse(&format!("http://{address}")).expect("Failed to parse base URL"),
             server_handle,
         )
     }
@@ -340,10 +340,10 @@ mod tests {
     #[tokio::test]
     async fn test_client_returns_transport_error_when_server_is_unreachable() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind address");
-        let addr = listener.local_addr().expect("Failed to get local addr");
+        let address = listener.local_addr().expect("Failed to get local address");
         drop(listener);
 
-        let base_url = Url::parse(&format!("http://{addr}")).expect("Failed to parse base URL");
+        let base_url = Url::parse(&format!("http://{address}")).expect("Failed to parse base URL");
 
         LeanCheckpointClient::new()
             .fetch_finalized_state(&base_url)
@@ -513,7 +513,7 @@ mod tests {
         signed_block: SignedBlock,
     ) -> (Url, actix_web::dev::ServerHandle) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind address");
-        let addr = listener.local_addr().expect("Failed to get local addr");
+        let address = listener.local_addr().expect("Failed to get local address");
 
         let server = HttpServer::new(move || {
             let state = state.clone();
@@ -552,7 +552,7 @@ mod tests {
         tokio::spawn(server);
 
         (
-            Url::parse(&format!("http://{addr}")).expect("Failed to parse base URL"),
+            Url::parse(&format!("http://{address}")).expect("Failed to parse base URL"),
             server_handle,
         )
     }
@@ -579,7 +579,7 @@ mod tests {
     async fn test_client_finalized_block_returns_http_error_context() {
         // Spawn a server that returns 404 on /blocks/finalized but a valid state.
         let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind address");
-        let addr = listener.local_addr().expect("Failed to get local addr");
+        let address = listener.local_addr().expect("Failed to get local address");
 
         let server = HttpServer::new(move || {
             App::new().service(web::scope("/lean/v0").route(
@@ -596,7 +596,7 @@ mod tests {
         let server_handle = server.handle();
         tokio::spawn(server);
 
-        let base_url = Url::parse(&format!("http://{addr}")).expect("Failed to parse base URL");
+        let base_url = Url::parse(&format!("http://{address}")).expect("Failed to parse base URL");
 
         let err = LeanCheckpointClient::new()
             .fetch_finalized_block(&base_url)
@@ -614,7 +614,7 @@ mod tests {
     async fn test_client_finalized_block_returns_decode_error_for_malformed_ssz() {
         // Spawn a server that returns garbage bytes on /blocks/finalized.
         let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind address");
-        let addr = listener.local_addr().expect("Failed to get local addr");
+        let address = listener.local_addr().expect("Failed to get local address");
 
         let server = HttpServer::new(move || {
             App::new().service(web::scope("/lean/v0").route(
@@ -633,7 +633,7 @@ mod tests {
         let server_handle = server.handle();
         tokio::spawn(server);
 
-        let base_url = Url::parse(&format!("http://{addr}")).expect("Failed to parse base URL");
+        let base_url = Url::parse(&format!("http://{address}")).expect("Failed to parse base URL");
 
         let err = LeanCheckpointClient::new()
             .fetch_finalized_block(&base_url)

@@ -105,19 +105,19 @@ mod tests {
         let app =
             test::init_service(App::new().app_data(Data::new(reader)).service(get_state)).await;
 
-        let req = test::TestRequest::get()
+        let request = test::TestRequest::get()
             .uri("/states/finalized")
             .insert_header(("Accept", "application/octet-stream"))
             .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            resp.headers().get("content-type").unwrap(),
+            response.headers().get("content-type").unwrap(),
             "application/octet-stream"
         );
 
-        let body = test::read_body(resp).await;
+        let body = test::read_body(response).await;
         let state = LeanState::from_ssz_bytes(&body).expect("Failed to decode SSZ");
         assert!(!state.validators.is_empty());
     }
@@ -130,15 +130,15 @@ mod tests {
         let app =
             test::init_service(App::new().app_data(Data::new(reader)).service(get_state)).await;
 
-        let req = test::TestRequest::get()
+        let request = test::TestRequest::get()
             .uri("/states/finalized")
             .insert_header(("Accept", "application/json"))
             .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
         assert!(
-            resp.headers()
+            response.headers()
                 .get("content-type")
                 .unwrap()
                 .to_str()
@@ -155,14 +155,14 @@ mod tests {
         let app =
             test::init_service(App::new().app_data(Data::new(reader)).service(get_state)).await;
 
-        let req = test::TestRequest::get()
+        let request = test::TestRequest::get()
             .uri("/states/finalized")
             .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
         assert!(
-            resp.headers()
+            response.headers()
                 .get("content-type")
                 .unwrap()
                 .to_str()

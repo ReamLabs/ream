@@ -1,10 +1,5 @@
 use std::{
-    env, fs,
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    process,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    collections::BTreeSet, env, fs, net::SocketAddr, path::{Path, PathBuf}, process, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 
 use alloy_primitives::hex;
@@ -76,7 +71,11 @@ use ream_post_quantum_crypto::{
     },
 };
 use ream_rpc_common::config::RpcServerConfig;
-use ream_rpc_lean::aggregator_controller::AggregatorController;
+use ream_rpc_lean::{
+    aggregator_controller::AggregatorController,
+    handlers::test_driver::test_driver_enabled,
+    server::start_test_driver,
+};
 use ream_storage::{
     cache::{BeaconCacheDB, LeanCacheDB},
     db::{ReamDB, reset_db},
@@ -96,9 +95,8 @@ use ream_validator_lean::{
 };
 use ssz_types::VariableList;
 use tokio::{
-    sync::{broadcast, mpsc},
-    time,
-    time::Instant,
+    sync::{broadcast, mpsc::{unbounded_channel}},
+    time::{self, Instant},
 };
 use tracing::{Instrument, error, info};
 use tracing_subscriber::EnvFilter;
@@ -266,8 +264,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     info!("ream lean database has been initialized");
 
     // Initialize the services that will run in the lean node.
-    let (chain_sender, chain_receiver) = mpsc::unbounded_channel::<LeanChainServiceMessage>();
-    let (outbound_p2p_sender, outbound_p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+    let (chain_sender, chain_receiver) = unbounded_channel::<LeanChainServiceMessage>();
+    let (outbound_p2p_sender, outbound_p2p_receiver) = unbounded_channel::<LeanP2PRequest>();
 
     let (anchor_signed_block, anchor_state) = if let Some(url) = config.checkpoint_sync_url.clone()
     {
@@ -313,7 +311,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         .expect("Could not get forkchoice store"),
     );
 
-    let test_driver_enabled = ream_rpc_lean::handlers::test_driver::test_driver_enabled();
+    let test_driver_enabled = test_driver_enabled();
     let network_state = lean_chain_reader.read().await.network_state.clone();
 
     let aggregator_controller = Arc::new(AggregatorController::new(network_state.clone()));
@@ -324,7 +322,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             config.http_port,
             config.http_allow_origin,
         );
-        ream_rpc_lean::server::start_test_driver(
+        start_test_driver(
             server_config,
             lean_chain_reader,
             lean_chain_writer,
@@ -341,7 +339,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
     let committee_count = attestation_committee_count();
     let subscribed_subnets = {
-        let mut set: std::collections::BTreeSet<u64> = keystores
+        let mut set: BTreeSet<u64> = keystores
             .iter()
             .map(|keystore| keystore.index % committee_count)
             .collect();
@@ -877,10 +875,7 @@ pub async fn countdown_for_genesis() {
 #[cfg(test)]
 mod tests {
     use std::{
-        fs,
-        path::{Path, PathBuf},
-        process::{Command, Stdio},
-        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+        env::temp_dir, fs, path::{Path, PathBuf}, process::{Command, Stdio}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}
     };
 
     use alloy_primitives::hex;
@@ -1024,7 +1019,7 @@ mod tests {
 
             for (i, db_slot) in db_instances.iter_mut().enumerate().take(node_count) {
                 let node_index = i + 1;
-                let ream_dir = std::env::temp_dir()
+                let ream_dir = temp_dir()
                     .join(format!("{APP_NAME}_{}_node_{node_index}", scenario.test_name));
 
                 if ream_dir.exists()
@@ -1354,7 +1349,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("System time is before UNIX epoch")
             .as_nanos();
-        let network_config_path = std::env::temp_dir().join(format!(
+        let network_config_path = temp_dir().join(format!(
             "{APP_NAME}_{test_name}_{unique_suffix}_network.yaml"
         ));
 
@@ -1591,7 +1586,7 @@ mod tests {
                 let node_id = format!("node{node_index}");
 
                 let ream_dir =
-                    std::env::temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
+                    temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
 
                 if ream_dir.exists()
                     && let Err(err) = fs::remove_dir_all(&ream_dir)
@@ -1802,7 +1797,7 @@ mod tests {
                 let node_index = i + 1;
 
                 let ream_dir =
-                    std::env::temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
+                    temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
 
                 if ream_dir.exists()
                     && let Err(err) = fs::remove_dir_all(&ream_dir)
@@ -1826,7 +1821,7 @@ mod tests {
             for (i, node_boot_config) in topology.iter().enumerate() {
                 let node_index = i + 1;
                 let db = db_instances[i].clone().unwrap();
-                let key_path = std::env::temp_dir()
+                let key_path = temp_dir()
                     .join(format!("{APP_NAME}_{test_name}_node_{node_index}"))
                     .join("node_key");
 
@@ -2125,7 +2120,7 @@ mod tests {
             let node_index = i + 1;
 
             let ream_data_directory =
-                std::env::temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
+                temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
 
             if ream_data_directory.exists()
                 && let Err(err) = fs::remove_dir_all(&ream_data_directory)

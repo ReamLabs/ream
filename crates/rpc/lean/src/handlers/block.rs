@@ -135,7 +135,9 @@ mod tests {
     use ssz::Decode;
     use tree_hash::TreeHash;
 
-    use super::get_finalized_signed_block;
+    use crate::handlers::state::get_state;
+
+use super::get_finalized_signed_block;
 
     #[tokio::test]
     async fn test_get_finalized_signed_block_returns_ssz() {
@@ -149,19 +151,19 @@ mod tests {
         )
         .await;
 
-        let req = test::TestRequest::get()
+        let request = test::TestRequest::get()
             .uri("/blocks/finalized")
             .insert_header(("Accept", "application/octet-stream"))
             .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            resp.headers().get("content-type").unwrap(),
+            response.headers().get("content-type").unwrap(),
             "application/octet-stream"
         );
 
-        let body = test::read_body(resp).await;
+        let body = test::read_body(response).await;
         SignedBlock::from_ssz_bytes(&body).expect("Failed to decode SSZ SignedBlock");
     }
 
@@ -177,18 +179,18 @@ mod tests {
         )
         .await;
 
-        let req = test::TestRequest::get()
+        let request = test::TestRequest::get()
             .uri("/blocks/finalized")
             .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            resp.headers().get("content-type").unwrap(),
+            response.headers().get("content-type").unwrap(),
             "application/octet-stream"
         );
 
-        let body = test::read_body(resp).await;
+        let body = test::read_body(response).await;
         SignedBlock::from_ssz_bytes(&body).expect("Failed to decode SSZ SignedBlock");
     }
 
@@ -204,19 +206,19 @@ mod tests {
         )
         .await;
 
-        let req = test::TestRequest::get()
+        let request = test::TestRequest::get()
             .uri("/blocks/finalized")
             .insert_header(("Accept", "application/json"))
             .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            resp.headers().get("content-type").unwrap(),
+            response.headers().get("content-type").unwrap(),
             "application/json"
         );
 
-        let body = test::read_body(resp).await;
+        let body = test::read_body(response).await;
         serde_json::from_slice::<serde_json::Value>(&body).expect("Failed to decode JSON block");
     }
 
@@ -224,8 +226,6 @@ mod tests {
     async fn test_finalized_signed_block_state_root_matches_finalized_state() {
         // Protocol invariant required by `Store::get_forkchoice_store`:
         // `anchor_block.state_root == hash_tree_root(state)`.
-        use crate::handlers::state::get_state;
-
         let store = sample_store(10).await;
         let (_writer, reader) = Writer::new(store);
 
@@ -237,21 +237,21 @@ mod tests {
         )
         .await;
 
-        let block_req = test::TestRequest::get()
+        let block_request = test::TestRequest::get()
             .uri("/blocks/finalized")
             .insert_header(("Accept", "application/octet-stream"))
             .to_request();
-        let block_resp = test::call_service(&app, block_req).await;
-        let block_body = test::read_body(block_resp).await;
+        let block_response = test::call_service(&app, block_request).await;
+        let block_body = test::read_body(block_response).await;
         let signed_block =
             SignedBlock::from_ssz_bytes(&block_body).expect("Failed to decode SignedBlock");
 
-        let state_req = test::TestRequest::get()
+        let state_request = test::TestRequest::get()
             .uri("/states/finalized")
             .insert_header(("Accept", "application/octet-stream"))
             .to_request();
-        let state_resp = test::call_service(&app, state_req).await;
-        let state_body = test::read_body(state_resp).await;
+        let state_response = test::call_service(&app, state_request).await;
+        let state_body = test::read_body(state_response).await;
         let state = LeanState::from_ssz_bytes(&state_body).expect("Failed to decode LeanState");
 
         assert_eq!(signed_block.block.state_root, state.tree_hash_root());

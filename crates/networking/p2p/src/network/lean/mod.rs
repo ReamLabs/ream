@@ -69,6 +69,7 @@ use tracing::{error, info, trace, warn};
 
 use crate::{
     bootnodes::Bootnodes,
+    network::lean::LeanP2PRequest::{GossipBlock, GossipAttestation, GossipAggregatedAttestation, Request, Response, InvalidRequest, EndOfStream},
     gossipsub::{
         GossipsubBehaviour,
         lean::{
@@ -581,7 +582,7 @@ impl LeanNetworkService {
                 }
                 Some(item) = self.outbound_p2p_request.recv() => {
                     match item {
-                        LeanP2PRequest::GossipBlock(block) => {
+                        GossipBlock(block) => {
                             self.publish_gossip(
                                 |topic| matches!(topic, LeanGossipTopicKind::Block),
                                 block.as_ssz_bytes(),
@@ -589,7 +590,7 @@ impl LeanNetworkService {
                                 "block"
                             );
                         }
-                        LeanP2PRequest::GossipAttestation { subnet_id, attestation } => {
+                        GossipAttestation { subnet_id, attestation } => {
                             let slot = attestation.message.slot;
                             self.publish_gossip_to_subnet(
                                 subnet_id,
@@ -598,7 +599,7 @@ impl LeanNetworkService {
                                 "attestation"
                             );
                         }
-                        LeanP2PRequest::GossipAggregatedAttestation(aggregated) => {
+                        GossipAggregatedAttestation(aggregated) => {
                             let slot = aggregated.data.slot;
                             self.publish_gossip(
                                 |topic| matches!(topic, LeanGossipTopicKind::AggregatedAttestation),
@@ -607,7 +608,7 @@ impl LeanNetworkService {
                                 "aggregated_attestation"
                             );
                         }
-                        LeanP2PRequest::Request { peer_id, callback, message } => {
+                        Request { peer_id, callback, message } => {
                             let message = match message {
                                 P2PCallbackRequest::BlocksByRoot { roots } => {
                                     LeanRequestMessage::BlocksByRoot(BlocksByRootV1Request::new(roots))
@@ -627,13 +628,13 @@ impl LeanNetworkService {
                                 },
                             }
                         }
-                        LeanP2PRequest::Response { peer_id, stream_id, connection_id, message } => {
+                       Response { peer_id, stream_id, connection_id, message } => {
                             self.send_response(peer_id, connection_id, stream_id, message);
                         }
-                        LeanP2PRequest::InvalidRequest { peer_id, stream_id, connection_id, reason } => {
+                        InvalidRequest { peer_id, stream_id, connection_id, reason } => {
                             self.send_invalid_request(peer_id, connection_id, stream_id, reason);
                         }
-                        LeanP2PRequest::EndOfStream { peer_id, stream_id, connection_id } => {
+                        EndOfStream { peer_id, stream_id, connection_id } => {
                             self.send_end_of_stream(peer_id, connection_id, stream_id);
                         }
                     }
@@ -1392,7 +1393,10 @@ mod tests {
     use alloy_primitives::B256;
     use ream_consensus_lean::checkpoint::Checkpoint;
     use ream_network_spec::networks::initialize_lean_test_network_spec;
-    use tokio::sync::mpsc;
+    use tokio::{
+        sync::mpsc,
+        time::sleep,
+    };
     use tracing_test::traced_test;
 
     use super::*;
@@ -1459,14 +1463,14 @@ mod tests {
             node_1.start(bootnodes).await.unwrap();
         });
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
 
         let node_2_handle = tokio::spawn(async move {
             let bootnodes = Bootnodes::Multiaddr(vec![node_1_addr]);
             node_2.start(bootnodes).await.unwrap();
         });
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(2)).await;
 
         node_1_handle.abort();
         node_2_handle.abort();
@@ -1515,23 +1519,23 @@ mod tests {
             node_1.start(bootnodes).await.unwrap();
         });
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
 
         let node_2_handle = tokio::spawn(async move {
             let bootnodes = Bootnodes::Multiaddr(vec![node_1_addr]);
             node_2.start(bootnodes).await.unwrap();
         });
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(2)).await;
 
         let (callback, _) = mpsc::channel(5);
-        p2p_sender_1.send(LeanP2PRequest::Request {
+        p2p_sender_1.send(Request {
             peer_id: peer_id_2,
             callback,
             message: P2PCallbackRequest::Status,
         })?;
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(1)).await;
 
         let peer_2_state = network_state_1
             .cached_peer(&peer_id_2)
@@ -1722,46 +1726,46 @@ mod tests {
     }
 
     fn test_multiaddr(peer_id: PeerId, port: u16) -> Multiaddr {
-        let mut addr: Multiaddr = Ipv4Addr::new(127, 0, 0, 1).into();
-        addr.push(Protocol::Udp(port));
-        addr.push(Protocol::QuicV1);
-        addr.push(Protocol::P2p(peer_id));
-        addr
+        let mut address: Multiaddr = Ipv4Addr::new(127, 0, 0, 1).into();
+        address.push(Protocol::Udp(port));
+        address.push(Protocol::QuicV1);
+        address.push(Protocol::P2p(peer_id));
+        address
     }
 
     #[test]
     fn test_dedupe_retry_addresses_preserves_first_occurrence() {
         let peer_id = PeerId::random();
-        let addr_1 = test_multiaddr(peer_id, 9004);
-        let addr_2 = test_multiaddr(peer_id, 9005);
+        let address_1 = test_multiaddr(peer_id, 9004);
+        let address_2 = test_multiaddr(peer_id, 9005);
         let mut addresses = vec![
-            addr_1.clone(),
-            addr_1.clone(),
-            addr_2.clone(),
-            addr_1.clone(),
-            addr_2.clone(),
+            address_1.clone(),
+            address_1.clone(),
+            address_2.clone(),
+            address_1.clone(),
+            address_2.clone(),
         ];
 
         dedupe_retry_addresses(&mut addresses);
 
-        assert_eq!(addresses, vec![addr_1, addr_2]);
+        assert_eq!(addresses, vec![address_1, address_2]);
     }
 
     #[test]
     fn test_bootnode_retry_rotates_across_unique_addresses() {
         let peer_id = PeerId::random();
-        let addr_1 = test_multiaddr(peer_id, 9004);
-        let addr_2 = test_multiaddr(peer_id, 9005);
+        let address_1 = test_multiaddr(peer_id, 9004);
+        let address_2 = test_multiaddr(peer_id, 9005);
         let mut retry_state = BootnodeRetry::default();
 
-        retry_state.record_address(addr_1.clone());
-        retry_state.record_address(addr_1.clone());
-        retry_state.record_address(addr_2.clone());
+        retry_state.record_address(address_1.clone());
+        retry_state.record_address(address_1.clone());
+        retry_state.record_address(address_2.clone());
 
-        assert_eq!(retry_state.next_address(), Some(addr_1.clone()));
-        assert_eq!(retry_state.next_address(), Some(addr_2.clone()));
-        assert_eq!(retry_state.next_address(), Some(addr_1));
-        assert_eq!(retry_state.next_address(), Some(addr_2));
+        assert_eq!(retry_state.next_address(), Some(address_1.clone()));
+        assert_eq!(retry_state.next_address(), Some(address_2.clone()));
+        assert_eq!(retry_state.next_address(), Some(address_1));
+        assert_eq!(retry_state.next_address(), Some(address_2));
     }
 
     #[test]

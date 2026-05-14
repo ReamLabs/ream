@@ -13,6 +13,6 @@ pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s = String::deserialize(deserializer)?;
-    Vec::<u8>::from_hex(&s).map_err(|err| de::Error::custom(err.to_string()))
+    let string = String::deserialize(deserializer)?;
+    Vec::<u8>::from_hex(&string).map_err(|err| de::Error::custom(err.to_string()))
 }

@@ -44,8 +44,8 @@ impl LeanRequestMessage {
     pub fn max_response_chunks(&self) -> u64 {
         match self {
             LeanRequestMessage::Status(_) => 1,
-            LeanRequestMessage::BlocksByRoot(req) => req.roots.len() as u64,
-            LeanRequestMessage::BlocksByRange(req) => req.count,
+            LeanRequestMessage::BlocksByRoot(request) => request.roots.len() as u64,
+            LeanRequestMessage::BlocksByRange(request) => request.count,
         }
     }
 }
