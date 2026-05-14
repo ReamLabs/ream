@@ -41,9 +41,12 @@ use tree_hash::TreeHash;
 
 use crate::{
     clock::{create_lean_clock_interval, get_initial_tick_count},
-    service::LeanP2PRequest::{GossipBlock, GossipAttestation, GossipAggregatedAttestation, Request, Response, EndOfStream, InvalidRequest},
     messages::{LeanChainServiceMessage, ServiceResponse},
     p2p_request::{LeanP2PRequest, P2PCallbackRequest},
+    service::LeanP2PRequest::{
+        EndOfStream, GossipAggregatedAttestation, GossipAttestation, GossipBlock, InvalidRequest,
+        Request, Response,
+    },
     slot::get_current_slot,
     sync::{
         BackfillState, QueueRecovery, SyncStatus,
@@ -2712,7 +2715,6 @@ mod tests {
         sync::{mpsc, oneshot},
         time::sleep,
     };
-
     use tree_hash::TreeHash;
 
     use super::{InflightRootRequest, LeanChainService, SyncBlockSource};
@@ -2940,10 +2942,7 @@ complete(start=60, fetched_through=57, jobs=0)"
 
         assert!(!service.should_run_backfill_sync().await);
 
-        sleep(
-            super::SYNCED_BACKFILL_GAP_PERSISTENCE_THRESHOLD + Duration::from_millis(50),
-        )
-        .await;
+        sleep(super::SYNCED_BACKFILL_GAP_PERSISTENCE_THRESHOLD + Duration::from_millis(50)).await;
 
         assert!(service.should_run_backfill_sync().await);
     }

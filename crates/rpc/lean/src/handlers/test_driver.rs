@@ -188,9 +188,9 @@ fn driver_error(context: impl Into<String>, err: impl Display) -> ApiError {
 }
 
 fn new_test_db() -> Result<ream_storage::db::lean::LeanDB, ApiError> {
-    let dir = setup_data_dir("hive_lean_test_driver", None, true)
-        .map_err(|err| driver_error("failed to create test-driver data dir", err))?;
-    ReamDB::new(dir)
+    let directory = setup_data_dir("hive_lean_test_driver", None, true)
+        .map_err(|err| driver_error("failed to create test-driver data directory", err))?;
+    ReamDB::new(directory)
         .map_err(|err| driver_error("failed to create test-driver ReamDB", err))?
         .init_lean_db()
         .map_err(|err| driver_error("failed to initialize test-driver LeanDB", err))

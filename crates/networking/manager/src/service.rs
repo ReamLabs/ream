@@ -57,7 +57,7 @@ impl NetworkManagerService {
         executor: ReamExecutor,
         config: ManagerConfig,
         ream_db: BeaconDB,
-        ream_dir: PathBuf,
+        ream_directory: PathBuf,
         beacon_chain: Arc<BeaconChain>,
         sync_committee_pool: Arc<SyncCommitteePool>,
         cached_db: Arc<BeaconCacheDB>,
@@ -88,7 +88,7 @@ impl NetworkManagerService {
         let network_config = NetworkConfig {
             discv5_config,
             gossipsub_config,
-            data_dir: ream_dir,
+            data_dir: ream_directory,
         };
 
         let (manager_sender, manager_receiver) = mpsc::unbounded_channel();

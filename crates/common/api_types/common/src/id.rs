@@ -38,14 +38,20 @@ impl<'de> Deserialize<'de> for ID {
             _ => {
                 if string.starts_with("0x") {
                     B256::from_str(&string).map(ID::Root).map_err(|err| {
-                        serde::de::Error::custom(format!("Invalid hex root: {string}, error: {err}"))
+                        serde::de::Error::custom(format!(
+                            "Invalid hex root: {string}, error: {err}"
+                        ))
                     })
                 } else if string.chars().all(|c| c.is_ascii_digit()) {
                     string.parse::<u64>().map(ID::Slot).map_err(|err| {
-                        serde::de::Error::custom(format!("Invalid slot number: {string}, error: {err}"))
+                        serde::de::Error::custom(format!(
+                            "Invalid slot number: {string}, error: {err}"
+                        ))
                     })
                 } else {
-                    Err(serde::de::Error::custom(format!("Invalid state ID: {string}")))
+                    Err(serde::de::Error::custom(format!(
+                        "Invalid state ID: {string}"
+                    )))
                 }
             }
         }

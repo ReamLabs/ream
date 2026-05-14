@@ -138,7 +138,8 @@ mod tests {
         let response = test::call_service(&app, request).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert!(
-            response.headers()
+            response
+                .headers()
                 .get("content-type")
                 .unwrap()
                 .to_str()
@@ -162,7 +163,8 @@ mod tests {
         let response = test::call_service(&app, request).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert!(
-            response.headers()
+            response
+                .headers()
                 .get("content-type")
                 .unwrap()
                 .to_str()

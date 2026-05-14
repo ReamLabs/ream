@@ -69,7 +69,6 @@ use tracing::{error, info, trace, warn};
 
 use crate::{
     bootnodes::Bootnodes,
-    network::lean::LeanP2PRequest::{GossipBlock, GossipAttestation, GossipAggregatedAttestation, Request, Response, InvalidRequest, EndOfStream},
     gossipsub::{
         GossipsubBehaviour,
         lean::{
@@ -78,7 +77,13 @@ use crate::{
         },
         snappy::SnappyTransform,
     },
-    network::misc::Executor,
+    network::{
+        lean::LeanP2PRequest::{
+            EndOfStream, GossipAggregatedAttestation, GossipAttestation, GossipBlock,
+            InvalidRequest, Request, Response,
+        },
+        misc::Executor,
+    },
 };
 
 const BOOTNODE_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -1393,10 +1398,7 @@ mod tests {
     use alloy_primitives::B256;
     use ream_consensus_lean::checkpoint::Checkpoint;
     use ream_network_spec::networks::initialize_lean_test_network_spec;
-    use tokio::{
-        sync::mpsc,
-        time::sleep,
-    };
+    use tokio::{sync::mpsc, time::sleep};
     use tracing_test::traced_test;
 
     use super::*;

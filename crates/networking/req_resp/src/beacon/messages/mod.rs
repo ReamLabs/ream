@@ -106,7 +106,9 @@ impl BeaconRequestMessage {
             | BeaconRequestMessage::Status(_)
             | BeaconRequestMessage::Ping(_) => 1,
 
-            BeaconRequestMessage::BeaconBlocksByRange(request) => request.count.min(MAX_REQUEST_BLOCKS),
+            BeaconRequestMessage::BeaconBlocksByRange(request) => {
+                request.count.min(MAX_REQUEST_BLOCKS)
+            }
             BeaconRequestMessage::BeaconBlocksByRoot(request) => request.inner.len() as u64,
             BeaconRequestMessage::BlobSidecarsByRange(request) => {
                 (request.count * MAX_BLOBS_PER_BLOCK).min(MAX_REQUEST_BLOB_SIDECARS)

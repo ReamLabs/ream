@@ -1,5 +1,11 @@
 use std::{
-    collections::BTreeSet, env, fs, net::SocketAddr, path::{Path, PathBuf}, process, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}
+    collections::BTreeSet,
+    env, fs,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    process,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use alloy_primitives::hex;
@@ -72,8 +78,7 @@ use ream_post_quantum_crypto::{
 };
 use ream_rpc_common::config::RpcServerConfig;
 use ream_rpc_lean::{
-    aggregator_controller::AggregatorController,
-    handlers::test_driver::test_driver_enabled,
+    aggregator_controller::AggregatorController, handlers::test_driver::test_driver_enabled,
     server::start_test_driver,
 };
 use ream_storage::{
@@ -95,7 +100,7 @@ use ream_validator_lean::{
 };
 use ssz_types::VariableList;
 use tokio::{
-    sync::{broadcast, mpsc::{unbounded_channel}},
+    sync::{broadcast, mpsc::unbounded_channel},
     time::{self, Instant},
 };
 use tracing::{Instrument, error, info};
@@ -140,27 +145,29 @@ fn main() {
 
     let executor = ReamExecutor::new().expect("unable to create executor");
     let executor_clone = executor.clone();
-    let ream_dir = setup_data_dir(APP_NAME, cli.data_dir.clone(), cli.ephemeral)
+    let ream_directory = setup_data_dir(APP_NAME, cli.data_dir.clone(), cli.ephemeral)
         .expect("Unable to initialize database directory");
 
     if cli.purge_db {
-        reset_db(&ream_dir).expect("Unable to delete database");
+        reset_db(&ream_directory).expect("Unable to delete database");
     }
 
     let task_handle = match cli.command {
         Commands::LeanNode(config) => {
-            let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
+            let ream_db =
+                ReamDB::new(ream_directory.clone()).expect("unable to init Ream Database");
             executor_clone.spawn(async move { run_lean_node(*config, executor, ream_db).await })
         }
         Commands::BeaconNode(config) => {
-            let ream_db = ReamDB::new(ream_dir.clone()).expect("unable to init Ream Database");
+            let ream_db =
+                ReamDB::new(ream_directory.clone()).expect("unable to init Ream Database");
             executor_clone.spawn(async move { run_beacon_node(*config, executor, ream_db).await })
         }
         Commands::ValidatorNode(config) => {
             executor_clone.spawn(async move { run_validator_node(*config, executor).await })
         }
         Commands::AccountManager(config) => {
-            executor_clone.spawn(async move { run_account_manager(*config, ream_dir).await })
+            executor_clone.spawn(async move { run_account_manager(*config, ream_directory).await })
         }
         Commands::VoluntaryExit(config) => {
             executor_clone.spawn(async move { run_voluntary_exit(*config).await })
@@ -646,7 +653,7 @@ pub async fn run_validator_node(config: ValidatorNodeConfig, executor: ReamExecu
 ///
 /// This function initializes the account manager by validating the configuration,
 /// generating keys, and starting the account manager service.
-pub async fn run_account_manager(config: AccountManagerConfig, ream_dir: PathBuf) {
+pub async fn run_account_manager(config: AccountManagerConfig, ream_directory: PathBuf) {
     info!("Starting account manager...");
 
     info!(
@@ -671,10 +678,10 @@ pub async fn run_account_manager(config: AccountManagerConfig, ream_dir: PathBuf
             if path.is_absolute() {
                 path.to_path_buf()
             } else {
-                ream_dir.join(custom_path)
+                ream_directory.join(custom_path)
             }
         }
-        None => ream_dir.join("keystores"),
+        None => ream_directory.join("keystores"),
     };
 
     if !keystore_dir.exists() {
@@ -875,7 +882,11 @@ pub async fn countdown_for_genesis() {
 #[cfg(test)]
 mod tests {
     use std::{
-        env::temp_dir, fs, path::{Path, PathBuf}, process::{Command, Stdio}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}
+        env::temp_dir,
+        fs,
+        path::{Path, PathBuf},
+        process::{Command, Stdio},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
     use alloy_primitives::hex;
@@ -1019,17 +1030,17 @@ mod tests {
 
             for (i, db_slot) in db_instances.iter_mut().enumerate().take(node_count) {
                 let node_index = i + 1;
-                let ream_dir = temp_dir()
+                let ream_directory = temp_dir()
                     .join(format!("{APP_NAME}_{}_node_{node_index}", scenario.test_name));
 
-                if ream_dir.exists()
-                    && let Err(err) = fs::remove_dir_all(&ream_dir)
+                if ream_directory.exists()
+                    && let Err(err) = fs::remove_dir_all(&ream_directory)
                 {
                     warn!("Failed to remove ream directory: {err}");
                 }
-                fs::create_dir_all(&ream_dir).expect("Failed to create data dir");
+                fs::create_dir_all(&ream_directory).expect("Failed to create data directory");
 
-                let key_path = ream_dir.join("node_key");
+                let key_path = ream_directory.join("node_key");
                 let peer_id = generate_node_identity(&key_path);
                 key_paths.push(key_path);
 
@@ -1039,7 +1050,7 @@ mod tests {
                     format!("/ip4/127.0.0.1/udp/{p2p_port}/quic-v1/p2p/{peer_id}");
                 node_addresses.push(address);
 
-                *db_slot = Some(ReamDB::new(ream_dir).unwrap());
+                *db_slot = Some(ReamDB::new(ream_directory).unwrap());
             }
 
             let node_1_http_port = base_http_port + port_offset;
@@ -1153,7 +1164,7 @@ mod tests {
                 {
                     if node_3_started {
                         info!(
-                            "Restarting Node 3 with --checkpoint-sync-url using existing data dir..."
+                            "Restarting Node 3 with --checkpoint-sync-url using existing data directory..."
                         );
                         node_3_state_before_restart =
                             db_instances[2].as_ref().and_then(read_head_state);
@@ -1391,8 +1402,8 @@ mod tests {
             panic!("Expected lean_node command");
         };
 
-        let ream_dir = setup_data_dir(APP_NAME, None, true).unwrap();
-        let db = ReamDB::new(ream_dir).unwrap();
+        let ream_directory = setup_data_dir(APP_NAME, None, true).unwrap();
+        let db = ReamDB::new(ream_directory).unwrap();
         let executor = ReamExecutor::new().unwrap();
         let executor_handle = executor.clone();
 
@@ -1447,8 +1458,8 @@ mod tests {
             panic!("Expected lean_node command");
         };
 
-        let ream_dir = setup_data_dir(APP_NAME, None, true).unwrap();
-        let db = ReamDB::new(ream_dir).unwrap();
+        let ream_directory = setup_data_dir(APP_NAME, None, true).unwrap();
+        let db = ReamDB::new(ream_directory).unwrap();
         let executor = ReamExecutor::new().unwrap();
         let executor_handle = executor.clone();
 
@@ -1517,7 +1528,7 @@ mod tests {
     fn generate_node_identity(path: &PathBuf) -> String {
         let secp256k1_key = secp256k1::Keypair::generate();
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).expect("Failed to create key dir");
+            fs::create_dir_all(parent).expect("Failed to create key directory");
         }
         fs::write(path, hex::encode(secp256k1_key.secret().to_bytes()))
             .expect("Failed to write private key");
@@ -1585,17 +1596,17 @@ mod tests {
                 let node_index = i + 1;
                 let node_id = format!("node{node_index}");
 
-                let ream_dir =
+                let ream_directory =
                     temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
 
-                if ream_dir.exists()
-                    && let Err(err) = fs::remove_dir_all(&ream_dir)
+                if ream_directory.exists()
+                    && let Err(err) = fs::remove_dir_all(&ream_directory)
                 {
                     warn!("Failed to remove ream directory: {err}");
                 }
-                fs::create_dir_all(&ream_dir).expect("Failed to create data dir");
+                fs::create_dir_all(&ream_directory).expect("Failed to create data directory");
 
-                let key_path = ream_dir.join("node_key");
+                let key_path = ream_directory.join("node_key");
                 let peer_id = generate_node_identity(&key_path);
 
                 let port_offset = (test_name.len() as u16) % 100;
@@ -1609,7 +1620,7 @@ mod tests {
                     info!("BOOTNODE ADDRESS: {address}");
                 }
 
-                db_instances.push(ReamDB::new(ream_dir.clone()).unwrap());
+                db_instances.push(ReamDB::new(ream_directory.clone()).unwrap());
 
                 let mut bootnode_arguments: Vec<String> = Vec::new();
                 for &target_idx in node_boot_config {
@@ -1796,17 +1807,17 @@ mod tests {
             for (i, _) in topology.iter().enumerate() {
                 let node_index = i + 1;
 
-                let ream_dir =
+                let ream_directory =
                     temp_dir().join(format!("{APP_NAME}_{test_name}_node_{node_index}"));
 
-                if ream_dir.exists()
-                    && let Err(err) = fs::remove_dir_all(&ream_dir)
+                if ream_directory.exists()
+                    && let Err(err) = fs::remove_dir_all(&ream_directory)
                 {
                     warn!("Failed to remove ream directory: {err}");
                 }
-                fs::create_dir_all(&ream_dir).expect("Failed to create data dir");
+                fs::create_dir_all(&ream_directory).expect("Failed to create data directory");
 
-                let key_path = ream_dir.join("node_key");
+                let key_path = ream_directory.join("node_key");
                 let peer_id = generate_node_identity(&key_path);
 
                 let port_offset = (test_name.len() as u16) % 100;
@@ -1815,7 +1826,7 @@ mod tests {
                 let address = format!("/ip4/127.0.0.1/udp/{p2p_port}/quic-v1/p2p/{peer_id}");
                 node_addresses.push(address.clone());
 
-                db_instances[i] = Some(ReamDB::new(ream_dir.clone()).unwrap());
+                db_instances[i] = Some(ReamDB::new(ream_directory.clone()).unwrap());
             }
 
             for (i, node_boot_config) in topology.iter().enumerate() {
@@ -2127,7 +2138,7 @@ mod tests {
             {
                 warn!("Failed to remove ream data directory: {err}");
             }
-            fs::create_dir_all(&ream_data_directory).expect("Failed to create data dir");
+            fs::create_dir_all(&ream_data_directory).expect("Failed to create data directory");
 
             let key_path = ream_data_directory.join("node_key");
             let peer_id = generate_node_identity(&key_path);

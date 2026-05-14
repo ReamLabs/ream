@@ -135,9 +135,8 @@ mod tests {
     use ssz::Decode;
     use tree_hash::TreeHash;
 
+    use super::get_finalized_signed_block;
     use crate::handlers::state::get_state;
-
-use super::get_finalized_signed_block;
 
     #[tokio::test]
     async fn test_get_finalized_signed_block_returns_ssz() {
