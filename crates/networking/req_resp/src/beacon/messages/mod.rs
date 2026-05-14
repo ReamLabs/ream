@@ -106,19 +106,21 @@ impl BeaconRequestMessage {
             | BeaconRequestMessage::Status(_)
             | BeaconRequestMessage::Ping(_) => 1,
 
-            BeaconRequestMessage::BeaconBlocksByRange(req) => req.count.min(MAX_REQUEST_BLOCKS),
-            BeaconRequestMessage::BeaconBlocksByRoot(req) => req.inner.len() as u64,
-            BeaconRequestMessage::BlobSidecarsByRange(req) => {
-                (req.count * MAX_BLOBS_PER_BLOCK).min(MAX_REQUEST_BLOB_SIDECARS)
+            BeaconRequestMessage::BeaconBlocksByRange(request) => {
+                request.count.min(MAX_REQUEST_BLOCKS)
             }
-            BeaconRequestMessage::BlobSidecarsByRoot(req) => req.inner.len() as u64,
-            BeaconRequestMessage::DataColumnSidecarsByRange(req) => {
-                let num_columns = req.columns.len() as u64;
-                (req.count * num_columns)
+            BeaconRequestMessage::BeaconBlocksByRoot(request) => request.inner.len() as u64,
+            BeaconRequestMessage::BlobSidecarsByRange(request) => {
+                (request.count * MAX_BLOBS_PER_BLOCK).min(MAX_REQUEST_BLOB_SIDECARS)
+            }
+            BeaconRequestMessage::BlobSidecarsByRoot(request) => request.inner.len() as u64,
+            BeaconRequestMessage::DataColumnSidecarsByRange(request) => {
+                let num_columns = request.columns.len() as u64;
+                (request.count * num_columns)
                     .min(MAX_REQUEST_DATA_COLUMN_SIDECARS_PER_COLUMN * num_columns)
             }
-            BeaconRequestMessage::DataColumnSidecarsByRoot(req) => {
-                req.inner.iter().map(|id| id.columns.len() as u64).sum()
+            BeaconRequestMessage::DataColumnSidecarsByRoot(request) => {
+                request.inner.iter().map(|id| id.columns.len() as u64).sum()
             }
         }
     }

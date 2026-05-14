@@ -29,23 +29,29 @@ impl<'de> Deserialize<'de> for ID {
     where
         D: serde::Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        match s.to_lowercase().as_str() {
+        let string = String::deserialize(deserializer)?;
+        match string.to_lowercase().as_str() {
             "finalized" => Ok(ID::Finalized),
             "genesis" => Ok(ID::Genesis),
             "head" => Ok(ID::Head),
             "justified" => Ok(ID::Justified),
             _ => {
-                if s.starts_with("0x") {
-                    B256::from_str(&s).map(ID::Root).map_err(|err| {
-                        serde::de::Error::custom(format!("Invalid hex root: {s}, error: {err}"))
+                if string.starts_with("0x") {
+                    B256::from_str(&string).map(ID::Root).map_err(|err| {
+                        serde::de::Error::custom(format!(
+                            "Invalid hex root: {string}, error: {err}"
+                        ))
                     })
-                } else if s.chars().all(|c| c.is_ascii_digit()) {
-                    s.parse::<u64>().map(ID::Slot).map_err(|err| {
-                        serde::de::Error::custom(format!("Invalid slot number: {s}, error: {err}"))
+                } else if string.chars().all(|c| c.is_ascii_digit()) {
+                    string.parse::<u64>().map(ID::Slot).map_err(|err| {
+                        serde::de::Error::custom(format!(
+                            "Invalid slot number: {string}, error: {err}"
+                        ))
                     })
                 } else {
-                    Err(serde::de::Error::custom(format!("Invalid state ID: {s}")))
+                    Err(serde::de::Error::custom(format!(
+                        "Invalid state ID: {string}"
+                    )))
                 }
             }
         }

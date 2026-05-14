@@ -611,10 +611,10 @@ impl Store {
             }
 
             let xmss_keys: Vec<_> = raw_entries.iter().map(|err| err.1).collect();
-            let xmss_sigs: Vec<_> = raw_entries.iter().map(|err| err.2).collect();
+            let xmss_signatures: Vec<_> = raw_entries.iter().map(|err| err.2).collect();
 
             let aggregated_signature =
-                aggregate_signatures(&xmss_keys, &xmss_sigs, &data_root.0, data.slot as u32)?;
+                aggregate_signatures(&xmss_keys, &xmss_signatures, &data_root.0, data.slot as u32)?;
 
             let proof = AggregatedSignatureProof {
                 participants: bits.clone(),

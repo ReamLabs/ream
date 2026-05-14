@@ -130,9 +130,9 @@ macro_rules! test_fork_choice {
                             utils::read_ssz_snappy(&case_dir.join("anchor_block.ssz_snappy"))
                                 .expect("Failed to read anchor_block.ssz_snappy");
 
-                        let ream_dir = setup_data_dir("ream", None, true).expect("Failed to create data dir");
+                        let ream_directory = setup_data_dir("ream", None, true).expect("Failed to create data directory");
 
-                        let ream_db = ReamDB::new(ream_dir).expect("unable to init Ream Database");
+                        let ream_db = ReamDB::new(ream_directory).expect("unable to init Ream Database");
                         let beacon_db = ream_db.init_beacon_db().expect("count not find reabdb");
                         let mut store = get_forkchoice_store(anchor_state, anchor_block, beacon_db)
                             .expect("get_forkchoice_store failed");

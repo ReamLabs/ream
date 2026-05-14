@@ -44,14 +44,15 @@ mod tests {
         )
         .await;
 
-        let req = test::TestRequest::get()
+        let request = test::TestRequest::get()
             .uri("/checkpoints/justified")
             .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
         assert!(
-            resp.headers()
+            response
+                .headers()
                 .get("content-type")
                 .unwrap()
                 .to_str()
@@ -59,7 +60,7 @@ mod tests {
                 .contains("application/json")
         );
 
-        let body = test::read_body(resp).await;
+        let body = test::read_body(response).await;
         let checkpoint: Checkpoint = serde_json::from_slice(&body).expect("Failed to decode JSON");
         assert_eq!(checkpoint.slot, 0);
     }

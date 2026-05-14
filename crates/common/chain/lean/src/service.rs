@@ -43,6 +43,10 @@ use crate::{
     clock::{create_lean_clock_interval, get_initial_tick_count},
     messages::{LeanChainServiceMessage, ServiceResponse},
     p2p_request::{LeanP2PRequest, P2PCallbackRequest},
+    service::LeanP2PRequest::{
+        EndOfStream, GossipAggregatedAttestation, GossipAttestation, GossipBlock, InvalidRequest,
+        Request, Response,
+    },
     slot::get_current_slot,
     sync::{
         BackfillState, QueueRecovery, SyncStatus,
@@ -439,7 +443,7 @@ impl LeanChainService {
                                 warn!("Failed to handle process block message: {err:?}");
                             }
 
-                            if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipBlock(signed_block)) {
+                            if need_gossip && let Err(err) = self.outbound_p2p.send(GossipBlock(signed_block)) {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
@@ -464,7 +468,7 @@ impl LeanChainService {
                                 warn!("Failed to handle process attestation message: {err:?}");
                             }
 
-                            if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipAttestation { subnet_id, attestation: signed_attestation }) {
+                            if need_gossip && let Err(err) = self.outbound_p2p.send(GossipAttestation { subnet_id, attestation: signed_attestation }) {
                                 warn!("Failed to send item to outbound gossip channel: {err:?}");
                             }
                         }
@@ -481,7 +485,7 @@ impl LeanChainService {
                                 warn!("Failed to handle process aggregated attestation message: {err:?}");
                             }
 
-                            if need_gossip && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::GossipAggregatedAttestation(aggregated_attestation)) {
+                            if need_gossip && let Err(err) = self.outbound_p2p.send(GossipAggregatedAttestation(aggregated_attestation)) {
                                 warn!("Failed to send aggregated attestation to outbound gossip channel: {err:?}");
                             }
                         }
@@ -982,7 +986,7 @@ impl LeanChainService {
 
     fn request_block_by_root_from_peer(&mut self, peer_id: PeerId, root: B256) -> bool {
         let (callback, rx) = mpsc::channel(100);
-        if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::Request {
+        if let Err(err) = self.outbound_p2p.send(Request {
             peer_id,
             callback,
             message: P2PCallbackRequest::BlocksByRoot { roots: vec![root] },
@@ -2126,7 +2130,7 @@ impl LeanChainService {
                 for root in blocks_by_root_v1_request.roots {
                     match block_provider.get(root) {
                         Ok(Some(block)) => {
-                            if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::Response {
+                            if let Err(err) = self.outbound_p2p.send(Response {
                                 peer_id,
                                 stream_id,
                                 connection_id,
@@ -2143,7 +2147,7 @@ impl LeanChainService {
                         }
                     }
                 }
-                if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::EndOfStream {
+                if let Err(err) = self.outbound_p2p.send(EndOfStream {
                     peer_id,
                     stream_id,
                     connection_id,
@@ -2151,18 +2155,18 @@ impl LeanChainService {
                     warn!("Failed to send end of stream: {err:?}");
                 }
             }
-            LeanRequestMessage::BlocksByRange(req) => {
-                if req.count == 0
-                    || req.count > MAX_REQUEST_BLOCKS
-                    || req.start_slot.checked_add(req.count).is_none()
+            LeanRequestMessage::BlocksByRange(request) => {
+                if request.count == 0
+                    || request.count > MAX_REQUEST_BLOCKS
+                    || request.start_slot.checked_add(request.count).is_none()
                 {
-                    if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::InvalidRequest {
+                    if let Err(err) = self.outbound_p2p.send(InvalidRequest {
                         peer_id,
                         stream_id,
                         connection_id,
                         reason: format!(
                             "invalid BlocksByRange count {} from start_slot {}",
-                            req.count, req.start_slot
+                            request.count, request.start_slot
                         ),
                     }) {
                         warn!(
@@ -2177,10 +2181,10 @@ impl LeanChainService {
                     (store.slot_index_provider(), store.block_provider())
                 };
 
-                for slot in (req.start_slot..).take(req.count as usize) {
+                for slot in (request.start_slot..).take(request.count as usize) {
                     if let Ok(Some(root)) = slot_index_provider.get(slot)
                         && let Ok(Some(block)) = block_provider.get(root)
-                        && let Err(err) = self.outbound_p2p.send(LeanP2PRequest::Response {
+                        && let Err(err) = self.outbound_p2p.send(Response {
                             peer_id,
                             stream_id,
                             connection_id,
@@ -2190,7 +2194,7 @@ impl LeanChainService {
                         warn!("Failed to send block to peer {peer_id}: {err:?}");
                     }
                 }
-                if let Err(err) = self.outbound_p2p.send(LeanP2PRequest::EndOfStream {
+                if let Err(err) = self.outbound_p2p.send(EndOfStream {
                     peer_id,
                     stream_id,
                     connection_id,
@@ -2707,7 +2711,10 @@ mod tests {
     use ream_storage::tables::{field::REDBField, table::REDBTable};
     use ream_sync::rwlock::Writer;
     use ream_test_utils::store::sample_store;
-    use tokio::sync::{mpsc, oneshot};
+    use tokio::{
+        sync::{mpsc, oneshot},
+        time::sleep,
+    };
     use tree_hash::TreeHash;
 
     use super::{InflightRootRequest, LeanChainService, SyncBlockSource};
@@ -2935,10 +2942,7 @@ complete(start=60, fetched_through=57, jobs=0)"
 
         assert!(!service.should_run_backfill_sync().await);
 
-        tokio::time::sleep(
-            super::SYNCED_BACKFILL_GAP_PERSISTENCE_THRESHOLD + Duration::from_millis(50),
-        )
-        .await;
+        sleep(super::SYNCED_BACKFILL_GAP_PERSISTENCE_THRESHOLD + Duration::from_millis(50)).await;
 
         assert!(service.should_run_backfill_sync().await);
     }

@@ -33,8 +33,8 @@ impl Encodable for ToAddress {
             ToAddress::Empty => {
                 out.put_u8(EMPTY_STRING_CODE);
             }
-            ToAddress::Exists(addr) => {
-                addr.0.encode(out);
+            ToAddress::Exists(address) => {
+                address.0.encode(out);
             }
         }
     }
