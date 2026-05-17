@@ -14,7 +14,7 @@ use ream_consensus_lean::{
     block::{Block, BlockBody, BlockWithSignatures, SignedBlock},
     checkpoint::Checkpoint,
     slot::is_justifiable_after,
-    state::LeanState,
+    state::{LeanState, attestation_data_matches_chain},
     validator::{Validator, is_proposer},
 };
 use ream_consensus_misc::constants::lean::{
@@ -739,7 +739,122 @@ impl Store {
         let mut attestations: VariableList<AggregatedAttestations, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
 
+        let mut current_justified = if head_state.latest_block_header.slot == 0 {
+            let mut justified_copy = head_state.latest_justified;
+            justified_copy.root = parent_root;
+            justified_copy
+        } else {
+            head_state.latest_justified
+        };
+
+        let mut current_finalized_slot = head_state.latest_finalized.slot;
+
+        let mut current_justified_slots = head_state.justified_slots.clone();
+
+        let num_empty_slots = slot
+            .saturating_sub(head_state.latest_block_header.slot)
+            .saturating_sub(1);
+        let mut extended_historical_block_hashes = head_state.historical_block_hashes.to_vec();
+        extended_historical_block_hashes.push(parent_root);
+        extended_historical_block_hashes.extend(vec![B256::ZERO; num_empty_slots as usize]);
+
+        let mut processed_attestation_data: HashSet<AttestationData> = HashSet::new();
+
+        let mut sorted_candidates: Vec<_> = available_signed_attestations.values().collect();
+        sorted_candidates.sort_by_key(|signed_attestaion| signed_attestaion.message.target.slot);
+
         loop {
+            let mut new_attestations: VariableList<AggregatedAttestations, U4096> =
+                VariableList::empty();
+
+            for signed_attestation in &sorted_candidates {
+                let data = &signed_attestation.message;
+
+                if processed_attestation_data.len() >= MAX_ATTESTATIONS_DATA as usize
+                    && !processed_attestation_data.contains(data)
+                {
+                    break;
+                }
+
+                if !block_provider.contains_key(data.head.root) {
+                    continue;
+                }
+
+                if !(attestation_data_matches_chain(
+                    &extended_historical_block_hashes,
+                    data.clone(),
+                )?) {
+                    continue;
+                }
+
+                let source_id = data.source.slot as usize;
+                let current_source_justified = source_id < current_justified_slots.len()
+                    && current_justified_slots.get(source_id).unwrap_or(false);
+
+                let head_source_justified = source_id < head_state.justified_slots.len()
+                    && head_state.justified_slots.get(source_id).unwrap_or(false);
+
+                let source_is_justified = data.source.slot <= current_finalized_slot
+                    || current_source_justified
+                    || head_source_justified
+                    || data.source == current_justified;
+
+                if !source_is_justified {
+                    continue;
+                }
+
+                let is_genesis_self_vote = data.source.slot == 0 && data.target.slot == 0;
+
+                let target_id = data.target.slot as usize;
+                let current_target_justified = target_id < current_justified_slots.len()
+                    && current_justified_slots.get(target_id).unwrap_or(false);
+
+                let head_target_justified = target_id < head_state.justified_slots.len()
+                    && head_state.justified_slots.get(target_id).unwrap_or(false);
+
+                let target_is_justified = data.target.slot <= current_finalized_slot
+                    || current_target_justified
+                    || head_target_justified
+                    || data.target == current_justified;
+
+                if !is_genesis_self_vote && target_is_justified {
+                    continue;
+                }
+
+                let validator_id = signed_attestation.validator_id;
+                let attestation = AggregatedAttestations {
+                    validator_id,
+                    data: data.clone(),
+                };
+
+                if attestations.contains(&attestation) {
+                    continue;
+                }
+
+                let data_root = data.tree_hash_root();
+                let signature_key = SignatureKey::from_parts(validator_id, data_root);
+                let has_proof =
+                    latest_known_aggregated_payloads_provider.contains_key(&signature_key);
+
+                if has_proof {
+                    new_attestations
+                        .push(attestation)
+                        .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
+
+                    processed_attestation_data.insert(data.clone());
+                }
+            }
+
+            if new_attestations.is_empty() {
+                break;
+            }
+
+            for attestation in new_attestations {
+                attestations
+                    .push(attestation)
+                    .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
+            }
+
             let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
             for attestation in attestations.iter() {
                 groups
@@ -779,55 +894,21 @@ impl Store {
                     attestations: attestations_list,
                 },
             };
+
             let mut advanced_state = head_state.clone();
             advanced_state.process_slots(slot)?;
             advanced_state.process_block(&candidate_block)?;
 
-            let mut new_attestations: VariableList<AggregatedAttestations, U4096> =
-                VariableList::empty();
-
-            for signed_attestation in available_signed_attestations.values() {
-                let data = &signed_attestation.message;
-                let validator_id = signed_attestation.validator_id;
-                let data_root = data.tree_hash_root();
-                let signature_key = SignatureKey::from_parts(validator_id, data_root);
-
-                let attestation = AggregatedAttestations {
-                    validator_id,
-                    data: data.clone(),
-                };
-
-                if !block_provider.contains_key(data.head.root) {
-                    continue;
-                }
-
-                if data.source != advanced_state.latest_justified {
-                    continue;
-                }
-
-                if attestations.contains(&attestation) {
-                    continue;
-                }
-
-                let has_proof =
-                    latest_known_aggregated_payloads_provider.contains_key(&signature_key);
-
-                if has_proof {
-                    new_attestations
-                        .push(attestation)
-                        .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
-                }
+            if advanced_state.latest_justified != current_justified
+                || advanced_state.latest_finalized.slot != current_finalized_slot
+            {
+                current_justified = advanced_state.latest_justified;
+                current_finalized_slot = advanced_state.latest_finalized.slot;
+                current_justified_slots = advanced_state.justified_slots.clone();
+                continue;
             }
 
-            if new_attestations.is_empty() {
-                break;
-            }
-
-            for attestation in new_attestations {
-                attestations
-                    .push(attestation)
-                    .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
-            }
+            break;
         }
 
         let attestations_vec: Vec<_> = attestations.to_vec();
