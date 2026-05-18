@@ -1229,11 +1229,7 @@ impl Store {
                 for (key, _) in latest_new_aggregated_payloads_provider
                     .iter()?
                     .into_iter()
-                    .chain(
-                        latest_known_aggregated_payloads_provider
-                            .iter()?
-                            .into_iter(),
-                    )
+                    .chain(latest_known_aggregated_payloads_provider.iter()?)
                 {
                     if key.validator_id != validator || key.data_root == data_root {
                         continue;
@@ -1632,7 +1628,7 @@ fn compact_aggregated_proofs(
     let mut out_attestations = Vec::with_capacity(order.len());
     let mut out_proofs = Vec::with_capacity(order.len());
 
-    for (data, indices) in order.into_iter().zip(groups.into_iter()) {
+    for (data, indices) in order.into_iter().zip(groups) {
         if let [single_index] = indices.as_slice() {
             out_attestations.push(
                 remaining_attestations
