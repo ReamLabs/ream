@@ -20,7 +20,7 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    attestation::{AggregatedAttestation, AggregatedSignatureProof},
+    attestation::{AggregatedAttestation, AggregatedSignatureProof, AttestationData},
     block::{Block, BlockBody, BlockHeader},
     checkpoint::Checkpoint,
     config::Config,
@@ -363,34 +363,16 @@ impl LeanState {
                 continue;
             }
 
-            if attestation.source().root
-                != *self
-                    .historical_block_hashes
-                    .get(attestation.source().slot as usize)
-                    .ok_or(anyhow!("Source slot not found in historical_block_hashes"))?
-            {
+            if !attestation_data_matches_chain(
+                &self.historical_block_hashes,
+                attestation.message.clone(),
+            )? {
                 info!(
-                    reason = "Source block not in historical block hashes",
+                    reason = "Attestation data does not match canonical chain historical hashes",
                     source_slot = attestation.source().slot,
                     target_slot = attestation.target().slot,
                     "Skipping attestations by Validator {}",
                     attestation.aggregation_bits,
-                );
-                continue;
-            }
-
-            if attestation.target().root
-                != *self
-                    .historical_block_hashes
-                    .get(attestation.target().slot as usize)
-                    .ok_or(anyhow!("Target slot not found in historical_block_hashes"))?
-            {
-                info!(
-                    reason = "Target block not in historical block hashes",
-                    source_slot = attestation.source().slot,
-                    target_slot = attestation.target().slot,
-                    "Skipping attestations by Validator {}",
-                    attestation.aggregation_bits
                 );
                 continue;
             }
@@ -557,6 +539,31 @@ impl LeanState {
         stop_timer(timer);
         Ok(())
     }
+}
+
+pub fn attestation_data_matches_chain(
+    historical_block_hashes: &[B256],
+    attestation_data: AttestationData,
+) -> anyhow::Result<bool> {
+    if attestation_data.source.root == B256::ZERO || attestation_data.target.root == B256::ZERO {
+        return Ok(false);
+    }
+
+    let source_slot = attestation_data.source.slot as usize;
+    let target_slot = attestation_data.target.slot as usize;
+
+    if source_slot >= historical_block_hashes.len() {
+        return Ok(false);
+    }
+
+    if target_slot >= historical_block_hashes.len() {
+        return Ok(false);
+    }
+
+    let matches = attestation_data.source.root == historical_block_hashes[source_slot]
+        && attestation_data.target.root == historical_block_hashes[target_slot];
+
+    Ok(matches)
 }
 
 #[cfg(test)]
