@@ -22,10 +22,13 @@ use ream_consensus_misc::constants::lean::{
     attestation_committee_count,
 };
 use ream_metrics::{
-    ATTESTATION_COMMITTEE_SUBNET, FINALIZATIONS_TOTAL, FINALIZED_SLOT,
-    FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT,
-    LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS, LATEST_NEW_AGGREGATED_PAYLOADS,
-    LEAN_TICK_INTERVAL_DURATION_SECONDS, PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL,
+    ATTESTATION_COMMITTEE_SUBNET, ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL,
+    ATTESTATIONS_VALID_TOTAL, FINALIZATIONS_TOTAL, FINALIZED_SLOT,
+    FORK_CHOICE_BLOCK_PROCESSING_TIME, FORK_CHOICE_REORG_DEPTH, FORK_CHOICE_REORGS_TOTAL,
+    HEAD_SLOT, JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT,
+    LATEST_KNOWN_AGGREGATED_PAYLOADS, LATEST_NEW_AGGREGATED_PAYLOADS,
+    LEAN_TICK_INTERVAL_DURATION_SECONDS, PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME,
+    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_TOTAL,
     PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME,
     PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL,
     PQ_SIG_ATTESTATION_VERIFICATION_TIME, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
@@ -388,14 +391,22 @@ impl Store {
 
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
-        let (latest_justified_provider, head_provider, latest_known_aggregated_payloads_provider) = {
+        let (
+            latest_justified_provider,
+            head_provider,
+            latest_known_aggregated_payloads_provider,
+            block_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.latest_justified_provider(),
                 db.head_provider(),
                 db.latest_known_aggregated_payloads_provider(),
+                db.block_provider(),
             )
         };
+
+        let old_head = head_provider.get().ok();
 
         let attestations = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
@@ -428,6 +439,45 @@ impl Store {
         };
 
         head_provider.insert(new_head)?;
+
+        if let Some(old_head) = old_head
+            && new_head != old_head
+        {
+            // Walk new head's ancestry to check if old head is an ancestor (no reorg)
+            // and collect the chain set for depth computation if it is a reorg.
+            let mut new_chain = HashSet::new();
+            let mut cursor = new_head;
+            let mut is_extension = false;
+            for _ in 0..200u32 {
+                new_chain.insert(cursor);
+                if cursor == old_head {
+                    is_extension = true;
+                    break;
+                }
+                match block_provider.get(cursor)? {
+                    Some(block) => cursor = block.block.parent_root,
+                    None => break,
+                }
+            }
+
+            if !is_extension {
+                let mut depth: f64 = 0.0;
+                let mut oc = old_head;
+                while !new_chain.contains(&oc) && depth < 200.0 {
+                    match block_provider.get(oc)? {
+                        Some(block) => {
+                            oc = block.block.parent_root;
+                            depth += 1.0;
+                        }
+                        None => break,
+                    }
+                }
+                inc_int_counter_vec(&FORK_CHOICE_REORGS_TOTAL, &[]);
+                FORK_CHOICE_REORG_DEPTH
+                    .with_label_values(&[])
+                    .observe(depth);
+            }
+        }
 
         Ok(())
     }
@@ -613,8 +663,12 @@ impl Store {
             let xmss_keys: Vec<_> = raw_entries.iter().map(|err| err.1).collect();
             let xmss_signatures: Vec<_> = raw_entries.iter().map(|err| err.2).collect();
 
-            let aggregated_signature =
-                aggregate_signatures(&xmss_keys, &xmss_signatures, &data_root.0, data.slot as u32)?;
+            let building_timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
+            let aggregated_signature_bytes =
+                aggregate_signatures(&xmss_keys, &xmss_signatures, &data_root.0, data.slot as u32);
+            stop_timer(building_timer);
+            let aggregated_signature = aggregated_signature_bytes?;
+            inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
 
             let proof = AggregatedSignatureProof {
                 participants: bits.clone(),
@@ -1162,6 +1216,7 @@ impl Store {
         &self,
         signed_attestation: &SignedAttestation,
     ) -> anyhow::Result<()> {
+        let _timer = start_timer(&ATTESTATION_VALIDATION_TIME, &[]);
         let data = &signed_attestation.message;
 
         let (block_provider, time_provider) = {
@@ -1231,12 +1286,20 @@ impl Store {
         &mut self,
         signed_attestation: SignedAggregatedAttestation,
     ) -> anyhow::Result<()> {
-        self.validate_attestation(&SignedAttestation {
-            validator_id: 0,
-            message: signed_attestation.data.clone(),
-            signature: Signature::blank(),
-        })
-        .await?;
+        match self
+            .validate_attestation(&SignedAttestation {
+                validator_id: 0,
+                message: signed_attestation.data.clone(),
+                signature: Signature::blank(),
+            })
+            .await
+        {
+            Ok(()) => inc_int_counter_vec(&ATTESTATIONS_VALID_TOTAL, &[]),
+            Err(err) => {
+                inc_int_counter_vec(&ATTESTATIONS_INVALID_TOTAL, &[]);
+                return Err(err);
+            }
+        }
 
         let (
             attestation_data_by_root_provider,
@@ -1536,7 +1599,13 @@ impl Store {
             )
         };
 
-        self.validate_attestation(&signed_attestation).await?;
+        match self.validate_attestation(&signed_attestation).await {
+            Ok(()) => inc_int_counter_vec(&ATTESTATIONS_VALID_TOTAL, &[]),
+            Err(err) => {
+                inc_int_counter_vec(&ATTESTATIONS_INVALID_TOTAL, &[]);
+                return Err(err);
+            }
+        }
 
         let key_state = state_provider
             .get(attestation_data.target.root)?
