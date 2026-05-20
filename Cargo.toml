@@ -102,8 +102,8 @@ itertools = "0.14"
 jsonwebtoken = "9.3.1"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 lazy_static = "1.5.0"
-lean-multisig = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "d853f1ce821e40b5b5d1fe4e9cca655d24938ceb" }
-leansig = { git = "https://github.com/leanEthereum/leanSig.git", branch = "devnet4" }
+lean-multisig = { git = "https://github.com/leanEthereum/leanMultisig.git", rev = "5eba3b141455349d7cdbf0f5d3ccfb2e640b02aa" }
+leansig = { git = "https://github.com/leanEthereum//leanSig.git", branch = "devnet4" }
 libp2p = { version = "0.56", default-features = false, features = ["identify", "yamux", "noise", "dns", "serde", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
 libp2p-identity = "0.2.12"
 libp2p-mplex = "0.43.1"
@@ -185,6 +185,9 @@ ream-validator-lean = { path = "crates/common/validator/lean", default-features 
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git", rev = "c14a9ad96436e6b8b631faf49a3666e4558b71ae" }
+
+[patch."https://github.com/leanEthereum/leanSig"]
+leansig = { git = "https://github.com/leanEthereum//leanSig.git", branch = "devnet4" }
 
 [profile.test]
 inherits = "release"
