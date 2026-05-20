@@ -90,12 +90,17 @@ lazy_static::lazy_static! {
     ).expect("failed to create VALIDATORS_COUNT int gauge vec");
 
     // Fork-Choice Metrics
-    pub static ref FORK_CHOICE_BLOCK_PROCESSING_TIME: HistogramVec = register_histogram_vec_with_registry!(
-        "lean_fork_choice_block_processing_time_seconds",
-        "Time taken to process block",
-        &[],
-        default_registry()
-    ).expect("failed to create FORK_CHOICE_BLOCK_PROCESSING_TIME histogram vec");
+    pub static ref FORK_CHOICE_BLOCK_PROCESSING_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_fork_choice_block_processing_time_seconds",
+            "Time taken to process block"
+        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 1.0, 1.25, 1.5, 2.0, 4.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create FORK_CHOICE_BLOCK_PROCESSING_TIME histogram vec")
+    };
 
     pub static ref ATTESTATIONS_VALID_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
         "lean_attestations_valid_total",
@@ -111,12 +116,17 @@ lazy_static::lazy_static! {
         default_registry()
     ).expect("failed to create ATTESTATIONS_INVALID_TOTAL int counter vec");
 
-    pub static ref ATTESTATION_VALIDATION_TIME: HistogramVec = register_histogram_vec_with_registry!(
-        "lean_attestation_validation_time_seconds",
-        "Time taken to validate attestation",
-        &[],
-        default_registry()
-    ).expect("failed to create ATTESTATION_VALIDATION_TIME histogram vec");
+    pub static ref ATTESTATION_VALIDATION_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_attestation_validation_time_seconds",
+            "Time taken to validate attestation"
+        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 1.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create ATTESTATION_VALIDATION_TIME histogram vec")
+    };
 
     pub static ref FORK_CHOICE_REORGS_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
         "lean_fork_choice_reorgs_total",
@@ -138,19 +148,29 @@ lazy_static::lazy_static! {
     };
 
     // State Transition Metrics
-    pub static ref STATE_TRANSITION_TIME: HistogramVec = register_histogram_vec_with_registry!(
-        "lean_state_transition_time_seconds",
-        "Time taken to process state transition",
-        &[],
-        default_registry()
-    ).expect("failed to create STATE_TRANSITION_TIME histogram vec");
+    pub static ref STATE_TRANSITION_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_state_transition_time_seconds",
+            "Time taken to process state transition"
+        ).buckets(vec![0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create STATE_TRANSITION_TIME histogram vec")
+    };
 
-    pub static ref STATE_TRANSITION_BLOCK_PROCESSING_TIME: HistogramVec = register_histogram_vec_with_registry!(
-        "lean_state_transition_block_processing_time_seconds",
-        "Time taken to process block in state transition",
-        &[],
-        default_registry()
-    ).expect("failed to create STATE_TRANSITION_BLOCK_PROCESSING_TIME histogram vec");
+    pub static ref STATE_TRANSITION_BLOCK_PROCESSING_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_state_transition_block_processing_time_seconds",
+            "Time taken to process block in state transition"
+        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 1.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create STATE_TRANSITION_BLOCK_PROCESSING_TIME histogram vec")
+    };
 
     pub static ref STATE_TRANSITION_SLOTS_PROCESSED_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
         "lean_state_transition_slots_processed_total",
@@ -159,12 +179,17 @@ lazy_static::lazy_static! {
         default_registry()
     ).expect("failed to create STATE_TRANSITION_SLOTS_PROCESSED_TOTAL int counter vec");
 
-    pub static ref STATE_TRANSITION_SLOTS_PROCESSING_TIME: HistogramVec = register_histogram_vec_with_registry!(
-        "lean_state_transition_slots_processing_time_seconds",
-        "Time taken to process slots in state transition",
-        &[],
-        default_registry()
-    ).expect("failed to create STATE_TRANSITION_SLOTS_PROCESSING_TIME histogram vec");
+    pub static ref STATE_TRANSITION_SLOTS_PROCESSING_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_state_transition_slots_processing_time_seconds",
+            "Time taken to process slots in state transition"
+        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 1.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create STATE_TRANSITION_SLOTS_PROCESSING_TIME histogram vec")
+    };
 
     pub static ref STATE_TRANSITION_ATTESTATIONS_PROCESSED_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
         "lean_state_transition_attestations_processed_total",
@@ -173,12 +198,17 @@ lazy_static::lazy_static! {
         default_registry()
     ).expect("failed to create STATE_TRANSITION_ATTESTATIONS_PROCESSED_TOTAL int counter vec");
 
-    pub static ref STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME: HistogramVec = register_histogram_vec_with_registry!(
-        "lean_state_transition_attestations_processing_time_seconds",
-        "Time taken to process attestations in state transition",
-        &[],
-        default_registry()
-    ).expect("failed to create STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME histogram vec");
+    pub static ref STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_state_transition_attestations_processing_time_seconds",
+            "Time taken to process attestations in state transition"
+        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 1.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME histogram vec")
+    };
 
     // Finalization Metrics
     pub static ref FINALIZATIONS_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
@@ -348,7 +378,7 @@ lazy_static::lazy_static! {
         let opts = HistogramOpts::new(
             "lean_committee_signatures_aggregation_time_seconds",
             "Time taken to aggregate committee signatures"
-        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]);
+        ).buckets(vec![0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0]);
         register_histogram_vec_with_registry!(
             opts,
             &[],
@@ -377,7 +407,7 @@ lazy_static::lazy_static! {
         let histogram_opts = HistogramOpts::new(
             "lean_tick_interval_duration_seconds",
             "Tracks elapsed time between clock ticks in seconds"
-        ).buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]);
+        ).buckets(vec![0.4, 0.6, 0.75, 0.8, 0.805, 0.81, 0.815, 0.82, 0.825, 0.85, 0.9, 1.0, 1.2, 1.6]);
         register_histogram_vec_with_registry!(
             histogram_opts,
             &[],

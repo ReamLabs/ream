@@ -22,10 +22,12 @@ use ream_consensus_misc::constants::lean::{
     attestation_committee_count,
 };
 use ream_metrics::{
-    ATTESTATION_COMMITTEE_SUBNET, FINALIZATIONS_TOTAL, FINALIZED_SLOT,
+    ATTESTATION_COMMITTEE_SUBNET, ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL,
+    ATTESTATIONS_VALID_TOTAL, FINALIZATIONS_TOTAL, FINALIZED_SLOT,
     FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT,
     LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS, LATEST_NEW_AGGREGATED_PAYLOADS,
-    LEAN_TICK_INTERVAL_DURATION_SECONDS, PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL,
+    LEAN_TICK_INTERVAL_DURATION_SECONDS, PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME,
+    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_TOTAL,
     PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME,
     PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL,
     PQ_SIG_ATTESTATION_VERIFICATION_TIME, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
@@ -613,8 +615,12 @@ impl Store {
             let xmss_keys: Vec<_> = raw_entries.iter().map(|err| err.1).collect();
             let xmss_signatures: Vec<_> = raw_entries.iter().map(|err| err.2).collect();
 
-            let aggregated_signature =
-                aggregate_signatures(&xmss_keys, &xmss_signatures, &data_root.0, data.slot as u32)?;
+            let building_timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
+            let aggregated_signature_bytes =
+                aggregate_signatures(&xmss_keys, &xmss_signatures, &data_root.0, data.slot as u32);
+            stop_timer(building_timer);
+            let aggregated_signature = aggregated_signature_bytes?;
+            inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
 
             let proof = AggregatedSignatureProof {
                 participants: bits.clone(),
@@ -1162,6 +1168,7 @@ impl Store {
         &self,
         signed_attestation: &SignedAttestation,
     ) -> anyhow::Result<()> {
+        let _timer = start_timer(&ATTESTATION_VALIDATION_TIME, &[]);
         let data = &signed_attestation.message;
 
         let (block_provider, time_provider) = {
@@ -1231,12 +1238,20 @@ impl Store {
         &mut self,
         signed_attestation: SignedAggregatedAttestation,
     ) -> anyhow::Result<()> {
-        self.validate_attestation(&SignedAttestation {
-            validator_id: 0,
-            message: signed_attestation.data.clone(),
-            signature: Signature::blank(),
-        })
-        .await?;
+        match self
+            .validate_attestation(&SignedAttestation {
+                validator_id: 0,
+                message: signed_attestation.data.clone(),
+                signature: Signature::blank(),
+            })
+            .await
+        {
+            Ok(()) => inc_int_counter_vec(&ATTESTATIONS_VALID_TOTAL, &[]),
+            Err(err) => {
+                inc_int_counter_vec(&ATTESTATIONS_INVALID_TOTAL, &[]);
+                return Err(err);
+            }
+        }
 
         let (
             attestation_data_by_root_provider,
@@ -1536,7 +1551,13 @@ impl Store {
             )
         };
 
-        self.validate_attestation(&signed_attestation).await?;
+        match self.validate_attestation(&signed_attestation).await {
+            Ok(()) => inc_int_counter_vec(&ATTESTATIONS_VALID_TOTAL, &[]),
+            Err(err) => {
+                inc_int_counter_vec(&ATTESTATIONS_INVALID_TOTAL, &[]);
+                return Err(err);
+            }
+        }
 
         let key_state = state_provider
             .get(attestation_data.target.root)?
