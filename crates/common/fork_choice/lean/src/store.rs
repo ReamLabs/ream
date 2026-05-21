@@ -23,15 +23,19 @@ use ream_consensus_misc::constants::lean::{
 };
 use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL,
-    ATTESTATIONS_VALID_TOTAL, FINALIZATIONS_TOTAL, FINALIZED_SLOT,
-    FORK_CHOICE_BLOCK_PROCESSING_TIME, HEAD_SLOT, JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT,
-    LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS, LATEST_NEW_AGGREGATED_PAYLOADS,
-    LEAN_TICK_INTERVAL_DURATION_SECONDS, PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME,
-    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_TOTAL,
-    PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME,
-    PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL,
-    PQ_SIG_ATTESTATION_VERIFICATION_TIME, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
-    inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
+    ATTESTATIONS_VALID_TOTAL, BLOCK_AGGREGATED_PAYLOADS, BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME,
+    BLOCK_BUILDING_SUCCESS_TOTAL, BLOCK_BUILDING_TIME, COMMITTEE_SIGNATURES_AGGREGATION_TIME,
+    FINALIZATIONS_TOTAL, FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME,
+    FORK_CHOICE_REORG_DEPTH, FORK_CHOICE_REORGS_TOTAL, GOSSIP_SIGNATURES, HEAD_SLOT,
+    JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS,
+    LATEST_NEW_AGGREGATED_PAYLOADS, LEAN_TICK_INTERVAL_DURATION_SECONDS,
+    PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
+    PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, PQ_SIG_ATTESTATION_VERIFICATION_TIME,
+    PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
+    inc_int_counter_vec, inc_int_counter_vec_by, observe_histogram_vec, set_int_gauge_vec,
+    start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -390,14 +394,22 @@ impl Store {
 
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
-        let (latest_justified_provider, head_provider, latest_known_aggregated_payloads_provider) = {
+        let (
+            latest_justified_provider,
+            head_provider,
+            latest_known_aggregated_payloads_provider,
+            block_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.latest_justified_provider(),
                 db.head_provider(),
                 db.latest_known_aggregated_payloads_provider(),
+                db.block_provider(),
             )
         };
+
+        let old_head = head_provider.get()?;
 
         let attestations = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
@@ -422,6 +434,27 @@ impl Store {
                 0,
             )
             .await?;
+
+        // Detect fork-choice reorgs: a reorg occurs when the old head is not
+        // an ancestor of the new head (i.e., the canonical chain switched branches).
+        if new_head != old_head {
+            let mut is_forward_progress = false;
+            let mut current = new_head;
+            for _ in 0..100u64 {
+                if current == old_head {
+                    is_forward_progress = true;
+                    break;
+                }
+                match block_provider.get(current)? {
+                    Some(block) => current = block.block.parent_root,
+                    None => break,
+                }
+            }
+            if !is_forward_progress {
+                inc_int_counter_vec(&FORK_CHOICE_REORGS_TOTAL, &[]);
+                FORK_CHOICE_REORG_DEPTH.with_label_values(&[]).observe(1.0);
+            }
+        }
 
         set_int_gauge_vec(&HEAD_SLOT, new_head_slot as i64, &[]);
         *self.network_state.head_checkpoint.write() = Checkpoint {
@@ -621,6 +654,11 @@ impl Store {
             stop_timer(building_timer);
             let aggregated_signature = aggregated_signature_bytes?;
             inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
+            inc_int_counter_vec_by(
+                &PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL,
+                raw_entries.len() as u64,
+                &[],
+            );
 
             let proof = AggregatedSignatureProof {
                 participants: bits.clone(),
@@ -919,6 +957,7 @@ impl Store {
 
         let attestations_vec: Vec<_> = attestations.to_vec();
 
+        let payload_aggregation_timer = start_timer(&BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME, &[]);
         let (aggregated_attestations, aggregated_proofs) =
             self.select_aggregated_proofs(&attestations_vec).await?;
 
@@ -927,6 +966,12 @@ impl Store {
             aggregated_proofs,
             &head_state.validators,
         )?;
+        stop_timer(payload_aggregation_timer);
+        observe_histogram_vec(
+            &BLOCK_AGGREGATED_PAYLOADS,
+            aggregated_proofs.len() as f64,
+            &[],
+        );
 
         let attestations_list =
             VariableList::new(aggregated_attestations).map_err(|err| anyhow!("{err:?}"))?;
@@ -973,6 +1018,7 @@ impl Store {
         };
 
         let head_root = self.get_proposal_head(slot).await?;
+        let building_timer = start_timer(&BLOCK_BUILDING_TIME, &[]);
         let initialize_block_timer = start_timer(&PROPOSE_BLOCK_TIME, &["initialize_block"]);
 
         let head_state = state_provider
@@ -1031,6 +1077,9 @@ impl Store {
         if finalized_advanced {
             self.prune_stale_attestation_data().await?;
         }
+
+        stop_timer(building_timer);
+        inc_int_counter_vec(&BLOCK_BUILDING_SUCCESS_TOTAL, &[]);
 
         Ok(BlockWithSignatures {
             block: candidate_block,
@@ -1168,7 +1217,7 @@ impl Store {
         &self,
         signed_attestation: &SignedAttestation,
     ) -> anyhow::Result<()> {
-        let _timer = start_timer(&ATTESTATION_VALIDATION_TIME, &[]);
+        let timer = start_timer(&ATTESTATION_VALIDATION_TIME, &[]);
         let data = &signed_attestation.message;
 
         let (block_provider, time_provider) = {
@@ -1231,6 +1280,7 @@ impl Store {
             "Attestation too far in future"
         );
 
+        stop_timer(timer);
         Ok(())
     }
 
@@ -1413,8 +1463,11 @@ impl Store {
             .get(head_root)?
             .ok_or_else(|| anyhow!("Head state not found"))?;
 
+        let signature_keys = attestation_signatures_provider.get_keys()?;
+        set_int_gauge_vec(&GOSSIP_SIGNATURES, signature_keys.len() as i64, &[]);
+
         let mut attestation_signatures = Vec::new();
-        for signature_key in attestation_signatures_provider.get_keys()? {
+        for signature_key in signature_keys {
             if let Some(attestation_data) =
                 attestation_data_by_root_provider.get(signature_key.data_root)?
             {
@@ -1451,6 +1504,7 @@ impl Store {
             }
         }
 
+        let aggregation_timer = start_timer(&COMMITTEE_SIGNATURES_AGGREGATION_TIME, &[]);
         let signed_attestations = self.state_aggregate(
             &head_state,
             &attestation_signatures,
@@ -1459,6 +1513,7 @@ impl Store {
             Some(&known_payloads),
             true,
         )?;
+        stop_timer(aggregation_timer);
 
         let mut aggregated_data_roots = HashSet::new();
         let mut next_new_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>> =
