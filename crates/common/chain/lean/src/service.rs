@@ -41,7 +41,7 @@ use tree_hash::TreeHash;
 
 use crate::{
     clock::{create_lean_clock_interval, get_initial_tick_count},
-    messages::{LeanChainServiceMessage, ServiceResponse},
+    messages::{DutyGateDecision, DutyKind, LeanChainServiceMessage, ServiceResponse},
     p2p_request::{LeanP2PRequest, P2PCallbackRequest},
     service::LeanP2PRequest::{
         EndOfStream, GossipAggregatedAttestation, GossipAttestation, GossipBlock, InvalidRequest,
@@ -241,6 +241,9 @@ pub struct LeanChainService {
     pending_callbacks: FuturesUnordered<CallbackFuture>,
     is_aggregator: bool,
     telemetry: SyncTelemetry,
+    /// Hysteresis flag for the sync-lag duty gate. While true, the gate keeps
+    /// silencing duties until lag drops below `SYNC_LAG_THRESHOLD - HYSTERESIS_BAND`.
+    duty_gate_closed: bool,
 }
 
 impl LeanChainService {
@@ -268,6 +271,7 @@ impl LeanChainService {
             pending_job_requests: VecDeque::new(),
             is_aggregator,
             telemetry: SyncTelemetry::from_env(),
+            duty_gate_closed: false,
         }
     }
 
@@ -2578,6 +2582,19 @@ impl LeanChainService {
         Ok(())
     }
 
+    /// Decide whether duties may run for the given wall-clock slot.
+    ///
+    /// Combines local lag and local-store stall evidence with hysteresis.
+    /// Mutates `duty_gate_closed` on state transitions; only the call site
+    /// owns the resulting counter/log-line attribution.
+    async fn is_synced_for_duties(
+        &mut self,
+        _wall_clock_slot: u64,
+        _duty: DutyKind,
+    ) -> anyhow::Result<DutyGateDecision> {
+        todo!("sync-lag duty gate not yet implemented")
+    }
+
     async fn handle_produce_block(
         &mut self,
         slot: u64,
@@ -2719,7 +2736,7 @@ mod tests {
 
     use super::{InflightRootRequest, LeanChainService, SyncBlockSource};
     use crate::{
-        messages::ServiceResponse,
+        messages::{DutyGateDecision, DutyKind, ServiceResponse},
         p2p_request::LeanP2PRequest,
         sync::{
             SyncStatus,
@@ -2727,6 +2744,323 @@ mod tests {
             job::{pending::PendingJobRequest, queue::JobQueue, request::JobRequest},
         },
     };
+
+    /// Rewrite the head pointer to the block at the given slot. Assumes
+    /// `advance_store_to_slot` already populated the slot index past that slot.
+    async fn set_head_to_slot(store: &Store, slot: u64) {
+        let db = store.store.lock().await;
+        let root = db
+            .slot_index_provider()
+            .get(slot)
+            .expect("slot_index lookup failed")
+            .expect("no block at requested slot");
+        db.head_provider()
+            .insert(root)
+            .expect("failed to overwrite head");
+    }
+
+    /// Build a fresh chain service for gate tests with a store advanced to
+    /// `chain_height` and head pointer set to `head_slot`. The 10-validator
+    /// count matches the other tests in this module.
+    async fn gate_service_with_head(chain_height: u64, head_slot: u64) -> LeanChainService {
+        let mut store = sample_store(10).await;
+        if chain_height > 0 {
+            advance_store_to_slot(&mut store, chain_height, 10).await;
+        }
+        set_head_to_slot(&store, head_slot).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+        service
+    }
+
+    // -------------------------------------------------------------------------
+    // Sync-lag duty gate: Layer 1 — predicate tests
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_sync_lag_gate_within_threshold_allows_duties() {
+        // Head at slot 10. wall-clock sweeps 10..=14 (lag 0..=4).
+        let mut service = gate_service_with_head(10, 10).await;
+
+        for lag in 0..=4_u64 {
+            let decision = service
+                .is_synced_for_duties(10 + lag, DutyKind::Block)
+                .await
+                .expect("gate predicate failed");
+            assert!(
+                matches!(decision, DutyGateDecision::Allowed),
+                "lag {lag} should be allowed, got {decision:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_gate_boundary_lag_equal_threshold_allowed() {
+        // chain extended to 14 so the slot index has fresh evidence at
+        // wall-clock 14 (defeats the network-stall escape), but head is
+        // rewound to slot 10. Lag is exactly 4 — the inclusive boundary.
+        let mut service = gate_service_with_head(14, 10).await;
+
+        let decision = service
+            .is_synced_for_duties(14, DutyKind::Block)
+            .await
+            .expect("gate predicate failed");
+        assert!(
+            matches!(decision, DutyGateDecision::Allowed),
+            "lag == threshold (4) should be allowed, got {decision:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_gate_boundary_lag_one_over_threshold_gated() {
+        // Same setup but wall-clock advances to 15 → lag 5, gate closes.
+        let mut service = gate_service_with_head(15, 10).await;
+
+        let decision = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .expect("gate predicate failed");
+        match decision {
+            DutyGateDecision::Gated {
+                head_slot,
+                lag,
+                max_seen_slot,
+            } => {
+                assert_eq!(head_slot, 10);
+                assert_eq!(lag, 5);
+                assert_eq!(max_seen_slot, 15);
+            }
+            other => panic!("lag == threshold + 1 should be gated, got {other:?}"),
+        }
+        assert!(
+            service.duty_gate_closed,
+            "duty_gate_closed flag must be set after closing transition"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_gate_clock_skew_saturates_to_zero_lag() {
+        // Head at slot 20, wall-clock at slot 15 — head leads by 5. Lag must
+        // saturate at 0 rather than trust the chain unconditionally.
+        let mut service = gate_service_with_head(20, 20).await;
+
+        let decision = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .expect("gate predicate failed");
+        assert!(
+            matches!(decision, DutyGateDecision::Allowed),
+            "head ahead of wall-clock must saturate to zero lag, got {decision:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_gate_network_stall_keeps_duties_live() {
+        // Head at genesis, no fresh blocks anywhere — pure isolation /
+        // network-wide stall. wall-clock at slot 50: local lag = 50,
+        // network lag = 50 (> NETWORK_STALL_THRESHOLD of 8). The escape
+        // hatch must fire so the chain can recover.
+        let mut service = gate_service_with_head(0, 0).await;
+
+        let decision = service
+            .is_synced_for_duties(50, DutyKind::Block)
+            .await
+            .expect("gate predicate failed");
+        assert!(
+            matches!(decision, DutyGateDecision::Allowed),
+            "network stall must keep duties live, got {decision:?}"
+        );
+        assert!(
+            !service.duty_gate_closed,
+            "stall escape must not flip the hysteresis flag"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_gate_hysteresis_prevents_flap() {
+        // Setup: chain advanced to slot 20 (so fresh evidence exists),
+        // head rewound to slot 10. wall-clock fixed at 15 throughout.
+        //
+        // Step 1 (lag 5):  open gate closes.
+        // Step 2 (lag 4):  closed gate stays closed — band is 2, reopen
+        //                  requires lag <= 4 - 2 = 2.
+        // Step 3 (lag 5):  still closed, no flap.
+        // Step 4 (lag 2):  reopen at last.
+        let mut service = gate_service_with_head(20, 10).await;
+
+        // Step 1 — close.
+        let s1 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
+        assert!(
+            matches!(s1, DutyGateDecision::Gated { .. }),
+            "step 1: {s1:?}"
+        );
+        assert!(service.duty_gate_closed);
+
+        // Step 2 — head moves to 11, lag = 4, still inside the band.
+        {
+            let fork_choice = service.store.read().await;
+            set_head_to_slot(&*fork_choice, 11).await;
+        }
+        let s2 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
+        assert!(
+            matches!(s2, DutyGateDecision::Gated { .. }),
+            "step 2: {s2:?}"
+        );
+        assert!(service.duty_gate_closed, "step 2: stays closed");
+
+        // Step 3 — head back to 10, lag = 5, still closed (no reopen).
+        {
+            let fork_choice = service.store.read().await;
+            set_head_to_slot(&*fork_choice, 10).await;
+        }
+        let s3 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
+        assert!(
+            matches!(s3, DutyGateDecision::Gated { .. }),
+            "step 3: {s3:?}"
+        );
+
+        // Step 4 — head jumps to 13, lag = 2, hysteresis allows reopen.
+        {
+            let fork_choice = service.store.read().await;
+            set_head_to_slot(&*fork_choice, 13).await;
+        }
+        let s4 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
+        assert!(matches!(s4, DutyGateDecision::Allowed), "step 4: {s4:?}");
+        assert!(
+            !service.duty_gate_closed,
+            "step 4: hysteresis flag must clear on reopen"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Sync-lag duty gate: Layer 2 — handler integration tests
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_handle_produce_block_lag_gated_responds_with_sync_lag_gated() {
+        // Head rewound to slot 10, fresh evidence up to slot 15: local lag = 5
+        // at wall-clock 15, network-stall escape does not fire.
+        let mut service = gate_service_with_head(15, 10).await;
+
+        let (tx, rx) = oneshot::channel::<ServiceResponse<BlockWithSignatures>>();
+        service
+            .handle_produce_block(15, tx)
+            .await
+            .expect("handle_produce_block must not error on gated path");
+
+        match rx.await.expect("response channel dropped") {
+            ServiceResponse::SyncLagGated {
+                head_slot,
+                lag,
+                max_seen_slot,
+            } => {
+                assert_eq!(head_slot, 10);
+                assert_eq!(lag, 5);
+                assert_eq!(max_seen_slot, 15);
+            }
+            other => panic!("expected SyncLagGated, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_produce_block_within_lag_does_not_gate() {
+        // Head at slot 3, wall-clock at slot 4: lag 1, well under threshold.
+        // The gate must not interfere — the response may be `Ok` or a non-gate
+        // error from downstream block production, but never `SyncLagGated`.
+        let mut service = gate_service_with_head(3, 3).await;
+
+        let (tx, rx) = oneshot::channel::<ServiceResponse<BlockWithSignatures>>();
+        service.handle_produce_block(4, tx).await.unwrap();
+
+        assert!(
+            !matches!(rx.await.unwrap(), ServiceResponse::SyncLagGated { .. }),
+            "in-threshold lag must not trip the duty gate"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_build_attestation_data_lag_gated_responds_with_sync_lag_gated() {
+        let mut service = gate_service_with_head(15, 10).await;
+
+        let (tx, rx) = oneshot::channel();
+        service
+            .handle_build_attestation_data(15, tx)
+            .await
+            .expect("handler must not error on gated path");
+
+        match rx.await.expect("response channel dropped") {
+            ServiceResponse::SyncLagGated {
+                head_slot,
+                lag,
+                max_seen_slot,
+            } => {
+                assert_eq!(head_slot, 10);
+                assert_eq!(lag, 5);
+                assert_eq!(max_seen_slot, 15);
+            }
+            other => panic!("expected SyncLagGated, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_build_attestation_data_within_lag_does_not_gate() {
+        let mut service = gate_service_with_head(3, 3).await;
+
+        let (tx, rx) = oneshot::channel();
+        service.handle_build_attestation_data(4, tx).await.unwrap();
+
+        assert!(
+            !matches!(rx.await.unwrap(), ServiceResponse::SyncLagGated { .. }),
+            "in-threshold lag must not trip the duty gate"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_duty_gate_state_persists_across_handler_calls() {
+        // Hysteresis lives on the service; once a block-duty call closes the
+        // gate, a subsequent attestation-duty call within the band must still
+        // be gated. Catches the bug where state is accidentally per-call.
+        let mut service = gate_service_with_head(20, 10).await;
+
+        // First call: lag 5 → gate closes.
+        let (tx, rx) = oneshot::channel::<ServiceResponse<BlockWithSignatures>>();
+        service.handle_produce_block(15, tx).await.unwrap();
+        assert!(matches!(
+            rx.await.unwrap(),
+            ServiceResponse::SyncLagGated { .. }
+        ));
+        assert!(service.duty_gate_closed);
+
+        // Move head to slot 12, lag becomes 3 — still inside the band
+        // (reopen requires <= 2). A pristine gate would allow this; the
+        // persistent flag must not.
+        {
+            let fork_choice = service.store.read().await;
+            set_head_to_slot(&*fork_choice, 12).await;
+        }
+        let (tx, rx) = oneshot::channel();
+        service.handle_build_attestation_data(15, tx).await.unwrap();
+        assert!(
+            matches!(rx.await.unwrap(), ServiceResponse::SyncLagGated { .. }),
+            "hysteresis flag must persist across handler types"
+        );
+    }
 
     async fn advance_store_to_slot(store: &mut Store, target_slot: u64, validator_count: u64) {
         for slot in 1..=target_slot {
