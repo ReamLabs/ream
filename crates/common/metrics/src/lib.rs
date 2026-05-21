@@ -386,6 +386,107 @@ lazy_static::lazy_static! {
         ).expect("failed to create COMMITTEE_SIGNATURES_AGGREGATION_TIME histogram vec")
     };
 
+    // Block Production Metrics
+    pub static ref BLOCK_AGGREGATED_PAYLOADS: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_block_aggregated_payloads",
+            "Number of aggregated_payloads in a block"
+        ).buckets(vec![1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create BLOCK_AGGREGATED_PAYLOADS histogram vec")
+    };
+
+    pub static ref BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_block_building_payload_aggregation_time_seconds",
+            "Time taken to build aggregated_payloads during block building"
+        ).buckets(vec![0.1, 0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME histogram vec")
+    };
+
+    pub static ref BLOCK_BUILDING_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_block_building_time_seconds",
+            "Time taken to build a block"
+        ).buckets(vec![0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create BLOCK_BUILDING_TIME histogram vec")
+    };
+
+    pub static ref BLOCK_BUILDING_SUCCESS_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_block_building_success_total",
+        "Successful block builds",
+        &[],
+        default_registry()
+    ).expect("failed to create BLOCK_BUILDING_SUCCESS_TOTAL int counter vec");
+
+    pub static ref BLOCK_BUILDING_FAILURES_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_block_building_failures_total",
+        "Failed block builds",
+        &[],
+        default_registry()
+    ).expect("failed to create BLOCK_BUILDING_FAILURES_TOTAL int counter vec");
+
+    // Gossip Message Size Metrics
+    pub static ref GOSSIP_BLOCK_SIZE_BYTES: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_gossip_block_size_bytes",
+            "Bytes size of a gossip block message"
+        ).buckets(vec![10000.0, 50000.0, 100000.0, 250000.0, 500000.0, 1000000.0, 2000000.0, 5000000.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create GOSSIP_BLOCK_SIZE_BYTES histogram vec")
+    };
+
+    pub static ref GOSSIP_ATTESTATION_SIZE_BYTES: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_gossip_attestation_size_bytes",
+            "Bytes size of a gossip attestation message"
+        ).buckets(vec![512.0, 1024.0, 2048.0, 4096.0, 8192.0, 16384.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create GOSSIP_ATTESTATION_SIZE_BYTES histogram vec")
+    };
+
+    pub static ref GOSSIP_AGGREGATION_SIZE_BYTES: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_gossip_aggregation_size_bytes",
+            "Bytes size of a gossip aggregated attestation message"
+        ).buckets(vec![1024.0, 4096.0, 16384.0, 65536.0, 131072.0, 262144.0, 524288.0, 1048576.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create GOSSIP_AGGREGATION_SIZE_BYTES histogram vec")
+    };
+
+    // Validator Attestation Production Metrics
+    pub static ref ATTESTATIONS_PRODUCTION_TIME: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_attestations_production_time_seconds",
+            "Time taken to produce attestation"
+        ).buckets(vec![0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &[],
+            default_registry()
+        ).expect("failed to create ATTESTATIONS_PRODUCTION_TIME histogram vec")
+    };
+
     // State Transition Additional Metrics
     pub static ref IS_AGGREGATOR: IntGaugeVec = register_int_gauge_vec_with_registry!(
         "lean_is_aggregator",
@@ -446,4 +547,14 @@ pub fn stop_timer_discard_on_drop(timer: DiscardOnDropHistogramTimer) {
 /// Increment a counter metric
 pub fn inc_int_counter_vec(counter_vec: &IntCounterVec, label_values: &[&str]) {
     counter_vec.with_label_values(label_values).inc();
+}
+
+/// Increment a counter metric by a given amount
+pub fn inc_int_counter_vec_by(counter_vec: &IntCounterVec, amount: u64, label_values: &[&str]) {
+    counter_vec.with_label_values(label_values).inc_by(amount);
+}
+
+/// Observe a value on a histogram metric
+pub fn observe_histogram_vec(histogram_vec: &HistogramVec, value: f64, label_values: &[&str]) {
+    histogram_vec.with_label_values(label_values).observe(value);
 }

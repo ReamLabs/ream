@@ -40,8 +40,9 @@ use ream_chain_lean::{
 };
 use ream_executor::ReamExecutor;
 use ream_metrics::{
+    GOSSIP_AGGREGATION_SIZE_BYTES, GOSSIP_ATTESTATION_SIZE_BYTES, GOSSIP_BLOCK_SIZE_BYTES,
     LEAN_CONNECTION_EVENT_TOTAL, LEAN_DISCONNECTION_EVENT_TOTAL, LEAN_GOSSIP_MESH_PEERS,
-    LEAN_PEER_COUNT, inc_int_counter_vec, set_int_gauge_vec,
+    LEAN_PEER_COUNT, inc_int_counter_vec, observe_histogram_vec, set_int_gauge_vec,
 };
 use ream_network_state_lean::{NetworkState, cached_peer::CachedPeer};
 use ream_peer::{ConnectionState, Direction};
@@ -879,6 +880,11 @@ impl LeanNetworkService {
             GossipsubEvent::Message { message, .. } => {
                 match LeanGossipsubMessage::decode(&message.topic, &message.data) {
                     Ok(LeanGossipsubMessage::Block(signed_block)) => {
+                        observe_histogram_vec(
+                            &GOSSIP_BLOCK_SIZE_BYTES,
+                            message.data.len() as f64,
+                            &[],
+                        );
                         let slot = signed_block.block.slot;
 
                         if let Err(err) =
@@ -895,6 +901,11 @@ impl LeanNetworkService {
                         subnet_id,
                         attestation: signed_attestation,
                     }) => {
+                        observe_histogram_vec(
+                            &GOSSIP_ATTESTATION_SIZE_BYTES,
+                            message.data.len() as f64,
+                            &[],
+                        );
                         let slot = signed_attestation.message.slot;
 
                         if let Err(err) = self.chain_message_sender.send(
@@ -910,6 +921,11 @@ impl LeanNetworkService {
                         }
                     }
                     Ok(LeanGossipsubMessage::AggregatedAttestation(aggregated_attestation)) => {
+                        observe_histogram_vec(
+                            &GOSSIP_AGGREGATION_SIZE_BYTES,
+                            message.data.len() as f64,
+                            &[],
+                        );
                         let slot = aggregated_attestation.data.slot;
 
                         if let Err(err) = self.chain_message_sender.send(

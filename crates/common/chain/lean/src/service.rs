@@ -19,7 +19,8 @@ use ream_consensus_lean::{
 use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_committee_count};
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_metrics::{
-    ATTESTATION_COMMITTEE_COUNT as ATTESTATION_COMMITTEE_COUNT_METRIC, CURRENT_SLOT, IS_AGGREGATOR,
+    ATTESTATION_COMMITTEE_COUNT as ATTESTATION_COMMITTEE_COUNT_METRIC,
+    BLOCK_BUILDING_FAILURES_TOTAL, CURRENT_SLOT, IS_AGGREGATOR, inc_int_counter_vec,
     set_int_gauge_vec,
 };
 use ream_network_spec::networks::lean_network_spec;
@@ -2593,6 +2594,7 @@ impl LeanChainService {
             Ok(block) => block,
             Err(err) => {
                 warn!("Failed to produce block for slot {slot}: {err}");
+                inc_int_counter_vec(&BLOCK_BUILDING_FAILURES_TOTAL, &[]);
                 if let Err(err) = response.send(ServiceResponse::Err(err)) {
                     warn!("Failed to send error response for ProduceBlock: {err:?}");
                 }

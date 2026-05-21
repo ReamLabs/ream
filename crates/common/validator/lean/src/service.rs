@@ -11,8 +11,9 @@ use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_commi
 use ream_fork_choice_lean::store::compute_subnet_id;
 use ream_keystore::lean_keystore::ValidatorKeystore;
 use ream_metrics::{
-    PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, PQ_SIG_ATTESTATION_SIGNING_TIME, VALIDATORS_COUNT,
-    inc_int_counter_vec, set_int_gauge_vec, start_timer, stop_timer,
+    ATTESTATIONS_PRODUCTION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_TOTAL,
+    PQ_SIG_ATTESTATION_SIGNING_TIME, VALIDATORS_COUNT, inc_int_counter_vec, set_int_gauge_vec,
+    start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use tokio::sync::{mpsc, oneshot};
@@ -126,6 +127,8 @@ impl ValidatorService {
                             // Second tick (t=1/4): Attestation.
                             info!(slot, tick = tick_count, "Starting attestation phase: {} validator(s) voting", self.keystores.len());
 
+                            let attestation_production_timer =
+                                start_timer(&ATTESTATIONS_PRODUCTION_TIME, &[]);
                             let (tx, rx) = oneshot::channel();
                             self.chain_sender
                                 .send(LeanChainServiceMessage::BuildAttestationData { slot, sender: tx })
@@ -188,6 +191,7 @@ impl ValidatorService {
                                     .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation: Box::new(signed_attestation), subnet_id, need_gossip: true })
                                     .map_err(|err| anyhow!("Failed to send attestation to LeanChainService: {err:?}"))?;
                             }
+                            stop_timer(attestation_production_timer);
                         }
                         _ => {
                             // Other ticks (t=2/4, t=3/4): Do nothing.
