@@ -25,17 +25,16 @@ use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL,
     ATTESTATIONS_VALID_TOTAL, BLOCK_AGGREGATED_PAYLOADS, BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME,
     BLOCK_BUILDING_SUCCESS_TOTAL, BLOCK_BUILDING_TIME, COMMITTEE_SIGNATURES_AGGREGATION_TIME,
-    FINALIZATIONS_TOTAL, FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME,
-    FORK_CHOICE_REORG_DEPTH, FORK_CHOICE_REORGS_TOTAL, GOSSIP_SIGNATURES, HEAD_SLOT,
-    JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS,
-    LATEST_NEW_AGGREGATED_PAYLOADS, LEAN_TICK_INTERVAL_DURATION_SECONDS,
-    PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL,
-    PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL,
-    PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
-    PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, PQ_SIG_ATTESTATION_VERIFICATION_TIME,
-    PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
-    inc_int_counter_vec, inc_int_counter_vec_by, observe_histogram_vec, set_int_gauge_vec,
-    start_timer, stop_timer,
+    FINALIZATIONS_TOTAL, FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, GOSSIP_SIGNATURES,
+    HEAD_SLOT, JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT,
+    LATEST_KNOWN_AGGREGATED_PAYLOADS, LATEST_NEW_AGGREGATED_PAYLOADS,
+    LEAN_TICK_INTERVAL_DURATION_SECONDS, PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME,
+    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME,
+    PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL,
+    PQ_SIG_ATTESTATION_VERIFICATION_TIME, PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL,
+    PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT, inc_int_counter_vec, inc_int_counter_vec_by,
+    observe_histogram_vec, set_int_gauge_vec, start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -394,22 +393,14 @@ impl Store {
 
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
-        let (
-            latest_justified_provider,
-            head_provider,
-            latest_known_aggregated_payloads_provider,
-            block_provider,
-        ) = {
+        let (latest_justified_provider, head_provider, latest_known_aggregated_payloads_provider) = {
             let db = self.store.lock().await;
             (
                 db.latest_justified_provider(),
                 db.head_provider(),
                 db.latest_known_aggregated_payloads_provider(),
-                db.block_provider(),
             )
         };
-
-        let old_head = head_provider.get()?;
 
         let attestations = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
@@ -434,27 +425,6 @@ impl Store {
                 0,
             )
             .await?;
-
-        // Detect fork-choice reorgs: a reorg occurs when the old head is not
-        // an ancestor of the new head (i.e., the canonical chain switched branches).
-        if new_head != old_head {
-            let mut is_forward_progress = false;
-            let mut current = new_head;
-            for _ in 0..100u64 {
-                if current == old_head {
-                    is_forward_progress = true;
-                    break;
-                }
-                match block_provider.get(current)? {
-                    Some(block) => current = block.block.parent_root,
-                    None => break,
-                }
-            }
-            if !is_forward_progress {
-                inc_int_counter_vec(&FORK_CHOICE_REORGS_TOTAL, &[]);
-                FORK_CHOICE_REORG_DEPTH.with_label_values(&[]).observe(1.0);
-            }
-        }
 
         set_int_gauge_vec(&HEAD_SLOT, new_head_slot as i64, &[]);
         *self.network_state.head_checkpoint.write() = Checkpoint {
