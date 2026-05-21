@@ -14,6 +14,10 @@ version.workspace = true
 name = "ream"
 path = "src/main.rs"
 
+[[bin]]
+name = "reth-poc"
+path = "src/bin/reth_poc.rs"
+
 [features]
 default = ["devnet4"]
 devnet4 = [
@@ -62,6 +66,29 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tree_hash.workspace = true
 unicode-normalization.workspace = true
 url.workspace = true
+
+# Reth EL integration
+reth-node-builder = { workspace = true, features = ["test-utils"] }
+reth-node-core = { workspace = true }
+reth-node-ethereum = { workspace = true, features = ["test-utils"] }
+reth-chainspec.workspace = true
+reth-ethereum-primitives.workspace = true
+reth-node-api.workspace = true
+reth-static-file-types.workspace = true
+reth-exex.workspace = true
+reth-transaction-pool.workspace = true
+reth-tasks.workspace = true
+reth-storage-api.workspace = true
+reth-primitives-traits = "0.3.1"
+eyre.workspace = true
+futures.workspace = true
+
+# Alloy signer and provider for transaction simulation
+alloy-signer-local.workspace = true
+alloy-provider.workspace = true
+alloy-network.workspace = true
+alloy-rpc-types-eth = "2.0.5"
+alloy-consensus.workspace = true
 
 # ream dependencies
 ream-account-manager.workspace = true
