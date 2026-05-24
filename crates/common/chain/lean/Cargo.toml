@@ -64,6 +64,7 @@ ream-sync.workspace = true
 [dev-dependencies]
 ream-peer.workspace = true
 ream-test-utils.workspace = true
+tracing-test.workspace = true
 
 [lints]
 workspace = true
