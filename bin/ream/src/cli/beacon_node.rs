@@ -89,6 +89,9 @@ pub struct BeaconNodeConfig {
         help = "Number of epochs to retain blob sidecars. Defaults to network spec value (4096 epochs for mainnet, ~18 days)"
     )]
     pub blob_retention_epochs: Option<u64>,
+
+    #[arg(long, default_value_t = true, help = "Enable optimistic sync")]
+    pub optimistic_sync: bool,
 }
 
 impl From<BeaconNodeConfig> for ManagerConfig {
@@ -108,6 +111,7 @@ impl From<BeaconNodeConfig> for ManagerConfig {
             enable_builder: config.enable_builder,
             mev_relay_url: config.mev_relay_url,
             blob_retention_epochs: config.blob_retention_epochs,
+            optimistic_sync: config.optimistic_sync,
         }
     }
 }
