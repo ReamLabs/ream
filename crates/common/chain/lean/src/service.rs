@@ -22,12 +22,15 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlock},
     checkpoint::Checkpoint,
 };
-use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_committee_count};
+use ream_consensus_misc::constants::lean::{
+    HYSTERESIS_BAND, INTERVALS_PER_SLOT, NETWORK_STALL_THRESHOLD, SYNC_LAG_THRESHOLD,
+    attestation_committee_count,
+};
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_COUNT as ATTESTATION_COMMITTEE_COUNT_METRIC,
     BLOCK_BUILDING_FAILURES_TOTAL, CURRENT_SLOT, IS_AGGREGATOR, LEAN_AGGREGATOR_SKIPPED_TOTAL,
-    inc_int_counter_vec, set_int_gauge_vec,
+    VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, inc_int_counter_vec, set_int_gauge_vec,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -239,7 +242,6 @@ type CallbackFuture = Pin<
 >;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 enum SyncedForDuties {
     Yes,
     No {
@@ -269,7 +271,6 @@ pub struct LeanChainService {
     telemetry: SyncTelemetry,
     #[cfg(feature = "devnet5")]
     pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
-    #[allow(dead_code)]
     duties_paused: bool,
 }
 
@@ -2883,13 +2884,90 @@ impl LeanChainService {
         Ok(())
     }
 
-    #[allow(dead_code)]
     async fn is_synced_for_duties(
         &mut self,
-        _wall_clock_slot: u64,
-        _duty: &'static str,
+        wall_clock_slot: u64,
+        duty: &'static str,
     ) -> anyhow::Result<SyncedForDuties> {
-        Ok(SyncedForDuties::Yes)
+        // head_slot is the slot of our local head block.
+        // max_seen_slot is the freshest authenticated block we've stored.
+        let (head_slot, max_seen_slot) = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            let head_root = store.head_provider().get()?;
+            let Some(head_block) = store.block_provider().get(head_root)? else {
+                return Ok(SyncedForDuties::Yes);
+            };
+            let head_slot = head_block.block.slot;
+            let max_seen_slot = store
+                .slot_index_provider()
+                .get_highest_slot()?
+                .unwrap_or(head_slot);
+            (head_slot, max_seen_slot)
+        };
+
+        // Use saturating_sub so a head ahead of wall clock returns zero lag instead of panicking.
+        let lag = wall_clock_slot.saturating_sub(head_slot);
+        let network_lag = wall_clock_slot.saturating_sub(max_seen_slot);
+
+        // Whole network appears stalled so keep signing to let the chain recover.
+        if network_lag > NETWORK_STALL_THRESHOLD {
+            if self.duties_paused {
+                self.duties_paused = false;
+                info!(
+                    duty,
+                    slot = wall_clock_slot,
+                    head_slot,
+                    lag,
+                    max_seen_slot,
+                    network_lag,
+                    "Validator resuming duties: network stall detected",
+                );
+            }
+            return Ok(SyncedForDuties::Yes);
+        }
+
+        // We're currently pausing duties so check if it's safe to resume.
+        if self.duties_paused {
+            // Lag has dropped well below the threshold so it's safe to resume.
+            if lag <= SYNC_LAG_THRESHOLD - HYSTERESIS_BAND {
+                self.duties_paused = false;
+                info!(
+                    duty,
+                    slot = wall_clock_slot,
+                    head_slot,
+                    lag,
+                    "Validator resuming duties: local view caught up",
+                );
+                return Ok(SyncedForDuties::Yes);
+            }
+            return Ok(SyncedForDuties::No {
+                head_slot,
+                lag,
+                max_seen_slot,
+            });
+        }
+
+        // Local view is fresh so allow duties to proceed.
+        if lag <= SYNC_LAG_THRESHOLD {
+            return Ok(SyncedForDuties::Yes);
+        }
+
+        self.duties_paused = true;
+        info!(
+            duty,
+            slot = wall_clock_slot,
+            head_slot,
+            lag,
+            max_seen_slot,
+            network_lag,
+            "Validator pausing duties: too far behind chain head",
+        );
+        Ok(SyncedForDuties::No {
+            head_slot,
+            lag,
+            max_seen_slot,
+        })
     }
 
     async fn handle_produce_block(
@@ -2897,6 +2975,34 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
+        // Skip block production while duties are paused by the sync-lag check.
+        let decision = match self.is_synced_for_duties(slot, "block").await {
+            Ok(decision) => decision,
+            Err(err) => {
+                warn!("Failed to run sync-lag check for slot {slot}: {err}");
+                if let Err(err) = response.send(ServiceResponse::Err(err)) {
+                    warn!("Failed to send error response for ProduceBlock: {err:?}");
+                }
+                return Ok(());
+            }
+        };
+        if let SyncedForDuties::No {
+            head_slot,
+            lag,
+            max_seen_slot,
+        } = decision
+        {
+            inc_int_counter_vec(&VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, &["block"]);
+            if let Err(err) = response.send(ServiceResponse::SyncLag {
+                head_slot,
+                lag,
+                max_seen_slot,
+            }) {
+                warn!("Failed to send SyncLag response for ProduceBlock: {err:?}");
+            }
+            return Ok(());
+        }
+
         let block_with_signatures = match self
             .store
             .write()
@@ -2932,6 +3038,34 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<AttestationData>>,
     ) -> anyhow::Result<()> {
+        // Skip attestation while duties are paused by the sync-lag check.
+        let decision = match self.is_synced_for_duties(slot, "attestation").await {
+            Ok(decision) => decision,
+            Err(err) => {
+                warn!("Failed to run sync-lag check for slot {slot}: {err}");
+                if let Err(err) = response.send(ServiceResponse::Err(err)) {
+                    warn!("Failed to send error response for BuildAttestationData: {err:?}");
+                }
+                return Ok(());
+            }
+        };
+        if let SyncedForDuties::No {
+            head_slot,
+            lag,
+            max_seen_slot,
+        } = decision
+        {
+            inc_int_counter_vec(&VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, &["attestation"]);
+            if let Err(err) = response.send(ServiceResponse::SyncLag {
+                head_slot,
+                lag,
+                max_seen_slot,
+            }) {
+                warn!("Failed to send SyncLag response for BuildAttestationData: {err:?}");
+            }
+            return Ok(());
+        }
+
         let attestation_data = match self.store.read().await.produce_attestation_data(slot).await {
             Ok(data) => data,
             Err(err) => {
