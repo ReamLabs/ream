@@ -6210,6 +6210,7 @@ dependencies = [
  "ssz_types",
  "tokio",
  "tracing",
+ "tracing-test",
  "tree_hash",
 ]
 

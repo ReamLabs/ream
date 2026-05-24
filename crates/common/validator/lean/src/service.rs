@@ -93,6 +93,17 @@ impl ValidatorService {
                                         tick_count += 1;
                                         continue;
                                     }
+                                    Ok(ServiceResponse::SyncLag { head_slot, lag, max_seen_slot }) => {
+                                        warn!(
+                                            slot,
+                                            head_slot,
+                                            lag,
+                                            max_seen_slot,
+                                            "Skipping block proposal: validator is too far behind the chain head",
+                                        );
+                                        tick_count += 1;
+                                        continue;
+                                    }
                                     Ok(ServiceResponse::Err(err)) => {
                                         warn!("Failed to produce block for slot {slot}: {err}");
                                         tick_count += 1;
@@ -147,6 +158,17 @@ impl ValidatorService {
                                 Ok(ServiceResponse::Ok(data)) => data,
                                 Ok(ServiceResponse::Syncing) => {
                                     warn!("LeanChainService is syncing, cannot build attestation data for slot {slot}");
+                                    tick_count += 1;
+                                    continue;
+                                }
+                                Ok(ServiceResponse::SyncLag { head_slot, lag, max_seen_slot }) => {
+                                    warn!(
+                                        slot,
+                                        head_slot,
+                                        lag,
+                                        max_seen_slot,
+                                        "Skipping attestation: validator is too far behind the chain head",
+                                    );
                                     tick_count += 1;
                                     continue;
                                 }
