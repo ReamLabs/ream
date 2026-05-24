@@ -22,6 +22,7 @@ use crate::{
             unrealized_finalized_checkpoint::UnrealizedFinalizedCheckpointField,
             unrealized_justifications::UnrealizedJustificationsTable,
             unrealized_justified_checkpoint::UnrealizedJustifiedCheckpointField,
+            optimistic_roots::OptimisticRootsTable,
         },
         table::REDBTable,
     },
@@ -52,6 +53,12 @@ impl BeaconDB {
         BeaconStateTable {
             db: self.db.clone(),
             cache: self.cache.clone(),
+        }
+    }
+
+    pub fn optimistic_roots_provider(&self) -> OptimisticRootsTable {
+        OptimisticRootsTable {
+            db: self.db.clone(),
         }
     }
 

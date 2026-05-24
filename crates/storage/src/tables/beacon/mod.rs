@@ -1,4 +1,5 @@
 pub mod beacon_block;
+pub mod optimistic_roots;
 pub mod beacon_state;
 pub mod blobs_and_proofs;
 pub mod block_timeliness;
