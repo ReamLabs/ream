@@ -2924,6 +2924,8 @@ impl LeanChainService {
 
         // We're currently pausing duties so check if it's safe to resume.
         if self.duties_paused {
+            // Swap for static_assertions::const_assert! once that crate is a workspace dep.
+            const _: () = assert!(HYSTERESIS_BAND < SYNC_LAG_THRESHOLD);
             // Lag has dropped well below the threshold so it's safe to resume.
             if lag <= SYNC_LAG_THRESHOLD - HYSTERESIS_BAND {
                 self.duties_paused = false;
