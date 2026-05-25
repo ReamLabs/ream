@@ -271,6 +271,8 @@ pub struct LeanChainService {
     telemetry: SyncTelemetry,
     #[cfg(feature = "devnet5")]
     pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
+    /// Start paused so a node restarted while behind doesn't fire a duty before the
+    /// sync-lag check can close the gate.
     duties_paused: bool,
 }
 
@@ -301,7 +303,7 @@ impl LeanChainService {
             telemetry: SyncTelemetry::from_env(),
             #[cfg(feature = "devnet5")]
             pending_block_aggregates: Arc::new(Mutex::new(Vec::new())),
-            duties_paused: false,
+            duties_paused: true,
         }
     }
 
@@ -3211,6 +3213,9 @@ mod tests {
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
         service.sync_status = SyncStatus::Synced;
+        // Tests assert predicate behaviour from a running-normally state; the
+        // start-paused default is exercised by tests that touch construction directly.
+        service.duties_paused = false;
         service
     }
 
