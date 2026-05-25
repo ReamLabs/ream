@@ -251,6 +251,23 @@ enum SyncedForDuties {
     },
 }
 
+// Replace this hand-rolled impl with `#[derive(strum::AsRefStr)]` once `strum` is added
+// as a workspace dep so the labels are derived from the variant names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DutyKind {
+    Block,
+    Attestation,
+}
+
+impl AsRef<str> for DutyKind {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Block => "block",
+            Self::Attestation => "attestation",
+        }
+    }
+}
+
 /// LeanChainService is responsible for updating the [LeanChain] state
 pub struct LeanChainService {
     store: Arc<LeanStoreWriter>,
@@ -2884,24 +2901,22 @@ impl LeanChainService {
     async fn is_synced_for_duties(
         &mut self,
         wall_clock_slot: u64,
-        duty: &'static str,
+        duty: DutyKind,
     ) -> anyhow::Result<SyncedForDuties> {
         // head_slot is the slot of our local head block.
         // max_seen_slot is the freshest authenticated block we've stored.
-        let (head_slot, max_seen_slot) = {
-            let fork_choice = self.store.read().await;
-            let store = fork_choice.store.lock().await;
-            let head_root = store.head_provider().get()?;
-            let Some(head_block) = store.block_provider().get(head_root)? else {
-                return Ok(SyncedForDuties::Yes);
-            };
-            let head_slot = head_block.block.slot;
-            let max_seen_slot = store
-                .slot_index_provider()
-                .get_highest_slot()?
-                .unwrap_or(head_slot);
-            (head_slot, max_seen_slot)
+        let Some((head_slot, max_seen_slot)) = self
+            .store
+            .read()
+            .await
+            .store
+            .lock()
+            .await
+            .snapshot_head_and_max_slot()?
+        else {
+            return Ok(SyncedForDuties::Yes);
         };
+        let duty = duty.as_ref();
 
         // Use saturating_sub so a head ahead of wall clock returns zero lag instead of panicking.
         let lag = wall_clock_slot.saturating_sub(head_slot);
@@ -2969,38 +2984,61 @@ impl LeanChainService {
         })
     }
 
+    /// Run the sync-lag gate for `slot`. Sends a `SyncLag` (or error) response to
+    /// `response` if the duty must be skipped and returns `None`; otherwise returns
+    /// the sender back so the caller can complete duty production with it.
+    async fn skip_for_lag<T: std::fmt::Debug>(
+        &mut self,
+        slot: u64,
+        duty: DutyKind,
+        response: oneshot::Sender<ServiceResponse<T>>,
+    ) -> Option<oneshot::Sender<ServiceResponse<T>>> {
+        let decision = match self.is_synced_for_duties(slot, duty).await {
+            Ok(decision) => decision,
+            Err(err) => {
+                warn!(
+                    duty = duty.as_ref(),
+                    slot, "Failed to run sync-lag check: {err}",
+                );
+                if let Err(err) = response.send(ServiceResponse::Err(err)) {
+                    warn!(
+                        duty = duty.as_ref(),
+                        "Failed to send error response: {err:?}",
+                    );
+                }
+                return None;
+            }
+        };
+        let SyncedForDuties::No {
+            head_slot,
+            lag,
+            max_seen_slot,
+        } = decision
+        else {
+            return Some(response);
+        };
+        inc_int_counter_vec(&VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, &[duty.as_ref()]);
+        if let Err(err) = response.send(ServiceResponse::SyncLag {
+            head_slot,
+            lag,
+            max_seen_slot,
+        }) {
+            warn!(
+                duty = duty.as_ref(),
+                "Failed to send SyncLag response: {err:?}",
+            );
+        }
+        None
+    }
+
     async fn handle_produce_block(
         &mut self,
         slot: u64,
         response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
-        // Skip block production while duties are paused by the sync-lag check.
-        let decision = match self.is_synced_for_duties(slot, "block").await {
-            Ok(decision) => decision,
-            Err(err) => {
-                warn!("Failed to run sync-lag check for slot {slot}: {err}");
-                if let Err(err) = response.send(ServiceResponse::Err(err)) {
-                    warn!("Failed to send error response for ProduceBlock: {err:?}");
-                }
-                return Ok(());
-            }
-        };
-        if let SyncedForDuties::No {
-            head_slot,
-            lag,
-            max_seen_slot,
-        } = decision
-        {
-            inc_int_counter_vec(&VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, &["block"]);
-            if let Err(err) = response.send(ServiceResponse::SyncLag {
-                head_slot,
-                lag,
-                max_seen_slot,
-            }) {
-                warn!("Failed to send SyncLag response for ProduceBlock: {err:?}");
-            }
+        let Some(response) = self.skip_for_lag(slot, DutyKind::Block, response).await else {
             return Ok(());
-        }
+        };
 
         let block_with_signatures = match self
             .store
@@ -3037,33 +3075,12 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<AttestationData>>,
     ) -> anyhow::Result<()> {
-        // Skip attestation while duties are paused by the sync-lag check.
-        let decision = match self.is_synced_for_duties(slot, "attestation").await {
-            Ok(decision) => decision,
-            Err(err) => {
-                warn!("Failed to run sync-lag check for slot {slot}: {err}");
-                if let Err(err) = response.send(ServiceResponse::Err(err)) {
-                    warn!("Failed to send error response for BuildAttestationData: {err:?}");
-                }
-                return Ok(());
-            }
-        };
-        if let SyncedForDuties::No {
-            head_slot,
-            lag,
-            max_seen_slot,
-        } = decision
-        {
-            inc_int_counter_vec(&VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, &["attestation"]);
-            if let Err(err) = response.send(ServiceResponse::SyncLag {
-                head_slot,
-                lag,
-                max_seen_slot,
-            }) {
-                warn!("Failed to send SyncLag response for BuildAttestationData: {err:?}");
-            }
+        let Some(response) = self
+            .skip_for_lag(slot, DutyKind::Attestation, response)
+            .await
+        else {
             return Ok(());
-        }
+        };
 
         let attestation_data = match self.store.read().await.produce_attestation_data(slot).await {
             Ok(data) => data,
@@ -3168,7 +3185,9 @@ mod tests {
     };
     use tree_hash::TreeHash;
 
-    use super::{InflightRootRequest, LeanChainService, SyncBlockSource, SyncedForDuties};
+    use super::{
+        DutyKind, InflightRootRequest, LeanChainService, SyncBlockSource, SyncedForDuties,
+    };
     use crate::{
         messages::ServiceResponse,
         p2p_request::LeanP2PRequest,
@@ -3225,7 +3244,7 @@ mod tests {
 
         for lag in 0..=SYNC_LAG_THRESHOLD {
             let decision = service
-                .is_synced_for_duties(10 + lag, "block")
+                .is_synced_for_duties(10 + lag, DutyKind::Block)
                 .await
                 .expect("sync-lag check failed");
             assert!(
@@ -3243,7 +3262,7 @@ mod tests {
         let mut service = sync_lag_service_with_head(14, 10).await;
 
         let decision = service
-            .is_synced_for_duties(14, "block")
+            .is_synced_for_duties(14, DutyKind::Block)
             .await
             .expect("sync-lag check failed");
         assert!(
@@ -3258,7 +3277,7 @@ mod tests {
         let mut service = sync_lag_service_with_head(15, 10).await;
 
         let decision = service
-            .is_synced_for_duties(15, "block")
+            .is_synced_for_duties(15, DutyKind::Block)
             .await
             .expect("sync-lag check failed");
         match decision {
@@ -3286,7 +3305,7 @@ mod tests {
         let mut service = sync_lag_service_with_head(20, 20).await;
 
         let decision = service
-            .is_synced_for_duties(15, "block")
+            .is_synced_for_duties(15, DutyKind::Block)
             .await
             .expect("sync-lag check failed");
         assert!(
@@ -3304,7 +3323,7 @@ mod tests {
         let mut service = sync_lag_service_with_head(0, 0).await;
 
         let decision = service
-            .is_synced_for_duties(50, "block")
+            .is_synced_for_duties(50, DutyKind::Block)
             .await
             .expect("sync-lag check failed");
         assert!(
@@ -3330,7 +3349,10 @@ mod tests {
         let mut service = sync_lag_service_with_head(20, 10).await;
 
         // Step 1, close.
-        let s1 = service.is_synced_for_duties(15, "block").await.unwrap();
+        let s1 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
         assert!(matches!(s1, SyncedForDuties::No { .. }), "step 1: {s1:?}");
         assert!(service.duties_paused);
 
@@ -3339,7 +3361,10 @@ mod tests {
             let fork_choice = service.store.read().await;
             set_head_to_slot(&fork_choice, 11).await;
         }
-        let s2 = service.is_synced_for_duties(15, "block").await.unwrap();
+        let s2 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
         assert!(matches!(s2, SyncedForDuties::No { .. }), "step 2: {s2:?}");
         assert!(service.duties_paused, "step 2: stays closed");
 
@@ -3348,7 +3373,10 @@ mod tests {
             let fork_choice = service.store.read().await;
             set_head_to_slot(&fork_choice, 10).await;
         }
-        let s3 = service.is_synced_for_duties(15, "block").await.unwrap();
+        let s3 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
         assert!(matches!(s3, SyncedForDuties::No { .. }), "step 3: {s3:?}");
 
         // Step 4, head jumps to 13, lag = 2, hysteresis allows reopen.
@@ -3356,7 +3384,10 @@ mod tests {
             let fork_choice = service.store.read().await;
             set_head_to_slot(&fork_choice, 13).await;
         }
-        let s4 = service.is_synced_for_duties(15, "block").await.unwrap();
+        let s4 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
         assert!(matches!(s4, SyncedForDuties::Yes), "step 4: {s4:?}");
         assert!(
             !service.duties_paused,
@@ -3493,7 +3524,7 @@ mod tests {
         }
 
         let decision = service
-            .is_synced_for_duties(20, "block")
+            .is_synced_for_duties(20, DutyKind::Block)
             .await
             .expect("missing head block must not be a hard error");
         assert!(
@@ -3517,14 +3548,20 @@ mod tests {
         //   wall=21 so lag=11, network_lag=9, stalling, escape reopens.
         let mut service = sync_lag_service_with_head(12, 10).await;
 
-        let close = service.is_synced_for_duties(20, "block").await.unwrap();
+        let close = service
+            .is_synced_for_duties(20, DutyKind::Block)
+            .await
+            .unwrap();
         assert!(
             matches!(close, SyncedForDuties::No { .. }),
             "network_lag at exactly the threshold must NOT trigger the stall escape, got {close:?}",
         );
         assert!(service.duties_paused);
 
-        let reopen = service.is_synced_for_duties(21, "block").await.unwrap();
+        let reopen = service
+            .is_synced_for_duties(21, DutyKind::Block)
+            .await
+            .unwrap();
         assert!(
             matches!(reopen, SyncedForDuties::Yes),
             "network_lag past the threshold must trigger the stall escape and reopen, got {reopen:?}",
@@ -3541,7 +3578,10 @@ mod tests {
         let mut service = sync_lag_service_with_head(20, 10).await;
 
         for _ in 0..3 {
-            let _ = service.is_synced_for_duties(15, "block").await.unwrap();
+            let _ = service
+                .is_synced_for_duties(15, DutyKind::Block)
+                .await
+                .unwrap();
         }
 
         logs_assert(|lines: &[&str]| {
