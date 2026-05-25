@@ -3150,6 +3150,7 @@ mod tests {
         block::{BlockSignatures, BlockWithSignatures, SignedBlock},
         checkpoint::Checkpoint,
     };
+    use ream_consensus_misc::constants::lean::SYNC_LAG_THRESHOLD;
     use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
     use ream_post_quantum_crypto::leansig::signature::Signature;
@@ -3212,10 +3213,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_lag_check_within_threshold_allows_duties() {
-        // Head at slot 10. wall-clock sweeps 10..=14 (lag 0..=4).
+        // Head at slot 10. wall-clock sweeps 10..=10+SYNC_LAG_THRESHOLD.
         let mut service = sync_lag_service_with_head(10, 10).await;
 
-        for lag in 0..=4_u64 {
+        for lag in 0..=SYNC_LAG_THRESHOLD {
             let decision = service
                 .is_synced_for_duties(10 + lag, "block")
                 .await
