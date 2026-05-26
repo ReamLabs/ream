@@ -45,7 +45,10 @@ use ream_req_resp::{
         messages::{LeanRequestMessage, LeanResponseMessage},
     },
 };
-use ream_storage::tables::{field::REDBField, table::REDBTable};
+use ream_storage::{
+    errors::StoreError,
+    tables::{field::REDBField, table::REDBTable},
+};
 #[cfg(feature = "devnet5")]
 use ssz_types::VariableList;
 #[cfg(feature = "devnet5")]
@@ -2910,16 +2913,23 @@ impl LeanChainService {
     ) -> anyhow::Result<SyncedForDuties> {
         // head_slot is the slot of our local head block.
         // max_seen_slot is the freshest authenticated block we've stored.
-        let Some((head_slot, max_seen_slot)) = self
-            .store
-            .read()
-            .await
-            .store
-            .lock()
-            .await
-            .snapshot_head_and_max_slot()?
-        else {
-            return Ok(SyncedForDuties::Yes);
+        let (head_slot, max_seen_slot) = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            let head_root = match store.head_provider().get() {
+                Ok(root) => root,
+                Err(StoreError::FieldNotInitilized) => return Ok(SyncedForDuties::Yes),
+                Err(err) => return Err(err.into()),
+            };
+            let Some(head_block) = store.block_provider().get(head_root)? else {
+                return Ok(SyncedForDuties::Yes);
+            };
+            let head_slot = head_block.block.slot;
+            let max_seen_slot = store
+                .slot_index_provider()
+                .get_highest_slot()?
+                .unwrap_or(head_slot);
+            (head_slot, max_seen_slot)
         };
         let duty = duty.as_ref();
 

@@ -5,7 +5,6 @@ use tracing::info;
 
 use crate::{
     cache::LeanCacheDB,
-    errors::StoreError,
     tables::{
         field::REDBField,
         lean::{
@@ -158,26 +157,6 @@ impl LeanDB {
         LeanValidatorIdField {
             db: self.db.clone(),
         }
-    }
-
-    /// Read the local head slot and the freshest authenticated slot we've stored in one shot.
-    /// Returns `Ok(None)` when no head has been set yet (pre-genesis) or when the head root
-    /// points at a block that isn't in the store (recovery / pruning races).
-    pub fn snapshot_head_and_max_slot(&self) -> Result<Option<(u64, u64)>, StoreError> {
-        let head_root = match self.head_provider().get() {
-            Ok(root) => root,
-            Err(StoreError::FieldNotInitilized) => return Ok(None),
-            Err(err) => return Err(err),
-        };
-        let Some(head_block) = self.block_provider().get(head_root)? else {
-            return Ok(None);
-        };
-        let head_slot = head_block.block.slot;
-        let max_seen_slot = self
-            .slot_index_provider()
-            .get_highest_slot()?
-            .unwrap_or(head_slot);
-        Ok(Some((head_slot, max_seen_slot)))
     }
 
     /// Checks the storage usage of all tables and reports metrics.
