@@ -251,14 +251,14 @@ enum SyncedForDuties {
     },
 }
 
-// Replace this hand-rolled impl with `#[derive(strum::AsRefStr)]` once `strum` is added
-// as a workspace dep so the labels are derived from the variant names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DutyKind {
     Block,
     Attestation,
 }
 
+// Replace this hand-rolled impl with `#[derive(strum::AsRefStr)]` once `strum` is added
+// as a workspace dep so the labels are derived from the variant names.
 impl AsRef<str> for DutyKind {
     fn as_ref(&self) -> &str {
         match self {
@@ -288,8 +288,6 @@ pub struct LeanChainService {
     telemetry: SyncTelemetry,
     #[cfg(feature = "devnet5")]
     pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
-    /// Start paused so a node restarted while behind doesn't fire a duty before the
-    /// sync-lag check can close the gate.
     duties_paused: bool,
 }
 
@@ -320,6 +318,8 @@ impl LeanChainService {
             telemetry: SyncTelemetry::from_env(),
             #[cfg(feature = "devnet5")]
             pending_block_aggregates: Arc::new(Mutex::new(Vec::new())),
+            // Start paused so a node restarted while behind doesn't fire a duty before the
+            // sync-lag check can close the gate.
             duties_paused: true,
         }
     }
