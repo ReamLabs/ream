@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::anyhow;
 use ream_chain_lean::{
     clock::{create_lean_clock_interval, get_initial_tick_count},
@@ -11,7 +13,8 @@ use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_commi
 use ream_fork_choice_lean::store::compute_subnet_id;
 use ream_keystore::lean_keystore::ValidatorKeystore;
 use ream_metrics::{
-    ATTESTATIONS_PRODUCTION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_TOTAL,
+    ATTESTATIONS_PRODUCTION_TIME, LEAN_ATTESTATION_AGGREGATE_SUBNETS,
+    LEAN_ATTESTATION_AGGREGATE_VALIDATORS, PQ_SIG_ATTESTATION_SIGNATURES_TOTAL,
     PQ_SIG_ATTESTATION_SIGNING_TIME, VALIDATORS_COUNT, inc_int_counter_vec, set_int_gauge_vec,
     start_timer, stop_timer,
 };
@@ -185,12 +188,34 @@ impl ValidatorService {
                                 });
                             }
 
-                            for signed_attestation in signed_attestations {
+                            let section = "timely";
+                            let mut unique_subnets = HashSet::new();
+
+                            for signed_attestation in &signed_attestations {
                                 let subnet_id = compute_subnet_id(signed_attestation.validator_id, attestation_committee_count());
+                                unique_subnets.insert(subnet_id);
+
                                 self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessAttestation { signed_attestation: Box::new(signed_attestation), subnet_id, need_gossip: true })
+                                    .send(LeanChainServiceMessage::ProcessAttestation {
+                                        signed_attestation: Box::new(signed_attestation.clone()),
+                                        subnet_id,
+                                        need_gossip: true
+                                    })
                                     .map_err(|err| anyhow!("Failed to send attestation to LeanChainService: {err:?}"))?;
                             }
+
+                            set_int_gauge_vec(
+                                &LEAN_ATTESTATION_AGGREGATE_VALIDATORS,
+                                signed_attestations.len() as i64,
+                                &[section, "combined"]
+                            );
+
+                            set_int_gauge_vec(
+                                &LEAN_ATTESTATION_AGGREGATE_SUBNETS,
+                                unique_subnets.len() as i64,
+                                &[section]
+                            );
+
                             stop_timer(attestation_production_timer);
                         }
                         _ => {

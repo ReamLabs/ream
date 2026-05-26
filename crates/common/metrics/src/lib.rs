@@ -8,6 +8,20 @@ use prometheus_exporter::prometheus::{
 
 use crate::timer::DiscardOnDropHistogramTimer;
 
+pub const ATTESTATION_AGGREGATE_COVERAGE_SECTIONS: &[&str] = &[
+    "timely",
+    "late",
+    "block",
+    "combined",
+    "agg_start_new",
+    "proposal_payloads",
+    "proposal_gossip",
+    "proposal_combined",
+];
+
+pub const ATTESTATION_AGGREGATE_COVERAGE_DIFFERENT_DIRECTIONS: &[&str] =
+    &["block_only", "timely_only"];
+
 // Provisioning each metrics
 lazy_static::lazy_static! {
     // Node Info Metrics
@@ -515,6 +529,46 @@ lazy_static::lazy_static! {
             default_registry()
         ).expect("failed to create LEAN_TICK_INTERVAL_DURATION_SECONDS histogram vec")
     };
+
+    pub static ref LEAN_ATTESTATION_AGGREGATE_VALIDATORS: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_attestation_aggregate_coverage_validators",
+        "Validator's is_aggregator status. True=1, False=0",
+        &["section", "subnet"],
+        default_registry()
+    ).expect("failed to create IS_AGGREGATOR int gauge vec");
+
+    pub static ref LEAN_ATTESTATION_AGGREGATE_SUBNETS: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_attestation_aggregate_coverage_subnets",
+        "Validator's is_aggregator status. True=1, False=0",
+        &["section"],
+        default_registry()
+    ).expect("failed to create IS_AGGREGATOR int gauge vec");
+
+    pub static ref LEAN_ATTESTATION_AGGREGATE_DIFFERENT_VALIDATORS: IntGaugeVec = register_int_gauge_vec_with_registry!(
+        "lean_attestation_aggregate_coverage_different_validators",
+        "Validator's is_aggregator status. True=1, False=0",
+        &["direction"],
+        default_registry()
+    ).expect("failed to create IS_AGGREGATOR int gauge vec");
+}
+
+pub fn init_aggregate_coverage_metrics() {
+    for &section in ATTESTATION_AGGREGATE_COVERAGE_SECTIONS {
+        set_int_gauge_vec(&LEAN_ATTESTATION_AGGREGATE_SUBNETS, 0, &[section]);
+        set_int_gauge_vec(
+            &LEAN_ATTESTATION_AGGREGATE_VALIDATORS,
+            0,
+            &[section, "combined"],
+        );
+    }
+
+    for &direction in ATTESTATION_AGGREGATE_COVERAGE_DIFFERENT_DIRECTIONS {
+        set_int_gauge_vec(
+            &LEAN_ATTESTATION_AGGREGATE_DIFFERENT_VALIDATORS,
+            0,
+            &[direction],
+        );
+    }
 }
 
 /// Set the value of a gauge metric
