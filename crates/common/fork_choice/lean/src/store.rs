@@ -1827,13 +1827,17 @@ fn compact_aggregated_proofs(
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
+        let building_timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
         let merged_proof_data = aggregate_signatures_recursive(
             &children,
             &[],
             &[],
             &data.tree_hash_root().0,
             data.slot as u32,
-        )?;
+        );
+        stop_timer(building_timer);
+        let merged_proof_data = merged_proof_data?;
+        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
 
         let merged_proof = AggregatedSignatureProof::new(
             merged_bits.clone(),
