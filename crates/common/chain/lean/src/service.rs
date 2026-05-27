@@ -2959,6 +2959,8 @@ impl LeanChainService {
                     slot = wall_clock_slot,
                     head_slot,
                     lag,
+                    max_seen_slot,
+                    network_lag,
                     "Validator resuming duties: local view caught up",
                 );
                 return Ok(SyncedForDuties::Yes);
