@@ -81,6 +81,9 @@ alloy-primitives = { version = "1.4.1", features = ['serde'] }
 alloy-rlp = { version = "0.3.12", default-features = false, features = ["derive"] }
 alloy-rpc-types-beacon = "1.0.41"
 alloy-rpc-types-eth = "1.0.41"
+alloy-signer-local = "2.0.5"
+alloy-provider = "2.0.5"
+alloy-network = "2.0.5"
 anyhow = "1.0.100"
 async-trait = "0.1.89"
 bincode = "1.3.3"
@@ -137,6 +140,20 @@ tree_hash_derive = "0.12"
 unicode-normalization = "0.1.24"
 url = "2.5.7"
 
+# Reth execution layer dependencies (for EL integration POC)
+eyre = "0.6"
+reth-node-builder = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-node-core = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-node-api = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-exex = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-tasks = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-static-file-types = { git = "https://github.com/paradigmxyz/reth.git", features = ["std"] }
+reth-storage-api = { git = "https://github.com/paradigmxyz/reth.git" }
+
 # ream dependencies
 lean-spec-tests = { path = "testing/lean-spec-tests", default-features = false }
 ream-account-manager = { path = "crates/common/account_manager" }
@@ -186,8 +203,15 @@ ream-validator-lean = { path = "crates/common/validator/lean", default-features 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git", rev = "c14a9ad96436e6b8b631faf49a3666e4558b71ae" }
 
+[patch."https://github.com/paradigmxyz/reth.git"]
+reth-fs-util = { path = "crates/fs-util" }
+
 [patch."https://github.com/leanEthereum/leanSig"]
 leansig = { git = "https://github.com/leanEthereum//leanSig.git", branch = "devnet4" }
 
 [profile.test]
 inherits = "release"
+
+[profile.dev]
+debug = 0
+
