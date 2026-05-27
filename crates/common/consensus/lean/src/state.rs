@@ -853,7 +853,7 @@ mod test {
         state.process_slots(10)?;
         let block_9_root = state.latest_block_header.tree_hash_root();
 
-        let make_att =
+        let make_attestation =
             |target_slot: u64, target_root: B256| -> anyhow::Result<AggregatedAttestation> {
                 let mut bits = BitList::with_capacity(4).map_err(|err| anyhow!("{err:?}"))?;
                 bits.set(0, true).map_err(|err| anyhow!("{err:?}"))?;
@@ -883,9 +883,9 @@ mod test {
         // The slot-6 attestation is processed last; without the fix it would
         // clobber latest_justified and set it back to slot 6.
         let attestations = VariableList::new(vec![
-            make_att(4, block_4_root)?,
-            make_att(9, block_9_root)?,
-            make_att(6, block_6_root)?,
+            make_attestation(4, block_4_root)?,
+            make_attestation(9, block_9_root)?,
+            make_attestation(6, block_6_root)?,
         ])
         .map_err(|err| anyhow!("Failed to create attestations list: {err:?}"))?;
 
