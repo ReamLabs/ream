@@ -427,7 +427,12 @@ impl LeanState {
             // to prevent integer division which could lead to less than 2/3 of validators
             // justifying specially if the num_validators is low in testing scenarios
             if 3 * count >= (2 * self.validators.len()) {
-                self.latest_justified = attestation.target();
+                // Attestations within a block can resolve in any order, and
+                // an earlier target processed after a later one must not
+                // drag latest_justified backwards.
+                if attestation.target().slot > self.latest_justified.slot {
+                    self.latest_justified = attestation.target();
+                }
 
                 if let Some(index) =
                     justified_index_after(attestation.target().slot, self.latest_finalized.slot)
@@ -812,6 +817,104 @@ mod test {
         assert_eq!(state.latest_finalized.slot, 1);
         assert_eq!(state.latest_justified.slot, 2);
         assert!(state.justifications_roots.contains(&slot_3_root));
+        Ok(())
+    }
+
+    #[test]
+    fn test_same_block_multi_target_attestations_advance_to_highest_slot() -> anyhow::Result<()> {
+        let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(4)));
+
+        let mut source_root = B256::ZERO;
+        let mut block_4_root = B256::ZERO;
+        let mut block_6_root = B256::ZERO;
+
+        for slot in 1u64..=9 {
+            state.process_slots(slot)?;
+            let parent_root = state.latest_block_header.tree_hash_root();
+
+            match slot {
+                1 => source_root = parent_root,
+                5 => block_4_root = parent_root,
+                7 => block_6_root = parent_root,
+                _ => {}
+            }
+
+            state.process_block(&Block {
+                slot,
+                proposer_index: slot % 4,
+                parent_root,
+                state_root: B256::ZERO,
+                body: BlockBody {
+                    attestations: VariableList::empty(),
+                },
+            })?;
+        }
+
+        state.process_slots(10)?;
+        let block_9_root = state.latest_block_header.tree_hash_root();
+
+        let make_attestation =
+            |target_slot: u64, target_root: B256| -> anyhow::Result<AggregatedAttestation> {
+                let mut bits = BitList::with_capacity(4).map_err(|err| anyhow!("{err:?}"))?;
+                bits.set(0, true).map_err(|err| anyhow!("{err:?}"))?;
+                bits.set(1, true).map_err(|err| anyhow!("{err:?}"))?;
+                bits.set(2, true).map_err(|err| anyhow!("{err:?}"))?;
+                Ok(AggregatedAttestation {
+                    aggregation_bits: bits,
+                    message: AttestationData {
+                        slot: 10,
+                        head: Checkpoint {
+                            slot: 9,
+                            root: block_9_root,
+                        },
+                        source: Checkpoint {
+                            slot: 0,
+                            root: source_root,
+                        },
+                        target: Checkpoint {
+                            slot: target_slot,
+                            root: target_root,
+                        },
+                    },
+                })
+            };
+
+        // On-chain order: 4 → 9 → 6.
+        // The slot-6 attestation is processed last; without the fix it would
+        // clobber latest_justified and set it back to slot 6.
+        let attestations = VariableList::new(vec![
+            make_attestation(4, block_4_root)?,
+            make_attestation(9, block_9_root)?,
+            make_attestation(6, block_6_root)?,
+        ])
+        .map_err(|err| anyhow!("Failed to create attestations list: {err:?}"))?;
+
+        state.process_block(&Block {
+            slot: 10,
+            proposer_index: 10 % 4,
+            parent_root: block_9_root,
+            state_root: B256::ZERO,
+            body: BlockBody { attestations },
+        })?;
+
+        // latest_justified must be slot 9 — the highest justified target,
+        // not slot 6 which was the last one processed.
+        assert_eq!(state.latest_justified.slot, 9);
+
+        // All three targets must be marked justified in the bitfield.
+        assert!(
+            state.justified_slots.get(3).unwrap(),
+            "slot 4 (index 3) should be justified"
+        );
+        assert!(
+            state.justified_slots.get(5).unwrap(),
+            "slot 6 (index 5) should be justified"
+        );
+        assert!(
+            state.justified_slots.get(8).unwrap(),
+            "slot 9 (index 8) should be justified"
+        );
+
         Ok(())
     }
 
