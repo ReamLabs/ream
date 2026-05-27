@@ -260,7 +260,7 @@ enum DutyKind {
     Attestation,
 }
 
-// Replace this hand-rolled impl with `#[derive(strum::AsRefStr)]` once `strum` is added
+// TODO: Replace this hand-rolled impl with `#[derive(strum::AsRefStr)]` once `strum` is added
 // as a workspace dep so the labels are derived from the variant names.
 impl AsRef<str> for DutyKind {
     fn as_ref(&self) -> &str {
@@ -2949,7 +2949,7 @@ impl LeanChainService {
 
         // We're currently pausing duties so check if it's safe to resume.
         if self.duties_paused {
-            // Swap for static_assertions::const_assert! once that crate is a workspace dep.
+            // TODO: Swap for static_assertions::const_assert! once that crate is a workspace dep.
             const _: () = assert!(HYSTERESIS_BAND < SYNC_LAG_THRESHOLD);
             // Lag has dropped well below the threshold so it's safe to resume.
             if lag <= SYNC_LAG_THRESHOLD - HYSTERESIS_BAND {
