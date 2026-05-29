@@ -84,7 +84,7 @@ pub fn aggregate_signatures_recursive(
                         .map_err(|err| anyhow!("Failed to convert child public key: {err}"))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
-            let aggregated = AggregatedXMSS::deserialize(&child.proof_data)
+            let aggregated = AggregatedXMSS::decompress(&child.proof_data)
                 .ok_or_else(|| anyhow!("Failed to deserialize child AggregatedXMSS proof"))?;
             Ok((pubkeys, aggregated))
         })
@@ -98,9 +98,9 @@ pub fn aggregate_signatures_recursive(
         .collect();
 
     let (_global_pubkeys, aggregated) =
-        xmss_aggregate(&child_refs, raw_xmss, message, slot, DEFAULT_LOG_INV_RATE);
+        xmss_aggregate(&child_refs, raw_xmss, message, slot, DEFAULT_LOG_INV_RATE)?;
 
-    Ok(aggregated.serialize())
+    Ok(aggregated.compress())
 }
 
 /// Verify an aggregated signature proof.
@@ -110,7 +110,7 @@ pub fn verify_aggregate_signature(
     proof_data: &[u8],
     slot: u32,
 ) -> anyhow::Result<()> {
-    let aggregated = AggregatedXMSS::deserialize(proof_data)
+    let aggregated = AggregatedXMSS::decompress(proof_data)
         .ok_or_else(|| anyhow!("Failed to deserialize AggregatedXMSS proof"))?;
 
     let lean_pubkeys: Vec<_> = public_keys
