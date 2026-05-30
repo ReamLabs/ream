@@ -458,8 +458,9 @@ impl LeanState {
 
                 // Finalization: if the target is the next valid justifiable
                 // hash after the source
-                let is_target_next_valid_justifiable_slot =
-                    !((attestation.source().slot + 1)..attestation.target().slot).any(|slot| {
+                let is_target_next_valid_justifiable_slot = attestation.source().slot
+                    > self.latest_finalized.slot
+                    && !((attestation.source().slot + 1)..attestation.target().slot).any(|slot| {
                         is_justifiable_after(slot, self.latest_finalized.slot).unwrap_or(false)
                     });
 
