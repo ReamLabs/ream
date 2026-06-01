@@ -92,13 +92,19 @@ impl Discovery {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
 
+        let enr_fork_id = if let Some(fork_digest) = config.fork_digest_override {
+            EnrForkId::fulu(fork_digest)
+        } else {
+            EnrForkId::electra(genesis_validators_root())
+        };
+
         let mut enr_builder = Enr::builder();
         enr_builder.ip(config.socket_address);
         enr_builder.tcp4(config.socket_port);
         enr_builder.udp4(config.discovery_port);
 
         let enr = enr_builder
-            .add_value(ENR_ETH2_KEY, &EnrForkId::electra(genesis_validators_root()))
+            .add_value(ENR_ETH2_KEY, &enr_fork_id)
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.attestation_subnets)
             .add_value(
                 SYNC_COMMITTEE_BITFIELD_ENR_KEY,

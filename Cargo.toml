@@ -2,6 +2,7 @@
 default-members = ["bin/ream"]
 members = [
     "bin/ream",
+    "bin/ream-da",
     "crates/common/account_manager",
     "crates/common/api_types/beacon",
     "crates/common/api_types/common",
@@ -33,6 +34,10 @@ members = [
     "crates/crypto/keystore",
     "crates/crypto/merkle",
     "crates/crypto/post_quantum",
+    "crates/da/errors",
+    "crates/da/storage",
+    "crates/da/networking",
+    "crates/da/beacon",
     "crates/networking/discv5",
     "crates/networking/manager",
     "crates/networking/network_state/lean",
@@ -151,6 +156,10 @@ ream-checkpoint-sync-lean = { path = "crates/common/checkpoint_sync/lean", defau
 ream-consensus-beacon = { path = "crates/common/consensus/beacon" }
 ream-consensus-lean = { path = "crates/common/consensus/lean", default-features = false }
 ream-consensus-misc = { path = "crates/common/consensus/misc", default-features = false }
+ream-da-beacon = { path = "crates/da/beacon" }
+ream-da-errors = { path = "crates/da/errors" }
+ream-da-networking = { path = "crates/da/networking" }
+ream-da-storage = { path = "crates/da/storage" }
 ream-discv5 = { path = "crates/networking/discv5" }
 ream-events-beacon = { path = "crates/common/events/beacon" }
 ream-execution-engine = { path = "crates/common/execution/engine" }

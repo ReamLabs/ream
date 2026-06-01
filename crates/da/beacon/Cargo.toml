@@ -1,0 +1,24 @@
+[package]
+name = "ream-da-beacon"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-primitives.workspace = true
+anyhow.workspace = true
+futures.workspace = true
+reqwest.workspace = true
+
+# ream dependencies
+ream-da-errors.workspace = true
+ream-events-beacon.workspace = true
+ream-validator-beacon.workspace = true
+
+[lints]
+workspace = true

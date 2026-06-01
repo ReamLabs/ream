@@ -81,6 +81,7 @@ impl NetworkManagerService {
             attestation_subnets: AttestationSubnets::new(),
             sync_committee_subnets: SyncCommitteeSubnets::new(),
             custody_group_count: CustodyGroupCount::default(),
+            fork_digest_override: None,
         };
 
         let gossipsub_config = init_gossipsub_config_with_topics();

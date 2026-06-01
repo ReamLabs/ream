@@ -6099,6 +6099,101 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-da"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "clap",
+ "discv5",
+ "futures",
+ "libp2p",
+ "ream-consensus-misc",
+ "ream-da-beacon",
+ "ream-da-errors",
+ "ream-da-networking",
+ "ream-da-storage",
+ "ream-executor",
+ "ream-network-spec",
+ "ream-p2p",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "ream-da-beacon"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "futures",
+ "ream-da-errors",
+ "ream-events-beacon",
+ "ream-validator-beacon",
+ "reqwest",
+]
+
+[[package]]
+name = "ream-da-errors"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "ream-da-networking"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "discv5",
+ "ethereum_ssz",
+ "libp2p",
+ "ream-consensus-beacon",
+ "ream-consensus-misc",
+ "ream-da-storage",
+ "ream-discv5",
+ "ream-executor",
+ "ream-network-manager",
+ "ream-network-spec",
+ "ream-p2p",
+ "ream-polynomial-commitments",
+ "ream-req-resp",
+ "rust_eth_kzg",
+ "sha2",
+ "tokio",
+ "tracing",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
+name = "ream-da-storage"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "delay_map",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "ream-consensus-beacon",
+ "ream-consensus-misc",
+ "ream-da-errors",
+ "redb",
+ "snap",
+ "ssz_types",
+ "tempdir",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "ream-discv5"
 version = "0.1.0"
 dependencies = [
