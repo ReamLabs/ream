@@ -5,20 +5,24 @@ use ream_metrics::{
     PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
     PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, inc_int_counter_vec, start_timer, stop_timer,
 };
-use ream_post_quantum_crypto::{
-    lean_multisig::aggregate::verify_aggregate_signature, leansig::signature::Signature,
-};
+use ream_post_quantum_crypto::lean_multisig::aggregate::verify_aggregate_signature;
+#[cfg(feature = "devnet4")]
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
+#[cfg(feature = "devnet5")]
+use ssz_types::typenum::U524288;
 use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-use crate::{
-    attestation::{AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof},
-    state::LeanState,
-};
+#[cfg(feature = "devnet4")]
+use crate::attestation::{AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof};
+#[cfg(feature = "devnet5")]
+use crate::attestation::{AggregatedAttestation, AggregatedAttestations, TypeOneMultiSignature};
+use crate::state::LeanState;
 
+#[cfg(feature = "devnet4")]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct BlockSignatures {
     pub attestation_signatures: VariableList<AggregatedSignatureProof, U4096>,
@@ -29,7 +33,10 @@ pub struct BlockSignatures {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct SignedBlock {
     pub block: Block,
+    #[cfg(feature = "devnet4")]
     pub signature: BlockSignatures,
+    #[cfg(feature = "devnet5")]
+    pub proof: VariableList<u8, U524288>,
 }
 
 impl SignedBlock {
@@ -91,7 +98,10 @@ impl SignedBlock {
                 match verify_aggregate_signature(
                     &public_keys,
                     &attestation_root,
+                    #[cfg(feature = "devnet4")]
                     aggregated_signature.proof_data.as_ref(),
+                    #[cfg(feature = "devnet5")]
+                    aggregated_signature.proof.as_ref(),
                     aggregated_attestation.message.slot as u32,
                 ) {
                     Ok(()) => {
@@ -190,5 +200,10 @@ pub struct BlockBody {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct BlockWithSignatures {
     pub block: Block,
+
+    #[cfg(feature = "devnet4")]
     pub signatures: VariableList<AggregatedSignatureProof, U4096>,
+
+    #[cfg(feature = "devnet5")]
+    pub signatures: VariableList<TypeOneMultiSignature, U4096>,
 }

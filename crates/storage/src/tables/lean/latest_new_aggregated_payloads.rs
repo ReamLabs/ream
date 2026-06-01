@@ -1,6 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
-use ream_consensus_lean::attestation::{AggregatedSignatureProof, SignatureKey};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::attestation::AggregatedSignatureProof as PayloadProof;
+use ream_consensus_lean::attestation::SignatureKey;
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::TypeOneMultiSignature as PayloadProof;
 use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 
 use crate::{
@@ -15,21 +19,22 @@ pub struct LeanLatestNewAggregatedPayloadsTable {
 /// Table definition for the Lean Latest New Aggregated Payloads table
 ///
 /// Key: SignatureKey
-/// Value: [AggregatedSignatureProof]
+/// Value: [PayloadProof] (Maps to AggregatedSignatureProof on devnet4, TypeOneMultiSignature on
+/// devnet5)
 impl REDBTable for LeanLatestNewAggregatedPayloadsTable {
     const TABLE_DEFINITION: TableDefinition<
         'static,
         SSZEncoding<SignatureKey>,
-        SSZEncoding<Vec<AggregatedSignatureProof>>,
+        SSZEncoding<Vec<PayloadProof>>,
     > = TableDefinition::new("lean_latest_new_aggregated_payloads");
 
     type Key = SignatureKey;
 
     type KeyTableDefinition = SSZEncoding<SignatureKey>;
 
-    type Value = Vec<AggregatedSignatureProof>;
+    type Value = Vec<PayloadProof>;
 
-    type ValueTableDefinition = SSZEncoding<Vec<AggregatedSignatureProof>>;
+    type ValueTableDefinition = SSZEncoding<Vec<PayloadProof>>;
 
     fn database(&self) -> Arc<Database> {
         self.db.clone()
@@ -42,11 +47,7 @@ impl REDBTable for LeanLatestNewAggregatedPayloadsTable {
         Ok(result.map(|guard| guard.value()))
     }
 
-    fn insert(
-        &self,
-        key: SignatureKey,
-        value: Vec<AggregatedSignatureProof>,
-    ) -> Result<(), StoreError> {
+    fn insert(&self, key: SignatureKey, value: Vec<PayloadProof>) -> Result<(), StoreError> {
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
         {
@@ -59,7 +60,7 @@ impl REDBTable for LeanLatestNewAggregatedPayloadsTable {
 }
 
 impl LeanLatestNewAggregatedPayloadsTable {
-    pub fn iter(&self) -> Result<Vec<(SignatureKey, Vec<AggregatedSignatureProof>)>, StoreError> {
+    pub fn iter(&self) -> Result<Vec<(SignatureKey, Vec<PayloadProof>)>, StoreError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
 
@@ -68,7 +69,7 @@ impl LeanLatestNewAggregatedPayloadsTable {
             let (key_guard, value_guard) = result?;
 
             let key: SignatureKey = key_guard.value();
-            let value: Vec<AggregatedSignatureProof> = value_guard.value();
+            let value: Vec<PayloadProof> = value_guard.value();
 
             entries.push((key, value));
         }
@@ -77,7 +78,7 @@ impl LeanLatestNewAggregatedPayloadsTable {
 
     pub fn retain<F>(&self, mut f: F) -> Result<(), StoreError>
     where
-        F: FnMut(&SignatureKey, &Vec<AggregatedSignatureProof>) -> bool,
+        F: FnMut(&SignatureKey, &Vec<PayloadProof>) -> bool,
     {
         let mut write_txn = self.db.begin_write()?;
         write_txn.set_durability(Durability::Immediate)?;
@@ -86,7 +87,7 @@ impl LeanLatestNewAggregatedPayloadsTable {
 
             table.retain(|key, value| {
                 let key_ref: &SignatureKey = &key;
-                let val_ref: &Vec<AggregatedSignatureProof> = &value;
+                let val_ref: &Vec<PayloadProof> = &value;
 
                 f(key_ref, val_ref)
             })?;
@@ -95,9 +96,7 @@ impl LeanLatestNewAggregatedPayloadsTable {
         Ok(())
     }
 
-    pub fn drain(
-        &self,
-    ) -> Result<HashMap<SignatureKey, Vec<AggregatedSignatureProof>>, StoreError> {
+    pub fn drain(&self) -> Result<HashMap<SignatureKey, Vec<PayloadProof>>, StoreError> {
         let write_txn = self.db.begin_write()?;
         let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
 
@@ -114,5 +113,33 @@ impl LeanLatestNewAggregatedPayloadsTable {
         self.get(key.clone())
             .map(|option| option.is_some())
             .unwrap_or(false)
+    }
+
+    pub fn get_all(&self) -> Result<HashMap<SignatureKey, Vec<PayloadProof>>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+
+        let mut map = HashMap::new();
+        for result in table.iter()? {
+            let (key_guard, value_guard) = result?;
+            map.insert(key_guard.value(), value_guard.value());
+        }
+        Ok(map)
+    }
+
+    pub fn update_all(
+        &self,
+        updates: HashMap<SignatureKey, Vec<PayloadProof>>,
+    ) -> Result<(), StoreError> {
+        let mut write_txn = self.db.begin_write()?;
+        write_txn.set_durability(Durability::Immediate)?;
+        {
+            let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
+            for (key, value) in updates {
+                table.insert(key, value)?;
+            }
+        }
+        write_txn.commit()?;
+        Ok(())
     }
 }

@@ -2,10 +2,13 @@ use std::path::Path;
 
 use alloy_primitives::hex;
 use anyhow::{Context, bail};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::attestation::AggregatedSignatureProof;
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::TypeOneMultiSignature;
 use ream_consensus_lean::{
     attestation::{
-        AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
-        SignedAttestation,
+        AggregatedAttestation, AggregatedAttestations, AttestationData, SignedAttestation,
     },
     block::{Block, BlockBody, BlockHeader, BlockSignatures, SignedBlock},
     checkpoint::Checkpoint,
@@ -79,10 +82,17 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
         // XMSS containers
         "Signature" => run_test::<SignatureJSON, Signature>(&test.value, &expected_ssz),
         "PublicKey" => run_test::<PublicKeyJSON, PublicKey>(&test.value, &expected_ssz),
+        #[cfg(feature = "devnet4")]
         "AggregatedSignatureProof" => run_test::<
             AggregatedSignatureProofJSON,
             AggregatedSignatureProof,
         >(&test.value, &expected_ssz),
+
+        #[cfg(feature = "devnet5")]
+        "TypeOneMultiSignature" => run_test::<AggregatedSignatureProofJSON, TypeOneMultiSignature>(
+            &test.value,
+            &expected_ssz,
+        ),
 
         _ => {
             warn!("Unknown type: {}, skipping", test.type_name);

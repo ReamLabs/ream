@@ -11,6 +11,12 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use libp2p_identity::PeerId;
 use libp2p_swarm::ConnectionId;
 use rand::seq::IndexedRandom;
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::SignatureKey;
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::SignedAggregatedAttestation;
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::TypeOneMultiSignature;
 use ream_consensus_lean::{
     attestation::{AttestationData, SignedAttestation},
     block::{BlockWithSignatures, SignedBlock},
@@ -33,6 +39,10 @@ use ream_req_resp::{
     },
 };
 use ream_storage::tables::{field::REDBField, table::REDBTable};
+#[cfg(feature = "devnet5")]
+use ssz_types::VariableList;
+#[cfg(feature = "devnet5")]
+use tokio::sync::{Mutex, MutexGuard};
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
@@ -242,6 +252,8 @@ pub struct LeanChainService {
     pending_callbacks: FuturesUnordered<CallbackFuture>,
     is_aggregator: bool,
     telemetry: SyncTelemetry,
+    #[cfg(feature = "devnet5")]
+    pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
 }
 
 impl LeanChainService {
@@ -269,6 +281,8 @@ impl LeanChainService {
             pending_job_requests: VecDeque::new(),
             is_aggregator,
             telemetry: SyncTelemetry::from_env(),
+            #[cfg(feature = "devnet5")]
+            pending_block_aggregates: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -1039,6 +1053,180 @@ impl LeanChainService {
                 );
             }
         }
+    }
+
+    #[cfg(feature = "devnet5")]
+    pub async fn deconstruct_block_into_store(
+        &self,
+        block: &SignedBlock,
+    ) -> Vec<SignedAggregatedAttestation> {
+        if block.block.body.attestations.is_empty() {
+            return Vec::new();
+        }
+
+        let fork_choice = self.store.read().await;
+        let database = fork_choice.store.lock().await;
+
+        if database
+            .state_provider()
+            .get(block.block.parent_root)
+            .expect("Database read error")
+            .is_none()
+        {
+            return Vec::new();
+        }
+
+        let mut local_proofs_by_root: HashMap<B256, Vec<TypeOneMultiSignature>> = HashMap::new();
+        let initial_payloads = database
+            .latest_new_aggregated_payloads_provider()
+            .get_all()
+            .expect("Database read error");
+
+        for (key, proofs) in &initial_payloads {
+            local_proofs_by_root
+                .entry(key.data_root)
+                .or_default()
+                .extend(proofs.clone());
+        }
+
+        let mut new_payloads = initial_payloads;
+        let mut aggregates = Vec::new();
+        let latest_justified = database
+            .latest_justified_provider()
+            .get()
+            .expect("Database read error");
+
+        let payload_bytes = block.proof.as_slice();
+        if payload_bytes.len() < 32 {
+            return Vec::new();
+        }
+
+        let (random_salt, payload_data) = payload_bytes.split_at(32);
+        let mut current_offset = 0;
+        let single_signature_len = 2144;
+
+        for attestation in &block.block.body.attestations {
+            if attestation.message.target.slot <= latest_justified.slot {
+                continue;
+            }
+
+            let participant_count = attestation.aggregation_bits.iter().filter(|&b| *b).count();
+            let required_bytes = participant_count * single_signature_len;
+
+            if current_offset + required_bytes > payload_data.len() {
+                break;
+            }
+
+            let mut wire_data = Vec::with_capacity(32 + required_bytes);
+            wire_data.extend_from_slice(random_salt);
+            wire_data
+                .extend_from_slice(&payload_data[current_offset..current_offset + required_bytes]);
+
+            let block_type_one = TypeOneMultiSignature::new(
+                attestation.aggregation_bits.clone(),
+                VariableList::new(wire_data).expect("Payload size limit exceeded"),
+            );
+
+            let data_root = attestation.message.tree_hash_root();
+            let combined = if let Some(local_proofs) = local_proofs_by_root.get(&data_root) {
+                let mut combined_bits = attestation.aggregation_bits.clone();
+                let mut combined_bytes = block_type_one.proof.to_vec();
+
+                for proof in local_proofs {
+                    for validator_id in proof.to_validator_indices() {
+                        let _ = combined_bits.set(validator_id as usize, true);
+                    }
+                    combined_bytes.extend_from_slice(&proof.proof);
+                }
+                TypeOneMultiSignature::new(
+                    combined_bits,
+                    VariableList::new(combined_bytes).expect("Aggregate size limit exceeded"),
+                )
+            } else {
+                block_type_one
+            };
+
+            if let Some(local_proofs) = local_proofs_by_root.get(&data_root) {
+                for proofs in new_payloads.values_mut() {
+                    proofs.retain(|proof| !local_proofs.contains(proof));
+                }
+                new_payloads.retain(|_, value| !value.is_empty());
+            }
+
+            for validator_id in combined.to_validator_indices() {
+                new_payloads
+                    .entry(SignatureKey {
+                        validator_id,
+                        data_root,
+                    })
+                    .or_default()
+                    .push(combined.clone());
+            }
+
+            aggregates.push(SignedAggregatedAttestation {
+                data: attestation.message.clone(),
+                proof: combined,
+            });
+            current_offset += required_bytes;
+        }
+
+        if !aggregates.is_empty() {
+            database
+                .latest_new_aggregated_payloads_provider()
+                .update_all(new_payloads)
+                .expect("Database write error");
+
+            let mut pending_lock = self.pending_block_aggregates.lock().await;
+            pending_lock.extend(aggregates.clone());
+        }
+
+        aggregates
+    }
+
+    #[cfg(feature = "devnet5")]
+    pub async fn publish_pending_block_aggregates(&self) -> anyhow::Result<()> {
+        let pending = {
+            let mut lock = self.pending_block_aggregates.lock().await;
+            if lock.is_empty() {
+                return Ok(());
+            }
+            std::mem::replace(&mut *lock, Vec::new())
+        };
+
+        for signed_attestation in pending {
+            self.outbound_p2p
+                .send(LeanP2PRequest::GossipAggregatedAttestation(Box::new(
+                    signed_attestation,
+                )))
+                .map_err(|err| anyhow!("Failed to gossip aggregated attestation: {err:?}"))?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "devnet5")]
+    pub async fn process_new_block(&mut self, signed_block: &SignedBlock) -> anyhow::Result<()> {
+        let block = &signed_block.block;
+        {
+            let fork_choice = self.store.read().await;
+            let db = fork_choice.store.lock().await;
+            let state_table = db.state_provider();
+
+            let mut state = state_table
+                .get(block.parent_root)?
+                .ok_or_else(|| anyhow!("Parent state root not found"))?;
+
+            state.process_block(block)?;
+            state_table.insert(block.tree_hash_root(), state)?;
+        }
+
+        let aggregates = self.deconstruct_block_into_store(signed_block).await;
+
+        if !aggregates.is_empty() {
+            self.publish_pending_block_aggregates().await?;
+        }
+
+        Ok(())
     }
 
     async fn current_peer_gap_slots(&self) -> u64 {
@@ -2739,10 +2927,14 @@ mod tests {
                 .unwrap();
             let signed_block = SignedBlock {
                 block: block.block,
+                #[cfg(feature = "devnet4")]
                 signature: BlockSignatures {
                     attestation_signatures: block.signatures,
                     proposer_signature: Signature::blank(),
                 },
+                #[cfg(feature = "devnet5")]
+                proof: VariableList::<u8, U524288>::new(proof_bytes)
+                    .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
             };
             store.on_block(&signed_block, false).await.unwrap();
         }
@@ -2755,7 +2947,11 @@ mod tests {
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
 
         let peer_id = PeerId::random();
         service.network_state.upsert_peer(
@@ -2776,8 +2972,11 @@ mod tests {
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-
+        #[cfg(feature = "devnet4")]
         let service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
 
         let target_checkpoint = Checkpoint {
             root: B256::repeat_byte(0x44),
@@ -2863,7 +3062,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
 
         // Try to produce a block for slot 2 (behind head slot 3)
@@ -2884,7 +3087,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_id = PeerId::random();
@@ -2920,7 +3127,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_id = PeerId::random();
@@ -2957,7 +3168,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
 
         let peer_a = PeerId::random();
         let peer_b = PeerId::random();
@@ -3002,7 +3217,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_id = PeerId::random();
@@ -3047,7 +3266,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_a = PeerId::random();
@@ -3103,7 +3326,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
 
         let root = B256::repeat_byte(0x11);
         let parent_root = B256::repeat_byte(0x22);
@@ -3167,7 +3394,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_id = PeerId::random();
@@ -3203,10 +3434,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(4, 4).await.unwrap();
         let signed_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::blank(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         let checkpoint_root = signed_block.block.tree_hash_root();
 
@@ -3216,7 +3451,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Syncing;
 
         let peer_id = PeerId::random();
@@ -3253,10 +3492,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(4, 4).await.unwrap();
         let signed_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::blank(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         let pending_root = signed_block.block.tree_hash_root();
         store
@@ -3270,7 +3513,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Syncing;
 
         let old_queue_root = B256::repeat_byte(0x99);
@@ -3319,7 +3566,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
         service.checkpoints_to_queue.push((
             Checkpoint {
@@ -3344,7 +3595,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Syncing;
         service.checkpoints_to_queue.push((
             Checkpoint {
@@ -3396,7 +3651,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
 
         let quarantined_root = B256::repeat_byte(0x33);
@@ -3441,7 +3700,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         let checkpoint = Checkpoint {
             root: B256::repeat_byte(0xbb),
             slot: 5,
@@ -3496,7 +3759,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         let checkpoint = Checkpoint {
             root: B256::repeat_byte(0xaa),
             slot: 1,
@@ -3546,7 +3813,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
 
         let peer_id = PeerId::random();
         service.network_state.upsert_peer(
@@ -3592,7 +3863,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_id = PeerId::random();
@@ -3626,10 +3901,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
         let mut pending_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         let pending_root = {
             pending_block.block.parent_root = B256::repeat_byte(0x88);
@@ -3646,7 +3925,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Syncing;
 
         assert!(service.has_orphaned_pending_blocks().await);
@@ -3663,10 +3946,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
         let mut pending_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         let pending_root = {
             pending_block.block.parent_root = B256::repeat_byte(0x99);
@@ -3683,7 +3970,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
 
         assert!(service.has_orphaned_pending_blocks().await);
@@ -3702,7 +3993,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.sync_status = SyncStatus::Synced;
         service.telemetry.inflight_roots.insert(
             B256::repeat_byte(0xaa),
@@ -3727,10 +4022,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
         let pending_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         let actual_root = pending_block.block.tree_hash_root();
         let bad_root = B256::repeat_byte(0xab);
@@ -3745,7 +4044,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         let mut previous_queue = JobQueue::new(bad_root, 1, 1);
         previous_queue.is_complete = true;
         service.sync_status = SyncStatus::Syncing;
@@ -3796,10 +4099,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
         let pending_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         let actual_root = pending_block.block.tree_hash_root();
         let bad_root = B256::repeat_byte(0xcd);
@@ -3814,7 +4121,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         let mut previous_queue = JobQueue::new(bad_root, 1, 1);
         previous_queue.is_complete = true;
         service.sync_status = SyncStatus::Syncing;
@@ -3854,10 +4165,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
         let pending_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         let pending_root = pending_block.block.tree_hash_root();
         store
@@ -3871,7 +4186,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.dropped_backfill_roots.insert(pending_root);
 
         let advanced = service
@@ -3903,10 +4222,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(3, 3).await.unwrap();
         let mut signed_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         {
             signed_block.block.parent_root = suppressed_parent_root;
@@ -3917,7 +4240,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service
             .dropped_backfill_roots
             .insert(suppressed_parent_root);
@@ -3955,10 +4282,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(3, 3).await.unwrap();
         let mut pending_parent = SignedBlock {
             block: block.block.clone(),
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures.clone(),
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         {
             pending_parent.block.parent_root = canonical_completion_root;
@@ -3974,10 +4305,14 @@ complete(start=60, fetched_through=57, jobs=0)"
 
         let mut signed_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         {
             signed_block.block.slot = 4;
@@ -3988,7 +4323,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
 
         let mut queue = JobQueue::new(last_root, 4, 4);
         queue.add_job(JobRequest::new(PeerId::random(), last_root));
@@ -4016,10 +4355,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(3, 3).await.unwrap();
         let mut pending_parent = SignedBlock {
             block: block.block.clone(),
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures.clone(),
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         {
             pending_parent.block.parent_root = missing_root;
@@ -4035,10 +4378,14 @@ complete(start=60, fetched_through=57, jobs=0)"
 
         let mut signed_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         {
             signed_block.block.slot = 4;
@@ -4079,10 +4426,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
         let mut pending_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         {
             pending_block.block.parent_root = B256::repeat_byte(0x77);
@@ -4109,7 +4460,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
 
         assert!(service.has_orphaned_pending_blocks().await);
         service.prune_stale_pending_blocks().await.unwrap();
@@ -4126,10 +4481,14 @@ complete(start=60, fetched_through=57, jobs=0)"
             .unwrap();
         let mut signed_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         {
             signed_block.block.parent_root = B256::repeat_byte(0x99);
@@ -4162,7 +4521,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
 
         let peer_id = PeerId::random();
         service.network_state.upsert_peer(
@@ -4202,10 +4565,14 @@ complete(start=60, fetched_through=57, jobs=0)"
             let block = store.produce_block_with_signatures(1, 1).await.unwrap();
             let mut signed_block = SignedBlock {
                 block: block.block,
+                #[cfg(feature = "devnet4")]
                 signature: BlockSignatures {
                     attestation_signatures: block.signatures,
                     proposer_signature: Signature::mock(),
                 },
+                #[cfg(feature = "devnet5")]
+                proof: VariableList::<u8, U524288>::new(proof_bytes)
+                    .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
             };
             signed_block.block.slot = 101;
             signed_block.block.parent_root = old_root;
@@ -4216,7 +4583,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         let peer_old = PeerId::random();
         let peer_new = PeerId::random();
 
@@ -4271,17 +4642,25 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
         let signed_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         let root = signed_block.block.tree_hash_root();
 
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.backfill_recovery_attempts.insert(root, 3);
         service.quarantined_backfill_roots.insert(
             root,
@@ -4310,7 +4689,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         let root = B256::repeat_byte(0xaa);
         let mut previous_queue = JobQueue::new(root, 1, 1);
         previous_queue.is_complete = true;
@@ -4349,10 +4732,14 @@ complete(start=60, fetched_through=57, jobs=0)"
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
         let mut pending_block = SignedBlock {
             block: block.block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: block.signatures,
                 proposer_signature: Signature::mock(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         };
         {
             pending_block.block.slot = 0;
@@ -4370,7 +4757,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         service.backfill_state.add_new_job_queue(
             Checkpoint {
                 root: pending_root,
@@ -4402,10 +4793,14 @@ complete(start=60, fetched_through=57, jobs=0)"
             let block = store.produce_block_with_signatures(1, 1).await.unwrap();
             SignedBlock {
                 block: block.block,
+                #[cfg(feature = "devnet4")]
                 signature: BlockSignatures {
                     attestation_signatures: block.signatures,
                     proposer_signature: Signature::mock(),
                 },
+                #[cfg(feature = "devnet5")]
+                proof: VariableList::<u8, U524288>::new(proof_bytes)
+                    .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
             }
         };
 
@@ -4415,7 +4810,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
+        #[cfg(feature = "devnet4")]
         let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        #[cfg(feature = "devnet5")]
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
         let old_peer = PeerId::random();
         let new_peer = PeerId::random();
         service.backfill_state.add_new_job_queue(

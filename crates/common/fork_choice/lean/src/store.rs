@@ -6,10 +6,14 @@ use std::{
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::attestation::AggregatedSignatureProof as PayloadProof;
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::TypeOneMultiSignature as PayloadProof;
 use ream_consensus_lean::{
     attestation::{
-        AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
-        SignatureKey, SignedAggregatedAttestation, SignedAttestation,
+        AggregatedAttestation, AggregatedAttestations, AttestationData, SignatureKey,
+        SignedAggregatedAttestation, SignedAttestation,
     },
     block::{Block, BlockBody, BlockWithSignatures, SignedBlock},
     checkpoint::Checkpoint,
@@ -405,7 +409,7 @@ impl Store {
         let attestations = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
 
-            let all_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>> =
+            let all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> =
                 entries.into_iter().collect();
 
             self.extract_attestations_from_aggregated_payloads(&all_payloads)
@@ -513,8 +517,8 @@ impl Store {
         head_state: &LeanState,
         attestations: &[AggregatedAttestations],
         gossip_signatures_provider: &GossipSignaturesTable,
-        new_payloads: Option<&HashMap<AttestationData, HashSet<AggregatedSignatureProof>>>,
-        known_payloads: Option<&HashMap<AttestationData, HashSet<AggregatedSignatureProof>>>,
+        new_payloads: Option<&HashMap<AttestationData, HashSet<PayloadProof>>>,
+        known_payloads: Option<&HashMap<AttestationData, HashSet<PayloadProof>>>,
         recursive: bool,
     ) -> anyhow::Result<Vec<SignedAggregatedAttestation>> {
         let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
@@ -630,9 +634,13 @@ impl Store {
                 &[],
             );
 
-            let proof = AggregatedSignatureProof {
+            let proof = PayloadProof {
                 participants: bits.clone(),
+                #[cfg(feature = "devnet4")]
                 proof_data: VariableList::new(aggregated_signature)
+                    .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+                #[cfg(feature = "devnet5")]
+                proof: VariableList::new(aggregated_signature)
                     .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
             };
 
@@ -648,7 +656,7 @@ impl Store {
     async fn select_aggregated_proofs(
         &self,
         attestations: &[AggregatedAttestations],
-    ) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<AggregatedSignatureProof>)> {
+    ) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<PayloadProof>)> {
         let mut results = Vec::new();
         let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
         let latest_known_aggregated_payloads_provider = self
@@ -719,7 +727,7 @@ impl Store {
             }
         }
 
-        let (attestations, proofs): (Vec<_>, Vec<_>) = results.into_iter().unzip();
+        let (attestations, proofs): (Vec<_>, Vec<PayloadProof>) = results.into_iter().unzip();
         Ok((attestations, proofs))
     }
 
@@ -729,7 +737,7 @@ impl Store {
         proposer_index: u64,
         parent_root: B256,
         attestations: Option<VariableList<AggregatedAttestations, U4096>>,
-    ) -> anyhow::Result<(Block, Vec<AggregatedSignatureProof>, LeanState)> {
+    ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
         let (
             state_provider,
             latest_known_attestation_provider,
@@ -775,7 +783,7 @@ impl Store {
         let mut processed_attestation_data: HashSet<AttestationData> = HashSet::new();
 
         let mut sorted_candidates: Vec<_> = available_signed_attestations.values().collect();
-        sorted_candidates.sort_by_key(|signed_attestaion| signed_attestaion.message.target.slot);
+        sorted_candidates.sort_by_key(|signed_attestation| signed_attestation.message.target.slot);
 
         loop {
             let mut new_attestations: VariableList<AggregatedAttestations, U4096> =
@@ -1010,7 +1018,7 @@ impl Store {
         let attestation_data_map = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
 
-            let all_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>> =
+            let all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> =
                 entries.into_iter().collect();
 
             self.extract_attestations_from_aggregated_payloads(&all_payloads)
@@ -1318,7 +1326,10 @@ impl Store {
             match verify_aggregate_signature(
                 &public_keys,
                 &data_root.0,
+                #[cfg(feature = "devnet4")]
                 proof.proof_data.as_ref(),
+                #[cfg(feature = "devnet5")]
+                proof.proof.as_ref(),
                 attestation_slot as u32,
             ) {
                 Ok(()) => {
@@ -1380,7 +1391,7 @@ impl Store {
 
     pub async fn extract_attestations_from_aggregated_payloads(
         &self,
-        aggregated_payloads: &HashMap<SignatureKey, Vec<AggregatedSignatureProof>>,
+        aggregated_payloads: &HashMap<SignatureKey, Vec<PayloadProof>>,
     ) -> anyhow::Result<HashMap<u64, AttestationData>> {
         let mut attestations: HashMap<u64, AttestationData> = HashMap::new();
         let attestation_data_by_root_provider =
@@ -1448,8 +1459,7 @@ impl Store {
             }
         }
 
-        let mut new_payloads: HashMap<AttestationData, HashSet<AggregatedSignatureProof>> =
-            HashMap::new();
+        let mut new_payloads: HashMap<AttestationData, HashSet<PayloadProof>> = HashMap::new();
         for (signature_key, proofs) in latest_new_aggregated_payloads_provider.iter()? {
             if let Some(attestation_data) =
                 attestation_data_by_root_provider.get(signature_key.data_root)?
@@ -1461,8 +1471,7 @@ impl Store {
             }
         }
 
-        let mut known_payloads: HashMap<AttestationData, HashSet<AggregatedSignatureProof>> =
-            HashMap::new();
+        let mut known_payloads: HashMap<AttestationData, HashSet<PayloadProof>> = HashMap::new();
         for (signature_key, proofs) in latest_known_aggregated_payloads_provider.iter()? {
             if let Some(attestation_data) =
                 attestation_data_by_root_provider.get(signature_key.data_root)?
@@ -1486,8 +1495,7 @@ impl Store {
         stop_timer(aggregation_timer);
 
         let mut aggregated_data_roots = HashSet::new();
-        let mut next_new_payloads: HashMap<SignatureKey, Vec<AggregatedSignatureProof>> =
-            HashMap::new();
+        let mut next_new_payloads: HashMap<SignatureKey, Vec<PayloadProof>> = HashMap::new();
 
         for signed_attestation in &signed_attestations {
             let data_root = signed_attestation.data.tree_hash_root();
@@ -1714,9 +1722,9 @@ pub fn compute_subnet_id(validator_id: u64, num_committees: u64) -> u64 {
 
 fn compact_aggregated_proofs(
     attestations: Vec<AggregatedAttestation>,
-    proofs: Vec<AggregatedSignatureProof>,
+    proofs: Vec<PayloadProof>,
     validators: &VariableList<Validator, U4096>,
-) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<AggregatedSignatureProof>)> {
+) -> anyhow::Result<(Vec<AggregatedAttestation>, Vec<PayloadProof>)> {
     ensure!(
         attestations.len() == proofs.len(),
         "Mismatched attestations ({}) and proofs ({}) lengths",
@@ -1822,7 +1830,10 @@ fn compact_aggregated_proofs(
                     .collect::<anyhow::Result<Vec<_>>>()?;
                 Ok(ChildProof {
                     public_keys,
+                    #[cfg(feature = "devnet4")]
                     proof_data: proof.proof_data.to_vec(),
+                    #[cfg(feature = "devnet5")]
+                    proof_data: proof.proof.to_vec(),
                 })
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1839,7 +1850,7 @@ fn compact_aggregated_proofs(
         let merged_proof_data = merged_proof_data?;
         inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
 
-        let merged_proof = AggregatedSignatureProof::new(
+        let merged_proof = PayloadProof::new(
             merged_bits.clone(),
             VariableList::new(merged_proof_data)
                 .map_err(|err| anyhow!("Merged proof exceeds size limit: {err:?}"))?,

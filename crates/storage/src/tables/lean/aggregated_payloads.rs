@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use ream_consensus_lean::attestation::{AggregatedSignatureProof, SignatureKey};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::attestation::AggregatedSignatureProof;
+use ream_consensus_lean::attestation::SignatureKey;
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::TypeOneMultiSignature;
 use redb::{Database, Durability, TableDefinition};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{VariableList, typenum::U4096};
@@ -14,7 +18,11 @@ use crate::{
 /// Uses VariableList for SSZ compatibility.
 #[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
 pub struct AggregatedPayloadList {
+    #[cfg(feature = "devnet4")]
     pub proofs: VariableList<AggregatedSignatureProof, U4096>,
+
+    #[cfg(feature = "devnet5")]
+    pub proofs: VariableList<TypeOneMultiSignature, U4096>,
 }
 
 impl AggregatedPayloadList {
@@ -24,7 +32,13 @@ impl AggregatedPayloadList {
         }
     }
 
+    #[cfg(feature = "devnet4")]
     pub fn push(&mut self, proof: AggregatedSignatureProof) -> Result<(), ssz_types::Error> {
+        self.proofs.push(proof)
+    }
+
+    #[cfg(feature = "devnet5")]
+    pub fn push(&mut self, proof: TypeOneMultiSignature) -> Result<(), ssz_types::Error> {
         self.proofs.push(proof)
     }
 
@@ -36,7 +50,13 @@ impl AggregatedPayloadList {
         self.proofs.len()
     }
 
+    #[cfg(feature = "devnet4")]
     pub fn iter(&self) -> impl Iterator<Item = &AggregatedSignatureProof> {
+        self.proofs.iter()
+    }
+
+    #[cfg(feature = "devnet5")]
+    pub fn iter(&self) -> impl Iterator<Item = &TypeOneMultiSignature> {
         self.proofs.iter()
     }
 }
@@ -73,10 +93,24 @@ impl REDBTable for AggregatedPayloadsTable {
 
 impl AggregatedPayloadsTable {
     /// Append a proof to the list for the given key.
+    #[cfg(feature = "devnet4")]
     pub fn append_proof(
         &self,
         key: SignatureKey,
         proof: AggregatedSignatureProof,
+    ) -> Result<(), StoreError> {
+        let mut list = self.get(key.clone())?.unwrap_or_default();
+        list.push(proof)
+            .map_err(|err| StoreError::DecodeError(format!("VariableList error: {err:?}")))?;
+        self.insert(key, list)
+    }
+
+    /// Append a proof to the list for the given key.
+    #[cfg(feature = "devnet5")]
+    pub fn append_proof(
+        &self,
+        key: SignatureKey,
+        proof: TypeOneMultiSignature,
     ) -> Result<(), StoreError> {
         let mut list = self.get(key.clone())?.unwrap_or_default();
         list.push(proof)

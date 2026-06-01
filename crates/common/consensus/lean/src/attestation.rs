@@ -4,10 +4,11 @@ use alloy_primitives::B256;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use ssz_types::{
-    BitList, VariableList,
-    typenum::{U4096, U1048576},
-};
+#[cfg(feature = "devnet5")]
+use ssz_types::typenum::U524288;
+#[cfg(feature = "devnet4")]
+use ssz_types::typenum::U1048576;
+use ssz_types::{BitList, VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
@@ -39,17 +40,45 @@ impl SignatureKey {
     }
 }
 
+#[cfg(feature = "devnet4")]
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct AggregatedSignatureProof {
     pub participants: BitList<U4096>,
     pub proof_data: VariableList<u8, U1048576>,
 }
 
+#[cfg(feature = "devnet4")]
 impl AggregatedSignatureProof {
     pub fn new(participants: BitList<U4096>, proof_data: VariableList<u8, U1048576>) -> Self {
         Self {
             participants,
             proof_data,
+        }
+    }
+
+    pub fn to_validator_indices(&self) -> Vec<u64> {
+        self.participants
+            .iter()
+            .enumerate()
+            .filter(|(_, bit)| *bit)
+            .map(|(index, _)| index as u64)
+            .collect()
+    }
+}
+
+#[cfg(feature = "devnet5")]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash)]
+pub struct TypeOneMultiSignature {
+    pub participants: BitList<U4096>,
+    pub proof: VariableList<u8, U524288>,
+}
+
+#[cfg(feature = "devnet5")]
+impl TypeOneMultiSignature {
+    pub fn new(participants: BitList<U4096>, proof: VariableList<u8, U524288>) -> Self {
+        Self {
+            participants,
+            proof,
         }
     }
 
@@ -121,5 +150,10 @@ pub struct AggregatedAttestation {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct SignedAggregatedAttestation {
     pub data: AttestationData,
+
+    #[cfg(feature = "devnet4")]
     pub proof: AggregatedSignatureProof,
+
+    #[cfg(feature = "devnet5")]
+    pub proof: TypeOneMultiSignature,
 }
