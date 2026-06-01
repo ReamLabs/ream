@@ -5,10 +5,12 @@ use std::{
 
 use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::attestation::AggregatedSignatureProof;
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::TypeOneMultiSignature;
 use ream_consensus_lean::{
-    attestation::{
-        AggregatedSignatureProof, AttestationData, SignedAggregatedAttestation, SignedAttestation,
-    },
+    attestation::{AttestationData, SignedAggregatedAttestation, SignedAttestation},
     block::{Block, BlockSignatures, SignedBlock},
     checkpoint::Checkpoint,
     state::LeanState,
@@ -22,10 +24,11 @@ use ream_storage::{
     dir::setup_data_dir,
     tables::{field::REDBField, table::REDBTable},
 };
-use ssz_types::{
-    BitList, VariableList,
-    typenum::{U4096, U1048576},
-};
+#[cfg(feature = "devnet5")]
+use ssz_types::typenum::U524288;
+#[cfg(feature = "devnet4")]
+use ssz_types::typenum::U1048576;
+use ssz_types::{BitList, VariableList, typenum::U4096};
 use tracing::{debug, info};
 use tree_hash::TreeHash;
 
@@ -122,10 +125,14 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     let store = Store::get_forkchoice_store(
         SignedBlock {
             block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: VariableList::empty(),
                 proposer_signature: Signature::blank(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
         },
         state,
         db,
@@ -188,10 +195,19 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 }
 
                 let proof_bytes = decode_hex_bytes(&attestation.proof.proof_data.data)?;
+                #[cfg(feature = "devnet4")]
                 let proof_data = VariableList::<u8, U1048576>::new(proof_bytes)
                     .map_err(|err| anyhow!("Failed to build proof_data list: {err:?}"))?;
 
+                #[cfg(feature = "devnet5")]
+                let proof = VariableList::<u8, U524288>::new(proof_bytes)
+                    .map_err(|err| anyhow!("Failed to build proof_data list: {err:?}"))?;
+
+                #[cfg(feature = "devnet4")]
                 let proof = AggregatedSignatureProof::new(participants, proof_data);
+
+                #[cfg(feature = "devnet5")]
+                let proof = TypeOneMultiSignature::new(participants, proof);
 
                 let signed = SignedAggregatedAttestation {
                     data: attestation.data.clone(),
@@ -280,9 +296,16 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                                 anyhow!("Failed to set participant bit {index}: {err:?}")
                             })?;
                         }
+                        #[cfg(feature = "devnet4")]
                         proofs.push(AggregatedSignatureProof::new(
                             participants,
                             VariableList::<u8, U1048576>::new(vec![])
+                                .expect("Failed to create empty proof_data"),
+                        ));
+                        #[cfg(feature = "devnet5")]
+                        proofs.push(TypeOneMultiSignature::new(
+                            participants,
+                            VariableList::<u8, U524288>::new(vec![])
                                 .expect("Failed to create empty proof_data"),
                         ));
                     }
@@ -321,10 +344,14 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     .on_block(
                         &SignedBlock {
                             block: ream_block,
+                            #[cfg(feature = "devnet4")]
                             signature: BlockSignatures {
                                 attestation_signatures: signatures,
                                 proposer_signature,
                             },
+                            #[cfg(feature = "devnet5")]
+                            proof: VariableList::<u8, U524288>::new(proof_bytes)
+                                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
                         },
                         false, // Don't verify signatures in spec tests (we use blank signatures)
                     )

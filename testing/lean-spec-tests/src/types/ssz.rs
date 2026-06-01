@@ -8,10 +8,13 @@
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::attestation::AggregatedSignatureProof;
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::TypeOneMultiSignature;
 use ream_consensus_lean::{
     attestation::{
-        AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof, AttestationData,
-        SignedAttestation,
+        AggregatedAttestation, AggregatedAttestations, AttestationData, SignedAttestation,
     },
     block::{Block, BlockBody, BlockHeader, BlockSignatures, SignedBlock},
     checkpoint::Checkpoint,
@@ -393,6 +396,7 @@ pub struct AggregatedSignatureProofJSON {
     pub proof_data: ProofDataJSON,
 }
 
+#[cfg(feature = "devnet4")]
 impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
     type Error = anyhow::Error;
 
@@ -402,6 +406,19 @@ impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
             proof_data: VariableList::try_from(decode_hex(&value.proof_data.data)?)
                 .map_err(|err| anyhow!("Failed to convert proof_data: {err}"))?,
         })
+    }
+}
+
+#[cfg(feature = "devnet5")]
+impl TryFrom<&AggregatedSignatureProofJSON> for TypeOneMultiSignature {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &AggregatedSignatureProofJSON) -> anyhow::Result<Self> {
+        Ok(Self::new(
+            bools_to_bitlist(&value.participants.data)?,
+            VariableList::try_from(decode_hex(&value.proof_data.data)?)
+                .map_err(|err| anyhow!("Failed to convert proof_data: {err}"))?,
+        ))
     }
 }
 
