@@ -1110,36 +1110,36 @@ impl LeanChainService {
         };
         let validators = &parent_state.validators;
 
-        let attestation_pubkey = |validator_id: usize| {
+        let attestation_public_key = |validator_id: usize| {
             validators
                 .get(validator_id)
                 .map(|v| v.attestation_public_key)
         };
 
-        let mut pubkeys_per_component: Vec<Vec<_>> =
+        let mut public_keys_per_component: Vec<Vec<_>> =
             Vec::with_capacity(block.block.body.attestations.len() + 1);
         for attestation in &block.block.body.attestations {
-            let mut pks = Vec::new();
+            let mut public_keys = Vec::new();
             for (validator_id, bit) in attestation.aggregation_bits.iter().enumerate() {
                 if bit {
-                    match attestation_pubkey(validator_id) {
-                        Some(pk) => pks.push(pk),
+                    match attestation_public_key(validator_id) {
+                        Some(public_key) => public_keys.push(public_key),
                         None => return Vec::new(),
                     }
                 }
             }
-            pubkeys_per_component.push(pks);
+            public_keys_per_component.push(public_keys);
         }
-        let proposer_pubkey = match validators
+        let proposer_public_key = match validators
             .get(block.block.proposer_index as usize)
             .map(|v| v.proposal_public_key)
         {
-            Some(pk) => pk,
+            Some(public_key) => public_key,
             None => return Vec::new(),
         };
-        pubkeys_per_component.push(vec![proposer_pubkey]);
+        public_keys_per_component.push(vec![proposer_public_key]);
 
-        let type_two = match type2_from_wire(block.proof.as_ref(), &pubkeys_per_component) {
+        let type_two = match type2_from_wire(block.proof.as_ref(), &public_keys_per_component) {
             Ok(proof) => proof,
             Err(err) => {
                 debug!("Post-block Type-2 decode failed: {err}");
@@ -1192,7 +1192,7 @@ impl LeanChainService {
                         for validator_id in proof.to_validator_indices() {
                             let _ = union_bits.set(validator_id as usize, true);
                         }
-                        match type1_from_wire(&proof.proof, &local_proof_pubkeys(proof, validators))
+                        match type1_from_wire(&proof.proof, &local_proof_public_keys(proof, validators))
                         {
                             Ok(child) => children.push(child),
                             Err(err) => {
@@ -2959,7 +2959,7 @@ fn pending_block_parent_root(block: &SignedBlock) -> B256 {
 }
 
 #[cfg(feature = "devnet5")]
-fn local_proof_pubkeys(
+fn local_proof_public_keys(
     proof: &TypeOneMultiSignature,
     validators: &ssz_types::VariableList<
         ream_consensus_lean::validator::Validator,

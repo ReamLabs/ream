@@ -13,20 +13,20 @@ pub fn type2_setup() {
     setup_prover();
 }
 
-fn to_lib_pubkey(pk: &PublicKey) -> Result<XmssPublicKey> {
-    pk.as_lean_sig()
+fn to_lib_public_key(public_key: &PublicKey) -> Result<XmssPublicKey> {
+    public_key.as_lean_sig()
 }
 
-fn to_lib_signature(sig: &Signature) -> Result<XmssSignature> {
-    sig.as_lean_sig()
+fn to_lib_signature(signature: &Signature) -> Result<XmssSignature> {
+    signature.as_lean_sig()
 }
 
 pub fn type1_from_wire(wire: &[u8], public_keys: &[PublicKey]) -> Result<TypeOneMultiSignature> {
-    let lib_pks = public_keys
+    let lib_public_keys = public_keys
         .iter()
-        .map(to_lib_pubkey)
+        .map(to_lib_public_key)
         .collect::<Result<Vec<_>>>()?;
-    TypeOneMultiSignature::decompress_without_pubkeys(wire, lib_pks)
+    TypeOneMultiSignature::decompress_without_pubkeys(wire, lib_public_keys)
         .ok_or_else(|| anyhow!("Failed to decode Type-1 multi-signature from wire bytes"))
 }
 
@@ -44,7 +44,7 @@ pub fn type1_aggregate(
 
     let raw: Vec<_> = raw_xmss
         .iter()
-        .map(|(pk, sig)| Ok((to_lib_pubkey(pk)?, to_lib_signature(sig)?)))
+        .map(|(public_key, signature)| Ok((to_lib_public_key(public_key)?, to_lib_signature(signature)?)))
         .collect::<Result<Vec<_>>>()?;
 
     aggregate_type_1(children, raw, *message, slot, LOG_INV_RATE)
@@ -69,13 +69,13 @@ pub fn type2_to_wire(proof: &TypeTwoMultiSignature) -> Vec<u8> {
 
 pub fn type2_from_wire(
     wire: &[u8],
-    pubkeys_per_component: &[Vec<PublicKey>],
+    public_keys_per_component: &[Vec<PublicKey>],
 ) -> Result<TypeTwoMultiSignature> {
-    let lib_pks = pubkeys_per_component
+    let lib_public_keys = public_keys_per_component
         .iter()
-        .map(|pks| pks.iter().map(to_lib_pubkey).collect::<Result<Vec<_>>>())
+        .map(|public_keys| public_keys.iter().map(to_lib_public_key).collect::<Result<Vec<_>>>())
         .collect::<Result<Vec<_>>>()?;
-    TypeTwoMultiSignature::decompress_without_pubkeys(wire, lib_pks)
+    TypeTwoMultiSignature::decompress_without_pubkeys(wire, lib_public_keys)
         .ok_or_else(|| anyhow!("Failed to decode Type-2 multi-signature from wire bytes"))
 }
 
@@ -93,12 +93,12 @@ pub fn type2_split(proof: TypeTwoMultiSignature, index: usize) -> Result<TypeOne
 
 pub fn type2_verify_block(
     wire: &[u8],
-    pubkeys_per_component: &[Vec<PublicKey>],
+    public_keys_per_component: &[Vec<PublicKey>],
     expected_bindings: &[([u8; 32], u32)],
 ) -> Result<()> {
     type2_setup();
 
-    let proof = type2_from_wire(wire, pubkeys_per_component)?;
+    let proof = type2_from_wire(wire, public_keys_per_component)?;
 
     if proof.info.len() != expected_bindings.len() {
         return Err(anyhow!(

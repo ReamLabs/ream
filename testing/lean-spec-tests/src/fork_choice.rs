@@ -393,8 +393,8 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 // Build the SignedAttestation from fixture data, including a real
                 // signature when one is provided; otherwise use a blank signature.
                 let signature = match attestation.signature.as_deref() {
-                    Some(sig_hex) => {
-                        let bytes = decode_hex_bytes(sig_hex)?;
+                    Some(signature_hex) => {
+                        let bytes = decode_hex_bytes(signature_hex)?;
                         Signature::from(bytes.as_slice())
                     }
                     None => Signature::blank(),

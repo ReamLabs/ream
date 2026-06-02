@@ -281,7 +281,7 @@ impl ValidatorService {
 
         if signatures.len() != attestation_public_keys.len() {
             return Err(anyhow!(
-                "Attestation proof count ({}) does not match pubkey-set count ({})",
+                "Attestation proof count ({}) does not match public-key-set count ({})",
                 signatures.len(),
                 attestation_public_keys.len()
             ));
@@ -298,8 +298,8 @@ impl ValidatorService {
         inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
 
         let mut components = Vec::with_capacity(signatures.len() + 1);
-        for (proof, pubkeys) in signatures.iter().zip(attestation_public_keys.iter()) {
-            let component = type1_from_wire(&proof.proof, pubkeys)
+        for (proof, public_keys) in signatures.iter().zip(attestation_public_keys.iter()) {
+            let component = type1_from_wire(&proof.proof, public_keys)
                 .map_err(|err| anyhow!("Failed to reconstruct attestation Type-1 proof: {err}"))?;
             components.push(component);
         }

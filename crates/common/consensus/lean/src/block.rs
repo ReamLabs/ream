@@ -166,7 +166,7 @@ impl SignedBlock {
         let aggregated_attestations = &block.body.attestations;
         let validators = &parent_state.validators;
 
-        let mut pubkeys_per_component: Vec<Vec<_>> =
+        let mut public_keys_per_component: Vec<Vec<_>> =
             Vec::with_capacity(aggregated_attestations.len() + 1);
         let mut expected_bindings: Vec<([u8; 32], u32)> =
             Vec::with_capacity(aggregated_attestations.len() + 1);
@@ -190,7 +190,7 @@ impl SignedBlock {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
-            pubkeys_per_component.push(public_keys);
+            public_keys_per_component.push(public_keys);
             expected_bindings.push((
                 aggregated_attestation.message.tree_hash_root().into(),
                 aggregated_attestation.message.slot as u32,
@@ -206,14 +206,14 @@ impl SignedBlock {
             .get(proposer_index as usize)
             .ok_or_else(|| anyhow!("Failed to get proposer validator"))?;
 
-        pubkeys_per_component.push(vec![proposer.proposal_public_key]);
+        public_keys_per_component.push(vec![proposer.proposal_public_key]);
         expected_bindings.push((block.tree_hash_root().into(), block.slot as u32));
 
         if verify_signatures {
             let timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
             match type2_verify_block(
                 self.proof.as_ref(),
-                &pubkeys_per_component,
+                &public_keys_per_component,
                 &expected_bindings,
             ) {
                 Ok(()) => {
