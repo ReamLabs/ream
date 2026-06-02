@@ -1345,6 +1345,7 @@ impl Store {
 
             let data_root = data.tree_hash_root();
             let validator_ids = proof.to_validator_indices();
+            #[cfg(feature = "devnet4")]
             let attestation_slot = data.slot;
 
             let state = self
@@ -1378,11 +1379,8 @@ impl Store {
             );
 
             #[cfg(feature = "devnet5")]
-            let verification_result =
-                type1_from_wire(proof.proof.as_ref(), &public_keys).and_then(|type_one| {
-                    let _ = attestation_slot;
-                    type1_verify(&type_one)
-                });
+            let verification_result = type1_from_wire(proof.proof.as_ref(), &public_keys)
+                .and_then(|type_one| type1_verify(&type_one));
 
             match verification_result {
                 Ok(()) => {
