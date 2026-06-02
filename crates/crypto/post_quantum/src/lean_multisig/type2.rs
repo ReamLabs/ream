@@ -1,4 +1,3 @@
-
 use anyhow::{Result, anyhow};
 use lean_multisig_type2::{
     TypeOneMultiSignature, TypeTwoMultiSignature, XmssPublicKey, XmssSignature, aggregate_type_1,
@@ -44,7 +43,9 @@ pub fn type1_aggregate(
 
     let raw: Vec<_> = raw_xmss
         .iter()
-        .map(|(public_key, signature)| Ok((to_lib_public_key(public_key)?, to_lib_signature(signature)?)))
+        .map(|(public_key, signature)| {
+            Ok((to_lib_public_key(public_key)?, to_lib_signature(signature)?))
+        })
         .collect::<Result<Vec<_>>>()?;
 
     aggregate_type_1(children, raw, *message, slot, LOG_INV_RATE)
@@ -73,7 +74,12 @@ pub fn type2_from_wire(
 ) -> Result<TypeTwoMultiSignature> {
     let lib_public_keys = public_keys_per_component
         .iter()
-        .map(|public_keys| public_keys.iter().map(to_lib_public_key).collect::<Result<Vec<_>>>())
+        .map(|public_keys| {
+            public_keys
+                .iter()
+                .map(to_lib_public_key)
+                .collect::<Result<Vec<_>>>()
+        })
         .collect::<Result<Vec<_>>>()?;
     TypeTwoMultiSignature::decompress_without_pubkeys(wire, lib_public_keys)
         .ok_or_else(|| anyhow!("Failed to decode Type-2 multi-signature from wire bytes"))

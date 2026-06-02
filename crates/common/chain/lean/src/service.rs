@@ -1192,8 +1192,10 @@ impl LeanChainService {
                         for validator_id in proof.to_validator_indices() {
                             let _ = union_bits.set(validator_id as usize, true);
                         }
-                        match type1_from_wire(&proof.proof, &local_proof_public_keys(proof, validators))
-                        {
+                        match type1_from_wire(
+                            &proof.proof,
+                            &local_proof_public_keys(proof, validators),
+                        ) {
                             Ok(child) => children.push(child),
                             Err(err) => {
                                 debug!("Local Type-1 reconstruct failed: {err}; skipping merge");

@@ -627,8 +627,12 @@ impl Store {
             let proof = {
                 let xmss_keys: Vec<_> = raw_entries.iter().map(|err| err.1).collect();
                 let xmss_signatures: Vec<_> = raw_entries.iter().map(|err| err.2).collect();
-                let aggregated_signature =
-                    aggregate_signatures(&xmss_keys, &xmss_signatures, &data_root.0, data.slot as u32)?;
+                let aggregated_signature = aggregate_signatures(
+                    &xmss_keys,
+                    &xmss_signatures,
+                    &data_root.0,
+                    data.slot as u32,
+                )?;
                 PayloadProof {
                     participants: bits.clone(),
                     proof_data: VariableList::new(aggregated_signature)
@@ -642,8 +646,7 @@ impl Store {
                     .iter()
                     .map(|(_, public_key, signature)| (*public_key, *signature))
                     .collect();
-                let type_one =
-                    type1_aggregate(&[], &raw_xmss, &data_root.0, data.slot as u32)?;
+                let type_one = type1_aggregate(&[], &raw_xmss, &data_root.0, data.slot as u32)?;
                 PayloadProof {
                     participants: bits.clone(),
                     proof: VariableList::new(type1_to_wire(&type_one))
