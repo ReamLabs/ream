@@ -11,8 +11,8 @@ version.workspace = true
 
 [features]
 default = ["devnet4"]
-devnet4 = []
-devnet5 = []
+devnet4 = ["ream-post-quantum-crypto/devnet4"]
+devnet5 = ["ream-post-quantum-crypto/devnet5"]
 
 [dependencies]
 alloy-primitives.workspace = true

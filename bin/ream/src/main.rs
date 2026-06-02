@@ -35,10 +35,9 @@ use ream_chain_lean::{
 };
 use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
 use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
-use ream_consensus_lean::{
-    block::{BlockSignatures, SignedBlock},
-    validator::Validator,
-};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::block::BlockSignatures;
+use ream_consensus_lean::{block::SignedBlock, validator::Validator};
 use ream_consensus_misc::{
     constants::{
         beacon::set_genesis_validator_root,
@@ -70,11 +69,11 @@ use ream_p2p::{
     },
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
+#[cfg(feature = "devnet4")]
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_post_quantum_crypto::{
     lean_multisig::aggregate::{aggregation_setup_prover, aggregation_setup_verifier},
-    leansig::{
-        private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey, signature::Signature,
-    },
+    leansig::{private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey},
 };
 use ream_rpc_common::config::RpcServerConfig;
 use ream_rpc_lean::{
@@ -300,10 +299,13 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             setup_genesis(lean_network_spec().genesis_time, validators);
         let signed_genesis = SignedBlock {
             block: genesis_block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: VariableList::default(),
                 proposer_signature: Signature::blank(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::default(),
         };
         (signed_genesis, genesis_state)
     };

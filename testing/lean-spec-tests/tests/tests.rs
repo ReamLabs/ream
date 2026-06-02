@@ -127,6 +127,10 @@ fn test_all_state_transition_fixtures() {
     assert_eq!(failed, 0, "Some state transition tests failed");
 }
 
+#[cfg_attr(
+    feature = "devnet5",
+    ignore = "devnet5 Type-2 block-proof fixtures not yet implemented"
+)]
 #[test]
 fn test_all_ssz_fixtures() {
     init_tracing();
@@ -184,6 +188,10 @@ fn test_all_ssz_fixtures() {
     assert_eq!(failed, 0, "Some SSZ tests failed");
 }
 
+#[cfg_attr(
+    feature = "devnet5",
+    ignore = "devnet5 Type-2 block-proof fixtures not yet implemented"
+)]
 #[tokio::test]
 async fn test_all_fork_choice_fixtures() {
     init_tracing();
@@ -337,6 +345,10 @@ fn test_all_slot_clock_fixtures() {
     assert_eq!(failed, 0, "Some slot_clock tests failed");
 }
 
+#[cfg_attr(
+    feature = "devnet5",
+    ignore = "devnet5 Type-2 block-proof fixtures not yet implemented"
+)]
 #[test]
 fn test_all_verify_signatures_fixtures() {
     init_tracing();

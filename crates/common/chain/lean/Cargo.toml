@@ -21,6 +21,7 @@ devnet4 = [
     "ream-test-utils/devnet4",
     "ream-req-resp/devnet4",
     "ream-sync/devnet4",
+    "ream-post-quantum-crypto/devnet4",
 ]
 devnet5 = [
     "ream-consensus-lean/devnet5",
@@ -32,6 +33,7 @@ devnet5 = [
     "ream-test-utils/devnet5",
     "ream-req-resp/devnet5",
     "ream-sync/devnet5",
+    "ream-post-quantum-crypto/devnet5",
 ]
 
 [dependencies]

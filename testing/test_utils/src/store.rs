@@ -1,9 +1,9 @@
-use ream_consensus_lean::{
-    block::{BlockSignatures, SignedBlock},
-    utils::generate_default_validators,
-};
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::block::BlockSignatures;
+use ream_consensus_lean::{block::SignedBlock, utils::generate_default_validators};
 use ream_fork_choice_lean::{genesis::setup_genesis, store::Store};
 use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
+#[cfg(feature = "devnet4")]
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::db::ReamDB;
 use ssz_types::VariableList;
@@ -17,10 +17,13 @@ pub async fn sample_store(no_of_validators: usize) -> Store {
 
     let signed_genesis_block = SignedBlock {
         block: genesis_block,
+        #[cfg(feature = "devnet4")]
         signature: BlockSignatures {
             attestation_signatures: VariableList::default(),
             proposer_signature: Signature::blank(),
         },
+        #[cfg(feature = "devnet5")]
+        proof: VariableList::default(),
     };
 
     let temp_path = std::env::temp_dir().join(format!(

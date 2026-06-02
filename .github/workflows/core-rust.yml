@@ -86,9 +86,7 @@ jobs:
     with:
       network: devnet4
 
-  # devnet5 scaffolding — disabled.
   test-devnet5:
-    if: false
     name: test devnet5
     needs: [format, cargo-clippy]
     uses: ./.github/workflows/tests-matrix.yml

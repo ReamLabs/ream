@@ -6,11 +6,13 @@ use anyhow::{Context, bail};
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::TypeOneMultiSignature;
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AttestationData, SignedAttestation,
     },
-    block::{Block, BlockBody, BlockHeader, BlockSignatures, SignedBlock},
+    block::{Block, BlockBody, BlockHeader, SignedBlock},
     checkpoint::Checkpoint,
     config::Config,
     state::LeanState,
@@ -24,10 +26,9 @@ use crate::types::{
     TestFixture,
     ssz::{
         AggregatedAttestationJSON, AggregatedSignatureProofJSON, AttestationDataJSON,
-        AttestationJSON, BlockBodyJSON, BlockHeaderJSON, BlockJSON, BlockSignaturesJSON,
-        BlocksByRootRequestJSON, BlocksByRootRequestSSZ, CheckpointJSON, ConfigJSON, PublicKeyJSON,
-        SSZTest, SignatureJSON, SignedAttestationJSON, SignedBlockJSON, StateJSON, StatusJSON,
-        ValidatorJSON,
+        AttestationJSON, BlockBodyJSON, BlockHeaderJSON, BlockJSON, BlocksByRootRequestJSON,
+        BlocksByRootRequestSSZ, CheckpointJSON, ConfigJSON, PublicKeyJSON, SSZTest, SignatureJSON,
+        SignedAttestationJSON, SignedBlockJSON, StateJSON, StatusJSON, ValidatorJSON,
     },
 };
 
@@ -69,9 +70,11 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
         "SignedAttestation" => {
             run_test::<SignedAttestationJSON, SignedAttestation>(&test.value, &expected_ssz)
         }
-        "BlockSignatures" => {
-            run_test::<BlockSignaturesJSON, BlockSignatures>(&test.value, &expected_ssz)
-        }
+        #[cfg(feature = "devnet4")]
+        "BlockSignatures" => run_test::<crate::types::ssz::BlockSignaturesJSON, BlockSignatures>(
+            &test.value,
+            &expected_ssz,
+        ),
         "SignedBlock" => run_test::<SignedBlockJSON, SignedBlock>(&test.value, &expected_ssz),
         // Networking containers
         "Status" => run_test::<StatusJSON, StatusJSON>(&test.value, &expected_ssz),

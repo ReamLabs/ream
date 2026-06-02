@@ -17,6 +17,7 @@ devnet4 = [
     "ream-fork-choice-lean/devnet4",
     "ream-keystore/devnet4",
     "ream-network-spec/devnet4",
+    "ream-post-quantum-crypto/devnet4",
 ]
 devnet5 = [
     "ream-consensus-lean/devnet5",
@@ -24,6 +25,7 @@ devnet5 = [
     "ream-fork-choice-lean/devnet5",
     "ream-keystore/devnet5",
     "ream-network-spec/devnet5",
+    "ream-post-quantum-crypto/devnet5",
 ]
 
 [dependencies]
