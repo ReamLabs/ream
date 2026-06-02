@@ -1114,27 +1114,16 @@ impl Store {
     ) -> anyhow::Result<()> {
         let block_processing_timer = start_timer(&FORK_CHOICE_BLOCK_PROCESSING_TIME, &[]);
 
-        let (
-            state_provider,
-            block_provider,
-            latest_justified_provider,
-            latest_finalized_provider,
-            attestation_data_by_root_provider,
-            latest_known_aggregated_payloads_provider,
-        ) = {
-            let db = self.store.lock().await;
-            (
-                db.state_provider(),
-                db.block_provider(),
-                db.latest_justified_provider(),
-                db.latest_finalized_provider(),
-                db.attestation_data_by_root_provider(),
-                db.latest_known_aggregated_payloads_provider(),
-            )
-        };
-
-        #[cfg(feature = "devnet5")]
-        let _ = &latest_known_aggregated_payloads_provider;
+        let db = self.store.lock().await;
+        let state_provider = db.state_provider();
+        let block_provider = db.block_provider();
+        let latest_justified_provider = db.latest_justified_provider();
+        let latest_finalized_provider = db.latest_finalized_provider();
+        let attestation_data_by_root_provider = db.attestation_data_by_root_provider();
+        #[cfg(feature = "devnet4")]
+        let latest_known_aggregated_payloads_provider =
+            db.latest_known_aggregated_payloads_provider();
+        drop(db);
 
         let block = &signed_block.block;
         let block_root = block.tree_hash_root();
