@@ -50,6 +50,8 @@ use ream_post_quantum_crypto::lean_multisig::aggregate::{
 use ream_post_quantum_crypto::lean_multisig::type2::{
     type1_aggregate, type1_from_wire, type1_to_wire, type1_verify,
 };
+#[cfg(feature = "devnet5")]
+use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::{
     db::lean::LeanDB,
@@ -1065,9 +1067,7 @@ impl Store {
         stop_timer(compute_state_root_timer);
 
         #[cfg(feature = "devnet5")]
-        let attestation_public_keys: Vec<
-            Vec<ream_post_quantum_crypto::leansig::public_key::PublicKey>,
-        > = proofs
+        let attestation_public_keys: Vec<Vec<PublicKey>> = proofs
             .iter()
             .map(|proof| {
                 proof
@@ -2047,13 +2047,7 @@ mod tests {
     async fn install_validator_keys(
         store: &Store,
         validator_ids: &[u64],
-    ) -> HashMap<
-        u64,
-        (
-            ream_post_quantum_crypto::leansig::public_key::PublicKey,
-            PrivateKey,
-        ),
-    > {
+    ) -> HashMap<u64, (PublicKey, PrivateKey)> {
         let cache = cached_key_pairs();
         let mut key_pairs = HashMap::new();
         for validator_id in validator_ids {
@@ -2104,13 +2098,7 @@ mod tests {
 
     fn make_aggregated_proof(
         participants: &[u64],
-        key_pairs: &HashMap<
-            u64,
-            (
-                ream_post_quantum_crypto::leansig::public_key::PublicKey,
-                PrivateKey,
-            ),
-        >,
+        key_pairs: &HashMap<u64, (PublicKey, PrivateKey)>,
         attestation_data: &AttestationData,
     ) -> AggregatedSignatureProof {
         let data_root = attestation_data.tree_hash_root();
