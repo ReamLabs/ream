@@ -11,7 +11,7 @@ use ream_metrics::{
 #[cfg(feature = "devnet4")]
 use ream_post_quantum_crypto::lean_multisig::aggregate::verify_aggregate_signature;
 #[cfg(feature = "devnet5")]
-use ream_post_quantum_crypto::lean_multisig::type2::type2_verify_block;
+use ream_post_quantum_crypto::lean_multisig::type_2::type_2_verify_block;
 #[cfg(feature = "devnet4")]
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
@@ -211,7 +211,7 @@ impl SignedBlock {
 
         if verify_signatures {
             let timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
-            match type2_verify_block(
+            match type_2_verify_block(
                 self.proof.as_ref(),
                 &public_keys_per_component,
                 &expected_bindings,

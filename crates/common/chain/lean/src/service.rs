@@ -32,8 +32,8 @@ use ream_metrics::{
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
 #[cfg(feature = "devnet5")]
-use ream_post_quantum_crypto::lean_multisig::type2::{
-    type1_aggregate, type1_from_wire, type1_to_wire, type2_from_wire, type2_split,
+use ream_post_quantum_crypto::lean_multisig::type_2::{
+    type_1_aggregate, type_1_from_wire, type_1_to_wire, type_2_from_wire, type_2_split,
 };
 use ream_req_resp::{
     constants::MAX_REQUEST_BLOCKS,
@@ -1139,7 +1139,7 @@ impl LeanChainService {
         };
         public_keys_per_component.push(vec![proposer_public_key]);
 
-        let type_two = match type2_from_wire(block.proof.as_ref(), &public_keys_per_component) {
+        let type_two = match type_2_from_wire(block.proof.as_ref(), &public_keys_per_component) {
             Ok(proof) => proof,
             Err(err) => {
                 debug!("Post-block Type-2 decode failed: {err}");
@@ -1171,7 +1171,7 @@ impl LeanChainService {
                 continue;
             }
 
-            let block_t1 = match type2_split(type_two.clone(), component_index) {
+            let block_t1 = match type_2_split(type_two.clone(), component_index) {
                 Ok(t1) => t1,
                 Err(err) => {
                     debug!("Post-block Type-2 split failed for component {component_index}: {err}");
@@ -1192,7 +1192,7 @@ impl LeanChainService {
                         for validator_id in proof.to_validator_indices() {
                             let _ = union_bits.set(validator_id as usize, true);
                         }
-                        match type1_from_wire(
+                        match type_1_from_wire(
                             &proof.proof,
                             &local_proof_public_keys(proof, validators),
                         ) {
@@ -1203,17 +1203,17 @@ impl LeanChainService {
                         }
                     }
 
-                    match type1_aggregate(&children, &[], &att_root, slot) {
+                    match type_1_aggregate(&children, &[], &att_root, slot) {
                         Ok(merged) => TypeOneMultiSignature::new(
                             union_bits,
-                            VariableList::new(type1_to_wire(&merged))
+                            VariableList::new(type_1_to_wire(&merged))
                                 .expect("Aggregate size limit exceeded"),
                         ),
                         Err(err) => {
                             debug!("Post-block re-aggregation failed for {data_root}: {err}");
                             TypeOneMultiSignature::new(
                                 attestation.aggregation_bits.clone(),
-                                VariableList::new(type1_to_wire(&block_t1))
+                                VariableList::new(type_1_to_wire(&block_t1))
                                     .expect("Proof size limit exceeded"),
                             )
                         }
@@ -1221,7 +1221,8 @@ impl LeanChainService {
                 }
                 _ => TypeOneMultiSignature::new(
                     attestation.aggregation_bits.clone(),
-                    VariableList::new(type1_to_wire(&block_t1)).expect("Proof size limit exceeded"),
+                    VariableList::new(type_1_to_wire(&block_t1))
+                        .expect("Proof size limit exceeded"),
                 ),
             };
 

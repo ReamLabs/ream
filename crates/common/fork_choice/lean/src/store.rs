@@ -47,8 +47,8 @@ use ream_post_quantum_crypto::lean_multisig::aggregate::{
     ChildProof, aggregate_signatures, aggregate_signatures_recursive, verify_aggregate_signature,
 };
 #[cfg(feature = "devnet5")]
-use ream_post_quantum_crypto::lean_multisig::type2::{
-    type1_aggregate, type1_from_wire, type1_to_wire, type1_verify,
+use ream_post_quantum_crypto::lean_multisig::type_2::{
+    type_1_aggregate, type_1_from_wire, type_1_to_wire, type_1_verify,
 };
 #[cfg(feature = "devnet5")]
 use ream_post_quantum_crypto::leansig::public_key::PublicKey;
@@ -648,10 +648,10 @@ impl Store {
                     .iter()
                     .map(|(_, public_key, signature)| (*public_key, *signature))
                     .collect();
-                let type_one = type1_aggregate(&[], &raw_xmss, &data_root.0, data.slot as u32)?;
+                let type_one = type_1_aggregate(&[], &raw_xmss, &data_root.0, data.slot as u32)?;
                 PayloadProof {
                     participants: bits.clone(),
-                    proof: VariableList::new(type1_to_wire(&type_one))
+                    proof: VariableList::new(type_1_to_wire(&type_one))
                         .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
                 }
             };
@@ -1379,8 +1379,8 @@ impl Store {
             );
 
             #[cfg(feature = "devnet5")]
-            let verification_result = type1_from_wire(proof.proof.as_ref(), &public_keys)
-                .and_then(|type_one| type1_verify(&type_one));
+            let verification_result = type_1_from_wire(proof.proof.as_ref(), &public_keys)
+                .and_then(|type_one| type_1_verify(&type_one));
 
             match verification_result {
                 Ok(()) => {
@@ -1903,10 +1903,10 @@ fn compact_aggregated_proofs(
             let children = group_proofs
                 .iter()
                 .zip(children_public_keys.iter())
-                .map(|(proof, public_keys)| type1_from_wire(&proof.proof, public_keys))
+                .map(|(proof, public_keys)| type_1_from_wire(&proof.proof, public_keys))
                 .collect::<anyhow::Result<Vec<_>>>()?;
-            let merged = type1_aggregate(&children, &[], &data_root.0, data.slot as u32)?;
-            type1_to_wire(&merged)
+            let merged = type_1_aggregate(&children, &[], &data_root.0, data.slot as u32)?;
+            type_1_to_wire(&merged)
         };
 
         stop_timer(building_timer);

@@ -22,8 +22,8 @@ use ream_metrics::{
 };
 use ream_network_spec::networks::lean_network_spec;
 #[cfg(feature = "devnet5")]
-use ream_post_quantum_crypto::lean_multisig::type2::{
-    type1_aggregate, type1_from_wire, type2_merge, type2_to_wire,
+use ream_post_quantum_crypto::lean_multisig::type_2::{
+    type_1_aggregate, type_1_from_wire, type_2_merge, type_2_to_wire,
 };
 #[cfg(feature = "devnet5")]
 use ssz_types::VariableList;
@@ -299,12 +299,12 @@ impl ValidatorService {
 
         let mut components = Vec::with_capacity(signatures.len() + 1);
         for (proof, public_keys) in signatures.iter().zip(attestation_public_keys.iter()) {
-            let component = type1_from_wire(&proof.proof, public_keys)
+            let component = type_1_from_wire(&proof.proof, public_keys)
                 .map_err(|err| anyhow!("Failed to reconstruct attestation Type-1 proof: {err}"))?;
             components.push(component);
         }
 
-        let proposer_type_1 = type1_aggregate(
+        let proposer_type_1 = type_1_aggregate(
             &[],
             &[(keystore.proposal_public_key, proposer_signature)],
             &block_root_bytes,
@@ -313,12 +313,12 @@ impl ValidatorService {
         .map_err(|err| anyhow!("Failed to build proposer Type-1 proof: {err}"))?;
         components.push(proposer_type_1);
 
-        let merged = type2_merge(components)
+        let merged = type_2_merge(components)
             .map_err(|err| anyhow!("Failed to merge block Type-2 proof: {err}"))?;
 
         Ok(SignedBlock {
             block,
-            proof: VariableList::new(type2_to_wire(&merged))
+            proof: VariableList::new(type_2_to_wire(&merged))
                 .map_err(|err| anyhow!("Block proof exceeds size limit: {err:?}"))?,
         })
     }
