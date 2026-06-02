@@ -7,12 +7,17 @@ use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::attestation::AttestationData;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::TypeOneMultiSignature;
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::block::BlockSignatures;
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::checkpoint::Checkpoint;
 use ream_consensus_lean::{
-    attestation::{AttestationData, SignedAggregatedAttestation, SignedAttestation},
-    block::{Block, BlockSignatures, SignedBlock},
-    checkpoint::Checkpoint,
+    attestation::{SignedAggregatedAttestation, SignedAttestation},
+    block::{Block, SignedBlock},
     state::LeanState,
 };
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
@@ -89,6 +94,7 @@ fn load_test_keys() -> anyhow::Result<HashMap<u64, PrivateKey>> {
 pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyhow::Result<()> {
     info!("Running fork choice test: {test_name}");
 
+    #[cfg_attr(feature = "devnet5", allow(unused_variables, unused_mut))]
     let mut keys = load_test_keys()?;
 
     // Extract values needed before consuming anchor_state
@@ -107,7 +113,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     let block = Block::try_from(&test.anchor_block)
         .map_err(|err| anyhow!("Failed to convert anchor block: {err}"))?;
 
-    // Create anchor checkpoint for use as source in attestations
+    #[cfg(feature = "devnet4")]
     let source_checkpoint = Checkpoint {
         root: block.tree_hash_root(),
         slot: block.slot,
@@ -131,8 +137,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 proposer_signature: Signature::blank(),
             },
             #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
+            proof: VariableList::<u8, U524288>::empty(),
         },
         state,
         db,
@@ -264,7 +269,9 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 store.on_tick(time, true, true).await?;
 
                 // Get the parent state and parent block to extract the correct checkpoints
+                #[cfg(feature = "devnet4")]
                 let db = store.store.lock().await;
+                #[cfg(feature = "devnet4")]
                 let parent_block = db
                     .block_provider()
                     .get(ream_block.parent_root)?
@@ -274,8 +281,10 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                             ream_block.parent_root
                         )
                     })?;
+                #[cfg(feature = "devnet4")]
                 let parent_slot = parent_block.block.slot;
 
+                #[cfg(feature = "devnet4")]
                 drop(db);
 
                 // Build attestation_signatures with `participants` mirroring each
@@ -283,6 +292,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 // empty because tests run with signature verification disabled,
                 // but participants must be populated so fork choice attributes
                 // votes to the correct validators.
+                #[cfg(feature = "devnet4")]
                 let signatures = {
                     let mut proofs = Vec::with_capacity(ream_block.body.attestations.len());
                     for attestation in ream_block.body.attestations.iter() {
@@ -296,24 +306,18 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                                 anyhow!("Failed to set participant bit {index}: {err:?}")
                             })?;
                         }
-                        #[cfg(feature = "devnet4")]
                         proofs.push(AggregatedSignatureProof::new(
                             participants,
                             VariableList::<u8, U1048576>::new(vec![])
                                 .expect("Failed to create empty proof_data"),
                         ));
-                        #[cfg(feature = "devnet5")]
-                        proofs.push(TypeOneMultiSignature::new(
-                            participants,
-                            VariableList::<u8, U524288>::new(vec![])
-                                .expect("Failed to create empty proof_data"),
-                        ));
                     }
-                    VariableList::try_from(proofs)
+                    VariableList::<AggregatedSignatureProof, U4096>::try_from(proofs)
                         .map_err(|err| anyhow!("Failed to create signatures VariableList: {err}"))?
                 };
 
                 // Build proposer attestation data and sign with real key
+                #[cfg(feature = "devnet4")]
                 let proposer_attestation_data = AttestationData {
                     slot: ream_block.slot,
                     head: Checkpoint {
@@ -327,8 +331,11 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     source: source_checkpoint,
                 };
 
+                #[cfg(feature = "devnet4")]
                 let proposer_index = ream_block.proposer_index;
+                #[cfg(feature = "devnet4")]
                 let data_root = proposer_attestation_data.tree_hash_root();
+                #[cfg(feature = "devnet4")]
                 let proposer_signature = {
                     let key = keys.get_mut(&proposer_index).ok_or_else(|| {
                         anyhow!("No signing key found for proposer validator {proposer_index}")
@@ -350,8 +357,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                                 proposer_signature,
                             },
                             #[cfg(feature = "devnet5")]
-                            proof: VariableList::<u8, U524288>::new(proof_bytes)
-                                .map_err(|err| anyhow!("Proof size exceeded {err:?"))?,
+                            proof: VariableList::<u8, U524288>::empty(),
                         },
                         false, // Don't verify signatures in spec tests (we use blank signatures)
                     )
@@ -387,8 +393,8 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 // Build the SignedAttestation from fixture data, including a real
                 // signature when one is provided; otherwise use a blank signature.
                 let signature = match attestation.signature.as_deref() {
-                    Some(sig_hex) => {
-                        let bytes = decode_hex_bytes(sig_hex)?;
+                    Some(signature_hex) => {
+                        let bytes = decode_hex_bytes(signature_hex)?;
                         Signature::from(bytes.as_slice())
                     }
                     None => Signature::blank(),

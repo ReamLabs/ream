@@ -42,13 +42,17 @@ use ream_metrics::{
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
-use ream_post_quantum_crypto::{
-    lean_multisig::aggregate::{
-        ChildProof, aggregate_signatures, aggregate_signatures_recursive,
-        verify_aggregate_signature,
-    },
-    leansig::signature::Signature,
+#[cfg(feature = "devnet4")]
+use ream_post_quantum_crypto::lean_multisig::aggregate::{
+    ChildProof, aggregate_signatures, aggregate_signatures_recursive, verify_aggregate_signature,
 };
+#[cfg(feature = "devnet5")]
+use ream_post_quantum_crypto::lean_multisig::type_2::{
+    type_1_aggregate, type_1_from_wire, type_1_to_wire, type_1_verify,
+};
+#[cfg(feature = "devnet5")]
+use ream_post_quantum_crypto::leansig::public_key::PublicKey;
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::{
     db::lean::LeanDB,
     tables::{field::REDBField, lean::gossip_signatures::GossipSignaturesTable, table::REDBTable},
@@ -619,30 +623,46 @@ impl Store {
                 }
             }
 
-            let xmss_keys: Vec<_> = raw_entries.iter().map(|err| err.1).collect();
-            let xmss_signatures: Vec<_> = raw_entries.iter().map(|err| err.2).collect();
-
             let building_timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
-            let aggregated_signature_bytes =
-                aggregate_signatures(&xmss_keys, &xmss_signatures, &data_root.0, data.slot as u32);
+
+            #[cfg(feature = "devnet4")]
+            let proof = {
+                let xmss_keys: Vec<_> = raw_entries.iter().map(|err| err.1).collect();
+                let xmss_signatures: Vec<_> = raw_entries.iter().map(|err| err.2).collect();
+                let aggregated_signature = aggregate_signatures(
+                    &xmss_keys,
+                    &xmss_signatures,
+                    &data_root.0,
+                    data.slot as u32,
+                )?;
+                PayloadProof {
+                    participants: bits.clone(),
+                    proof_data: VariableList::new(aggregated_signature)
+                        .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+                }
+            };
+
+            #[cfg(feature = "devnet5")]
+            let proof = {
+                let raw_xmss: Vec<_> = raw_entries
+                    .iter()
+                    .map(|(_, public_key, signature)| (*public_key, *signature))
+                    .collect();
+                let type_one = type_1_aggregate(&[], &raw_xmss, &data_root.0, data.slot as u32)?;
+                PayloadProof {
+                    participants: bits.clone(),
+                    proof: VariableList::new(type_1_to_wire(&type_one))
+                        .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+                }
+            };
+
             stop_timer(building_timer);
-            let aggregated_signature = aggregated_signature_bytes?;
             inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
             inc_int_counter_vec_by(
                 &PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL,
                 raw_entries.len() as u64,
                 &[],
             );
-
-            let proof = PayloadProof {
-                participants: bits.clone(),
-                #[cfg(feature = "devnet4")]
-                proof_data: VariableList::new(aggregated_signature)
-                    .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
-                #[cfg(feature = "devnet5")]
-                proof: VariableList::new(aggregated_signature)
-                    .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
-            };
 
             results.push(SignedAggregatedAttestation {
                 data: data.clone(),
@@ -1046,6 +1066,26 @@ impl Store {
         candidate_block.state_root = post_state.tree_hash_root();
         stop_timer(compute_state_root_timer);
 
+        #[cfg(feature = "devnet5")]
+        let attestation_public_keys: Vec<Vec<PublicKey>> = proofs
+            .iter()
+            .map(|proof| {
+                proof
+                    .to_validator_indices()
+                    .into_iter()
+                    .map(|validator_id| {
+                        head_state
+                            .validators
+                            .get(validator_id as usize)
+                            .map(|validator| validator.attestation_public_key)
+                            .ok_or_else(|| {
+                                anyhow!("Proof references validator {validator_id} out of range")
+                            })
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
         let signatures_list = VariableList::new(proofs)
             .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
 
@@ -1062,6 +1102,8 @@ impl Store {
         Ok(BlockWithSignatures {
             block: candidate_block,
             signatures: signatures_list,
+            #[cfg(feature = "devnet5")]
+            attestation_public_keys,
         })
     }
 
@@ -1072,24 +1114,16 @@ impl Store {
     ) -> anyhow::Result<()> {
         let block_processing_timer = start_timer(&FORK_CHOICE_BLOCK_PROCESSING_TIME, &[]);
 
-        let (
-            state_provider,
-            block_provider,
-            latest_justified_provider,
-            latest_finalized_provider,
-            attestation_data_by_root_provider,
-            latest_known_aggregated_payloads_provider,
-        ) = {
-            let db = self.store.lock().await;
-            (
-                db.state_provider(),
-                db.block_provider(),
-                db.latest_justified_provider(),
-                db.latest_finalized_provider(),
-                db.attestation_data_by_root_provider(),
-                db.latest_known_aggregated_payloads_provider(),
-            )
-        };
+        let db = self.store.lock().await;
+        let state_provider = db.state_provider();
+        let block_provider = db.block_provider();
+        let latest_justified_provider = db.latest_justified_provider();
+        let latest_finalized_provider = db.latest_finalized_provider();
+        let attestation_data_by_root_provider = db.attestation_data_by_root_provider();
+        #[cfg(feature = "devnet4")]
+        let latest_known_aggregated_payloads_provider =
+            db.latest_known_aggregated_payloads_provider();
+        drop(db);
 
         let block = &signed_block.block;
         let block_root = block.tree_hash_root();
@@ -1136,12 +1170,6 @@ impl Store {
         latest_finalized_provider.insert(latest_finalized)?;
         *self.network_state.finalized_checkpoint.write() = latest_finalized;
         let aggregated_attestations = &block.body.attestations;
-        let attestation_signatures = &signed_block.signature.attestation_signatures;
-
-        ensure!(
-            aggregated_attestations.len() == attestation_signatures.len(),
-            "Attestation signature groups must match aggregated attestations"
-        );
 
         let mut seen_attestation_data = HashSet::with_capacity(aggregated_attestations.len());
         for attestation in aggregated_attestations.iter() {
@@ -1159,25 +1187,42 @@ impl Store {
              maximum is {MAX_ATTESTATIONS_DATA}",
         );
 
-        for (attestation, proof) in aggregated_attestations
-            .iter()
-            .zip(attestation_signatures.iter())
+        #[cfg(feature = "devnet4")]
         {
-            let validator_ids = proof.to_validator_indices();
-            let data_root = attestation.message.tree_hash_root();
+            let attestation_signatures = &signed_block.signature.attestation_signatures;
+            ensure!(
+                aggregated_attestations.len() == attestation_signatures.len(),
+                "Attestation signature groups must match aggregated attestations"
+            );
 
-            attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
+            for (attestation, proof) in aggregated_attestations
+                .iter()
+                .zip(attestation_signatures.iter())
+            {
+                let validator_ids = proof.to_validator_indices();
+                let data_root = attestation.message.tree_hash_root();
 
-            for validator_id in validator_ids {
-                let key = SignatureKey::from_parts(validator_id, data_root);
+                attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
 
-                let mut existing_proofs = latest_known_aggregated_payloads_provider
-                    .get(key.clone())?
-                    .unwrap_or_default();
+                for validator_id in validator_ids {
+                    let key = SignatureKey::from_parts(validator_id, data_root);
 
-                existing_proofs.push(proof.clone());
+                    let mut existing_proofs = latest_known_aggregated_payloads_provider
+                        .get(key.clone())?
+                        .unwrap_or_default();
 
-                latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
+                    existing_proofs.push(proof.clone());
+
+                    latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
+                }
+            }
+        }
+
+        #[cfg(feature = "devnet5")]
+        {
+            for attestation in aggregated_attestations.iter() {
+                let data_root = attestation.message.tree_hash_root();
+                attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
             }
         }
 
@@ -1300,6 +1345,7 @@ impl Store {
 
             let data_root = data.tree_hash_root();
             let validator_ids = proof.to_validator_indices();
+            #[cfg(feature = "devnet4")]
             let attestation_slot = data.slot;
 
             let state = self
@@ -1323,15 +1369,20 @@ impl Store {
 
             let verification_timer =
                 start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
-            match verify_aggregate_signature(
+
+            #[cfg(feature = "devnet4")]
+            let verification_result = verify_aggregate_signature(
                 &public_keys,
                 &data_root.0,
-                #[cfg(feature = "devnet4")]
                 proof.proof_data.as_ref(),
-                #[cfg(feature = "devnet5")]
-                proof.proof.as_ref(),
                 attestation_slot as u32,
-            ) {
+            );
+
+            #[cfg(feature = "devnet5")]
+            let verification_result = type_1_from_wire(proof.proof.as_ref(), &public_keys)
+                .and_then(|type_one| type_1_verify(&type_one));
+
+            match verification_result {
                 Ok(()) => {
                     stop_timer(verification_timer);
                     inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
@@ -1811,10 +1862,10 @@ fn compact_aggregated_proofs(
             }
         }
 
-        let children = group_proofs
+        let children_public_keys = group_proofs
             .iter()
             .map(|proof| {
-                let public_keys = proof
+                proof
                     .to_validator_indices()
                     .into_iter()
                     .map(|validator_index| {
@@ -1827,27 +1878,38 @@ fn compact_aggregated_proofs(
                                 )
                             })
                     })
-                    .collect::<anyhow::Result<Vec<_>>>()?;
-                Ok(ChildProof {
-                    public_keys,
-                    #[cfg(feature = "devnet4")]
-                    proof_data: proof.proof_data.to_vec(),
-                    #[cfg(feature = "devnet5")]
-                    proof_data: proof.proof.to_vec(),
-                })
+                    .collect::<anyhow::Result<Vec<_>>>()
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
+        let data_root = data.tree_hash_root();
         let building_timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
-        let merged_proof_data = aggregate_signatures_recursive(
-            &children,
-            &[],
-            &[],
-            &data.tree_hash_root().0,
-            data.slot as u32,
-        );
+
+        #[cfg(feature = "devnet4")]
+        let merged_proof_data = {
+            let children = group_proofs
+                .iter()
+                .zip(children_public_keys.iter())
+                .map(|(proof, public_keys)| ChildProof {
+                    public_keys: public_keys.clone(),
+                    proof_data: proof.proof_data.to_vec(),
+                })
+                .collect::<Vec<_>>();
+            aggregate_signatures_recursive(&children, &[], &[], &data_root.0, data.slot as u32)?
+        };
+
+        #[cfg(feature = "devnet5")]
+        let merged_proof_data = {
+            let children = group_proofs
+                .iter()
+                .zip(children_public_keys.iter())
+                .map(|(proof, public_keys)| type_1_from_wire(&proof.proof, public_keys))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            let merged = type_1_aggregate(&children, &[], &data_root.0, data.slot as u32)?;
+            type_1_to_wire(&merged)
+        };
+
         stop_timer(building_timer);
-        let merged_proof_data = merged_proof_data?;
         inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
 
         let merged_proof = PayloadProof::new(
@@ -1867,7 +1929,9 @@ fn compact_aggregated_proofs(
 }
 
 #[cfg(test)]
+#[cfg(feature = "devnet4")]
 mod tests {
+
     use std::{
         collections::{HashMap, HashSet},
         sync::OnceLock,
@@ -1970,13 +2034,7 @@ mod tests {
     async fn install_validator_keys(
         store: &Store,
         validator_ids: &[u64],
-    ) -> HashMap<
-        u64,
-        (
-            ream_post_quantum_crypto::leansig::public_key::PublicKey,
-            PrivateKey,
-        ),
-    > {
+    ) -> HashMap<u64, (PublicKey, PrivateKey)> {
         let cache = cached_key_pairs();
         let mut key_pairs = HashMap::new();
         for validator_id in validator_ids {
@@ -2027,13 +2085,7 @@ mod tests {
 
     fn make_aggregated_proof(
         participants: &[u64],
-        key_pairs: &HashMap<
-            u64,
-            (
-                ream_post_quantum_crypto::leansig::public_key::PublicKey,
-                PrivateKey,
-            ),
-        >,
+        key_pairs: &HashMap<u64, (PublicKey, PrivateKey)>,
         attestation_data: &AttestationData,
     ) -> AggregatedSignatureProof {
         let data_root = attestation_data.tree_hash_root();

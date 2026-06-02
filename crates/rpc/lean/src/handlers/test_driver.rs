@@ -16,9 +16,11 @@ use ream_api_types_common::error::ApiError;
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::TypeOneMultiSignature;
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
     attestation::{SignedAggregatedAttestation, SignedAttestation},
-    block::{Block as ReamBlock, BlockBody, BlockSignatures, SignedBlock},
+    block::{Block as ReamBlock, BlockBody, SignedBlock},
     state::LeanState,
     validator::Validator,
 };
@@ -215,27 +217,20 @@ fn blank_signed_block(block: ReamBlock) -> anyhow::Result<SignedBlock> {
             ))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    #[cfg(feature = "devnet5")]
-    let proofs = block
-        .body
-        .attestations
-        .iter()
-        .map(|attestation| {
-            Ok(TypeOneMultiSignature::new(
-                attestation.aggregation_bits.clone(),
-                VariableList::<u8, U524288>::new(vec![])
-                    .map_err(|err| anyhow!("failed to build empty proof data: {err:?}"))?,
-            ))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-
-    Ok(SignedBlock {
+    #[cfg(feature = "devnet4")]
+    return Ok(SignedBlock {
         block,
         signature: BlockSignatures {
             attestation_signatures: VariableList::try_from(proofs)
                 .map_err(|err| anyhow!("failed to build attestation signatures list: {err}"))?,
             proposer_signature: Signature::blank(),
         },
+    });
+
+    #[cfg(feature = "devnet5")]
+    Ok(SignedBlock {
+        block,
+        proof: VariableList::<u8, U524288>::empty(),
     })
 }
 

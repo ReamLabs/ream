@@ -11,7 +11,7 @@ env:
 jobs:
   devnet4-known-good-vs-current-pr:
     name: devnet4 known-good vs current pr
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
@@ -60,11 +60,9 @@ jobs:
             --features devnet4 \
             -- --nocapture
 
-  # devnet5 scaffolding — disabled until devnet5 code lands.
   devnet5-known-good-vs-current-pr:
-    if: false
     name: devnet5 known-good vs current pr
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4

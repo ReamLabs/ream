@@ -115,16 +115,21 @@ mod tests {
         web::{self, Data},
     };
     use alloy_primitives::B256;
+    #[cfg(feature = "devnet4")]
+    use ream_consensus_lean::block::BlockSignatures;
     use ream_consensus_lean::{
-        block::{Block, BlockBody, BlockSignatures, SignedBlock},
+        block::{Block, BlockBody, SignedBlock},
         state::LeanState,
         utils::generate_default_validators,
         validator::Validator,
     };
     use ream_consensus_misc::constants::lean::VALIDATOR_REGISTRY_LIMIT;
+    #[cfg(feature = "devnet4")]
     use ream_post_quantum_crypto::leansig::signature::Signature;
     use reqwest::Url;
     use ssz::Encode;
+    #[cfg(feature = "devnet5")]
+    use ssz_types::typenum::U524288;
     use ssz_types::{
         VariableList,
         typenum::{U4096, U8192},
@@ -501,10 +506,13 @@ mod tests {
         };
         SignedBlock {
             block,
+            #[cfg(feature = "devnet4")]
             signature: BlockSignatures {
                 attestation_signatures: VariableList::default(),
                 proposer_signature: Signature::blank(),
             },
+            #[cfg(feature = "devnet5")]
+            proof: VariableList::<u8, U524288>::default(),
         }
     }
 

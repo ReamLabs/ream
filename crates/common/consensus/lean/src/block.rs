@@ -2,10 +2,16 @@ use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
 use ream_metrics::{
     PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL,
-    PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
-    PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, inc_int_counter_vec, start_timer, stop_timer,
+    PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, inc_int_counter_vec, start_timer, stop_timer,
 };
+#[cfg(feature = "devnet4")]
+use ream_metrics::{
+    PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL,
+};
+#[cfg(feature = "devnet4")]
 use ream_post_quantum_crypto::lean_multisig::aggregate::verify_aggregate_signature;
+#[cfg(feature = "devnet5")]
+use ream_post_quantum_crypto::lean_multisig::type_2::type_2_verify_block;
 #[cfg(feature = "devnet4")]
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
@@ -40,6 +46,7 @@ pub struct SignedBlock {
 }
 
 impl SignedBlock {
+    #[cfg(feature = "devnet4")]
     pub fn verify_signatures(
         &self,
         parent_state: &LeanState,
@@ -148,6 +155,81 @@ impl SignedBlock {
 
         Ok(true)
     }
+
+    #[cfg(feature = "devnet5")]
+    pub fn verify_signatures(
+        &self,
+        parent_state: &LeanState,
+        verify_signatures: bool,
+    ) -> anyhow::Result<bool> {
+        let block = &self.block;
+        let aggregated_attestations = &block.body.attestations;
+        let validators = &parent_state.validators;
+
+        let mut public_keys_per_component: Vec<Vec<_>> =
+            Vec::with_capacity(aggregated_attestations.len() + 1);
+        let mut expected_bindings: Vec<([u8; 32], u32)> =
+            Vec::with_capacity(aggregated_attestations.len() + 1);
+
+        for aggregated_attestation in aggregated_attestations.iter() {
+            let validator_ids: Vec<usize> = aggregated_attestation
+                .aggregation_bits
+                .iter()
+                .enumerate()
+                .filter(|(_, bit)| *bit)
+                .map(|(index, _)| index)
+                .collect();
+
+            let public_keys: Vec<_> = validator_ids
+                .iter()
+                .map(|&validator_id| {
+                    validators
+                        .get(validator_id)
+                        .map(|validator| validator.attestation_public_key)
+                        .ok_or_else(|| anyhow!("Failed to get validator {validator_id}"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            public_keys_per_component.push(public_keys);
+            expected_bindings.push((
+                aggregated_attestation.message.tree_hash_root().into(),
+                aggregated_attestation.message.slot as u32,
+            ));
+        }
+
+        let proposer_index = block.proposer_index;
+        ensure!(
+            proposer_index < validators.len() as u64,
+            "Proposer index out of range"
+        );
+        let proposer = validators
+            .get(proposer_index as usize)
+            .ok_or_else(|| anyhow!("Failed to get proposer validator"))?;
+
+        public_keys_per_component.push(vec![proposer.proposal_public_key]);
+        expected_bindings.push((block.tree_hash_root().into(), block.slot as u32));
+
+        if verify_signatures {
+            let timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
+            match type_2_verify_block(
+                self.proof.as_ref(),
+                &public_keys_per_component,
+                &expected_bindings,
+            ) {
+                Ok(()) => {
+                    stop_timer(timer);
+                    inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
+                }
+                Err(err) => {
+                    stop_timer(timer);
+                    inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, &[]);
+                    return Err(anyhow!("Block proof verification failed: {err}"));
+                }
+            }
+        }
+
+        Ok(true)
+    }
 }
 
 /// Bundle containing a block and the proposer's attestation.
@@ -206,4 +288,7 @@ pub struct BlockWithSignatures {
 
     #[cfg(feature = "devnet5")]
     pub signatures: VariableList<TypeOneMultiSignature, U4096>,
+
+    #[cfg(feature = "devnet5")]
+    pub attestation_public_keys: Vec<Vec<ream_post_quantum_crypto::leansig::public_key::PublicKey>>,
 }

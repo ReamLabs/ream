@@ -31,6 +31,10 @@ use ream_metrics::{
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
+#[cfg(feature = "devnet5")]
+use ream_post_quantum_crypto::lean_multisig::type_2::{
+    type_1_aggregate, type_1_from_wire, type_1_to_wire, type_2_from_wire, type_2_split,
+};
 use ream_req_resp::{
     constants::MAX_REQUEST_BLOCKS,
     lean::{
@@ -42,7 +46,7 @@ use ream_storage::tables::{field::REDBField, table::REDBTable};
 #[cfg(feature = "devnet5")]
 use ssz_types::VariableList;
 #[cfg(feature = "devnet5")]
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::Mutex;
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
@@ -1096,59 +1100,136 @@ impl LeanChainService {
             .get()
             .expect("Database read error");
 
-        let payload_bytes = block.proof.as_slice();
-        if payload_bytes.len() < 32 {
-            return Vec::new();
-        }
+        let parent_state = match database
+            .state_provider()
+            .get(block.block.parent_root)
+            .expect("Database read error")
+        {
+            Some(state) => state,
+            None => return Vec::new(),
+        };
+        let validators = &parent_state.validators;
 
-        let (random_salt, payload_data) = payload_bytes.split_at(32);
-        let mut current_offset = 0;
-        let single_signature_len = 2144;
+        let attestation_public_key = |validator_id: usize| {
+            validators
+                .get(validator_id)
+                .map(|v| v.attestation_public_key)
+        };
 
+        let mut public_keys_per_component: Vec<Vec<_>> =
+            Vec::with_capacity(block.block.body.attestations.len() + 1);
         for attestation in &block.block.body.attestations {
+            let mut public_keys = Vec::new();
+            for (validator_id, bit) in attestation.aggregation_bits.iter().enumerate() {
+                if bit {
+                    match attestation_public_key(validator_id) {
+                        Some(public_key) => public_keys.push(public_key),
+                        None => return Vec::new(),
+                    }
+                }
+            }
+            public_keys_per_component.push(public_keys);
+        }
+        let proposer_public_key = match validators
+            .get(block.block.proposer_index as usize)
+            .map(|v| v.proposal_public_key)
+        {
+            Some(public_key) => public_key,
+            None => return Vec::new(),
+        };
+        public_keys_per_component.push(vec![proposer_public_key]);
+
+        let type_two = match type_2_from_wire(block.proof.as_ref(), &public_keys_per_component) {
+            Ok(proof) => proof,
+            Err(err) => {
+                debug!("Post-block Type-2 decode failed: {err}");
+                return Vec::new();
+            }
+        };
+
+        for (component_index, attestation) in block.block.body.attestations.iter().enumerate() {
             if attestation.message.target.slot <= latest_justified.slot {
                 continue;
             }
 
-            let participant_count = attestation.aggregation_bits.iter().filter(|&b| *b).count();
-            let required_bytes = participant_count * single_signature_len;
+            let data_root = attestation.message.tree_hash_root();
+            let local_proofs = local_proofs_by_root.get(&data_root);
 
-            if current_offset + required_bytes > payload_data.len() {
-                break;
+            let block_participants: std::collections::HashSet<u64> = attestation
+                .aggregation_bits
+                .iter()
+                .enumerate()
+                .filter(|(_, bit)| *bit)
+                .map(|(index, _)| index as u64)
+                .collect();
+            let local_union: std::collections::HashSet<u64> = local_proofs
+                .into_iter()
+                .flatten()
+                .flat_map(|proof| proof.to_validator_indices())
+                .collect();
+            if block_participants.difference(&local_union).next().is_none() {
+                continue;
             }
 
-            let mut wire_data = Vec::with_capacity(32 + required_bytes);
-            wire_data.extend_from_slice(random_salt);
-            wire_data
-                .extend_from_slice(&payload_data[current_offset..current_offset + required_bytes]);
-
-            let block_type_one = TypeOneMultiSignature::new(
-                attestation.aggregation_bits.clone(),
-                VariableList::new(wire_data).expect("Payload size limit exceeded"),
-            );
-
-            let data_root = attestation.message.tree_hash_root();
-            let combined = if let Some(local_proofs) = local_proofs_by_root.get(&data_root) {
-                let mut combined_bits = attestation.aggregation_bits.clone();
-                let mut combined_bytes = block_type_one.proof.to_vec();
-
-                for proof in local_proofs {
-                    for validator_id in proof.to_validator_indices() {
-                        let _ = combined_bits.set(validator_id as usize, true);
-                    }
-                    combined_bytes.extend_from_slice(&proof.proof);
+            let block_t1 = match type_2_split(type_two.clone(), component_index) {
+                Ok(t1) => t1,
+                Err(err) => {
+                    debug!("Post-block Type-2 split failed for component {component_index}: {err}");
+                    continue;
                 }
-                TypeOneMultiSignature::new(
-                    combined_bits,
-                    VariableList::new(combined_bytes).expect("Aggregate size limit exceeded"),
-                )
-            } else {
-                block_type_one
             };
 
-            if let Some(local_proofs) = local_proofs_by_root.get(&data_root) {
+            let combined = match local_proofs {
+                Some(locals) if !locals.is_empty() => {
+                    let att_root: [u8; 32] = data_root.into();
+                    let slot = attestation.message.slot as u32;
+
+                    let mut children = Vec::with_capacity(locals.len() + 1);
+                    let mut union_bits = attestation.aggregation_bits.clone();
+
+                    children.push(block_t1.clone());
+                    for proof in locals {
+                        for validator_id in proof.to_validator_indices() {
+                            let _ = union_bits.set(validator_id as usize, true);
+                        }
+                        match type_1_from_wire(
+                            &proof.proof,
+                            &local_proof_public_keys(proof, validators),
+                        ) {
+                            Ok(child) => children.push(child),
+                            Err(err) => {
+                                debug!("Local Type-1 reconstruct failed: {err}; skipping merge");
+                            }
+                        }
+                    }
+
+                    match type_1_aggregate(&children, &[], &att_root, slot) {
+                        Ok(merged) => TypeOneMultiSignature::new(
+                            union_bits,
+                            VariableList::new(type_1_to_wire(&merged))
+                                .expect("Aggregate size limit exceeded"),
+                        ),
+                        Err(err) => {
+                            debug!("Post-block re-aggregation failed for {data_root}: {err}");
+                            TypeOneMultiSignature::new(
+                                attestation.aggregation_bits.clone(),
+                                VariableList::new(type_1_to_wire(&block_t1))
+                                    .expect("Proof size limit exceeded"),
+                            )
+                        }
+                    }
+                }
+                _ => TypeOneMultiSignature::new(
+                    attestation.aggregation_bits.clone(),
+                    VariableList::new(type_1_to_wire(&block_t1))
+                        .expect("Proof size limit exceeded"),
+                ),
+            };
+
+            if local_proofs.is_some_and(|locals| !locals.is_empty()) {
+                let superseded = local_proofs.cloned().unwrap_or_default();
                 for proofs in new_payloads.values_mut() {
-                    proofs.retain(|proof| !local_proofs.contains(proof));
+                    proofs.retain(|proof| !superseded.contains(proof));
                 }
                 new_payloads.retain(|_, value| !value.is_empty());
             }
@@ -1167,7 +1248,6 @@ impl LeanChainService {
                 data: attestation.message.clone(),
                 proof: combined,
             });
-            current_offset += required_bytes;
         }
 
         if !aggregates.is_empty() {
@@ -1190,7 +1270,7 @@ impl LeanChainService {
             if lock.is_empty() {
                 return Ok(());
             }
-            std::mem::replace(&mut *lock, Vec::new())
+            std::mem::take(&mut *lock)
         };
 
         for signed_attestation in pending {
@@ -2881,8 +2961,29 @@ fn pending_block_parent_root(block: &SignedBlock) -> B256 {
     block.block.parent_root
 }
 
+#[cfg(feature = "devnet5")]
+fn local_proof_public_keys(
+    proof: &TypeOneMultiSignature,
+    validators: &ssz_types::VariableList<
+        ream_consensus_lean::validator::Validator,
+        ssz_types::typenum::U4096,
+    >,
+) -> Vec<ream_post_quantum_crypto::leansig::public_key::PublicKey> {
+    proof
+        .to_validator_indices()
+        .into_iter()
+        .filter_map(|validator_id| {
+            validators
+                .get(validator_id as usize)
+                .map(|v| v.attestation_public_key)
+        })
+        .collect()
+}
+
 #[cfg(test)]
+#[cfg(feature = "devnet4")]
 mod tests {
+
     use std::{
         sync::Arc,
         time::{Duration, Instant},

@@ -92,6 +92,19 @@ impl TypeOneMultiSignature {
     }
 }
 
+#[cfg(feature = "devnet5")]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash)]
+pub struct TypeTwoMultiSignature {
+    pub proof: VariableList<u8, U524288>,
+}
+
+#[cfg(feature = "devnet5")]
+impl TypeTwoMultiSignature {
+    pub fn new(proof: VariableList<u8, U524288>) -> Self {
+        Self { proof }
+    }
+}
+
 /// Attestation content describing the validator's observed chain view.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Hash)]
 pub struct AttestationData {
