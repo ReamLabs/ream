@@ -13,10 +13,11 @@ use ream_consensus_lean::attestation::AttestationData;
 use ream_consensus_lean::attestation::TypeOneMultiSignature;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
+#[cfg(feature = "devnet4")]
+use ream_consensus_lean::checkpoint::Checkpoint;
 use ream_consensus_lean::{
     attestation::{SignedAggregatedAttestation, SignedAttestation},
     block::{Block, SignedBlock},
-    checkpoint::Checkpoint,
     state::LeanState,
 };
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
@@ -112,7 +113,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     let block = Block::try_from(&test.anchor_block)
         .map_err(|err| anyhow!("Failed to convert anchor block: {err}"))?;
 
-    #[cfg_attr(feature = "devnet5", allow(unused_variables))]
+    #[cfg(feature = "devnet4")]
     let source_checkpoint = Checkpoint {
         root: block.tree_hash_root(),
         slot: block.slot,
@@ -268,7 +269,9 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 store.on_tick(time, true, true).await?;
 
                 // Get the parent state and parent block to extract the correct checkpoints
+                #[cfg(feature = "devnet4")]
                 let db = store.store.lock().await;
+                #[cfg(feature = "devnet4")]
                 let parent_block = db
                     .block_provider()
                     .get(ream_block.parent_root)?
@@ -278,9 +281,10 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                             ream_block.parent_root
                         )
                     })?;
-                #[cfg_attr(feature = "devnet5", allow(unused_variables))]
+                #[cfg(feature = "devnet4")]
                 let parent_slot = parent_block.block.slot;
 
+                #[cfg(feature = "devnet4")]
                 drop(db);
 
                 // Build attestation_signatures with `participants` mirroring each
