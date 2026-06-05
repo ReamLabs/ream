@@ -68,13 +68,13 @@ impl AggregatedSignatureProof {
 
 #[cfg(feature = "devnet5")]
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct TypeOneMultiSignature {
+pub struct SingleMessageAggregate {
     pub participants: BitList<U4096>,
     pub proof: VariableList<u8, U524288>,
 }
 
 #[cfg(feature = "devnet5")]
-impl TypeOneMultiSignature {
+impl SingleMessageAggregate {
     pub fn new(participants: BitList<U4096>, proof: VariableList<u8, U524288>) -> Self {
         Self {
             participants,
@@ -94,12 +94,12 @@ impl TypeOneMultiSignature {
 
 #[cfg(feature = "devnet5")]
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize, Encode, Decode, TreeHash)]
-pub struct TypeTwoMultiSignature {
+pub struct MultiMessageAggregate {
     pub proof: VariableList<u8, U524288>,
 }
 
 #[cfg(feature = "devnet5")]
-impl TypeTwoMultiSignature {
+impl MultiMessageAggregate {
     pub fn new(proof: VariableList<u8, U524288>) -> Self {
         Self { proof }
     }
@@ -168,5 +168,5 @@ pub struct SignedAggregatedAttestation {
     pub proof: AggregatedSignatureProof,
 
     #[cfg(feature = "devnet5")]
-    pub proof: TypeOneMultiSignature,
+    pub proof: SingleMessageAggregate,
 }

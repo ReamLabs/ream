@@ -299,8 +299,9 @@ impl ValidatorService {
 
         let mut components = Vec::with_capacity(signatures.len() + 1);
         for (proof, public_keys) in signatures.iter().zip(attestation_public_keys.iter()) {
-            let component = type_1_from_wire(&proof.proof, public_keys)
-                .map_err(|err| anyhow!("Failed to reconstruct attestation Type-1 proof: {err}"))?;
+            let component = type_1_from_wire(&proof.proof, public_keys).map_err(|err| {
+                anyhow!("Failed to reconstruct attestation single-message aggregate proof: {err}")
+            })?;
             components.push(component);
         }
 
@@ -310,11 +311,11 @@ impl ValidatorService {
             &block_root_bytes,
             slot as u32,
         )
-        .map_err(|err| anyhow!("Failed to build proposer Type-1 proof: {err}"))?;
+        .map_err(|err| anyhow!("Failed to build proposer single-message aggregate proof: {err}"))?;
         components.push(proposer_type_1);
 
         let merged = type_2_merge(components)
-            .map_err(|err| anyhow!("Failed to merge block Type-2 proof: {err}"))?;
+            .map_err(|err| anyhow!("Failed to merge block multi-message aggregate proof: {err}"))?;
 
         Ok(SignedBlock {
             block,

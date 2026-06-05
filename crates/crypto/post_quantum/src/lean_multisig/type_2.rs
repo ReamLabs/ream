@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 use lean_multisig_type2::{
-    TypeOneMultiSignature, TypeTwoMultiSignature, XmssPublicKey, XmssSignature, aggregate_type_1,
+    MultiMessageAggregate, SingleMessageAggregate, XmssPublicKey, XmssSignature, aggregate_type_1,
     merge_many_type_1, setup_prover, split_type_2, verify_type_1, verify_type_2,
 };
 
@@ -20,25 +20,26 @@ fn to_lib_signature(signature: &Signature) -> Result<XmssSignature> {
     signature.as_lean_sig()
 }
 
-pub fn type_1_from_wire(wire: &[u8], public_keys: &[PublicKey]) -> Result<TypeOneMultiSignature> {
+pub fn type_1_from_wire(wire: &[u8], public_keys: &[PublicKey]) -> Result<SingleMessageAggregate> {
     let lib_public_keys = public_keys
         .iter()
         .map(to_lib_public_key)
         .collect::<Result<Vec<_>>>()?;
-    TypeOneMultiSignature::decompress_without_pubkeys(wire, lib_public_keys)
-        .ok_or_else(|| anyhow!("Failed to decode Type-1 multi-signature from wire bytes"))
+    SingleMessageAggregate::decompress_without_pubkeys(wire, lib_public_keys).ok_or_else(|| {
+        anyhow!("Failed to decode single-message aggregate multi-signature from wire bytes")
+    })
 }
 
-pub fn type_1_to_wire(proof: &TypeOneMultiSignature) -> Vec<u8> {
+pub fn type_1_to_wire(proof: &SingleMessageAggregate) -> Vec<u8> {
     proof.compress_without_pubkeys()
 }
 
 pub fn type_1_aggregate(
-    children: &[TypeOneMultiSignature],
+    children: &[SingleMessageAggregate],
     raw_xmss: &[(PublicKey, Signature)],
     message: &[u8; 32],
     slot: u32,
-) -> Result<TypeOneMultiSignature> {
+) -> Result<SingleMessageAggregate> {
     type_2_setup();
 
     let raw: Vec<_> = raw_xmss
@@ -49,29 +50,30 @@ pub fn type_1_aggregate(
         .collect::<Result<Vec<_>>>()?;
 
     aggregate_type_1(children, raw, *message, slot, LOG_INV_RATE)
-        .map_err(|err| anyhow!("Type-1 aggregation failed: {err:?}"))
+        .map_err(|err| anyhow!("single-message aggregate aggregation failed: {err:?}"))
 }
 
-pub fn type_1_verify(proof: &TypeOneMultiSignature) -> Result<()> {
+pub fn type_1_verify(proof: &SingleMessageAggregate) -> Result<()> {
     type_2_setup();
     verify_type_1(proof)
         .map(|_| ())
-        .map_err(|err| anyhow!("Type-1 verification failed: {err:?}"))
+        .map_err(|err| anyhow!("single-message aggregate verification failed: {err:?}"))
 }
 
-pub fn type_2_merge(parts: Vec<TypeOneMultiSignature>) -> Result<TypeTwoMultiSignature> {
+pub fn type_2_merge(parts: Vec<SingleMessageAggregate>) -> Result<MultiMessageAggregate> {
     type_2_setup();
-    merge_many_type_1(parts, LOG_INV_RATE).map_err(|err| anyhow!("Type-2 merge failed: {err:?}"))
+    merge_many_type_1(parts, LOG_INV_RATE)
+        .map_err(|err| anyhow!("multi-message aggregate merge failed: {err:?}"))
 }
 
-pub fn type_2_to_wire(proof: &TypeTwoMultiSignature) -> Vec<u8> {
+pub fn type_2_to_wire(proof: &MultiMessageAggregate) -> Vec<u8> {
     proof.compress_without_pubkeys()
 }
 
 pub fn type_2_from_wire(
     wire: &[u8],
     public_keys_per_component: &[Vec<PublicKey>],
-) -> Result<TypeTwoMultiSignature> {
+) -> Result<MultiMessageAggregate> {
     let lib_public_keys = public_keys_per_component
         .iter()
         .map(|public_keys| {
@@ -81,20 +83,22 @@ pub fn type_2_from_wire(
                 .collect::<Result<Vec<_>>>()
         })
         .collect::<Result<Vec<_>>>()?;
-    TypeTwoMultiSignature::decompress_without_pubkeys(wire, lib_public_keys)
-        .ok_or_else(|| anyhow!("Failed to decode Type-2 multi-signature from wire bytes"))
+    MultiMessageAggregate::decompress_without_pubkeys(wire, lib_public_keys).ok_or_else(|| {
+        anyhow!("Failed to decode multi-message aggregate multi-signature from wire bytes")
+    })
 }
 
-pub fn type_2_verify(proof: &TypeTwoMultiSignature) -> Result<()> {
+pub fn type_2_verify(proof: &MultiMessageAggregate) -> Result<()> {
     type_2_setup();
     verify_type_2(proof)
         .map(|_| ())
-        .map_err(|err| anyhow!("Type-2 verification failed: {err:?}"))
+        .map_err(|err| anyhow!("multi-message aggregate verification failed: {err:?}"))
 }
 
-pub fn type_2_split(proof: TypeTwoMultiSignature, index: usize) -> Result<TypeOneMultiSignature> {
+pub fn type_2_split(proof: MultiMessageAggregate, index: usize) -> Result<SingleMessageAggregate> {
     type_2_setup();
-    split_type_2(proof, index, LOG_INV_RATE).map_err(|err| anyhow!("Type-2 split failed: {err:?}"))
+    split_type_2(proof, index, LOG_INV_RATE)
+        .map_err(|err| anyhow!("multi-message aggregate split failed: {err:?}"))
 }
 
 pub fn type_2_verify_block(
@@ -129,5 +133,5 @@ pub fn type_2_verify_block(
 
     verify_type_2(&proof)
         .map(|_| ())
-        .map_err(|err| anyhow!("Type-2 verification failed: {err:?}"))
+        .map_err(|err| anyhow!("multi-message aggregate verification failed: {err:?}"))
 }

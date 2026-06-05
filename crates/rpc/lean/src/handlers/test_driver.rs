@@ -15,7 +15,7 @@ use ream_api_types_common::error::ApiError;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
-use ream_consensus_lean::attestation::TypeOneMultiSignature;
+use ream_consensus_lean::attestation::SingleMessageAggregate;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
@@ -381,7 +381,7 @@ fn convert_gossip_aggregate(
         #[cfg(feature = "devnet4")]
         proof: AggregatedSignatureProof::new(participants, proof_data),
         #[cfg(feature = "devnet5")]
-        proof: TypeOneMultiSignature::new(participants, proof),
+        proof: SingleMessageAggregate::new(participants, proof),
     })
 }
 
