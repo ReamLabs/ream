@@ -13,7 +13,7 @@ env:
 
 jobs:
   build-sp1:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Repository
@@ -40,7 +40,7 @@ jobs:
       run: cargo build --target=riscv32im-succinct-zkvm-elf -p ream-consensus-beacon -p ream-consensus-misc -p ream-bls -p ream-consensus-lean
 
   build-risc0:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4

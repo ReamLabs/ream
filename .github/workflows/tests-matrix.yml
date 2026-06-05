@@ -38,7 +38,7 @@ jobs:
 
   test-parallel:
     name: parallel
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: [discover-serial-tests]
 
     steps:
@@ -74,7 +74,7 @@ jobs:
   test-serial:
     name: serial (${{ matrix.test_name }})
     if: ${{ needs.discover-serial-tests.outputs.has_tests == 'true' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: [discover-serial-tests]
     strategy:
       fail-fast: false

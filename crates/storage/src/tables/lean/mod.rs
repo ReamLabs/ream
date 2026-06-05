@@ -1,6 +1,7 @@
 pub mod aggregated_payloads;
 pub mod attestation_data_by_root;
 pub mod block;
+pub mod children_index;
 pub mod gossip_signatures;
 pub mod head;
 pub mod latest_finalized;

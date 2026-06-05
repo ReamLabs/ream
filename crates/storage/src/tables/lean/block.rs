@@ -5,7 +5,11 @@ use ream_consensus_lean::block::SignedBlock;
 use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 use tree_hash::TreeHash;
 
-use super::{slot_index::LeanSlotIndexTable, state_root_index::LeanStateRootIndexTable};
+use super::{
+    children_index::{ChildIndexEntry, LeanChildrenIndexTable},
+    slot_index::LeanSlotIndexTable,
+    state_root_index::LeanStateRootIndexTable,
+};
 use crate::{
     cache::LeanCacheDB,
     errors::StoreError,
@@ -79,6 +83,19 @@ impl REDBTable for LeanBlockTable {
 
         state_root_index_table.insert(value.block.state_root, block_root)?;
 
+        // insert entry to children index table, mirroring slot + parent_root so
+        // fork choice can build the children map without decoding full blocks
+        let children_index_table = LeanChildrenIndexTable {
+            db: self.db.clone(),
+        };
+        children_index_table.insert(
+            block_root,
+            ChildIndexEntry {
+                slot: value.block.slot,
+                parent_root: value.block.parent_root,
+            },
+        )?;
+
         if let Some(cache) = &self.cache
             && let Ok(mut cache_lock) = cache.blocks.lock()
         {
@@ -114,6 +131,11 @@ impl REDBTable for LeanBlockTable {
             };
 
             state_root_index_table.remove(block.block.state_root)?;
+
+            let children_index_table = LeanChildrenIndexTable {
+                db: self.db.clone(),
+            };
+            children_index_table.remove(key)?;
         }
         drop(table);
         write_txn.commit()?;
@@ -126,32 +148,21 @@ impl LeanBlockTable {
         matches!(self.get(key), Ok(Some(_)))
     }
 
+    /// Build the `parent_root -> children` adjacency map used by LMD GHOST.
+    ///
+    /// Reads the dedicated children index rather than scanning the block table,
+    /// avoiding a full `SignedBlock` decode (including the large `devnet5` proof)
+    /// per entry. The index is pruned on finalization, so this scan is bounded by
+    /// the non-finalized block set rather than the whole chain history.
     pub fn get_children_map(
         &self,
         min_score: u64,
         attestation_weights: &HashMap<B256, u64>,
     ) -> Result<HashMap<B256, Vec<B256>>, StoreError> {
-        let mut children_map = HashMap::<B256, Vec<B256>>::new();
-        let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
-
-        for entry in table.iter()? {
-            let (hash_entry, block_entry) = entry?;
-            let root: B256 = hash_entry.value();
-
-            let parent_root = block_entry.value().block.parent_root;
-
-            if parent_root == B256::ZERO {
-                continue;
-            }
-
-            if min_score > 0 && attestation_weights.get(&root).unwrap_or(&0) < &min_score {
-                continue;
-            }
-
-            children_map.entry(parent_root).or_default().push(root);
-        }
-        Ok(children_map)
+        let children_index_table = LeanChildrenIndexTable {
+            db: self.db.clone(),
+        };
+        children_index_table.get_children_map(min_score, attestation_weights)
     }
 
     pub fn get_all_blocks(&self, min_slot: u64) -> Result<Vec<SignedBlock>, StoreError> {

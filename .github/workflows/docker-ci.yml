@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   push:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: github.repository == 'reamlabs/ream'
     steps:
       - uses: actions/checkout@v6

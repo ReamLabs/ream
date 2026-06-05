@@ -10,8 +10,9 @@ use crate::{
         lean::{
             aggregated_payloads::AggregatedPayloadsTable,
             attestation_data_by_root::LeanAttestationDataByRootTable, block::LeanBlockTable,
-            gossip_signatures::GossipSignaturesTable, head::LeanHeadField,
-            latest_finalized::LatestFinalizedField, latest_justified::LatestJustifiedField,
+            children_index::LeanChildrenIndexTable, gossip_signatures::GossipSignaturesTable,
+            head::LeanHeadField, latest_finalized::LatestFinalizedField,
+            latest_justified::LatestJustifiedField,
             latest_known_aggregated_payloads::LeanLatestKnownAggregatedPayloadsTable,
             latest_known_attestation::LatestKnownAttestationTable,
             latest_new_aggregated_payloads::LeanLatestNewAggregatedPayloadsTable,
@@ -62,6 +63,12 @@ impl LeanDB {
 
     pub fn slot_index_provider(&self) -> LeanSlotIndexTable {
         LeanSlotIndexTable {
+            db: self.db.clone(),
+        }
+    }
+
+    pub fn children_index_provider(&self) -> LeanChildrenIndexTable {
+        LeanChildrenIndexTable {
             db: self.db.clone(),
         }
     }
@@ -187,6 +194,7 @@ impl LeanDB {
         collect_stats!(LeanBlockTable, "LeanBlockTable");
         collect_stats!(LeanStateTable, "LeanStateTable");
         collect_stats!(LeanSlotIndexTable, "LeanSlotIndexTable");
+        collect_stats!(LeanChildrenIndexTable, "LeanChildrenIndexTable");
         collect_stats!(LeanStateRootIndexTable, "LeanStateRootIndexTable");
         collect_stats!(LatestKnownAttestationTable, "LatestKnownAttestationTable");
         collect_stats!(
