@@ -1730,6 +1730,7 @@ impl Store {
             attestation_data_by_root_provider,
             latest_new_aggregated_payloads_provider,
             latest_known_aggregated_payloads_provider,
+            children_index_provider,
         ) = {
             let db = self.store.lock().await;
             (
@@ -1738,10 +1739,14 @@ impl Store {
                 db.attestation_data_by_root_provider(),
                 db.latest_new_aggregated_payloads_provider(),
                 db.latest_known_aggregated_payloads_provider(),
+                db.children_index_provider(),
             )
         };
 
         let finalized_slot = latest_finalized_provider.get()?.slot;
+
+        children_index_provider.prune_finalized(finalized_slot)?;
+
         let stale_roots: HashSet<B256> = attestation_data_by_root_provider
             .iter()?
             .into_iter()

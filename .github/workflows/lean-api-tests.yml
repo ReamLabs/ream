@@ -24,7 +24,7 @@ env:
 jobs:
   api-conformance:
     name: api-spec-tests
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     env:
       LEAN_ENV: prod
 

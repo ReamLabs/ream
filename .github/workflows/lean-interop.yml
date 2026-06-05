@@ -11,7 +11,7 @@ env:
 jobs:
   devnet4-known-good-vs-current-pr:
     name: devnet4 known-good vs current pr
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +62,7 @@ jobs:
 
   devnet5-known-good-vs-current-pr:
     name: devnet5 known-good vs current pr
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4

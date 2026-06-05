@@ -11,7 +11,7 @@ env:
 
 jobs:
   cargo-udeps:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
       run: cargo +nightly udeps --workspace --tests --all-targets --release --exclude ef-tests
   
   cargo-workspace-lints:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
