@@ -290,16 +290,11 @@ impl ValidatorService {
         let block_root = block.tree_hash_root();
         let block_root_bytes: [u8; 32] = block_root.into();
 
-        let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
-        let proposer_signature = keystore
-            .proposal_private_key
-            .sign(&block_root, slot as u32)?;
-        stop_timer(timer);
-        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
+        let _ = keystore;
 
         let mut components = Vec::with_capacity(signatures.len() + 1);
-        for (proof, public_keys) in signatures.iter().zip(attestation_public_keys.iter()) {
-            let component = type_1_from_wire(&proof.proof, public_keys).map_err(|err| {
+        for proof in &signatures {
+            let component = type_1_from_wire(&proof.proof).map_err(|err| {
                 anyhow!("Failed to reconstruct attestation single-message aggregate proof: {err}")
             })?;
             components.push(component);
@@ -307,7 +302,7 @@ impl ValidatorService {
 
         let proposer_type_1 = type_1_aggregate(
             &[],
-            &[(keystore.proposal_public_key, proposer_signature)],
+            vec![],
             &block_root_bytes,
             slot as u32,
         )

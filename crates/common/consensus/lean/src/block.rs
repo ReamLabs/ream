@@ -166,31 +166,10 @@ impl SignedBlock {
         let aggregated_attestations = &block.body.attestations;
         let validators = &parent_state.validators;
 
-        let mut public_keys_per_component: Vec<Vec<_>> =
-            Vec::with_capacity(aggregated_attestations.len() + 1);
         let mut expected_bindings: Vec<([u8; 32], u32)> =
             Vec::with_capacity(aggregated_attestations.len() + 1);
 
         for aggregated_attestation in aggregated_attestations.iter() {
-            let validator_ids: Vec<usize> = aggregated_attestation
-                .aggregation_bits
-                .iter()
-                .enumerate()
-                .filter(|(_, bit)| *bit)
-                .map(|(index, _)| index)
-                .collect();
-
-            let public_keys: Vec<_> = validator_ids
-                .iter()
-                .map(|&validator_id| {
-                    validators
-                        .get(validator_id)
-                        .map(|validator| validator.attestation_public_key)
-                        .ok_or_else(|| anyhow!("Failed to get validator {validator_id}"))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-
-            public_keys_per_component.push(public_keys);
             expected_bindings.push((
                 aggregated_attestation.message.tree_hash_root().into(),
                 aggregated_attestation.message.slot as u32,
@@ -202,18 +181,13 @@ impl SignedBlock {
             proposer_index < validators.len() as u64,
             "Proposer index out of range"
         );
-        let proposer = validators
-            .get(proposer_index as usize)
-            .ok_or_else(|| anyhow!("Failed to get proposer validator"))?;
 
-        public_keys_per_component.push(vec![proposer.proposal_public_key]);
         expected_bindings.push((block.tree_hash_root().into(), block.slot as u32));
 
         if verify_signatures {
             let timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
             match type_2_verify_block(
                 self.proof.as_ref(),
-                &public_keys_per_component,
                 &expected_bindings,
             ) {
                 Ok(()) => {

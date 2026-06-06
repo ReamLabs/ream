@@ -1100,46 +1100,7 @@ impl LeanChainService {
             .get()
             .expect("Database read error");
 
-        let parent_state = match database
-            .state_provider()
-            .get(block.block.parent_root)
-            .expect("Database read error")
-        {
-            Some(state) => state,
-            None => return Vec::new(),
-        };
-        let validators = &parent_state.validators;
-
-        let attestation_public_key = |validator_id: usize| {
-            validators
-                .get(validator_id)
-                .map(|v| v.attestation_public_key)
-        };
-
-        let mut public_keys_per_component: Vec<Vec<_>> =
-            Vec::with_capacity(block.block.body.attestations.len() + 1);
-        for attestation in &block.block.body.attestations {
-            let mut public_keys = Vec::new();
-            for (validator_id, bit) in attestation.aggregation_bits.iter().enumerate() {
-                if bit {
-                    match attestation_public_key(validator_id) {
-                        Some(public_key) => public_keys.push(public_key),
-                        None => return Vec::new(),
-                    }
-                }
-            }
-            public_keys_per_component.push(public_keys);
-        }
-        let proposer_public_key = match validators
-            .get(block.block.proposer_index as usize)
-            .map(|v| v.proposal_public_key)
-        {
-            Some(public_key) => public_key,
-            None => return Vec::new(),
-        };
-        public_keys_per_component.push(vec![proposer_public_key]);
-
-        let type_two = match type_2_from_wire(block.proof.as_ref(), &public_keys_per_component) {
+        let type_two = match type_2_from_wire(block.proof.as_ref()) {
             Ok(proof) => proof,
             Err(err) => {
                 debug!("Post-block multi-message aggregate decode failed: {err}");
@@ -1182,33 +1143,26 @@ impl LeanChainService {
             };
 
             let combined = if let Some(locals) = local_proofs {
-                let mut children = Vec::with_capacity(locals.len() + 1);
+                let mut children: Vec<_> = Vec::with_capacity(locals.len() + 1);
                 let mut union_bits = attestation.aggregation_bits.clone();
 
-                children.push((
-                    block_t1.clone(),
-                    public_keys_per_component[component_index].clone(),
-                ));
+                children.push(block_t1.clone());
 
                 for proof in locals {
                     for validator_id in proof.to_validator_indices() {
                         let _ = union_bits.set(validator_id as usize, true);
                     }
-                    let pubkeys: Vec<_> = proof
-                        .to_validator_indices()
-                        .iter()
-                        .filter_map(|&vid| {
-                            validators
-                                .get(vid as usize)
-                                .map(|v| v.attestation_public_key)
-                        })
-                        .collect();
-                    children.push((proof.clone(), pubkeys));
+                    match type_1_from_wire(proof.proof.as_ref()) {
+                        Ok(t1) => children.push(t1),
+                        Err(err) => {
+                            debug!("Failed to decode local proof for {data_root}: {err}");
+                        }
+                    }
                 }
 
                 match type_1_aggregate(
                     &children,
-                    &[],
+                    vec![],
                     &data_root.into(),
                     attestation.message.slot as u32,
                 ) {

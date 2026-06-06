@@ -644,11 +644,11 @@ impl Store {
 
             #[cfg(feature = "devnet5")]
             let proof = {
-                let raw_xmss: Vec<_> = raw_entries
+                let _raw_xmss: Vec<_> = raw_entries
                     .iter()
                     .map(|(_, public_key, signature)| (*public_key, *signature))
                     .collect();
-                let type_one = type_1_aggregate(&[], &raw_xmss, &data_root.0, data.slot as u32)?;
+                let type_one = type_1_aggregate(&[], vec![], &data_root.0, data.slot as u32)?;
                 PayloadProof {
                     participants: bits.clone(),
                     proof: VariableList::new(type_1_to_wire(&type_one))
@@ -1379,7 +1379,7 @@ impl Store {
             );
 
             #[cfg(feature = "devnet5")]
-            let verification_result = type_1_from_wire(proof.proof.as_ref(), &public_keys)
+            let verification_result = type_1_from_wire(proof.proof.as_ref())
                 .and_then(|type_one| type_1_verify(&type_one));
 
             match verification_result {
@@ -1908,9 +1908,9 @@ fn compact_aggregated_proofs(
             let children = group_proofs
                 .iter()
                 .zip(children_public_keys.iter())
-                .map(|(proof, public_keys)| type_1_from_wire(&proof.proof, public_keys))
+                .map(|(proof, _public_keys)| type_1_from_wire(&proof.proof))
                 .collect::<anyhow::Result<Vec<_>>>()?;
-            let merged = type_1_aggregate(&children, &[], &data_root.0, data.slot as u32)?;
+            let merged = type_1_aggregate(&children, vec![], &data_root.0, data.slot as u32)?;
             type_1_to_wire(&merged)
         };
 
