@@ -10,7 +10,7 @@ use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AttestationData;
 #[cfg(feature = "devnet5")]
-use ream_consensus_lean::attestation::TypeOneMultiSignature;
+use ream_consensus_lean::attestation::SingleMessageAggregate;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
 #[cfg(feature = "devnet4")]
@@ -212,7 +212,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 let proof = AggregatedSignatureProof::new(participants, proof_data);
 
                 #[cfg(feature = "devnet5")]
-                let proof = TypeOneMultiSignature::new(participants, proof);
+                let proof = SingleMessageAggregate::new(participants, proof);
 
                 let signed = SignedAggregatedAttestation {
                     data: attestation.data.clone(),

@@ -5,7 +5,7 @@ use anyhow::{Context, bail};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
-use ream_consensus_lean::attestation::TypeOneMultiSignature;
+use ream_consensus_lean::attestation::SingleMessageAggregate;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
@@ -92,10 +92,12 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
         >(&test.value, &expected_ssz),
 
         #[cfg(feature = "devnet5")]
-        "TypeOneMultiSignature" => run_test::<AggregatedSignatureProofJSON, TypeOneMultiSignature>(
-            &test.value,
-            &expected_ssz,
-        ),
+        "SingleMessageAggregate" => {
+            run_test::<AggregatedSignatureProofJSON, SingleMessageAggregate>(
+                &test.value,
+                &expected_ssz,
+            )
+        }
 
         _ => {
             warn!("Unknown type: {}, skipping", test.type_name);

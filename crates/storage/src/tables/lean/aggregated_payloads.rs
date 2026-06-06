@@ -4,7 +4,7 @@ use std::sync::Arc;
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
 use ream_consensus_lean::attestation::SignatureKey;
 #[cfg(feature = "devnet5")]
-use ream_consensus_lean::attestation::TypeOneMultiSignature;
+use ream_consensus_lean::attestation::SingleMessageAggregate;
 use redb::{Database, Durability, TableDefinition};
 use ssz_derive::{Decode, Encode};
 use ssz_types::{VariableList, typenum::U4096};
@@ -16,47 +16,44 @@ use crate::{
 
 /// Wrapper for a list of aggregated signature proofs.
 /// Uses VariableList for SSZ compatibility.
+#[cfg(feature = "devnet4")]
 #[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
 pub struct AggregatedPayloadList {
-    #[cfg(feature = "devnet4")]
     pub proofs: VariableList<AggregatedSignatureProof, U4096>,
-
-    #[cfg(feature = "devnet5")]
-    pub proofs: VariableList<TypeOneMultiSignature, U4096>,
 }
 
+#[cfg(feature = "devnet4")]
 impl AggregatedPayloadList {
     pub fn new() -> Self {
         Self {
             proofs: VariableList::empty(),
         }
     }
-
-    #[cfg(feature = "devnet4")]
     pub fn push(&mut self, proof: AggregatedSignatureProof) -> Result<(), ssz_types::Error> {
         self.proofs.push(proof)
     }
-
-    #[cfg(feature = "devnet5")]
-    pub fn push(&mut self, proof: TypeOneMultiSignature) -> Result<(), ssz_types::Error> {
-        self.proofs.push(proof)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.proofs.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.proofs.len()
-    }
-
-    #[cfg(feature = "devnet4")]
     pub fn iter(&self) -> impl Iterator<Item = &AggregatedSignatureProof> {
         self.proofs.iter()
     }
+}
 
-    #[cfg(feature = "devnet5")]
-    pub fn iter(&self) -> impl Iterator<Item = &TypeOneMultiSignature> {
+#[cfg(feature = "devnet5")]
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
+pub struct AggregatedPayloadList {
+    pub proofs: VariableList<SingleMessageAggregate, U4096>,
+}
+
+#[cfg(feature = "devnet5")]
+impl AggregatedPayloadList {
+    pub fn new() -> Self {
+        Self {
+            proofs: VariableList::empty(),
+        }
+    }
+    pub fn push(&mut self, proof: SingleMessageAggregate) -> Result<(), ssz_types::Error> {
+        self.proofs.push(proof)
+    }
+    pub fn iter(&self) -> impl Iterator<Item = &SingleMessageAggregate> {
         self.proofs.iter()
     }
 }
@@ -67,9 +64,17 @@ impl Default for AggregatedPayloadList {
     }
 }
 
+impl AggregatedPayloadList {
+    pub fn is_empty(&self) -> bool {
+        self.proofs.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.proofs.len()
+    }
+}
+
 /// Table for storing aggregated signature proofs learned from blocks.
-/// Key: SignatureKey (validator_id, attestation_data_root)
-/// Value: AggregatedPayloadList (list of AggregateSignature proofs)
 pub struct AggregatedPayloadsTable {
     pub db: Arc<Database>,
 }
@@ -110,7 +115,7 @@ impl AggregatedPayloadsTable {
     pub fn append_proof(
         &self,
         key: SignatureKey,
-        proof: TypeOneMultiSignature,
+        proof: SingleMessageAggregate,
     ) -> Result<(), StoreError> {
         let mut list = self.get(key.clone())?.unwrap_or_default();
         list.push(proof)

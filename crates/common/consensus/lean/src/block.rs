@@ -25,7 +25,7 @@ use tree_hash_derive::TreeHash;
 #[cfg(feature = "devnet4")]
 use crate::attestation::{AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof};
 #[cfg(feature = "devnet5")]
-use crate::attestation::{AggregatedAttestation, AggregatedAttestations, TypeOneMultiSignature};
+use crate::attestation::{AggregatedAttestation, AggregatedAttestations, SingleMessageAggregate};
 use crate::state::LeanState;
 
 #[cfg(feature = "devnet4")]
@@ -287,7 +287,7 @@ pub struct BlockWithSignatures {
     pub signatures: VariableList<AggregatedSignatureProof, U4096>,
 
     #[cfg(feature = "devnet5")]
-    pub signatures: VariableList<TypeOneMultiSignature, U4096>,
+    pub signatures: VariableList<SingleMessageAggregate, U4096>,
 
     #[cfg(feature = "devnet5")]
     pub attestation_public_keys: Vec<Vec<ream_post_quantum_crypto::leansig::public_key::PublicKey>>,

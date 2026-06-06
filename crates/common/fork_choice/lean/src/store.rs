@@ -9,7 +9,7 @@ use anyhow::{anyhow, ensure};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AggregatedSignatureProof as PayloadProof;
 #[cfg(feature = "devnet5")]
-use ream_consensus_lean::attestation::TypeOneMultiSignature as PayloadProof;
+use ream_consensus_lean::attestation::SingleMessageAggregate as PayloadProof;
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AttestationData, SignatureKey,

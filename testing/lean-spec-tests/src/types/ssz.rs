@@ -11,7 +11,7 @@ use anyhow::{anyhow, ensure};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
-use ream_consensus_lean::attestation::TypeOneMultiSignature;
+use ream_consensus_lean::attestation::SingleMessageAggregate;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
@@ -426,7 +426,7 @@ impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
 }
 
 #[cfg(feature = "devnet5")]
-impl TryFrom<&AggregatedSignatureProofJSON> for TypeOneMultiSignature {
+impl TryFrom<&AggregatedSignatureProofJSON> for SingleMessageAggregate {
     type Error = anyhow::Error;
 
     fn try_from(value: &AggregatedSignatureProofJSON) -> anyhow::Result<Self> {
