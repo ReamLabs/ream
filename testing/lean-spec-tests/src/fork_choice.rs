@@ -161,6 +161,9 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     info!("  Anchor block slot: {}", test.anchor_block.slot);
     info!("  Number of steps: {}", test.steps.len());
 
+    // label → computed block root, populated as Block steps are processed.
+    let mut block_roots: HashMap<String, alloy_primitives::B256> = HashMap::new();
+
     // Process each step
     for (index, step) in test.steps.iter().enumerate() {
         match step {
@@ -247,7 +250,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 }
 
                 if let Some(checks) = checks {
-                    validate_checks(&store, checks).await?;
+                    validate_checks(&store, checks, &block_roots).await?;
                 }
             }
 
@@ -263,6 +266,11 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 let ream_block = Block::try_from(block)
                     .map_err(|err| anyhow!("Failed to convert block: {err}"))?;
+
+                // Record label → computed root before on_block consumes ream_block.
+                if let Some(label) = &block.block_root_label {
+                    block_roots.insert(label.clone(), ream_block.tree_hash_root());
+                }
 
                 // Advance time to the block's slot before processing
                 let time = ream_block.slot * network_spec.seconds_per_slot;
@@ -376,7 +384,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 
                 // Validate checks if present
                 if let Some(checks) = checks {
-                    validate_checks(&store, checks).await?;
+                    validate_checks(&store, checks, &block_roots).await?;
                 }
             }
 
@@ -427,12 +435,12 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 }
 
                 if let Some(checks) = checks {
-                    validate_checks(&store, checks).await?;
+                    validate_checks(&store, checks, &block_roots).await?;
                 }
             }
 
             ForkChoiceStep::Checks { checks } => {
-                validate_checks(&store, checks).await?;
+                validate_checks(&store, checks, &block_roots).await?;
             }
         }
     }
@@ -442,7 +450,11 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
 }
 
 /// Validate store checks
-async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<()> {
+async fn validate_checks(
+    store: &Store,
+    checks: &StoreChecks,
+    block_roots: &HashMap<String, alloy_primitives::B256>,
+) -> anyhow::Result<()> {
     let db = store.store.lock().await;
 
     if let Some(expected_head_slot) = checks.head_slot {
@@ -452,12 +464,10 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
             .get(head_root)?
             .ok_or_else(|| anyhow!("Head block not found"))?;
         let actual_slot = head_block.block.slot;
-
         ensure!(
             actual_slot == expected_head_slot,
             "Head slot mismatch: expected {expected_head_slot}, got {actual_slot}"
         );
-
         debug!("Head slot: {actual_slot}");
     }
 
@@ -468,6 +478,41 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
             "Head root mismatch: expected {expected_head_root}, got {actual_head_root}"
         );
         debug!("Head root: {actual_head_root}");
+    }
+
+    if let Some(label) = &checks.head_root_label {
+        let expected_root = block_roots
+            .get(label)
+            .ok_or_else(|| anyhow!("headRootLabel '{label}' not found in processed blocks"))?;
+        let actual_head_root = db.head_provider().get()?;
+        ensure!(
+            actual_head_root == *expected_root,
+            "Head root (label '{label}') mismatch: expected {expected_root}, got {actual_head_root}"
+        );
+        debug!("Head root (label '{label}'): {actual_head_root}");
+    }
+
+    if !checks.lexicographic_head_among.is_empty() {
+        let actual_head_root = db.head_provider().get()?;
+        let candidates: Vec<alloy_primitives::B256> = checks
+            .lexicographic_head_among
+            .iter()
+            .map(|label| {
+                block_roots
+                    .get(label)
+                    .copied()
+                    .ok_or_else(|| anyhow!("lexicographicHeadAmong label '{label}' not found"))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let expected_head = candidates
+            .iter()
+            .max()
+            .ok_or_else(|| anyhow!("lexicographicHeadAmong list is empty"))?;
+        ensure!(
+            actual_head_root == *expected_head,
+            "Lexicographic head mismatch: expected {expected_head}, got {actual_head_root}"
+        );
+        debug!("Lexicographic head: {actual_head_root}");
     }
 
     if let Some(expected_time) = checks.time {
@@ -494,9 +539,29 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
         ensure!(
             actual_finalized.slot == expected_finalized.slot
                 && actual_finalized.root == expected_finalized.root,
-            "Finalized checkpoint mismatch: expected {expected_finalized:?}, got {actual_finalized:?}",
+            "Finalized checkpoint mismatch: expected {expected_finalized:?}, got {actual_finalized:?}"
         );
         debug!("Finalized checkpoint: slot {}", actual_finalized.slot);
+    }
+
+    if let Some(expected_slot) = checks.latest_justified_slot {
+        let actual = db.latest_justified_provider().get()?;
+        ensure!(
+            actual.slot == expected_slot,
+            "latest_justified slot mismatch: expected {expected_slot}, got {}",
+            actual.slot
+        );
+        debug!("Latest justified slot: {}", actual.slot);
+    }
+
+    if let Some(expected_slot) = checks.latest_finalized_slot {
+        let actual = db.latest_finalized_provider().get()?;
+        ensure!(
+            actual.slot == expected_slot,
+            "latest_finalized slot mismatch: expected {expected_slot}, got {}",
+            actual.slot
+        );
+        debug!("Latest finalized slot: {}", actual.slot);
     }
 
     Ok(())

@@ -132,33 +132,97 @@ fn validate_post_state(
     if let Some(expected_slot) = expectations.slot {
         ensure!(
             state.slot == expected_slot,
-            "Post-state slot mismatch: expected {expected_slot}, got {}",
+            "slot mismatch: expected {expected_slot}, got {}",
             state.slot
         );
         info!("slot: {}", state.slot);
     }
 
+    if let Some(expected) = expectations.latest_justified_slot {
+        ensure!(
+            state.latest_justified.slot == expected,
+            "latest_justified.slot mismatch: expected {expected}, got {}",
+            state.latest_justified.slot
+        );
+    }
+
+    if let Some(expected) = expectations.latest_justified_root {
+        ensure!(
+            state.latest_justified.root == expected,
+            "latest_justified.root mismatch: expected {expected}, got {}",
+            state.latest_justified.root
+        );
+    }
+
+    if let Some(expected) = expectations.latest_finalized_slot {
+        ensure!(
+            state.latest_finalized.slot == expected,
+            "latest_finalized.slot mismatch: expected {expected}, got {}",
+            state.latest_finalized.slot
+        );
+    }
+
+    if let Some(expected) = expectations.latest_finalized_root {
+        ensure!(
+            state.latest_finalized.root == expected,
+            "latest_finalized.root mismatch: expected {expected}, got {}",
+            state.latest_finalized.root
+        );
+    }
+
+    if let Some(expected) = expectations.validator_count {
+        let actual = state.validators.len();
+        ensure!(
+            actual == expected,
+            "validator count mismatch: expected {expected}, got {actual}"
+        );
+    }
+
+    if let Some(expected) = expectations.config_genesis_time {
+        ensure!(
+            state.config.genesis_time == expected,
+            "config.genesis_time mismatch: expected {expected}, got {}",
+            state.config.genesis_time
+        );
+    }
+
     if let Some(expected_header_slot) = expectations.latest_block_header_slot {
         ensure!(
             state.latest_block_header.slot == expected_header_slot,
-            "Post-state latest_block_header.slot mismatch: expected {expected_header_slot}, got {}",
+            "latest_block_header.slot mismatch: expected {expected_header_slot}, got {}",
             state.latest_block_header.slot
         );
-        info!(
-            "latest_block_header.slot: {}",
-            state.latest_block_header.slot
+    }
+
+    if let Some(expected) = expectations.latest_block_header_proposer_index {
+        ensure!(
+            state.latest_block_header.proposer_index == expected,
+            "latest_block_header.proposer_index mismatch: expected {expected}, got {}",
+            state.latest_block_header.proposer_index
+        );
+    }
+
+    if let Some(expected) = expectations.latest_block_header_parent_root {
+        ensure!(
+            state.latest_block_header.parent_root == expected,
+            "latest_block_header.parent_root mismatch: expected {expected}, got {}",
+            state.latest_block_header.parent_root
         );
     }
 
     if let Some(expected_state_root) = expectations.latest_block_header_state_root {
         ensure!(
             state.latest_block_header.state_root == expected_state_root,
-            "Post-state latest_block_header.state_root mismatch: expected {expected_state_root}, got {}",
+            "latest_block_header.state_root mismatch: expected {expected_state_root}, got {}",
             state.latest_block_header.state_root
         );
-        info!(
-            "latest_block_header.state_root: {}",
-            state.latest_block_header.state_root
+    }
+
+    if let Some(expected) = expectations.latest_block_header_body_root {
+        ensure!(
+            state.latest_block_header.body_root == expected,
+            "latest_block_header.body_root mismatch: expected {expected}, got {}",
+            state.latest_block_header.body_root
         );
     }
 
@@ -166,9 +230,8 @@ fn validate_post_state(
         let actual_count = state.historical_block_hashes.len();
         ensure!(
             actual_count == expected_count,
-            "Post-state historical_block_hashes count mismatch: expected {expected_count}, got {actual_count}"
+            "historical_block_hashes count mismatch: expected {expected_count}, got {actual_count}"
         );
-        info!("historical_block_hashes.len(): {actual_count}");
     }
 
     Ok(())

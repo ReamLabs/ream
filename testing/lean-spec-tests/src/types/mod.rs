@@ -63,8 +63,10 @@ pub struct Checkpoint {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Validator {
-    pub attestation_pubkey: String,
-    pub proposal_pubkey: String,
+    #[serde(alias = "attestationPubkey")]
+    pub attestation_public_key: String,
+    #[serde(alias = "proposalPubkey")]
+    pub proposal_public_key: String,
     pub index: u64,
 }
 
@@ -80,6 +82,8 @@ pub struct Block {
     #[serde(alias = "stateRoot")]
     pub state_root: B256,
     pub body: BlockBody,
+    #[serde(default, alias = "blockRootLabel")]
+    pub block_root_label: Option<String>,
 }
 
 /// Block body - uses flexible attestation type that can parse both formats
@@ -110,7 +114,7 @@ pub struct BodyAttestationJSON {
 /// Attestation
 #[derive(Debug, Deserialize)]
 pub struct Attestation {
-    #[serde(alias = "validatorId")]
+    #[serde(alias = "validatorId", alias = "validatorIndex")]
     pub validator_id: u64,
     pub data: AttestationData,
     #[serde(default)]
@@ -206,8 +210,8 @@ impl TryFrom<&Validator> for ReamValidator {
     type Error = anyhow::Error;
 
     fn try_from(validator: &Validator) -> anyhow::Result<Self> {
-        let attestation_public_key = decode_xmss_pubkey(&validator.attestation_pubkey)?;
-        let proposal_public_key = decode_xmss_pubkey(&validator.proposal_pubkey)?;
+        let attestation_public_key = decode_xmss_pubkey(&validator.attestation_public_key)?;
+        let proposal_public_key = decode_xmss_pubkey(&validator.proposal_public_key)?;
         Ok(ReamValidator {
             attestation_public_key,
             proposal_public_key,

@@ -62,13 +62,23 @@ pub enum ForkChoiceStep {
 #[serde(rename_all = "camelCase")]
 pub struct StoreChecks {
     pub head_slot: Option<u64>,
+    /// Literal hash (verify_signatures / devnet4 fixtures).
     pub head_root: Option<B256>,
+    /// Block label whose computed root must equal the store head (devnet5 fixtures).
+    pub head_root_label: Option<String>,
+    /// All listed block labels must have equal weight; head is the lex-max among them.
+    #[serde(default)]
+    pub lexicographic_head_among: Vec<String>,
     pub time: Option<u64>,
     pub justified_checkpoint: Option<Checkpoint>,
     pub finalized_checkpoint: Option<Checkpoint>,
     pub proposer_boost_root: Option<B256>,
+    pub latest_justified_slot: Option<u64>,
+    pub latest_finalized_slot: Option<u64>,
     #[serde(default)]
     pub attestation_checks: Vec<AttestationCheck>,
+    #[serde(default)]
+    pub latest_known_aggregated_target_slots: Vec<u64>,
 }
 
 /// Attestation check for validating attestation state

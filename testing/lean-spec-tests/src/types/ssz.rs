@@ -162,8 +162,8 @@ impl TryFrom<&BlockHeaderJSON> for BlockHeader {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidatorJSON {
-    pub attestation_pubkey: String,
-    pub proposal_pubkey: String,
+    pub attestation_public_key: String,
+    pub proposal_public_key: String,
     pub index: u64,
 }
 
@@ -172,8 +172,8 @@ impl TryFrom<&ValidatorJSON> for Validator {
 
     fn try_from(value: &ValidatorJSON) -> anyhow::Result<Self> {
         Ok(Self {
-            attestation_public_key: decode_pubkey(&value.attestation_pubkey)?,
-            proposal_public_key: decode_pubkey(&value.proposal_pubkey)?,
+            attestation_public_key: decode_pubkey(&value.attestation_public_key)?,
+            proposal_public_key: decode_pubkey(&value.proposal_public_key)?,
             index: value.index,
         })
     }
@@ -374,11 +374,24 @@ impl TryFrom<&BlockSignaturesJSON> for BlockSignatures {
     }
 }
 
+/// Outer wrapper for the devnet5 single-message aggregate proof in a signed block.
+/// Fixture JSON: `{ "proof": { "data": "0x..." } }`
+#[derive(Debug, Deserialize, Clone)]
+pub struct SingleMessageAggregateJSON {
+    pub proof: ProofDataJSON,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedBlockJSON {
     pub block: BlockJSON,
-    pub signature: BlockSignaturesJSON,
+    /// devnet4 / verify_signatures: `{ "attestationSignatures": [...], "proposerSignature":
+    /// "0x..." }`
+    #[serde(default)]
+    pub signature: Option<BlockSignaturesJSON>,
+    /// devnet5 SSZ tests: `{ "proof": { "data": "0x..." } }`
+    #[serde(default)]
+    pub proof: Option<SingleMessageAggregateJSON>,
 }
 
 #[cfg(feature = "devnet4")]
@@ -386,9 +399,13 @@ impl TryFrom<&SignedBlockJSON> for SignedBlock {
     type Error = anyhow::Error;
 
     fn try_from(value: &SignedBlockJSON) -> anyhow::Result<Self> {
+        let signature = value
+            .signature
+            .as_ref()
+            .ok_or_else(|| anyhow!("Missing signature field for devnet4 SignedBlock"))?;
         Ok(Self {
             block: (&value.block).try_into()?,
-            signature: (&value.signature).try_into()?,
+            signature: signature.try_into()?,
         })
     }
 }
@@ -398,9 +415,14 @@ impl TryFrom<&SignedBlockJSON> for SignedBlock {
     type Error = anyhow::Error;
 
     fn try_from(value: &SignedBlockJSON) -> anyhow::Result<Self> {
+        let proof_bytes = match &value.proof {
+            Some(p) => decode_hex(&p.proof.data)?,
+            None => vec![],
+        };
         Ok(Self {
             block: (&value.block).try_into()?,
-            proof: VariableList::empty(),
+            proof: VariableList::try_from(proof_bytes)
+                .map_err(|err| anyhow!("Failed to convert block proof: {err}"))?,
         })
     }
 }
