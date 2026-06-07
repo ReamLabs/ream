@@ -35,6 +35,8 @@ use ream_chain_lean::{
 };
 use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
 use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::MultiMessageAggregate;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{block::SignedBlock, validator::Validator};
@@ -305,7 +307,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                 proposer_signature: Signature::blank(),
             },
             #[cfg(feature = "devnet5")]
-            proof: VariableList::default(),
+            proof: MultiMessageAggregate {
+                proof: VariableList::default(),
+            },
         };
         (signed_genesis, genesis_state)
     };
