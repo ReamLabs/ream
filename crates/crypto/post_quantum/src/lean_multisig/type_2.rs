@@ -1,8 +1,9 @@
 use anyhow::{Result, anyhow};
 use lean_multisig_type2::{
-    TypeOneMultiSignature as SingleMessageAggregate,
-    TypeTwoMultiSignature as MultiMessageAggregate, XmssPublicKey, XmssSignature, aggregate_type_1,
-    merge_many_type_1, setup_prover, split_type_2, verify_type_1, verify_type_2,
+    MultiMessageAggregateSignature as MultiMessageAggregate,
+    SingleMessageAggregateSignature as SingleMessageAggregate, XmssPublicKey, XmssSignature,
+    aggregate_single_message_signatures, merge_single_message_aggregates, setup_prover,
+    split_multi_message_aggregate, verify_multi_message_aggregate, verify_single_message_aggregate,
 };
 
 use crate::leansig::{public_key::PublicKey, signature::Signature};
@@ -50,20 +51,20 @@ pub fn type_1_aggregate(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    aggregate_type_1(children, raw, *message, slot, LOG_INV_RATE)
+    aggregate_single_message_signatures(children, raw, *message, slot, LOG_INV_RATE)
         .map_err(|err| anyhow!("single-message aggregate aggregation failed: {err:?}"))
 }
 
 pub fn type_1_verify(proof: &SingleMessageAggregate) -> Result<()> {
     type_2_setup();
-    verify_type_1(proof)
+    verify_single_message_aggregate(proof)
         .map(|_| ())
         .map_err(|err| anyhow!("single-message aggregate verification failed: {err:?}"))
 }
 
 pub fn type_2_merge(parts: Vec<SingleMessageAggregate>) -> Result<MultiMessageAggregate> {
     type_2_setup();
-    merge_many_type_1(parts, LOG_INV_RATE)
+    merge_single_message_aggregates(parts, LOG_INV_RATE)
         .map_err(|err| anyhow!("multi-message aggregate merge failed: {err:?}"))
 }
 
@@ -91,14 +92,14 @@ pub fn type_2_from_wire(
 
 pub fn type_2_verify(proof: &MultiMessageAggregate) -> Result<()> {
     type_2_setup();
-    verify_type_2(proof)
+    verify_multi_message_aggregate(proof)
         .map(|_| ())
         .map_err(|err| anyhow!("multi-message aggregate verification failed: {err:?}"))
 }
 
 pub fn type_2_split(proof: MultiMessageAggregate, index: usize) -> Result<SingleMessageAggregate> {
     type_2_setup();
-    split_type_2(proof, index, LOG_INV_RATE)
+    split_multi_message_aggregate(proof, index, LOG_INV_RATE)
         .map_err(|err| anyhow!("multi-message aggregate split failed: {err:?}"))
 }
 
@@ -132,7 +133,7 @@ pub fn type_2_verify_block(
         }
     }
 
-    verify_type_2(&proof)
+    verify_multi_message_aggregate(&proof)
         .map(|_| ())
         .map_err(|err| anyhow!("multi-message aggregate verification failed: {err:?}"))
 }
