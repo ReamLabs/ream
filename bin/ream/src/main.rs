@@ -2105,7 +2105,7 @@ mod tests {
         let topology = [vec![], vec![0]];
         let test_name = "two_nodes_sync_from_genesis";
 
-        let test_duration_secs = 90;
+        let test_duration_secs = 240;
         let base_p2p_port = 22600;
         let base_http_port = 18652;
         let node_count = topology.len();
@@ -2321,12 +2321,10 @@ mod tests {
                 node_2_state.latest_finalized.slot
             );
 
-            if node_1_state.latest_finalized.slot == 0 {
-                warn!(
-                    "Known-good node did not finalize; skipping comparison because the baseline is inconclusive"
-                );
-                return;
-            }
+            assert!(
+                node_1_state.latest_finalized.slot > 0,
+                "Known-good node failed to finalize"
+            );
             assert!(
                 node_2_state.latest_finalized.slot > 0,
                 "Current-branch node failed to finalize after syncing"
