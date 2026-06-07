@@ -5,6 +5,8 @@ use ream_chain_lean::{
     clock::{create_lean_clock_interval, get_initial_tick_count},
     messages::{LeanChainServiceMessage, ServiceResponse},
 };
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::MultiMessageAggregate;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
@@ -319,8 +321,10 @@ impl ValidatorService {
 
         Ok(SignedBlock {
             block,
-            proof: VariableList::new(type_2_to_wire(&merged))
-                .map_err(|err| anyhow!("Block proof exceeds size limit: {err:?}"))?,
+            proof: MultiMessageAggregate::new(
+                VariableList::new(type_2_to_wire(&merged))
+                    .map_err(|err| anyhow!("Block proof exceeds size limit: {err:?}"))?,
+            ),
         })
     }
 }

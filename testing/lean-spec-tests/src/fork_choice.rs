@@ -10,7 +10,7 @@ use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AttestationData;
 #[cfg(feature = "devnet5")]
-use ream_consensus_lean::attestation::SingleMessageAggregate;
+use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
 #[cfg(feature = "devnet4")]
@@ -41,6 +41,9 @@ use crate::types::{
     TestFixture,
     fork_choice::{ForkChoiceStep, ForkChoiceTest, StoreChecks},
 };
+
+#[cfg(feature = "devnet4")]
+const DEVNET4_MAX_BLOCK_ATTESTATIONS: usize = 8;
 
 /// Load a fork choice test fixture from a JSON file
 pub fn load_fork_choice_test(
@@ -79,7 +82,10 @@ fn load_test_keys() -> anyhow::Result<HashMap<u64, PrivateKey>> {
             .map_err(|err| anyhow!("Failed to parse key file {i}.json: {err}"))?;
         let secret_hex = key_json["secret"]
             .as_str()
-            .ok_or_else(|| anyhow!("Missing secret field in key file {i}.json"))?;
+            .or_else(|| key_json["proposal_keypair"]["secret_key"].as_str())
+            .ok_or_else(|| {
+                anyhow!("Missing secret or proposal_keypair.secret_key field in key file {i}.json")
+            })?;
         let secret_bytes = hex::decode(secret_hex.trim_start_matches("0x"))
             .map_err(|err| anyhow!("Failed to decode secret hex for validator {i}: {err}"))?;
         let private_key = PrivateKey::from_bytes(&secret_bytes)
@@ -137,7 +143,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 proposer_signature: Signature::blank(),
             },
             #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::empty(),
+            proof: MultiMessageAggregate::default(),
         },
         state,
         db,
@@ -268,6 +274,21 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 let time = ream_block.slot * network_spec.seconds_per_slot;
                 store.on_tick(time, true, true).await?;
 
+                #[cfg(feature = "devnet4")]
+                if ream_block.body.attestations.len() > DEVNET4_MAX_BLOCK_ATTESTATIONS {
+                    if *valid {
+                        bail!(
+                            "Block at slot {} exceeds devnet4 attestation limit of {}",
+                            block.slot,
+                            DEVNET4_MAX_BLOCK_ATTESTATIONS
+                        );
+                    }
+                    if let Some(checks) = checks {
+                        validate_checks(&store, checks).await?;
+                    }
+                    continue;
+                }
+
                 // Get the parent state and parent block to extract the correct checkpoints
                 #[cfg(feature = "devnet4")]
                 let db = store.store.lock().await;
@@ -357,7 +378,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                                 proposer_signature,
                             },
                             #[cfg(feature = "devnet5")]
-                            proof: VariableList::<u8, U524288>::empty(),
+                            proof: MultiMessageAggregate::default(),
                         },
                         false, // Don't verify signatures in spec tests (we use blank signatures)
                     )

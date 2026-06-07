@@ -1,6 +1,7 @@
 use anyhow::{Result, anyhow};
 use lean_multisig_type2::{
-    MultiMessageAggregate, SingleMessageAggregate, XmssPublicKey, XmssSignature, aggregate_type_1,
+    TypeOneMultiSignature as SingleMessageAggregate,
+    TypeTwoMultiSignature as MultiMessageAggregate, XmssPublicKey, XmssSignature, aggregate_type_1,
     merge_many_type_1, setup_prover, split_type_2, verify_type_1, verify_type_2,
 };
 

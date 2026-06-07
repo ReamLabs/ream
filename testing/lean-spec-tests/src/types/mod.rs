@@ -63,7 +63,9 @@ pub struct Checkpoint {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Validator {
+    #[serde(alias = "attestationPublicKey")]
     pub attestation_pubkey: String,
+    #[serde(alias = "proposalPublicKey")]
     pub proposal_pubkey: String,
     pub index: u64,
 }
@@ -110,7 +112,7 @@ pub struct BodyAttestationJSON {
 /// Attestation
 #[derive(Debug, Deserialize)]
 pub struct Attestation {
-    #[serde(alias = "validatorId")]
+    #[serde(alias = "validatorId", alias = "validatorIndex")]
     pub validator_id: u64,
     pub data: AttestationData,
     #[serde(default)]
@@ -130,6 +132,7 @@ pub struct GossipAggregatedAttestationStep {
 #[serde(rename_all = "camelCase")]
 pub struct GossipProofJSON {
     pub participants: AggregationBitsJSON,
+    #[serde(alias = "proof")]
     pub proof_data: HexBytesJSON,
 }
 

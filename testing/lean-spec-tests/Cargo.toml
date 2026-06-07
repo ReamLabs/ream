@@ -16,6 +16,7 @@ devnet4 = [
     "ream-consensus-lean/devnet4",
     "ream-consensus-misc/devnet4",
     "ream-fork-choice-lean/devnet4",
+    "ream-post-quantum-crypto/devnet5",
     "ream-storage/devnet4",
 ]
 devnet5 = [

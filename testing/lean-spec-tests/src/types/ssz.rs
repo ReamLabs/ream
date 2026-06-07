@@ -11,7 +11,7 @@ use anyhow::{anyhow, ensure};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
-use ream_consensus_lean::attestation::SingleMessageAggregate;
+use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
@@ -29,6 +29,8 @@ use ream_post_quantum_crypto::leansig::{
     signature::{SIGNATURE_SIZE, Signature},
 };
 use serde::Deserialize;
+#[cfg(feature = "devnet4")]
+use ssz_types::typenum::U524288;
 use ssz_types::{
     BitList, VariableList,
     typenum::{U1024, U262144, U1073741824},
@@ -87,8 +89,23 @@ pub struct DataListJSON<T> {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct ProofDataJSON {
+pub struct ProofBytesJSON {
     pub data: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum ProofDataJSON {
+    Bytes(ProofBytesJSON),
+    Wrapped { proof: ProofBytesJSON },
+}
+
+impl ProofDataJSON {
+    pub fn data(&self) -> &str {
+        match self {
+            Self::Bytes(proof) | Self::Wrapped { proof } => &proof.data,
+        }
+    }
 }
 
 // ============================================================================
@@ -162,7 +179,9 @@ impl TryFrom<&BlockHeaderJSON> for BlockHeader {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidatorJSON {
+    #[serde(alias = "attestationPublicKey")]
     pub attestation_pubkey: String,
+    #[serde(alias = "proposalPublicKey")]
     pub proposal_pubkey: String,
     pub index: u64,
 }
@@ -210,6 +229,7 @@ impl TryFrom<&AggregatedAttestationJSON> for AggregatedAttestation {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AttestationJSON {
+    #[serde(alias = "validatorId", alias = "validatorIndex")]
     pub validator_id: u64,
     pub data: AttestationData,
 }
@@ -330,6 +350,7 @@ impl TryFrom<&StateJSON> for LeanState {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedAttestationJSON {
+    #[serde(alias = "validatorId", alias = "validatorIndex")]
     pub validator_id: u64,
     pub data: AttestationData,
     pub signature: String,
@@ -378,7 +399,16 @@ impl TryFrom<&BlockSignaturesJSON> for BlockSignatures {
 #[serde(rename_all = "camelCase")]
 pub struct SignedBlockJSON {
     pub block: BlockJSON,
-    pub signature: BlockSignaturesJSON,
+    #[serde(default)]
+    pub signature: Option<BlockSignaturesJSON>,
+    #[serde(default)]
+    pub proof: Option<ProofDataJSON>,
+}
+
+impl SignedBlockJSON {
+    pub fn is_proof_only(&self) -> bool {
+        self.signature.is_none() && self.proof.is_some()
+    }
 }
 
 #[cfg(feature = "devnet4")]
@@ -388,7 +418,45 @@ impl TryFrom<&SignedBlockJSON> for SignedBlock {
     fn try_from(value: &SignedBlockJSON) -> anyhow::Result<Self> {
         Ok(Self {
             block: (&value.block).try_into()?,
-            signature: (&value.signature).try_into()?,
+            signature: value
+                .signature
+                .as_ref()
+                .ok_or_else(|| anyhow!("missing devnet4 block signature"))?
+                .try_into()?,
+        })
+    }
+}
+
+#[cfg(feature = "devnet4")]
+#[derive(Debug, PartialEq, Eq, Clone, ssz_derive::Encode)]
+pub struct ProofOnlyMultiMessageAggregate {
+    pub proof: VariableList<u8, U524288>,
+}
+
+#[cfg(feature = "devnet4")]
+#[derive(Debug, PartialEq, Eq, Clone, ssz_derive::Encode)]
+pub struct ProofOnlySignedBlock {
+    pub block: Block,
+    pub proof: ProofOnlyMultiMessageAggregate,
+}
+
+#[cfg(feature = "devnet4")]
+impl TryFrom<&SignedBlockJSON> for ProofOnlySignedBlock {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &SignedBlockJSON) -> anyhow::Result<Self> {
+        Ok(Self {
+            block: (&value.block).try_into()?,
+            proof: ProofOnlyMultiMessageAggregate {
+                proof: VariableList::try_from(decode_hex(
+                    value
+                        .proof
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("missing proof-only block proof"))?
+                        .data(),
+                )?)
+                .map_err(|err| anyhow!("Failed to convert proof: {err}"))?,
+            },
         })
     }
 }
@@ -400,7 +468,17 @@ impl TryFrom<&SignedBlockJSON> for SignedBlock {
     fn try_from(value: &SignedBlockJSON) -> anyhow::Result<Self> {
         Ok(Self {
             block: (&value.block).try_into()?,
-            proof: VariableList::empty(),
+            proof: MultiMessageAggregate::new(
+                value
+                    .proof
+                    .as_ref()
+                    .map(|proof| decode_hex(proof.data()))
+                    .transpose()?
+                    .map(VariableList::try_from)
+                    .transpose()
+                    .map_err(|err| anyhow!("Failed to convert block proof: {err}"))?
+                    .unwrap_or_else(VariableList::empty),
+            ),
         })
     }
 }
@@ -409,6 +487,7 @@ impl TryFrom<&SignedBlockJSON> for SignedBlock {
 #[serde(rename_all = "camelCase")]
 pub struct AggregatedSignatureProofJSON {
     pub participants: DataListJSON<bool>,
+    #[serde(alias = "proof")]
     pub proof_data: ProofDataJSON,
 }
 
@@ -419,7 +498,7 @@ impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
     fn try_from(value: &AggregatedSignatureProofJSON) -> anyhow::Result<Self> {
         Ok(Self {
             participants: bools_to_bitlist(&value.participants.data)?,
-            proof_data: VariableList::try_from(decode_hex(&value.proof_data.data)?)
+            proof_data: VariableList::try_from(decode_hex(value.proof_data.data())?)
                 .map_err(|err| anyhow!("Failed to convert proof_data: {err}"))?,
         })
     }
@@ -432,8 +511,20 @@ impl TryFrom<&AggregatedSignatureProofJSON> for SingleMessageAggregate {
     fn try_from(value: &AggregatedSignatureProofJSON) -> anyhow::Result<Self> {
         Ok(Self::new(
             bools_to_bitlist(&value.participants.data)?,
-            VariableList::try_from(decode_hex(&value.proof_data.data)?)
+            VariableList::try_from(decode_hex(value.proof_data.data())?)
                 .map_err(|err| anyhow!("Failed to convert proof_data: {err}"))?,
+        ))
+    }
+}
+
+#[cfg(feature = "devnet5")]
+impl TryFrom<&ProofDataJSON> for MultiMessageAggregate {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &ProofDataJSON) -> anyhow::Result<Self> {
+        Ok(Self::new(
+            VariableList::try_from(decode_hex(value.data())?)
+                .map_err(|err| anyhow!("Failed to convert proof: {err}"))?,
         ))
     }
 }
@@ -498,34 +589,42 @@ impl TryFrom<&SignatureJSON> for Signature {
     }
 }
 
-/// JSON representation of a PublicKey with structured root/parameter arrays.
-/// Each array element is a u32 KoalaBear field element.
 #[derive(Debug, Deserialize, Clone)]
-pub struct PublicKeyJSON {
-    pub root: DataListJSON<u32>,
-    pub parameter: DataListJSON<u32>,
+#[serde(untagged)]
+pub enum PublicKeyJSON {
+    Hex(String),
+    Structured {
+        root: DataListJSON<u32>,
+        parameter: DataListJSON<u32>,
+    },
 }
 
 impl TryFrom<&PublicKeyJSON> for PublicKey {
     type Error = anyhow::Error;
 
     fn try_from(value: &PublicKeyJSON) -> anyhow::Result<Self> {
+        let PublicKeyJSON::Structured { root, parameter } = value else {
+            if let PublicKeyJSON::Hex(hex) = value {
+                return decode_pubkey(hex);
+            }
+            unreachable!("all PublicKeyJSON variants are handled")
+        };
+
         ensure!(
-            value.root.data.len() == 8,
+            root.data.len() == 8,
             "Expected 8 root elements, got {}",
-            value.root.data.len()
+            root.data.len()
         );
         ensure!(
-            value.parameter.data.len() == 5,
+            parameter.data.len() == 5,
             "Expected 5 parameter elements, got {}",
-            value.parameter.data.len()
+            parameter.data.len()
         );
 
-        let bytes: Vec<u8> = value
-            .root
+        let bytes: Vec<u8> = root
             .data
             .iter()
-            .chain(value.parameter.data.iter())
+            .chain(parameter.data.iter())
             .flat_map(|e| e.to_le_bytes())
             .collect();
 
