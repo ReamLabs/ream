@@ -99,6 +99,7 @@ use ream_validator_beacon::{
 use ream_validator_lean::{
     registry::load_validator_registry, service::ValidatorService as LeanValidatorService,
 };
+#[cfg(feature = "devnet4")]
 use ssz_types::VariableList;
 use tokio::{
     sync::{broadcast, mpsc::unbounded_channel},
@@ -307,9 +308,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                 proposer_signature: Signature::blank(),
             },
             #[cfg(feature = "devnet5")]
-            proof: MultiMessageAggregate {
-                proof: VariableList::default(),
-            },
+            proof: MultiMessageAggregate::default(),
         };
         (signed_genesis, genesis_state)
     };

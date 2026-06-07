@@ -6,7 +6,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  KNOWN_GOOD_REF: 8fc998c6f6660cc72e19e312605512d24e517422
+  KNOWN_GOOD_REF: ${{ github.event.pull_request.base.sha }}
 
 jobs:
   devnet4-known-good-vs-current-pr:
