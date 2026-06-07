@@ -162,6 +162,8 @@ mod tests {
     use std::sync::Arc;
 
     use libp2p_identity::PeerId;
+    #[cfg(feature = "devnet5")]
+    use ream_consensus_lean::attestation::MultiMessageAggregate;
     #[cfg(feature = "devnet4")]
     use ream_consensus_lean::block::BlockSignatures;
     use ream_consensus_lean::block::SignedBlock;
@@ -189,7 +191,7 @@ mod tests {
                     proposer_signature: Signature::blank(),
                 },
                 #[cfg(feature = "devnet5")]
-                proof: ssz_types::VariableList::default(),
+                proof: MultiMessageAggregate::default(),
             };
             store.on_block(&signed_block, false).await.unwrap();
         }
@@ -206,7 +208,7 @@ mod tests {
                 proposer_signature: Signature::mock(),
             },
             #[cfg(feature = "devnet5")]
-            proof: ssz_types::VariableList::default(),
+            proof: MultiMessageAggregate::default(),
         };
         let bad_root = B256::repeat_byte(0xef);
         store
