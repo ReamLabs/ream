@@ -16,8 +16,6 @@ use ream_post_quantum_crypto::lean_multisig::type_2::type_2_verify_block;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-#[cfg(feature = "devnet5")]
-use ssz_types::typenum::U524288;
 use ssz_types::{VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
@@ -25,7 +23,9 @@ use tree_hash_derive::TreeHash;
 #[cfg(feature = "devnet4")]
 use crate::attestation::{AggregatedAttestation, AggregatedAttestations, AggregatedSignatureProof};
 #[cfg(feature = "devnet5")]
-use crate::attestation::{AggregatedAttestation, AggregatedAttestations, SingleMessageAggregate};
+use crate::attestation::{
+    AggregatedAttestation, AggregatedAttestations, MultiMessageAggregate, SingleMessageAggregate,
+};
 use crate::state::LeanState;
 
 #[cfg(feature = "devnet4")]
@@ -42,7 +42,7 @@ pub struct SignedBlock {
     #[cfg(feature = "devnet4")]
     pub signature: BlockSignatures,
     #[cfg(feature = "devnet5")]
-    pub proof: VariableList<u8, U524288>,
+    pub proof: MultiMessageAggregate,
 }
 
 impl SignedBlock {

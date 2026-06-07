@@ -1171,8 +1171,11 @@ impl LeanChainService {
                 continue;
             }
 
-            let block_t1 = match type_2_split(type_two.clone(), component_index) {
-                Ok(t1) => t1,
+            let block_single_message_aggregate = match type_2_split(
+                type_two.clone(),
+                component_index,
+            ) {
+                Ok(single_message_aggregate) => single_message_aggregate,
                 Err(err) => {
                     debug!(
                         "Post-block multi-message aggregate split failed for component {component_index}: {err}"
@@ -1185,17 +1188,11 @@ impl LeanChainService {
                 let mut children = Vec::with_capacity(locals.len() + 1);
                 let mut union_bits = attestation.aggregation_bits.clone();
 
-                children.push((
-                    block_t1.clone(),
-                    public_keys_per_component[component_index].clone(),
-                ));
+                children.push(block_single_message_aggregate.clone());
 
                 for proof in locals {
-                    for validator_id in proof.to_validator_indices() {
-                        let _ = union_bits.set(validator_id as usize, true);
-                    }
-                    let pubkeys: Vec<_> = proof
-                        .to_validator_indices()
+                    let validator_indices = proof.to_validator_indices();
+                    let pubkeys: Vec<_> = validator_indices
                         .iter()
                         .filter_map(|&vid| {
                             validators
@@ -1203,7 +1200,17 @@ impl LeanChainService {
                                 .map(|v| v.attestation_public_key)
                         })
                         .collect();
-                    children.push((proof.clone(), pubkeys));
+                    match type_1_from_wire(&proof.proof, &pubkeys) {
+                        Ok(local_single_message_aggregate) => {
+                            for validator_id in validator_indices {
+                                let _ = union_bits.set(validator_id as usize, true);
+                            }
+                            children.push(local_single_message_aggregate);
+                        }
+                        Err(err) => {
+                            debug!("Failed to decode local aggregate proof for {data_root}: {err}");
+                        }
+                    }
                 }
 
                 match type_1_aggregate(
@@ -1221,7 +1228,7 @@ impl LeanChainService {
                         debug!("Post-block re-aggregation failed for {data_root}: {err}");
                         SingleMessageAggregate::new(
                             attestation.aggregation_bits.clone(),
-                            VariableList::new(type_1_to_wire(&block_t1))
+                            VariableList::new(type_1_to_wire(&block_single_message_aggregate))
                                 .expect("Proof size limit exceeded"),
                         )
                     }
@@ -1229,7 +1236,7 @@ impl LeanChainService {
             } else {
                 SingleMessageAggregate::new(
                     attestation.aggregation_bits.clone(),
-                    VariableList::new(type_1_to_wire(&block_t1))
+                    VariableList::new(type_1_to_wire(&block_single_message_aggregate))
                         .expect("Proof size limit exceeded"),
                 )
             };
@@ -2969,25 +2976,6 @@ fn pending_block_slot(block: &SignedBlock) -> u64 {
 
 fn pending_block_parent_root(block: &SignedBlock) -> B256 {
     block.block.parent_root
-}
-
-#[cfg(feature = "devnet5")]
-fn local_proof_public_keys(
-    proof: &SingleMessageAggregate,
-    validators: &ssz_types::VariableList<
-        ream_consensus_lean::validator::Validator,
-        ssz_types::typenum::U4096,
-    >,
-) -> Vec<ream_post_quantum_crypto::leansig::public_key::PublicKey> {
-    proof
-        .to_validator_indices()
-        .into_iter()
-        .filter_map(|validator_id| {
-            validators
-                .get(validator_id as usize)
-                .map(|v| v.attestation_public_key)
-        })
-        .collect()
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ use ream_api_types_common::error::ApiError;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
-use ream_consensus_lean::attestation::SingleMessageAggregate;
+use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
@@ -230,7 +230,7 @@ fn blank_signed_block(block: ReamBlock) -> anyhow::Result<SignedBlock> {
     #[cfg(feature = "devnet5")]
     Ok(SignedBlock {
         block,
-        proof: VariableList::<u8, U524288>::empty(),
+        proof: MultiMessageAggregate::default(),
     })
 }
 

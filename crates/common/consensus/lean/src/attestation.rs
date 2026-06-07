@@ -105,6 +105,22 @@ impl MultiMessageAggregate {
     }
 }
 
+#[cfg(feature = "devnet5")]
+impl Default for MultiMessageAggregate {
+    fn default() -> Self {
+        Self {
+            proof: VariableList::default(),
+        }
+    }
+}
+
+#[cfg(feature = "devnet5")]
+impl AsRef<[u8]> for MultiMessageAggregate {
+    fn as_ref(&self) -> &[u8] {
+        self.proof.as_ref()
+    }
+}
+
 /// Attestation content describing the validator's observed chain view.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash, Hash)]
 pub struct AttestationData {
