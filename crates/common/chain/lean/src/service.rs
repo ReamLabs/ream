@@ -22,12 +22,15 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlock},
     checkpoint::Checkpoint,
 };
-use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_committee_count};
+use ream_consensus_misc::constants::lean::{
+    HYSTERESIS_BAND, INTERVALS_PER_SLOT, NETWORK_STALL_THRESHOLD, SYNC_LAG_THRESHOLD,
+    attestation_committee_count,
+};
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_COUNT as ATTESTATION_COMMITTEE_COUNT_METRIC,
-    BLOCK_BUILDING_FAILURES_TOTAL, CURRENT_SLOT, IS_AGGREGATOR, inc_int_counter_vec,
-    set_int_gauge_vec,
+    BLOCK_BUILDING_FAILURES_TOTAL, CURRENT_SLOT, IS_AGGREGATOR, VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL,
+    inc_int_counter_vec, set_int_gauge_vec,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -42,7 +45,10 @@ use ream_req_resp::{
         messages::{LeanRequestMessage, LeanResponseMessage},
     },
 };
-use ream_storage::tables::{field::REDBField, table::REDBTable};
+use ream_storage::{
+    errors::StoreError,
+    tables::{field::REDBField, table::REDBTable},
+};
 #[cfg(feature = "devnet5")]
 use ssz_types::VariableList;
 #[cfg(feature = "devnet5")]
@@ -238,6 +244,33 @@ type CallbackFuture = Pin<
     >,
 >;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncedForDuties {
+    Yes,
+    No {
+        head_slot: u64,
+        lag: u64,
+        max_seen_slot: u64,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DutyKind {
+    Block,
+    Attestation,
+}
+
+// TODO: Replace this hand-rolled impl with `#[derive(strum::AsRefStr)]` once `strum` is added
+// as a workspace dep so the labels are derived from the variant names.
+impl AsRef<str> for DutyKind {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Block => "block",
+            Self::Attestation => "attestation",
+        }
+    }
+}
+
 /// LeanChainService is responsible for updating the [LeanChain] state
 pub struct LeanChainService {
     store: Arc<LeanStoreWriter>,
@@ -258,6 +291,7 @@ pub struct LeanChainService {
     telemetry: SyncTelemetry,
     #[cfg(feature = "devnet5")]
     pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
+    duties_paused: bool,
 }
 
 impl LeanChainService {
@@ -287,6 +321,7 @@ impl LeanChainService {
             telemetry: SyncTelemetry::from_env(),
             #[cfg(feature = "devnet5")]
             pending_block_aggregates: Arc::new(Mutex::new(Vec::new())),
+            duties_paused: false,
         }
     }
 
@@ -2864,11 +2899,157 @@ impl LeanChainService {
         Ok(())
     }
 
+    async fn is_synced_for_duties(
+        &mut self,
+        wall_clock_slot: u64,
+        duty: DutyKind,
+    ) -> anyhow::Result<SyncedForDuties> {
+        // head_slot is the slot of our local head block.
+        // max_seen_slot is the freshest authenticated block we've stored.
+        let (head_slot, max_seen_slot) = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            let head_root = match store.head_provider().get() {
+                Ok(root) => root,
+                Err(StoreError::FieldNotInitilized) => return Ok(SyncedForDuties::Yes),
+                Err(err) => return Err(err.into()),
+            };
+            let Some(head_block) = store.block_provider().get(head_root)? else {
+                return Ok(SyncedForDuties::Yes);
+            };
+            let head_slot = head_block.block.slot;
+            let max_seen_slot = store
+                .slot_index_provider()
+                .get_highest_slot()?
+                .unwrap_or(head_slot);
+            (head_slot, max_seen_slot)
+        };
+        let duty = duty.as_ref();
+
+        // Use saturating_sub so a head ahead of wall clock returns zero lag instead of panicking.
+        let lag = wall_clock_slot.saturating_sub(head_slot);
+        let network_lag = wall_clock_slot.saturating_sub(max_seen_slot);
+
+        // Whole network appears stalled so keep signing to let the chain recover.
+        if network_lag > NETWORK_STALL_THRESHOLD {
+            if self.duties_paused {
+                self.duties_paused = false;
+                info!(
+                    duty,
+                    slot = wall_clock_slot,
+                    head_slot,
+                    lag,
+                    max_seen_slot,
+                    network_lag,
+                    "Validator resuming duties: network stall detected",
+                );
+            }
+            return Ok(SyncedForDuties::Yes);
+        }
+
+        // We're currently pausing duties so check if it's safe to resume.
+        if self.duties_paused {
+            // TODO: Swap for static_assertions::const_assert! once that crate is a workspace dep.
+            const _: () = assert!(HYSTERESIS_BAND < SYNC_LAG_THRESHOLD);
+            // Lag has dropped well below the threshold so it's safe to resume.
+            if lag <= SYNC_LAG_THRESHOLD - HYSTERESIS_BAND {
+                self.duties_paused = false;
+                info!(
+                    duty,
+                    slot = wall_clock_slot,
+                    head_slot,
+                    lag,
+                    max_seen_slot,
+                    network_lag,
+                    "Validator resuming duties: local view caught up",
+                );
+                return Ok(SyncedForDuties::Yes);
+            }
+            return Ok(SyncedForDuties::No {
+                head_slot,
+                lag,
+                max_seen_slot,
+            });
+        }
+
+        // Local view is fresh so allow duties to proceed.
+        if lag <= SYNC_LAG_THRESHOLD {
+            return Ok(SyncedForDuties::Yes);
+        }
+
+        self.duties_paused = true;
+        info!(
+            duty,
+            slot = wall_clock_slot,
+            head_slot,
+            lag,
+            max_seen_slot,
+            network_lag,
+            "Validator pausing duties: too far behind chain head",
+        );
+        Ok(SyncedForDuties::No {
+            head_slot,
+            lag,
+            max_seen_slot,
+        })
+    }
+
+    /// Run the sync-lag gate for `slot`. Sends a `SyncLag` (or error) response to
+    /// `response` if the duty must be skipped and returns `None`; otherwise returns
+    /// the sender back so the caller can complete duty production with it.
+    async fn skip_for_lag<T: std::fmt::Debug>(
+        &mut self,
+        slot: u64,
+        duty: DutyKind,
+        response: oneshot::Sender<ServiceResponse<T>>,
+    ) -> Option<oneshot::Sender<ServiceResponse<T>>> {
+        let decision = match self.is_synced_for_duties(slot, duty).await {
+            Ok(decision) => decision,
+            Err(err) => {
+                warn!(
+                    duty = duty.as_ref(),
+                    slot, "Failed to run sync-lag check: {err}",
+                );
+                if let Err(err) = response.send(ServiceResponse::Err(err)) {
+                    warn!(
+                        duty = duty.as_ref(),
+                        "Failed to send error response: {err:?}",
+                    );
+                }
+                return None;
+            }
+        };
+        let SyncedForDuties::No {
+            head_slot,
+            lag,
+            max_seen_slot,
+        } = decision
+        else {
+            return Some(response);
+        };
+        inc_int_counter_vec(&VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, &[duty.as_ref()]);
+        if let Err(err) = response.send(ServiceResponse::SyncLag {
+            head_slot,
+            lag,
+            max_seen_slot,
+        }) {
+            warn!(
+                duty = duty.as_ref(),
+                "Failed to send SyncLag response: {err:?}",
+            );
+        }
+        None
+    }
+
     async fn handle_produce_block(
         &mut self,
         slot: u64,
         response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
+        let Some(response) = self.skip_for_lag(slot, DutyKind::Block, response).await else {
+            return Ok(());
+        };
+
         let block_with_signatures = match self
             .store
             .write()
@@ -2904,6 +3085,13 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<AttestationData>>,
     ) -> anyhow::Result<()> {
+        let Some(response) = self
+            .skip_for_lag(slot, DutyKind::Attestation, response)
+            .await
+        else {
+            return Ok(());
+        };
+
         let attestation_data = match self.store.read().await.produce_attestation_data(slot).await {
             Ok(data) => data,
             Err(err) => {
@@ -2993,6 +3181,7 @@ mod tests {
         block::{BlockSignatures, BlockWithSignatures, SignedBlock},
         checkpoint::Checkpoint,
     };
+    use ream_consensus_misc::constants::lean::SYNC_LAG_THRESHOLD;
     use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
     use ream_post_quantum_crypto::leansig::signature::Signature;
@@ -3006,7 +3195,9 @@ mod tests {
     };
     use tree_hash::TreeHash;
 
-    use super::{InflightRootRequest, LeanChainService, SyncBlockSource};
+    use super::{
+        DutyKind, InflightRootRequest, LeanChainService, SyncBlockSource, SyncedForDuties,
+    };
     use crate::{
         messages::ServiceResponse,
         p2p_request::LeanP2PRequest,
@@ -3016,6 +3207,447 @@ mod tests {
             job::{pending::PendingJobRequest, queue::JobQueue, request::JobRequest},
         },
     };
+
+    /// Rewrite the head pointer to the block at `slot`. Lets sync-lag check tests
+    /// control `head_slot` independently of how far the chain was advanced.
+    async fn set_head_to_slot(store: &Store, slot: u64) {
+        let db = store.store.lock().await;
+        let root = db
+            .slot_index_provider()
+            .get(slot)
+            .expect("slot_index lookup failed")
+            .expect("no block at requested slot");
+        db.head_provider()
+            .insert(root)
+            .expect("failed to overwrite head");
+    }
+
+    /// Build a synced chain service with the chain extended to `max_seen_slot`
+    /// (controls `is_synced_for_duties`'s freshest-block lookup) and the head
+    /// pointer rewound to `head_slot`. Wall-clock comes from the test caller.
+    async fn sync_lag_service_with_head(max_seen_slot: u64, head_slot: u64) -> LeanChainService {
+        let mut store = sample_store(10).await;
+        if max_seen_slot > 0 {
+            advance_store_to_slot(&mut store, max_seen_slot, 10).await;
+        }
+        set_head_to_slot(&store, head_slot).await;
+
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        service.sync_status = SyncStatus::Synced;
+        service
+    }
+
+    // -------------------------------------------------------------------------
+    // Sync-lag check, layer 1 predicate tests.
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_sync_lag_check_within_threshold_allows_duties() {
+        // Head at slot 10. wall-clock sweeps 10..=10+SYNC_LAG_THRESHOLD.
+        let mut service = sync_lag_service_with_head(10, 10).await;
+
+        for lag in 0..=SYNC_LAG_THRESHOLD {
+            let decision = service
+                .is_synced_for_duties(10 + lag, DutyKind::Block)
+                .await
+                .expect("sync-lag check failed");
+            assert!(
+                matches!(decision, SyncedForDuties::Yes),
+                "lag {lag} should be allowed, got {decision:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_check_boundary_lag_equal_threshold_allowed() {
+        // chain extended to 14 so the slot index has fresh evidence at
+        // wall-clock 14 (defeats the network-stall escape), but head is
+        // rewound to slot 10. Lag is exactly 4 so it sits on the inclusive boundary.
+        let mut service = sync_lag_service_with_head(14, 10).await;
+
+        let decision = service
+            .is_synced_for_duties(14, DutyKind::Block)
+            .await
+            .expect("sync-lag check failed");
+        assert!(
+            matches!(decision, SyncedForDuties::Yes),
+            "lag == threshold (4) should be allowed, got {decision:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_check_boundary_lag_one_over_threshold_pauses() {
+        // Same setup but wall-clock advances to 15 so lag 5, duties pause.
+        let mut service = sync_lag_service_with_head(15, 10).await;
+
+        let decision = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .expect("sync-lag check failed");
+        match decision {
+            SyncedForDuties::No {
+                head_slot,
+                lag,
+                max_seen_slot,
+            } => {
+                assert_eq!(head_slot, 10);
+                assert_eq!(lag, 5);
+                assert_eq!(max_seen_slot, 15);
+            }
+            other => panic!("lag == threshold + 1 should pause duties, got {other:?}"),
+        }
+        assert!(
+            service.duties_paused,
+            "duties_paused flag must be set after closing transition"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_check_clock_skew_saturates_to_zero_lag() {
+        // Head at slot 20, wall-clock at slot 15 so head leads by 5. Lag must
+        // saturate at 0 rather than trust the chain unconditionally.
+        let mut service = sync_lag_service_with_head(20, 20).await;
+
+        let decision = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .expect("sync-lag check failed");
+        assert!(
+            matches!(decision, SyncedForDuties::Yes),
+            "head ahead of wall-clock must saturate to zero lag, got {decision:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_check_network_stall_keeps_duties_live() {
+        // Head at genesis, no fresh blocks anywhere, so pure isolation
+        // or network-wide stall. wall-clock at slot 50 so local lag = 50,
+        // network lag = 50 (> NETWORK_STALL_THRESHOLD of 8). The escape
+        // hatch must fire so the chain can recover.
+        let mut service = sync_lag_service_with_head(0, 0).await;
+
+        let decision = service
+            .is_synced_for_duties(50, DutyKind::Block)
+            .await
+            .expect("sync-lag check failed");
+        assert!(
+            matches!(decision, SyncedForDuties::Yes),
+            "network stall must keep duties live, got {decision:?}"
+        );
+        assert!(
+            !service.duties_paused,
+            "stall escape must not flip the hysteresis flag"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_check_hysteresis_prevents_flap() {
+        // Setup is chain advanced to slot 20 so fresh evidence exists,
+        // head rewound to slot 10. wall-clock fixed at 15 throughout.
+        //
+        // Step 1 (lag 5) opens, then closes.
+        // Step 2 (lag 4) stays closed because band is 2, so reopen
+        //                requires lag <= 4 - 2 = 2.
+        // Step 3 (lag 5) still closed, no flap.
+        // Step 4 (lag 2) reopens at last.
+        let mut service = sync_lag_service_with_head(20, 10).await;
+
+        // Step 1, close.
+        let s1 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
+        assert!(matches!(s1, SyncedForDuties::No { .. }), "step 1: {s1:?}");
+        assert!(service.duties_paused);
+
+        // Step 2, head moves to 11, lag = 4, still inside the band.
+        {
+            let fork_choice = service.store.read().await;
+            set_head_to_slot(&fork_choice, 11).await;
+        }
+        let s2 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
+        assert!(matches!(s2, SyncedForDuties::No { .. }), "step 2: {s2:?}");
+        assert!(service.duties_paused, "step 2: stays closed");
+
+        // Step 3, head back to 10, lag = 5, still closed (no reopen).
+        {
+            let fork_choice = service.store.read().await;
+            set_head_to_slot(&fork_choice, 10).await;
+        }
+        let s3 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
+        assert!(matches!(s3, SyncedForDuties::No { .. }), "step 3: {s3:?}");
+
+        // Step 4, head jumps to 13, lag = 2, hysteresis allows reopen.
+        {
+            let fork_choice = service.store.read().await;
+            set_head_to_slot(&fork_choice, 13).await;
+        }
+        let s4 = service
+            .is_synced_for_duties(15, DutyKind::Block)
+            .await
+            .unwrap();
+        assert!(matches!(s4, SyncedForDuties::Yes), "step 4: {s4:?}");
+        assert!(
+            !service.duties_paused,
+            "step 4: hysteresis flag must clear on reopen"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Sync-lag check, layer 2 handler integration tests.
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_handle_produce_block_paused_responds_with_sync_lag() {
+        // Head rewound to slot 10, fresh evidence up to slot 15 so local lag = 5
+        // at wall-clock 15, network-stall escape does not fire.
+        let mut service = sync_lag_service_with_head(15, 10).await;
+
+        let (tx, rx) = oneshot::channel::<ServiceResponse<BlockWithSignatures>>();
+        service
+            .handle_produce_block(15, tx)
+            .await
+            .expect("handle_produce_block must not error on paused path");
+
+        match rx.await.expect("response channel dropped") {
+            ServiceResponse::SyncLag {
+                head_slot,
+                lag,
+                max_seen_slot,
+            } => {
+                assert_eq!(head_slot, 10);
+                assert_eq!(lag, 5);
+                assert_eq!(max_seen_slot, 15);
+            }
+            other => panic!("expected SyncLag, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_produce_block_within_lag_does_not_pause() {
+        // Head at slot 3, wall-clock at slot 4 so lag 1, well under threshold.
+        // The check must not interfere so the response may be `Ok` or a non-pause
+        // error from downstream block production, but never `SyncLag`.
+        let mut service = sync_lag_service_with_head(3, 3).await;
+
+        let (tx, rx) = oneshot::channel::<ServiceResponse<BlockWithSignatures>>();
+        service.handle_produce_block(4, tx).await.unwrap();
+
+        assert!(
+            !matches!(rx.await.unwrap(), ServiceResponse::SyncLag { .. }),
+            "in-threshold lag must not pause duties"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_build_attestation_data_paused_responds_with_sync_lag() {
+        let mut service = sync_lag_service_with_head(15, 10).await;
+
+        let (tx, rx) = oneshot::channel();
+        service
+            .handle_build_attestation_data(15, tx)
+            .await
+            .expect("handler must not error on paused path");
+
+        match rx.await.expect("response channel dropped") {
+            ServiceResponse::SyncLag {
+                head_slot,
+                lag,
+                max_seen_slot,
+            } => {
+                assert_eq!(head_slot, 10);
+                assert_eq!(lag, 5);
+                assert_eq!(max_seen_slot, 15);
+            }
+            other => panic!("expected SyncLag, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_build_attestation_data_within_lag_does_not_pause() {
+        let mut service = sync_lag_service_with_head(3, 3).await;
+
+        let (tx, rx) = oneshot::channel();
+        service.handle_build_attestation_data(4, tx).await.unwrap();
+
+        assert!(
+            !matches!(rx.await.unwrap(), ServiceResponse::SyncLag { .. }),
+            "in-threshold lag must not pause duties"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pause_state_persists_across_handler_calls() {
+        // Hysteresis lives on the service; once a block-duty call pauses
+        // duties, a subsequent attestation-duty call within the band must
+        // still be paused. Catches the bug where state is accidentally per-call.
+        let mut service = sync_lag_service_with_head(20, 10).await;
+
+        // First call, lag 5 so duties pause.
+        let (tx, rx) = oneshot::channel::<ServiceResponse<BlockWithSignatures>>();
+        service.handle_produce_block(15, tx).await.unwrap();
+        assert!(matches!(rx.await.unwrap(), ServiceResponse::SyncLag { .. }));
+        assert!(service.duties_paused);
+
+        // Move head to slot 12, lag becomes 3 so still inside the band
+        // (reopen requires <= 2). A pristine check would allow this; the
+        // persistent flag must not.
+        {
+            let fork_choice = service.store.read().await;
+            set_head_to_slot(&fork_choice, 12).await;
+        }
+        let (tx, rx) = oneshot::channel();
+        service.handle_build_attestation_data(15, tx).await.unwrap();
+        assert!(
+            matches!(rx.await.unwrap(), ServiceResponse::SyncLag { .. }),
+            "hysteresis flag must persist across handler types"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_check_head_block_missing_allows_duties() {
+        // Head pointer may briefly reference a block not yet in the table
+        // (recovery / pruning races); the check must hold no opinion rather
+        // than returning a fatal-looking error.
+        let mut service = sync_lag_service_with_head(3, 3).await;
+        {
+            let fork_choice = service.store.read().await;
+            fork_choice
+                .store
+                .lock()
+                .await
+                .head_provider()
+                .insert(B256::repeat_byte(0xff))
+                .expect("failed to plant bogus head root");
+        }
+
+        let decision = service
+            .is_synced_for_duties(20, DutyKind::Block)
+            .await
+            .expect("missing head block must not be a hard error");
+        assert!(
+            matches!(decision, SyncedForDuties::Yes),
+            "missing head block must allow duties, got {decision:?}"
+        );
+        assert!(
+            !service.duties_paused,
+            "missing-head escape must not flip the hysteresis flag"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_check_network_stall_boundary_transition() {
+        // Distinguish local-lag-closing from network-stall-allowing across
+        // the NETWORK_STALL_THRESHOLD (8) boundary.
+        //
+        // Setup is head 10, freshness evidence at slot 12 (max_seen_slot = 12).
+        //   wall=20 so lag=10, network_lag=8, not stalling (`> 8` is strict),
+        //             local lag pauses duties.
+        //   wall=21 so lag=11, network_lag=9, stalling, escape reopens.
+        let mut service = sync_lag_service_with_head(12, 10).await;
+
+        let close = service
+            .is_synced_for_duties(20, DutyKind::Block)
+            .await
+            .unwrap();
+        assert!(
+            matches!(close, SyncedForDuties::No { .. }),
+            "network_lag at exactly the threshold must NOT trigger the stall escape, got {close:?}",
+        );
+        assert!(service.duties_paused);
+
+        let reopen = service
+            .is_synced_for_duties(21, DutyKind::Block)
+            .await
+            .unwrap();
+        assert!(
+            matches!(reopen, SyncedForDuties::Yes),
+            "network_lag past the threshold must trigger the stall escape and reopen, got {reopen:?}",
+        );
+        assert!(!service.duties_paused);
+    }
+
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn test_sync_lag_check_logs_only_on_state_transitions() {
+        // Three consecutive paused calls in the same state must emit exactly
+        // one "closed" record for the transition and no spurious follow-ups.
+        // `logs_assert` is injected into scope by `#[traced_test]`.
+        let mut service = sync_lag_service_with_head(20, 10).await;
+
+        for _ in 0..3 {
+            let _ = service
+                .is_synced_for_duties(15, DutyKind::Block)
+                .await
+                .unwrap();
+        }
+
+        logs_assert(|lines: &[&str]| {
+            let close_count = lines
+                .iter()
+                .filter(|line| line.contains("Validator pausing duties"))
+                .count();
+            let reopen_count = lines
+                .iter()
+                .filter(|line| line.contains("Validator resuming duties"))
+                .count();
+            if close_count == 1 && reopen_count == 0 {
+                Ok(())
+            } else {
+                Err(format!(
+                    "expected 1 close and 0 reopens, got close={close_count} reopen={reopen_count}",
+                ))
+            }
+        });
+    }
+
+    #[tokio::test]
+    async fn test_sync_lag_check_increments_counter_for_each_skipped_duty() {
+        // The Prometheus counter is global state shared across all tests, so
+        // we measure deltas from this test's perspective and assert each
+        // delta is positive so it's robust against parallel test interleaving.
+        use ream_metrics::VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL;
+
+        let mut service = sync_lag_service_with_head(20, 10).await;
+
+        let block_before = VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL
+            .with_label_values(&["block"])
+            .get();
+        let (tx, rx) = oneshot::channel::<ServiceResponse<BlockWithSignatures>>();
+        service.handle_produce_block(15, tx).await.unwrap();
+        assert!(matches!(rx.await.unwrap(), ServiceResponse::SyncLag { .. }));
+        let block_after = VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL
+            .with_label_values(&["block"])
+            .get();
+        assert!(
+            block_after > block_before,
+            "block-duty counter must increment on paused skip ({block_before} -> {block_after})",
+        );
+
+        // Duties are now paused. Send an attestation duty within the band, also paused.
+        let attestation_before = VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL
+            .with_label_values(&["attestation"])
+            .get();
+        let (tx, rx) = oneshot::channel();
+        service.handle_build_attestation_data(15, tx).await.unwrap();
+        assert!(matches!(rx.await.unwrap(), ServiceResponse::SyncLag { .. }));
+        let attestation_after = VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL
+            .with_label_values(&["attestation"])
+            .get();
+        assert!(
+            attestation_after > attestation_before,
+            "attestation-duty counter must increment on paused skip ({attestation_before} -> {attestation_after})",
+        );
+    }
 
     async fn advance_store_to_slot(store: &mut Store, target_slot: u64, validator_count: u64) {
         for slot in 1..=target_slot {

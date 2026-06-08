@@ -103,6 +103,13 @@ lazy_static::lazy_static! {
         default_registry()
     ).expect("failed to create VALIDATORS_COUNT int gauge vec");
 
+    pub static ref VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_validator_duties_skipped_lag_total",
+        "Total validator duties skipped because the validator was too far behind the chain head",
+        &["duty"],
+        default_registry()
+    ).expect("failed to create VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL int counter vec");
+
     // Fork-Choice Metrics
     pub static ref FORK_CHOICE_BLOCK_PROCESSING_TIME: HistogramVec = {
         let opts = HistogramOpts::new(
