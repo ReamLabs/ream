@@ -36,7 +36,11 @@ jobs:
                 echo "::notice::Skipping ${test_name} in the generic matrix; covered by pr-vs-known-commit."
                 ;;
               test_lean_node_syncs_and_finalizes_late_joiner|test_lean_node_checkpoint_sync_from_running_node|test_lean_node_checkpoint_sync_from_fresh_source|test_lean_node_checkpoint_sync_restart_existing_node|test_lean_node_checkpoint_sync_from_existing_data_dir)
-                echo "::notice::Skipping flaky local-network serial test in the generic matrix: ${test_name}"
+                if [ "${{ inputs.network }}" = "devnet5" ]; then
+                  ci_serial_tests+=("${test_name}")
+                else
+                  echo "::notice::Skipping flaky local-network serial test in the generic matrix: ${test_name}"
+                fi
                 ;;
               *)
                 ci_serial_tests+=("${test_name}")
