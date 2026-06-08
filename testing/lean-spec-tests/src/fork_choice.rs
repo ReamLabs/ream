@@ -278,9 +278,8 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 if ream_block.body.attestations.len() > DEVNET4_MAX_BLOCK_ATTESTATIONS {
                     if *valid {
                         bail!(
-                            "Block at slot {} exceeds devnet4 attestation limit of {}",
+                            "Block at slot {} exceeds devnet4 attestation limit of {DEVNET4_MAX_BLOCK_ATTESTATIONS}",
                             block.slot,
-                            DEVNET4_MAX_BLOCK_ATTESTATIONS
                         );
                     }
                     if let Some(checks) = checks {
