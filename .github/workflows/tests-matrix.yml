@@ -120,7 +120,7 @@ jobs:
                 --package ream \
                 --bin ream \
                 ${{ matrix.test_name }} \
-                -- --nocapture
+                -- --exact --nocapture
               ;;
             devnet5)
               cargo test \
@@ -129,7 +129,7 @@ jobs:
                 ${{ matrix.test_name }} \
                 --no-default-features \
                 --features devnet5 \
-                -- --nocapture
+                -- --exact --nocapture
               ;;
             *)
               echo "Unknown network: ${{ inputs.network }}" >&2
