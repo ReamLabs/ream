@@ -116,7 +116,7 @@ impl ValidatorService {
     }
 
     pub async fn start(mut self) {
-        let seconds_per_slot = beacon_network_spec().seconds_per_slot;
+        let seconds_per_slot = beacon_network_spec().seconds_per_slot();
         let seconds_per_interval = seconds_per_slot / INTERVALS_PER_SLOT;
 
         let genesis_instant =
@@ -510,7 +510,7 @@ impl ValidatorService {
         committee_index: u64,
     ) -> anyhow::Result<()> {
         sleep(Duration::from_secs(
-            beacon_network_spec().seconds_per_slot / 3,
+            beacon_network_spec().seconds_per_slot() / 3,
         ))
         .await;
 
