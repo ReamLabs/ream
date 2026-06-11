@@ -26,8 +26,8 @@ use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_commi
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_COUNT as ATTESTATION_COMMITTEE_COUNT_METRIC,
-    BLOCK_BUILDING_FAILURES_TOTAL, CURRENT_SLOT, IS_AGGREGATOR, inc_int_counter_vec,
-    set_int_gauge_vec,
+    BLOCK_BUILDING_FAILURES_TOTAL, CURRENT_SLOT, IS_AGGREGATOR, LEAN_AGGREGATOR_SKIPPED_TOTAL,
+    inc_int_counter_vec, set_int_gauge_vec,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -416,6 +416,7 @@ impl LeanChainService {
                         LeanChainServiceMessage::BuildAttestationData { slot, sender } => {
                             if self.sync_status == SyncStatus::Syncing {
                                 warn!("Received BuildAttestationData request while syncing. Ignoring.");
+                                inc_int_counter_vec(&LEAN_AGGREGATOR_SKIPPED_TOTAL, &["not_synced"]);
                                 if let Err(err) = sender.send(ServiceResponse::Syncing) {
                                     warn!("Failed to send syncing response for BuildAttestationData: {err:?}");
                                 }
@@ -424,6 +425,7 @@ impl LeanChainService {
 
                             if let Err(err) = self.handle_build_attestation_data(slot, sender).await {
                                 error!("Failed to handle build attestation data message: {err:?}");
+                                inc_int_counter_vec(&LEAN_AGGREGATOR_SKIPPED_TOTAL, &["other"]);
                             }
                         }
                         LeanChainServiceMessage::ProcessBlock { signed_block, need_gossip } => {
@@ -495,6 +497,7 @@ impl LeanChainService {
                         LeanChainServiceMessage::ProcessAggregatedAttestation { aggregated_attestation, need_gossip } => {
                             if self.sync_status != SyncStatus::Synced {
                                 trace!("Received ProcessAggregatedAttestation request while syncing. Ignoring.");
+                                inc_int_counter_vec(&LEAN_AGGREGATOR_SKIPPED_TOTAL, &["not_synced"]);
                                 continue;
                             }
 
@@ -502,9 +505,11 @@ impl LeanChainService {
 
                             if let Err(err) = self.store.write().await.on_gossip_aggregated_attestation(*aggregated_attestation.clone()).await {
                                 warn!("Failed to handle process aggregated attestation message: {err:?}");
+                                inc_int_counter_vec(&LEAN_AGGREGATOR_SKIPPED_TOTAL, &["missing_state"]);
                             }
 
                             if need_gossip && let Err(err) = self.outbound_p2p.send(GossipAggregatedAttestation(aggregated_attestation)) {
+                                inc_int_counter_vec(&LEAN_AGGREGATOR_SKIPPED_TOTAL, &["other"]);
                                 warn!("Failed to send aggregated attestation to outbound gossip channel: {err:?}");
                             }
                         }
