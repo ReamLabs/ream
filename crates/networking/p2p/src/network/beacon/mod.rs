@@ -476,6 +476,14 @@ impl Network {
                     );
                 } else {
                     // send status request to the peer
+                    self.network_state.upsert_peer(
+                        peer_id,
+                        None,
+                        ConnectionState::Connecting,
+                        Direction::Outbound,
+                        None,
+                    );
+
                     let status_message =
                         BeaconRequestMessage::Status(self.network_state.status.read().clone());
                     self.send_request(peer_id, status_message);
@@ -836,6 +844,12 @@ impl Network {
 
         self.swarm.behaviour_mut().gossipsub.unsubscribe(&topic)
     }
+
+    pub fn dial_multiaddr(&mut self, addr: Multiaddr) {
+        if let Err(err) = self.swarm.dial(addr.clone()) {
+            warn!("Failed to dial static peer {addr}: {err}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -888,6 +902,7 @@ mod tests {
                 attestation_subnets: AttestationSubnets::new(),
                 sync_committee_subnets: SyncCommitteeSubnets::new(),
                 custody_group_count: CustodyGroupCount::default(),
+                fork_digest_override: None,
             },
             gossipsub_config: GossipsubConfig {
                 topics,

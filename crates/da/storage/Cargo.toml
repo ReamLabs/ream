@@ -1,0 +1,32 @@
+[package]
+name = "ream-da-storage"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-primitives.workspace = true
+anyhow.workspace = true
+delay_map.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
+snap.workspace = true
+ssz_types.workspace = true
+tempdir.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+redb.workspace = true
+
+# ream dependencies
+ream-consensus-beacon.workspace = true
+ream-consensus-misc.workspace = true
+ream-da-errors.workspace = true
+
+[lints]
+workspace = true

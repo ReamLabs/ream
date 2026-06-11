@@ -37,6 +37,15 @@ impl EnrForkId {
             next_fork_epoch,
         }
     }
+
+    pub fn fulu(fork_digest: B32) -> Self {
+        let spec = beacon_network_spec();
+        Self {
+            fork_digest,
+            next_fork_version: spec.fulu_fork_version,
+            next_fork_epoch: FAR_FUTURE_EPOCH,
+        }
+    }
 }
 
 impl Encodable for EnrForkId {
