@@ -6,6 +6,7 @@ use std::{
 
 use alloy_primitives::{Address, B256, U256, address, aliases::B32, b256, fixed_bytes};
 use ream_consensus_misc::{
+    blob_parameters::BlobParameters,
     constants::beacon::GENESIS_VALIDATORS_ROOT,
     fork::Fork,
     fork_data::{ForkData, compute_fork_digest},
@@ -44,6 +45,18 @@ impl<'de> Deserialize<'de> for Network {
             "hoodi" => Ok(Network::Hoodi),
             "dev" => Ok(Network::Dev),
             custom => Ok(Network::Custom(custom.to_string())),
+        }
+    }
+}
+
+impl std::fmt::Display for Network {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Network::Mainnet => write!(f, "mainnet"),
+            Network::Sepolia => write!(f, "sepolia"),
+            Network::Hoodi => write!(f, "hoodi"),
+            Network::Dev => write!(f, "dev"),
+            Network::Custom(name) => write!(f, "{name}"),
         }
     }
 }
@@ -97,31 +110,42 @@ pub struct BeaconNetworkSpec {
     pub genesis_delay: u64,
 
     // Forking
+    // Altair
     #[serde(with = "crate::b32_hex")]
     pub altair_fork_version: B32,
     pub altair_fork_epoch: u64,
+    // Bellatrix
     #[serde(with = "crate::b32_hex")]
     pub bellatrix_fork_version: B32,
     pub bellatrix_fork_epoch: u64,
+    // Capella
     #[serde(with = "crate::b32_hex")]
     pub capella_fork_version: B32,
     pub capella_fork_epoch: u64,
+    // Deneb
     #[serde(with = "crate::b32_hex")]
     pub deneb_fork_version: B32,
     pub deneb_fork_epoch: u64,
+    // Electra
     #[serde(with = "crate::b32_hex")]
     pub electra_fork_version: B32,
     pub electra_fork_epoch: u64,
+    // Fulu
     #[serde(with = "crate::b32_hex")]
     pub fulu_fork_version: B32,
     pub fulu_fork_epoch: u64,
 
     // Time parameters
-    pub seconds_per_slot: u64,
+    pub slot_duration_ms: u64,
     pub seconds_per_eth1_block: u64,
     pub min_validator_withdrawability_delay: u64,
     pub shard_committee_period: u64,
     pub eth1_follow_distance: u64,
+    pub proposer_reorg_cutoff_bps: u64,
+    pub attestation_due_bps: u64,
+    pub aggregate_due_bps: u64,
+    pub sync_message_due_bps: u64,
+    pub contribution_due_bps: u64,
 
     // Validator cycle
     pub inactivity_score_bias: u64,
@@ -147,9 +171,6 @@ pub struct BeaconNetworkSpec {
     pub max_payload_size: u64,
     pub max_request_blocks: u64,
     pub epochs_per_subnet_subscription: u64,
-    pub min_epochs_for_block_requests: u64,
-    pub ttfb_timeout: u64,
-    pub resp_timeout: u64,
     pub attestation_propagation_slot_range: u64,
     pub maximum_gossip_clock_disparity: u64,
     #[serde(with = "crate::b32_hex")]
@@ -159,11 +180,9 @@ pub struct BeaconNetworkSpec {
     pub subnets_per_node: u64,
     pub attestation_subnet_count: u64,
     pub attestation_subnet_extra_bits: u64,
-    pub attestation_subnet_prefix_bits: u64,
 
     // Deneb
     pub max_request_blocks_deneb: u64,
-    pub max_request_blob_sidecars: u64,
     pub min_epochs_for_blob_sidecars_requests: u64,
     pub blob_sidecar_subnet_count: u64,
 
@@ -172,7 +191,18 @@ pub struct BeaconNetworkSpec {
     pub max_per_epoch_activation_exit_churn_limit: u64,
     pub blob_sidecar_subnet_count_electra: u64,
     pub max_blobs_per_block_electra: u64,
-    pub max_request_blob_sidecars_electra: u64,
+
+    // Fulu
+    pub number_of_custody_groups: u64,
+    pub data_column_sidecar_subnet_count: u64,
+    pub samples_per_slot: u64,
+    pub custody_requirement: u64,
+    pub validator_custody_requirement: u64,
+    pub balance_per_additional_custody_group: u64,
+    pub min_epochs_for_data_column_sidecars_requests: u64,
+
+    #[serde(default)]
+    pub blob_schedule: Vec<BlobParameters>,
 }
 
 impl BeaconNetworkSpec {
@@ -232,8 +262,12 @@ impl BeaconNetworkSpec {
         let elapsed = SystemTime::now()
             .duration_since(genesis_instant)
             .expect("System Time is before the genesis time");
-        let current_slot = elapsed.as_secs() / self.seconds_per_slot;
-        current_slot.saturating_sub(n_days_ago * 24 * 60 * 60 / self.seconds_per_slot)
+        let current_slot = elapsed.as_millis() as u64 / self.slot_duration_ms;
+        current_slot.saturating_sub(n_days_ago * 24 * 60 * 60 * 1000 / self.slot_duration_ms)
+    }
+
+    pub fn seconds_per_slot(&self) -> u64 {
+        self.slot_duration_ms / 1000
     }
 }
 
@@ -263,11 +297,16 @@ pub static MAINNET: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         electra_fork_epoch: 364032,
         fulu_fork_version: fixed_bytes!("0x06000000"),
         fulu_fork_epoch: 411392,
-        seconds_per_slot: 12,
+        slot_duration_ms: 12000,
         seconds_per_eth1_block: 14,
         min_validator_withdrawability_delay: 256,
         shard_committee_period: 256,
         eth1_follow_distance: 2048,
+        proposer_reorg_cutoff_bps: 1667,
+        attestation_due_bps: 3333,
+        aggregate_due_bps: 6667,
+        sync_message_due_bps: 3333,
+        contribution_due_bps: 6667,
         inactivity_score_bias: 4,
         inactivity_score_recovery_rate: 16,
         ejection_balance: 16000000000,
@@ -284,9 +323,6 @@ pub static MAINNET: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         max_payload_size: 10485760,
         max_request_blocks: 1024,
         epochs_per_subnet_subscription: 256,
-        min_epochs_for_block_requests: 33024,
-        ttfb_timeout: 5,
-        resp_timeout: 10,
         attestation_propagation_slot_range: 32,
         maximum_gossip_clock_disparity: 500,
         message_domain_invalid_snappy: fixed_bytes!("0x00000000"),
@@ -294,16 +330,30 @@ pub static MAINNET: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         subnets_per_node: 2,
         attestation_subnet_count: 64,
         attestation_subnet_extra_bits: 0,
-        attestation_subnet_prefix_bits: 6,
         max_request_blocks_deneb: 128,
-        max_request_blob_sidecars: 768,
         min_epochs_for_blob_sidecars_requests: 4096,
         blob_sidecar_subnet_count: 6,
         min_per_epoch_churn_limit_electra: 128000000000,
         max_per_epoch_activation_exit_churn_limit: 256000000000,
         blob_sidecar_subnet_count_electra: 9,
         max_blobs_per_block_electra: 9,
-        max_request_blob_sidecars_electra: 1152,
+        number_of_custody_groups: 128,
+        data_column_sidecar_subnet_count: 128,
+        samples_per_slot: 8,
+        custody_requirement: 4,
+        validator_custody_requirement: 8,
+        balance_per_additional_custody_group: 32000000000,
+        min_epochs_for_data_column_sidecars_requests: 4096,
+        blob_schedule: vec![
+            BlobParameters {
+                epoch: 412672,
+                max_blobs_per_block: 15,
+            },
+            BlobParameters {
+                epoch: 419072,
+                max_blobs_per_block: 21,
+            },
+        ],
     }
     .into()
 });
@@ -334,11 +384,16 @@ pub static SEPOLIA: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         electra_fork_epoch: 222464,
         fulu_fork_version: fixed_bytes!("0x90000075"),
         fulu_fork_epoch: 272640,
-        seconds_per_slot: 12,
+        slot_duration_ms: 12000,
         seconds_per_eth1_block: 14,
         min_validator_withdrawability_delay: 256,
         shard_committee_period: 256,
         eth1_follow_distance: 2048,
+        proposer_reorg_cutoff_bps: 1667,
+        attestation_due_bps: 3333,
+        aggregate_due_bps: 6667,
+        sync_message_due_bps: 3333,
+        contribution_due_bps: 6667,
         inactivity_score_bias: 4,
         inactivity_score_recovery_rate: 16,
         ejection_balance: 16000000000,
@@ -355,9 +410,6 @@ pub static SEPOLIA: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         max_payload_size: 10485760,
         max_request_blocks: 1024,
         epochs_per_subnet_subscription: 256,
-        min_epochs_for_block_requests: 33024,
-        ttfb_timeout: 5,
-        resp_timeout: 10,
         attestation_propagation_slot_range: 32,
         maximum_gossip_clock_disparity: 500,
         message_domain_invalid_snappy: fixed_bytes!("0x00000000"),
@@ -365,16 +417,30 @@ pub static SEPOLIA: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         subnets_per_node: 2,
         attestation_subnet_count: 64,
         attestation_subnet_extra_bits: 0,
-        attestation_subnet_prefix_bits: 6,
         max_request_blocks_deneb: 128,
-        max_request_blob_sidecars: 768,
         min_epochs_for_blob_sidecars_requests: 4096,
         blob_sidecar_subnet_count: 6,
         min_per_epoch_churn_limit_electra: 128000000000,
         max_per_epoch_activation_exit_churn_limit: 256000000000,
         blob_sidecar_subnet_count_electra: 9,
         max_blobs_per_block_electra: 9,
-        max_request_blob_sidecars_electra: 1152,
+        number_of_custody_groups: 128,
+        data_column_sidecar_subnet_count: 128,
+        samples_per_slot: 8,
+        custody_requirement: 4,
+        validator_custody_requirement: 8,
+        balance_per_additional_custody_group: 32000000000,
+        min_epochs_for_data_column_sidecars_requests: 4096,
+        blob_schedule: vec![
+            BlobParameters {
+                epoch: 274176,
+                max_blobs_per_block: 15,
+            },
+            BlobParameters {
+                epoch: 275712,
+                max_blobs_per_block: 21,
+            },
+        ],
     }
     .into()
 });
@@ -405,11 +471,16 @@ pub static HOODI: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         electra_fork_epoch: 2048,
         fulu_fork_version: fixed_bytes!("0x70000910"),
         fulu_fork_epoch: 50688,
-        seconds_per_slot: 12,
+        slot_duration_ms: 12000,
         seconds_per_eth1_block: 14,
         min_validator_withdrawability_delay: 256,
         shard_committee_period: 256,
         eth1_follow_distance: 2048,
+        proposer_reorg_cutoff_bps: 1667,
+        attestation_due_bps: 3333,
+        aggregate_due_bps: 6667,
+        sync_message_due_bps: 3333,
+        contribution_due_bps: 6667,
         inactivity_score_bias: 4,
         inactivity_score_recovery_rate: 16,
         ejection_balance: 16000000000,
@@ -426,9 +497,6 @@ pub static HOODI: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         max_payload_size: 10485760,
         max_request_blocks: 1024,
         epochs_per_subnet_subscription: 256,
-        min_epochs_for_block_requests: 33024,
-        ttfb_timeout: 5,
-        resp_timeout: 10,
         attestation_propagation_slot_range: 32,
         maximum_gossip_clock_disparity: 500,
         message_domain_invalid_snappy: fixed_bytes!("0x00000000"),
@@ -436,16 +504,30 @@ pub static HOODI: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         subnets_per_node: 2,
         attestation_subnet_count: 64,
         attestation_subnet_extra_bits: 0,
-        attestation_subnet_prefix_bits: 6,
         max_request_blocks_deneb: 128,
-        max_request_blob_sidecars: 768,
         min_epochs_for_blob_sidecars_requests: 4096,
         blob_sidecar_subnet_count: 6,
         min_per_epoch_churn_limit_electra: 128000000000,
         max_per_epoch_activation_exit_churn_limit: 256000000000,
         blob_sidecar_subnet_count_electra: 9,
         max_blobs_per_block_electra: 9,
-        max_request_blob_sidecars_electra: 1152,
+        number_of_custody_groups: 128,
+        data_column_sidecar_subnet_count: 128,
+        samples_per_slot: 8,
+        custody_requirement: 4,
+        validator_custody_requirement: 8,
+        balance_per_additional_custody_group: 32000000000,
+        min_epochs_for_data_column_sidecars_requests: 4096,
+        blob_schedule: vec![
+            BlobParameters {
+                epoch: 52480,
+                max_blobs_per_block: 15,
+            },
+            BlobParameters {
+                epoch: 54016,
+                max_blobs_per_block: 21,
+            },
+        ],
     }
     .into()
 });
@@ -476,11 +558,16 @@ pub static DEV: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         electra_fork_epoch: 364032,
         fulu_fork_version: fixed_bytes!("0x06000000"),
         fulu_fork_epoch: 411392,
-        seconds_per_slot: 12,
+        slot_duration_ms: 12000,
         seconds_per_eth1_block: 14,
         min_validator_withdrawability_delay: 256,
         shard_committee_period: 256,
         eth1_follow_distance: 2048,
+        proposer_reorg_cutoff_bps: 1667,
+        attestation_due_bps: 3333,
+        aggregate_due_bps: 6667,
+        sync_message_due_bps: 3333,
+        contribution_due_bps: 6667,
         inactivity_score_bias: 4,
         inactivity_score_recovery_rate: 16,
         ejection_balance: 16000000000,
@@ -497,9 +584,6 @@ pub static DEV: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         max_payload_size: 10485760,
         max_request_blocks: 1024,
         epochs_per_subnet_subscription: 256,
-        min_epochs_for_block_requests: 33024,
-        ttfb_timeout: 5,
-        resp_timeout: 10,
         attestation_propagation_slot_range: 32,
         maximum_gossip_clock_disparity: 500,
         message_domain_invalid_snappy: fixed_bytes!("0x00000000"),
@@ -507,16 +591,21 @@ pub static DEV: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
         subnets_per_node: 2,
         attestation_subnet_count: 64,
         attestation_subnet_extra_bits: 0,
-        attestation_subnet_prefix_bits: 6,
         max_request_blocks_deneb: 128,
-        max_request_blob_sidecars: 768,
         min_epochs_for_blob_sidecars_requests: 4096,
         blob_sidecar_subnet_count: 6,
         min_per_epoch_churn_limit_electra: 128000000000,
         max_per_epoch_activation_exit_churn_limit: 256000000000,
         blob_sidecar_subnet_count_electra: 9,
         max_blobs_per_block_electra: 9,
-        max_request_blob_sidecars_electra: 1152,
+        number_of_custody_groups: 128,
+        data_column_sidecar_subnet_count: 128,
+        samples_per_slot: 8,
+        custody_requirement: 4,
+        validator_custody_requirement: 8,
+        balance_per_additional_custody_group: 32000000000,
+        min_epochs_for_data_column_sidecars_requests: 4096,
+        blob_schedule: vec![],
     }
     .into()
 });

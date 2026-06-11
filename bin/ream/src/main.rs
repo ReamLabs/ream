@@ -816,7 +816,7 @@ fn get_current_epoch(genesis_time: u64) -> u64 {
             .duration_since(UNIX_EPOCH + Duration::from_secs(genesis_time))
             .expect("System Time is before the genesis time")
             .as_secs()
-            / beacon_network_spec().seconds_per_slot,
+            / beacon_network_spec().seconds_per_slot(),
     )
 }
 

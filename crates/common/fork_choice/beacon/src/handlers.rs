@@ -100,9 +100,9 @@ pub async fn on_block(
     // Add block timeliness to the store
     let time_into_slot = (store.db.time_provider().get()?
         - store.db.genesis_time_provider().get()?)
-        % beacon_network_spec().seconds_per_slot;
+        % beacon_network_spec().seconds_per_slot();
     let is_before_attesting_interval =
-        time_into_slot < beacon_network_spec().seconds_per_slot / INTERVALS_PER_SLOT;
+        time_into_slot < beacon_network_spec().seconds_per_slot() / INTERVALS_PER_SLOT;
     let is_timely = store.get_current_slot()? == block.slot && is_before_attesting_interval;
     store
         .db
@@ -183,10 +183,10 @@ pub fn on_tick(store: &mut Store, time: u64) -> anyhow::Result<()> {
     // If the ``store.time`` falls behind, while loop catches up slot by slot
     // to ensure that every previous slot is processed with ``on_tick_per_slot``
     let tick_slot =
-        (time - store.db.genesis_time_provider().get()?) / beacon_network_spec().seconds_per_slot;
+        (time - store.db.genesis_time_provider().get()?) / beacon_network_spec().seconds_per_slot();
     while store.get_current_slot()? < tick_slot {
         let previous_time = store.db.genesis_time_provider().get()?
-            + (store.get_current_slot()? + 1) * beacon_network_spec().seconds_per_slot;
+            + (store.get_current_slot()? + 1) * beacon_network_spec().seconds_per_slot();
         store.on_tick_per_slot(previous_time)?;
     }
     store.on_tick_per_slot(time)?;

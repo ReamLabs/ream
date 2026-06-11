@@ -139,7 +139,9 @@ impl NetworkManagerService {
             ..
         } = self;
 
-        let mut interval = interval(Duration::from_secs(beacon_network_spec().seconds_per_slot));
+        let mut interval = interval(Duration::from_secs(
+            beacon_network_spec().seconds_per_slot(),
+        ));
         let mut syncer_handle = block_range_syncer.start();
         loop {
             tokio::select! {

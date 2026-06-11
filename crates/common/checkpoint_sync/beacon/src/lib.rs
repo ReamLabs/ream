@@ -90,7 +90,7 @@ pub async fn initialize_db_from_checkpoint(
     let mut store = get_forkchoice_store(state.clone(), block.message, db)?;
 
     let time = beacon_network_spec().min_genesis_time
-        + beacon_network_spec().seconds_per_slot * (slot + 1);
+        + beacon_network_spec().seconds_per_slot() * (slot + 1);
     on_tick(&mut store, time)?;
     info!("Initial sync complete");
 

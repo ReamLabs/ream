@@ -73,7 +73,10 @@ pub async fn process_voluntary_exit(
 
     if wait_till_exit {
         loop {
-            sleep(Duration::from_secs(beacon_network_spec().seconds_per_slot)).await;
+            sleep(Duration::from_secs(
+                beacon_network_spec().seconds_per_slot(),
+            ))
+            .await;
             match beacon_api_client
                 .get_state_validator(ID::Head, ValidatorID::Index(validator_index))
                 .await?

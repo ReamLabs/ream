@@ -30,7 +30,7 @@ impl Default for GossipsubConfig {
             .history_gossip(3)
             .max_messages_per_rpc(Some(500))
             .duplicate_cache_time(Duration::from_secs(
-                SLOTS_PER_EPOCH * beacon_network_spec().seconds_per_slot * 2,
+                SLOTS_PER_EPOCH * beacon_network_spec().seconds_per_slot() * 2,
             ))
             .validate_messages()
             .validation_mode(ValidationMode::Anonymous)
