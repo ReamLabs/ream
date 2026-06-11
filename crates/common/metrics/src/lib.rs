@@ -19,6 +19,14 @@ pub const ATTESTATION_AGGREGATE_COVERAGE_SECTIONS: &[&str] = &[
     "proposal_combined",
 ];
 
+pub const AGGREGATOR_SKIP_REASONS: &[&str] = &[
+    "not_aggregator",
+    "not_synced",
+    "missing_state",
+    "spawn_failed",
+    "other",
+];
+
 pub const ATTESTATION_AGGREGATE_COVERAGE_DIFFERENT_DIRECTIONS: &[&str] =
     &["block_only", "timely_only"];
 
@@ -550,6 +558,13 @@ lazy_static::lazy_static! {
         &["direction"],
         default_registry()
     ).expect("failed to create IS_AGGREGATOR int gauge vec");
+
+    pub static ref LEAN_AGGREGATOR_SKIPPED_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
+        "lean_aggregator_skipped_total",
+        "Total number of aggregation submissions skipped, labeled by reason",
+        &["reason"],
+        default_registry()
+    ).expect("failed to create AGGREGATOR_SKIPPED_TOTAL int counter vec");
 }
 
 pub fn init_aggregate_coverage_metrics() {
