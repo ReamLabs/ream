@@ -114,4 +114,21 @@ impl PeerManager {
             .max_by_key(|&(_, count)| count)
             .map(|(slot, _)| slot)
     }
+
+    pub fn head_slot(&self) -> Option<u64> {
+        let mut frequencies = HashMap::new();
+
+        for peer in self.peers.values() {
+            if let Some(status) = &peer.peer.status {
+                *frequencies
+                    .entry(status.head_slot)
+                    .or_insert(0) += 1;
+            }
+        }
+
+        frequencies
+            .into_iter()
+            .max_by_key(|&(_, count)| count)
+            .map(|(slot, _)| slot)
+    }
 }

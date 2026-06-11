@@ -21,11 +21,12 @@ use tree_hash::TreeHash;
 use crate::store::Store;
 
 /// Run ``on_block`` upon receiving a new block.
-pub async fn on_block(
+pub async fn on_block<E: ExecutionApi>(
     store: &mut Store,
     signed_block: &SignedBeaconBlock,
-    execution_engine: &Option<impl ExecutionApi>,
+    execution_engine: &Option<E>,
     verify_blob_availability: bool,
+    skip_execution_validation: bool,
 ) -> anyhow::Result<()> {
     let block = &signed_block.message;
     let parent_root = block.parent_root;
@@ -81,8 +82,14 @@ pub async fn on_block(
         .get(parent_root)?
         .ok_or_else(|| anyhow!("beacon state not found"))?
         .clone();
+    let engine_to_pass = if skip_execution_validation {
+        &None
+    } else {
+        execution_engine
+    };
+
     state
-        .state_transition(signed_block, true, execution_engine)
+        .state_transition(signed_block, true, engine_to_pass)
         .await?;
 
     // Add new block to the store
