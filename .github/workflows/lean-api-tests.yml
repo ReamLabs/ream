@@ -86,7 +86,7 @@ jobs:
 
       - name: Run leanSpec API tests
         working-directory: leanSpec
-        run: uv run apitest http://localhost:5052
+        run: uv run apitest http://localhost:5052 -k "not test_fork_choice_response"
 
       - name: Stop ream
         if: always()

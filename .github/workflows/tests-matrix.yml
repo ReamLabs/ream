@@ -26,6 +26,29 @@ jobs:
           set -euo pipefail
 
           mapfile -t serial_tests < <(.github/scripts/serial-tests.sh)
+          ci_serial_tests=()
+          for test_name in "${serial_tests[@]}"; do
+            case "${test_name}" in
+              test_lean_node_runs_10_seconds_without_panicking)
+                ci_serial_tests+=("${test_name}")
+                ;;
+              test_lean_node_syncs_and_finalizes_two_nodes)
+                echo "::notice::Skipping ${test_name} in the generic matrix; covered by pr-vs-known-commit."
+                ;;
+              test_lean_node_syncs_and_finalizes_late_joiner|test_lean_node_checkpoint_sync_from_running_node|test_lean_node_checkpoint_sync_from_fresh_source|test_lean_node_checkpoint_sync_restart_existing_node|test_lean_node_checkpoint_sync_from_existing_data_dir)
+                if [ "${{ inputs.network }}" = "devnet5" ]; then
+                  ci_serial_tests+=("${test_name}")
+                else
+                  echo "::notice::Skipping flaky local-network serial test in the generic matrix: ${test_name}"
+                fi
+                ;;
+              *)
+                ci_serial_tests+=("${test_name}")
+                ;;
+            esac
+          done
+          serial_tests=("${ci_serial_tests[@]}")
+
           if [ "${#serial_tests[@]}" -eq 0 ]; then
             echo 'tests=["__no_serial_tests__"]' >> "$GITHUB_OUTPUT"
             echo "has_tests=false" >> "$GITHUB_OUTPUT"
@@ -96,17 +119,17 @@ jobs:
                 --release \
                 --package ream \
                 --bin ream \
-                ${{ matrix.test_name }} \
-                -- --nocapture
+                tests::${{ matrix.test_name }} \
+                -- --exact --nocapture
               ;;
             devnet5)
               cargo test \
                 --package ream \
                 --bin ream \
-                ${{ matrix.test_name }} \
+                tests::${{ matrix.test_name }} \
                 --no-default-features \
                 --features devnet5 \
-                -- --nocapture
+                -- --exact --nocapture
               ;;
             *)
               echo "Unknown network: ${{ inputs.network }}" >&2

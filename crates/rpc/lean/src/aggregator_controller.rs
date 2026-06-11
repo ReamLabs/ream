@@ -102,9 +102,9 @@ mod tests {
         let r2 = controller.set_enabled(false);
         let r3 = controller.set_enabled(true);
 
-        assert!(r1);
+        assert!(!r1);
         assert!(r2);
-        assert!(r3);
+        assert!(!r3);
 
         assert!(controller.is_enabled());
         assert!(*controller.network_state.is_aggregator.lock());

@@ -1960,7 +1960,10 @@ mod tests {
     };
     use ream_network_spec::networks::{LeanNetworkSpec, lean_network_spec, set_lean_network_spec};
     use ream_post_quantum_crypto::{
-        lean_multisig::aggregate::{aggregate_signatures, verify_aggregate_signature},
+        lean_multisig::aggregate::{
+            aggregate_signatures, aggregation_setup_prover, aggregation_setup_verifier,
+            verify_aggregate_signature,
+        },
         leansig::{private_key::PrivateKey, public_key::PublicKey, signature::Signature},
     };
     use ream_storage::tables::{field::REDBField, table::REDBTable};
@@ -1973,9 +1976,17 @@ mod tests {
     use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 
     static TEST_GLOBAL_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+    static TEST_AGGREGATION_SETUP: OnceLock<()> = OnceLock::new();
 
     fn test_global_lock() -> &'static AsyncMutex<()> {
         TEST_GLOBAL_LOCK.get_or_init(|| AsyncMutex::new(()))
+    }
+
+    fn init_test_aggregation_setup() {
+        TEST_AGGREGATION_SETUP.get_or_init(|| {
+            aggregation_setup_verifier();
+            aggregation_setup_prover();
+        });
     }
 
     const CACHED_KEY_COUNT: usize = 10;
@@ -1996,6 +2007,8 @@ mod tests {
     }
 
     async fn sample_store_as_store(no_of_validators: usize) -> Store {
+        init_test_aggregation_setup();
+
         let test_store = sample_store(no_of_validators).await;
         Store {
             store: test_store.store,
@@ -3019,7 +3032,7 @@ mod tests {
         let block = store.produce_block_with_signatures(1, 1).await;
         assert_eq!(
             block.unwrap_err().to_string(),
-            "Failed to get head state for safe target update".to_string()
+            "Head state not found while reading genesis time".to_string()
         );
     }
 
@@ -3538,6 +3551,7 @@ mod tests {
         let key_pairs = install_validator_keys(&store, &[attestor_validator]).await;
 
         let attestation_data = store.produce_attestation_data(1).await.unwrap();
+        set_time_for_slot(&store, attestation_data.slot).await;
         let signature = key_pairs
             .get(&attestor_validator)
             .unwrap()
@@ -3601,6 +3615,7 @@ mod tests {
         let key_pairs = install_validator_keys(&store, &[attestor_validator]).await;
 
         let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        set_time_for_slot(&store, attestation_data.slot).await;
         let signature = key_pairs
             .get(&attestor_validator)
             .unwrap()
@@ -3646,6 +3661,7 @@ mod tests {
         let key_pairs = install_validator_keys(&store, &[attestor_validator]).await;
 
         let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        set_time_for_slot(&store, attestation_data.slot).await;
         let signature = key_pairs
             .get(&attestor_validator)
             .unwrap()
@@ -3710,6 +3726,7 @@ mod tests {
         let key_pairs = install_validator_keys(&store, &[attestor_validator]).await;
 
         let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        set_time_for_slot(&store, attestation_data.slot).await;
         let signature = key_pairs
             .get(&attestor_validator)
             .unwrap()
@@ -3935,6 +3952,7 @@ mod tests {
         let slot = 1;
 
         let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        set_time_for_slot(&store, attestation_data.slot).await;
         let data_root = attestation_data.tree_hash_root();
 
         for &validator_id in attesting_validators.iter() {
@@ -3983,6 +4001,7 @@ mod tests {
         let slot = 1;
 
         let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        set_time_for_slot(&store, attestation_data.slot).await;
         let data_root = attestation_data.tree_hash_root();
 
         for &validator_id in attesting_validators.iter() {
@@ -4158,6 +4177,7 @@ mod tests {
         let slot = 1;
 
         let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        set_time_for_slot(&store, attestation_data.slot).await;
         let data_root = attestation_data.tree_hash_root();
 
         for &validator_id in attesting_validators.iter() {
@@ -4207,6 +4227,7 @@ mod tests {
         let slot = 1;
 
         let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        set_time_for_slot(&store, attestation_data.slot).await;
         let data_root = attestation_data.tree_hash_root();
 
         for &validator_id in attesting_validators.iter() {
@@ -4256,6 +4277,7 @@ mod tests {
         let slot = 1;
 
         let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        set_time_for_slot(&store, attestation_data.slot).await;
         let data_root = attestation_data.tree_hash_root();
         let sig_key = SignatureKey::from_parts(1, data_root);
 
@@ -4329,6 +4351,7 @@ mod tests {
         let slot = 1;
 
         let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        set_time_for_slot(&store, attestation_data.slot).await;
         let data_root = attestation_data.tree_hash_root();
 
         for &validator_id in attesting_validators.iter() {
