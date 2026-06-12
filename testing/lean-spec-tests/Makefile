@@ -1,18 +1,18 @@
-EXTRACT_DIR = fixtures
 NETWORK ?= devnet4
+EXTRACT_DIR = fixtures/$(NETWORK)
 DEVNET4_REPO_URL = https://github.com/ReamLabs/lean-spec-tests.git
 DEVNET5_RELEASE_URL = https://github.com/leanEthereum/leanSpec/releases/download/latest/fixtures-prod-scheme.tar.gz
 DEVNET5_RELEASE_API_URL = https://api.github.com/repos/leanEthereum/leanSpec/releases/tags/latest
 DEVNET5_ARCHIVE = fixtures-prod-scheme.tar.gz
 DEVNET5_TMP_DIR = .leanSpec-fixtures
 CURL = curl --fail --location --retry 3 --retry-all-errors --retry-delay 5 --connect-timeout 30 --speed-time 60 --speed-limit 1024
-KEYS_DIR = fixtures/keys/prod_scheme
+KEYS_DIR = $(EXTRACT_DIR)/keys/prod_scheme
 KEYS_URL = https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-bbbbf62/prod_scheme.tar.gz
 
 FIXTURES := state_transition ssz fork_choice justifiability slot_clock sync verify_signatures
 SELECTED := $(filter $(FIXTURES),$(MAKECMDGOALS))
 CARGO_FEATURES = lean-spec-tests $(NETWORK)
-SOURCE_MARKER = $(EXTRACT_DIR)/.ream-source-$(NETWORK)
+SOURCE_MARKER = $(EXTRACT_DIR)/.ream-source
 
 .PHONY: all clean test test-devnet4 test-devnet5 prepare-fixtures $(FIXTURES)
 
@@ -70,8 +70,8 @@ $(KEYS_DIR):
 		echo "$(KEYS_DIR) already exists. Skipping download."; \
 	else \
 		echo "Downloading test keys..."; \
-		mkdir -p fixtures/keys; \
-		$(CURL) --silent --output - $(KEYS_URL) | tar xz -C fixtures/keys || { echo "Key download failed."; exit 1; }; \
+		mkdir -p $(EXTRACT_DIR)/keys; \
+		$(CURL) --silent --output - $(KEYS_URL) | tar xz -C $(EXTRACT_DIR)/keys || { echo "Key download failed."; exit 1; }; \
 		echo "Test keys downloaded successfully."; \
 	fi
 
@@ -90,6 +90,6 @@ $(FIXTURES):
 
 clean:
 	@echo "Cleaning up downloaded fixtures and keys..."
-	@rm -rf $(EXTRACT_DIR)
+	@rm -rf fixtures/devnet4 fixtures/devnet5
 	@rm -rf $(DEVNET5_TMP_DIR)
 	@echo "Clean up complete."
