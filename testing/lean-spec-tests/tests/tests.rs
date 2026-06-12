@@ -47,7 +47,11 @@ fn find_json_files(dir: &str) -> Vec<PathBuf> {
 }
 
 fn find_fixture_files(suite: &str) -> Vec<PathBuf> {
-    find_json_files(&format!("fixtures/consensus/{suite}/{FIXTURE_PROFILE}"))
+    #[cfg(feature = "devnet5")]
+    let network = "devnet5";
+    #[cfg(not(feature = "devnet5"))]
+    let network = "devnet4";
+    find_json_files(&format!("fixtures/{network}/consensus/{suite}/{FIXTURE_PROFILE}"))
 }
 
 fn should_run_fixture_suite(suite: &str, fixtures: &[PathBuf]) -> bool {
