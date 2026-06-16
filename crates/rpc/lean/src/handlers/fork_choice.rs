@@ -44,9 +44,7 @@ pub async fn get_fork_choice_tree(
         .get(head_root)
         .map_err(|err| ApiError::InternalError(format!("Unable to get head state: {err:?}")))?;
 
-    let validator_count = head_state
-        .map(|state| state.validators.len() as u64)
-        .unwrap_or(0);
+    let validator_count = head_state.map(|state| state.validators.len() as u64);
 
     let blocks = db
         .block_provider()
