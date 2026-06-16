@@ -45,7 +45,9 @@ pub fn run_state_transition_test(
     // Track whether we expect an exception (devnet4: expectException, devnet5: rejectionReason)
     let expect_exception = test.expects_failure();
     if expect_exception {
-        let reason = test.expect_exception.as_deref()
+        let reason = test
+            .expect_exception
+            .as_deref()
             .or(test.rejection_reason.as_deref())
             .unwrap_or("unknown");
         info!("Expected result: Exception: {reason}");
@@ -93,7 +95,9 @@ pub fn run_state_transition_test(
     // Check if the result matches expectations
     match (result, expect_exception) {
         (Ok(_), true) => {
-            let reason = test.expect_exception.as_deref()
+            let reason = test
+                .expect_exception
+                .as_deref()
                 .or(test.rejection_reason.as_deref())
                 .unwrap_or("unknown");
             bail!("Expected exception '{reason}' but state transition succeeded");

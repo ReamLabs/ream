@@ -70,20 +70,28 @@ pub fn run_slot_clock_test(test_name: &str, test: &SlotClockTest) -> anyhow::Res
             let genesis_time = param_u64("genesisTime", None)?;
             // devnet4: currentTimeMs (integer), devnet5: currentTimeMilliseconds (float)
             let current_time_ms = param_u64("currentTimeMs", Some("currentTimeMilliseconds"))?;
-            let expected = test.output.slot.ok_or_else(|| anyhow!("Missing output.slot"))?;
+            let expected = test
+                .output
+                .slot
+                .ok_or_else(|| anyhow!("Missing output.slot"))?;
             let genesis_ms = genesis_time * 1000;
             let actual = if current_time_ms <= genesis_ms {
                 0
             } else {
                 (current_time_ms - genesis_ms) / ms_per_slot
             };
-            ensure!(actual == expected, "current_slot mismatch: expected {expected}, got {actual}");
+            ensure!(
+                actual == expected,
+                "current_slot mismatch: expected {expected}, got {actual}"
+            );
         }
         "current_interval" => {
             let genesis_time = param_u64("genesisTime", None)?;
             let current_time_ms = param_u64("currentTimeMs", Some("currentTimeMilliseconds"))?;
-            let expected =
-                test.output.interval.ok_or_else(|| anyhow!("Missing output.interval"))?;
+            let expected = test
+                .output
+                .interval
+                .ok_or_else(|| anyhow!("Missing output.interval"))?;
             let genesis_ms = genesis_time * 1000;
             let actual = if current_time_ms <= genesis_ms {
                 0
@@ -116,16 +124,23 @@ pub fn run_slot_clock_test(test_name: &str, test: &SlotClockTest) -> anyhow::Res
         }
         "from_slot" => {
             let slot = param_u64("slot", None)?;
-            let expected =
-                test.output.interval.ok_or_else(|| anyhow!("Missing output.interval"))?;
+            let expected = test
+                .output
+                .interval
+                .ok_or_else(|| anyhow!("Missing output.interval"))?;
             let actual = slot * cfg.intervals_per_slot;
-            ensure!(actual == expected, "from_slot mismatch: expected {expected}, got {actual}");
+            ensure!(
+                actual == expected,
+                "from_slot mismatch: expected {expected}, got {actual}"
+            );
         }
         "from_unix_time" => {
             let genesis_time = param_u64("genesisTime", None)?;
             let unix_seconds = param_u64("unixSeconds", None)?;
-            let expected =
-                test.output.interval.ok_or_else(|| anyhow!("Missing output.interval"))?;
+            let expected = test
+                .output
+                .interval
+                .ok_or_else(|| anyhow!("Missing output.interval"))?;
             let actual = if unix_seconds <= genesis_time {
                 0
             } else {
