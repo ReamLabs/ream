@@ -556,23 +556,27 @@ pub fn attestation_data_matches_chain(
     historical_block_hashes: &[B256],
     attestation_data: AttestationData,
 ) -> anyhow::Result<bool> {
-    if attestation_data.source.root == B256::ZERO || attestation_data.target.root == B256::ZERO {
+    if attestation_data.source.root == B256::ZERO
+        || attestation_data.target.root == B256::ZERO
+        || attestation_data.head.root == B256::ZERO
+    {
         return Ok(false);
     }
 
     let source_slot = attestation_data.source.slot as usize;
     let target_slot = attestation_data.target.slot as usize;
+    let head_slot = attestation_data.head.slot as usize;
 
-    if source_slot >= historical_block_hashes.len() {
-        return Ok(false);
-    }
-
-    if target_slot >= historical_block_hashes.len() {
+    if source_slot >= historical_block_hashes.len()
+        || target_slot >= historical_block_hashes.len()
+        || head_slot >= historical_block_hashes.len()
+    {
         return Ok(false);
     }
 
     let matches = attestation_data.source.root == historical_block_hashes[source_slot]
-        && attestation_data.target.root == historical_block_hashes[target_slot];
+        && attestation_data.target.root == historical_block_hashes[target_slot]
+        && attestation_data.head.root == historical_block_hashes[head_slot];
 
     Ok(matches)
 }

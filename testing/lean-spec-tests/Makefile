@@ -1,6 +1,7 @@
 NETWORK ?= devnet4
 EXTRACT_DIR = fixtures/$(NETWORK)
 DEVNET4_REPO_URL = https://github.com/ReamLabs/lean-spec-tests.git
+DEVNET4_COMMIT = a3bf5d72e74e3bdf7634e5ee3a8154aabf0a8565
 DEVNET5_RELEASE_URL = https://github.com/leanEthereum/leanSpec/releases/download/latest/fixtures-prod-scheme.tar.gz
 DEVNET5_RELEASE_API_URL = https://api.github.com/repos/leanEthereum/leanSpec/releases/tags/latest
 DEVNET5_ARCHIVE = fixtures-prod-scheme.tar.gz
@@ -32,9 +33,10 @@ prepare-fixtures:
 	@if [ -f $(SOURCE_MARKER) ] && [ -d $(EXTRACT_DIR)/consensus ]; then \
 		echo "$(EXTRACT_DIR) already contains $(NETWORK) fixtures. Skipping download."; \
 	elif [ "$(NETWORK)" = "devnet4" ]; then \
-		echo "Cloning devnet4 fixtures from $(DEVNET4_REPO_URL)..."; \
+		echo "Cloning devnet4 fixtures from $(DEVNET4_REPO_URL) at $(DEVNET4_COMMIT)..."; \
 		rm -rf $(EXTRACT_DIR); \
-		git clone --depth 1 --filter=blob:none --single-branch --quiet $(DEVNET4_REPO_URL) $(EXTRACT_DIR) || { echo "Clone failed. Repository may be private or inaccessible."; exit 1; }; \
+		git clone --filter=blob:none --quiet $(DEVNET4_REPO_URL) $(EXTRACT_DIR) || { echo "Clone failed. Repository may be private or inaccessible."; exit 1; }; \
+		git -C $(EXTRACT_DIR) checkout --quiet $(DEVNET4_COMMIT) || { echo "Checkout of commit $(DEVNET4_COMMIT) failed."; exit 1; }; \
 		touch $(SOURCE_MARKER); \
 		echo "devnet4 fixtures downloaded successfully."; \
 	else \

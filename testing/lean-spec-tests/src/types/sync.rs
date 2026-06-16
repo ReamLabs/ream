@@ -4,8 +4,11 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 pub struct SyncTest {
     pub network: String,
-    pub operation: String,
-    pub input: SyncInput,
+    /// devnet4: plain string; devnet5: object with `kind`, `numValidators`, `anchorSlot`
+    pub operation: serde_json::Value,
+    /// devnet4 only — params moved into `operation` in devnet5
+    #[serde(default)]
+    pub input: Option<SyncInput>,
     pub output: SyncOutput,
 }
 
@@ -22,6 +25,10 @@ pub struct SyncInput {
 pub struct SyncOutput {
     pub valid: bool,
     pub state_bytes: String,
-    pub validator_count: u64,
-    pub anchor_slot: u64,
+    /// devnet4 only — in devnet5 this lives in `operation`
+    #[serde(default)]
+    pub validator_count: Option<u64>,
+    /// devnet4 only — in devnet5 this lives in `operation`
+    #[serde(default)]
+    pub anchor_slot: Option<u64>,
 }
