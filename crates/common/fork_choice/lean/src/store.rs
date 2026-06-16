@@ -1236,6 +1236,36 @@ impl Store {
         Ok(())
     }
 
+    pub async fn checkpoint_is_ancestor(
+        &self,
+        ancestor: &Checkpoint,
+        descendant: &Checkpoint,
+    ) -> anyhow::Result<bool> {
+        if ancestor.slot > descendant.slot {
+            return Ok(false);
+        }
+
+        let db = self.store.lock().await;
+
+        let mut current_root = descendant.root;
+
+        while let Some(block_wrapper) = db.block_provider().get(current_root)? {
+            let block = &block_wrapper.block;
+
+            if block.slot == ancestor.slot {
+                return Ok(current_root == ancestor.root);
+            }
+
+            if block.slot < ancestor.slot {
+                break;
+            }
+
+            current_root = block.parent_root;
+        }
+
+        Ok(false)
+    }
+
     pub async fn validate_attestation(
         &self,
         signed_attestation: &SignedAttestation,
@@ -1293,6 +1323,30 @@ impl Store {
         ensure!(
             head_block.block.slot == data.head.slot,
             "Head checkpoint slot mismatch"
+        );
+
+        if block_provider.contains_key(data.source.root)
+            && block_provider.contains_key(data.target.root)
+        {
+            ensure!(
+                self.checkpoint_is_ancestor(&data.source, &data.target)
+                    .await?,
+                "Source checkpoint must be ancestor of target"
+            );
+        }
+        if block_provider.contains_key(data.target.root)
+            && block_provider.contains_key(data.head.root)
+        {
+            ensure!(
+                self.checkpoint_is_ancestor(&data.target, &data.head)
+                    .await?,
+                "Target checkpoint must be ancestor of head"
+            );
+        }
+
+        ensure!(
+            data.slot >= head_block.block.slot,
+            "Attestation slot precedes head"
         );
 
         let current_time = time_provider.get()?;
