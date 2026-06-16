@@ -83,7 +83,7 @@ impl Store {
     pub fn get_slots_since_genesis(&self) -> anyhow::Result<u64> {
         Ok(
             (self.db.time_provider().get()? - self.db.genesis_time_provider().get()?)
-                / beacon_network_spec().seconds_per_slot,
+                / beacon_network_spec().seconds_per_slot(),
         )
     }
 
@@ -354,8 +354,9 @@ impl Store {
         // Use half `SECONDS_PER_SLOT // INTERVALS_PER_SLOT` as the proposer reorg deadline
         let time_into_slot = (self.db.time_provider().get()?
             - self.db.genesis_time_provider().get()?)
-            % beacon_network_spec().seconds_per_slot;
-        let proposer_reorg_cutoff = beacon_network_spec().seconds_per_slot / INTERVALS_PER_SLOT / 2;
+            % beacon_network_spec().seconds_per_slot();
+        let proposer_reorg_cutoff =
+            beacon_network_spec().seconds_per_slot() / INTERVALS_PER_SLOT / 2;
         Ok(time_into_slot <= proposer_reorg_cutoff)
     }
 
@@ -850,7 +851,7 @@ pub fn get_forkchoice_store(
     };
 
     db.time_provider().insert(
-        anchor_state.genesis_time + beacon_network_spec().seconds_per_slot * anchor_state.slot,
+        anchor_state.genesis_time + beacon_network_spec().seconds_per_slot() * anchor_state.slot,
     )?;
     db.genesis_time_provider()
         .insert(anchor_state.genesis_time)?;

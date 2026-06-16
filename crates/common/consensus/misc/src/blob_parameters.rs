@@ -5,6 +5,7 @@ use tree_hash_derive::TreeHash;
 use crate::constants::beacon::{ELECTRA_FORK_EPOCH, MAX_BLOBS_PER_BLOCK_ELECTRA};
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
+#[serde(rename_all = "UPPERCASE")]
 pub struct BlobParameters {
     pub epoch: u64,
     pub max_blobs_per_block: u64,

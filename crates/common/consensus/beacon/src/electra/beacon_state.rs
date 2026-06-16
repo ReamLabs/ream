@@ -1228,7 +1228,7 @@ impl BeaconState {
 
     pub fn compute_timestamp_at_slot(&self, slot: u64) -> u64 {
         let slots_since_genesis = slot - GENESIS_SLOT;
-        self.genesis_time + slots_since_genesis * beacon_network_spec().seconds_per_slot
+        self.genesis_time + slots_since_genesis * beacon_network_spec().seconds_per_slot()
     }
 
     pub fn validate_voluntary_exit(
