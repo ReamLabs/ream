@@ -42,15 +42,13 @@ pub fn run_state_transition_test(
     let mut state = LeanState::try_from(test.pre.clone())
         .map_err(|err| anyhow!("Failed to convert pre-state: {err}"))?;
 
-    // Track whether we expect an exception
-    let expect_exception = test.expect_exception.is_some();
+    // Track whether we expect an exception (devnet4: expectException, devnet5: rejectionReason)
+    let expect_exception = test.expects_failure();
     if expect_exception {
-        info!(
-            "Expected result: Exception: {}",
-            test.expect_exception
-                .as_ref()
-                .expect("Failed to fetch expected exception")
-        );
+        let reason = test.expect_exception.as_deref()
+            .or(test.rejection_reason.as_deref())
+            .unwrap_or("unknown");
+        info!("Expected result: Exception: {reason}");
     } else {
         info!("Expected result: Success");
     }
@@ -95,12 +93,10 @@ pub fn run_state_transition_test(
     // Check if the result matches expectations
     match (result, expect_exception) {
         (Ok(_), true) => {
-            bail!(
-                "Expected exception '{}' but state transition succeeded",
-                test.expect_exception
-                    .as_ref()
-                    .expect("Failed to fetch expected exception")
-            );
+            let reason = test.expect_exception.as_deref()
+                .or(test.rejection_reason.as_deref())
+                .unwrap_or("unknown");
+            bail!("Expected exception '{reason}' but state transition succeeded");
         }
         (Err(err), false) => {
             bail!("State transition should succeed but failed: {err}");
