@@ -1,4 +1,5 @@
 use std::{
+    cmp::Reverse,
     collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
@@ -68,6 +69,46 @@ use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 
 pub type LeanStoreWriter = Writer<Store>;
 pub type LeanStoreReader = Reader<Store>;
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum AttestationScoreTier {
+    Finalize = 1,
+    Justify = 2,
+    Build = 3,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AttestationEntryScore {
+    tier: AttestationScoreTier,
+    new_voter_count: usize,
+    target_slot: u64,
+    attestation_slot: u64,
+}
+
+#[allow(dead_code)]
+impl AttestationEntryScore {
+    fn ordering_key(&self, data_root: B256) -> AttestationEntryOrderingKey {
+        AttestationEntryOrderingKey {
+            tier: self.tier,
+            new_voter_count: Reverse(self.new_voter_count),
+            target_slot: self.target_slot,
+            attestation_slot: self.attestation_slot,
+            data_root,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct AttestationEntryOrderingKey {
+    tier: AttestationScoreTier,
+    new_voter_count: Reverse<usize>,
+    target_slot: u64,
+    attestation_slot: u64,
+    data_root: B256,
+}
 
 /// [Store] represents the state that the Lean node should maintain.
 #[derive(Debug, Clone)]
