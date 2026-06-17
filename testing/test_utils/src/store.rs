@@ -1,3 +1,5 @@
+#[cfg(feature = "devnet5")]
+use ream_consensus_lean::attestation::MultiMessageAggregate;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{block::SignedBlock, utils::generate_default_validators};
@@ -23,7 +25,9 @@ pub async fn sample_store(no_of_validators: usize) -> Store {
             proposer_signature: Signature::blank(),
         },
         #[cfg(feature = "devnet5")]
-        proof: VariableList::default(),
+        proof: MultiMessageAggregate {
+            proof: VariableList::default(),
+        },
     };
 
     let temp_path = std::env::temp_dir().join(format!(
