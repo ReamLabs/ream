@@ -30,7 +30,7 @@ use ream_metrics::{
     inc_int_counter_vec, set_int_gauge_vec,
 };
 use ream_network_spec::networks::lean_network_spec;
-use ream_network_state_lean::NetworkState;
+use ream_network_state_lean::{AggregatorState, NetworkState};
 #[cfg(feature = "devnet5")]
 use ream_post_quantum_crypto::lean_multisig::type_2::{
     type_1_aggregate, type_1_from_wire, type_1_to_wire, type_2_from_wire, type_2_split,
@@ -254,7 +254,7 @@ pub struct LeanChainService {
     quarantined_backfill_roots: HashMap<B256, QuarantinedBackfillRoot>,
     dropped_backfill_roots: HashSet<B256>,
     pending_callbacks: FuturesUnordered<CallbackFuture>,
-    is_aggregator: bool,
+    aggregator_state: Arc<AggregatorState>,
     telemetry: SyncTelemetry,
     #[cfg(feature = "devnet5")]
     pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
@@ -265,7 +265,7 @@ impl LeanChainService {
         store: LeanStoreWriter,
         receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
         outbound_p2p: mpsc::UnboundedSender<LeanP2PRequest>,
-        is_aggregator: bool,
+        aggregator_state: Arc<AggregatorState>,
     ) -> Self {
         let network_state = store.read().await.network_state.clone();
         LeanChainService {
@@ -283,7 +283,7 @@ impl LeanChainService {
             dropped_backfill_roots: HashSet::new(),
             pending_callbacks: FuturesUnordered::new(),
             pending_job_requests: VecDeque::new(),
-            is_aggregator,
+            aggregator_state,
             telemetry: SyncTelemetry::from_env(),
             #[cfg(feature = "devnet5")]
             pending_block_aggregates: Arc::new(Mutex::new(Vec::new())),
@@ -291,7 +291,7 @@ impl LeanChainService {
     }
 
     pub async fn start(mut self) -> anyhow::Result<()> {
-        set_int_gauge_vec(&IS_AGGREGATOR, self.is_aggregator as i64, &[]);
+        set_int_gauge_vec(&IS_AGGREGATOR, self.is_aggregator() as i64, &[]);
         set_int_gauge_vec(
             &ATTESTATION_COMMITTEE_COUNT_METRIC,
             attestation_committee_count() as i64,
@@ -595,6 +595,12 @@ impl LeanChainService {
                 }
             }
         }
+    }
+
+    fn is_aggregator(&self) -> bool {
+        let is_aggregator = self.aggregator_state.is_enabled();
+        set_int_gauge_vec(&IS_AGGREGATOR, is_aggregator as i64, &[]);
+        is_aggregator
     }
 
     async fn step_head_sync(&mut self, tick_count: u64) -> anyhow::Result<()> {
@@ -2948,7 +2954,7 @@ impl LeanChainService {
         self.store
             .write()
             .await
-            .on_gossip_attestation(signed_attestation, self.is_aggregator)
+            .on_gossip_attestation(signed_attestation, self.is_aggregator())
             .await?;
 
         Ok(())
@@ -2989,6 +2995,7 @@ mod tests {
         checkpoint::Checkpoint,
     };
     use ream_fork_choice_lean::store::Store;
+    use ream_network_state_lean::AggregatorState;
     use ream_peer::{ConnectionState, Direction};
     use ream_post_quantum_crypto::leansig::signature::Signature;
     use ream_req_resp::lean::messages::LeanResponseMessage;
@@ -3011,6 +3018,10 @@ mod tests {
             job::{pending::PendingJobRequest, queue::JobQueue, request::JobRequest},
         },
     };
+
+    fn role(enabled: bool) -> Arc<AggregatorState> {
+        Arc::new(AggregatorState::new(enabled))
+    }
 
     async fn advance_store_to_slot(store: &mut Store, target_slot: u64, validator_count: u64) {
         for slot in 1..=target_slot {
@@ -3042,10 +3053,11 @@ mod tests {
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
 
         let peer_id = PeerId::random();
         service.network_state.upsert_peer(
@@ -3061,16 +3073,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_is_aggregator_reads_shared_state() {
+        let store = sample_store(10).await;
+        let (writer, _reader) = Writer::new(store);
+        let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
+        let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
+        let aggregator_state = role(false);
+        let service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, aggregator_state.clone())
+                .await;
+
+        assert!(!service.is_aggregator());
+
+        let previous = aggregator_state.set_enabled(true);
+
+        assert!(!previous);
+        assert!(service.is_aggregator());
+    }
+
+    #[tokio::test]
     async fn test_assignable_peer_id_for_checkpoint_prefers_matching_head_peer() {
         let store = sample_store(10).await;
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let service = LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
 
         let target_checkpoint = Checkpoint {
             root: B256::repeat_byte(0x44),
@@ -3120,7 +3151,8 @@ mod tests {
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
 
         let root_active_start = B256::repeat_byte(0x11);
         let root_active_progress = B256::repeat_byte(0x22);
@@ -3157,10 +3189,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
 
         // Try to produce a block for slot 2 (behind head slot 3)
@@ -3182,10 +3215,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_id = PeerId::random();
@@ -3222,10 +3256,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_id = PeerId::random();
@@ -3263,10 +3298,10 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let service = LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
 
         let peer_a = PeerId::random();
         let peer_b = PeerId::random();
@@ -3312,10 +3347,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_id = PeerId::random();
@@ -3361,10 +3397,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_a = PeerId::random();
@@ -3421,10 +3458,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
 
         let root = B256::repeat_byte(0x11);
         let parent_root = B256::repeat_byte(0x22);
@@ -3489,10 +3527,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_id = PeerId::random();
@@ -3546,10 +3585,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Syncing;
 
         let peer_id = PeerId::random();
@@ -3608,10 +3648,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Syncing;
 
         let old_queue_root = B256::repeat_byte(0x99);
@@ -3661,10 +3702,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
         service.checkpoints_to_queue.push((
             Checkpoint {
@@ -3690,10 +3732,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Syncing;
         service.checkpoints_to_queue.push((
             Checkpoint {
@@ -3746,10 +3789,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
 
         let quarantined_root = B256::repeat_byte(0x33);
@@ -3795,10 +3839,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         let checkpoint = Checkpoint {
             root: B256::repeat_byte(0xbb),
             slot: 5,
@@ -3854,10 +3899,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         let checkpoint = Checkpoint {
             root: B256::repeat_byte(0xaa),
             slot: 1,
@@ -3908,10 +3954,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
 
         let peer_id = PeerId::random();
         service.network_state.upsert_peer(
@@ -3958,10 +4005,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
 
         let peer_id = PeerId::random();
@@ -4020,10 +4068,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Syncing;
 
         assert!(service.has_orphaned_pending_blocks().await);
@@ -4065,10 +4114,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
 
         assert!(service.has_orphaned_pending_blocks().await);
@@ -4088,10 +4138,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
         service.telemetry.inflight_roots.insert(
             B256::repeat_byte(0xaa),
@@ -4139,10 +4190,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         let mut previous_queue = JobQueue::new(bad_root, 1, 1);
         previous_queue.is_complete = true;
         service.sync_status = SyncStatus::Syncing;
@@ -4216,10 +4268,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         let mut previous_queue = JobQueue::new(bad_root, 1, 1);
         previous_queue.is_complete = true;
         service.sync_status = SyncStatus::Syncing;
@@ -4281,10 +4334,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.dropped_backfill_roots.insert(pending_root);
 
         let advanced = service
@@ -4335,10 +4389,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service
             .dropped_backfill_roots
             .insert(suppressed_parent_root);
@@ -4418,10 +4473,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
 
         let mut queue = JobQueue::new(last_root, 4, 4);
         queue.add_job(JobRequest::new(PeerId::random(), last_root));
@@ -4490,7 +4546,8 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
 
         let mut queue = JobQueue::new(last_root, 4, 4);
         queue.add_job(JobRequest::new(PeerId::random(), last_root));
@@ -4555,10 +4612,10 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let service = LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
 
         assert!(service.has_orphaned_pending_blocks().await);
         service.prune_stale_pending_blocks().await.unwrap();
@@ -4591,7 +4648,8 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (writer, _reader) = Writer::new(target_store);
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.sync_status = SyncStatus::Synced;
 
         service.handle_process_block(&signed_block).await.unwrap();
@@ -4616,10 +4674,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
 
         let peer_id = PeerId::random();
         service.network_state.upsert_peer(
@@ -4678,10 +4737,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         let peer_old = PeerId::random();
         let peer_new = PeerId::random();
 
@@ -4751,10 +4811,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.backfill_recovery_attempts.insert(root, 3);
         service.quarantined_backfill_roots.insert(
             root,
@@ -4784,10 +4845,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         let root = B256::repeat_byte(0xaa);
         let mut previous_queue = JobQueue::new(root, 1, 1);
         previous_queue.is_complete = true;
@@ -4852,10 +4914,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (_chain_sender, chain_receiver) = mpsc::unbounded_channel();
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         service.backfill_state.add_new_job_queue(
             Checkpoint {
                 root: pending_root,
@@ -4905,10 +4968,11 @@ complete(start=60, fetched_through=57, jobs=0)"
         let (p2p_sender, _p2p_receiver) = mpsc::unbounded_channel::<LeanP2PRequest>();
 
         #[cfg(feature = "devnet4")]
-        let mut service = LeanChainService::new(writer, chain_receiver, p2p_sender, false).await;
+        let mut service =
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         #[cfg(feature = "devnet5")]
         let mut service =
-            LeanChainService::new(writer, chain_receiver, p2p_sender, false, false).await;
+            LeanChainService::new(writer, chain_receiver, p2p_sender, role(false)).await;
         let old_peer = PeerId::random();
         let new_peer = PeerId::random();
         service.backfill_state.add_new_job_queue(

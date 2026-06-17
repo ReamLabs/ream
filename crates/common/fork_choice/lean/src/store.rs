@@ -138,11 +138,7 @@ impl Store {
 
         Ok(Store {
             store: Arc::new(Mutex::new(db)),
-            network_state: Arc::new(NetworkState::new(
-                anchor_checkpoint,
-                anchor_checkpoint,
-                false,
-            )),
+            network_state: Arc::new(NetworkState::new(anchor_checkpoint, anchor_checkpoint)),
             tick_interval_duration: None,
         })
     }

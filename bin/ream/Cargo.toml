@@ -84,6 +84,7 @@ ream-keystore.workspace = true
 ream-metrics.workspace = true
 ream-network-manager.workspace = true
 ream-network-spec.workspace = true
+ream-network-state-lean.workspace = true
 ream-node.workspace = true
 ream-operation-pool.workspace = true
 ream-p2p.workspace = true

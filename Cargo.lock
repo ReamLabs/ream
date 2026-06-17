@@ -6075,6 +6075,7 @@ dependencies = [
  "ream-metrics",
  "ream-network-manager",
  "ream-network-spec",
+ "ream-network-state-lean",
  "ream-node",
  "ream-operation-pool",
  "ream-p2p",

@@ -1,6 +1,13 @@
 pub mod cached_peer;
 
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Instant,
+};
 
 use libp2p::{Multiaddr, PeerId};
 use parking_lot::{Mutex, RwLock};
@@ -14,20 +21,14 @@ pub struct NetworkState {
     pub peer_table: Arc<Mutex<HashMap<PeerId, CachedPeer>>>,
     pub head_checkpoint: RwLock<Checkpoint>,
     pub finalized_checkpoint: RwLock<Checkpoint>,
-    pub is_aggregator: Mutex<bool>,
 }
 
 impl NetworkState {
-    pub fn new(
-        head_checkpoint: Checkpoint,
-        finalized_checkpoint: Checkpoint,
-        is_aggregator: bool,
-    ) -> Self {
+    pub fn new(head_checkpoint: Checkpoint, finalized_checkpoint: Checkpoint) -> Self {
         Self {
             peer_table: Arc::new(Mutex::new(HashMap::new())),
             head_checkpoint: RwLock::new(head_checkpoint),
             finalized_checkpoint: RwLock::new(finalized_checkpoint),
-            is_aggregator: Mutex::new(is_aggregator),
         }
     }
 
@@ -230,6 +231,27 @@ impl NetworkState {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct AggregatorState {
+    enabled: Arc<AtomicBool>,
+}
+
+impl AggregatorState {
+    pub fn new(enabled: bool) -> Self {
+        Self {
+            enabled: Arc::new(AtomicBool::new(enabled)),
+        }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
+    }
+
+    pub fn set_enabled(&self, enabled: bool) -> bool {
+        self.enabled.swap(enabled, Ordering::SeqCst)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use libp2p::PeerId;
@@ -247,7 +269,7 @@ mod tests {
 
     #[test]
     fn common_highest_checkpoint_returns_none_for_singleton_outlier_tie() {
-        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0), false);
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
         let peer_a = PeerId::random();
         let peer_b = PeerId::random();
 
@@ -272,7 +294,7 @@ mod tests {
 
     #[test]
     fn common_highest_checkpoint_prefers_agreed_checkpoint_over_outlier() {
-        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0), false);
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
         let peer_a = PeerId::random();
         let peer_b = PeerId::random();
         let peer_c = PeerId::random();
@@ -301,7 +323,7 @@ mod tests {
 
     #[test]
     fn connected_peer_queries_filter_by_head_checkpoint_and_slot() {
-        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0), false);
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
         let peer_a = PeerId::random();
         let peer_b = PeerId::random();
         let peer_c = PeerId::random();
@@ -334,7 +356,7 @@ mod tests {
 
     #[test]
     fn preferred_highest_checkpoint_uses_small_devnet_fallback_for_two_peer_split() {
-        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0), false);
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
         let peer_a = PeerId::random();
         let peer_b = PeerId::random();
         let shared_finalized = checkpoint(0x20, 10);
@@ -362,7 +384,7 @@ mod tests {
 
     #[test]
     fn preferred_highest_checkpoint_falls_back_to_highest_scored_peer_when_finalized_split() {
-        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0), false);
+        let network_state = NetworkState::new(checkpoint(0x01, 0), checkpoint(0x01, 0));
         let peer_a = PeerId::random();
         let peer_b = PeerId::random();
         let peer_a_head = checkpoint(0x30, 40);
