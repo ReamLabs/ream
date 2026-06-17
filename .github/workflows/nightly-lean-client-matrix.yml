@@ -166,7 +166,7 @@ jobs:
           node_binary="$ream_binary_path --data-dir $dataDir/$item \
                   lean_node \
                   --network $configDir/config.yaml \
-                  --validator-registry-path $configDir/validators.yaml \
+                  --validator-registry-path $configDir/annotated_validators.yaml \
                   --bootnodes $configDir/nodes.yaml \
                   --node-id $item --node-key $configDir/$privKeyPath \
                   --socket-port $quicPort \
@@ -181,7 +181,7 @@ jobs:
           node_docker="${REAM_DOCKER_IMAGE:-ghcr.io/reamlabs/ream:latest-devnet4} --data-dir /data \
                   lean_node \
                   --network /config/config.yaml \
-                  --validator-registry-path /config/validators.yaml \
+                  --validator-registry-path /config/annotated_validators.yaml \
                   --bootnodes /config/nodes.yaml \
                   --node-id $item --node-key /config/$privKeyPath \
                   --socket-port $quicPort \
@@ -467,7 +467,12 @@ jobs:
           binary_path="${ETHLAMBDA_BINARY_PATH:-$scriptDir/ethlambda/build/ethlambda}"
 
           node_binary="$binary_path \
-            --custom-network-config-dir $configDir \
+            --genesis $configDir/config.yaml \
+            --validators $configDir/annotated_validators.yaml \
+            --bootnodes $configDir/nodes.yaml \
+            --validator-config $configDir/validator-config.yaml \
+            --hash-sig-keys-dir $configDir/hash-sig-keys \
+            --data-dir $dataDir/$item \
             --gossipsub-port $quicPort \
             --node-id $item \
             --node-key $configDir/$item.key \
@@ -479,7 +484,12 @@ jobs:
             $checkpoint_sync_flag"
 
           node_docker="${ETHLAMBDA_DOCKER_IMAGE:-ghcr.io/lambdaclass/ethlambda:devnet4} \
-            --custom-network-config-dir /config \
+            --genesis /config/config.yaml \
+            --validators /config/annotated_validators.yaml \
+            --bootnodes /config/nodes.yaml \
+            --validator-config /config/validator-config.yaml \
+            --hash-sig-keys-dir /config/hash-sig-keys \
+            --data-dir /data \
             --gossipsub-port $quicPort \
             --node-id $item \
             --node-key /config/$item.key \

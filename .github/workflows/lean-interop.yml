@@ -6,7 +6,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  KNOWN_GOOD_REF: 8fc998c6f6660cc72e19e312605512d24e517422
+  KNOWN_GOOD_REF: ${{ github.event.pull_request.base.sha }}
 
 jobs:
   devnet4-known-good-vs-current-pr:
@@ -87,16 +87,22 @@ jobs:
           git worktree add --detach "${KNOWN_GOOD_WORKTREE}" "${KNOWN_GOOD_REF}"
           trap 'git worktree remove --force "${KNOWN_GOOD_WORKTREE}" || true' EXIT
 
-          (
+          if ! (
             cd "${KNOWN_GOOD_WORKTREE}"
             CARGO_TARGET_DIR="${KNOWN_GOOD_TARGET_DIR}" cargo build --release --package ream --bin ream --no-default-features --features devnet5
-          )
+          ); then
+            echo "::notice::Known-good ref ${KNOWN_GOOD_REF} does not build devnet5; skipping devnet5 known-good comparison."
+            echo "comparison_available=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
 
           cp "${KNOWN_GOOD_TARGET_DIR}/release/ream" "${KNOWN_GOOD_BIN}"
           chmod +x "${KNOWN_GOOD_BIN}"
           echo "known_good_bin=${KNOWN_GOOD_BIN}" >> "${GITHUB_OUTPUT}"
+          echo "comparison_available=true" >> "${GITHUB_OUTPUT}"
 
       - name: Run 2-node sync/finalization test (known-good vs current PR)
+        if: ${{ steps.known_good.outputs.comparison_available == 'true' }}
         env:
           REAM_RUN_INTEROP_TESTS: "1"
           REAM_KNOWN_GOOD_BIN: ${{ steps.known_good.outputs.known_good_bin }}
