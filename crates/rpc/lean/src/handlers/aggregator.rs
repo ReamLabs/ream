@@ -120,6 +120,22 @@ mod tests {
             .to_request();
         let response: AggregatorStatus = test::call_and_read_body_json(&app, request).await;
         assert!(response.is_aggregator);
+
+        let request = test::TestRequest::post()
+            .uri("/admin/aggregator")
+            .set_json(ToggleRequest { enabled: false })
+            .to_request();
+
+        let response: ToggleResponse = test::call_and_read_body_json(&app, request).await;
+        assert!(!response.is_aggregator);
+        assert!(response.previous);
+        assert!(!aggregator_state.is_enabled());
+
+        let request = test::TestRequest::get()
+            .uri("/admin/aggregator")
+            .to_request();
+        let response: AggregatorStatus = test::call_and_read_body_json(&app, request).await;
+        assert!(!response.is_aggregator);
     }
 
     #[actix_web::test]
