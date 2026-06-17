@@ -1446,11 +1446,7 @@ mod tests {
             executor.clone(),
             chain_sender,
             outbound_request_receiver,
-            Arc::new(NetworkState::new(
-                Default::default(),
-                Default::default(),
-                false,
-            )),
+            Arc::new(NetworkState::new(Default::default(), Default::default())),
         )
         .await?;
 

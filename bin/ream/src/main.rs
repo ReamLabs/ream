@@ -62,6 +62,7 @@ use ream_network_manager::service::NetworkManagerService;
 use ream_network_spec::networks::{
     beacon_network_spec, lean_network_spec, set_beacon_network_spec, set_lean_network_spec,
 };
+use ream_network_state_lean::AggregatorState;
 use ream_node::version::REAM_VERSION;
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
@@ -78,10 +79,7 @@ use ream_post_quantum_crypto::{
     leansig::{private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey},
 };
 use ream_rpc_common::config::RpcServerConfig;
-use ream_rpc_lean::{
-    aggregator_controller::AggregatorController, handlers::test_driver::test_driver_enabled,
-    server::start_test_driver,
-};
+use ream_rpc_lean::{handlers::test_driver::test_driver_enabled, server::start_test_driver};
 use ream_storage::{
     cache::{BeaconCacheDB, LeanCacheDB},
     db::{ReamDB, reset_db},
@@ -327,7 +325,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     let test_driver_enabled = test_driver_enabled();
     let network_state = lean_chain_reader.read().await.network_state.clone();
 
-    let aggregator_controller = Arc::new(AggregatorController::new(network_state.clone()));
+    let aggregator_state = Arc::new(AggregatorState::new(config.is_aggregator));
 
     if test_driver_enabled {
         let server_config = RpcServerConfig::new(
@@ -340,7 +338,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             lean_chain_reader,
             lean_chain_writer,
             network_state,
-            aggregator_controller,
+            aggregator_state,
         )
         .await
         .expect("Lean test-driver RPC service stopped unexpectedly");
@@ -419,7 +417,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         lean_chain_writer,
         chain_receiver,
         outbound_p2p_sender,
-        config.is_aggregator,
+        aggregator_state.clone(),
     )
     .await;
 
@@ -448,7 +446,7 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
                     server_config,
                     lean_chain_reader,
                     network_state,
-                    aggregator_controller,
+                    aggregator_state,
                 )
                 .await
             }
