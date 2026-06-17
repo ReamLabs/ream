@@ -401,20 +401,41 @@ impl Store {
 
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
-        let (latest_justified_provider, head_provider, latest_known_aggregated_payloads_provider) = {
+        let (
+            latest_justified_provider,
+            latest_finalized_provider,
+            head_provider,
+            block_provider,
+            state_provider,
+            latest_known_aggregated_payloads_provider,
+            attestation_data_by_root_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.latest_justified_provider(),
+                db.latest_finalized_provider(),
                 db.head_provider(),
+                db.block_provider(),
+                db.state_provider(),
                 db.latest_known_aggregated_payloads_provider(),
+                db.attestation_data_by_root_provider(),
             )
         };
 
+        let latest_finalized_checkpoint = latest_finalized_provider.get()?;
+        let finalized_slot = latest_finalized_checkpoint.slot;
+
         let attestations = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
+            let mut all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> = HashMap::new();
 
-            let all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> =
-                entries.into_iter().collect();
+            for (key, proofs) in entries {
+                if let Some(data) = attestation_data_by_root_provider.get(key.data_root)?
+                    && data.head.slot > finalized_slot
+                {
+                    all_payloads.insert(key, proofs);
+                }
+            }
 
             self.extract_attestations_from_aggregated_payloads(&all_payloads)
                 .await?
@@ -434,6 +455,32 @@ impl Store {
             )
             .await?;
 
+        let post_state = state_provider
+            .get(new_head)?
+            .ok_or(anyhow!("State not found"))?;
+        let target_finalized_slot = post_state.latest_finalized.slot;
+        let mut finalized_root = new_head;
+
+        while let Some(block) = block_provider.get(finalized_root)? {
+            if block.block.slot <= target_finalized_slot {
+                break;
+            }
+            finalized_root = block.block.parent_root;
+        }
+
+        let final_finalized_checkpoint = if block_provider
+            .get(finalized_root)?
+            .map(|block| block.block.slot)
+            == Some(target_finalized_slot)
+        {
+            Checkpoint {
+                root: finalized_root,
+                slot: target_finalized_slot,
+            }
+        } else {
+            latest_finalized_checkpoint
+        };
+
         set_int_gauge_vec(&HEAD_SLOT, new_head_slot as i64, &[]);
         *self.network_state.head_checkpoint.write() = Checkpoint {
             root: new_head,
@@ -441,6 +488,7 @@ impl Store {
         };
 
         head_provider.insert(new_head)?;
+        latest_finalized_provider.insert(final_finalized_checkpoint)?;
 
         Ok(())
     }
@@ -1089,10 +1137,7 @@ impl Store {
         let signatures_list = VariableList::new(proofs)
             .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
 
-        let finalized_advanced =
-            post_state.latest_finalized.slot > latest_finalized_provider.get()?.slot;
-
-        if finalized_advanced {
+        if post_state.latest_finalized.slot > latest_finalized_provider.get()?.slot {
             self.prune_stale_attestation_data().await?;
         }
 
