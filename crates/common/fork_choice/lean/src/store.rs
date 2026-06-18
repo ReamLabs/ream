@@ -29,16 +29,16 @@ use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL,
     ATTESTATIONS_VALID_TOTAL, BLOCK_AGGREGATED_PAYLOADS, BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME,
     BLOCK_BUILDING_SUCCESS_TOTAL, BLOCK_BUILDING_TIME, COMMITTEE_SIGNATURES_AGGREGATION_TIME,
-    FINALIZATIONS_TOTAL, FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, GOSSIP_SIGNATURES,
-    HEAD_SLOT, JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT,
-    LATEST_KNOWN_AGGREGATED_PAYLOADS, LATEST_NEW_AGGREGATED_PAYLOADS,
-    LEAN_TICK_INTERVAL_DURATION_SECONDS, PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME,
-    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_TOTAL,
-    PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME,
-    PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL,
-    PQ_SIG_ATTESTATION_VERIFICATION_TIME, PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL,
-    PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT, inc_int_counter_vec, inc_int_counter_vec_by,
-    observe_histogram_vec, set_int_gauge_vec, start_timer, stop_timer,
+    FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, GOSSIP_SIGNATURES, HEAD_SLOT,
+    JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS,
+    LATEST_NEW_AGGREGATED_PAYLOADS, LEAN_TICK_INTERVAL_DURATION_SECONDS,
+    PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
+    PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, PQ_SIG_ATTESTATION_VERIFICATION_TIME,
+    PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
+    inc_int_counter_vec, inc_int_counter_vec_by, observe_histogram_vec, set_int_gauge_vec,
+    start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -401,20 +401,40 @@ impl Store {
 
     /// Done upon processing new attestations or a new block
     pub async fn update_head(&self) -> anyhow::Result<()> {
-        let (latest_justified_provider, head_provider, latest_known_aggregated_payloads_provider) = {
+        let (
+            latest_justified_provider,
+            latest_finalized_provider,
+            head_provider,
+            block_provider,
+            state_provider,
+            latest_known_aggregated_payloads_provider,
+            attestation_data_by_root_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.latest_justified_provider(),
+                db.latest_finalized_provider(),
                 db.head_provider(),
+                db.block_provider(),
+                db.state_provider(),
                 db.latest_known_aggregated_payloads_provider(),
+                db.attestation_data_by_root_provider(),
             )
         };
 
+        let latest_finalized_checkpoint = latest_finalized_provider.get()?;
+        let finalized_slot = latest_finalized_checkpoint.slot;
         let attestations = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
+            let mut all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> = HashMap::new();
 
-            let all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> =
-                entries.into_iter().collect();
+            for (key, proofs) in entries {
+                if let Some(data) = attestation_data_by_root_provider.get(key.data_root)?
+                    && data.head.slot > finalized_slot
+                {
+                    all_payloads.insert(key, proofs);
+                }
+            }
 
             self.extract_attestations_from_aggregated_payloads(&all_payloads)
                 .await?
@@ -434,13 +454,48 @@ impl Store {
             )
             .await?;
 
+        let target_finalized_slot = state_provider
+            .get(new_head)?
+            .ok_or(anyhow!("State not found"))?
+            .latest_finalized
+            .slot;
+        let mut finalized_root = new_head;
+
+        while let Some(block) = block_provider.get(finalized_root)? {
+            if block.block.slot <= target_finalized_slot {
+                break;
+            }
+            finalized_root = block.block.parent_root;
+        }
+
+        let final_finalized_checkpoint = if block_provider
+            .get(finalized_root)?
+            .map(|block| block.block.slot)
+            == Some(target_finalized_slot)
+        {
+            Checkpoint {
+                root: finalized_root,
+                slot: target_finalized_slot,
+            }
+        } else {
+            latest_finalized_checkpoint
+        };
+
         set_int_gauge_vec(&HEAD_SLOT, new_head_slot as i64, &[]);
+        set_int_gauge_vec(&FINALIZED_SLOT, final_finalized_checkpoint.slot as i64, &[]);
+        set_int_gauge_vec(
+            &LATEST_FINALIZED_SLOT,
+            final_finalized_checkpoint.slot as i64,
+            &[],
+        );
         *self.network_state.head_checkpoint.write() = Checkpoint {
             root: new_head,
             slot: new_head_slot,
         };
+        *self.network_state.finalized_checkpoint.write() = final_finalized_checkpoint;
 
         head_provider.insert(new_head)?;
+        latest_finalized_provider.insert(final_finalized_checkpoint)?;
 
         Ok(())
     }
@@ -1006,12 +1061,11 @@ impl Store {
         slot: u64,
         validator_index: u64,
     ) -> anyhow::Result<BlockWithSignatures> {
-        let (state_provider, latest_known_aggregated_payloads_provider, latest_finalized_provider) = {
+        let (state_provider, latest_known_aggregated_payloads_provider) = {
             let db = self.store.lock().await;
             (
                 db.state_provider(),
                 db.latest_known_aggregated_payloads_provider(),
-                db.latest_finalized_provider(),
             )
         };
 
@@ -1089,13 +1143,6 @@ impl Store {
         let signatures_list = VariableList::new(proofs)
             .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
 
-        let finalized_advanced =
-            post_state.latest_finalized.slot > latest_finalized_provider.get()?.slot;
-
-        if finalized_advanced {
-            self.prune_stale_attestation_data().await?;
-        }
-
         stop_timer(building_timer);
         inc_int_counter_vec(&BLOCK_BUILDING_SUCCESS_TOTAL, &[]);
 
@@ -1118,7 +1165,6 @@ impl Store {
         let state_provider = db.state_provider();
         let block_provider = db.block_provider();
         let latest_justified_provider = db.latest_justified_provider();
-        let latest_finalized_provider = db.latest_finalized_provider();
         let attestation_data_by_root_provider = db.attestation_data_by_root_provider();
         #[cfg(feature = "devnet4")]
         let latest_known_aggregated_payloads_provider =
@@ -1150,25 +1196,11 @@ impl Store {
             latest_justified_provider.get()?
         };
 
-        let finalized_advanced = parent_state.latest_finalized.slot
-            > latest_finalized_provider.get()?.slot
-            && block_provider.contains_key(parent_state.latest_finalized.root);
-        let latest_finalized = if finalized_advanced {
-            inc_int_counter_vec(&FINALIZATIONS_TOTAL, &["success"]);
-            parent_state.latest_finalized
-        } else {
-            latest_finalized_provider.get()?
-        };
-
         set_int_gauge_vec(&JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
-        set_int_gauge_vec(&FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
         set_int_gauge_vec(&LATEST_JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
-        set_int_gauge_vec(&LATEST_FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
         block_provider.insert(block_root, signed_block.clone())?;
         state_provider.insert(block_root, parent_state)?;
         latest_justified_provider.insert(latest_justified)?;
-        latest_finalized_provider.insert(latest_finalized)?;
-        *self.network_state.finalized_checkpoint.write() = latest_finalized;
         let aggregated_attestations = &block.body.attestations;
 
         let mut seen_attestation_data = HashSet::with_capacity(aggregated_attestations.len());
@@ -1227,10 +1259,6 @@ impl Store {
         }
 
         self.update_head().await?;
-
-        if finalized_advanced {
-            self.prune_stale_attestation_data().await?;
-        }
 
         stop_timer(block_processing_timer);
         Ok(())
