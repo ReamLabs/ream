@@ -115,6 +115,8 @@ mod tests {
         web::{self, Data},
     };
     use alloy_primitives::B256;
+    #[cfg(feature = "devnet5")]
+    use ream_consensus_lean::attestation::MultiMessageAggregate;
     #[cfg(feature = "devnet4")]
     use ream_consensus_lean::block::BlockSignatures;
     use ream_consensus_lean::{
@@ -512,7 +514,9 @@ mod tests {
                 proposer_signature: Signature::blank(),
             },
             #[cfg(feature = "devnet5")]
-            proof: VariableList::<u8, U524288>::default(),
+            proof: MultiMessageAggregate {
+                proof: VariableList::<u8, U524288>::default(),
+            },
         }
     }
 
