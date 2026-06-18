@@ -492,6 +492,7 @@ impl Store {
             root: new_head,
             slot: new_head_slot,
         };
+        *self.network_state.finalized_checkpoint.write() = final_finalized_checkpoint;
 
         head_provider.insert(new_head)?;
         latest_finalized_provider.insert(final_finalized_checkpoint)?;
