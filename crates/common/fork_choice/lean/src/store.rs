@@ -1194,7 +1194,7 @@ impl Store {
 
         set_int_gauge_vec(&JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
         set_int_gauge_vec(&LATEST_JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
-        block_provider.insert(block_root, signed_block.clone())?;
+        block_provider.insert_ref(block_root, signed_block)?;
         state_provider.insert(block_root, parent_state)?;
         latest_justified_provider.insert(latest_justified)?;
         let aggregated_attestations = &block.body.attestations;
