@@ -380,12 +380,13 @@ impl Store {
         let latest_justified_root = latest_justified_provider.get()?.root;
 
         let attestations = {
-            let new_payloads = latest_new_aggregated_payloads_provider
+            let new_payload_keys = latest_new_aggregated_payloads_provider
                 .iter()?
                 .into_iter()
-                .collect();
+                .map(|(signature_key, _proofs)| signature_key)
+                .collect::<Vec<_>>();
 
-            self.extract_attestations_from_aggregated_payloads(&new_payloads)
+            self.extract_attestations_from_aggregated_payloads(&new_payload_keys)
                 .await?
         };
 
@@ -463,7 +464,7 @@ impl Store {
 
         set_int_gauge_vec(
             &LATEST_KNOWN_AGGREGATED_PAYLOADS,
-            latest_known_aggregated_payloads_provider.iter()?.len() as i64,
+            latest_known_aggregated_payloads_provider.entry_count()? as i64,
             &[],
         );
 
@@ -560,18 +561,16 @@ impl Store {
         let latest_finalized_checkpoint = latest_finalized_provider.get()?;
         let finalized_slot = latest_finalized_checkpoint.slot;
         let attestations = {
-            let entries = latest_known_aggregated_payloads_provider.iter()?;
-            let mut all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> = HashMap::new();
-
-            for (key, proofs) in entries {
+            let mut relevant_keys = Vec::new();
+            for key in latest_known_aggregated_payloads_provider.iter_keys()? {
                 if let Some(data) = attestation_data_by_root_provider.get(key.data_root)?
                     && data.head.slot > finalized_slot
                 {
-                    all_payloads.insert(key, proofs);
+                    relevant_keys.push(key);
                 }
             }
 
-            self.extract_attestations_from_aggregated_payloads(&all_payloads)
+            self.extract_attestations_from_aggregated_payloads(&relevant_keys)
                 .await?
         };
 
@@ -1561,12 +1560,9 @@ impl Store {
             start_timer(&PROPOSE_BLOCK_TIME, &["add_valid_attestations_to_block"]);
 
         let attestation_data_map = {
-            let entries = latest_known_aggregated_payloads_provider.iter()?;
+            let signature_keys = latest_known_aggregated_payloads_provider.iter_keys()?;
 
-            let all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> =
-                entries.into_iter().collect();
-
-            self.extract_attestations_from_aggregated_payloads(&all_payloads)
+            self.extract_attestations_from_aggregated_payloads(&signature_keys)
                 .await?
         };
 
@@ -2021,17 +2017,13 @@ impl Store {
 
     pub async fn extract_attestations_from_aggregated_payloads(
         &self,
-        aggregated_payloads: &HashMap<SignatureKey, Vec<PayloadProof>>,
+        signature_keys: &[SignatureKey],
     ) -> anyhow::Result<HashMap<u64, AttestationData>> {
         let attestation_data_by_root_provider =
             self.store.lock().await.attestation_data_by_root_provider();
-        let mut resolved_attestations = Vec::with_capacity(aggregated_payloads.len());
+        let mut resolved_attestations = Vec::with_capacity(signature_keys.len());
 
-        for (signature_key, proofs) in aggregated_payloads {
-            if proofs.is_empty() {
-                continue;
-            }
-
+        for signature_key in signature_keys {
             let data_root = signature_key.data_root;
             let Some(attestation_data) = attestation_data_by_root_provider.get(data_root)? else {
                 continue;
@@ -2366,13 +2358,10 @@ impl Store {
             )
         };
 
-        let aggregated_payloads = latest_known_aggregated_payloads_provider
-            .iter()?
-            .into_iter()
-            .collect();
+        let signature_keys = latest_known_aggregated_payloads_provider.iter_keys()?;
 
         let attestations = self
-            .extract_attestations_from_aggregated_payloads(&aggregated_payloads)
+            .extract_attestations_from_aggregated_payloads(&signature_keys)
             .await?;
 
         let start_slot = latest_finalized_provider.get()?.slot;

@@ -3,7 +3,9 @@ use std::sync::Arc;
 use ream_consensus_lean::attestation::SignatureKey;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::SingleMessageAggregate as PayloadProof;
-use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
+use redb::{
+    Database, Durability, ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition,
+};
 
 use crate::{
     errors::StoreError,
@@ -71,6 +73,24 @@ impl LeanLatestKnownAggregatedPayloadsTable {
             entries.push((key, value));
         }
         Ok(entries)
+    }
+
+    pub fn iter_keys(&self) -> Result<Vec<SignatureKey>, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+
+        let mut keys = Vec::new();
+        for result in table.iter()? {
+            let (key_guard, _value_guard) = result?;
+            keys.push(key_guard.value());
+        }
+        Ok(keys)
+    }
+
+    pub fn entry_count(&self) -> Result<u64, StoreError> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+        Ok(table.len()?)
     }
 
     pub fn retain<F>(&self, mut f: F) -> Result<(), StoreError>
