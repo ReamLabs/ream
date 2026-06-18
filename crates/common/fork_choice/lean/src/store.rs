@@ -58,7 +58,14 @@ use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::{
     db::lean::LeanDB,
-    tables::{field::REDBField, lean::gossip_signatures::GossipSignaturesTable, table::REDBTable},
+    tables::{
+        field::REDBField,
+        lean::{
+            block::LeanBlockTable, gossip_signatures::GossipSignaturesTable,
+            latest_known_aggregated_payloads::LeanLatestKnownAggregatedPayloadsTable,
+        },
+        table::REDBTable,
+    },
 };
 use ream_sync::rwlock::{Reader, Writer};
 use ssz_types::{BitList, VariableList, typenum::U4096};
@@ -108,6 +115,18 @@ struct AttestationEntryOrderingKey {
     target_slot: u64,
     attestation_slot: u64,
     data_root: B256,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum BlockProductionStrategy {
+    RoundBased,
+}
+
+struct BuildContext {
+    head_state: LeanState,
+    available_signed_attestations: HashMap<u64, SignedAttestation>,
+    block_provider: LeanBlockTable,
+    latest_known_aggregated_payloads_provider: LeanLatestKnownAggregatedPayloadsTable,
 }
 
 /// [Store] represents the state that the Lean node should maintain.
@@ -874,6 +893,49 @@ impl Store {
         parent_root: B256,
         attestations: Option<VariableList<AggregatedAttestations, U4096>>,
     ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
+        self.build_block_with(
+            BlockProductionStrategy::RoundBased,
+            slot,
+            proposer_index,
+            parent_root,
+            attestations,
+        )
+        .await
+    }
+
+    async fn build_block_with(
+        &self,
+        strategy: BlockProductionStrategy,
+        slot: u64,
+        proposer_index: u64,
+        parent_root: B256,
+        attestations: Option<VariableList<AggregatedAttestations, U4096>>,
+    ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
+        let ctx = self.load_build_context(parent_root).await?;
+        let extended_historical_block_hashes =
+            Self::extended_historical_block_hashes(&ctx.head_state, parent_root, slot);
+        let selected_attestations = match strategy {
+            BlockProductionStrategy::RoundBased => Self::select_round_based(
+                &ctx,
+                &extended_historical_block_hashes,
+                attestations,
+                slot,
+                proposer_index,
+                parent_root,
+            )?,
+        };
+
+        self.seal_block(
+            &ctx.head_state,
+            &selected_attestations,
+            slot,
+            proposer_index,
+            parent_root,
+        )
+        .await
+    }
+
+    async fn load_build_context(&self, parent_root: B256) -> anyhow::Result<BuildContext> {
         let (
             state_provider,
             latest_known_attestation_provider,
@@ -894,6 +956,39 @@ impl Store {
         let head_state = state_provider
             .get(parent_root)?
             .ok_or(anyhow!("State not found for head root"))?;
+
+        Ok(BuildContext {
+            head_state,
+            available_signed_attestations,
+            block_provider,
+            latest_known_aggregated_payloads_provider,
+        })
+    }
+
+    fn extended_historical_block_hashes(
+        head_state: &LeanState,
+        parent_root: B256,
+        slot: u64,
+    ) -> Vec<B256> {
+        let num_empty_slots = slot
+            .saturating_sub(head_state.latest_block_header.slot)
+            .saturating_sub(1);
+        let mut extended_historical_block_hashes = head_state.historical_block_hashes.to_vec();
+        extended_historical_block_hashes.push(parent_root);
+        extended_historical_block_hashes.extend(vec![B256::ZERO; num_empty_slots as usize]);
+
+        extended_historical_block_hashes
+    }
+
+    fn select_round_based(
+        ctx: &BuildContext,
+        extended_historical_block_hashes: &[B256],
+        attestations: Option<VariableList<AggregatedAttestations, U4096>>,
+        slot: u64,
+        proposer_index: u64,
+        parent_root: B256,
+    ) -> anyhow::Result<Vec<AggregatedAttestations>> {
+        let head_state = &ctx.head_state;
         let mut attestations: VariableList<AggregatedAttestations, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
 
@@ -909,16 +1004,9 @@ impl Store {
 
         let mut current_justified_slots = head_state.justified_slots.clone();
 
-        let num_empty_slots = slot
-            .saturating_sub(head_state.latest_block_header.slot)
-            .saturating_sub(1);
-        let mut extended_historical_block_hashes = head_state.historical_block_hashes.to_vec();
-        extended_historical_block_hashes.push(parent_root);
-        extended_historical_block_hashes.extend(vec![B256::ZERO; num_empty_slots as usize]);
-
         let mut processed_attestation_data: HashSet<AttestationData> = HashSet::new();
 
-        let mut sorted_candidates: Vec<_> = available_signed_attestations.values().collect();
+        let mut sorted_candidates: Vec<_> = ctx.available_signed_attestations.values().collect();
         sorted_candidates.sort_by_key(|signed_attestation| signed_attestation.message.target.slot);
 
         let select_start = Instant::now();
@@ -937,12 +1025,12 @@ impl Store {
                     break;
                 }
 
-                if !block_provider.contains_key(data.head.root) {
+                if !ctx.block_provider.contains_key(data.head.root) {
                     continue;
                 }
 
                 if !(attestation_data_matches_chain(
-                    &extended_historical_block_hashes,
+                    extended_historical_block_hashes,
                     data.clone(),
                 )?) {
                     continue;
@@ -994,8 +1082,9 @@ impl Store {
 
                 let data_root = data.tree_hash_root();
                 let signature_key = SignatureKey::from_parts(validator_id, data_root);
-                let has_proof =
-                    latest_known_aggregated_payloads_provider.contains_key(&signature_key);
+                let has_proof = ctx
+                    .latest_known_aggregated_payloads_provider
+                    .contains_key(&signature_key);
 
                 if has_proof {
                     new_attestations
@@ -1078,12 +1167,22 @@ impl Store {
         }
         observe_block_proposal_phase("stf_simulate", total_stf_duration);
         observe_block_proposal_phase("select_payloads", select_start.elapsed());
-        let attestations_vec: Vec<_> = attestations.to_vec();
 
+        Ok(attestations.to_vec())
+    }
+
+    async fn seal_block(
+        &self,
+        head_state: &LeanState,
+        attestations: &[AggregatedAttestations],
+        slot: u64,
+        proposer_index: u64,
+        parent_root: B256,
+    ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
         let payload_aggregation_timer = start_timer(&BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME, &[]);
         let aggregator_start = Instant::now();
         let (aggregated_attestations, aggregated_proofs) =
-            self.select_aggregated_proofs(&attestations_vec).await?;
+            self.select_aggregated_proofs(attestations).await?;
 
         let (aggregated_attestations, aggregated_proofs) = compact_aggregated_proofs(
             aggregated_attestations,
