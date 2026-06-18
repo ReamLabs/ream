@@ -68,6 +68,47 @@ impl REDBTable for LeanBlockTable {
     }
 
     fn insert(&self, key: Self::Key, value: Self::Value) -> Result<(), StoreError> {
+        self.insert_ref(key, &value)
+    }
+
+    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
+        if let Some(cache) = &self.cache
+            && let Ok(mut cache_lock) = cache.blocks.lock()
+        {
+            cache_lock.pop(&key);
+        }
+
+        let write_txn = self.db.begin_write()?;
+        let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
+        let value = table.remove(key)?.map(|v| v.value());
+        if let Some(block) = &value {
+            let slot_index_table = LeanSlotIndexTable {
+                db: self.db.clone(),
+            };
+            slot_index_table.remove(block.block.slot)?;
+            let state_root_index_table = LeanStateRootIndexTable {
+                db: self.db.clone(),
+            };
+
+            state_root_index_table.remove(block.block.state_root)?;
+
+            let children_index_table = LeanChildrenIndexTable {
+                db: self.db.clone(),
+            };
+            children_index_table.remove(key)?;
+        }
+        drop(table);
+        write_txn.commit()?;
+        Ok(value)
+    }
+}
+
+impl LeanBlockTable {
+    pub fn contains_key(&self, key: B256) -> bool {
+        matches!(self.get(key), Ok(Some(_)))
+    }
+
+    pub fn insert_ref(&self, key: B256, value: &SignedBlock) -> Result<(), StoreError> {
         // insert entry to slot_index table
         let block_root = value.block.tree_hash_root();
         let slot_index_table = LeanSlotIndexTable {
@@ -109,43 +150,6 @@ impl REDBTable for LeanBlockTable {
         drop(table);
         write_txn.commit()?;
         Ok(())
-    }
-
-    fn remove(&self, key: Self::Key) -> Result<Option<Self::Value>, StoreError> {
-        if let Some(cache) = &self.cache
-            && let Ok(mut cache_lock) = cache.blocks.lock()
-        {
-            cache_lock.pop(&key);
-        }
-
-        let write_txn = self.db.begin_write()?;
-        let mut table = write_txn.open_table(Self::TABLE_DEFINITION)?;
-        let value = table.remove(key)?.map(|v| v.value());
-        if let Some(block) = &value {
-            let slot_index_table = LeanSlotIndexTable {
-                db: self.db.clone(),
-            };
-            slot_index_table.remove(block.block.slot)?;
-            let state_root_index_table = LeanStateRootIndexTable {
-                db: self.db.clone(),
-            };
-
-            state_root_index_table.remove(block.block.state_root)?;
-
-            let children_index_table = LeanChildrenIndexTable {
-                db: self.db.clone(),
-            };
-            children_index_table.remove(key)?;
-        }
-        drop(table);
-        write_txn.commit()?;
-        Ok(value)
-    }
-}
-
-impl LeanBlockTable {
-    pub fn contains_key(&self, key: B256) -> bool {
-        matches!(self.get(key), Ok(Some(_)))
     }
 
     /// Build the `parent_root -> children` adjacency map used by LMD GHOST.
