@@ -29,15 +29,16 @@ use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL,
     ATTESTATIONS_VALID_TOTAL, BLOCK_AGGREGATED_PAYLOADS, BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME,
     BLOCK_BUILDING_SUCCESS_TOTAL, BLOCK_BUILDING_TIME, COMMITTEE_SIGNATURES_AGGREGATION_TIME,
-    FORK_CHOICE_BLOCK_PROCESSING_TIME, GOSSIP_SIGNATURES, HEAD_SLOT, JUSTIFIED_SLOT,
-    LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS, LATEST_NEW_AGGREGATED_PAYLOADS,
-    LEAN_TICK_INTERVAL_DURATION_SECONDS, PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME,
-    PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_TOTAL,
-    PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME,
-    PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL,
-    PQ_SIG_ATTESTATION_VERIFICATION_TIME, PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL,
-    PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT, inc_int_counter_vec, inc_int_counter_vec_by,
-    observe_histogram_vec, set_int_gauge_vec, start_timer, stop_timer,
+    FINALIZED_SLOT, FORK_CHOICE_BLOCK_PROCESSING_TIME, GOSSIP_SIGNATURES, HEAD_SLOT,
+    JUSTIFIED_SLOT, LATEST_FINALIZED_SLOT, LATEST_JUSTIFIED_SLOT, LATEST_KNOWN_AGGREGATED_PAYLOADS,
+    LATEST_NEW_AGGREGATED_PAYLOADS, LEAN_TICK_INTERVAL_DURATION_SECONDS,
+    PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL,
+    PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
+    PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, PQ_SIG_ATTESTATION_VERIFICATION_TIME,
+    PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
+    inc_int_counter_vec, inc_int_counter_vec_by, observe_histogram_vec, set_int_gauge_vec,
+    start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -423,7 +424,6 @@ impl Store {
 
         let latest_finalized_checkpoint = latest_finalized_provider.get()?;
         let finalized_slot = latest_finalized_checkpoint.slot;
-
         let attestations = {
             let entries = latest_known_aggregated_payloads_provider.iter()?;
             let mut all_payloads: HashMap<SignatureKey, Vec<PayloadProof>> = HashMap::new();
@@ -454,10 +454,11 @@ impl Store {
             )
             .await?;
 
-        let post_state = state_provider
+        let target_finalized_slot = state_provider
             .get(new_head)?
-            .ok_or(anyhow!("State not found"))?;
-        let target_finalized_slot = post_state.latest_finalized.slot;
+            .ok_or(anyhow!("State not found"))?
+            .latest_finalized
+            .slot;
         let mut finalized_root = new_head;
 
         while let Some(block) = block_provider.get(finalized_root)? {
@@ -481,6 +482,12 @@ impl Store {
         };
 
         set_int_gauge_vec(&HEAD_SLOT, new_head_slot as i64, &[]);
+        set_int_gauge_vec(&FINALIZED_SLOT, final_finalized_checkpoint.slot as i64, &[]);
+        set_int_gauge_vec(
+            &LATEST_FINALIZED_SLOT,
+            final_finalized_checkpoint.slot as i64,
+            &[],
+        );
         *self.network_state.head_checkpoint.write() = Checkpoint {
             root: new_head,
             slot: new_head_slot,
@@ -1053,12 +1060,11 @@ impl Store {
         slot: u64,
         validator_index: u64,
     ) -> anyhow::Result<BlockWithSignatures> {
-        let (state_provider, latest_known_aggregated_payloads_provider, latest_finalized_provider) = {
+        let (state_provider, latest_known_aggregated_payloads_provider) = {
             let db = self.store.lock().await;
             (
                 db.state_provider(),
                 db.latest_known_aggregated_payloads_provider(),
-                db.latest_finalized_provider(),
             )
         };
 
@@ -1135,10 +1141,6 @@ impl Store {
 
         let signatures_list = VariableList::new(proofs)
             .map_err(|err| anyhow!("Failed to return signatures {err:?}"))?;
-
-        if post_state.latest_finalized.slot > latest_finalized_provider.get()?.slot {
-            self.prune_stale_attestation_data().await?;
-        }
 
         stop_timer(building_timer);
         inc_int_counter_vec(&BLOCK_BUILDING_SUCCESS_TOTAL, &[]);
