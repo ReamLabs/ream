@@ -1163,7 +1163,6 @@ impl Store {
         let state_provider = db.state_provider();
         let block_provider = db.block_provider();
         let latest_justified_provider = db.latest_justified_provider();
-        let latest_finalized_provider = db.latest_finalized_provider();
         let attestation_data_by_root_provider = db.attestation_data_by_root_provider();
         #[cfg(feature = "devnet4")]
         let latest_known_aggregated_payloads_provider =
@@ -1195,25 +1194,11 @@ impl Store {
             latest_justified_provider.get()?
         };
 
-        let finalized_advanced = parent_state.latest_finalized.slot
-            > latest_finalized_provider.get()?.slot
-            && block_provider.contains_key(parent_state.latest_finalized.root);
-        let latest_finalized = if finalized_advanced {
-            inc_int_counter_vec(&FINALIZATIONS_TOTAL, &["success"]);
-            parent_state.latest_finalized
-        } else {
-            latest_finalized_provider.get()?
-        };
-
         set_int_gauge_vec(&JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
-        set_int_gauge_vec(&FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
         set_int_gauge_vec(&LATEST_JUSTIFIED_SLOT, latest_justified.slot as i64, &[]);
-        set_int_gauge_vec(&LATEST_FINALIZED_SLOT, latest_finalized.slot as i64, &[]);
         block_provider.insert(block_root, signed_block.clone())?;
         state_provider.insert(block_root, parent_state)?;
         latest_justified_provider.insert(latest_justified)?;
-        latest_finalized_provider.insert(latest_finalized)?;
-        *self.network_state.finalized_checkpoint.write() = latest_finalized;
         let aggregated_attestations = &block.body.attestations;
 
         let mut seen_attestation_data = HashSet::with_capacity(aggregated_attestations.len());
@@ -1272,10 +1257,6 @@ impl Store {
         }
 
         self.update_head().await?;
-
-        if finalized_advanced {
-            self.prune_stale_attestation_data().await?;
-        }
 
         stop_timer(block_processing_timer);
         Ok(())
