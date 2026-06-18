@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use alloy_primitives::B256;
 use anyhow::{Context, anyhow, ensure};
 use itertools::Itertools;
+use ream_consensus_misc::constants::lean::MAX_ATTESTATIONS_DATA;
 use ream_metrics::{
     FINALIZED_SLOT, JUSTIFIED_SLOT, STATE_TRANSITION_ATTESTATIONS_PROCESSED_TOTAL,
     STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME, STATE_TRANSITION_BLOCK_PROCESSING_TIME,
@@ -277,6 +278,17 @@ impl LeanState {
         attestations: &[AggregatedAttestation],
     ) -> anyhow::Result<()> {
         let timer = start_timer(&STATE_TRANSITION_ATTESTATIONS_PROCESSING_TIME, &[]);
+
+        let mut distinct_data_roots = HashSet::new();
+        for attestation in attestations {
+            distinct_data_roots.insert(attestation.message.tree_hash_root());
+        }
+        let distinct_attestation_data = distinct_data_roots.len();
+        ensure!(
+            distinct_attestation_data as u64 <= MAX_ATTESTATIONS_DATA,
+            "Block contains {distinct_attestation_data} distinct AttestationData entries; \
+             maximum is {MAX_ATTESTATIONS_DATA}",
+        );
 
         ensure!(
             !self.justifications_roots.contains(&B256::ZERO),
