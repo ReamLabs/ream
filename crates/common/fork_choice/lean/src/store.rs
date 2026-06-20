@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use alloy_primitives::B256;
@@ -37,8 +37,10 @@ use ream_metrics::{
     PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL,
     PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, PQ_SIG_ATTESTATION_VERIFICATION_TIME,
     PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL, PROPOSE_BLOCK_TIME, SAFE_TARGET_SLOT,
-    inc_int_counter_vec, inc_int_counter_vec_by, observe_histogram_vec, set_int_gauge_vec,
-    start_timer, stop_timer,
+    inc_block_proposal_attestation_builds, inc_block_proposal_child_payloads_consumed,
+    inc_int_counter_vec, inc_int_counter_vec_by, observe_block_proposal_aggregates_selected,
+    observe_block_proposal_attestation_data_selected, observe_block_proposal_phase,
+    observe_histogram_vec, set_int_gauge_vec, start_timer, stop_timer,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::NetworkState;
@@ -860,6 +862,9 @@ impl Store {
         let mut sorted_candidates: Vec<_> = available_signed_attestations.values().collect();
         sorted_candidates.sort_by_key(|signed_attestation| signed_attestation.message.target.slot);
 
+        let select_start = Instant::now();
+        let mut child_payloads_consumed = 0;
+        let mut total_stf_duration = Duration::default();
         loop {
             let mut new_attestations: VariableList<AggregatedAttestations, U4096> =
                 VariableList::empty();
@@ -939,6 +944,7 @@ impl Store {
                         .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
 
                     processed_attestation_data.insert(data.clone());
+                    child_payloads_consumed += 1;
                 }
             }
 
@@ -952,6 +958,7 @@ impl Store {
                     .map_err(|err| anyhow!("Could not append attestation: {err:?}"))?;
             }
 
+            let compact_start = Instant::now();
             let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
             for attestation in attestations.iter() {
                 groups
@@ -982,6 +989,8 @@ impl Store {
             )
             .map_err(|err| anyhow!("Limit exceeded: {err:?}"))?;
 
+            observe_block_proposal_phase("compact", compact_start.elapsed());
+            let stf_start = Instant::now();
             let candidate_block = Block {
                 slot,
                 proposer_index,
@@ -996,6 +1005,8 @@ impl Store {
             advanced_state.process_slots(slot)?;
             advanced_state.process_block(&candidate_block)?;
 
+            total_stf_duration += stf_start.elapsed();
+
             if advanced_state.latest_justified != current_justified
                 || advanced_state.latest_finalized.slot != current_finalized_slot
             {
@@ -1004,13 +1015,14 @@ impl Store {
                 current_justified_slots = advanced_state.justified_slots.clone();
                 continue;
             }
-
             break;
         }
-
+        observe_block_proposal_phase("stf_simulate", total_stf_duration);
+        observe_block_proposal_phase("select_payloads", select_start.elapsed());
         let attestations_vec: Vec<_> = attestations.to_vec();
 
         let payload_aggregation_timer = start_timer(&BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME, &[]);
+        let aggregator_start = Instant::now();
         let (aggregated_attestations, aggregated_proofs) =
             self.select_aggregated_proofs(&attestations_vec).await?;
 
@@ -1019,6 +1031,7 @@ impl Store {
             aggregated_proofs,
             &head_state.validators,
         )?;
+        observe_block_proposal_phase("proof_aggregation", aggregator_start.elapsed());
         stop_timer(payload_aggregation_timer);
         observe_histogram_vec(
             &BLOCK_AGGREGATED_PAYLOADS,
@@ -1042,6 +1055,13 @@ impl Store {
         let mut post_state = head_state.clone();
         post_state.process_slots(slot)?;
         post_state.process_block(&candidate_final_block)?;
+
+        inc_block_proposal_attestation_builds();
+        inc_block_proposal_child_payloads_consumed(child_payloads_consumed);
+        observe_block_proposal_attestation_data_selected(
+            candidate_final_block.body.attestations.len(),
+        );
+        observe_block_proposal_aggregates_selected(aggregated_proofs.len());
 
         Ok((
             Block {
