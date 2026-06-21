@@ -3,7 +3,8 @@ use lean_multisig_type2::{
     MultiMessageAggregateSignature as MultiMessageAggregate,
     SingleMessageAggregateSignature as SingleMessageAggregate, XmssPublicKey, XmssSignature,
     aggregate_single_message_signatures, merge_single_message_aggregates, setup_prover,
-    split_multi_message_aggregate, verify_multi_message_aggregate, verify_single_message_aggregate,
+    setup_verifier, split_multi_message_aggregate, verify_multi_message_aggregate,
+    verify_single_message_aggregate,
 };
 
 use crate::leansig::{public_key::PublicKey, signature::Signature};
@@ -12,6 +13,12 @@ pub const LOG_INV_RATE: usize = 2;
 
 pub fn type_2_setup() {
     setup_prover();
+}
+
+/// Initialize only the aggregation bytecode needed to *verify* aggregates.
+/// Skips the prover-only DFT twiddle precomputation.
+pub fn type_2_setup_verifier() {
+    setup_verifier();
 }
 
 fn to_lib_public_key(public_key: &PublicKey) -> Result<XmssPublicKey> {

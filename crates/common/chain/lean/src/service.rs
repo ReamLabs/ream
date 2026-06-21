@@ -342,7 +342,7 @@ impl LeanChainService {
                         self.sync_status = self.update_sync_status().await?;
                     }
                     if self.sync_status == SyncStatus::Synced {
-                        self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), self.is_aggregator).await.expect("Failed to tick interval");
+                        self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), self.is_aggregator).await?;
                         self.step_head_sync(tick_count).await?;
                     }
 
@@ -653,12 +653,7 @@ impl LeanChainService {
                     tick = tick_count,
                     "Computing safe target"
                 );
-                self.store
-                    .write()
-                    .await
-                    .update_safe_target()
-                    .await
-                    .expect("Failed to update safe target");
+                self.store.write().await.update_safe_target().await?;
             }
             4 => {
                 // Fifth tick: Accept new attestations.
@@ -667,12 +662,7 @@ impl LeanChainService {
                     tick = tick_count,
                     "Accepting new attestations"
                 );
-                self.store
-                    .write()
-                    .await
-                    .accept_new_attestations()
-                    .await
-                    .expect("Failed to accept new attestations");
+                self.store.write().await.accept_new_attestations().await?;
             }
             _ => {
                 // Other ticks: Do nothing.
