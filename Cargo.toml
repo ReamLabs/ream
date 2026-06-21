@@ -57,7 +57,14 @@ exclude = ["book/cli"]
 [workspace.package]
 authors = ["https://github.com/ReamLabs/ream/graphs/contributors"]
 edition = "2024"
-keywords = ["ethereum", "beam-chain", "blockchain", "consensus", "protocol", "ream"]
+keywords = [
+    "ethereum",
+    "beam-chain",
+    "blockchain",
+    "consensus",
+    "protocol",
+    "ream",
+]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/ReamLabs/ream"
@@ -78,7 +85,9 @@ actix-web-lab = "0.24.3"
 aes = "0.8.4"
 alloy-consensus = { version = "1.0.41", default-features = false }
 alloy-primitives = { version = "1.4.1", features = ['serde'] }
-alloy-rlp = { version = "0.3.12", default-features = false, features = ["derive"] }
+alloy-rlp = { version = "0.3.12", default-features = false, features = [
+    "derive",
+] }
 alloy-rpc-types-beacon = "1.0.41"
 alloy-rpc-types-eth = "1.0.41"
 anyhow = "1.0.100"
@@ -103,9 +112,26 @@ jsonwebtoken = "9.3.1"
 kzg = { git = "https://github.com/grandinetech/rust-kzg" }
 lazy_static = "1.5.0"
 lean-multisig = { git = "https://github.com/leanEthereum/leanVM.git", rev = "2498896ca4d32a545a98a1b1cf1ca78f7f13f553" }
-lean-multisig-type2 = { package = "lean-multisig", git = "https://github.com/leanEthereum/leanMultisig.git", rev = "b00d6ba3dc574f915dc40a1796d95972178ac420" }
+lean-multisig-type2 = { package = "lean-multisig", git = "https://github.com/leanEthereum/leanMultisig.git", rev = "e2592df4e30fdddbbf8ae26a333116c68cec7026" }
 leansig = { git = "https://github.com/leanEthereum//leanSig.git", branch = "devnet4" }
-libp2p = { version = "0.56", default-features = false, features = ["identify", "yamux", "noise", "dns", "serde", "tcp", "tokio", "plaintext", "secp256k1", "macros", "ecdsa", "metrics", "quic", "upnp", "gossipsub", "ping"] }
+libp2p = { version = "0.56", default-features = false, features = [
+    "identify",
+    "yamux",
+    "noise",
+    "dns",
+    "serde",
+    "tcp",
+    "tokio",
+    "plaintext",
+    "secp256k1",
+    "macros",
+    "ecdsa",
+    "metrics",
+    "quic",
+    "upnp",
+    "gossipsub",
+    "ping",
+] }
 libp2p-identity = "0.2.12"
 libp2p-mplex = "0.43.1"
 libp2p-swarm = "0.47"
@@ -115,10 +141,13 @@ prometheus_exporter = { git = "https://github.com/AlexanderThaller/prometheus_ex
 rand = "0.9"
 rand_chacha = "0.9"
 redb = "3.1.0"
-reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12.24", default-features = false, features = [
+    "rustls-tls",
+    "json",
+] }
 rstest = "0.26.1"
 rust-kzg-blst = { git = 'https://github.com/grandinetech/rust-kzg.git' }
-rust_eth_kzg = { git = "https://github.com/crate-crypto/rust-eth-kzg.git", tag = "v0.5.4" } 
+rust_eth_kzg = { git = "https://github.com/crate-crypto/rust-eth-kzg.git", tag = "v0.5.4" }
 serde = { version = '1.0', features = ['derive', "rc"] }
 serde_json = "1.0.145"
 serde_yaml = "0.9"
@@ -128,7 +157,14 @@ ssz_types = { git = "https://github.com/sigp/ssz_types.git", rev = "5dc2d521ed31
 tempdir = "0.3.7"
 tempfile = "3.23.0"
 thiserror = "2.0.17"
-tokio = { version = "1.48.0", features = ["rt", "rt-multi-thread", "sync", "signal", "time", "macros"] }
+tokio = { version = "1.48.0", features = [
+    "rt",
+    "rt-multi-thread",
+    "sync",
+    "signal",
+    "time",
+    "macros",
+] }
 tokio-util = { version = "0.7.16", features = ["compat"] }
 tracing = "0.1"
 tracing-subscriber = "0.3.20"
@@ -144,7 +180,9 @@ ream-account-manager = { path = "crates/common/account_manager" }
 ream-api-types-beacon = { path = "crates/common/api_types/beacon" }
 ream-api-types-common = { path = "crates/common/api_types/common" }
 ream-api-types-lean = { path = "crates/common/api_types/lean" }
-ream-bls = { path = "crates/crypto/bls", features = ["zkcrypto"] } # Default feature is zkcrypto
+ream-bls = { path = "crates/crypto/bls", features = [
+    "zkcrypto",
+] } # Default feature is zkcrypto
 ream-chain-beacon = { path = "crates/common/chain/beacon" }
 ream-chain-lean = { path = "crates/common/chain/lean", default-features = false }
 ream-checkpoint-sync-beacon = { path = "crates/common/checkpoint_sync/beacon" }

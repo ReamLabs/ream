@@ -1088,7 +1088,7 @@ dependencies = [
  "mt-symetric 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "mt-whir 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
- "parallel",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "tracing",
  "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
 ]
@@ -1096,19 +1096,20 @@ dependencies = [
 [[package]]
 name = "backend"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "mt-air 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-fiat-shamir 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-koala-bear 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-poly 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-sumcheck 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-symetric 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-whir 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "rayon",
+ "mt-air 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-fiat-shamir 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-koala-bear 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-poly 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-sumcheck 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-symetric 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-whir 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "tracing",
+ "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -3772,7 +3773,7 @@ dependencies = [
  "clap",
  "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "leansig_wrapper 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
- "parallel",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "rand 0.10.0",
  "rec_aggregation 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "serde_json",
@@ -3785,19 +3786,20 @@ dependencies = [
 [[package]]
 name = "lean-multisig"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "clap",
- "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "leansig_wrapper 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "leansig_wrapper 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "libc",
  "rand 0.10.0",
- "rec_aggregation 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "rec_aggregation 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "serde_json",
- "sub_protocols 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "system-info 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "sub_protocols 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "system-info 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -3842,17 +3844,17 @@ dependencies = [
 [[package]]
 name = "lean_compiler"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "include_dir",
- "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "pest",
  "pest_derive",
  "rand 0.10.0",
- "sub_protocols 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "sub_protocols 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "tracing",
- "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -3876,19 +3878,19 @@ dependencies = [
 [[package]]
 name = "lean_prover"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "itertools 0.14.0",
- "lean_compiler 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "lean_compiler 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "pest",
  "pest_derive",
  "rand 0.10.0",
  "serde",
- "sub_protocols 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "sub_protocols 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "tracing",
- "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -3910,17 +3912,17 @@ dependencies = [
 [[package]]
 name = "lean_vm"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "itertools 0.14.0",
- "leansig_wrapper 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "leansig_wrapper 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "pest",
  "pest_derive",
  "rand 0.10.0",
  "serde",
  "tracing",
- "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -3979,9 +3981,9 @@ dependencies = [
 [[package]]
 name = "leansig_wrapper"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "ethereum_ssz",
  "leansig",
  "leansig_fast_keygen",
@@ -4646,10 +4648,10 @@ dependencies = [
 [[package]]
 name = "mt-air"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-poly 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-poly 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -4661,7 +4663,7 @@ dependencies = [
  "mt-koala-bear 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "mt-symetric 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
- "parallel",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "serde",
  "tracing",
 ]
@@ -4669,13 +4671,13 @@ dependencies = [
 [[package]]
 name = "mt-fiat-shamir"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-koala-bear 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-symetric 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "rayon",
+ "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-koala-bear 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-symetric 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "serde",
  "tracing",
 ]
@@ -4688,7 +4690,7 @@ dependencies = [
  "itertools 0.14.0",
  "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "num-bigint",
- "parallel",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "paste",
  "rand 0.10.0",
  "serde",
@@ -4698,14 +4700,14 @@ dependencies = [
 [[package]]
 name = "mt-field"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
  "itertools 0.14.0",
- "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "num-bigint",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "paste",
  "rand 0.10.0",
- "rayon",
  "serde",
  "tracing",
 ]
@@ -4728,15 +4730,14 @@ dependencies = [
 [[package]]
 name = "mt-koala-bear"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
  "itertools 0.14.0",
- "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "num-bigint",
  "paste",
  "rand 0.10.0",
- "rayon",
  "serde",
  "tracing",
 ]
@@ -4749,7 +4750,7 @@ dependencies = [
  "itertools 0.14.0",
  "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
- "parallel",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "rand 0.10.0",
  "serde",
  "system-info 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
@@ -4759,15 +4760,16 @@ dependencies = [
 [[package]]
 name = "mt-poly"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
  "itertools 0.14.0",
- "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "rand 0.10.0",
- "rayon",
  "serde",
- "system-info 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "system-info 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -4779,7 +4781,7 @@ dependencies = [
  "mt-fiat-shamir 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "mt-poly 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
- "parallel",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "tracing",
  "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
 ]
@@ -4787,14 +4789,15 @@ dependencies = [
 [[package]]
 name = "mt-sumcheck"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "mt-air 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-fiat-shamir 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-poly 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "rayon",
+ "mt-air 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-fiat-shamir 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-poly 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "tracing",
+ "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -4804,18 +4807,19 @@ source = "git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a9
 dependencies = [
  "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "mt-koala-bear 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
- "parallel",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
 ]
 
 [[package]]
 name = "mt-symetric"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-koala-bear 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "rayon",
+ "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-koala-bear 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -4829,7 +4833,7 @@ dependencies = [
 [[package]]
 name = "mt-utils"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
  "serde",
 ]
@@ -4847,7 +4851,7 @@ dependencies = [
  "mt-sumcheck 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "mt-symetric 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
- "parallel",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "rand 0.10.0",
  "system-info 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "tracing",
@@ -4857,20 +4861,21 @@ dependencies = [
 [[package]]
 name = "mt-whir"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
  "itertools 0.14.0",
- "mt-fiat-shamir 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-koala-bear 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-poly 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-sumcheck 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-symetric 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "mt-fiat-shamir 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-field 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-koala-bear 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-poly 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-sumcheck 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-symetric 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "mt-utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "rand 0.10.0",
- "rayon",
- "system-info 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "system-info 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "tracing",
+ "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -5345,6 +5350,14 @@ version = "0.1.0"
 source = "git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553#2498896ca4d32a545a98a1b1cf1ca78f7f13f553"
 dependencies = [
  "system-info 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
+]
+
+[[package]]
+name = "parallel"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
+dependencies = [
+ "system-info 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -6734,7 +6747,7 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "lean-multisig 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
- "lean-multisig 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "lean-multisig 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "leansig",
  "rand 0.10.0",
  "serde",
@@ -7053,14 +7066,14 @@ dependencies = [
 [[package]]
 name = "rec_aggregation"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "include_dir",
- "lean_compiler 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "lean_prover 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "leansig_wrapper 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "lean_compiler 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "lean_prover 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "leansig_wrapper 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "lz4_flex",
  "objc2",
  "objc2-foundation",
@@ -7068,10 +7081,10 @@ dependencies = [
  "rand 0.10.0",
  "serde",
  "sha3 0.11.0",
- "sub_protocols 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "sub_protocols 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "tracing",
- "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "zk-alloc 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -8078,7 +8091,7 @@ source = "git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a9
 dependencies = [
  "backend 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
- "parallel",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "tracing",
  "utils 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
 ]
@@ -8086,12 +8099,12 @@ dependencies = [
 [[package]]
 name = "sub_protocols"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
- "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "lean_vm 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "tracing",
- "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "utils 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
@@ -8186,10 +8199,9 @@ dependencies = [
 [[package]]
 name = "system-info"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
  "libc",
- "rayon",
 ]
 
 [[package]]
@@ -8803,9 +8815,9 @@ dependencies = [
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
- "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "backend 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
  "tracing",
  "tracing-forest",
  "tracing-subscriber",
@@ -9676,17 +9688,18 @@ version = "0.1.0"
 source = "git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553#2498896ca4d32a545a98a1b1cf1ca78f7f13f553"
 dependencies = [
  "libc",
- "parallel",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
  "system-info 0.1.0 (git+https://github.com/leanEthereum/leanVM.git?rev=2498896ca4d32a545a98a1b1cf1ca78f7f13f553)",
 ]
 
 [[package]]
 name = "zk-alloc"
 version = "0.1.0"
-source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420#b00d6ba3dc574f915dc40a1796d95972178ac420"
+source = "git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026#e2592df4e30fdddbbf8ae26a333116c68cec7026"
 dependencies = [
  "libc",
- "system-info 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=b00d6ba3dc574f915dc40a1796d95972178ac420)",
+ "parallel 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
+ "system-info 0.1.0 (git+https://github.com/leanEthereum/leanMultisig.git?rev=e2592df4e30fdddbbf8ae26a333116c68cec7026)",
 ]
 
 [[package]]
