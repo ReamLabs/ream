@@ -1,7 +1,4 @@
-use alloy_primitives::{
-    aliases::B32,
-    hex::{FromHex, ToHexExt},
-};
+use alloy_primitives::{aliases::B32, hex::FromHex};
 use libp2p::gossipsub::{IdentTopic as Topic, TopicHash};
 
 use crate::gossipsub::error::GossipsubError;
@@ -68,9 +65,15 @@ impl GossipTopic {
             }
         };
 
-        let fork = B32::from_hex(topic_parts[1]).map_err(|err| {
+        // Fork digest on the wire is 4 bytes (8 hex chars). Parse into [u8;4]
+        // then store in the first 4 bytes of B32, rest zeroed.
+        let fork_hex = topic_parts[1];
+        let fork_bytes = <[u8; 4]>::from_hex(fork_hex).map_err(|err| {
             GossipsubError::InvalidTopic(format!("Invalid topic fork: {topic:?} {err:?}"))
         })?;
+        let mut fork = B32::ZERO;
+        fork[..4].copy_from_slice(&fork_bytes);
+
         let kind = match topic_parts[2] {
             BEACON_BLOCK_TOPIC => GossipTopicKind::BeaconBlock,
             BEACON_AGGREGATE_AND_PROOF_TOPIC => GossipTopicKind::AggregateAndProof,
@@ -96,9 +99,8 @@ impl std::fmt::Display for GossipTopic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "/{TOPIC_PREFIX}/{}/{}/{ENCODING_POSTFIX}",
-            self.fork.encode_hex(),
-            self.kind,
+            "/{TOPIC_PREFIX}/{:02x}{:02x}{:02x}{:02x}/{}/{ENCODING_POSTFIX}",
+            self.fork[0], self.fork[1], self.fork[2], self.fork[3], self.kind,
         )
     }
 }

@@ -1,5 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr};
 
+use alloy_primitives::aliases::B32;
 use discv5::{ConfigBuilder, Enr, ListenConfig};
 
 use crate::subnet::{AttestationSubnets, CustodyGroupCount, SyncCommitteeSubnets};
@@ -15,6 +16,7 @@ pub struct DiscoveryConfig {
     pub attestation_subnets: AttestationSubnets,
     pub sync_committee_subnets: SyncCommitteeSubnets,
     pub custody_group_count: CustodyGroupCount,
+    pub fork_digest_override: Option<B32>,
 }
 
 impl Default for DiscoveryConfig {
@@ -47,6 +49,7 @@ impl Default for DiscoveryConfig {
             attestation_subnets,
             sync_committee_subnets,
             custody_group_count: CustodyGroupCount::default(),
+            fork_digest_override: None,
         }
     }
 }
