@@ -8,7 +8,7 @@ use ssz_types::FixedVector;
 
 use crate::data_column_sidecar::Cell;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MatrixEntry {
     cell: Cell,
     #[allow(dead_code)]
@@ -60,8 +60,8 @@ pub fn recover_matrix(
             matrix.push(MatrixEntry {
                 cell,
                 kzg_proof,
-                column_index: blob_index,
-                row_index: cell_index as u64,
+                column_index: cell_index as u64,
+                row_index: blob_index,
             });
         }
     }
@@ -155,4 +155,95 @@ pub fn compute_cells(
         .map_err(|err| anyhow!("Failed to convert to fixed array {err:?}"))?;
 
     Ok(final_cells)
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::{Rng, SeedableRng, rngs::StdRng, seq::SliceRandom};
+    use rust_eth_kzg::{DASContext, TrustedSetup, UsePrecomp};
+    use ssz::Decode;
+
+    use super::*;
+
+    const BYTES_PER_BLOB: usize = 131072;
+
+    fn get_sample_blob(rng: &mut StdRng) -> Blob {
+        let mut bytes = vec![0u8; BYTES_PER_BLOB];
+        for chunk in bytes.chunks_mut(32) {
+            rng.fill(&mut chunk[1..]);
+        }
+        Blob::from_ssz_bytes(&bytes).expect("constructed blob bytes should decode")
+    }
+
+    fn chunks<T: Clone>(items: &[T], size: usize) -> Vec<Vec<T>> {
+        items.chunks(size).map(|chunk| chunk.to_vec()).collect()
+    }
+
+    #[test]
+    fn test_compute_matrix() -> Result<()> {
+        let mut rng = StdRng::seed_from_u64(5566);
+        let context = DASContext::new(&TrustedSetup::default(), UsePrecomp::No);
+
+        let blob_count = 2;
+        let input_blobs: Vec<Blob> = (0..blob_count).map(|_| get_sample_blob(&mut rng)).collect();
+
+        let matrix = compute_matrix(input_blobs.clone(), &context)?;
+        assert_eq!(matrix.len(), CELLS_PER_EXT_BLOB as usize * blob_count);
+
+        let rows = chunks(&matrix, CELLS_PER_EXT_BLOB as usize);
+        assert_eq!(rows.len(), blob_count);
+        for row in &rows {
+            assert_eq!(row.len(), CELLS_PER_EXT_BLOB as usize);
+        }
+
+        for (blob_index, row) in rows.iter().enumerate() {
+            let mut column_indices: Vec<u64> = row
+                .iter()
+                .map(|entry| {
+                    assert_eq!(entry.row_index, blob_index as u64);
+                    entry.column_index
+                })
+                .collect();
+            column_indices.sort();
+            assert_eq!(column_indices, (0..CELLS_PER_EXT_BLOB).collect::<Vec<_>>());
+
+            let mut extended_blob = Vec::<u8>::new();
+            for entry in row {
+                extended_blob.extend::<Vec<u8>>(entry.cell.clone().into());
+            }
+            let blob_part = &extended_blob[..extended_blob.len() / 2];
+            let original: Vec<u8> = input_blobs[blob_index].inner.clone().into();
+            assert_eq!(blob_part, original.as_slice());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_recover_matrix() -> Result<()> {
+        let mut rng = StdRng::seed_from_u64(5566);
+        let context = DASContext::new(&TrustedSetup::default(), UsePrecomp::No);
+
+        let n_samples = (CELLS_PER_EXT_BLOB / 2) as usize;
+        let blob_count = 2;
+
+        let blobs: Vec<Blob> = (0..blob_count).map(|_| get_sample_blob(&mut rng)).collect();
+        let matrix = compute_matrix(blobs, &context)?;
+
+        let mut partial_matrix = Vec::new();
+        for blob_entries in chunks(&matrix, CELLS_PER_EXT_BLOB as usize) {
+            let mut indices: Vec<usize> = (0..blob_entries.len()).collect();
+
+            indices.shuffle(&mut rng);
+            let mut sampled = indices[..n_samples].to_vec();
+            sampled.sort();
+            partial_matrix.extend(sampled.into_iter().map(|i| blob_entries[i].clone()));
+        }
+
+        let recovered_matrix = recover_matrix(partial_matrix, blob_count as u64, &context)?;
+
+        assert_eq!(recovered_matrix, matrix);
+
+        Ok(())
+    }
 }
