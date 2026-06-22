@@ -72,13 +72,13 @@ use ream_p2p::{
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
 #[cfg(feature = "devnet4")]
-use ream_post_quantum_crypto::leansig::signature::Signature;
-#[cfg(feature = "devnet4")]
 use ream_post_quantum_crypto::lean_multisig::aggregate::{
     aggregation_setup_prover, aggregation_setup_verifier,
 };
 #[cfg(feature = "devnet5")]
 use ream_post_quantum_crypto::lean_multisig::type_2::{type_2_setup, type_2_setup_verifier};
+#[cfg(feature = "devnet4")]
+use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_post_quantum_crypto::leansig::{
     private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey,
 };
