@@ -5991,6 +5991,8 @@ dependencies = [
  "ream-consensus-beacon",
  "ream-consensus-lean",
  "ream-consensus-misc",
+ "ream-da",
+ "ream-da-node",
  "ream-discv5",
  "ream-events-beacon",
  "ream-execution-engine",
@@ -6271,6 +6273,28 @@ dependencies = [
  "thiserror 2.0.18",
  "tree_hash",
  "tree_hash_derive",
+]
+
+[[package]]
+name = "ream-da"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "ream-da-node"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "ream-da",
+ "ream-executor",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
