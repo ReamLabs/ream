@@ -1232,12 +1232,6 @@ impl Store {
                  each AttestationData must appear at most once",
             );
         }
-        let distinct_attestation_data = seen_attestation_data.len();
-        ensure!(
-            distinct_attestation_data as u64 <= MAX_ATTESTATIONS_DATA,
-            "Block contains {distinct_attestation_data} distinct AttestationData entries; \
-             maximum is {MAX_ATTESTATIONS_DATA}",
-        );
 
         #[cfg(feature = "devnet4")]
         {
