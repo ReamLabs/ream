@@ -1,8 +1,12 @@
+#![recursion_limit = "256"]
 pub mod timer;
 
+use std::time::Duration;
+
 use prometheus_exporter::prometheus::{
-    HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, IntGaugeVec, default_registry,
-    register_histogram_vec_with_registry, register_int_counter_vec_with_registry,
+    Histogram, HistogramOpts, HistogramTimer, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec,
+    default_registry, register_histogram_vec_with_registry, register_histogram_with_registry,
+    register_int_counter, register_int_counter_vec_with_registry,
     register_int_gauge_vec_with_registry,
 };
 
@@ -565,6 +569,54 @@ lazy_static::lazy_static! {
         &["reason"],
         default_registry()
     ).expect("failed to create AGGREGATOR_SKIPPED_TOTAL int counter vec");
+
+    pub static ref LEAN_BLOCK_PROPOSAL_ATTESTATION_BUILD_PHASE_SECONDS: HistogramVec = {
+        let opts = HistogramOpts::new(
+            "lean_block_proposal_attestation_build_phase_seconds",
+            "Phase-level time in block-proposal attestation selection."
+        ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0]);
+        register_histogram_vec_with_registry!(
+            opts,
+            &["phase"],
+            default_registry()
+        ).expect("failed to create LEAN_BLOCK_PROPOSAL_ATTESTATION_BUILD_PHASE_SECONDS")
+    };
+
+    pub static ref LEAN_BLOCK_PROPOSAL_ATTESTATION_BUILDS_TOTAL: IntCounter = {
+        register_int_counter!(
+            "lean_block_proposal_attestation_builds_total",
+            "Attestations selected during block-proposal selection."
+        ).expect("failed to create LEAN_BLOCK_PROPOSAL_ATTESTATION_BUILDS_TOTAL")
+    };
+
+    pub static ref LEAN_BLOCK_PROPOSAL_CHILD_PAYLOADS_CONSUMED_TOTAL: IntCounter = {
+        register_int_counter!(
+            "lean_block_proposal_child_payloads_consumed_total",
+            "Child aggregated payloads selected during greedy proof picking."
+        ).expect("failed to create LEAN_BLOCK_PROPOSAL_CHILD_PAYLOADS_CONSUMED_TOTAL")
+    };
+
+    pub static ref LEAN_BLOCK_PROPOSAL_ATTESTATION_DATA_SELECTED: Histogram = {
+        let opts = HistogramOpts::new(
+            "lean_block_proposal_attestation_data_selected",
+            "Distinct AttestationData entries in the proposal block body"
+        ).buckets(vec![0.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0]);
+        register_histogram_with_registry!(
+            opts,
+            default_registry()
+        ).expect("failed to create LEAN_BLOCK_PROPOSAL_ATTESTATION_DATA_SELECTED")
+    };
+
+    pub static ref LEAN_BLOCK_PROPOSAL_AGGREGATES_SELECTED: Histogram = {
+        let histogram_opts = HistogramOpts::new(
+            "lean_block_proposal_aggregates_selected",
+            "Aggregated signature proofs in the proposal result after compaction"
+        ).buckets(vec![0.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0]);
+        register_histogram_with_registry!(
+            histogram_opts,
+            default_registry()
+        ).expect("failed to create LEAN_BLOCK_PROPOSAL_AGGREGATES_SELECTED")
+    };
 }
 
 pub fn init_aggregate_coverage_metrics() {
@@ -626,4 +678,26 @@ pub fn inc_int_counter_vec_by(counter_vec: &IntCounterVec, amount: u64, label_va
 /// Observe a value on a histogram metric
 pub fn observe_histogram_vec(histogram_vec: &HistogramVec, value: f64, label_values: &[&str]) {
     histogram_vec.with_label_values(label_values).observe(value);
+}
+
+pub fn observe_block_proposal_phase(phase: &str, elapsed: Duration) {
+    LEAN_BLOCK_PROPOSAL_ATTESTATION_BUILD_PHASE_SECONDS
+        .with_label_values(&[phase])
+        .observe(elapsed.as_secs_f64());
+}
+
+pub fn inc_block_proposal_attestation_builds() {
+    LEAN_BLOCK_PROPOSAL_ATTESTATION_BUILDS_TOTAL.inc();
+}
+
+pub fn inc_block_proposal_child_payloads_consumed(count: u64) {
+    LEAN_BLOCK_PROPOSAL_CHILD_PAYLOADS_CONSUMED_TOTAL.inc_by(count);
+}
+
+pub fn observe_block_proposal_attestation_data_selected(count: usize) {
+    LEAN_BLOCK_PROPOSAL_ATTESTATION_DATA_SELECTED.observe(count as f64);
+}
+
+pub fn observe_block_proposal_aggregates_selected(count: usize) {
+    LEAN_BLOCK_PROPOSAL_AGGREGATES_SELECTED.observe(count as f64);
 }
