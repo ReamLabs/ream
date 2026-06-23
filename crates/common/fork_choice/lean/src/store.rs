@@ -701,11 +701,33 @@ impl Store {
 
             #[cfg(feature = "devnet5")]
             let proof = {
+                let children: Vec<_> = child_proofs
+                    .iter()
+                    .map(|child| {
+                        let public_keys = child
+                            .to_validator_indices()
+                            .into_iter()
+                            .map(|validator_id| {
+                                head_state
+                                    .validators
+                                    .get(validator_id as usize)
+                                    .map(|validator| validator.attestation_public_key)
+                                    .ok_or_else(|| {
+                                        anyhow!(
+                                            "Validator index {validator_id} out of range during aggregation"
+                                        )
+                                    })
+                            })
+                            .collect::<anyhow::Result<Vec<_>>>()?;
+                        type_1_from_wire(&child.proof, &public_keys)
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?;
                 let raw_xmss: Vec<_> = raw_entries
                     .iter()
                     .map(|(_, public_key, signature)| (*public_key, *signature))
                     .collect();
-                let type_one = type_1_aggregate(&[], &raw_xmss, &data_root.0, data.slot as u32)?;
+                let type_one =
+                    type_1_aggregate(&children, &raw_xmss, &data_root.0, data.slot as u32)?;
                 PayloadProof {
                     participants: bits.clone(),
                     proof: VariableList::new(type_1_to_wire(&type_one))

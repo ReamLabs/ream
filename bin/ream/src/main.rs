@@ -72,10 +72,15 @@ use ream_p2p::{
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
 #[cfg(feature = "devnet4")]
+use ream_post_quantum_crypto::lean_multisig::aggregate::{
+    aggregation_setup_prover, aggregation_setup_verifier,
+};
+#[cfg(feature = "devnet5")]
+use ream_post_quantum_crypto::lean_multisig::type_2::{type_2_setup, type_2_setup_verifier};
+#[cfg(feature = "devnet4")]
 use ream_post_quantum_crypto::leansig::signature::Signature;
-use ream_post_quantum_crypto::{
-    lean_multisig::aggregate::{aggregation_setup_prover, aggregation_setup_verifier},
-    leansig::{private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey},
+use ream_post_quantum_crypto::leansig::{
+    private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey,
 };
 use ream_rpc_common::config::RpcServerConfig;
 use ream_rpc_lean::{
@@ -249,13 +254,19 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // Initialize aggregation verifier bytecode — all nodes need this to verify
     // aggregate signatures when processing blocks during sync.
     info!("Initializing aggregation verifier bytecode...");
+    #[cfg(feature = "devnet4")]
     aggregation_setup_verifier();
+    #[cfg(feature = "devnet5")]
+    type_2_setup_verifier();
     info!("Aggregation verifier bytecode initialized");
 
     // Initialize aggregation prover bytecode only if this node is an aggregator.
     if config.is_aggregator {
         info!("Initializing aggregation prover bytecode for aggregator mode...");
+        #[cfg(feature = "devnet4")]
         aggregation_setup_prover();
+        #[cfg(feature = "devnet5")]
+        type_2_setup();
         info!("Aggregation prover bytecode initialized");
     }
 

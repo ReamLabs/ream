@@ -305,9 +305,14 @@ impl LeanState {
             for (i, root) in self.justifications_roots.iter().enumerate() {
                 let start_index = i * validator_count;
                 let end_index = start_index + validator_count;
-                let vote_slice = &flat_votes
-                    .get(start_index..end_index)
-                    .expect("Could not get indexs");
+                let vote_slice = &flat_votes.get(start_index..end_index).ok_or_else(|| {
+                    anyhow!(
+                        "justifications_validators too short: expected at least {end_index} bits \
+                         ({} roots x {validator_count} validators), got {}",
+                        self.justifications_roots.len(),
+                        flat_votes.len(),
+                    )
+                })?;
 
                 let mut new_bitlist = BitList::<U1073741824>::with_capacity(validator_count)
                     .map_err(|err| {
