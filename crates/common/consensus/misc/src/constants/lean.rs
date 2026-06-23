@@ -14,7 +14,10 @@ pub fn set_attestation_committee_count(value: u64) -> u64 {
 
 pub const GOSSIP_DISPARITY_INTERVALS: u64 = 1;
 pub const INTERVALS_PER_SLOT: u64 = 5;
-pub const MAX_ATTESTATIONS_DATA: u64 = 16;
+// The leanspec value is 8. ream's 16 let blocks carry up to 16 distinct
+// AttestationData (each ~173KB WHIR proof → ~2.8MB blocks under head-spread),
+// doubling block size and slowing gossip propagation vs the spec's 8-cap.
+pub const MAX_ATTESTATIONS_DATA: u64 = 8;
 pub const MAX_HISTORICAL_BLOCK_HASHES: u64 = 262144;
 pub const SLOT_DURATION: u64 = 4;
 pub const VALIDATOR_REGISTRY_LIMIT: u64 = 4096;
