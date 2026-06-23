@@ -7,11 +7,12 @@ use ream_consensus_misc::{
 use ream_merkle::is_valid_merkle_branch;
 use ream_network_spec::networks::beacon_network_spec;
 use serde::{Deserialize, Serialize};
-use ssz::DecodeError;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{FixedVector, VariableList, typenum};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
+
+use crate::error::DataColumnSidecarError;
 
 pub type Cell = FixedVector<u8, typenum::U2048>;
 
@@ -103,16 +104,17 @@ impl DataColumnSidecar {
     }
 }
 
-pub fn get_column_data_sidecars(
+/// https://github.com/ethereum/consensus-specs/blob/master/specs/fulu/validator.md#get_data_column_sidecars
+pub fn get_data_column_sidecars(
     signed_block_header: SignedBeaconBlockHeader,
     kzg_commitments: VariableList<KZGCommitment, MaxBlobCommitmentsPerBlock>,
     kzg_commitments_inclusion_proof: FixedVector<B256, typenum::U4>,
     cells_and_kzg_proofs: Vec<(Vec<Cell>, Vec<KZGProof>)>,
-) -> Result<Vec<DataColumnSidecar>, DecodeError> {
+) -> Result<Vec<DataColumnSidecar>, DataColumnSidecarError> {
     if cells_and_kzg_proofs.len() != kzg_commitments.len() {
-        return Err(DecodeError::InvalidByteLength {
-            len: kzg_commitments.len(),
-            expected: cells_and_kzg_proofs.len(),
+        return Err(DataColumnSidecarError::CommitmentCountMismatch {
+            actual: cells_and_kzg_proofs.len(),
+            expected: kzg_commitments.len(),
         });
     }
 
@@ -122,7 +124,10 @@ pub fn get_column_data_sidecars(
         let mut column_proofs = Vec::new();
         for (cells, proofs) in &cells_and_kzg_proofs {
             if column_index as usize >= cells.len() || column_index as usize >= proofs.len() {
-                return Err(DecodeError::OffsetOutOfBounds(column_index as usize));
+                return Err(DataColumnSidecarError::ColumnIndexOutOfBounds(
+                    column_index as usize,
+                    cells.len().max(proofs.len()),
+                ));
             }
             column_cells.push(cells[column_index as usize].clone());
             column_proofs.push(proofs[column_index as usize]);
@@ -131,21 +136,46 @@ pub fn get_column_data_sidecars(
         sidecars.push(DataColumnSidecar {
             index: column_index,
             column: VariableList::try_from(column_cells).map_err(|err| {
-                DecodeError::BytesInvalid(format!(
-                    "Creating column VariableList for index {column_index} failed: {err}",
-                ))
+                DataColumnSidecarError::DecodingError {
+                    column_index,
+                    err: err.to_string(),
+                }
             })?,
             kzg_commitments: kzg_commitments.clone(),
             kzg_proofs: VariableList::try_from(column_proofs).map_err(|err| {
-                DecodeError::BytesInvalid(format!(
-                    "Creating proofs VariableList for index {column_index} failed: {err}",
-                ))
+                DataColumnSidecarError::DecodingError {
+                    column_index,
+                    err: err.to_string(),
+                }
             })?,
             signed_block_header: signed_block_header.clone(),
             kzg_commitments_inclusion_proof: kzg_commitments_inclusion_proof.clone(),
         });
     }
     Ok(sidecars)
+}
+
+/// Reconstructs the data column sidecars from any received column sidecar and the corresponding
+/// cells and KZG proofs for each commitment.
+///
+/// Spec: https://github.com/ethereum/consensus-specs/blob/master/specs/fulu/validator.md#get_data_column_sidecars_from_column_sidecar
+pub fn get_data_column_sidecars_from_column_sidecar(
+    sidecar: DataColumnSidecar,
+    cells_and_kzg_proofs: Vec<(Vec<Cell>, Vec<KZGProof>)>,
+) -> Result<Vec<DataColumnSidecar>, DataColumnSidecarError> {
+    if cells_and_kzg_proofs.len() != sidecar.kzg_commitments.len() {
+        return Err(DataColumnSidecarError::CommitmentCountMismatch {
+            actual: sidecar.kzg_commitments.len(),
+            expected: cells_and_kzg_proofs.len(),
+        });
+    }
+
+    get_data_column_sidecars(
+        sidecar.signed_block_header,
+        sidecar.kzg_commitments,
+        sidecar.kzg_commitments_inclusion_proof,
+        cells_and_kzg_proofs,
+    )
 }
 
 #[cfg(test)]
