@@ -13,9 +13,9 @@ pub async fn get_metrics() -> impl Responder {
         Ok(()) => HttpResponse::Ok()
             .content_type(PROMETHEUS_TEXT_CONTENT_TYPE)
             .body(body),
-        Err(error) => HttpResponse::InternalServerError()
+        Err(err) => HttpResponse::InternalServerError()
             .content_type("text/plain; charset=utf-8")
-            .body(format!("failed to encode Prometheus metrics: {error}")),
+            .body(format!("failed to encode Prometheus metrics: {err}")),
     }
 }
 
