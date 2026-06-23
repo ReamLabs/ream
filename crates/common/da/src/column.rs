@@ -17,6 +17,10 @@ impl DaPayload {
     pub fn new(bytes: Vec<u8>) -> Self {
         Self(bytes)
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 /// Consensus-derived context attached to a candidate column.
@@ -55,9 +59,6 @@ pub struct VerifiedColumn {
 
 impl VerifiedColumn {
     /// Construct a verified column without running verification.
-    ///
-    /// Must only be called by `DaVerifier` implementations (and tests). Any
-    /// other call site breaks the invariant that stored data is verified.
     pub fn new_unchecked(id: DaColumnId, context: DaContext, payload: DaPayload) -> Self {
         Self {
             id,

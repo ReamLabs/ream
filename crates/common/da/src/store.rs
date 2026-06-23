@@ -5,8 +5,8 @@ use crate::{column::VerifiedColumn, error::DaStoreError, id::DaColumnId};
 pub enum InsertOutcome {
     /// The column was newly persisted.
     Inserted,
-    /// The same identifier already held identical content; the insert is a
-    /// no-op (idempotent success).
+    /// A column was already stored for this identifier; the insert is a no-op
+    /// idempotent success and the existing value is kept.
     Duplicated,
 }
 
@@ -26,9 +26,10 @@ pub trait DaReadStore: Send + Sync {
 pub trait DaWriteStore: DaReadStore {
     /// Store a verified column.
     ///
-    /// Inserting identical content twice is not allowed. Inserting different
-    /// content under an existing identifier returns
-    /// [`DaStoreError::DuplicateConflict`] and keeps the existing value:
-    /// storage never silently overwrites a verified column.
+    /// Columns are keyed by [`DaColumnId`]. If a column is already stored for
+    /// this id, the call is an idempotent [`InsertOutcome::Duplicated`]: the
+    /// incoming column is ignored and the stored one is kept, never
+    /// overwritten. Otherwise the column is persisted and
+    /// [`InsertOutcome::Inserted`] is returned.
     fn put(&self, column: VerifiedColumn) -> Result<InsertOutcome, DaStoreError>;
 }
