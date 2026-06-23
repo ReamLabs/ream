@@ -2,7 +2,7 @@ pub mod lean;
 pub mod node;
 use actix_web::web::{ServiceConfig, scope};
 
-use crate::handlers::health::get_health;
+use crate::handlers::{health::get_health, metrics::get_metrics};
 
 pub fn get_v0_routes(config: &mut ServiceConfig) {
     config.service(
@@ -21,11 +21,15 @@ pub fn get_test_driver_v0_routes(config: &mut ServiceConfig) {
 }
 
 pub fn register_routers(config: &mut ServiceConfig) {
-    config.configure(get_v0_routes).service(get_health);
+    config
+        .configure(get_v0_routes)
+        .service(get_health)
+        .service(get_metrics);
 }
 
 pub fn register_test_driver_routers(config: &mut ServiceConfig) {
     config
         .configure(get_test_driver_v0_routes)
-        .service(get_health);
+        .service(get_health)
+        .service(get_metrics);
 }

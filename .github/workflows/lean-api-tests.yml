@@ -8,6 +8,8 @@ on:
       - "crates/common/api_types/lean/**"
       - "crates/common/api_types/common/**"
       - "crates/common/consensus/lean/**"
+      - "crates/common/metrics/**"
+      - "bin/ream/**"
       - ".github/workflows/lean-api-tests.yml"
   pull_request:
     branches: ["master"]
@@ -16,6 +18,8 @@ on:
       - "crates/common/api_types/lean/**"
       - "crates/common/api_types/common/**"
       - "crates/common/consensus/lean/**"
+      - "crates/common/metrics/**"
+      - "bin/ream/**"
       - ".github/workflows/lean-api-tests.yml"
 
 env:
@@ -41,7 +45,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build ream
-        run: cargo build --release --package ream --bin ream --no-default-features --features devnet4
+        run: cargo build --release --package ream --bin ream --no-default-features --features devnet5
 
       - name: Checkout leanSpec
         uses: actions/checkout@v4
@@ -61,36 +65,34 @@ jobs:
         working-directory: leanSpec
         run: uv sync
 
-      - name: Start ream in background
+      - name: Run leanSpec API tests
+        working-directory: leanSpec
         run: |
-          ./target/release/ream --ephemeral lean_node \
+          HIVE_LEAN_TEST_DRIVER=1 ../target/release/ream --ephemeral lean_node \
             --network ephemery \
-            --validator-registry-path ./bin/ream/assets/lean/annotated_validators.yaml \
+            --validator-registry-path ../bin/ream/assets/lean/annotated_validators.yaml \
             --bootnodes none \
-            &
-          echo $! > /tmp/ream.pid
+            > /tmp/ream.log 2>&1 &
+          ream_pid=$!
+          trap 'kill "$ream_pid" 2>/dev/null || true' EXIT
 
-      - name: Wait for ream to be ready
-        run: |
           echo "Waiting for ream API to be ready..."
           for i in {1..30}; do
             if curl -s http://localhost:5052/lean/v0/health | grep -q "healthy"; then
-              echo "ream is ready!"
-              exit 0
+              uv run apitest http://localhost:5052
+              exit $?
             fi
-            echo "Attempt $i: ream not ready yet, waiting..."
+
+            if ! kill -0 "$ream_pid" 2>/dev/null; then
+              echo "ream exited before becoming ready"
+              cat /tmp/ream.log || true
+              exit 1
+            fi
+
+            echo "Attempt $i: ream is not ready yet"
             sleep 2
           done
+
           echo "ream failed to start within 60 seconds"
+          cat /tmp/ream.log || true
           exit 1
-
-      - name: Run leanSpec API tests
-        working-directory: leanSpec
-        run: uv run apitest http://localhost:5052
-
-      - name: Stop ream
-        if: always()
-        run: |
-          if [ -f /tmp/ream.pid ]; then
-            kill $(cat /tmp/ream.pid) 2>/dev/null || true
-          fi
