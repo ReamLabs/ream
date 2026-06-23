@@ -278,6 +278,41 @@ mod tests {
     }
 
     #[test]
+    fn test_get_data_column_sidecars() {
+        let (_, signed_block, _commitments, cells_and_kzg_proofs) = sample_block_with_kzg(2);
+
+        let expected_sidecars =
+            get_data_column_sidecars_from_block(&signed_block, cells_and_kzg_proofs.clone())
+                .unwrap();
+
+        let recomputed_sidecars =
+            get_data_column_sidecars_from_block(&signed_block, cells_and_kzg_proofs).unwrap();
+
+        assert_eq!(recomputed_sidecars.len(), expected_sidecars.len(),);
+
+        assert_eq!(recomputed_sidecars, expected_sidecars,);
+    }
+
+    #[test]
+    fn test_get_data_column_sidecars_from_column_sidecar() {
+        let (_, signed_block, _commitments, cells_and_kzg_proofs) = sample_block_with_kzg(2);
+
+        let sidecars =
+            get_data_column_sidecars_from_block(&signed_block, cells_and_kzg_proofs.clone())
+                .unwrap();
+
+        let base_sidecar = sidecars[0].clone();
+
+        let recomputed =
+            get_data_column_sidecars_from_column_sidecar(base_sidecar, cells_and_kzg_proofs)
+                .unwrap();
+
+        assert_eq!(recomputed.len(), sidecars.len(),);
+
+        assert_eq!(recomputed, sidecars,);
+    }
+
+    #[test]
     fn test_get_data_column_sidecars_from_block() {
         let (context, signed_block, commitments, cells_and_kzg_proofs) = sample_block_with_kzg(2);
         let blob_count = commitments.len();
