@@ -212,25 +212,24 @@ fn main() {
 pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_db: ReamDB) {
     info!("starting up lean node...");
 
-    // Populate the default registry for both the optional standalone exporter and the Lean RPC
-    // `/metrics` endpoint. This must happen before test-driver mode returns early.
-    set_int_gauge_vec(&NODE_INFO, 1, &["ream", REAM_VERSION]);
-    set_int_gauge_vec(
-        &NODE_START_TIME_SECONDS,
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_secs() as i64,
-        &[],
-    );
-
-    // Initialize the optional standalone Prometheus exporter.
+    // Initialize prometheus metrics
     if config.enable_metrics {
         let address = SocketAddr::new(config.metrics_address, config.metrics_port);
         prometheus_exporter::start(address).expect("Failed to start prometheus exporter");
         info!(
             "Metrics started on {}:{}",
             config.metrics_address, config.metrics_port
+        );
+
+        // Set node info metrics
+        set_int_gauge_vec(&NODE_INFO, 1, &["ream", REAM_VERSION]);
+        set_int_gauge_vec(
+            &NODE_START_TIME_SECONDS,
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs() as i64,
+            &[],
         );
     }
 

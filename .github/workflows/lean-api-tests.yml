@@ -72,6 +72,7 @@ jobs:
             --network ephemery \
             --validator-registry-path ../bin/ream/assets/lean/annotated_validators.yaml \
             --bootnodes none \
+            --metrics \
             > /tmp/ream.log 2>&1 &
           ream_pid=$!
           trap 'kill "$ream_pid" 2>/dev/null || true' EXIT
