@@ -8,6 +8,8 @@ on:
       - "crates/common/api_types/lean/**"
       - "crates/common/api_types/common/**"
       - "crates/common/consensus/lean/**"
+      - "crates/common/metrics/**"
+      - "bin/ream/**"
       - ".github/workflows/lean-api-tests.yml"
   pull_request:
     branches: ["master"]
@@ -16,6 +18,8 @@ on:
       - "crates/common/api_types/lean/**"
       - "crates/common/api_types/common/**"
       - "crates/common/consensus/lean/**"
+      - "crates/common/metrics/**"
+      - "bin/ream/**"
       - ".github/workflows/lean-api-tests.yml"
 
 env:
@@ -41,7 +45,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build ream
-        run: cargo build --release --package ream --bin ream --no-default-features --features devnet4
+        run: cargo build --release --package ream --bin ream --no-default-features --features devnet5
 
       - name: Checkout leanSpec
         uses: actions/checkout@v4
@@ -63,10 +67,11 @@ jobs:
 
       - name: Start ream in background
         run: |
-          ./target/release/ream --ephemeral lean_node \
+          HIVE_LEAN_TEST_DRIVER=1 ./target/release/ream --ephemeral lean_node \
             --network ephemery \
             --validator-registry-path ./bin/ream/assets/lean/annotated_validators.yaml \
             --bootnodes none \
+            --metrics \
             &
           echo $! > /tmp/ream.pid
 
