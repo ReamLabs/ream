@@ -8,4 +8,6 @@ pub enum DataColumnSidecarError {
     ColumnIndexOutOfBounds(usize, usize),
     #[error("failed to create VariableList for column {column_index}: {err}")]
     DecodingError { column_index: u64, err: String },
+    #[error("failed to compute blob kzg commitments inclusion proof: {0}")]
+    InclusionProofError(String),
 }
