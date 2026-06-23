@@ -8,6 +8,7 @@ pub mod bls_to_execution_change;
 pub mod custody_group;
 pub mod data_column_sidecar;
 pub mod electra;
+pub mod error;
 pub mod eth_1_block;
 pub mod fork_choice;
 pub mod genesis;
