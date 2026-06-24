@@ -1096,6 +1096,12 @@ impl Store {
                     continue;
                 }
 
+                if !is_genesis_self_vote
+                    && !is_justifiable_after(data.target.slot, current_finalized_slot)?
+                {
+                    continue;
+                }
+
                 let validator_id = signed_attestation.validator_id;
                 let attestation = AggregatedAttestations {
                     validator_id,
