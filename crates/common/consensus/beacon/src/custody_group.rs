@@ -112,26 +112,26 @@ mod tests {
     }
 
     #[test]
-    fn custody_requirement_respects_minimum_for_empty_balance() {
-        assert_eq!(compute(0), VALIDATOR_CUSTODY_REQUIREMENT);
-    }
+    fn custody_requirement_matches_consensus_spec_boundaries() {
+        let balance_per_group = BALANCE_PER_ADDITIONAL_CUSTODY_GROUP as u128;
+        let cases = [
+            (0, VALIDATOR_CUSTODY_REQUIREMENT),
+            (8 * balance_per_group - 1, VALIDATOR_CUSTODY_REQUIREMENT),
+            (8 * balance_per_group, VALIDATOR_CUSTODY_REQUIREMENT),
+            (9 * balance_per_group, 9),
+            (10 * balance_per_group, 10),
+            (
+                NUMBER_OF_CUSTODY_GROUPS as u128 * balance_per_group,
+                NUMBER_OF_CUSTODY_GROUPS,
+            ),
+            (
+                (NUMBER_OF_CUSTODY_GROUPS as u128 + 1) * balance_per_group,
+                NUMBER_OF_CUSTODY_GROUPS,
+            ),
+        ];
 
-    #[test]
-    fn custody_requirement_respects_minimum_for_low_balance() {
-        let total_node_balance = (VALIDATOR_CUSTODY_REQUIREMENT - 1) as u128
-            * BALANCE_PER_ADDITIONAL_CUSTODY_GROUP as u128;
-        assert_eq!(compute(total_node_balance), VALIDATOR_CUSTODY_REQUIREMENT);
-    }
-
-    #[test]
-    fn custody_requirement_scales_with_effective_balance() {
-        let total_node_balance = 10u128 * BALANCE_PER_ADDITIONAL_CUSTODY_GROUP as u128;
-        assert_eq!(compute(total_node_balance), 10);
-    }
-
-    #[test]
-    fn custody_requirement_caps_at_number_of_custody_groups() {
-        let total_node_balance = 10_000u128 * BALANCE_PER_ADDITIONAL_CUSTODY_GROUP as u128;
-        assert_eq!(compute(total_node_balance), NUMBER_OF_CUSTODY_GROUPS);
+        for (total_node_balance, expected) in cases {
+            assert_eq!(compute(total_node_balance), expected);
+        }
     }
 }
