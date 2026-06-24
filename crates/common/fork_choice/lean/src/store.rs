@@ -2175,6 +2175,10 @@ impl Store {
         let mut keys: HashSet<AttestationData> = groups.keys().cloned().collect();
         keys.extend(new_payloads.keys().cloned());
 
+        const AGG_RECENT_SLOTS: u64 = 16;
+        let head_slot = head_state.slot;
+        keys.retain(|data| data.slot + AGG_RECENT_SLOTS >= head_slot);
+
         let mut jobs = Vec::new();
         for data in keys {
             let data_root = data.tree_hash_root();
@@ -2255,6 +2259,7 @@ impl Store {
                 raw_count,
             });
         }
+        jobs.sort_by(|a, b| b.data.slot.cmp(&a.data.slot));
         Ok(jobs)
     }
 
