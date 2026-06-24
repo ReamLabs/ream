@@ -931,7 +931,7 @@ impl Store {
         let ctx = self.load_build_context(parent_root).await?;
         let extended_historical_block_hashes =
             Self::extended_historical_block_hashes(&ctx.head_state, parent_root, slot);
-        let selected_attestations = match strategy {
+        let (selected_attestations, child_payloads_consumed) = match strategy {
             BlockProductionStrategy::RoundBased => Self::select_round_based(
                 &ctx,
                 &extended_historical_block_hashes,
@@ -941,13 +941,21 @@ impl Store {
                 parent_root,
             )?,
             BlockProductionStrategy::Tiered => {
-                Self::select_tiered(&ctx, &extended_historical_block_hashes, attestations, slot)?
+                let selected = Self::select_tiered(
+                    &ctx,
+                    &extended_historical_block_hashes,
+                    attestations,
+                    slot,
+                )?;
+                let child_payloads_consumed = selected.len() as u64;
+                (selected, child_payloads_consumed)
             }
         };
 
         self.seal_block(
             &ctx.head_state,
             &selected_attestations,
+            child_payloads_consumed,
             slot,
             proposer_index,
             parent_root,
@@ -1007,7 +1015,7 @@ impl Store {
         slot: u64,
         proposer_index: u64,
         parent_root: B256,
-    ) -> anyhow::Result<Vec<AggregatedAttestations>> {
+    ) -> anyhow::Result<(Vec<AggregatedAttestations>, u64)> {
         let head_state = &ctx.head_state;
         let mut attestations: VariableList<AggregatedAttestations, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
@@ -1188,7 +1196,7 @@ impl Store {
         observe_block_proposal_phase("stf_simulate", total_stf_duration);
         observe_block_proposal_phase("select_payloads", select_start.elapsed());
 
-        Ok(attestations.to_vec())
+        Ok((attestations.to_vec(), child_payloads_consumed))
     }
 
     fn select_tiered(
@@ -1417,6 +1425,7 @@ impl Store {
         &self,
         head_state: &LeanState,
         attestations: &[AggregatedAttestations],
+        child_payloads_consumed: u64,
         slot: u64,
         proposer_index: u64,
         parent_root: B256,
