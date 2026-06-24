@@ -152,8 +152,12 @@ pub fn prove_aggregation_jobs(
             .iter()
             .map(|(wire, public_keys)| type_1_from_wire(wire, public_keys))
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let type_one =
-            type_1_aggregate(&children, &job.raw_xmss, &job.data_root.0, job.data.slot as u32)?;
+        let type_one = type_1_aggregate(
+            &children,
+            &job.raw_xmss,
+            &job.data_root.0,
+            job.data.slot as u32,
+        )?;
         let proof = PayloadProof {
             participants: job.bits.clone(),
             proof: VariableList::new(type_1_to_wire(&type_one))
@@ -414,11 +418,16 @@ impl Store {
     }
 
     pub async fn accept_new_attestations(&mut self) -> anyhow::Result<()> {
-        let (latest_new_aggregated_payloads_provider, latest_known_aggregated_payloads_provider) = {
+        let (
+            latest_new_aggregated_payloads_provider,
+            latest_known_aggregated_payloads_provider,
+            attestation_data_by_root_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.latest_new_aggregated_payloads_provider(),
                 db.latest_known_aggregated_payloads_provider(),
+                db.attestation_data_by_root_provider(),
             )
         };
 
@@ -433,6 +442,29 @@ impl Store {
             existing_proofs.append(&mut new_proofs);
 
             latest_known_aggregated_payloads_provider.insert(signature_key, existing_proofs)?;
+        }
+
+        let known = latest_known_aggregated_payloads_provider.iter()?;
+        let mut validator_max_slot: HashMap<u64, u64> = HashMap::new();
+        let mut key_slots: Vec<(SignatureKey, u64)> = Vec::with_capacity(known.len());
+        for (key, _) in &known {
+            let slot = attestation_data_by_root_provider
+                .get(key.data_root)?
+                .map(|data| data.slot)
+                .unwrap_or(0);
+            key_slots.push((key.clone(), slot));
+            validator_max_slot
+                .entry(key.validator_id)
+                .and_modify(|max| *max = (*max).max(slot))
+                .or_insert(slot);
+        }
+        let superseded: HashSet<SignatureKey> = key_slots
+            .into_iter()
+            .filter(|(key, slot)| *slot < validator_max_slot[&key.validator_id])
+            .map(|(key, _)| key)
+            .collect();
+        if !superseded.is_empty() {
+            latest_known_aggregated_payloads_provider.retain(|key, _| !superseded.contains(key))?;
         }
 
         set_int_gauge_vec(
@@ -2159,7 +2191,10 @@ impl Store {
             if let Some(attestation_data) =
                 attestation_data_by_root_provider.get(signature_key.data_root)?
             {
-                new_payloads.entry(attestation_data).or_default().extend(proofs);
+                new_payloads
+                    .entry(attestation_data)
+                    .or_default()
+                    .extend(proofs);
             }
         }
 
@@ -2168,7 +2203,10 @@ impl Store {
             if let Some(attestation_data) =
                 attestation_data_by_root_provider.get(signature_key.data_root)?
             {
-                known_payloads.entry(attestation_data).or_default().extend(proofs);
+                known_payloads
+                    .entry(attestation_data)
+                    .or_default()
+                    .extend(proofs);
             }
         }
 
@@ -2208,7 +2246,11 @@ impl Store {
                         .get(SignatureKey::from_parts(validator_id, data_root))
                         && let Some(validator) = head_state.validators.get(validator_id as usize)
                     {
-                        raw_entries.push((validator_id, validator.attestation_public_key, signature));
+                        raw_entries.push((
+                            validator_id,
+                            validator.attestation_public_key,
+                            signature,
+                        ));
                         covered_validators.insert(validator_id);
                     }
                 }
@@ -2237,7 +2279,9 @@ impl Store {
                             .get(validator_id as usize)
                             .map(|validator| validator.attestation_public_key)
                             .ok_or_else(|| {
-                                anyhow!("Validator index {validator_id} out of range during aggregation")
+                                anyhow!(
+                                    "Validator index {validator_id} out of range during aggregation"
+                                )
                             })
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
