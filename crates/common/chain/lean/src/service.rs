@@ -1,3 +1,5 @@
+#[cfg(feature = "devnet5")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     pin::Pin,
@@ -24,6 +26,8 @@ use ream_consensus_lean::{
 };
 use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_committee_count};
 use ream_fork_choice_lean::store::LeanStoreWriter;
+#[cfg(feature = "devnet5")]
+use ream_fork_choice_lean::store::prove_aggregation_jobs;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_COUNT as ATTESTATION_COMMITTEE_COUNT_METRIC,
     BLOCK_BUILDING_FAILURES_TOTAL, CURRENT_SLOT, IS_AGGREGATOR, LEAN_AGGREGATOR_SKIPPED_TOTAL,
@@ -258,6 +262,8 @@ pub struct LeanChainService {
     telemetry: SyncTelemetry,
     #[cfg(feature = "devnet5")]
     pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
+    #[cfg(feature = "devnet5")]
+    aggregation_in_flight: Arc<AtomicBool>,
 }
 
 impl LeanChainService {
@@ -287,6 +293,8 @@ impl LeanChainService {
             telemetry: SyncTelemetry::from_env(),
             #[cfg(feature = "devnet5")]
             pending_block_aggregates: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(feature = "devnet5")]
+            aggregation_in_flight: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -344,6 +352,59 @@ impl LeanChainService {
                     if self.sync_status == SyncStatus::Synced {
                         self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), self.is_aggregator()).await?;
                         self.step_head_sync(tick_count).await?;
+
+                        #[cfg(feature = "devnet5")]
+                        if self.is_aggregator()
+                            && tick_count % INTERVALS_PER_SLOT == 2
+                            && !self.aggregation_in_flight.swap(true, Ordering::AcqRel)
+                        {
+                            let store = self.store.clone();
+                            let in_flight = self.aggregation_in_flight.clone();
+                            let outbound = self.outbound_p2p.clone();
+                            let agg_start = Instant::now();
+                            const AGG_DEADLINE: Duration = Duration::from_millis(750);
+                            let deadline = agg_start + AGG_DEADLINE;
+                            tokio::spawn(async move {
+                                let result = async {
+                                    let jobs = store.write().await.aggregate_prepare().await?;
+                                    let total = jobs.len();
+                                    let mut produced = 0usize;
+                                    for job in jobs {
+                                        if produced > 0 && Instant::now() >= deadline {
+                                            break;
+                                        }
+                                        let signed = tokio::task::spawn_blocking(move || {
+                                            prove_aggregation_jobs(vec![job])
+                                        })
+                                        .await
+                                        .map_err(|err| anyhow!("aggregation join error: {err:?}"))??;
+                                        store.write().await.aggregate_apply(&signed).await?;
+                                        for aggregate in signed {
+                                            produced += 1;
+                                            if let Err(err) = outbound.send(
+                                                LeanP2PRequest::GossipAggregatedAttestation(Box::new(
+                                                    aggregate,
+                                                )),
+                                            ) {
+                                                warn!("Failed to gossip aggregated attestation: {err:?}");
+                                            }
+                                        }
+                                    }
+                                    let elapsed_ms = agg_start.elapsed().as_millis() as u64;
+                                    if produced < total {
+                                        warn!(elapsed_ms, produced, total, "AGG_TIMING partial batch (deadline)");
+                                    } else {
+                                        info!(elapsed_ms, produced, "AGG_TIMING aggregation complete");
+                                    }
+                                    anyhow::Ok(())
+                                }
+                                .await;
+                                if let Err(err) = result {
+                                    warn!("Off-loop committee aggregation failed: {err:?}");
+                                }
+                                in_flight.store(false, Ordering::Release);
+                            });
+                        }
                     }
 
                     tick_count += 1;
