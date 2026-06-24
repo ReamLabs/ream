@@ -659,7 +659,7 @@ pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, data_dir:
     let (_tx, rx) = mpsc::channel(DA_VERIFICATION_QUEUE_CAPACITY);
     let service = DaVerificationService::new(rx, verifier.clone(), store.clone(), executor);
 
-    service.run().await
+    service.run().await;
     // TODO: p2p network
 }
 
