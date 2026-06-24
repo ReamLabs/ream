@@ -2985,20 +2985,38 @@ impl LeanChainService {
     }
     async fn handle_process_block(&mut self, signed_block: &SignedBlock) -> anyhow::Result<()> {
         let parent_root = signed_block.block.parent_root;
-        let has_parent_state = {
+        let parent_state = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
-            store.state_provider().get(parent_root)?.is_some()
+            store.state_provider().get(parent_root)?
         };
-        if !has_parent_state {
+        let Some(_parent_state) = parent_state else {
             warn!(
                 root = ?signed_block.block.tree_hash_root(),
                 parent_root = ?parent_root,
                 "Missing parent state while processing synced block; routing block to backfill path"
             );
             return self.handle_syncing_process_block(signed_block).await;
-        }
+        };
 
+        #[cfg(feature = "devnet5")]
+        {
+            let block_for_verify = signed_block.clone();
+            let verified = tokio::task::spawn_blocking(move || {
+                block_for_verify.verify_signatures(&_parent_state, true)
+            })
+            .await
+            .map_err(|err| anyhow!("block verify join error: {err:?}"))??;
+            if !verified {
+                return Err(anyhow!("Block signature verification failed"));
+            }
+            self.store
+                .write()
+                .await
+                .on_block(signed_block, false)
+                .await?;
+        }
+        #[cfg(feature = "devnet4")]
         self.store
             .write()
             .await
