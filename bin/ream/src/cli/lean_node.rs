@@ -1,6 +1,7 @@
 use std::{net::IpAddr, path::PathBuf};
 
 use clap::{Parser, error::ErrorKind};
+use ream_fork_choice_lean::store::BlockProductionStrategy;
 use ream_network_spec::{cli::lean_network_parser, networks::LeanNetworkSpec};
 use ream_p2p::bootnodes::Bootnodes;
 use url::Url;
@@ -92,6 +93,14 @@ pub struct LeanNodeConfig {
         help = "Number of attestation committees (subnets). Each validator's subnet is `validator_id % count`."
     )]
     pub attestation_committee_count: u64,
+
+    #[arg(
+        long,
+        default_value = "round-based",
+        value_parser = block_production_parser,
+        help = "Attestation selection strategy for block production: round-based or tiered."
+    )]
+    pub block_production: BlockProductionStrategy,
 }
 
 impl LeanNodeConfig {
@@ -109,5 +118,13 @@ impl LeanNodeConfig {
         }
 
         Ok(())
+    }
+}
+
+fn block_production_parser(value: &str) -> Result<BlockProductionStrategy, String> {
+    match value {
+        "round-based" => Ok(BlockProductionStrategy::RoundBased),
+        "tiered" => Ok(BlockProductionStrategy::Tiered),
+        other => Err(format!("expected 'round-based' or 'tiered', got '{other}'")),
     }
 }

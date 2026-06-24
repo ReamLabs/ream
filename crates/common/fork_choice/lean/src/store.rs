@@ -116,8 +116,9 @@ struct AttestationEntryOrderingKey {
     data_root: B256,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum BlockProductionStrategy {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BlockProductionStrategy {
+    #[default]
     RoundBased,
     Tiered,
 }
@@ -135,6 +136,7 @@ pub struct Store {
     pub store: Arc<Mutex<LeanDB>>,
     pub network_state: Arc<NetworkState>,
     pub tick_interval_duration: Option<Instant>,
+    pub block_production_strategy: BlockProductionStrategy,
 }
 
 impl Store {
@@ -200,7 +202,14 @@ impl Store {
             store: Arc::new(Mutex::new(db)),
             network_state: Arc::new(NetworkState::new(anchor_checkpoint, anchor_checkpoint)),
             tick_interval_duration: None,
+            block_production_strategy: BlockProductionStrategy::default(),
         })
+    }
+
+    /// Override the block-production strategy. Defaults to round-based.
+    pub fn with_block_production_strategy(mut self, strategy: BlockProductionStrategy) -> Self {
+        self.block_production_strategy = strategy;
+        self
     }
 
     /// Use LMD GHOST to get the head, given a particular root (usually the
@@ -886,41 +895,7 @@ impl Store {
         Ok((attestations, proofs))
     }
 
-    pub async fn build_block(
-        &self,
-        slot: u64,
-        proposer_index: u64,
-        parent_root: B256,
-        attestations: Option<VariableList<AggregatedAttestations, U4096>>,
-    ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
-        self.build_block_with(
-            BlockProductionStrategy::RoundBased,
-            slot,
-            proposer_index,
-            parent_root,
-            attestations,
-        )
-        .await
-    }
-
-    pub async fn build_block_tiered(
-        &self,
-        slot: u64,
-        proposer_index: u64,
-        parent_root: B256,
-        attestations: Option<VariableList<AggregatedAttestations, U4096>>,
-    ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
-        self.build_block_with(
-            BlockProductionStrategy::Tiered,
-            slot,
-            proposer_index,
-            parent_root,
-            attestations,
-        )
-        .await
-    }
-
-    async fn build_block_with(
+    async fn build_block(
         &self,
         strategy: BlockProductionStrategy,
         slot: u64,
@@ -1539,9 +1514,14 @@ impl Store {
         let attestation_list = VariableList::new(attestation_vector.clone())
             .map_err(|err| anyhow!("Failed to create VariableList: {err:?}"))?;
 
-        // TODO(author): switch this call to build_block_tiered after review/benchmarking.
         let (mut candidate_block, proofs, post_state) = self
-            .build_block(slot, validator_index, head_root, Some(attestation_list))
+            .build_block(
+                self.block_production_strategy,
+                slot,
+                validator_index,
+                head_root,
+                Some(attestation_list),
+            )
             .await?;
 
         stop_timer(add_attestations_timer);
@@ -2575,7 +2555,10 @@ mod tests {
     use tokio::sync::Mutex as AsyncMutex;
     use tree_hash::TreeHash;
 
-    use super::{AttestationEntryScore, AttestationScoreTier, Store, compute_subnet_id};
+    use super::{
+        AttestationEntryScore, AttestationScoreTier, BlockProductionStrategy, Store,
+        compute_subnet_id,
+    };
     use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 
     static TEST_GLOBAL_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
@@ -2799,6 +2782,7 @@ mod tests {
             store: test_store.store,
             network_state: test_store.network_state,
             tick_interval_duration: None,
+            block_production_strategy: BlockProductionStrategy::default(),
         }
     }
 
@@ -3344,6 +3328,30 @@ mod tests {
         assert!(block.proposer_index == validator_index);
         assert!(block.parent_root == head_provider.get().unwrap());
         assert!(block.state_root != B256::ZERO);
+    }
+
+    /// Smoke-test the tiered path end to end: produce_block -> build_block(Tiered)
+    /// -> select_tiered -> seal_block must yield a valid block, matching the
+    /// coverage the round-based path already gets from the produce_block tests.
+    #[tokio::test]
+    async fn test_produce_block_tiered_smoke() {
+        let slot = 1;
+        let validator_index = 1;
+        let mut store = sample_store_as_store(10)
+            .await
+            .with_block_production_strategy(BlockProductionStrategy::Tiered);
+        let BlockWithSignatures { block, .. } = store
+            .produce_block_with_signatures(slot, validator_index)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.block_production_strategy,
+            BlockProductionStrategy::Tiered
+        );
+        assert_eq!(block.slot, slot);
+        assert_eq!(block.proposer_index, validator_index);
+        assert!(!block.state_root.is_zero());
     }
 
     /// Test block production fails for unauthorized proposer.
