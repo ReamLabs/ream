@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use actix_web::{HttpResponse, Responder, delete, get, post, web};
 use ream_api_types_common::error::ApiError;
+use ream_network_state_lean::AggregatorState;
 use serde::{Deserialize, Serialize};
-
-use crate::aggregator_controller::AggregatorController;
+use tracing::info;
 
 #[derive(Serialize, Deserialize)]
 pub struct AggregatorStatus {
@@ -25,29 +25,34 @@ pub struct ToggleResponse {
 /// GET /lean/v0/admin/aggregator
 #[get("/admin/aggregator")]
 pub async fn handle_status(
-    controller: Option<web::Data<Arc<AggregatorController>>>,
+    aggregator_state: Option<web::Data<Arc<AggregatorState>>>,
 ) -> Result<impl Responder, ApiError> {
-    let controller = controller.ok_or_else(|| {
-        ApiError::InternalError("Aggregator controller not available".to_string())
-    })?;
+    let aggregator_state = aggregator_state
+        .ok_or_else(|| ApiError::InternalError("Aggregator state not available".to_string()))?;
 
     Ok(HttpResponse::Ok().json(AggregatorStatus {
-        is_aggregator: controller.is_enabled(),
+        is_aggregator: aggregator_state.is_enabled(),
     }))
 }
 
 /// POST /lean/v0/admin/aggregator
 #[post("/admin/aggregator")]
 pub async fn handle_toggle(
-    controller: Option<web::Data<Arc<AggregatorController>>>,
+    aggregator_state: Option<web::Data<Arc<AggregatorState>>>,
     payload: web::Json<ToggleRequest>,
 ) -> Result<impl Responder, ApiError> {
-    let controller = controller.ok_or_else(|| {
-        ApiError::InternalError("Aggregator controller not available".to_string())
-    })?;
+    let aggregator_state = aggregator_state
+        .ok_or_else(|| ApiError::InternalError("Aggregator state not available".to_string()))?;
 
     let enabled = payload.enabled;
-    let previous = controller.set_enabled(enabled);
+    let previous = aggregator_state.set_enabled(enabled);
+
+    if previous != enabled {
+        info!(
+            "Aggregator role {} via admin API; prover setup and subnet subscriptions remain boot-time configuration",
+            if enabled { "activated" } else { "deactivated" }
+        );
+    }
 
     Ok(HttpResponse::Ok().json(ToggleResponse {
         is_aggregator: enabled,
@@ -64,26 +69,19 @@ pub async fn handle_delete() -> impl Responder {
 #[cfg(test)]
 mod tests {
     use actix_web::{App, test, web::Data};
-    use ream_consensus_lean::checkpoint::Checkpoint;
-    use ream_network_state_lean::NetworkState;
 
     use super::*;
 
-    fn setup_test_controller(initial_state: bool) -> Arc<AggregatorController> {
-        let network_state = Arc::new(NetworkState::new(
-            Checkpoint::default(),
-            Checkpoint::default(),
-            initial_state,
-        ));
-        Arc::new(AggregatorController::new(network_state))
+    fn setup_test_aggregator_state(initial_state: bool) -> Arc<AggregatorState> {
+        Arc::new(AggregatorState::new(initial_state))
     }
 
     #[actix_web::test]
     async fn test_handle_status_happy_path() {
-        let controller = setup_test_controller(false);
+        let aggregator_state = setup_test_aggregator_state(false);
         let app = test::init_service(
             App::new()
-                .app_data(Data::new(controller.clone()))
+                .app_data(Data::new(aggregator_state.clone()))
                 .service(handle_status),
         )
         .await;
@@ -97,11 +95,11 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn test_handle_toggle_updates_state() {
-        let controller = setup_test_controller(false);
+    async fn test_handle_toggle_updates_shared_state() {
+        let aggregator_state = setup_test_aggregator_state(false);
         let app = test::init_service(
             App::new()
-                .app_data(Data::new(controller.clone()))
+                .app_data(Data::new(aggregator_state.clone()))
                 .service(handle_toggle)
                 .service(handle_status),
         )
@@ -115,12 +113,29 @@ mod tests {
         let response: ToggleResponse = test::call_and_read_body_json(&app, request).await;
         assert!(response.is_aggregator);
         assert!(!response.previous);
+        assert!(aggregator_state.is_enabled());
 
         let request = test::TestRequest::get()
             .uri("/admin/aggregator")
             .to_request();
         let response: AggregatorStatus = test::call_and_read_body_json(&app, request).await;
         assert!(response.is_aggregator);
+
+        let request = test::TestRequest::post()
+            .uri("/admin/aggregator")
+            .set_json(ToggleRequest { enabled: false })
+            .to_request();
+
+        let response: ToggleResponse = test::call_and_read_body_json(&app, request).await;
+        assert!(!response.is_aggregator);
+        assert!(response.previous);
+        assert!(!aggregator_state.is_enabled());
+
+        let request = test::TestRequest::get()
+            .uri("/admin/aggregator")
+            .to_request();
+        let response: AggregatorStatus = test::call_and_read_body_json(&app, request).await;
+        assert!(!response.is_aggregator);
     }
 
     #[actix_web::test]
