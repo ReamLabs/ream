@@ -46,7 +46,10 @@ use ream_consensus_misc::{
     },
     misc::compute_epoch_at_slot,
 };
-use ream_da_node::{service::DaVerificationService, store::DaFileStore, verifier::KzgVerifier};
+use ream_da_node::{
+    ingest::ingest_channel, service::DaVerificationService, store::DaFileStore,
+    verifier::KzgVerifier,
+};
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
@@ -98,10 +101,7 @@ use ream_validator_lean::{
 };
 use ssz_types::VariableList;
 use tokio::{
-    sync::{
-        broadcast,
-        mpsc::{self, unbounded_channel},
-    },
+    sync::{broadcast, mpsc::unbounded_channel},
     time::{self, Instant},
 };
 use tracing::{Instrument, error, info};
@@ -656,7 +656,7 @@ pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, data_dir:
     // Filesystem-backed store, rooted at the node's data directory.
     let store = Arc::new(DaFileStore::new(data_dir).expect("failed to open DA store"));
     let verifier = Arc::new(KzgVerifier::default());
-    let (_tx, rx) = mpsc::channel(DA_VERIFICATION_QUEUE_CAPACITY);
+    let (_tx, rx) = ingest_channel(DA_VERIFICATION_QUEUE_CAPACITY);
     let service = DaVerificationService::new(rx, verifier.clone(), store.clone(), executor);
 
     service.run().await;

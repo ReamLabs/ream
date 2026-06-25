@@ -9,12 +9,7 @@ use ream_executor::ReamExecutor;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
-/// Work delivered to the verification service over the ingest channel.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DaWorkItem {
-    /// A candidate column to verify and, if valid, store.
-    Candidate(CandidateColumn),
-}
+use crate::ingest::DaWorkItem;
 
 /// Runs the DA verification pipeline: drain candidate columns from the ingest
 /// channel, verify each one, and persist those that pass.
@@ -121,5 +116,90 @@ impl DaVerificationService {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        path::PathBuf,
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
+    };
+
+    use alloy_primitives::B256;
+    use ream_da::{
+        column::{CandidateColumn, DaContext, DaPayload},
+        id::DaColumnId,
+        store::DaReadStore,
+    };
+    use ream_executor::ReamExecutor;
+
+    use super::DaVerificationService;
+    use crate::{ingest::ingest_channel, store::DaFileStore, verifier::KzgVerifier};
+
+    /// Unique temp dir per call so parallel tests don't collide; no `tempfile`
+    /// dependency, and the store creates the directory lazily on first write.
+    fn temp_root() -> PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        std::env::temp_dir().join(format!("ream-da-pipeline-test-{pid}-{n}"))
+    }
+
+    fn sample_candidate(
+        block_root: B256,
+        index: u64,
+        slot: u64,
+        payload: &[u8],
+    ) -> CandidateColumn {
+        CandidateColumn {
+            id: DaColumnId::new(block_root, index).expect("index within range"),
+            context: DaContext { slot },
+            payload: DaPayload::new(payload.to_vec()),
+        }
+    }
+
+    /// Candidates submitted through the ingest handle are verified (by the
+    /// pass-through stub) and end up in the store — exercising the whole
+    /// `handle -> queue -> verify -> store` path end to end.
+    #[test]
+    fn submitted_candidates_are_verified_and_stored() {
+        let executor = ReamExecutor::new().expect("create executor");
+        let root = temp_root();
+        let store = Arc::new(DaFileStore::new(root.clone()).expect("open store"));
+        let verifier = Arc::new(KzgVerifier::default());
+        let (handle, rx) = ingest_channel(8);
+        let service = DaVerificationService::new(rx, verifier, store.clone(), executor.clone());
+
+        let candidates = vec![
+            sample_candidate(B256::repeat_byte(1), 0, 10, b"col-0"),
+            sample_candidate(B256::repeat_byte(1), 7, 10, b"col-7"),
+            sample_candidate(B256::repeat_byte(2), 3, 11, b"other-block"),
+        ];
+
+        executor.runtime().block_on(async move {
+            let service_task = tokio::spawn(service.run());
+
+            for candidate in &candidates {
+                handle.submit(candidate.clone()).await.expect("submit");
+            }
+            // Dropping the only handle closes the queue; the service drains the
+            // buffered items, then `recv` returns `None` and `run` returns.
+            drop(handle);
+            service_task.await.expect("service task joined");
+
+            for candidate in &candidates {
+                let stored = store
+                    .get(&candidate.id)
+                    .expect("get succeeds")
+                    .expect("column is present");
+                assert_eq!(stored.payload().as_bytes(), candidate.payload.as_bytes());
+            }
+        });
+
+        std::fs::remove_dir_all(&root).ok();
     }
 }
