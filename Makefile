@@ -53,7 +53,7 @@ test-devnet5:
 .PHONY: fmt
 fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `map_err` to be `err`
 	cargo +nightly fmt --all
-	@all_occurrences=$$(grep -RIn --include="*.rs" "\.map_err(|" . || true); \
+	@all_occurrences=$$(grep -RIn --exclude-dir=./target --include="*.rs" "\.map_err(|" . || true); \
 	violations=$$(echo "$$all_occurrences" | grep -Ev "\.map_err\(\|err\|" || true); \
 	if [ -n "$$violations" ]; then \
 		echo "Invalid .map_err closure naming found:"; \
@@ -64,7 +64,7 @@ fmt: # Run `rustfmt` on the entire workspace and enfore closure variables on `ma
 		exit 1; \
 	fi
 	@# ---- Err(err) naming check ----
-	@all_errs=$$(grep -RIn --include="*.rs" "Err(" . || true); \
+	@all_errs=$$(grep -RIn --exclude-dir=./target --include="*.rs" "Err(" . || true); \
 	violations_err=$$(echo "$$all_errs" | grep -E "Err\(\s*[a-z][a-zA-Z0-9_]*\s*\)" | grep -Ev "Err\(err\)" || true); \
 	if [ -n "$$violations_err" ]; then \
 		echo "Invalid Err variable naming found:"; \
