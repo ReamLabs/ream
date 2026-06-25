@@ -161,6 +161,7 @@ test_epoch_processing!(
 );
 test_epoch_processing!(pending_consolidations, process_pending_consolidations);
 test_epoch_processing!(pending_deposits, process_pending_deposits);
+test_epoch_processing!(proposer_lookahead, process_proposer_lookahead);
 test_epoch_processing!(randao_mixes_reset, process_randao_mixes_reset);
 test_epoch_processing!(registry_updates, process_registry_updates);
 test_epoch_processing!(rewards_and_penalties, process_rewards_and_penalties);
