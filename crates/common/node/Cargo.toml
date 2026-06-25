@@ -12,8 +12,8 @@ version.workspace = true
 [dependencies]
 
 [build-dependencies]
-vergen = { version = ">=9.0, <9.1", features = ["build", "cargo", "emit_and_set", "rustc"] }
-vergen-git2 = "1.0"
+vergen = { version = "10", features = ["build", "cargo", "emit_and_set", "rustc"] }
+vergen-git2 = "10"
 
 [lints]
 workspace = true
