@@ -659,6 +659,10 @@ impl Store {
                 if raw_entries.is_empty() && child_proofs.len() < 2 {
                     continue;
                 }
+
+                if child_proofs.is_empty() && raw_entries.len() <= 1 {
+                    continue;
+                }
             } else if raw_entries.is_empty() {
                 continue;
             }
@@ -3999,9 +4003,56 @@ mod tests {
     }
 
     #[tokio::test]
+    pub async fn test_aggregate_skips_single_gossip_sig_with_no_children() {
+        let mut store: Store = sample_store_as_store(2).await;
+        let attesting_validators: Vec<u64> = vec![1];
+        let key_pairs = install_validator_keys(&store, &attesting_validators).await;
+        let slot = 1;
+
+        let attestation_data = store.produce_attestation_data(slot).await.unwrap();
+        let data_root = attestation_data.tree_hash_root();
+        let signature = key_pairs
+            .get(&1)
+            .unwrap()
+            .1
+            .sign(&data_root.0, slot as u32)
+            .unwrap();
+
+        {
+            let db = store.store.lock().await;
+            db.attestation_data_by_root_provider()
+                .insert(data_root, attestation_data)
+                .unwrap();
+            db.attestation_signatures_provider()
+                .insert(SignatureKey::from_parts(1, data_root), signature)
+                .unwrap();
+        }
+
+        store.aggregate().await.unwrap();
+
+        let db = store.store.lock().await;
+
+        // No aggregate was produced for the lone sig.
+        let no_proof = db
+            .latest_new_aggregated_payloads_provider()
+            .get(SignatureKey::from_parts(1, data_root))
+            .unwrap()
+            .is_none();
+        assert!(no_proof);
+
+        // The unconsumed gossip sig stays put for a later, non-trivial pass.
+        let sig_survives = db
+            .attestation_signatures_provider()
+            .get(SignatureKey::from_parts(1, data_root))
+            .unwrap()
+            .is_some();
+        assert!(sig_survives);
+    }
+
+    #[tokio::test]
     pub async fn test_multiple_attestation_data_grouped_separately() {
         let mut store: Store = sample_store_as_store(4).await;
-        let attesting_validators: Vec<u64> = vec![1, 2];
+        let attesting_validators: Vec<u64> = vec![0, 1, 2, 3];
         let key_pairs = install_validator_keys(&store, &attesting_validators).await;
         let slot = 1;
 
@@ -4018,18 +4069,14 @@ mod tests {
         let data_root_1 = attestation_data_1.tree_hash_root();
         let data_root_2 = attestation_data_2.tree_hash_root();
 
-        let sig_1 = key_pairs
-            .get(&1)
-            .unwrap()
-            .1
-            .sign(&data_root_1.0, attestation_data_1.slot as u32)
-            .unwrap();
-        let sig_2 = key_pairs
-            .get(&2)
-            .unwrap()
-            .1
-            .sign(&data_root_2.0, attestation_data_2.slot as u32)
-            .unwrap();
+        let sign = |validator_id: u64, data_root: &B256| {
+            key_pairs
+                .get(&validator_id)
+                .unwrap()
+                .1
+                .sign(&data_root.0, slot as u32)
+                .unwrap()
+        };
 
         {
             let db = store.store.lock().await;
@@ -4043,18 +4090,22 @@ mod tests {
                 .insert(data_root_2, attestation_data_2)
                 .unwrap();
 
-            gossip_signatures
-                .insert(
-                    SignatureKey::from_parts(attesting_validators[0], data_root_1),
-                    sig_1,
-                )
-                .unwrap();
-            gossip_signatures
-                .insert(
-                    SignatureKey::from_parts(attesting_validators[1], data_root_2),
-                    sig_2,
-                )
-                .unwrap();
+            for &validator_id in &[1u64, 3] {
+                gossip_signatures
+                    .insert(
+                        SignatureKey::from_parts(validator_id, data_root_1),
+                        sign(validator_id, &data_root_1),
+                    )
+                    .unwrap();
+            }
+            for &validator_id in &[2u64, 0] {
+                gossip_signatures
+                    .insert(
+                        SignatureKey::from_parts(validator_id, data_root_2),
+                        sign(validator_id, &data_root_2),
+                    )
+                    .unwrap();
+            }
         }
 
         store.aggregate().await.unwrap();
@@ -4067,19 +4118,13 @@ mod tests {
 
         assert!(
             latest_new
-                .get(SignatureKey::from_parts(
-                    attesting_validators[0],
-                    data_root_1
-                ))
+                .get(SignatureKey::from_parts(1, data_root_1))
                 .unwrap()
                 .is_some()
         );
         assert!(
             latest_new
-                .get(SignatureKey::from_parts(
-                    attesting_validators[1],
-                    data_root_2
-                ))
+                .get(SignatureKey::from_parts(2, data_root_2))
                 .unwrap()
                 .is_some()
         );
