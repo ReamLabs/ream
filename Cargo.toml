@@ -157,6 +157,7 @@ ssz_types = { git = "https://github.com/sigp/ssz_types.git", rev = "5dc2d521ed31
 tempdir = "0.3.7"
 tempfile = "3.23.0"
 thiserror = "2.0.17"
+tikv-jemallocator = "0.6.0"
 tokio = { version = "1.48.0", features = [
     "rt",
     "rt-multi-thread",

@@ -110,6 +110,9 @@ use tokio::{
 use tracing::{Instrument, error, info};
 use tracing_subscriber::EnvFilter;
 
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 pub const APP_NAME: &str = "ream";
 const DEFAULT_QUIET_LOG_TARGETS: &str = "libp2p_gossipsub::behaviour=error";
 
