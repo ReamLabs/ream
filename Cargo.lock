@@ -563,7 +563,7 @@ dependencies = [
  "alloy-eips 2.1.0",
  "alloy-hardforks",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "alloy-rpc-types-eth 2.1.0",
  "alloy-sol-types",
  "auto_impl",
@@ -833,7 +833,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a05ef5b11fad72068e6f011c21445bc5b596ac850644c4a14c30d845ce56de8"
 dependencies = [
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "alloy-rpc-types-eth 2.1.0",
  "alloy-serde 2.1.0",
  "serde",
@@ -886,7 +886,7 @@ checksum = "57af0eb1ee47312e8c92ddf2669308249015fc2cf733eb17251e7343c27b70c7"
 dependencies = [
  "alloy-eips 2.1.0",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "derive_more",
  "ethereum_ssz",
  "ethereum_ssz_derive",
@@ -909,24 +909,6 @@ dependencies = [
  "derive_more",
  "serde",
  "serde_with",
-]
-
-[[package]]
-name = "alloy-rpc-types-engine"
-version = "1.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb9b97b6e7965679ad22df297dda809b11cebc13405c1b537e5cffecc95834fa"
-dependencies = [
- "alloy-consensus 1.8.3",
- "alloy-eips 1.8.3",
- "alloy-primitives",
- "alloy-rlp",
- "alloy-serde 1.8.3",
- "derive_more",
- "jsonwebtoken 9.3.1",
- "rand 0.8.5",
- "serde",
- "strum",
 ]
 
 [[package]]
@@ -9356,12 +9338,14 @@ version = "0.1.0"
 dependencies = [
  "alloy-genesis",
  "alloy-primitives",
- "alloy-rpc-types-engine 1.8.3",
+ "alloy-rpc-types-engine",
  "eyre",
  "futures-util",
+ "reqwest 0.12.28",
  "reth-ethereum",
  "reth-payload-builder",
  "serde_json",
+ "serial_test",
  "sha2",
  "tokio",
 ]
@@ -10043,7 +10027,7 @@ dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
  "alloy-provider",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "alloy-transport",
  "auto_impl",
  "derive_more",
@@ -10298,7 +10282,7 @@ source = "git+https://github.com/paradigmxyz/reth.git?rev=5d027e5ff72f31270b862f
 dependencies = [
  "alloy-consensus 2.1.0",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "eyre",
  "futures-util",
  "reth-chainspec",
@@ -10322,7 +10306,7 @@ dependencies = [
  "alloy-consensus 2.1.0",
  "alloy-eips 2.1.0",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "auto_impl",
  "futures",
  "reth-chain-state",
@@ -10350,7 +10334,7 @@ dependencies = [
  "alloy-evm",
  "alloy-primitives",
  "alloy-rlp",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "crossbeam-channel",
  "derive_more",
  "futures",
@@ -10405,7 +10389,7 @@ dependencies = [
  "alloy-consensus 2.1.0",
  "alloy-primitives",
  "alloy-rlp",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "eyre",
  "futures",
  "itertools 0.14.0",
@@ -10437,7 +10421,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "alloy-rpc-types-beacon",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "sha2",
@@ -10550,7 +10534,7 @@ name = "reth-ethereum"
 version = "2.3.0"
 source = "git+https://github.com/paradigmxyz/reth.git?rev=5d027e5ff72f31270b862f8e000d1cc79621be2e#5d027e5ff72f31270b862f8e000d1cc79621be2e"
 dependencies = [
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "alloy-rpc-types-eth 2.1.0",
  "reth-chainspec",
  "reth-codecs",
@@ -10606,7 +10590,7 @@ source = "git+https://github.com/paradigmxyz/reth.git?rev=5d027e5ff72f31270b862f
 dependencies = [
  "alloy-eips 2.1.0",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "reth-engine-primitives",
  "reth-ethereum-primitives",
  "reth-payload-primitives",
@@ -10637,7 +10621,7 @@ dependencies = [
  "alloy-eips 2.1.0",
  "alloy-primitives",
  "alloy-rlp",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "reth-basic-payload-builder",
  "reth-chainspec",
  "reth-consensus-common",
@@ -10716,7 +10700,7 @@ dependencies = [
  "alloy-eips 2.1.0",
  "alloy-evm",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "reth-chainspec",
  "reth-ethereum-forks",
  "reth-ethereum-primitives",
@@ -11107,7 +11091,7 @@ name = "reth-node-api"
 version = "2.3.0"
 source = "git+https://github.com/paradigmxyz/reth.git?rev=5d027e5ff72f31270b862f8e000d1cc79621be2e#5d027e5ff72f31270b862f8e000d1cc79621be2e"
 dependencies = [
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "eyre",
  "reth-basic-payload-builder",
  "reth-consensus",
@@ -11136,7 +11120,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-types",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "aquamarine",
  "eyre",
  "fdlimit",
@@ -11202,7 +11186,7 @@ dependencies = [
  "alloy-consensus 2.1.0",
  "alloy-eips 2.1.0",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "clap",
  "derive_more",
  "dirs-next",
@@ -11258,7 +11242,7 @@ dependencies = [
  "alloy-eips 2.1.0",
  "alloy-network",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "alloy-rpc-types-eth 2.1.0",
  "ethereum_ssz",
  "eyre",
@@ -11328,7 +11312,7 @@ dependencies = [
  "alloy-consensus 2.1.0",
  "alloy-eips 2.1.0",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "derive_more",
  "futures",
  "humantime",
@@ -11424,7 +11408,7 @@ dependencies = [
  "alloy-eips 2.1.0",
  "alloy-primitives",
  "alloy-rlp",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "auto_impl",
  "either",
  "reth-chainspec",
@@ -11444,7 +11428,7 @@ version = "2.3.0"
 source = "git+https://github.com/paradigmxyz/reth.git?rev=5d027e5ff72f31270b862f8e000d1cc79621be2e#5d027e5ff72f31270b862f8e000d1cc79621be2e"
 dependencies = [
  "alloy-consensus 2.1.0",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "reth-primitives-traits",
 ]
 
@@ -11491,7 +11475,7 @@ dependencies = [
  "alloy-eips 2.1.0",
  "alloy-genesis",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "eyre",
  "itertools 0.14.0",
  "metrics",
@@ -11608,7 +11592,7 @@ dependencies = [
  "alloy-rpc-types-admin",
  "alloy-rpc-types-beacon",
  "alloy-rpc-types-debug",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "alloy-rpc-types-eth 2.1.0",
  "alloy-rpc-types-mev",
  "alloy-rpc-types-trace",
@@ -11681,7 +11665,7 @@ dependencies = [
  "alloy-rpc-types-anvil",
  "alloy-rpc-types-beacon",
  "alloy-rpc-types-debug",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "alloy-rpc-types-eth 2.1.0",
  "alloy-rpc-types-mev",
  "alloy-rpc-types-trace",
@@ -11768,7 +11752,7 @@ dependencies = [
  "alloy-eips 2.1.0",
  "alloy-primitives",
  "alloy-rlp",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "async-trait",
  "jsonrpsee-core",
  "jsonrpsee-types",
@@ -11894,7 +11878,7 @@ name = "reth-rpc-layer"
 version = "2.3.0"
 source = "git+https://github.com/paradigmxyz/reth.git?rev=5d027e5ff72f31270b862f8e000d1cc79621be2e#5d027e5ff72f31270b862f8e000d1cc79621be2e"
 dependencies = [
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "http 1.4.0",
  "jsonrpsee-http-client",
  "pin-project",
@@ -11910,7 +11894,7 @@ source = "git+https://github.com/paradigmxyz/reth.git?rev=5d027e5ff72f31270b862f
 dependencies = [
  "alloy-eips 2.1.0",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "jsonrpsee-core",
  "jsonrpsee-types",
  "reth-errors",
@@ -12070,7 +12054,7 @@ dependencies = [
  "alloy-eip7928 0.4.5",
  "alloy-eips 2.1.0",
  "alloy-primitives",
- "alloy-rpc-types-engine 2.1.0",
+ "alloy-rpc-types-engine",
  "auto_impl",
  "reth-chainspec",
  "reth-db-api",

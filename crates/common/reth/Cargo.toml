@@ -10,20 +10,23 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-tokio.workspace = true
-reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e", features = [
-    "node",
-    "test-utils",
-] }
-reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e" }
 alloy-genesis = "2.1.0"
 alloy-primitives.workspace = true
-sha2.workspace = true
-futures-util = "0.3.32"
+alloy-rpc-types-engine = "2.1.0"
 eyre = "0.6.12"
+futures-util = "0.3.32"
+reqwest.workspace = true
+reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e", features = [
+  "node",
+  "test-utils",
+] }
+reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e" }
 serde_json.workspace = true
-alloy-rpc-types-engine = "1.6.3"
+sha2.workspace = true
+tokio.workspace = true
 
+[dev-dependencies]
+serial_test = "3.4.0"
 
 [lints]
 workspace = true
