@@ -28,9 +28,9 @@ use ream_consensus_misc::{
         DOMAIN_VOLUNTARY_EXIT, EFFECTIVE_BALANCE_INCREMENT, EJECTION_BALANCE,
         EPOCHS_PER_ETH1_VOTING_PERIOD, EPOCHS_PER_HISTORICAL_VECTOR, EPOCHS_PER_SLASHINGS_VECTOR,
         EPOCHS_PER_SYNC_COMMITTEE_PERIOD, ETH1_ADDRESS_WITHDRAWAL_PREFIX, FAR_FUTURE_EPOCH,
-        FINALIZED_CHECKPOINT_INDEX, FULL_EXIT_REQUEST_AMOUNT, GENESIS_EPOCH, GENESIS_SLOT,
-        HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT, HYSTERESIS_UPWARD_MULTIPLIER,
-        INACTIVITY_PENALTY_QUOTIENT_BELLATRIX, INACTIVITY_SCORE_BIAS,
+        FINALIZED_CHECKPOINT_INDEX, FULL_EXIT_REQUEST_AMOUNT, FULU_FORK_VERSION, GENESIS_EPOCH,
+        GENESIS_SLOT, HYSTERESIS_DOWNWARD_MULTIPLIER, HYSTERESIS_QUOTIENT,
+        HYSTERESIS_UPWARD_MULTIPLIER, INACTIVITY_PENALTY_QUOTIENT_BELLATRIX, INACTIVITY_SCORE_BIAS,
         INACTIVITY_SCORE_RECOVERY_RATE, JUSTIFICATION_BITS_LENGTH, MAX_COMMITTEES_PER_SLOT,
         MAX_DEPOSITS, MAX_EFFECTIVE_BALANCE_ELECTRA, MAX_PENDING_DEPOSITS_PER_EPOCH,
         MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP, MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT,
@@ -2289,8 +2289,9 @@ impl BeaconState {
             let Some(deposit) = self.pending_deposits.get(index).cloned() else {
                 bail!("Pending deposit not found");
             };
-            // Do not process deposit requests if Eth1 bridge deposits are not yet applied
-            if deposit.slot > GENESIS_SLOT
+            // Fulu removes support for the former Eth1 bridge deposit transition.
+            if self.fork.current_version != FULU_FORK_VERSION
+                && deposit.slot > GENESIS_SLOT
                 && self.eth1_deposit_index < self.deposit_requests_start_index
             {
                 break;

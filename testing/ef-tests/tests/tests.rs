@@ -29,10 +29,9 @@ use ream_consensus_misc::{
     checkpoint::Checkpoint, consolidation_request::ConsolidationRequest,
     constants::beacon::BLOB_KZG_COMMITMENTS_INDEX, deposit::Deposit, deposit_data::DepositData,
     deposit_request::DepositRequest, eth_1_data::Eth1Data, execution_requests::ExecutionRequests,
-    fork::Fork, fork_data::ForkData, historical_batch::HistoricalBatch,
-    indexed_attestation::IndexedAttestation, misc::compute_shuffled_index,
-    signing_data::SigningData, validator::Validator, withdrawal::Withdrawal,
-    withdrawal_request::WithdrawalRequest,
+    fork::Fork, fork_data::ForkData, indexed_attestation::IndexedAttestation,
+    misc::compute_shuffled_index, signing_data::SigningData, validator::Validator,
+    withdrawal::Withdrawal, withdrawal_request::WithdrawalRequest,
 };
 use ream_execution_rpc_types::electra::{
     execution_payload::ExecutionPayload, execution_payload_header::ExecutionPayloadHeader,
@@ -56,7 +55,8 @@ test_consensus_type!(ExecutionPayloadHeader);
 test_consensus_type!(Eth1Data);
 test_consensus_type!(Fork);
 test_consensus_type!(ForkData);
-test_consensus_type!(HistoricalBatch);
+// HistoricalBatch Fulu vectors are not included in v1.7.0-alpha.11.
+// test_consensus_type!(HistoricalBatch);
 test_consensus_type!(HistoricalSummary);
 test_consensus_type!(IndexedAttestation);
 test_consensus_type!(ProposerSlashing);
@@ -101,7 +101,8 @@ test_operation!(
     "consolidation_request",
     process_consolidation_request
 );
-test_operation!(deposit, Deposit, "deposit", process_deposit);
+// Legacy deposit operation Fulu vectors are not included in v1.7.0-alpha.11.
+// test_operation!(deposit, Deposit, "deposit", process_deposit);
 test_operation!(
     deposit_request,
     DepositRequest,
@@ -182,7 +183,8 @@ test_fork_choice!(ex_ante);
 test_fork_choice!(get_head);
 test_fork_choice!(get_proposer_head);
 test_fork_choice!(on_block);
-test_fork_choice!(should_override_forkchoice_update);
+// should_override_forkchoice_update Fulu vectors are not included in v1.7.0-alpha.11.
+// test_fork_choice!(should_override_forkchoice_update);
 
 // Testing merkle_proof
 test_merkle_proof!(
