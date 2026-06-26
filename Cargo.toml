@@ -25,6 +25,7 @@ members = [
     "crates/common/node",
     "crates/common/operation_pool",
     "crates/common/polynomial_commitments",
+    "crates/common/reth",
     "crates/common/sync",
     "crates/common/sync_committee_pool",
     "crates/common/validator/beacon",
@@ -222,6 +223,7 @@ ream-syncer = { path = "crates/networking/syncer", default-features = false }
 ream-test-utils = { path = "testing/test_utils", default-features = false }
 ream-validator-beacon = { path = "crates/common/validator/beacon" }
 ream-validator-lean = { path = "crates/common/validator/lean", default-features = false }
+reth-engine = { path = "crates/common/reth", default-features = false }
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing.git", rev = "c14a9ad96436e6b8b631faf49a3666e4558b71ae" }
