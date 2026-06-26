@@ -1,5 +1,5 @@
 [package]
-name = "reth-engine"
+name = "ream-reth-engine"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -11,11 +11,11 @@ version.workspace = true
 
 [dependencies]
 tokio.workspace = true
-reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "9384bc53d8c0c77e59cac83fdaaf3b372c6d2216", features = [
+reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e", features = [
     "node",
     "test-utils",
 ] }
-reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "9384bc53d8c0c77e59cac83fdaaf3b372c6d2216" }
+reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e" }
 alloy-genesis = "2.1.0"
 alloy-primitives.workspace = true
 sha2.workspace = true
