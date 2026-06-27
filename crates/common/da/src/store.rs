@@ -1,4 +1,8 @@
-use crate::{column::VerifiedColumn, error::DaStoreError, id::DaColumnId};
+use alloy_primitives::B256;
+
+use crate::{
+    availability::DaAvailability, column::VerifiedColumn, error::DaStoreError, id::DaColumnId,
+};
 
 /// Outcome of inserting a verified column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +21,7 @@ pub enum InsertOutcome {
 /// only ever contains verified data.
 pub trait DaReadStore: Send + Sync {
     fn get(&self, id: &DaColumnId) -> Result<Option<VerifiedColumn>, DaStoreError>;
+    fn availability(&self, block_root: B256) -> Result<DaAvailability, DaStoreError>;
 }
 
 /// Write-capable storage handle.
@@ -32,4 +37,6 @@ pub trait DaWriteStore: DaReadStore {
     /// overwritten. Otherwise the column is persisted and
     /// [`InsertOutcome::Inserted`] is returned.
     fn put(&self, column: VerifiedColumn) -> Result<InsertOutcome, DaStoreError>;
+
+    fn prune_below_slot(&self, slot: u64) -> Result<usize, DaStoreError>;
 }
