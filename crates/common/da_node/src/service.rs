@@ -9,7 +9,7 @@ use ream_executor::ReamExecutor;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
-use crate::ingest::DaWorkItem;
+use crate::ingest::{DaWorkItem, RetentionHint};
 
 /// Runs the DA verification pipeline: drain candidate columns from the ingest
 /// channel, verify each one, and persist those that pass.
@@ -49,9 +49,30 @@ impl DaVerificationService {
         while let Some(item) = self.receiver.recv().await {
             match item {
                 DaWorkItem::Candidate(candidate) => self.process_candidate(candidate).await,
+                DaWorkItem::Retention(hint) => self.process_retention(hint).await,
             }
         }
         info!("DA verification service stopped: ingestion queue closed");
+    }
+
+    /// Apply a beacon-issued retention boundary: prune every stored column whose
+    /// slot is below `hint.slot`.
+    async fn process_retention(&self, hint: RetentionHint) {
+        let store = self.store.clone();
+        let boundary = hint.slot;
+        match self
+            .executor
+            .spawn_blocking(move || store.prune_below_slot(boundary))
+            .await
+        {
+            Ok(Ok(count)) => {
+                if count > 0 {
+                    info!("retention pruned {count} column files below slot {boundary}");
+                }
+            }
+            Ok(Err(err)) => error!("retention prune failed: {err}"),
+            Err(err) => error!("retention prune worker panicked or was cancelled: {err}"),
+        }
     }
 
     /// Verify a single candidate and, if it passes, persist it.
@@ -138,7 +159,11 @@ mod tests {
     use ream_executor::ReamExecutor;
 
     use super::DaVerificationService;
-    use crate::{ingest::ingest_channel, store::DaFileStore, verifier::KzgVerifier};
+    use crate::{
+        ingest::{RetentionHint, ingest_channel},
+        store::DaFileStore,
+        verifier::KzgVerifier,
+    };
 
     /// Unique temp dir per call so parallel tests don't collide; no `tempfile`
     /// dependency, and the store creates the directory lazily on first write.
@@ -198,6 +223,48 @@ mod tests {
                     .expect("column is present");
                 assert_eq!(stored.payload().as_bytes(), candidate.payload.as_bytes());
             }
+        });
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A retention hint submitted after some candidates prunes exactly the
+    /// columns below its boundary and leaves newer ones in place — exercising
+    /// `submit_retention -> queue -> process_retention -> store.prune_below_slot`.
+    #[test]
+    fn retention_hint_prunes_columns_below_the_boundary() {
+        let executor = ReamExecutor::new().expect("create executor");
+        let root = temp_root();
+        let store = Arc::new(DaFileStore::new(root.clone()).expect("open store"));
+        let verifier = Arc::new(KzgVerifier::default());
+        let (handle, rx) = ingest_channel(8);
+        let service = DaVerificationService::new(rx, verifier, store.clone(), executor.clone());
+
+        // Two old columns at slot 10, one newer at slot 20.
+        let old_a = sample_candidate(B256::repeat_byte(1), 0, 10, b"old-a");
+        let old_b = sample_candidate(B256::repeat_byte(1), 7, 10, b"old-b");
+        let recent = sample_candidate(B256::repeat_byte(2), 3, 20, b"recent");
+
+        executor.runtime().block_on(async move {
+            let service_task = tokio::spawn(service.run());
+
+            // The queue is FIFO and drained by a single consumer, so a hint
+            // submitted after the candidates is applied only once they are stored.
+            for candidate in [&old_a, &old_b, &recent] {
+                handle.submit(candidate.clone()).await.expect("submit");
+            }
+            handle
+                .submit_retention(RetentionHint { slot: 15 })
+                .await
+                .expect("submit retention");
+
+            drop(handle);
+            service_task.await.expect("service task joined");
+
+            // slot 10 < 15 -> pruned; slot 20 >= 15 -> kept.
+            assert_eq!(store.get(&old_a.id).expect("get"), None);
+            assert_eq!(store.get(&old_b.id).expect("get"), None);
+            assert!(store.get(&recent.id).expect("get").is_some());
         });
 
         std::fs::remove_dir_all(&root).ok();
