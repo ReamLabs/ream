@@ -101,7 +101,8 @@ test_operation!(
     "consolidation_request",
     process_consolidation_request
 );
-// Legacy deposit operation Fulu vectors are not included in v1.7.0-alpha.11.
+// The standalone `deposit` operation vectors were removed in Fulu; deposits are processed via
+// `deposit_request` from Electra onwards.
 // test_operation!(deposit, Deposit, "deposit", process_deposit);
 test_operation!(
     deposit_request,
