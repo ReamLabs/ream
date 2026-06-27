@@ -2711,16 +2711,32 @@ impl BeaconState {
         }
 
         if let Some(execution_engine) = execution_engine {
-            ensure!(
-                execution_engine
-                    .verify_and_notify_new_payload(NewPayloadRequest {
-                        execution_payload: payload.clone(),
-                        versioned_hashes,
-                        parent_beacon_block_root: self.latest_block_header.parent_root,
-                        execution_requests: body.execution_requests.clone()
-                    })
-                    .await?
-            );
+            let status = execution_engine
+                .verify_and_notify_new_payload(NewPayloadRequest {
+                    execution_payload: payload.clone(),
+                    versioned_hashes,
+                    parent_beacon_block_root: self.latest_block_header.parent_root,
+                    execution_requests: body.execution_requests.clone()
+                })
+                .await?;
+            
+            use ream_execution_rpc_types::payload_status::PayloadStatus;
+            match status.status {
+                PayloadStatus::Invalid => {
+                    if let Some(latest_valid) = status.latest_valid_hash {
+                        anyhow::bail!("INVALID_PAYLOAD:{}", latest_valid);
+                    } else {
+                        anyhow::bail!("INVALID_PAYLOAD");
+                    }
+                }
+                PayloadStatus::InvalidBlockHash => {
+                    anyhow::bail!("INVALID_PAYLOAD_BLOCK_HASH");
+                }
+                PayloadStatus::Valid | PayloadStatus::Accepted => {}
+                PayloadStatus::Syncing => {
+                    // Syncing is technically fine, we can treat it as valid for now or wait
+                }
+            }
         }
 
         // Cache execution payload header

@@ -3,7 +3,10 @@ use std::path::Path;
 use alloy_primitives::B256;
 use anyhow::Ok;
 use async_trait::async_trait;
-use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
+use ream_execution_rpc_types::{
+    get_blobs::BlobAndProofV1,
+    payload_status::{PayloadStatus, PayloadStatusV1},
+};
 use serde::Deserialize;
 
 use super::{engine_trait::ExecutionApi, new_payload_request::NewPayloadRequest};
@@ -35,8 +38,17 @@ impl ExecutionApi for MockExecutionEngine {
     async fn verify_and_notify_new_payload(
         &self,
         _new_payload_request: NewPayloadRequest,
-    ) -> anyhow::Result<bool> {
-        Ok(self.execution_valid)
+    ) -> anyhow::Result<PayloadStatusV1> {
+        let status = if self.execution_valid {
+            PayloadStatus::Valid
+        } else {
+            PayloadStatus::Invalid
+        };
+        Ok(PayloadStatusV1 {
+            status,
+            latest_valid_hash: None,
+            validation_error: None,
+        })
     }
 
     async fn engine_get_blobs_v1(

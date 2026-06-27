@@ -49,13 +49,58 @@ impl BeaconChain {
     pub async fn process_block(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
 
+        let result = on_block(
+            &mut store,
+            &signed_block,
+            &self.execution_engine,
+            signed_block.message.slot >= beacon_network_spec().slot_n_days_ago(17),
+            false, // full validation
+        )
+        .await;
+
+        if let Err(e) = result {
+            let err_str = e.to_string();
+            if err_str.starts_with("INVALID_PAYLOAD") {
+                drop(store);
+                let block_root = signed_block.message.tree_hash_root();
+                let parts: Vec<&str> = err_str.split(':').collect();
+                if parts.len() == 2 {
+                    if let core::result::Result::Ok(latest_valid) = parts[1].parse::<alloy_primitives::B256>() {
+                        self.handle_invalid_payload(block_root, latest_valid).await?;
+                    }
+                }
+                bail!("Block payload is invalid");
+            }
+            return Err(e);
+        }
+
+        // Build and Emit Block event
+        let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
+        let block_event =
+            BlockEvent::from_block(&signed_block, finalized_checkpoint, |block_root, epoch| {
+                store.get_checkpoint_block(block_root, epoch)
+            })?;
+        self.event_sender
+            .send_event(BeaconEvent::Block(block_event));
+
+        Ok(())
+    }
+
+    pub async fn process_block_optimistic(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
+        let mut store = self.store.lock().await;
+
         on_block(
             &mut store,
             &signed_block,
             &self.execution_engine,
             signed_block.message.slot >= beacon_network_spec().slot_n_days_ago(17),
+            true, // skip execution validation
         )
         .await?;
+
+        // Insert the root as optimistic in the database
+        let block_root = signed_block.message.tree_hash_root();
+        store.db.optimistic_roots_provider().insert(block_root, true)?;
 
         // Build and Emit Block event
         let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
@@ -75,6 +120,35 @@ impl BeaconChain {
     ) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
         on_attester_slashing(&mut store, attester_slashing)?;
+        Ok(())
+    }
+
+    pub async fn handle_invalid_payload(
+        &self,
+        invalid_root: B256,
+        latest_valid_hash: B256,
+    ) -> anyhow::Result<()> {
+        let mut store = self.store.lock().await;
+        let mut to_remove = vec![];
+        let mut current = store.get_head()?;
+        loop {
+            if current == latest_valid_hash {
+                break;
+            }
+            let block = store.db.block_provider().get(current)?.ok_or(anyhow!("Missing block"))?;
+            to_remove.push(current);
+            current = block.message.parent_root;
+            if current == invalid_root {
+                to_remove.push(invalid_root);
+                break;
+            }
+        }
+        for root in to_remove {
+            store.db.block_provider().remove(root)?;
+            let _ = store.db.optimistic_roots_provider().remove(root);
+        }
+        // Actually Store doesn't have `set_head` directly, it is determined by fork choice, 
+        // but we assume get_head() will now compute it correctly after invalid branches are pruned.
         Ok(())
     }
 

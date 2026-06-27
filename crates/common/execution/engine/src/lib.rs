@@ -80,7 +80,7 @@ impl ExecutionEngine {
     pub async fn notify_new_payload(
         &self,
         new_payload_request: NewPayloadRequest,
-    ) -> anyhow::Result<PayloadStatus> {
+    ) -> anyhow::Result<PayloadStatusV1> {
         let NewPayloadRequest {
             execution_payload,
             versioned_hashes,
@@ -95,7 +95,7 @@ impl ExecutionEngine {
                 get_execution_requests_list(&execution_requests),
             )
             .await?;
-        Ok(payload_status.status)
+        Ok(payload_status)
     }
 
     pub fn build_request(&self, rpc_request: JsonRpcRequest) -> anyhow::Result<Request> {
@@ -426,7 +426,7 @@ impl ExecutionApi for ExecutionEngine {
     async fn verify_and_notify_new_payload(
         &self,
         new_payload_request: NewPayloadRequest,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<PayloadStatusV1> {
         let execution_requests_list =
             get_execution_requests_list(&new_payload_request.execution_requests);
         if new_payload_request
@@ -434,7 +434,11 @@ impl ExecutionApi for ExecutionEngine {
             .transactions
             .contains(&VariableList::empty())
         {
-            return Ok(false);
+            return Ok(PayloadStatusV1 {
+                status: PayloadStatus::Invalid,
+                latest_valid_hash: None,
+                validation_error: Some("Empty transaction list".to_string()),
+            });
         }
 
         if !self.is_valid_block_hash(
@@ -442,14 +446,22 @@ impl ExecutionApi for ExecutionEngine {
             new_payload_request.parent_beacon_block_root,
             &execution_requests_list,
         ) {
-            return Ok(false);
+            return Ok(PayloadStatusV1 {
+                status: PayloadStatus::InvalidBlockHash,
+                latest_valid_hash: None,
+                validation_error: Some("Invalid block hash".to_string()),
+            });
         }
 
         if !is_valid_versioned_hashes(&new_payload_request)? {
-            return Ok(false);
+            return Ok(PayloadStatusV1 {
+                status: PayloadStatus::Invalid,
+                latest_valid_hash: None,
+                validation_error: Some("Invalid versioned hashes".to_string()),
+            });
         }
 
-        return Ok(self.notify_new_payload(new_payload_request).await? == PayloadStatus::Valid);
+        return Ok(self.notify_new_payload(new_payload_request).await?);
     }
 
     async fn engine_get_blobs_v1(

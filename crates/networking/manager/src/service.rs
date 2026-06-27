@@ -104,12 +104,21 @@ impl NetworkManagerService {
             network.start(manager_sender, p2p_receiver).await;
         });
 
-        let block_range_syncer = BlockRangeSyncer::new(
-            beacon_chain.clone(),
-            p2p_sender.clone(),
-            network_state.clone(),
-            executor.clone(),
-        );
+        let block_range_syncer = if config.optimistic_sync {
+            BlockRangeSyncer::new_optimistic(
+                beacon_chain.clone(),
+                p2p_sender.clone(),
+                network_state.clone(),
+                executor.clone(),
+            )
+        } else {
+            BlockRangeSyncer::new(
+                beacon_chain.clone(),
+                p2p_sender.clone(),
+                network_state.clone(),
+                executor.clone(),
+            )
+        };
 
         Ok(Self {
             beacon_chain,
