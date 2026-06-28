@@ -2289,8 +2289,11 @@ impl BeaconState {
             let Some(deposit) = self.pending_deposits.get(index).cloned() else {
                 bail!("Pending deposit not found");
             };
-            // Do not process deposit requests if Eth1 bridge deposits are not yet applied
-            if deposit.slot > GENESIS_SLOT
+            // Fulu removes support for the former Eth1 bridge deposit transition.
+            let fulu_fork_epoch = beacon_network_spec().fulu_fork_epoch;
+            let is_fulu_or_later = self.get_current_epoch() >= fulu_fork_epoch;
+            if !is_fulu_or_later
+                && deposit.slot > GENESIS_SLOT
                 && self.eth1_deposit_index < self.deposit_requests_start_index
             {
                 break;
