@@ -44,6 +44,7 @@ members = [
     "crates/networking/syncer",
     "crates/rpc/beacon",
     "crates/rpc/common",
+    "crates/rpc/da",
     "crates/rpc/lean",
     "crates/runtime",
     "crates/storage",
@@ -211,6 +212,7 @@ ream-post-quantum-crypto = { path = "crates/crypto/post_quantum", default-featur
 ream-req-resp = { path = "crates/networking/req_resp", default-features = false }
 ream-rpc-beacon = { path = "crates/rpc/beacon", default-features = false }
 ream-rpc-common = { path = "crates/rpc/common" }
+ream-rpc-da = { path = "crates/rpc/da" }
 ream-rpc-lean = { path = "crates/rpc/lean", default-features = false }
 ream-storage = { path = "crates/storage", default-features = false }
 ream-sync = { path = "crates/common/sync", default-features = false }
