@@ -36,6 +36,13 @@ impl DaAvailability {
     pub fn missing_indices(&self) -> Vec<u64> {
         column_indices(self.expected & !self.held)
     }
+
+    /// Column indices physically held, ascending — the list a serving node walks
+    /// to return every column it has for a block. Includes any held outside the
+    /// custody set.
+    pub fn held_indices(&self) -> Vec<u64> {
+        column_indices(self.held)
+    }
 }
 
 #[cfg(test)]
@@ -92,5 +99,18 @@ mod tests {
         assert!(!availability.is_complete());
         assert_eq!(availability.held_count(), 2);
         assert_eq!(availability.missing_indices(), vec![70, 99]);
+    }
+
+    #[test]
+    fn held_indices_lists_every_stored_column_in_order() {
+        // Held {0, 2} within custody plus {9} outside it — all count as held.
+        let availability = DaAvailability::new((1 << 0) | (1 << 2) | (1 << 9), EXPECTED_FOUR);
+        assert_eq!(availability.held_indices(), vec![0, 2, 9]);
+        // Nothing held -> empty list.
+        assert!(
+            DaAvailability::new(0, EXPECTED_FOUR)
+                .held_indices()
+                .is_empty()
+        );
     }
 }

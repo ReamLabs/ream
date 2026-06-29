@@ -6010,6 +6010,7 @@ dependencies = [
  "ream-post-quantum-crypto",
  "ream-rpc-beacon",
  "ream-rpc-common",
+ "ream-rpc-da",
  "ream-rpc-lean",
  "ream-storage",
  "ream-sync",
@@ -6808,6 +6809,20 @@ dependencies = [
  "ream-node",
  "serde",
  "tracing",
+]
+
+[[package]]
+name = "ream-rpc-da"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "alloy-primitives",
+ "ream-api-types-common",
+ "ream-da",
+ "ream-da-node",
+ "ream-rpc-common",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
