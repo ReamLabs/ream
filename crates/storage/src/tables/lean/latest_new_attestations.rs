@@ -39,13 +39,15 @@ impl LeanLatestNewAttestationsTable {
     ) -> Result<impl Iterator<Item = anyhow::Result<SignedAttestation>>, StoreError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
-        Ok(table
-            .range::<<u64 as redb::Value>::SelfType<'_>>(..)?
-            .map(|result| {
-                result
-                    .map(|(_, value)| value.value())
-                    .map_err(|err| StoreError::from(err).into())
-            }))
+        let mut values = Vec::new();
+
+        for result in table.range::<<u64 as redb::Value>::SelfType<'_>>(..)? {
+            values.push(result.map(|(_, value)| value.value()));
+        }
+
+        Ok(values
+            .into_iter()
+            .map(|result| result.map_err(|err| StoreError::from(err).into())))
     }
 
     pub fn drain(&self) -> Result<HashMap<u64, SignedAttestation>, StoreError> {
