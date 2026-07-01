@@ -152,9 +152,11 @@ mod tests {
 
     use alloy_primitives::B256;
     use ream_da::{
-        column::{CandidateColumn, DaContext, DaPayload},
+        column::{CandidateColumn, DaContext, DaPayload, VerifiedColumn},
+        error::ValidationError,
         id::DaColumnId,
         store::DaReadStore,
+        verifier::DaVerifier,
     };
     use ream_executor::ReamExecutor;
 
@@ -162,8 +164,23 @@ mod tests {
     use crate::{
         ingest::{RetentionHint, ingest_channel},
         store::DaFileStore,
-        verifier::KzgVerifier,
     };
+
+    /// A pass-through verifier that accepts every candidate unchanged. These
+    /// tests exercise the `handle -> queue -> verify -> store` plumbing, not the
+    /// cryptography, so they must not depend on producing valid KZG sidecars.
+    /// Real verification lives in `ream-da-verifier-kzg` and is tested there.
+    struct AcceptAllVerifier;
+
+    impl DaVerifier for AcceptAllVerifier {
+        fn verify(&self, candidate: CandidateColumn) -> Result<VerifiedColumn, ValidationError> {
+            Ok(VerifiedColumn::new_unchecked(
+                candidate.id,
+                candidate.context,
+                candidate.payload,
+            ))
+        }
+    }
 
     /// Unique temp dir per call so parallel tests don't collide; no `tempfile`
     /// dependency, and the store creates the directory lazily on first write.
@@ -195,7 +212,7 @@ mod tests {
         let executor = ReamExecutor::new().expect("create executor");
         let root = temp_root();
         let store = Arc::new(DaFileStore::new(root.clone()).expect("open store"));
-        let verifier = Arc::new(KzgVerifier::default());
+        let verifier = Arc::new(AcceptAllVerifier);
         let (handle, rx) = ingest_channel(8);
         let service = DaVerificationService::new(rx, verifier, store.clone(), executor.clone());
 
@@ -236,7 +253,7 @@ mod tests {
         let executor = ReamExecutor::new().expect("create executor");
         let root = temp_root();
         let store = Arc::new(DaFileStore::new(root.clone()).expect("open store"));
-        let verifier = Arc::new(KzgVerifier::default());
+        let verifier = Arc::new(AcceptAllVerifier);
         let (handle, rx) = ingest_channel(8);
         let service = DaVerificationService::new(rx, verifier, store.clone(), executor.clone());
 

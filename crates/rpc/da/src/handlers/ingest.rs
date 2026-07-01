@@ -50,12 +50,13 @@ pub async fn post_ingest(
 ) -> Result<impl Responder, ApiError> {
     let candidate = body.into_inner().into_candidate()?;
     handle.try_submit(candidate).map_err(|err| match err {
-        // Both are "the node could not accept this", not a client error.
-        // TODO: a dedicated retryable 503 would fit `Overloaded` better than 500
-        // once `ApiError` grows one.
+        // Transient backpressure: the service is up but its queue is full, so a
+        // retryable 503 tells the caller to back off and try again.
         IngestionError::Overloaded => {
-            ApiError::InternalError("verification queue is full; retry shortly".to_string())
+            ApiError::ServiceUnavailable("verification queue is full; retry shortly".to_string())
         }
+        // The verification service is gone while the RPC is still up — a genuine
+        // internal fault, not something a retry will fix, so 500.
         IngestionError::Closed => {
             ApiError::InternalError("verification service is unavailable".to_string())
         }

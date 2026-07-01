@@ -26,10 +26,10 @@ pub async fn post_retention(
     handle
         .try_submit_retention(RetentionHint { slot })
         .map_err(|err| match err {
-            // TODO: a retryable 503 would fit `Overloaded` better than 500 once
-            // `ApiError` grows one (mirrors `/ingest`).
+            // Mirrors `/ingest`: transient overload is a retryable 503, a closed
+            // service is an internal fault (500).
             IngestionError::Overloaded => {
-                ApiError::InternalError("verification queue is full; retry shortly".to_string())
+                ApiError::ServiceUnavailable("verification queue is full; retry shortly".to_string())
             }
             IngestionError::Closed => {
                 ApiError::InternalError("verification service is unavailable".to_string())

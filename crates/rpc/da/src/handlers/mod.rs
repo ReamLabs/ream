@@ -3,6 +3,7 @@ use ream_api_types_common::{error::ApiError, id::ID};
 
 pub mod availability;
 pub mod column;
+pub mod health;
 pub mod ingest;
 pub mod retention;
 
