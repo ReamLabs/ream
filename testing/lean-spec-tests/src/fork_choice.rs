@@ -7,7 +7,6 @@ use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
-#[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AttestationData;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
@@ -39,7 +38,7 @@ use tree_hash::TreeHash;
 
 use crate::types::{
     TestFixture,
-    fork_choice::{ForkChoiceStep, ForkChoiceTest, StoreChecks},
+    fork_choice::{AttestationCheck, ForkChoiceStep, ForkChoiceTest, StoreChecks},
 };
 
 #[cfg(feature = "devnet4")]
@@ -153,7 +152,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         state,
         db,
         None,
-        None,
+        Some(0),
     );
 
     // Current fixtures encode invalid-anchor checks as step-less tests. Treat
@@ -522,6 +521,55 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
             "Finalized checkpoint mismatch: expected {expected_finalized:?}, got {actual_finalized:?}",
         );
         debug!("Finalized checkpoint: slot {}", actual_finalized.slot);
+    }
+
+    // Per-validator attestation checks.
+    let signature_checks: Vec<&AttestationCheck> = checks
+        .attestation_checks
+        .iter()
+        .filter(|check| check.location == "signatures")
+        .collect();
+
+    if !signature_checks.is_empty() {
+        // Map each validator to its highest-slot vote in the named pool.
+        let signatures_provider = db.attestation_signatures_provider();
+        let data_by_root_provider = db.attestation_data_by_root_provider();
+        let mut best_by_validator: HashMap<u64, AttestationData> = HashMap::new();
+        for key in signatures_provider.get_keys()? {
+            let data = data_by_root_provider.get(key.data_root)?.ok_or_else(|| {
+                anyhow!(
+                    "attestation_signatures key for validator {} references data root {} \
+                     missing from attestation_data_by_root",
+                    key.validator_id,
+                    key.data_root
+                )
+            })?;
+            match best_by_validator.get(&key.validator_id) {
+                Some(existing) if existing.slot >= data.slot => continue,
+                _ => {
+                    let _ = best_by_validator.insert(key.validator_id, data);
+                }
+            }
+        }
+
+        for check in signature_checks {
+            let data = best_by_validator.get(&check.validator).ok_or_else(|| {
+                anyhow!(
+                    "validator {} not found in attestation_signatures pool",
+                    check.validator
+                )
+            })?;
+
+            // Ensure all validators have the expected source slot.
+            if let Some(expected) = check.source_slot {
+                ensure!(
+                    data.source.slot == expected,
+                    "Attestation source slot mismatch for validator {}: expected {expected}, got {}",
+                    check.validator,
+                    data.source.slot
+                );
+            }
+        }
     }
 
     Ok(())
