@@ -5991,6 +5991,9 @@ dependencies = [
  "ream-consensus-beacon",
  "ream-consensus-lean",
  "ream-consensus-misc",
+ "ream-da",
+ "ream-da-node",
+ "ream-da-verifier-kzg",
  "ream-discv5",
  "ream-events-beacon",
  "ream-execution-engine",
@@ -6008,6 +6011,7 @@ dependencies = [
  "ream-post-quantum-crypto",
  "ream-rpc-beacon",
  "ream-rpc-common",
+ "ream-rpc-da",
  "ream-rpc-lean",
  "ream-storage",
  "ream-sync",
@@ -6269,6 +6273,47 @@ dependencies = [
  "thiserror 2.0.18",
  "tree_hash",
  "tree_hash_derive",
+]
+
+[[package]]
+name = "ream-da"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "ream-da-node"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "ream-da",
+ "ream-executor",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "ream-da-verifier-kzg"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_ssz",
+ "ream-consensus-beacon",
+ "ream-consensus-misc",
+ "ream-da",
+ "ream-execution-rpc-types",
+ "ream-merkle",
+ "ream-polynomial-commitments",
+ "rust_eth_kzg",
+ "serde_json",
+ "ssz_types",
+ "tree_hash",
 ]
 
 [[package]]
@@ -6782,6 +6827,20 @@ dependencies = [
  "ream-node",
  "serde",
  "tracing",
+]
+
+[[package]]
+name = "ream-rpc-da"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "alloy-primitives",
+ "ream-api-types-common",
+ "ream-da",
+ "ream-da-node",
+ "ream-rpc-common",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

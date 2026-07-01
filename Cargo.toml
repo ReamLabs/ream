@@ -13,6 +13,9 @@ members = [
     "crates/common/consensus/beacon",
     "crates/common/consensus/lean",
     "crates/common/consensus/misc",
+    "crates/common/da",
+    "crates/common/da_node",
+    "crates/common/da_adapters/kzg_verifier",
     "crates/common/events/beacon",
     "crates/common/execution/engine",
     "crates/common/execution/rpc_types",
@@ -42,6 +45,7 @@ members = [
     "crates/networking/syncer",
     "crates/rpc/beacon",
     "crates/rpc/common",
+    "crates/rpc/da",
     "crates/rpc/lean",
     "crates/runtime",
     "crates/storage",
@@ -184,6 +188,9 @@ ream-checkpoint-sync-lean = { path = "crates/common/checkpoint_sync/lean", defau
 ream-consensus-beacon = { path = "crates/common/consensus/beacon" }
 ream-consensus-lean = { path = "crates/common/consensus/lean", default-features = false }
 ream-consensus-misc = { path = "crates/common/consensus/misc", default-features = false }
+ream-da = { path = "crates/common/da" }
+ream-da-node = { path = "crates/common/da_node" }
+ream-da-verifier-kzg = { path = "crates/common/da_adapters/kzg_verifier" }
 ream-discv5 = { path = "crates/networking/discv5" }
 ream-events-beacon = { path = "crates/common/events/beacon" }
 ream-execution-engine = { path = "crates/common/execution/engine" }
@@ -207,6 +214,7 @@ ream-post-quantum-crypto = { path = "crates/crypto/post_quantum", default-featur
 ream-req-resp = { path = "crates/networking/req_resp", default-features = false }
 ream-rpc-beacon = { path = "crates/rpc/beacon", default-features = false }
 ream-rpc-common = { path = "crates/rpc/common" }
+ream-rpc-da = { path = "crates/rpc/da" }
 ream-rpc-lean = { path = "crates/rpc/lean", default-features = false }
 ream-storage = { path = "crates/storage", default-features = false }
 ream-sync = { path = "crates/common/sync", default-features = false }
