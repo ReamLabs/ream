@@ -2,6 +2,7 @@ use std::{
     collections::BTreeSet,
     env, fs,
     net::SocketAddr,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     process,
     sync::Arc,
@@ -48,10 +49,8 @@ use ream_consensus_misc::{
     },
     misc::compute_epoch_at_slot,
 };
-use ream_da_node::{
-    ingest::ingest_channel, service::DaVerificationService, store::DaFileStore,
-    verifier::KzgVerifier,
-};
+use ream_da_node::{ingest::ingest_channel, service::DaVerificationService, store::DaFileStore};
+use ream_da_verifier_kzg::KzgVerifier;
 use ream_events_beacon::BeaconEvent;
 use ream_execution_engine::ExecutionEngine;
 use ream_executor::ReamExecutor;
@@ -645,6 +644,8 @@ pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, data_dir:
         config.http_address, config.http_port
     );
 
+    set_beacon_network_spec(config.network.clone());
+
     // The DA RPC is a private, same-host channel to the local beacon, not a public
     // service. Refuse to start if bound anywhere reachable beyond this
     // machine, which would expose unauthenticated write/prune/read to the network.
@@ -665,7 +666,22 @@ pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, data_dir:
 
     // Filesystem-backed store, rooted at the node's data directory.
     let store = Arc::new(DaFileStore::new(data_dir).expect("failed to open DA store"));
-    let verifier = Arc::new(KzgVerifier::default());
+    let max_blobs_per_block =
+        NonZeroUsize::new(beacon_network_spec().max_blobs_per_block_electra as usize)
+            .expect("network spec max_blobs_per_block must be nonzero");
+    let verifier = Arc::new(KzgVerifier::new(max_blobs_per_block));
+
+    // The KZG trusted setup is lazily loaded and expensive (seconds). Warm it up
+    // now, off the async workers, so the first column to arrive doesn't pay that
+    // cost mid-verification.
+    if let Err(err) = executor
+        .spawn_blocking(KzgVerifier::warm_up_trusted_setup)
+        .await
+    {
+        error!("failed to warm up KZG trusted setup: {err}");
+        return;
+    }
+
     let (ingest_handle, rx) = ingest_channel(DA_VERIFICATION_QUEUE_CAPACITY);
     let service = DaVerificationService::new(rx, verifier.clone(), store.clone(), executor.clone());
     let mut service_task = AbortOnDrop(executor.spawn(service.run()));

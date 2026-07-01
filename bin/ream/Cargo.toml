@@ -77,6 +77,7 @@ ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
 ream-da.workspace = true
 ream-da-node.workspace = true
+ream-da-verifier-kzg.workspace = true
 ream-discv5.workspace = true
 ream-events-beacon.workspace = true
 ream-execution-engine.workspace = true
