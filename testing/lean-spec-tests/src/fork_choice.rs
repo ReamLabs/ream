@@ -7,8 +7,6 @@ use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AttestationData;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
 #[cfg(feature = "devnet4")]
@@ -16,7 +14,7 @@ use ream_consensus_lean::block::BlockSignatures;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::checkpoint::Checkpoint;
 use ream_consensus_lean::{
-    attestation::{SignedAggregatedAttestation, SignedAttestation},
+    attestation::{AttestationData, SignedAggregatedAttestation, SignedAttestation},
     block::{Block, SignedBlock},
     state::LeanState,
 };
@@ -35,11 +33,12 @@ use ssz_types::typenum::U524288;
 use ssz_types::typenum::U1048576;
 use ssz_types::{BitList, VariableList, typenum::U4096};
 use tracing::{debug, info};
+#[cfg(feature = "devnet4")]
 use tree_hash::TreeHash;
 
 use crate::types::{
     TestFixture,
-    fork_choice::{ForkChoiceStep, ForkChoiceTest, StoreChecks},
+    fork_choice::{AttestationCheck, ForkChoiceStep, ForkChoiceTest, StoreChecks},
 };
 
 #[cfg(feature = "devnet4")]
@@ -153,7 +152,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
         state,
         db,
         None,
-        None,
+        Some(0),
     );
 
     // Current fixtures encode invalid-anchor checks as step-less tests. Treat
@@ -409,6 +408,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 valid,
                 attestation,
                 checks,
+                is_aggregator,
             } => {
                 debug!(
                     "  Step {index}: Attestation from validator {} (expect valid: {valid})",
@@ -431,11 +431,11 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     signature,
                 };
 
-                // Run the full gossip pipeline so the test exercises the same
-                // validity checks the spec specifies for `on_gossip_attestation`:
-                // (1) attestation-data validation, (2) validator-id range check,
-                // (3) signature verification.
-                let result = run_attestation_pipeline(&mut store, &signed_attestation).await;
+                // Ingest the gossip vote via the full spec path (validate, verify signature,
+                // and record it in the store) so later checks can read the stored vote back.
+                let result = store
+                    .on_gossip_attestation(signed_attestation, is_aggregator.unwrap_or(false))
+                    .await;
 
                 if *valid {
                     result.map_err(|err| {
@@ -524,6 +524,75 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
         debug!("Finalized checkpoint: slot {}", actual_finalized.slot);
     }
 
+    // Per-validator attestation checks.
+    let signature_checks: Vec<&AttestationCheck> = checks
+        .attestation_checks
+        .iter()
+        .filter(|check| check.location == "signatures")
+        .collect();
+
+    if !signature_checks.is_empty() {
+        // Map each validator to its highest-slot vote in the named pool.
+        let signatures_provider = db.attestation_signatures_provider();
+        let data_by_root_provider = db.attestation_data_by_root_provider();
+        let mut best_by_validator: HashMap<u64, AttestationData> = HashMap::new();
+        for key in signatures_provider.get_keys()? {
+            let data = data_by_root_provider.get(key.data_root)?.ok_or_else(|| {
+                anyhow!(
+                    "attestation_signatures key for validator {} references data root {} \
+                     missing from attestation_data_by_root",
+                    key.validator_id,
+                    key.data_root
+                )
+            })?;
+            match best_by_validator.get(&key.validator_id) {
+                Some(existing) if existing.slot >= data.slot => continue,
+                _ => {
+                    let _ = best_by_validator.insert(key.validator_id, data);
+                }
+            }
+        }
+
+        for check in signature_checks {
+            let data = best_by_validator.get(&check.validator).ok_or_else(|| {
+                anyhow!(
+                    "validator {} not found in attestation_signatures pool",
+                    check.validator
+                )
+            })?;
+
+            // Ensure all validators have the expected head slot.
+            if let Some(expected) = check.head_slot {
+                ensure!(
+                    data.head.slot == expected,
+                    "Attestation head slot mismatch for validator {}: expected {expected}, got {}",
+                    check.validator,
+                    data.head.slot
+                );
+            }
+
+            // Ensure all validators have the expected source slot.
+            if let Some(expected) = check.source_slot {
+                ensure!(
+                    data.source.slot == expected,
+                    "Attestation source slot mismatch for validator {}: expected {expected}, got {}",
+                    check.validator,
+                    data.source.slot
+                );
+            }
+
+            // Ensure all validators have the expected target slot.
+            if let Some(expected) = check.target_slot {
+                ensure!(
+                    data.target.slot == expected,
+                    "Attestation target slot mismatch for validator {}: expected {expected}, got {}",
+                    check.validator,
+                    data.target.slot
+                );
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -531,45 +600,4 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
 fn decode_hex_bytes(value: &str) -> anyhow::Result<Vec<u8>> {
     hex::decode(value.trim_start_matches("0x"))
         .map_err(|err| anyhow!("Failed to decode hex bytes: {err}"))
-}
-
-/// Run the validation portion of `on_gossip_attestation` so the runner can
-/// distinguish accepted vs rejected attestations:
-///   1. attestation-data validation
-///   2. validator-id range check
-///   3. signature verification (using the attestation public key)
-async fn run_attestation_pipeline(
-    store: &mut Store,
-    signed_attestation: &SignedAttestation,
-) -> anyhow::Result<()> {
-    store.validate_attestation(signed_attestation).await?;
-
-    let key_state = {
-        let db = store.store.lock().await;
-        db.state_provider()
-            .get(signed_attestation.message.target.root)?
-    }
-    .ok_or_else(|| {
-        anyhow!(
-            "No state available to verify attestation signature for target {}",
-            signed_attestation.message.target.root
-        )
-    })?;
-
-    ensure!(
-        signed_attestation.validator_id < key_state.validators.len() as u64,
-        "Validator {} not found in state",
-        signed_attestation.validator_id,
-    );
-
-    let attestation_key =
-        key_state.validators[signed_attestation.validator_id as usize].attestation_public_key;
-    let signature_valid = signed_attestation.signature.verify(
-        &attestation_key,
-        signed_attestation.message.slot as u32,
-        &signed_attestation.message.tree_hash_root(),
-    )?;
-    ensure!(signature_valid, "Signature verification failed");
-
-    Ok(())
 }
