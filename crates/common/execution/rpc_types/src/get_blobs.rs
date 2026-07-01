@@ -3,7 +3,11 @@ use ream_consensus_misc::{
 };
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use ssz_types::{FixedVector, serde_utils::hex_fixed_vec, typenum::U131072};
+use ssz_types::{
+    FixedVector,
+    serde_utils::hex_fixed_vec,
+    typenum::{U32, U131072},
+};
 use tree_hash_derive::TreeHash;
 
 #[derive(
@@ -28,4 +32,11 @@ impl Blob {
 pub struct BlobAndProofV1 {
     pub blob: Blob,
     pub proof: KZGProof,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Decode, Encode, TreeHash)]
+#[serde(rename_all = "camelCase")]
+pub struct BlobAndProofV2 {
+    pub blob: Blob,
+    pub proofs: FixedVector<KZGProof, U32>,
 }

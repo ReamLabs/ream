@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use async_trait::async_trait;
-use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
+use ream_execution_rpc_types::get_blobs::{BlobAndProofV1, BlobAndProofV2};
 
 use super::new_payload_request::NewPayloadRequest;
 
@@ -17,4 +17,14 @@ pub trait ExecutionApi {
         &self,
         blob_version_hashes: Vec<B256>,
     ) -> anyhow::Result<Vec<Option<BlobAndProofV1>>>;
+
+    async fn engine_get_blobs_v2(
+        &self,
+        blob_version_hashes: Vec<B256>,
+    ) -> anyhow::Result<Option<Vec<BlobAndProofV2>>>;
+
+    async fn engine_get_blobs_v3(
+        &self,
+        blob_version_hashes: Vec<B256>,
+    ) -> anyhow::Result<Option<Vec<Option<BlobAndProofV2>>>>;
 }
