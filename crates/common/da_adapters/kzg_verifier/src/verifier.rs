@@ -118,7 +118,7 @@ mod tests {
 
     use alloy_primitives::B256;
     use ream_consensus_beacon::{
-        data_column_sidecar::{Cell, DataColumnSidecar, get_column_data_sidecars},
+        data_column_sidecar::{Cell, DataColumnSidecar, get_data_column_sidecars},
         matrix_entry::compute_cells_and_kzg_proofs,
     };
     use ream_consensus_misc::{
@@ -223,7 +223,7 @@ mod tests {
             signature: Default::default(),
         };
 
-        let sidecars = get_column_data_sidecars(
+        let sidecars = get_data_column_sidecars(
             signed_block_header,
             kzg_commitments,
             inclusion_proof,
