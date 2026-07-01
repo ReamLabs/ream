@@ -7,7 +7,6 @@ use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::attestation::AggregatedSignatureProof;
-use ream_consensus_lean::attestation::AttestationData;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
 #[cfg(feature = "devnet4")]
@@ -15,7 +14,7 @@ use ream_consensus_lean::block::BlockSignatures;
 #[cfg(feature = "devnet4")]
 use ream_consensus_lean::checkpoint::Checkpoint;
 use ream_consensus_lean::{
-    attestation::{SignedAggregatedAttestation, SignedAttestation},
+    attestation::{AttestationData, SignedAggregatedAttestation, SignedAttestation},
     block::{Block, SignedBlock},
     state::LeanState,
 };

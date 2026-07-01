@@ -1,7 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
-use lean_spec_tests::fork_choice::{load_fork_choice_test, run_fork_choice_test};
 use lean_spec_tests::{
+    fork_choice::{load_fork_choice_test, run_fork_choice_test},
     justifiability::{load_justifiability_test, run_justifiability_test},
     slot_clock::{load_slot_clock_test, run_slot_clock_test},
     state_transition::{load_state_transition_test, run_state_transition_test},
