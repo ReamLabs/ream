@@ -44,6 +44,8 @@ pub enum ForkChoiceStep {
         valid: bool,
         checks: Option<StoreChecks>,
         attestation: Attestation,
+        #[serde(default, rename = "isAggregator")]
+        is_aggregator: Option<bool>,
     },
     GossipAggregatedAttestation {
         #[serde(default)]

@@ -34,6 +34,7 @@ use ssz_types::typenum::U524288;
 use ssz_types::typenum::U1048576;
 use ssz_types::{BitList, VariableList, typenum::U4096};
 use tracing::{debug, info};
+#[cfg(feature = "devnet4")]
 use tree_hash::TreeHash;
 
 use crate::types::{
@@ -408,6 +409,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 valid,
                 attestation,
                 checks,
+                is_aggregator,
             } => {
                 debug!(
                     "  Step {index}: Attestation from validator {} (expect valid: {valid})",
@@ -430,11 +432,14 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     signature,
                 };
 
-                // Run the full gossip pipeline so the test exercises the same
-                // validity checks the spec specifies for `on_gossip_attestation`:
-                // (1) attestation-data validation, (2) validator-id range check,
-                // (3) signature verification.
-                let result = run_attestation_pipeline(&mut store, &signed_attestation).await;
+                // Route through `on_gossip_attestation` so the test exercises the
+                // full spec path: attestation-data validation, validator-id range
+                // check, signature verification, and - for aggregators - recording
+                // the vote in the raw per-validator `attestation_signatures` pool
+                // that `location: "signatures"` checks read back.
+                let result = store
+                    .on_gossip_attestation(signed_attestation, is_aggregator.unwrap_or(false))
+                    .await;
 
                 if *valid {
                     result.map_err(|err| {
@@ -579,45 +584,4 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
 fn decode_hex_bytes(value: &str) -> anyhow::Result<Vec<u8>> {
     hex::decode(value.trim_start_matches("0x"))
         .map_err(|err| anyhow!("Failed to decode hex bytes: {err}"))
-}
-
-/// Run the validation portion of `on_gossip_attestation` so the runner can
-/// distinguish accepted vs rejected attestations:
-///   1. attestation-data validation
-///   2. validator-id range check
-///   3. signature verification (using the attestation public key)
-async fn run_attestation_pipeline(
-    store: &mut Store,
-    signed_attestation: &SignedAttestation,
-) -> anyhow::Result<()> {
-    store.validate_attestation(signed_attestation).await?;
-
-    let key_state = {
-        let db = store.store.lock().await;
-        db.state_provider()
-            .get(signed_attestation.message.target.root)?
-    }
-    .ok_or_else(|| {
-        anyhow!(
-            "No state available to verify attestation signature for target {}",
-            signed_attestation.message.target.root
-        )
-    })?;
-
-    ensure!(
-        signed_attestation.validator_id < key_state.validators.len() as u64,
-        "Validator {} not found in state",
-        signed_attestation.validator_id,
-    );
-
-    let attestation_key =
-        key_state.validators[signed_attestation.validator_id as usize].attestation_public_key;
-    let signature_valid = signed_attestation.signature.verify(
-        &attestation_key,
-        signed_attestation.message.slot as u32,
-        &signed_attestation.message.tree_hash_root(),
-    )?;
-    ensure!(signature_valid, "Signature verification failed");
-
-    Ok(())
 }

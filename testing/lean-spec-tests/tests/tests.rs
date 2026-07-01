@@ -1,6 +1,5 @@
 use std::{env, fs, path::PathBuf};
 
-#[cfg(feature = "devnet4")]
 use lean_spec_tests::fork_choice::{load_fork_choice_test, run_fork_choice_test};
 use lean_spec_tests::{
     justifiability::{load_justifiability_test, run_justifiability_test},
@@ -195,12 +194,23 @@ fn test_all_ssz_fixtures() {
     assert_eq!(failed, 0, "Some SSZ tests failed");
 }
 
-#[cfg(feature = "devnet4")]
 #[tokio::test]
 async fn test_all_fork_choice_fixtures() {
     init_tracing();
 
     let fixtures = find_fixture_files("fork_choice");
+
+    // The devnet5 fork-choice is WIP so we only run
+    // `test_honest_vote_sources_from_head_chain_not_store` for now.
+    // TODO remove once the devnet5 fork-choice tests pass.
+    #[cfg(feature = "devnet5")]
+    let fixtures: Vec<PathBuf> = fixtures
+        .into_iter()
+        .filter(|path| {
+            path.to_string_lossy()
+                .contains("test_honest_vote_sources_from_head_chain_not_store")
+        })
+        .collect();
 
     if !should_run_fixture_suite("fork_choice", &fixtures) {
         return;
