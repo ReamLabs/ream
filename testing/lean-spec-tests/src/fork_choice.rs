@@ -565,6 +565,16 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
                 )
             })?;
 
+            // Ensure all validators have the expected head slot.
+            if let Some(expected) = check.head_slot {
+                ensure!(
+                    data.head.slot == expected,
+                    "Attestation head slot mismatch for validator {}: expected {expected}, got {}",
+                    check.validator,
+                    data.head.slot
+                );
+            }
+
             // Ensure all validators have the expected source slot.
             if let Some(expected) = check.source_slot {
                 ensure!(
@@ -572,6 +582,16 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
                     "Attestation source slot mismatch for validator {}: expected {expected}, got {}",
                     check.validator,
                     data.source.slot
+                );
+            }
+
+            // Ensure all validators have the expected target slot.
+            if let Some(expected) = check.target_slot {
+                ensure!(
+                    data.target.slot == expected,
+                    "Attestation target slot mismatch for validator {}: expected {expected}, got {}",
+                    check.validator,
+                    data.target.slot
                 );
             }
         }

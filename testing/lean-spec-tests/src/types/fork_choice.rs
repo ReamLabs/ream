@@ -78,6 +78,7 @@ pub struct StoreChecks {
 #[serde(rename_all = "camelCase")]
 pub struct AttestationCheck {
     pub validator: u64,
+    pub head_slot: Option<u64>,
     pub source_slot: Option<u64>,
     pub target_slot: Option<u64>,
     pub location: String,
