@@ -5993,6 +5993,7 @@ dependencies = [
  "ream-consensus-misc",
  "ream-da",
  "ream-da-node",
+ "ream-da-verifier-kzg",
  "ream-discv5",
  "ream-events-beacon",
  "ream-execution-engine",
@@ -6296,6 +6297,25 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "ream-da-verifier-kzg"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_ssz",
+ "ream-consensus-beacon",
+ "ream-consensus-misc",
+ "ream-da",
+ "ream-execution-rpc-types",
+ "ream-merkle",
+ "ream-polynomial-commitments",
+ "rust_eth_kzg",
+ "serde_json",
+ "ssz_types",
+ "tree_hash",
 ]
 
 [[package]]
