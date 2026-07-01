@@ -431,11 +431,8 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     signature,
                 };
 
-                // Route through `on_gossip_attestation` so the test exercises the
-                // full spec path: attestation-data validation, validator-id range
-                // check, signature verification, and - for aggregators - recording
-                // the vote in the raw per-validator `attestation_signatures` pool
-                // that `location: "signatures"` checks read back.
+                // Ingest the gossip vote via the full spec path (validate, verify signature,
+                // and record it in the store) so later checks can read the stored vote back.
                 let result = store
                     .on_gossip_attestation(signed_attestation, is_aggregator.unwrap_or(false))
                     .await;
