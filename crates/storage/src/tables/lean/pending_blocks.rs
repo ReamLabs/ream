@@ -45,13 +45,15 @@ impl LeanPendingBlocksTable {
     > {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
-        Ok(table
-            .range::<<SSZEncoding<B256> as redb::Value>::SelfType<'_>>(..)?
-            .map(|result| {
-                result
-                    .map(|(key, value)| (key.value(), value.value()))
-                    .map_err(StoreError::from)
-            }))
+        let mut entries = Vec::new();
+
+        for result in table.range::<<SSZEncoding<B256> as redb::Value>::SelfType<'_>>(..)? {
+            entries.push(result.map(|(key, value)| (key.value(), value.value())));
+        }
+
+        Ok(entries
+            .into_iter()
+            .map(|result| result.map_err(StoreError::from)))
     }
 
     pub fn retain<F>(&self, mut f: F) -> Result<(), crate::errors::StoreError>
