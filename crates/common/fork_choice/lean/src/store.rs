@@ -21,6 +21,7 @@ use ream_consensus_lean::{
     state::{LeanState, attestation_data_matches_chain},
     validator::{Validator, is_proposer},
 };
+use tracing::warn;
 use ream_consensus_misc::constants::lean::{
     GOSSIP_DISPARITY_INTERVALS, INTERVALS_PER_SLOT, MAX_ATTESTATIONS_DATA,
     attestation_committee_count,
@@ -1103,11 +1104,12 @@ impl Store {
         slot: u64,
         validator_index: u64,
     ) -> anyhow::Result<BlockWithSignatures> {
-        let (state_provider, latest_known_aggregated_payloads_provider) = {
+        let (state_provider, latest_known_aggregated_payloads_provider, latest_justified_provider) = {
             let db = self.store.lock().await;
             (
                 db.state_provider(),
                 db.latest_known_aggregated_payloads_provider(),
+                db.latest_justified_provider(),
             )
         };
 
@@ -1157,6 +1159,17 @@ impl Store {
             .await?;
 
         stop_timer(add_attestations_timer);
+
+        let block_justified = post_state.latest_justified.slot;
+        let store_justified = latest_justified_provider.get()?.slot;
+        
+        if block_justified < store_justified {
+            warn!(
+                "Produced block justified={} < store justified={}. Fixed point attestation loop did not converge",
+                block_justified,
+                store_justified
+            );
+        }
 
         let compute_state_root_timer = start_timer(&PROPOSE_BLOCK_TIME, &["compute_state_root"]);
         candidate_block.state_root = post_state.tree_hash_root();
