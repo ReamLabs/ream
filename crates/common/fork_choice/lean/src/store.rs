@@ -1,4 +1,5 @@
 use std::{
+    cmp::Reverse,
     collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
@@ -17,7 +18,7 @@ use ream_consensus_lean::{
     },
     block::{Block, BlockBody, BlockWithSignatures, SignedBlock},
     checkpoint::Checkpoint,
-    slot::is_justifiable_after,
+    slot::{is_justifiable_after, justified_index_after},
     state::{LeanState, attestation_data_matches_chain},
     validator::{Validator, is_proposer},
 };
@@ -57,10 +58,20 @@ use ream_post_quantum_crypto::leansig::public_key::PublicKey;
 use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_storage::{
     db::lean::LeanDB,
-    tables::{field::REDBField, lean::gossip_signatures::GossipSignaturesTable, table::REDBTable},
+    tables::{
+        field::REDBField,
+        lean::{
+            block::LeanBlockTable, gossip_signatures::GossipSignaturesTable,
+            latest_known_aggregated_payloads::LeanLatestKnownAggregatedPayloadsTable,
+        },
+        table::REDBTable,
+    },
 };
 use ream_sync::rwlock::{Reader, Writer};
-use ssz_types::{BitList, VariableList, typenum::U4096};
+use ssz_types::{
+    BitList, VariableList,
+    typenum::{U4096, U262144},
+};
 use tokio::sync::Mutex;
 use tree_hash::TreeHash;
 
@@ -69,12 +80,63 @@ use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 pub type LeanStoreWriter = Writer<Store>;
 pub type LeanStoreReader = Reader<Store>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum AttestationScoreTier {
+    Finalize = 1,
+    Justify = 2,
+    Build = 3,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AttestationEntryScore {
+    tier: AttestationScoreTier,
+    new_voter_count: usize,
+    target_slot: u64,
+    attestation_slot: u64,
+}
+
+impl AttestationEntryScore {
+    fn ordering_key(&self, data_root: B256) -> AttestationEntryOrderingKey {
+        AttestationEntryOrderingKey {
+            tier: self.tier,
+            new_voter_count: Reverse(self.new_voter_count),
+            target_slot: self.target_slot,
+            attestation_slot: self.attestation_slot,
+            data_root,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct AttestationEntryOrderingKey {
+    tier: AttestationScoreTier,
+    new_voter_count: Reverse<usize>,
+    target_slot: u64,
+    attestation_slot: u64,
+    data_root: B256,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BlockProductionStrategy {
+    #[default]
+    RoundBased,
+    Tiered,
+}
+
+struct BuildContext {
+    head_state: LeanState,
+    available_signed_attestations: HashMap<u64, SignedAttestation>,
+    block_provider: LeanBlockTable,
+    latest_known_aggregated_payloads_provider: LeanLatestKnownAggregatedPayloadsTable,
+}
+
 /// [Store] represents the state that the Lean node should maintain.
 #[derive(Debug, Clone)]
 pub struct Store {
     pub store: Arc<Mutex<LeanDB>>,
     pub network_state: Arc<NetworkState>,
     pub tick_interval_duration: Option<Instant>,
+    pub block_production_strategy: BlockProductionStrategy,
 }
 
 impl Store {
@@ -140,7 +202,14 @@ impl Store {
             store: Arc::new(Mutex::new(db)),
             network_state: Arc::new(NetworkState::new(anchor_checkpoint, anchor_checkpoint)),
             tick_interval_duration: None,
+            block_production_strategy: BlockProductionStrategy::default(),
         })
+    }
+
+    /// Override the block-production strategy. Defaults to round-based.
+    pub fn with_block_production_strategy(mut self, strategy: BlockProductionStrategy) -> Self {
+        self.block_production_strategy = strategy;
+        self
     }
 
     /// Use LMD GHOST to get the head, given a particular root (usually the
@@ -830,13 +899,50 @@ impl Store {
         Ok((attestations, proofs))
     }
 
-    pub async fn build_block(
+    async fn build_block(
         &self,
+        strategy: BlockProductionStrategy,
         slot: u64,
         proposer_index: u64,
         parent_root: B256,
         attestations: Option<VariableList<AggregatedAttestations, U4096>>,
     ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
+        let ctx = self.load_build_context(parent_root).await?;
+        let extended_historical_block_hashes =
+            Self::extended_historical_block_hashes(&ctx.head_state, parent_root, slot);
+        let (selected_attestations, child_payloads_consumed) = match strategy {
+            BlockProductionStrategy::RoundBased => Self::select_round_based(
+                &ctx,
+                &extended_historical_block_hashes,
+                attestations,
+                slot,
+                proposer_index,
+                parent_root,
+            )?,
+            BlockProductionStrategy::Tiered => {
+                let selected = Self::select_tiered(
+                    &ctx,
+                    &extended_historical_block_hashes,
+                    attestations,
+                    slot,
+                )?;
+                let child_payloads_consumed = selected.len() as u64;
+                (selected, child_payloads_consumed)
+            }
+        };
+
+        self.seal_block(
+            &ctx.head_state,
+            &selected_attestations,
+            child_payloads_consumed,
+            slot,
+            proposer_index,
+            parent_root,
+        )
+        .await
+    }
+
+    async fn load_build_context(&self, parent_root: B256) -> anyhow::Result<BuildContext> {
         let (
             state_provider,
             latest_known_attestation_provider,
@@ -857,6 +963,39 @@ impl Store {
         let head_state = state_provider
             .get(parent_root)?
             .ok_or(anyhow!("State not found for head root"))?;
+
+        Ok(BuildContext {
+            head_state,
+            available_signed_attestations,
+            block_provider,
+            latest_known_aggregated_payloads_provider,
+        })
+    }
+
+    fn extended_historical_block_hashes(
+        head_state: &LeanState,
+        parent_root: B256,
+        slot: u64,
+    ) -> Vec<B256> {
+        let num_empty_slots = slot
+            .saturating_sub(head_state.latest_block_header.slot)
+            .saturating_sub(1);
+        let mut extended_historical_block_hashes = head_state.historical_block_hashes.to_vec();
+        extended_historical_block_hashes.push(parent_root);
+        extended_historical_block_hashes.extend(vec![B256::ZERO; num_empty_slots as usize]);
+
+        extended_historical_block_hashes
+    }
+
+    fn select_round_based(
+        ctx: &BuildContext,
+        extended_historical_block_hashes: &[B256],
+        attestations: Option<VariableList<AggregatedAttestations, U4096>>,
+        slot: u64,
+        proposer_index: u64,
+        parent_root: B256,
+    ) -> anyhow::Result<(Vec<AggregatedAttestations>, u64)> {
+        let head_state = &ctx.head_state;
         let mut attestations: VariableList<AggregatedAttestations, U4096> =
             attestations.unwrap_or_else(VariableList::empty);
 
@@ -872,16 +1011,9 @@ impl Store {
 
         let mut current_justified_slots = head_state.justified_slots.clone();
 
-        let num_empty_slots = slot
-            .saturating_sub(head_state.latest_block_header.slot)
-            .saturating_sub(1);
-        let mut extended_historical_block_hashes = head_state.historical_block_hashes.to_vec();
-        extended_historical_block_hashes.push(parent_root);
-        extended_historical_block_hashes.extend(vec![B256::ZERO; num_empty_slots as usize]);
-
         let mut processed_attestation_data: HashSet<AttestationData> = HashSet::new();
 
-        let mut sorted_candidates: Vec<_> = available_signed_attestations.values().collect();
+        let mut sorted_candidates: Vec<_> = ctx.available_signed_attestations.values().collect();
         sorted_candidates.sort_by_key(|signed_attestation| signed_attestation.message.target.slot);
 
         let select_start = Instant::now();
@@ -900,12 +1032,12 @@ impl Store {
                     break;
                 }
 
-                if !block_provider.contains_key(data.head.root) {
+                if !ctx.block_provider.contains_key(data.head.root) {
                     continue;
                 }
 
                 if !(attestation_data_matches_chain(
-                    &extended_historical_block_hashes,
+                    extended_historical_block_hashes,
                     data.clone(),
                 )?) {
                     continue;
@@ -957,8 +1089,9 @@ impl Store {
 
                 let data_root = data.tree_hash_root();
                 let signature_key = SignatureKey::from_parts(validator_id, data_root);
-                let has_proof =
-                    latest_known_aggregated_payloads_provider.contains_key(&signature_key);
+                let has_proof = ctx
+                    .latest_known_aggregated_payloads_provider
+                    .contains_key(&signature_key);
 
                 if has_proof {
                     new_attestations
@@ -1041,12 +1174,245 @@ impl Store {
         }
         observe_block_proposal_phase("stf_simulate", total_stf_duration);
         observe_block_proposal_phase("select_payloads", select_start.elapsed());
-        let attestations_vec: Vec<_> = attestations.to_vec();
 
+        Ok((attestations.to_vec(), child_payloads_consumed))
+    }
+
+    fn select_tiered(
+        ctx: &BuildContext,
+        extended_historical_block_hashes: &[B256],
+        attestations: Option<VariableList<AggregatedAttestations, U4096>>,
+        slot: u64,
+    ) -> anyhow::Result<Vec<AggregatedAttestations>> {
+        let head_state = &ctx.head_state;
+        let mut candidates_by_data: HashMap<AttestationData, HashSet<u64>> = HashMap::new();
+        for signed_attestation in ctx.available_signed_attestations.values() {
+            candidates_by_data
+                .entry(signed_attestation.message.clone())
+                .or_default()
+                .insert(signed_attestation.validator_id);
+        }
+        if let Some(attestations) = attestations {
+            for attestation in attestations {
+                candidates_by_data
+                    .entry(attestation.data)
+                    .or_default()
+                    .insert(attestation.validator_id);
+            }
+        }
+
+        // Ream stores payloads by validator/data root, so rebuild the per-data
+        // proof pool that leanSpec receives directly.
+        let mut aggregated_payloads: HashMap<B256, (AttestationData, Vec<PayloadProof>)> =
+            HashMap::new();
+        for (data, validator_ids) in candidates_by_data {
+            if !ctx.block_provider.contains_key(data.head.root) {
+                continue;
+            }
+
+            let data_root = data.tree_hash_root();
+            let mut proofs = HashSet::new();
+            for validator_id in validator_ids {
+                if let Some(validator_proofs) = ctx
+                    .latest_known_aggregated_payloads_provider
+                    .get(SignatureKey::from_parts(validator_id, data_root))?
+                {
+                    proofs.extend(validator_proofs);
+                }
+            }
+
+            if !proofs.is_empty() {
+                aggregated_payloads.insert(data_root, (data, proofs.into_iter().collect()));
+            }
+        }
+
+        let validator_count = head_state.validators.len();
+        let mut finalized_slot = head_state.latest_finalized.slot;
+        let mut justified_slots = head_state.justified_slots.clone();
+        extend_projected_justified_slots(
+            &mut justified_slots,
+            finalized_slot,
+            slot.saturating_sub(1),
+        )?;
+
+        let mut votes_by_target_root = build_running_votes_by_target_root(head_state)?;
+        let mut processed_data_roots = HashSet::new();
+        let mut selected_attestations = Vec::new();
+
+        for _ in 0..MAX_ATTESTATIONS_DATA {
+            let mut best_candidate: Option<(B256, AttestationEntryScore, HashSet<u64>)> = None;
+            let mut best_candidate_key = None;
+
+            for (data_root, (candidate_data, proofs)) in &aggregated_payloads {
+                if processed_data_roots.contains(data_root) {
+                    continue;
+                }
+
+                if !ctx.block_provider.contains_key(candidate_data.head.root) {
+                    continue;
+                }
+
+                if !attestation_data_matches_chain(
+                    extended_historical_block_hashes,
+                    candidate_data.clone(),
+                )? {
+                    continue;
+                }
+
+                if !is_projected_slot_justified(
+                    &justified_slots,
+                    finalized_slot,
+                    candidate_data.source.slot,
+                ) {
+                    continue;
+                }
+
+                let is_genesis_self_vote =
+                    candidate_data.source.slot == 0 && candidate_data.target.slot == 0;
+
+                if !is_genesis_self_vote {
+                    if candidate_data.target.slot <= candidate_data.source.slot {
+                        continue;
+                    }
+
+                    if is_projected_slot_justified(
+                        &justified_slots,
+                        finalized_slot,
+                        candidate_data.target.slot,
+                    ) {
+                        continue;
+                    }
+
+                    if !is_justifiable_after(candidate_data.target.slot, finalized_slot)? {
+                        continue;
+                    }
+                }
+
+                let prior_voters = votes_by_target_root
+                    .get(&candidate_data.target.root)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut new_voters = HashSet::new();
+                for proof in proofs {
+                    for validator_index in proof.to_validator_indices() {
+                        if !prior_voters.contains(&validator_index) {
+                            new_voters.insert(validator_index);
+                        }
+                    }
+                }
+
+                if new_voters.is_empty() {
+                    continue;
+                }
+
+                let total_voters = prior_voters.len() + new_voters.len();
+                let crosses_two_thirds = 3 * total_voters >= 2 * validator_count;
+                // finalizes_source: source finalizes only if no slot strictly between
+                // source and target is still justifiable (3SF-mini). We loop instead of
+                // .any() so an is_justifiable_after error propagates (?) instead of being
+                // swallowed -- same as the target check above.
+                let finalizes_source =
+                    if crosses_two_thirds && candidate_data.source.slot > finalized_slot {
+                        let mut no_intermediate_justifiable = true;
+                        for intermediate_slot in
+                            candidate_data.source.slot + 1..candidate_data.target.slot
+                        {
+                            if is_justifiable_after(intermediate_slot, finalized_slot)? {
+                                no_intermediate_justifiable = false;
+                                break;
+                            }
+                        }
+                        no_intermediate_justifiable
+                    } else {
+                        false
+                    };
+
+                let tier = if is_genesis_self_vote || !crosses_two_thirds {
+                    AttestationScoreTier::Build
+                } else if finalizes_source {
+                    AttestationScoreTier::Finalize
+                } else {
+                    AttestationScoreTier::Justify
+                };
+
+                let score = AttestationEntryScore {
+                    tier,
+                    new_voter_count: new_voters.len(),
+                    target_slot: candidate_data.target.slot,
+                    attestation_slot: candidate_data.slot,
+                };
+                let candidate_key = score.ordering_key(*data_root);
+
+                if best_candidate_key
+                    .as_ref()
+                    .is_none_or(|key| candidate_key < *key)
+                {
+                    best_candidate = Some((*data_root, score, new_voters));
+                    best_candidate_key = Some(candidate_key);
+                }
+            }
+
+            let Some((data_root, score, selected_new_voters)) = best_candidate else {
+                break;
+            };
+            let (attestation_data, proofs) = aggregated_payloads
+                .get(&data_root)
+                .ok_or_else(|| anyhow!("Selected missing attestation data root {data_root:?}"))?;
+
+            processed_data_roots.insert(data_root);
+            let selected_participants = proofs
+                .iter()
+                .flat_map(|proof| proof.to_validator_indices())
+                .collect::<HashSet<_>>();
+            for validator_id in selected_participants {
+                selected_attestations.push(AggregatedAttestations {
+                    validator_id,
+                    data: attestation_data.clone(),
+                });
+            }
+
+            if score.tier <= AttestationScoreTier::Justify {
+                set_projected_justified_slot(
+                    &mut justified_slots,
+                    finalized_slot,
+                    attestation_data.target.slot,
+                )?;
+                votes_by_target_root.remove(&attestation_data.target.root);
+            } else {
+                votes_by_target_root
+                    .entry(attestation_data.target.root)
+                    .or_default()
+                    .extend(selected_new_voters);
+            }
+
+            if score.tier == AttestationScoreTier::Finalize {
+                shift_projected_finalized_slot(
+                    &mut justified_slots,
+                    finalized_slot,
+                    attestation_data.source.slot,
+                )?;
+                finalized_slot = attestation_data.source.slot;
+            }
+        }
+
+        // Emission covers the full proof-union for the data, like leanSpec's
+        // select_proofs_for_coverage. Projection above still uses new voters only.
+        Ok(selected_attestations)
+    }
+
+    async fn seal_block(
+        &self,
+        head_state: &LeanState,
+        attestations: &[AggregatedAttestations],
+        child_payloads_consumed: u64,
+        slot: u64,
+        proposer_index: u64,
+        parent_root: B256,
+    ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
         let payload_aggregation_timer = start_timer(&BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME, &[]);
         let aggregator_start = Instant::now();
         let (aggregated_attestations, aggregated_proofs) =
-            self.select_aggregated_proofs(&attestations_vec).await?;
+            self.select_aggregated_proofs(attestations).await?;
 
         let (aggregated_attestations, aggregated_proofs) = compact_aggregated_proofs(
             aggregated_attestations,
@@ -1153,7 +1519,13 @@ impl Store {
             .map_err(|err| anyhow!("Failed to create VariableList: {err:?}"))?;
 
         let (mut candidate_block, proofs, post_state) = self
-            .build_block(slot, validator_index, head_root, Some(attestation_list))
+            .build_block(
+                self.block_production_strategy,
+                slot,
+                validator_index,
+                head_root,
+                Some(attestation_list),
+            )
             .await?;
 
         stop_timer(add_attestations_timer);
@@ -1894,6 +2266,103 @@ pub fn compute_subnet_id(validator_id: u64, num_committees: u64) -> u64 {
     validator_id % num_committees
 }
 
+fn build_running_votes_by_target_root(
+    head_state: &LeanState,
+) -> anyhow::Result<HashMap<B256, HashSet<u64>>> {
+    let validator_count = head_state.validators.len();
+    let mut votes_by_target_root = HashMap::new();
+
+    for (root_index, target_root) in head_state.justifications_roots.iter().enumerate() {
+        let mut voters = HashSet::new();
+        for validator_index in 0..validator_count {
+            let bit_index = root_index * validator_count + validator_index;
+            if head_state
+                .justifications_validators
+                .get(bit_index)
+                .map_err(|err| anyhow!("Failed to get justification vote bit: {err:?}"))?
+            {
+                voters.insert(validator_index as u64);
+            }
+        }
+        votes_by_target_root.insert(*target_root, voters);
+    }
+
+    Ok(votes_by_target_root)
+}
+
+fn is_projected_slot_justified(
+    justified_slots: &BitList<U262144>,
+    finalized_slot: u64,
+    candidate_slot: u64,
+) -> bool {
+    let Some(index) = justified_index_after(candidate_slot, finalized_slot) else {
+        return candidate_slot <= finalized_slot;
+    };
+
+    index < justified_slots.len() as u64 && justified_slots.get(index as usize).unwrap_or(false)
+}
+
+fn extend_projected_justified_slots(
+    justified_slots: &mut BitList<U262144>,
+    finalized_slot: u64,
+    target_slot: u64,
+) -> anyhow::Result<()> {
+    let Some(target_index) = justified_index_after(target_slot, finalized_slot) else {
+        return Ok(());
+    };
+    let length = (target_index + 1) as usize;
+
+    if justified_slots.len() < length {
+        let new_bitlist = BitList::with_capacity(length)
+            .map_err(|err| anyhow!("Failed to extend projected justified slots: {err:?}"))?;
+        *justified_slots = new_bitlist.union(justified_slots);
+    }
+
+    Ok(())
+}
+
+fn set_projected_justified_slot(
+    justified_slots: &mut BitList<U262144>,
+    finalized_slot: u64,
+    target_slot: u64,
+) -> anyhow::Result<()> {
+    extend_projected_justified_slots(justified_slots, finalized_slot, target_slot)?;
+
+    if let Some(index) = justified_index_after(target_slot, finalized_slot) {
+        justified_slots
+            .set(index as usize, true)
+            .map_err(|err| anyhow!("Failed to set projected justified slot: {err:?}"))?;
+    }
+
+    Ok(())
+}
+
+fn shift_projected_finalized_slot(
+    justified_slots: &mut BitList<U262144>,
+    finalized_slot: u64,
+    new_finalized_slot: u64,
+) -> anyhow::Result<()> {
+    let delta = new_finalized_slot.saturating_sub(finalized_slot) as usize;
+    if delta == 0 {
+        return Ok(());
+    }
+
+    let new_len = justified_slots.len().saturating_sub(delta);
+    let mut shifted = BitList::with_capacity(new_len)
+        .map_err(|err| anyhow!("Failed to shift projected justified slots: {err:?}"))?;
+
+    for index in delta..justified_slots.len() {
+        if justified_slots.get(index).unwrap_or(false) {
+            shifted
+                .set(index - delta, true)
+                .map_err(|err| anyhow!("Failed to set shifted justified slot: {err:?}"))?;
+        }
+    }
+
+    *justified_slots = shifted;
+    Ok(())
+}
+
 fn compact_aggregated_proofs(
     attestations: Vec<AggregatedAttestation>,
     proofs: Vec<PayloadProof>,
@@ -2083,17 +2552,215 @@ mod tests {
     };
     use ream_storage::tables::{field::REDBField, table::REDBTable};
     use ream_test_utils::store::sample_store;
-    use ssz_types::{BitList, VariableList, typenum::U4096};
+    use ssz_types::{
+        BitList, VariableList,
+        typenum::{U4096, U1073741824},
+    };
     use tokio::sync::Mutex as AsyncMutex;
     use tree_hash::TreeHash;
 
-    use super::{Store, compute_subnet_id};
+    use super::{
+        AttestationEntryScore, AttestationScoreTier, BlockProductionStrategy, Store,
+        compute_subnet_id,
+    };
     use crate::constants::JUSTIFICATION_LOOKBACK_SLOTS;
 
     static TEST_GLOBAL_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
 
     fn test_global_lock() -> &'static AsyncMutex<()> {
         TEST_GLOBAL_LOCK.get_or_init(|| AsyncMutex::new(()))
+    }
+
+    #[test]
+    fn test_tier_ordering_prefers_finalize_before_justify_before_build() {
+        let data_root = B256::repeat_byte(0x11);
+        let finalize = AttestationEntryScore {
+            tier: AttestationScoreTier::Finalize,
+            new_voter_count: 1,
+            target_slot: 10,
+            attestation_slot: 9,
+        };
+        let justify = AttestationEntryScore {
+            tier: AttestationScoreTier::Justify,
+            new_voter_count: 100,
+            target_slot: 1,
+            attestation_slot: 1,
+        };
+        let build = AttestationEntryScore {
+            tier: AttestationScoreTier::Build,
+            new_voter_count: 100,
+            target_slot: 1,
+            attestation_slot: 1,
+        };
+
+        assert!(finalize.ordering_key(data_root) < justify.ordering_key(data_root));
+        assert!(justify.ordering_key(data_root) < build.ordering_key(data_root));
+    }
+
+    #[test]
+    fn test_tier_ordering_prefers_more_new_voters_within_tier() {
+        let data_root = B256::repeat_byte(0x22);
+        let more_voters = AttestationEntryScore {
+            tier: AttestationScoreTier::Build,
+            new_voter_count: 8,
+            target_slot: 10,
+            attestation_slot: 9,
+        };
+        let fewer_voters = AttestationEntryScore {
+            tier: AttestationScoreTier::Build,
+            new_voter_count: 3,
+            target_slot: 10,
+            attestation_slot: 9,
+        };
+
+        assert!(more_voters.ordering_key(data_root) < fewer_voters.ordering_key(data_root));
+    }
+
+    #[test]
+    fn test_tier_ordering_uses_data_root_as_deterministic_tiebreak() {
+        let score = AttestationEntryScore {
+            tier: AttestationScoreTier::Build,
+            new_voter_count: 3,
+            target_slot: 10,
+            attestation_slot: 9,
+        };
+
+        assert!(
+            score.ordering_key(B256::repeat_byte(0x01))
+                < score.ordering_key(B256::repeat_byte(0x02))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_select_aggregated_proofs_undercovers_when_given_new_voters_only() {
+        let store = sample_store_as_store(8).await;
+        let data = store.produce_attestation_data(1).await.unwrap();
+        let data_root = data.tree_hash_root();
+        let p_x = make_test_aggregated_proof(&[4]);
+        let p_y = make_test_aggregated_proof(&[1, 2, 3]);
+
+        {
+            let db = store.store.lock().await;
+            let latest_known = db.latest_known_aggregated_payloads_provider();
+            latest_known
+                .insert(SignatureKey::from_parts(4, data_root), vec![p_x.clone()])
+                .unwrap();
+            for validator_id in [1, 2, 3] {
+                latest_known
+                    .insert(
+                        SignatureKey::from_parts(validator_id, data_root),
+                        vec![p_y.clone()],
+                    )
+                    .unwrap();
+            }
+        }
+
+        let new_voters_only = vec![AggregatedAttestations {
+            validator_id: 4,
+            data: data.clone(),
+        }];
+        let (attestations, _) = store
+            .select_aggregated_proofs(&new_voters_only)
+            .await
+            .unwrap();
+        let covered = covered_validators(&attestations);
+
+        // leanSpec covers the whole pool from empty, so it would emit {1,2,3,4}.
+        // Passing only new voters {4} means P_y is never looked up.
+        assert_eq!(covered, HashSet::from([4]));
+
+        let full_union = [1, 2, 3, 4]
+            .into_iter()
+            .map(|validator_id| AggregatedAttestations {
+                validator_id,
+                data: data.clone(),
+            })
+            .collect::<Vec<_>>();
+        let (attestations, _) = store.select_aggregated_proofs(&full_union).await.unwrap();
+        assert_eq!(
+            covered_validators(&attestations),
+            HashSet::from([1, 2, 3, 4])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_select_tiered_emits_full_proof_union_for_selected_data() {
+        let store = sample_store_as_store(8).await;
+        let data_b = store.produce_attestation_data(1).await.unwrap();
+        let data_root = data_b.tree_hash_root();
+        let p_x = make_test_aggregated_proof(&[4]);
+        let p_y = make_test_aggregated_proof(&[1, 2, 3]);
+        let parent_root = { store.store.lock().await.head_provider().get().unwrap() };
+
+        {
+            let db = store.store.lock().await;
+            let latest_known = db.latest_known_aggregated_payloads_provider();
+            latest_known
+                .insert(SignatureKey::from_parts(4, data_root), vec![p_x.clone()])
+                .unwrap();
+            for validator_id in [1, 2, 3] {
+                latest_known
+                    .insert(
+                        SignatureKey::from_parts(validator_id, data_root),
+                        vec![p_y.clone()],
+                    )
+                    .unwrap();
+            }
+
+            let state_provider = db.state_provider();
+            let mut head_state = state_provider.get(parent_root).unwrap().unwrap();
+            let mut justifications_roots = VariableList::empty();
+            justifications_roots.push(data_b.target.root).unwrap();
+            let mut justifications_validators =
+                BitList::<U1073741824>::with_capacity(head_state.validators.len()).unwrap();
+            for validator_id in [1, 2, 3] {
+                justifications_validators
+                    .set(validator_id as usize, true)
+                    .unwrap();
+            }
+            head_state.justifications_roots = justifications_roots;
+            head_state.justifications_validators = justifications_validators;
+            state_provider.insert(parent_root, head_state).unwrap();
+        }
+
+        let ctx = store.load_build_context(parent_root).await.unwrap();
+        let ext_hashes = Store::extended_historical_block_hashes(&ctx.head_state, parent_root, 1);
+        let full_union_input = [1, 2, 3, 4]
+            .into_iter()
+            .map(|validator_id| AggregatedAttestations {
+                validator_id,
+                data: data_b.clone(),
+            })
+            .collect::<Vec<_>>();
+        let attestations = Store::select_tiered(
+            &ctx,
+            &ext_hashes,
+            Some(VariableList::new(full_union_input).unwrap()),
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(
+            attestations
+                .iter()
+                .filter(|attestation| attestation.data == data_b)
+                .map(|attestation| attestation.validator_id)
+                .collect::<HashSet<_>>(),
+            HashSet::from([1, 2, 3, 4])
+        );
+    }
+
+    fn covered_validators(attestations: &[AggregatedAttestation]) -> HashSet<u64> {
+        attestations
+            .iter()
+            .flat_map(|attestation| {
+                attestation
+                    .aggregation_bits
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(validator_id, signed)| signed.then_some(validator_id as u64))
+            })
+            .collect()
     }
 
     const CACHED_KEY_COUNT: usize = 10;
@@ -2119,6 +2786,7 @@ mod tests {
             store: test_store.store,
             network_state: test_store.network_state,
             tick_interval_duration: None,
+            block_production_strategy: BlockProductionStrategy::default(),
         }
     }
 
@@ -2664,6 +3332,30 @@ mod tests {
         assert!(block.proposer_index == validator_index);
         assert!(block.parent_root == head_provider.get().unwrap());
         assert!(block.state_root != B256::ZERO);
+    }
+
+    /// Smoke-test the tiered path end to end: produce_block -> build_block(Tiered)
+    /// -> select_tiered -> seal_block must yield a valid block, matching the
+    /// coverage the round-based path already gets from the produce_block tests.
+    #[tokio::test]
+    async fn test_produce_block_tiered_smoke() {
+        let slot = 1;
+        let validator_index = 1;
+        let mut store = sample_store_as_store(10)
+            .await
+            .with_block_production_strategy(BlockProductionStrategy::Tiered);
+        let BlockWithSignatures { block, .. } = store
+            .produce_block_with_signatures(slot, validator_index)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.block_production_strategy,
+            BlockProductionStrategy::Tiered
+        );
+        assert_eq!(block.slot, slot);
+        assert_eq!(block.proposer_index, validator_index);
+        assert!(!block.state_root.is_zero());
     }
 
     /// Test block production fails for unauthorized proposer.
