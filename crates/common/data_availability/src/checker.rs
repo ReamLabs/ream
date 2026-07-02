@@ -6,47 +6,30 @@ use ream_consensus_beacon::{
     electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
 };
 
-#[derive(Debug, Clone)]
-pub struct PendingBlock<State = BeaconState> {
-    pub signed_block: SignedBeaconBlock,
-    pub post_state: State,
-}
-
-#[derive(Debug, Clone)]
-pub struct PendingAvailability<State = BeaconState> {
-    pub pending_block: Option<PendingBlock<State>>,
-    pub received_columns: HashSet<u64>,
-}
-
-impl<State> Default for PendingAvailability<State> {
-    fn default() -> Self {
-        Self {
-            pending_block: None,
-            received_columns: HashSet::new(),
-        }
-    }
-}
+use crate::{PendingAvailability, PendingBlock};
 
 #[derive(Debug)]
 pub struct DataAvailabilityChecker<State = BeaconState> {
     entries: HashMap<B256, PendingAvailability<State>>,
-    node_columns: HashSet<u64>,
+    required_columns: HashSet<u64>,
 }
 
 impl<State> DataAvailabilityChecker<State> {
-    pub fn new(node_columns: HashSet<u64>) -> Self {
+    pub fn new(required_columns: HashSet<u64>) -> Self {
         assert!(
-            !node_columns.is_empty(),
+            !required_columns.is_empty(),
             "data availability checker must require at least one column"
         );
         assert!(
-            node_columns.iter().all(|index| *index < NUMBER_OF_COLUMNS),
+            required_columns
+                .iter()
+                .all(|index| *index < NUMBER_OF_COLUMNS),
             "data availability checker column set contains an out-of-range index"
         );
 
         Self {
             entries: HashMap::new(),
-            node_columns,
+            required_columns,
         }
     }
 
@@ -72,7 +55,7 @@ impl<State> DataAvailabilityChecker<State> {
         block_root: B256,
         column_index: u64,
     ) -> Option<PendingBlock<State>> {
-        if !self.node_columns.contains(&column_index) {
+        if !self.required_columns.contains(&column_index) {
             return None;
         }
 
@@ -125,14 +108,15 @@ impl<State> DataAvailabilityChecker<State> {
             return true;
         }
 
-        self.node_columns.is_subset(&entry.received_columns)
+        self.required_columns.is_subset(&entry.received_columns)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use ream_consensus_beacon::electra::{
-        beacon_block::BeaconBlock, beacon_block_body::BeaconBlockBody,
+        beacon_block::{BeaconBlock, SignedBeaconBlock},
+        beacon_block_body::BeaconBlockBody,
     };
     use ream_consensus_misc::{
         constants::beacon::BYTES_PER_COMMITMENT,
@@ -156,8 +140,8 @@ mod tests {
         }
     }
 
-    fn checker(node_columns: &[u64]) -> DataAvailabilityChecker<()> {
-        DataAvailabilityChecker::new(node_columns.iter().copied().collect())
+    fn checker(required_columns: &[u64]) -> DataAvailabilityChecker<()> {
+        DataAvailabilityChecker::new(required_columns.iter().copied().collect())
     }
 
     #[test]
@@ -172,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn block_waits_for_all_node_columns() {
+    fn block_waits_for_all_required_columns() {
         let mut checker = checker(&[0, 1, 2]);
         let root = B256::repeat_byte(2);
 
@@ -223,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn columns_outside_the_node_set_do_not_complete() {
+    fn columns_outside_the_required_set_do_not_complete() {
         let mut checker = checker(&[0]);
         let root = B256::repeat_byte(6);
 
@@ -233,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn columns_outside_the_node_set_do_not_create_entries() {
+    fn columns_outside_the_required_set_do_not_create_entries() {
         let mut checker = checker(&[0]);
         let root = B256::repeat_byte(7);
 
@@ -255,13 +239,13 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "at least one column")]
-    fn checker_rejects_empty_node_column_set() {
+    fn checker_rejects_empty_required_column_set() {
         let _checker: DataAvailabilityChecker<()> = DataAvailabilityChecker::new(HashSet::new());
     }
 
     #[test]
     #[should_panic(expected = "out-of-range")]
-    fn checker_rejects_out_of_range_node_column_set() {
+    fn checker_rejects_out_of_range_required_column_set() {
         let _checker: DataAvailabilityChecker<()> =
             DataAvailabilityChecker::new([NUMBER_OF_COLUMNS].into_iter().collect());
     }

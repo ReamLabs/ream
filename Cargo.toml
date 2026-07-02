@@ -13,6 +13,7 @@ members = [
     "crates/common/consensus/beacon",
     "crates/common/consensus/lean",
     "crates/common/consensus/misc",
+    "crates/common/data_availability",
     "crates/common/events/beacon",
     "crates/common/execution/engine",
     "crates/common/execution/rpc_types",
@@ -184,6 +185,7 @@ ream-checkpoint-sync-lean = { path = "crates/common/checkpoint_sync/lean", defau
 ream-consensus-beacon = { path = "crates/common/consensus/beacon" }
 ream-consensus-lean = { path = "crates/common/consensus/lean", default-features = false }
 ream-consensus-misc = { path = "crates/common/consensus/misc", default-features = false }
+ream-data-availability = { path = "crates/common/data_availability" }
 ream-discv5 = { path = "crates/networking/discv5" }
 ream-events-beacon = { path = "crates/common/events/beacon" }
 ream-execution-engine = { path = "crates/common/execution/engine" }

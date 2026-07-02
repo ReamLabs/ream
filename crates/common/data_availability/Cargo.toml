@@ -1,0 +1,23 @@
+[package]
+name = "ream-data-availability"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-primitives.workspace = true
+
+# ream dependencies
+ream-consensus-beacon.workspace = true
+
+[dev-dependencies]
+ream-consensus-misc.workspace = true
+ssz_types.workspace = true
+
+[lints]
+workspace = true
