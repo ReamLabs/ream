@@ -1,6 +1,9 @@
 use alloy_primitives::{Address, B256};
-use alloy_rpc_types_engine::ForkchoiceState;
-use reth_ethereum::engine::EthPayloadAttributes;
+use alloy_rpc_types_engine::{ForkchoiceState, ForkchoiceUpdated};
+use reth_ethereum::{
+    engine::EthPayloadAttributes,
+    node::{EthEngineTypes, api::ConsensusEngineHandle},
+};
 use sha2::{Digest, Sha256};
 
 /// Creates a `ForkchoiceState` used by the Engine API.
@@ -19,9 +22,27 @@ pub fn create_fork_choice_state(
     }
 }
 
+/// Applies a fork choice update to the execution layer, equivalent to
+/// `engine_forkchoiceUpdatedV4`.
+///
+/// This calls the consensus engine handle directly rather than the JSON-RPC
+/// layer, so it is version-agnostic: the effective version is determined by the
+/// `payload_attributes` passed. `EthPayloadAttributes` carries the Amsterdam
+/// (V4) fields `slot_number` and `target_gas_limit`
+pub async fn update(
+    consensus_engine_handle: &ConsensusEngineHandle<EthEngineTypes>,
+    state: ForkchoiceState,
+    payload_attributes: Option<EthPayloadAttributes>,
+) -> eyre::Result<ForkchoiceUpdated> {
+    let updated = consensus_engine_handle
+        .fork_choice_updated(state, payload_attributes)
+        .await?;
+    Ok(updated)
+}
+
 /// Creates an `EthPayloadAttributes` request for payload building.
 ///
-/// These attributes are supplied to the execution layer during
+/// These attributes are supplied to the execution layer
 /// to initiate the construction of a new payload.
 ///
 /// Withdrawals are currently omitted and set to None.
@@ -37,7 +58,7 @@ pub fn create_payload_attributes(
         timestamp,
         prev_randao,
         suggested_fee_recipient,
-        withdrawals: None,
+        withdrawals: Some(vec![]),
         parent_beacon_block_root,
         slot_number,
         target_gas_limit,

@@ -3,10 +3,10 @@
 use std::{path::PathBuf, sync::Arc};
 
 use alloy_genesis::Genesis;
-use alloy_primitives::B256;
-use alloy_rpc_types_engine::{ExecutionPayloadEnvelopeV3, ExecutionPayloadV3, PayloadStatus};
+use alloy_rpc_types_engine::{ExecutionData, ForkchoiceState, ForkchoiceUpdated, PayloadStatus};
 use reth_ethereum::{
     chainspec::ChainSpec,
+    engine::EthPayloadAttributes,
     node::{
         EthereumNode,
         builder::{NodeBuilder, NodeHandleFor},
@@ -21,9 +21,10 @@ use reth_ethereum::{
     },
     tasks::{RuntimeBuilder, RuntimeConfig, TokioConfig},
 };
+use reth_payload_builder::PayloadId;
 use tokio::runtime::Handle;
 
-use crate::payload::{self, ElPayloadRequest};
+use crate::{fork_choice, payload};
 
 pub struct RethHandle<DB>
 where
@@ -86,26 +87,45 @@ impl<DB> RethHandle<DB>
 where
     DB: Database + DatabaseMetrics + Clone + Unpin + 'static,
 {
-    pub async fn build_payload(
+    /// Sends a fork choice update to the execution layer.
+    ///
+    /// Called with `payload_attributes` to start building a payload for a
+    /// proposal (the returned `payload_id` is fed to [`Self::build_payload`]),
+    /// and with `None` to canonicalize the head after a block is imported.
+    pub async fn update_forkchoice(
         &self,
-        request: ElPayloadRequest,
-    ) -> eyre::Result<ExecutionPayloadEnvelopeV3> {
-        payload::build(&self.reth.node.payload_builder_handle, request).await
+        state: ForkchoiceState,
+        payload_attributes: Option<EthPayloadAttributes>,
+    ) -> eyre::Result<ForkchoiceUpdated> {
+        fork_choice::update(
+            self.reth.node.consensus_engine_handle(),
+            state,
+            payload_attributes,
+        )
+        .await
+    }
+
+    pub async fn build_payload(&self, payload_id: PayloadId) -> eyre::Result<ExecutionData> {
+        payload::build(&self.reth.node.payload_builder_handle, payload_id).await
     }
 
     pub async fn import_payload(
         &self,
-        payload: ExecutionPayloadV3,
-        parent_beacon_block_root: B256,
-        versioned_hashes: Vec<B256>,
+        execution_data: ExecutionData,
     ) -> eyre::Result<PayloadStatus> {
-        payload::import(
-            self.reth.node.consensus_engine_handle(),
-            payload,
-            parent_beacon_block_root,
-            versioned_hashes,
-        )
+        payload::import(self.reth.node.consensus_engine_handle(), execution_data).await
+    }
+
+    /// For tests, the immediate runtime shutdown causes tasks to panic
+    /// first fires the shutdown signal so all tasks exit their loops cleanly, then the runtime
+    /// drops with no tasks in flight.
+    pub async fn shutdown(self) {
+        let executor = self.reth.node.task_executor.clone();
+        tokio::task::spawn_blocking(move || {
+            executor.graceful_shutdown_with_timeout(std::time::Duration::from_secs(5));
+        })
         .await
+        .ok();
     }
 }
 
@@ -156,15 +176,16 @@ pub fn custom_chain() -> Arc<ChainSpec> {
 #[cfg(test)]
 mod test {
     use alloy_primitives::{B256, hex};
-    use alloy_rpc_types_engine::{ForkchoiceState, PayloadStatusEnum};
+    use alloy_rpc_types_engine::ForkchoiceState;
     use serial_test::serial;
 
     use super::*;
     use crate::fork_choice::{create_fork_choice_state, create_ream_payload_attributes};
 
+    /// This test demonstrates a full EL payload execution/validation for a proposer
     #[tokio::test]
     #[serial]
-    async fn test_fork_choice_update() {
+    async fn test_proposer_el_payload() {
         let handle = RethHandle::test().await.unwrap();
         let genesis_hash = custom_chain().genesis_hash();
         let fork_choice_state: ForkchoiceState =
@@ -172,23 +193,37 @@ mod test {
         let payload_attrs = create_ream_payload_attributes(1, B256::ZERO, 0, 4);
 
         let fork_choice_updated = handle
-            .reth
-            .node
-            .consensus_engine_handle()
-            .fork_choice_updated(fork_choice_state, Some(payload_attrs))
+            .update_forkchoice(fork_choice_state, Some(payload_attrs))
             .await
             .unwrap();
 
-        assert_eq!(
-            fork_choice_updated.payload_status.status,
-            PayloadStatusEnum::Valid
-        );
+        let built_payload = handle
+            .build_payload(fork_choice_updated.payload_id.unwrap())
+            .await
+            .unwrap();
+        let payload_status = handle.import_payload(built_payload).await.unwrap();
+        println!("{payload_status:?}");
+
+        assert!(payload_status.is_valid());
+
+        let new_block_hash = payload_status.latest_valid_hash.unwrap();
+        // The second fcu call updates the head
+        let second_fcu = handle
+            .update_forkchoice(
+                create_fork_choice_state(new_block_hash, new_block_hash, new_block_hash),
+                None, //  just update head
+            )
+            .await
+            .unwrap();
+
+        assert!(second_fcu.payload_status.is_valid());
+        handle.shutdown().await;
     }
 
     #[tokio::test]
     #[serial]
     async fn test_transaction_received() -> eyre::Result<()> {
-        let _node = RethHandle::test().await.unwrap();
+        let node = RethHandle::test().await.unwrap();
         let _raw_tx = hex!(
             "02f876820a28808477359400847735940082520894ab0840c0e43688012c1adb0f5e3fc665188f83d28a029d394a5d630544000080c080a0a044076b7e67b5deecc63f61a8d7913fab86ca365b344b5759d1fe3563b4c39ea019eab979dd000da04dfc72bb0377c092d30fd9e1cab5ae487de49586cc8b0090"
         );
@@ -211,6 +246,7 @@ mod test {
 
         println!("{}", response.text().await?);
 
+        node.shutdown().await;
         Ok(())
     }
 }
