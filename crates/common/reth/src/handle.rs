@@ -1,6 +1,6 @@
 #![warn(unused_imports)]
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use alloy_genesis::Genesis;
 use alloy_primitives::B256;
@@ -10,22 +10,31 @@ use reth_ethereum::{
     node::{
         EthereumNode,
         builder::{NodeBuilder, NodeHandleFor},
-        core::{args::RpcServerArgs, node_config::NodeConfig},
+        core::{
+            args::{DatadirArgs, RpcServerArgs},
+            node_config::NodeConfig,
+        },
     },
-    provider::db::{DatabaseEnv, test_utils::TempDatabase},
+    provider::db::{
+        ClientVersion, Database, DatabaseEnv, database_metrics::DatabaseMetrics, init_db,
+        mdbx::DatabaseArguments, test_utils::TempDatabase,
+    },
     tasks::{RuntimeBuilder, RuntimeConfig, TokioConfig},
 };
 use tokio::runtime::Handle;
 
 use crate::payload::{self, ElPayloadRequest};
 
-#[derive(Debug)]
-pub struct RethHandle {
-    pub reth: NodeHandleFor<EthereumNode, Arc<TempDatabase<DatabaseEnv>>>,
+pub struct RethHandle<DB>
+where
+    DB: Database + DatabaseMetrics + Clone + Unpin + 'static,
+{
+    pub reth: NodeHandleFor<EthereumNode, DB>,
 }
 
-impl RethHandle {
-    pub async fn start(ream_rt: Option<Handle>) -> eyre::Result<RethHandle> {
+impl RethHandle<DatabaseEnv> {
+    // Start a reth node with the given tokio runtime handle and persistent data directory.
+    pub async fn start(ream_rt: Option<Handle>, datadir: PathBuf) -> eyre::Result<Self> {
         let mut config = RuntimeConfig::default();
         if let Some(handle) = ream_rt {
             config = config.with_tokio(TokioConfig::existing_handle(handle));
@@ -33,20 +42,50 @@ impl RethHandle {
 
         let reth_rt = RuntimeBuilder::new(config).build()?;
 
-        let node_config = NodeConfig::test()
-            .dev()
+        let node_config = NodeConfig::new(custom_chain())
             .with_rpc(RpcServerArgs::default().with_http())
-            .with_chain(custom_chain());
+            .with_datadir_args(DatadirArgs {
+                datadir: datadir.into(),
+                ..Default::default()
+            });
+
+        let database = init_db(
+            node_config.datadir().db(),
+            DatabaseArguments::new(ClientVersion::default()),
+        )?;
 
         let reth = NodeBuilder::new(node_config)
-            .testing_node(reth_rt)
+            .with_database(database)
+            .with_launch_context(reth_rt)
             .node(EthereumNode::default())
             .launch_with_debug_capabilities()
             .await?;
 
         Ok(RethHandle { reth })
     }
+}
 
+impl RethHandle<Arc<TempDatabase<DatabaseEnv>>> {
+    // Start a reth node with a temporary in-memory database for testing.
+    pub async fn test() -> eyre::Result<Self> {
+        let reth_rt = RuntimeBuilder::new(RuntimeConfig::default()).build()?;
+
+        let reth = NodeBuilder::new(
+            NodeConfig::new(custom_chain()).with_rpc(RpcServerArgs::default().with_http()),
+        )
+        .testing_node(reth_rt)
+        .node(EthereumNode::default())
+        .launch_with_debug_capabilities()
+        .await?;
+
+        Ok(RethHandle { reth })
+    }
+}
+
+impl<DB> RethHandle<DB>
+where
+    DB: Database + DatabaseMetrics + Clone + Unpin + 'static,
+{
     pub async fn build_payload(
         &self,
         request: ElPayloadRequest,
@@ -61,7 +100,7 @@ impl RethHandle {
         versioned_hashes: Vec<B256>,
     ) -> eyre::Result<PayloadStatus> {
         payload::import(
-            &self.reth.node.consensus_engine_handle(),
+            self.reth.node.consensus_engine_handle(),
             payload,
             parent_beacon_block_root,
             versioned_hashes,
@@ -126,7 +165,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_fork_choice_update() {
-        let handle = RethHandle::start(None).await.unwrap();
+        let handle = RethHandle::test().await.unwrap();
         let genesis_hash = custom_chain().genesis_hash();
         let fork_choice_state: ForkchoiceState =
             create_fork_choice_state(genesis_hash, B256::ZERO, B256::ZERO);
@@ -149,7 +188,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_transaction_received() -> eyre::Result<()> {
-        let _node = RethHandle::start(None).await.unwrap();
+        let _node = RethHandle::test().await.unwrap();
         let _raw_tx = hex!(
             "02f876820a28808477359400847735940082520894ab0840c0e43688012c1adb0f5e3fc665188f83d28a029d394a5d630544000080c080a0a044076b7e67b5deecc63f61a8d7913fab86ca365b344b5759d1fe3563b4c39ea019eab979dd000da04dfc72bb0377c092d30fd9e1cab5ae487de49586cc8b0090"
         );

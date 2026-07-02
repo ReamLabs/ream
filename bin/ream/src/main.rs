@@ -449,9 +449,12 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // live at function scope for the whole run; the block returns the owned handle.
     #[cfg(feature = "reth")]
     let mut reth_handle = {
-        let handle = RethHandle::start(Some(executor.runtime().handle().clone()))
-            .await
-            .expect("failed to boot embedded reth execution layer");
+        let handle = RethHandle::start(
+            Some(executor.runtime().handle().clone()),
+            config.reth_datadir.clone(),
+        )
+        .await
+        .expect("failed to boot embedded reth execution layer");
 
         info!(
             "Embedded reth is started with genesis hash: {:?}",
