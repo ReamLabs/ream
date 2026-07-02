@@ -6123,6 +6123,7 @@ dependencies = [
  "ream-sync-committee-pool",
  "tokio",
  "tracing",
+ "tree_hash",
 ]
 
 [[package]]

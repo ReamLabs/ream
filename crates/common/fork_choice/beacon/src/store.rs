@@ -6,7 +6,6 @@ use hashbrown::HashMap;
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     attestation::Attestation,
-    data_column_sidecar::{ColumnIdentifier, DataColumnSidecar, NUMBER_OF_COLUMNS},
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
@@ -19,15 +18,15 @@ use ream_consensus_misc::{
     constants::beacon::{GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH},
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
 };
+use ream_data_availability::DataAvailabilityChecker;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
-use ream_polynomial_commitments::handlers::verify_data_column_sidecar_kzg_proofs;
 use ream_storage::{
     db::beacon::BeaconDB,
     tables::{
         field::{CustomField, REDBField},
         multimap_table::MultimapTable,
-        table::{CustomTable, REDBTable},
+        table::REDBTable,
     },
 };
 use ream_sync_committee_pool::SyncCommitteePool;
@@ -48,6 +47,7 @@ pub struct BlockWithEpochInfo {
 #[derive(Debug)]
 pub struct Store {
     pub db: BeaconDB,
+    pub data_availability_checker: DataAvailabilityChecker,
     pub operation_pool: Arc<OperationPool>,
     pub sync_committee_pool: Arc<SyncCommitteePool>,
 }
@@ -62,6 +62,7 @@ impl Store {
             sync_committee_pool.unwrap_or_else(|| Arc::new(SyncCommitteePool::default()));
         Self {
             db,
+            data_availability_checker: DataAvailabilityChecker::supernode(),
             operation_pool,
             sync_committee_pool,
         }
@@ -726,50 +727,6 @@ impl Store {
             .insert(target, base_state)?;
 
         Ok(())
-    }
-
-    /// Check if data is available for a block.
-    ///
-    /// For Fulu: https://ethereum.github.io/consensus-specs/specs/fulu/fork-choice/#modified-is_data_available
-    pub fn is_data_available(&self, beacon_block_root: B256) -> anyhow::Result<bool> {
-        // `retrieve_column_sidecars` is implementation and context dependent, replacing
-        // `retrieve_blobs_and_proofs`. For the given block root, it returns all column
-        // sidecars to sample, or raises an exception if they are not available.
-        // The p2p network does not guarantee sidecar retrieval outside of
-        // `MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS` epochs.
-        let column_sidecars = self.retrieve_column_sidecars(beacon_block_root)?;
-        ensure!(!column_sidecars.is_empty(), "No column sidecars available");
-
-        // Fulu column sidecars validation
-        for column_sidecar in column_sidecars {
-            if !column_sidecar.verify() {
-                return Ok(false);
-            }
-            if !verify_data_column_sidecar_kzg_proofs(&column_sidecar)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    /// Retrieve column sidecars for a block.
-    ///
-    /// We retrieve all columns that we have stored and returns an empty vector
-    /// if no sidecars are found (valid for blocks with no blobs).
-    fn retrieve_column_sidecars(
-        &self,
-        beacon_block_root: B256,
-    ) -> anyhow::Result<Vec<DataColumnSidecar>> {
-        let mut column_sidecars = Vec::new();
-
-        for index in 0..NUMBER_OF_COLUMNS {
-            let column_identifier = ColumnIdentifier::new(beacon_block_root, index);
-            if let Some(sidecar) = self.db.column_sidecars_provider().get(column_identifier)? {
-                column_sidecars.push(sidecar);
-            }
-        }
-
-        Ok(column_sidecars)
     }
 
     pub fn compute_pulled_up_tip(&mut self, block_root: B256) -> anyhow::Result<()> {
