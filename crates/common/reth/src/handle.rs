@@ -3,6 +3,8 @@
 use std::sync::Arc;
 
 use alloy_genesis::Genesis;
+use alloy_primitives::B256;
+use alloy_rpc_types_engine::{ExecutionPayloadEnvelopeV3, ExecutionPayloadV3, PayloadStatus};
 use reth_ethereum::{
     chainspec::ChainSpec,
     node::{
@@ -14,6 +16,8 @@ use reth_ethereum::{
     tasks::{RuntimeBuilder, RuntimeConfig, TokioConfig},
 };
 use tokio::runtime::Handle;
+
+use crate::payload::{self, ElPayloadRequest};
 
 #[derive(Debug)]
 pub struct RethHandle {
@@ -41,6 +45,28 @@ impl RethHandle {
             .await?;
 
         Ok(RethHandle { reth })
+    }
+
+    pub async fn build_payload(
+        &self,
+        request: ElPayloadRequest,
+    ) -> eyre::Result<ExecutionPayloadEnvelopeV3> {
+        payload::build(&self.reth.node.payload_builder_handle, request).await
+    }
+
+    pub async fn import_payload(
+        &self,
+        payload: ExecutionPayloadV3,
+        parent_beacon_block_root: B256,
+        versioned_hashes: Vec<B256>,
+    ) -> eyre::Result<PayloadStatus> {
+        payload::import(
+            &self.reth.node.consensus_engine_handle(),
+            payload,
+            parent_beacon_block_root,
+            versioned_hashes,
+        )
+        .await
     }
 }
 
