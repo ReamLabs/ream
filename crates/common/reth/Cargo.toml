@@ -1,0 +1,32 @@
+[package]
+name = "ream-reth-engine"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-genesis = "2.1.0"
+alloy-primitives.workspace = true
+alloy-rpc-types-engine = "2.1.0"
+eyre = "0.6.12"
+futures-util = "0.3.32"
+reqwest.workspace = true
+reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e", features = [
+  "node",
+  "test-utils",
+] }
+reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "5d027e5ff72f31270b862f8e000d1cc79621be2e" }
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+serial_test = "3.4.0"
+
+[lints]
+workspace = true
