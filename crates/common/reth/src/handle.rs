@@ -6,61 +6,42 @@ use alloy_genesis::Genesis;
 use reth_ethereum::{
     chainspec::ChainSpec,
     node::{
-        EthEngineTypes, EthereumNode,
-        api::{ConsensusEngineHandle, PayloadTypes},
-        builder::{NodeBuilder, NodeHandle},
+        EthereumNode,
+        builder::{NodeBuilder, NodeHandleFor},
         core::{args::RpcServerArgs, node_config::NodeConfig},
     },
-    tasks::Runtime,
+    provider::db::{DatabaseEnv, test_utils::TempDatabase},
+    tasks::{RuntimeBuilder, RuntimeConfig, TokioConfig},
 };
-use reth_payload_builder::PayloadBuilderHandle;
+use tokio::runtime::Handle;
 
 #[derive(Debug)]
-pub struct ReamRethHandle<T: PayloadTypes> {
-    pub consensus_engine_handle: ConsensusEngineHandle<T>,
-    pub payload_builder_handle: PayloadBuilderHandle<T>,
+pub struct RethHandle {
+    pub reth: NodeHandleFor<EthereumNode, Arc<TempDatabase<DatabaseEnv>>>,
 }
 
-impl<T: PayloadTypes> ReamRethHandle<T> {
-    pub fn new(
-        consensus_engine_handle: ConsensusEngineHandle<T>,
-        payload_builder_handle: PayloadBuilderHandle<T>,
-    ) -> Self {
-        Self {
-            consensus_engine_handle,
-            payload_builder_handle,
+impl RethHandle {
+    pub async fn start(ream_rt: Option<Handle>) -> eyre::Result<RethHandle> {
+        let mut config = RuntimeConfig::default();
+        if let Some(handle) = ream_rt {
+            config = config.with_tokio(TokioConfig::existing_handle(handle));
         }
+
+        let reth_rt = RuntimeBuilder::new(config).build()?;
+
+        let node_config = NodeConfig::test()
+            .dev()
+            .with_rpc(RpcServerArgs::default().with_http())
+            .with_chain(custom_chain());
+
+        let reth = NodeBuilder::new(node_config)
+            .testing_node(reth_rt)
+            .node(EthereumNode::default())
+            .launch_with_debug_capabilities()
+            .await?;
+
+        Ok(RethHandle { reth })
     }
-}
-
-pub async fn start_reth() -> eyre::Result<ReamRethHandle<EthEngineTypes>> {
-    let runtime = Runtime::test();
-
-    let node_config = NodeConfig::test()
-        .dev()
-        .with_rpc(RpcServerArgs::default().with_http())
-        .with_chain(custom_chain());
-
-    let NodeHandle {
-        node,
-        node_exit_future,
-    } = NodeBuilder::new(node_config)
-        .testing_node(runtime)
-        .node(EthereumNode::default())
-        .launch_with_debug_capabilities()
-        .await?;
-
-    let reth_handles = ReamRethHandle::new(
-        node.consensus_engine_handle().clone(),
-        node.payload_builder_handle.clone(),
-    );
-
-    tokio::spawn(async move {
-        let _node = node;
-        let _ = node_exit_future.await;
-    });
-
-    Ok(reth_handles)
 }
 
 pub fn custom_chain() -> Arc<ChainSpec> {
@@ -119,14 +100,16 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_fork_choice_update() {
-        let handle = start_reth().await.unwrap();
+        let handle = RethHandle::start(None).await.unwrap();
         let genesis_hash = custom_chain().genesis_hash();
         let fork_choice_state: ForkchoiceState =
             create_fork_choice_state(genesis_hash, B256::ZERO, B256::ZERO);
         let payload_attrs = create_ream_payload_attributes(1, B256::ZERO, 0, 4);
 
         let fork_choice_updated = handle
-            .consensus_engine_handle
+            .reth
+            .node
+            .consensus_engine_handle()
             .fork_choice_updated(fork_choice_state, Some(payload_attrs))
             .await
             .unwrap();
@@ -140,7 +123,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_transaction_received() -> eyre::Result<()> {
-        let _node = start_reth().await.unwrap();
+        let _node = RethHandle::start(None).await.unwrap();
         let _raw_tx = hex!(
             "02f876820a28808477359400847735940082520894ab0840c0e43688012c1adb0f5e3fc665188f83d28a029d394a5d630544000080c080a0a044076b7e67b5deecc63f61a8d7913fab86ca365b344b5759d1fe3563b4c39ea019eab979dd000da04dfc72bb0377c092d30fd9e1cab5ae487de49586cc8b0090"
         );
