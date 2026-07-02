@@ -38,6 +38,7 @@ devnet5 = [
     "ream-storage/devnet5",
     "ream-validator-lean/devnet5",
 ]
+reth = ["dep:ream-reth-engine"]
 
 [dependencies]
 alloy-primitives.workspace = true
@@ -90,6 +91,7 @@ ream-node.workspace = true
 ream-operation-pool.workspace = true
 ream-p2p.workspace = true
 ream-post-quantum-crypto.workspace = true
+ream-reth-engine = { workspace = true, optional = true }
 ream-rpc-beacon.workspace = true
 ream-rpc-common.workspace = true
 ream-rpc-lean.workspace = true

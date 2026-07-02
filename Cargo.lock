@@ -8612,6 +8612,7 @@ dependencies = [
  "ream-operation-pool",
  "ream-p2p",
  "ream-post-quantum-crypto",
+ "ream-reth-engine",
  "ream-rpc-beacon",
  "ream-rpc-common",
  "ream-rpc-lean",

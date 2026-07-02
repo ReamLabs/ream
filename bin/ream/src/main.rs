@@ -83,6 +83,8 @@ use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_post_quantum_crypto::leansig::{
     private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey,
 };
+#[cfg(feature = "reth")]
+use ream_reth_engine::handle::RethHandle;
 use ream_rpc_common::config::RpcServerConfig;
 use ream_rpc_lean::{handlers::test_driver::test_driver_enabled, server::start_test_driver};
 use ream_storage::{
@@ -443,6 +445,28 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         config.http_allow_origin,
     );
 
+    // Start the reth EL embedded in the same process. `reth_handle` owns the node, so it must
+    // live at function scope for the whole run; the block returns the owned handle.
+    #[cfg(feature = "reth")]
+    let mut reth_handle = {
+        let handle = RethHandle::start(Some(executor.runtime().handle().clone()))
+            .await
+            .expect("failed to boot embedded reth execution layer");
+
+        info!(
+            "Embedded reth is started with genesis hash: {:?}",
+            handle.reth.node.chain_spec().genesis_hash()
+        );
+
+        handle
+    };
+
+    #[cfg(feature = "reth")]
+    let reth_exit = &mut reth_handle.reth.node_exit_future;
+
+    #[cfg(not(feature = "reth"))]
+    let reth_exit = std::future::pending::<()>();
+
     // Start the services concurrently.
     let mut chain_task =
         AbortOnDrop(executor.spawn(async move { chain_service.start().await }.in_current_span()));
@@ -484,6 +508,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         },
         result = &mut http_task.0 => {
             error!("RPC service has stopped unexpectedly: {result:?}");
+        }
+        result = reth_exit => {
+            error!("Embedded reth execution layer has stopped unexpectedly: {result:?}");
         }
     }
 }
