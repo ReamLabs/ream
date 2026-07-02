@@ -22,12 +22,15 @@ use ream_consensus_lean::{
     block::{BlockWithSignatures, SignedBlock},
     checkpoint::Checkpoint,
 };
-use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_committee_count};
+use ream_consensus_misc::constants::lean::{
+    HYSTERESIS_BAND, INTERVALS_PER_SLOT, NETWORK_STALL_THRESHOLD, SYNC_LAG_THRESHOLD,
+    attestation_committee_count,
+};
 use ream_fork_choice_lean::store::LeanStoreWriter;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_COUNT as ATTESTATION_COMMITTEE_COUNT_METRIC,
     BLOCK_BUILDING_FAILURES_TOTAL, CURRENT_SLOT, IS_AGGREGATOR, LEAN_AGGREGATOR_SKIPPED_TOTAL,
-    inc_int_counter_vec, set_int_gauge_vec,
+    VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, inc_int_counter_vec, set_int_gauge_vec,
 };
 use ream_network_spec::networks::lean_network_spec;
 use ream_network_state_lean::{AggregatorState, NetworkState};
@@ -42,7 +45,10 @@ use ream_req_resp::{
         messages::{LeanRequestMessage, LeanResponseMessage},
     },
 };
-use ream_storage::tables::{field::REDBField, table::REDBTable};
+use ream_storage::{
+    errors::StoreError,
+    tables::{field::REDBField, table::REDBTable},
+};
 #[cfg(feature = "devnet5")]
 use ssz_types::VariableList;
 #[cfg(feature = "devnet5")]
@@ -238,6 +244,33 @@ type CallbackFuture = Pin<
     >,
 >;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncedForDuties {
+    Yes,
+    No {
+        head_slot: u64,
+        lag: u64,
+        max_seen_slot: u64,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DutyKind {
+    Block,
+    Attestation,
+}
+
+// TODO: Replace this hand-rolled impl with `#[derive(strum::AsRefStr)]` once `strum` is added
+// as a workspace dep so the labels are derived from the variant names.
+impl AsRef<str> for DutyKind {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Block => "block",
+            Self::Attestation => "attestation",
+        }
+    }
+}
+
 /// LeanChainService is responsible for updating the [LeanChain] state
 pub struct LeanChainService {
     store: Arc<LeanStoreWriter>,
@@ -258,6 +291,7 @@ pub struct LeanChainService {
     telemetry: SyncTelemetry,
     #[cfg(feature = "devnet5")]
     pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
+    duties_paused: bool,
 }
 
 impl LeanChainService {
@@ -287,6 +321,7 @@ impl LeanChainService {
             telemetry: SyncTelemetry::from_env(),
             #[cfg(feature = "devnet5")]
             pending_block_aggregates: Arc::new(Mutex::new(Vec::new())),
+            duties_paused: false,
         }
     }
 
@@ -2865,11 +2900,157 @@ impl LeanChainService {
         Ok(())
     }
 
+    async fn is_synced_for_duties(
+        &mut self,
+        wall_clock_slot: u64,
+        duty: DutyKind,
+    ) -> anyhow::Result<SyncedForDuties> {
+        // head_slot is the slot of our local head block.
+        // max_seen_slot is the freshest authenticated block we've stored.
+        let (head_slot, max_seen_slot) = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            let head_root = match store.head_provider().get() {
+                Ok(root) => root,
+                Err(StoreError::FieldNotInitilized) => return Ok(SyncedForDuties::Yes),
+                Err(err) => return Err(err.into()),
+            };
+            let Some(head_block) = store.block_provider().get(head_root)? else {
+                return Ok(SyncedForDuties::Yes);
+            };
+            let head_slot = head_block.block.slot;
+            let max_seen_slot = store
+                .slot_index_provider()
+                .get_highest_slot()?
+                .unwrap_or(head_slot);
+            (head_slot, max_seen_slot)
+        };
+        let duty = duty.as_ref();
+
+        // Use saturating_sub so a head ahead of wall clock returns zero lag instead of panicking.
+        let lag = wall_clock_slot.saturating_sub(head_slot);
+        let network_lag = wall_clock_slot.saturating_sub(max_seen_slot);
+
+        // Whole network appears stalled so keep signing to let the chain recover.
+        if network_lag > NETWORK_STALL_THRESHOLD {
+            if self.duties_paused {
+                self.duties_paused = false;
+                info!(
+                    duty,
+                    slot = wall_clock_slot,
+                    head_slot,
+                    lag,
+                    max_seen_slot,
+                    network_lag,
+                    "Validator resuming duties: network stall detected",
+                );
+            }
+            return Ok(SyncedForDuties::Yes);
+        }
+
+        // We're currently pausing duties so check if it's safe to resume.
+        if self.duties_paused {
+            // TODO: Swap for static_assertions::const_assert! once that crate is a workspace dep.
+            const _: () = assert!(HYSTERESIS_BAND < SYNC_LAG_THRESHOLD);
+            // Lag has dropped well below the threshold so it's safe to resume.
+            if lag <= SYNC_LAG_THRESHOLD - HYSTERESIS_BAND {
+                self.duties_paused = false;
+                info!(
+                    duty,
+                    slot = wall_clock_slot,
+                    head_slot,
+                    lag,
+                    max_seen_slot,
+                    network_lag,
+                    "Validator resuming duties: local view caught up",
+                );
+                return Ok(SyncedForDuties::Yes);
+            }
+            return Ok(SyncedForDuties::No {
+                head_slot,
+                lag,
+                max_seen_slot,
+            });
+        }
+
+        // Local view is fresh so allow duties to proceed.
+        if lag <= SYNC_LAG_THRESHOLD {
+            return Ok(SyncedForDuties::Yes);
+        }
+
+        self.duties_paused = true;
+        info!(
+            duty,
+            slot = wall_clock_slot,
+            head_slot,
+            lag,
+            max_seen_slot,
+            network_lag,
+            "Validator pausing duties: too far behind chain head",
+        );
+        Ok(SyncedForDuties::No {
+            head_slot,
+            lag,
+            max_seen_slot,
+        })
+    }
+
+    /// Run the sync-lag gate for `slot`. Sends a `SyncLag` (or error) response to
+    /// `response` if the duty must be skipped and returns `None`; otherwise returns
+    /// the sender back so the caller can complete duty production with it.
+    async fn skip_for_lag<T: std::fmt::Debug>(
+        &mut self,
+        slot: u64,
+        duty: DutyKind,
+        response: oneshot::Sender<ServiceResponse<T>>,
+    ) -> Option<oneshot::Sender<ServiceResponse<T>>> {
+        let decision = match self.is_synced_for_duties(slot, duty).await {
+            Ok(decision) => decision,
+            Err(err) => {
+                warn!(
+                    duty = duty.as_ref(),
+                    slot, "Failed to run sync-lag check: {err}",
+                );
+                if let Err(err) = response.send(ServiceResponse::Err(err)) {
+                    warn!(
+                        duty = duty.as_ref(),
+                        "Failed to send error response: {err:?}",
+                    );
+                }
+                return None;
+            }
+        };
+        let SyncedForDuties::No {
+            head_slot,
+            lag,
+            max_seen_slot,
+        } = decision
+        else {
+            return Some(response);
+        };
+        inc_int_counter_vec(&VALIDATOR_DUTIES_SKIPPED_LAG_TOTAL, &[duty.as_ref()]);
+        if let Err(err) = response.send(ServiceResponse::SyncLag {
+            head_slot,
+            lag,
+            max_seen_slot,
+        }) {
+            warn!(
+                duty = duty.as_ref(),
+                "Failed to send SyncLag response: {err:?}",
+            );
+        }
+        None
+    }
+
     async fn handle_produce_block(
         &mut self,
         slot: u64,
         response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
+        let Some(response) = self.skip_for_lag(slot, DutyKind::Block, response).await else {
+            return Ok(());
+        };
+
         let block_with_signatures = match self
             .store
             .write()
@@ -2905,6 +3086,13 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<AttestationData>>,
     ) -> anyhow::Result<()> {
+        let Some(response) = self
+            .skip_for_lag(slot, DutyKind::Attestation, response)
+            .await
+        else {
+            return Ok(());
+        };
+
         let attestation_data = match self.store.read().await.produce_attestation_data(slot).await {
             Ok(data) => data,
             Err(err) => {
