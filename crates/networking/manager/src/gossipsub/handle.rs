@@ -485,25 +485,35 @@ pub async fn handle_gossipsub_message(
 
                 match validation_result {
                     ValidationResult::Accept => {
+                        let block_root = data_column_sidecar
+                            .signed_block_header
+                            .message
+                            .tree_hash_root();
+                        let column_index = data_column_sidecar.index;
                         let data_column_sidecar_bytes = data_column_sidecar.as_ssz_bytes();
-                        if let Err(err) = beacon_chain
+                        let insert_result = beacon_chain
                             .store
                             .lock()
                             .await
                             .db
                             .column_sidecars_provider()
                             .insert(
-                                ColumnIdentifier::new(
-                                    data_column_sidecar
-                                        .signed_block_header
-                                        .message
-                                        .tree_hash_root(),
-                                    data_column_sidecar.index,
-                                ),
+                                ColumnIdentifier::new(block_root, column_index),
                                 *data_column_sidecar,
-                            )
-                        {
-                            error!("Failed to insert data_column_sidecar: {err}");
+                            );
+
+                        match insert_result {
+                            Ok(()) => {
+                                if let Err(err) = beacon_chain
+                                    .process_data_column_sidecar(block_root, column_index)
+                                    .await
+                                {
+                                    error!("Failed to process data_column_sidecar: {err}");
+                                }
+                            }
+                            Err(err) => {
+                                error!("Failed to insert data_column_sidecar: {err}");
+                            }
                         }
 
                         p2p_sender.send_gossip(GossipMessage {

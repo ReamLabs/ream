@@ -38,6 +38,7 @@ ream-bls.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
+ream-data-availability.workspace = true
 ream-execution-engine.workspace = true
 ream-execution-rpc-types.workspace = true
 ream-network-spec.workspace = true

@@ -2,11 +2,13 @@ use alloy_primitives::{B256, map::HashSet};
 use anyhow::{anyhow, ensure};
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
-    electra::beacon_block::SignedBeaconBlock, predicates::is_slashable_attestation_data,
+    electra::beacon_block::SignedBeaconBlock, electra::beacon_state::BeaconState,
+    predicates::is_slashable_attestation_data,
 };
 use ream_consensus_misc::{
     constants::beacon::INTERVALS_PER_SLOT, misc::compute_start_slot_at_epoch,
 };
+use ream_data_availability::PendingBlock;
 use ream_execution_engine::engine_trait::ExecutionApi;
 use ream_network_spec::networks::beacon_network_spec;
 use ream_storage::{
@@ -20,13 +22,19 @@ use tree_hash::TreeHash;
 
 use crate::store::Store;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnBlockOutcome {
+    Imported,
+    PendingAvailability,
+}
+
 /// Run ``on_block`` upon receiving a new block.
 pub async fn on_block(
     store: &mut Store,
     signed_block: &SignedBeaconBlock,
     execution_engine: &Option<impl ExecutionApi>,
     verify_blob_availability: bool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<OnBlockOutcome> {
     let block = &signed_block.message;
     let parent_root = block.parent_root;
     let block_slot = block.slot;
@@ -61,17 +69,6 @@ pub async fn on_block(
         store.db.finalized_checkpoint_provider().get()?.epoch,
     )?;
     ensure!(store.db.finalized_checkpoint_provider().get()?.root == finalized_checkpoint_block);
-    if verify_blob_availability {
-        // Check if data is available (Fulu: uses column sidecars instead of blobs)
-        // If not, this block MAY be queued and subsequently considered when data becomes
-        // available *Note*: Extraneous or invalid data (in addition to the
-        // expected/referenced valid data) received on the p2p network MUST NOT invalidate
-        // a block that is otherwise valid and available
-        ensure!(
-            store.is_data_available(block_root)?,
-            "Data not available for block root: {block_root:x}",
-        );
-    }
 
     // Check the block is valid and compute the post-state
     // Make a copy of the state to avoid mutability issues
@@ -85,11 +82,37 @@ pub async fn on_block(
         .state_transition(signed_block, true, execution_engine)
         .await?;
 
+    let pending = PendingBlock {
+        signed_block: signed_block.clone(),
+        post_state: state,
+    };
+
+    if !verify_blob_availability {
+        process_available_block(store, pending)?;
+        return Ok(OnBlockOutcome::Imported);
+    }
+
+    match store.data_availability_checker.insert_pending(
+        block_root,
+        pending.signed_block,
+        pending.post_state,
+    ) {
+        Some(available) => {
+            process_available_block(store, available)?;
+            Ok(OnBlockOutcome::Imported)
+        }
+        None => Ok(OnBlockOutcome::PendingAvailability),
+    }
+}
+
+pub fn process_available_block(store: &mut Store, pending: PendingBlock) -> anyhow::Result<()> {
+    let signed_block = pending.signed_block;
+    let block_root = signed_block.message.tree_hash_root();
+    let block_slot = signed_block.message.slot;
+    let state: BeaconState = pending.post_state;
+
     // Add new block to the store
-    store
-        .db
-        .block_provider()
-        .insert(block_root, signed_block.clone())?;
+    store.db.block_provider().insert(block_root, signed_block)?;
 
     // Add new state for this block to the store
     store
@@ -103,7 +126,7 @@ pub async fn on_block(
         % beacon_network_spec().seconds_per_slot();
     let is_before_attesting_interval =
         time_into_slot < beacon_network_spec().seconds_per_slot() / INTERVALS_PER_SLOT;
-    let is_timely = store.get_current_slot()? == block.slot && is_before_attesting_interval;
+    let is_timely = store.get_current_slot()? == block_slot && is_before_attesting_interval;
     store
         .db
         .block_timeliness_provider()

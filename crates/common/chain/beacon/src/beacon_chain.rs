@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use alloy_primitives::B256;
 use anyhow::bail;
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
@@ -9,7 +10,10 @@ use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators
 use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice_beacon::{
-    handlers::{on_attestation, on_attester_slashing, on_block, on_tick},
+    handlers::{
+        OnBlockOutcome, on_attestation, on_attester_slashing, on_block, on_tick,
+        process_available_block,
+    },
     store::Store,
 };
 use ream_network_spec::networks::beacon_network_spec;
@@ -21,7 +25,8 @@ use ream_storage::{
 };
 use ream_sync_committee_pool::SyncCommitteePool;
 use tokio::sync::{Mutex, broadcast};
-use tracing::warn;
+use tracing::{debug, warn};
+use tree_hash::TreeHash;
 
 /// BeaconChain is the main struct which manages the nodes local beacon chain.
 pub struct BeaconChain {
@@ -49,7 +54,7 @@ impl BeaconChain {
     pub async fn process_block(&self, signed_block: SignedBeaconBlock) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
 
-        on_block(
+        let outcome = on_block(
             &mut store,
             &signed_block,
             &self.execution_engine,
@@ -57,15 +62,50 @@ impl BeaconChain {
         )
         .await?;
 
-        // Build and Emit Block event
+        if outcome == OnBlockOutcome::PendingAvailability {
+            debug!(
+                "Block is pending data availability: root={}",
+                signed_block.message.tree_hash_root()
+            );
+            return Ok(());
+        }
+
+        self.emit_block_event(&store, &signed_block)?;
+
+        Ok(())
+    }
+
+    pub async fn process_data_column_sidecar(
+        &self,
+        block_root: B256,
+        column_index: u64,
+    ) -> anyhow::Result<()> {
+        let mut store = self.store.lock().await;
+
+        if let Some(pending) = store
+            .data_availability_checker
+            .add_column(block_root, column_index)
+        {
+            let signed_block = pending.signed_block.clone();
+            process_available_block(&mut store, pending)?;
+            self.emit_block_event(&store, &signed_block)?;
+        }
+
+        Ok(())
+    }
+
+    fn emit_block_event(
+        &self,
+        store: &Store,
+        signed_block: &SignedBeaconBlock,
+    ) -> anyhow::Result<()> {
         let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
         let block_event =
-            BlockEvent::from_block(&signed_block, finalized_checkpoint, |block_root, epoch| {
+            BlockEvent::from_block(signed_block, finalized_checkpoint, |block_root, epoch| {
                 store.get_checkpoint_block(block_root, epoch)
             })?;
         self.event_sender
             .send_event(BeaconEvent::Block(block_event));
-
         Ok(())
     }
 
