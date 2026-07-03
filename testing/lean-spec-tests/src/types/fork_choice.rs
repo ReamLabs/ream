@@ -18,6 +18,8 @@ pub struct ForkChoiceTest {
     pub anchor_block: Block,
     #[serde(default)]
     pub anchor_valid: Option<bool>,
+    #[serde(default)]
+    pub proof_setting: Option<u64>,
     pub steps: Vec<ForkChoiceStep>,
 }
 
@@ -38,6 +40,11 @@ pub enum ForkChoiceStep {
     Block {
         valid: bool,
         checks: Option<StoreChecks>,
+        /// Whether to advance the store clock to the block's slot before import.
+        /// Absent/`true` for normal blocks; `false` for blocks delivered ahead
+        /// of the store clock.
+        #[serde(default, rename = "tickToSlot")]
+        tick_to_slot: Option<bool>,
         block: Block,
     },
     Attestation {

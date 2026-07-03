@@ -5,35 +5,30 @@ use std::{
 
 use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AggregatedSignatureProof;
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AttestationData;
-#[cfg(feature = "devnet5")]
-use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::block::BlockSignatures;
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::checkpoint::Checkpoint;
 use ream_consensus_lean::{
-    attestation::{SignedAggregatedAttestation, SignedAttestation},
+    attestation::{
+        MultiMessageAggregate, SignatureKey, SignedAggregatedAttestation, SignedAttestation,
+        SingleMessageAggregate,
+    },
     block::{Block, SignedBlock},
     state::LeanState,
 };
 use ream_consensus_misc::constants::lean::INTERVALS_PER_SLOT;
 use ream_fork_choice_lean::store::Store;
 use ream_network_spec::networks::LeanNetworkSpec;
-use ream_post_quantum_crypto::leansig::{private_key::PrivateKey, signature::Signature};
+use ream_post_quantum_crypto::{
+    lean_multisig::type_2::type_2_setup_verifier,
+    leansig::{private_key::PrivateKey, signature::Signature},
+};
 use ream_storage::{
     db::ReamDB,
     dir::setup_data_dir,
     tables::{field::REDBField, table::REDBTable},
 };
-#[cfg(feature = "devnet5")]
-use ssz_types::typenum::U524288;
-#[cfg(feature = "devnet4")]
-use ssz_types::typenum::U1048576;
-use ssz_types::{BitList, VariableList, typenum::U4096};
+use ssz_types::{
+    BitList, VariableList,
+    typenum::{U4096, U524288},
+};
 use tracing::{debug, info};
 use tree_hash::TreeHash;
 
@@ -41,9 +36,6 @@ use crate::types::{
     TestFixture,
     fork_choice::{ForkChoiceStep, ForkChoiceTest, StoreChecks},
 };
-
-#[cfg(feature = "devnet4")]
-const DEVNET4_MAX_BLOCK_ATTESTATIONS: usize = 16;
 
 /// Load a fork choice test fixture from a JSON file
 pub fn load_fork_choice_test(
@@ -124,12 +116,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     let block = Block::try_from(&test.anchor_block)
         .map_err(|err| anyhow!("Failed to convert anchor block: {err}"))?;
 
-    #[cfg(feature = "devnet4")]
-    let source_checkpoint = Checkpoint {
-        root: block.tree_hash_root(),
-        slot: block.slot,
-    };
-
     // Setup test database
     let test_dir = setup_data_dir("spec_tests", None, true)
         .map_err(|err| anyhow!("Failed to setup test directory: {err}"))?;
@@ -142,12 +128,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     let store = Store::get_forkchoice_store(
         SignedBlock {
             block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: VariableList::empty(),
-                proposer_signature: Signature::blank(),
-            },
-            #[cfg(feature = "devnet5")]
             proof: MultiMessageAggregate::default(),
         },
         state,
@@ -171,6 +151,10 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
     info!("  Anchor state slot: {}", anchor_state_slot);
     info!("  Anchor block slot: {}", test.anchor_block.slot);
     info!("  Number of steps: {}", test.steps.len());
+
+    // `proofSetting == 1` means the fixture carries real cryptographic proofs;
+    // otherwise the aggregated-attestation proofs are mock bytes.
+    let proof_setting = test.proof_setting;
 
     // Process each step
     for (index, step) in test.steps.iter().enumerate() {
@@ -211,18 +195,9 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 }
 
                 let proof_bytes = decode_hex_bytes(&attestation.proof.proof_data.data)?;
-                #[cfg(feature = "devnet4")]
-                let proof_data = VariableList::<u8, U1048576>::new(proof_bytes)
-                    .map_err(|err| anyhow!("Failed to build proof_data list: {err:?}"))?;
-
-                #[cfg(feature = "devnet5")]
                 let proof = VariableList::<u8, U524288>::new(proof_bytes)
                     .map_err(|err| anyhow!("Failed to build proof_data list: {err:?}"))?;
 
-                #[cfg(feature = "devnet4")]
-                let proof = AggregatedSignatureProof::new(participants, proof_data);
-
-                #[cfg(feature = "devnet5")]
                 let proof = SingleMessageAggregate::new(participants, proof);
 
                 let signed = SignedAggregatedAttestation {
@@ -230,29 +205,33 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     proof,
                 };
 
-                let result = store
-                    .validate_attestation(&SignedAttestation {
-                        validator_id: 0,
-                        message: signed.data.clone(),
-                        signature: Signature::blank(),
-                    })
-                    .await;
+                let slot = signed.data.slot;
+
+                // With real proofs (`proofSetting == 1`) run the full spec
+                // pipeline.
+                // Otherwise the proof bytes are mock data, so verify
+                // everything the spec checks except the proof
+                let result = if proof_setting == Some(1) {
+                    // Real single-message aggregate verification needs its
+                    // recursion bytecode compiled first (idempotent after the
+                    // first call).
+                    type_2_setup_verifier();
+                    store.on_gossip_aggregated_attestation(signed).await
+                } else {
+                    validate_mock_aggregated_attestation(&mut store, &signed).await
+                };
 
                 match valid {
                     Some(false) => {
                         if result.is_ok() {
                             bail!(
-                                "Aggregated attestation at slot {} should be invalid but was accepted",
-                                signed.data.slot
+                                "Aggregated attestation at slot {slot} should be invalid but was accepted"
                             );
                         }
                     }
                     _ => {
                         result.map_err(|err| {
-                            anyhow!(
-                                "Aggregated attestation at slot {} should be valid: {err}",
-                                signed.data.slot
-                            )
+                            anyhow!("Aggregated attestation at slot {slot} should be valid: {err}")
                         })?;
                     }
                 }
@@ -266,6 +245,7 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 valid,
                 block,
                 checks,
+                tick_to_slot,
             } => {
                 debug!(
                     "  Step {index}: Block at slot {} (expect valid: {valid})",
@@ -275,128 +255,43 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                 let ream_block = Block::try_from(block)
                     .map_err(|err| anyhow!("Failed to convert block: {err}"))?;
 
-                // Advance time to the block's slot before processing
-                let time = ream_block.slot * network_spec.seconds_per_slot;
-                store.on_tick(time, true, true).await?;
-
-                #[cfg(feature = "devnet4")]
-                if ream_block.body.attestations.len() > DEVNET4_MAX_BLOCK_ATTESTATIONS {
-                    if *valid {
-                        bail!(
-                            "Block at slot {} exceeds devnet4 attestation limit of {DEVNET4_MAX_BLOCK_ATTESTATIONS}",
-                            block.slot,
-                        );
-                    }
-                    if let Some(checks) = checks {
-                        validate_checks(&store, checks).await?;
-                    }
-                    continue;
+                // Advance the store clock to the block's slot before importing,
+                // unless the fixture pins the clock (`tickToSlot: false`) to test
+                // importing a block ahead of the store clock.
+                if tick_to_slot.unwrap_or(true) {
+                    let time = ream_block.slot * network_spec.seconds_per_slot;
+                    store.on_tick(time, true, true).await?;
                 }
-
-                // Get the parent state and parent block to extract the correct checkpoints
-                #[cfg(feature = "devnet4")]
-                let db = store.store.lock().await;
-                #[cfg(feature = "devnet4")]
-                let parent_block = db
-                    .block_provider()
-                    .get(ream_block.parent_root)?
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "Parent block not found for parent_root: {}",
-                            ream_block.parent_root
-                        )
-                    })?;
-                #[cfg(feature = "devnet4")]
-                let parent_slot = parent_block.block.slot;
-
-                #[cfg(feature = "devnet4")]
-                drop(db);
-
-                // Build attestation_signatures with `participants` mirroring each
-                // body attestation's `aggregation_bits`. The proof_data is left
-                // empty because tests run with signature verification disabled,
-                // but participants must be populated so fork choice attributes
-                // votes to the correct validators.
-                #[cfg(feature = "devnet4")]
-                let signatures = {
-                    let mut proofs = Vec::with_capacity(ream_block.body.attestations.len());
-                    for attestation in ream_block.body.attestations.iter() {
-                        let mut participants =
-                            BitList::<U4096>::with_capacity(attestation.aggregation_bits.len())
-                                .map_err(|err| {
-                                    anyhow!("Failed to create participants BitList: {err:?}")
-                                })?;
-                        for (index, bit) in attestation.aggregation_bits.iter().enumerate() {
-                            participants.set(index, bit).map_err(|err| {
-                                anyhow!("Failed to set participant bit {index}: {err:?}")
-                            })?;
-                        }
-                        proofs.push(AggregatedSignatureProof::new(
-                            participants,
-                            VariableList::<u8, U1048576>::new(vec![])
-                                .expect("Failed to create empty proof_data"),
-                        ));
-                    }
-                    VariableList::<AggregatedSignatureProof, U4096>::try_from(proofs)
-                        .map_err(|err| anyhow!("Failed to create signatures VariableList: {err}"))?
-                };
-
-                // Build proposer attestation data and sign with real key
-                #[cfg(feature = "devnet4")]
-                let proposer_attestation_data = AttestationData {
-                    slot: ream_block.slot,
-                    head: Checkpoint {
-                        root: ream_block.tree_hash_root(),
-                        slot: ream_block.slot,
-                    },
-                    target: Checkpoint {
-                        root: ream_block.parent_root,
-                        slot: parent_slot,
-                    },
-                    source: source_checkpoint,
-                };
-
-                #[cfg(feature = "devnet4")]
-                let proposer_index = ream_block.proposer_index;
-                #[cfg(feature = "devnet4")]
-                let data_root = proposer_attestation_data.tree_hash_root();
-                #[cfg(feature = "devnet4")]
-                let proposer_signature = {
-                    let key = keys.get_mut(&proposer_index).ok_or_else(|| {
-                        anyhow!("No signing key found for proposer validator {proposer_index}")
-                    })?;
-                    while !key.get_prepared_interval().contains(&ream_block.slot) {
-                        key.prepare_signature();
-                    }
-                    key.sign(&data_root.0, ream_block.slot as u32)
-                        .map_err(|err| anyhow!("Failed to sign proposer attestation: {err}"))?
-                };
 
                 let result = store
                     .on_block(
                         &SignedBlock {
                             block: ream_block,
-                            #[cfg(feature = "devnet4")]
-                            signature: BlockSignatures {
-                                attestation_signatures: signatures,
-                                proposer_signature,
-                            },
-                            #[cfg(feature = "devnet5")]
                             proof: MultiMessageAggregate::default(),
                         },
                         false, // Don't verify signatures in spec tests (we use blank signatures)
                     )
                     .await;
+                let import_ok = result.is_ok();
 
                 if *valid {
                     result.map_err(|err| {
                         anyhow!("Block at slot {} should be valid: {err}", block.slot)
                     })?;
-                } else if result.is_ok() {
+                } else if import_ok {
                     bail!(
                         "Block at slot {} should be invalid but was accepted",
                         block.slot
                     );
+                }
+
+                // A blank block proof carries no votes, so `on_block` gives the
+                // block's own body attestations zero fork-choice weight. Mirror the
+                // node's post-import reaggregation: rebuild each attestation's
+                // participant set from `aggregation_bits`, fold it into the known
+                // pool, and recompute the head so block-borne votes count.
+                if import_ok {
+                    attribute_block_attestations(&store, block).await?;
                 }
 
                 // Validate checks if present
@@ -531,6 +426,96 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
 fn decode_hex_bytes(value: &str) -> anyhow::Result<Vec<u8>> {
     hex::decode(value.trim_start_matches("0x"))
         .map_err(|err| anyhow!("Failed to decode hex bytes: {err}"))
+}
+
+/// Fold a freshly imported block's body attestations into the known-vote pool.
+///
+/// Fixture blocks carry a blank proof, so `on_block` gives their body
+/// attestations no fork-choice weight. Mirror the node's post-import
+/// reaggregation: rebuild each attestation's participant set from its
+/// `aggregation_bits` (fork choice reads only the participants, not the proof
+/// bytes), record it in the known pool per validator, then recompute the head
+/// so block-borne votes are reflected.
+async fn attribute_block_attestations(
+    store: &Store,
+    block: &crate::types::Block,
+) -> anyhow::Result<()> {
+    let ream_block =
+        Block::try_from(block).map_err(|err| anyhow!("Failed to convert block: {err}"))?;
+
+    {
+        let db = store.store.lock().await;
+        let attestation_data_by_root_provider = db.attestation_data_by_root_provider();
+        let latest_known_aggregated_payloads_provider =
+            db.latest_known_aggregated_payloads_provider();
+
+        for attestation in ream_block.body.attestations.iter() {
+            let data_root = attestation.message.tree_hash_root();
+            attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
+
+            // Empty proof bytes: only the participant set drives fork-choice weight.
+            let payload = SingleMessageAggregate::new(
+                attestation.aggregation_bits.clone(),
+                VariableList::empty(),
+            );
+
+            for (validator_id, participated) in attestation.aggregation_bits.iter().enumerate() {
+                if !participated {
+                    continue;
+                }
+                let key = SignatureKey::from_parts(validator_id as u64, data_root);
+                let mut existing_proofs = latest_known_aggregated_payloads_provider
+                    .get(key.clone())?
+                    .unwrap_or_default();
+                existing_proofs.push(payload.clone());
+                latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
+            }
+        }
+    }
+
+    store.update_head().await?;
+    Ok(())
+}
+
+/// Validate an aggregated attestation whose cryptographic proof is mocked.
+///
+/// Runs the attestation-data validation that the spec's
+/// `on_gossip_aggregated_attestation` performs, plus the structural participant
+/// checks, while skipping the cryptographic proof verification.
+async fn validate_mock_aggregated_attestation(
+    store: &mut Store,
+    signed: &SignedAggregatedAttestation,
+) -> anyhow::Result<()> {
+    store
+        .validate_attestation(&SignedAttestation {
+            validator_id: 0,
+            message: signed.data.clone(),
+            signature: Signature::blank(),
+        })
+        .await?;
+
+    let validator_ids = signed.proof.to_validator_indices();
+    ensure!(
+        !validator_ids.is_empty(),
+        "Aggregated attestation has no participants"
+    );
+
+    let validator_count = {
+        let db = store.store.lock().await;
+        db.state_provider()
+            .get(signed.data.target.root)?
+            .ok_or_else(|| anyhow!("No state available for target {}", signed.data.target.root))?
+            .validators
+            .len()
+    };
+    for validator in validator_ids {
+        ensure!(
+            (validator as usize) < validator_count,
+            "Participant {validator} outside validator registry of size {validator_count}"
+        );
+    }
+
+    Ok(())
 }
 
 /// Run the validation portion of `on_gossip_attestation` so the runner can
