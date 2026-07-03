@@ -92,6 +92,13 @@ pub struct LeanNodeConfig {
         help = "Number of attestation committees (subnets). Each validator's subnet is `validator_id % count`."
     )]
     pub attestation_committee_count: u64,
+
+    #[arg(
+        long,
+        default_value = "./reth-data",
+        help = "Data directory for the embedded reth execution layer (MDBX database). Only used when built with `--features reth`."
+    )]
+    pub reth_datadir: PathBuf,
 }
 
 impl LeanNodeConfig {
