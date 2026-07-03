@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_primitives::B256;
 use libp2p::{PeerId, swarm::ConnectionId};
-use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
+use ream_consensus_beacon::{blob_sidecar::BlobIdentifier, data_column_sidecar::ColumnIdentifier};
 use ream_req_resp::{
     beacon::messages::{BeaconResponseMessage, status::Status},
     handler::RespMessage,
@@ -43,6 +43,11 @@ pub enum P2PRequest {
     BlobIdentifiers {
         peer_id: PeerId,
         blob_identifiers: Vec<BlobIdentifier>,
+        callback: mpsc::Sender<anyhow::Result<P2PCallbackResponse>>,
+    },
+    DataColumnIdentifiers {
+        peer_id: PeerId,
+        column_identifiers: Vec<ColumnIdentifier>,
         callback: mpsc::Sender<anyhow::Result<P2PCallbackResponse>>,
     },
 }

@@ -4,8 +4,10 @@ use alloy_primitives::B256;
 use anyhow::{bail, ensure};
 use ream_consensus_beacon::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
+    data_column_sidecar::{ColumnIdentifier, DataColumnSidecar, NUMBER_OF_COLUMNS},
     electra::beacon_block::SignedBeaconBlock,
 };
+use ream_consensus_misc::{constants::beacon::FULU_FORK_EPOCH, misc::compute_start_slot_at_epoch};
 use ream_network_spec::networks::beacon_network_spec;
 use ssz::Encode;
 use tree_hash::TreeHash;
@@ -15,6 +17,7 @@ use super::{MAX_BLOCKS_PER_REQUEST, peer_range_downloader::Range};
 pub struct BlockAndBlobBundle {
     pub block: SignedBeaconBlock,
     pub blobs: HashMap<BlobIdentifier, BlobSidecar>,
+    pub data_columns: HashMap<ColumnIdentifier, DataColumnSidecar>,
 }
 
 impl BlockAndBlobBundle {
@@ -22,6 +25,7 @@ impl BlockAndBlobBundle {
         Self {
             block,
             blobs: HashMap::new(),
+            data_columns: HashMap::new(),
         }
     }
 }
@@ -35,6 +39,7 @@ pub struct BlockCache {
     next_start_slot: u64,
     block_roots_in_progress: HashSet<B256>,
     blob_identifiers_in_progress: HashSet<BlobIdentifier>,
+    data_column_identifiers_in_progress: HashSet<ColumnIdentifier>,
 }
 
 impl BlockCache {
@@ -48,6 +53,7 @@ impl BlockCache {
             next_start_slot,
             block_roots_in_progress: HashSet::new(),
             blob_identifiers_in_progress: HashSet::new(),
+            data_column_identifiers_in_progress: HashSet::new(),
         }
     }
 
@@ -74,6 +80,26 @@ impl BlockCache {
                 block.message.tree_hash_root(),
                 BlockAndBlobBundle::new(block),
             );
+        }
+
+        Ok(())
+    }
+
+    pub fn add_data_columns(&mut self, data_columns: Vec<DataColumnSidecar>) -> anyhow::Result<()> {
+        for data_column_sidecar in data_columns {
+            let block_root = data_column_sidecar
+                .signed_block_header
+                .message
+                .tree_hash_root();
+
+            if let Some(bundle) = self.blocks_and_blobs.get_mut(&block_root) {
+                bundle.data_columns.insert(
+                    ColumnIdentifier::new(block_root, data_column_sidecar.index),
+                    data_column_sidecar,
+                );
+            } else {
+                bail!("Block root {block_root} not found in cache, this should be impossible");
+            }
         }
 
         Ok(())
@@ -119,6 +145,23 @@ impl BlockCache {
         }
     }
 
+    pub fn extend_data_column_identifiers_in_progress(
+        &mut self,
+        column_identifiers: &[ColumnIdentifier],
+    ) {
+        self.data_column_identifiers_in_progress
+            .extend(column_identifiers);
+    }
+
+    pub fn remove_data_column_identifiers_in_progress(
+        &mut self,
+        column_identifiers: &[ColumnIdentifier],
+    ) {
+        for identifier in column_identifiers {
+            self.data_column_identifiers_in_progress.remove(identifier);
+        }
+    }
+
     pub fn block_count(&self) -> u64 {
         self.blocks_and_blobs.len() as u64
     }
@@ -134,6 +177,24 @@ impl BlockCache {
         self.blocks_and_blobs
             .values()
             .map(|bundle| bundle.blobs.len() as u64)
+            .sum()
+    }
+
+    pub fn data_column_count(&self) -> u64 {
+        self.blocks_and_blobs
+            .values()
+            .filter(|bundle| {
+                is_fulu_slot(bundle.block.message.slot)
+                    && !bundle.block.message.body.blob_kzg_commitments.is_empty()
+            })
+            .map(|_| NUMBER_OF_COLUMNS)
+            .sum()
+    }
+
+    pub fn downloaded_data_column_count(&self) -> u64 {
+        self.blocks_and_blobs
+            .values()
+            .map(|bundle| bundle.data_columns.len() as u64)
             .sum()
     }
 
@@ -175,15 +236,32 @@ impl BlockCache {
         blob_identifiers_left_to_fetch
             .retain(|blob_identifier| !self.blob_identifiers_in_progress.contains(blob_identifier));
 
+        let mut data_column_identifiers_left_to_fetch = self.get_missing_data_column_identifiers();
+        let missing_data_column_identifiers_len = data_column_identifiers_left_to_fetch.len();
+        data_column_identifiers_left_to_fetch.retain(|column_identifier| {
+            !self
+                .data_column_identifiers_in_progress
+                .contains(column_identifier)
+        });
+
         if !block_roots_left_to_fetch.is_empty() {
             return DataToFetch::MissingBlockRoots(block_roots_left_to_fetch);
+        }
+
+        if !data_column_identifiers_left_to_fetch.is_empty() {
+            return DataToFetch::MissingDataColumnIdentifiers(
+                data_column_identifiers_left_to_fetch,
+            );
         }
 
         if !blob_identifiers_left_to_fetch.is_empty() {
             return DataToFetch::MissingBlobIdentifiers(blob_identifiers_left_to_fetch);
         }
 
-        if missing_block_roots_len > 0 || missing_blob_identifiers_len > 0 {
+        if missing_block_roots_len > 0
+            || missing_blob_identifiers_len > 0
+            || missing_data_column_identifiers_len > 0
+        {
             return DataToFetch::DownloadsInProgress;
         }
 
@@ -224,7 +302,8 @@ impl BlockCache {
         let slot_17_days_ago = beacon_network_spec().slot_n_days_ago(17);
         let mut missing_roots = Vec::new();
         for block in self.blocks_and_blobs.values() {
-            if block.block.message.slot < slot_17_days_ago {
+            if block.block.message.slot < slot_17_days_ago || is_fulu_slot(block.block.message.slot)
+            {
                 continue;
             }
 
@@ -242,12 +321,40 @@ impl BlockCache {
         }
         missing_roots
     }
+
+    fn get_missing_data_column_identifiers(&self) -> Vec<ColumnIdentifier> {
+        let slot_17_days_ago = beacon_network_spec().slot_n_days_ago(17);
+        let mut missing_identifiers = Vec::new();
+        for block in self.blocks_and_blobs.values() {
+            if block.block.message.slot < slot_17_days_ago
+                || !is_fulu_slot(block.block.message.slot)
+                || block.block.message.body.blob_kzg_commitments.is_empty()
+            {
+                continue;
+            }
+
+            let block_root = block.block.message.tree_hash_root();
+            for index in 0..NUMBER_OF_COLUMNS {
+                let column_identifier = ColumnIdentifier::new(block_root, index);
+                if block.data_columns.contains_key(&column_identifier) {
+                    continue;
+                }
+                missing_identifiers.push(column_identifier);
+            }
+        }
+        missing_identifiers
+    }
+}
+
+fn is_fulu_slot(slot: u64) -> bool {
+    slot >= compute_start_slot_at_epoch(FULU_FORK_EPOCH)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataToFetch {
     BlockRange(Range),
     MissingBlockRoots(Vec<B256>),
+    MissingDataColumnIdentifiers(Vec<ColumnIdentifier>),
     MissingBlobIdentifiers(Vec<BlobIdentifier>),
     DownloadsInProgress,
     Finished,
@@ -259,6 +366,9 @@ impl std::fmt::Display for DataToFetch {
             DataToFetch::BlockRange(range) => write!(f, "BlockRange({range:?})"),
             DataToFetch::MissingBlockRoots(roots) => {
                 write!(f, "MissingBlockRoots({})", roots.len())
+            }
+            DataToFetch::MissingDataColumnIdentifiers(identifiers) => {
+                write!(f, "MissingDataColumnIdentifiers({})", identifiers.len())
             }
             DataToFetch::MissingBlobIdentifiers(identifiers) => {
                 write!(f, "MissingBlobIdentifiers({})", identifiers.len())

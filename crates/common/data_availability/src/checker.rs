@@ -37,6 +37,10 @@ impl<State> DataAvailabilityChecker<State> {
         Self::new((0..NUMBER_OF_COLUMNS).collect())
     }
 
+    pub fn required_columns(&self) -> &HashSet<u64> {
+        &self.required_columns
+    }
+
     pub fn insert_pending(
         &mut self,
         block_root: B256,

@@ -19,6 +19,7 @@ use peer_range_downloader::{PeerBlobIdentifierDownloader, PeerRootsDownloader};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
+    data_column_sidecar::{ColumnIdentifier, DataColumnSidecar},
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_executor::ReamExecutor;
@@ -28,6 +29,7 @@ use ream_storage::tables::table::CustomTable;
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle, time::sleep};
 use tracing::{info, warn};
 
+use crate::block_range::peer_range_downloader::PeerDataColumnIdentifierDownloader;
 use crate::block_range::peer_range_downloader::{PeerRangeDownloader, Range};
 
 const MAX_BLOBS_PER_REQUEST: usize = 6;
@@ -120,10 +122,12 @@ impl BlockRangeSyncer {
 
                 let data_to_fetch = block_cache.data_to_fetch(finalized_slot);
                 info!(
-                    "Forward sync status: Downloaded Blocks {}, Downloaded Blobs {}/{}, Stage {data_to_fetch}",
+                    "Forward sync status: Downloaded Blocks {}, Downloaded Blobs {}/{}, Downloaded Data Columns {}/{}, Stage {data_to_fetch}",
                     block_cache.block_count(),
                     block_cache.downloaded_blob_count(),
                     block_cache.blob_count(),
+                    block_cache.downloaded_data_column_count(),
+                    block_cache.data_column_count(),
                 );
 
                 match data_to_fetch {
@@ -191,6 +195,29 @@ impl BlockRangeSyncer {
                             ));
                         }
                     }
+                    DataToFetch::MissingDataColumnIdentifiers(column_identifiers) => {
+                        for column_identifiers_chunk in column_identifiers.chunks(MAX_CONCURRENT_REQUESTS) {
+                            let Some(peer) = self.peer_manager.fetch_idle_peer() else {
+                                self.peer_manager.update_peer_set();
+                                info!("No idle peers available for data column sync. {}", self.peer_manager.peer_counts());
+                                sleep(SLEEP_DURATION).await;
+                                break;
+                            };
+
+                            block_cache.extend_data_column_identifiers_in_progress(column_identifiers_chunk);
+
+                            task_handles.push(DownloadTask::new_data_column_identifiers(
+                                PeerDataColumnIdentifierDownloader::start(
+                                    peer.peer_id,
+                                    self.p2p_sender.clone(),
+                                    self.executor.clone(),
+                                    column_identifiers_chunk.to_vec(),
+                                ),
+                                column_identifiers_chunk.to_vec(),
+                                peer.peer_id,
+                            ));
+                        }
+                    }
                     DataToFetch::DownloadsInProgress => {
                         info!("Waiting for ongoing downloads to complete... {}", self.peer_manager.peer_counts());
                         sleep(Duration::from_secs(10)).await;
@@ -199,13 +226,19 @@ impl BlockRangeSyncer {
                 }
             }
 
-            info!("Block range sync completed a segment successfully with {} blocks and {} blobs.",
+            info!("Block range sync completed a segment successfully with {} blocks, {} blobs, and {} data columns.",
                 block_cache.block_count(),
                 block_cache.downloaded_blob_count(),
+                block_cache.downloaded_data_column_count(),
             );
 
             // execute all the blocks downloaded
-            for BlockAndBlobBundle { block, blobs } in block_cache.get_blocks_and_blobs()?  {
+            for BlockAndBlobBundle {
+                block,
+                blobs,
+                data_columns,
+            } in block_cache.get_blocks_and_blobs()?
+            {
                 info!("Processing block with slot {}",
                     block.message.slot,
                 );
@@ -221,6 +254,26 @@ impl BlockRangeSyncer {
                     {
                         warn!("Failed to insert blob into database: {err}");
                     }
+                }
+                for (column_identifier, data_column_sidecar) in data_columns {
+                    let block_root = column_identifier.block_root;
+                    let column_index = column_identifier.index;
+                    if let Err(err) = self
+                        .beacon_chain
+                        .store
+                        .lock()
+                        .await
+                        .db
+                        .column_sidecars_provider()
+                        .insert(column_identifier, data_column_sidecar)
+                    {
+                        warn!("Failed to insert data column into database: {err}");
+                        continue;
+                    }
+
+                    self.beacon_chain
+                        .process_data_column_sidecar(block_root, column_index)
+                        .await?;
                 }
 
                 self.beacon_chain.process_block(block).await?;
@@ -247,6 +300,11 @@ pub enum DownloadTask {
     BlobIdentifiers {
         handle: JoinHandle<anyhow::Result<anyhow::Result<Vec<BlobSidecar>>>>,
         blob_identifiers: Vec<BlobIdentifier>,
+        peer_id: PeerId,
+    },
+    DataColumnIdentifiers {
+        handle: JoinHandle<anyhow::Result<anyhow::Result<Vec<DataColumnSidecar>>>>,
+        column_identifiers: Vec<ColumnIdentifier>,
         peer_id: PeerId,
     },
 }
@@ -284,6 +342,18 @@ impl DownloadTask {
         DownloadTask::BlobIdentifiers {
             handle,
             blob_identifiers,
+            peer_id,
+        }
+    }
+
+    pub fn new_data_column_identifiers(
+        handle: JoinHandle<anyhow::Result<anyhow::Result<Vec<DataColumnSidecar>>>>,
+        column_identifiers: Vec<ColumnIdentifier>,
+        peer_id: PeerId,
+    ) -> Self {
+        DownloadTask::DataColumnIdentifiers {
+            handle,
+            column_identifiers,
             peer_id,
         }
     }
@@ -445,6 +515,60 @@ fn poll_ready_tasks(
 
                         if let Err(err) = block_cache.add_blobs(blob_sidecars) {
                             warn!("Failed to add downloaded blobs to cache: {err:?}");
+                        }
+                    }
+                    Poll::Ready(Err(err)) => {
+                        warn!("Forward fill task failed: {err}");
+                        indexes_to_remove.push(index);
+                    }
+                    Poll::Pending => {}
+                }
+            }
+            DownloadTask::DataColumnIdentifiers {
+                handle,
+                column_identifiers,
+                peer_id,
+            } => {
+                let pinned = Pin::new(handle);
+
+                match pinned.poll(&mut context) {
+                    Poll::Ready(Ok(data_column_sidecars_result)) => {
+                        indexes_to_remove.push(index);
+                        block_cache.remove_data_column_identifiers_in_progress(column_identifiers);
+                        peer_manager.mark_peer_as_idle(peer_id);
+                        let data_column_sidecars = match data_column_sidecars_result {
+                            Ok(data_column_sidecars) => data_column_sidecars,
+                            Err(err) => {
+                                warn!("Failed to fetch data columns from peer: {err:?}");
+                                continue;
+                            }
+                        };
+
+                        let data_column_sidecars = match data_column_sidecars {
+                            Ok(data_column_sidecars) => data_column_sidecars,
+                            Err(err) => {
+                                warn!("Failed to fetch data columns from identifiers: {err:?}");
+                                peer_manager.ban_peer(
+                                    peer_id,
+                                    format!(
+                                        "Failed to fetch data columns from identifiers: {err:?}"
+                                    ),
+                                );
+                                continue;
+                            }
+                        };
+
+                        if data_column_sidecars.is_empty() {
+                            warn!("Received empty data column identifiers from peer: {peer_id}");
+                            peer_manager.ban_peer(
+                                peer_id,
+                                "Received empty data column identifiers".to_string(),
+                            );
+                            continue;
+                        }
+
+                        if let Err(err) = block_cache.add_data_columns(data_column_sidecars) {
+                            warn!("Failed to add downloaded data columns to cache: {err:?}");
                         }
                     }
                     Poll::Ready(Err(err)) => {

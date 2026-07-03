@@ -2,10 +2,11 @@ use std::{cmp::Ordering, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, bail, ensure};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     attestation::Attestation,
+    data_column_sidecar::ColumnIdentifier,
     electra::{
         beacon_block::{BeaconBlock, SignedBeaconBlock},
         beacon_state::BeaconState,
@@ -26,7 +27,7 @@ use ream_storage::{
     tables::{
         field::{CustomField, REDBField},
         multimap_table::MultimapTable,
-        table::REDBTable,
+        table::{CustomTable, REDBTable},
     },
 };
 use ream_sync_committee_pool::SyncCommitteePool;
@@ -48,6 +49,8 @@ pub struct BlockWithEpochInfo {
 pub struct Store {
     pub db: BeaconDB,
     pub data_availability_checker: DataAvailabilityChecker,
+    pending_parent_blocks: HashMap<B256, Vec<SignedBeaconBlock>>,
+    pending_parent_block_roots: HashSet<B256>,
     pub operation_pool: Arc<OperationPool>,
     pub sync_committee_pool: Arc<SyncCommitteePool>,
 }
@@ -63,9 +66,72 @@ impl Store {
         Self {
             db,
             data_availability_checker: DataAvailabilityChecker::supernode(),
+            pending_parent_blocks: HashMap::new(),
+            pending_parent_block_roots: HashSet::new(),
             operation_pool,
             sync_committee_pool,
         }
+    }
+
+    pub fn is_pending_block(&self, block_root: B256) -> bool {
+        self.data_availability_checker.contains(&block_root)
+            || self.pending_parent_block_roots.contains(&block_root)
+    }
+
+    pub fn insert_pending_parent_block(&mut self, parent_root: B256, block: SignedBeaconBlock) {
+        let block_root = block.message.tree_hash_root();
+        if !self.pending_parent_block_roots.insert(block_root) {
+            return;
+        }
+
+        self.pending_parent_blocks
+            .entry(parent_root)
+            .or_default()
+            .push(block);
+    }
+
+    pub fn take_pending_parent_blocks(&mut self, parent_root: B256) -> Vec<SignedBeaconBlock> {
+        let mut blocks = self
+            .pending_parent_blocks
+            .remove(&parent_root)
+            .unwrap_or_default();
+        blocks.sort_by_key(|block| block.message.slot);
+
+        for block in &blocks {
+            self.pending_parent_block_roots
+                .remove(&block.message.tree_hash_root());
+        }
+
+        blocks
+    }
+
+    pub fn backfill_data_availability_columns(
+        &mut self,
+        block_root: B256,
+    ) -> anyhow::Result<Option<ream_data_availability::PendingBlock>> {
+        let required_columns = self
+            .data_availability_checker
+            .required_columns()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+
+        for column_index in required_columns {
+            let column_identifier = ColumnIdentifier::new(block_root, column_index);
+            if self
+                .db
+                .column_sidecars_provider()
+                .get(column_identifier)?
+                .is_some()
+                && let Some(available) = self
+                    .data_availability_checker
+                    .add_column(block_root, column_index)
+            {
+                return Ok(Some(available));
+            }
+        }
+
+        Ok(None)
     }
 
     pub fn is_previous_epoch_justified(&self) -> anyhow::Result<bool> {

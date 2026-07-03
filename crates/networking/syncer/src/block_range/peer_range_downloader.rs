@@ -3,6 +3,7 @@ use anyhow::bail;
 use libp2p::PeerId;
 use ream_consensus_beacon::{
     blob_sidecar::{BlobIdentifier, BlobSidecar},
+    data_column_sidecar::{ColumnIdentifier, DataColumnSidecar},
     electra::beacon_block::SignedBeaconBlock,
 };
 use ream_executor::ReamExecutor;
@@ -189,6 +190,64 @@ impl PeerBlobIdentifierDownloader {
             }
 
             Ok(blob_sidecars)
+        })
+    }
+}
+
+pub struct PeerDataColumnIdentifierDownloader;
+
+impl PeerDataColumnIdentifierDownloader {
+    pub fn start(
+        peer_id: PeerId,
+        p2p_sender: UnboundedSender<P2PMessage>,
+        executor: ReamExecutor,
+        column_identifiers: Vec<ColumnIdentifier>,
+    ) -> JoinHandle<anyhow::Result<anyhow::Result<Vec<DataColumnSidecar>>>> {
+        executor.spawn(async move {
+            let mut data_column_sidecars = vec![];
+            let (callback, mut rx) = mpsc::channel(100);
+            p2p_sender
+                .send(P2PMessage::Request(P2PRequest::DataColumnIdentifiers {
+                    peer_id,
+                    column_identifiers: column_identifiers.to_vec(),
+                    callback,
+                }))
+                .expect("Failed to send data column identifiers request");
+
+            while let Some(response) = rx.recv().await {
+                match response {
+                    Ok(P2PCallbackResponse::ResponseMessage(message)) => {
+                        if let BeaconResponseMessage::DataColumnSidecarsByRoot(
+                            data_column_sidecar,
+                        ) = message.as_ref().clone()
+                        {
+                            info!(
+                                "Received data column sidecar response with index {} length {}",
+                                data_column_sidecar.index,
+                                data_column_sidecar.as_ssz_bytes().len()
+                            );
+                            data_column_sidecars.push(data_column_sidecar);
+                        }
+                    }
+                    Ok(P2PCallbackResponse::EndOfStream) => {
+                        info!("End of data column roots request stream received.");
+                        break;
+                    }
+                    Ok(P2PCallbackResponse::Disconnected) => {
+                        bail!("Peer disconnected while receiving data column sidecars.");
+                    }
+                    Ok(P2PCallbackResponse::Timeout) => {
+                        bail!("Data column identifiers request timed out.");
+                    }
+                    Err(err) => {
+                        info!(
+                            "Error receiving data columns from data column roots request: {err:?}"
+                        );
+                    }
+                }
+            }
+
+            Ok(data_column_sidecars)
         })
     }
 }

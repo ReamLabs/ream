@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::bail;
@@ -10,6 +10,7 @@ use ream_consensus_misc::constants::beacon::{FULU_FORK_EPOCH, genesis_validators
 use ream_events_beacon::{BeaconEvent, BeaconEventSender, event::chain::BlockEvent};
 use ream_execution_engine::ExecutionEngine;
 use ream_fork_choice_beacon::{
+    data_availability::PendingBlock,
     handlers::{
         OnBlockOutcome, on_attestation, on_attester_slashing, on_block, on_tick,
         process_available_block,
@@ -70,7 +71,19 @@ impl BeaconChain {
             return Ok(());
         }
 
+        if outcome == OnBlockOutcome::PendingParent {
+            debug!(
+                "Block is pending parent import: root={}, parent={}",
+                signed_block.message.tree_hash_root(),
+                signed_block.message.parent_root
+            );
+            store.insert_pending_parent_block(signed_block.message.parent_root, signed_block);
+            return Ok(());
+        }
+
         self.emit_block_event(&store, &signed_block)?;
+        self.process_pending_parent_blocks(&mut store, signed_block.message.tree_hash_root())
+            .await?;
 
         Ok(())
     }
@@ -86,9 +99,60 @@ impl BeaconChain {
             .data_availability_checker
             .add_column(block_root, column_index)
         {
-            let signed_block = pending.signed_block.clone();
-            process_available_block(&mut store, pending)?;
-            self.emit_block_event(&store, &signed_block)?;
+            self.import_available_block_and_process_children(&mut store, pending)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn import_available_block_and_process_children(
+        &self,
+        store: &mut Store,
+        pending: PendingBlock,
+    ) -> anyhow::Result<()> {
+        let signed_block = pending.signed_block.clone();
+        let block_root = signed_block.message.tree_hash_root();
+        process_available_block(store, pending)?;
+        self.emit_block_event(store, &signed_block)?;
+        self.process_pending_parent_blocks(store, block_root).await
+    }
+
+    async fn process_pending_parent_blocks(
+        &self,
+        store: &mut Store,
+        parent_root: B256,
+    ) -> anyhow::Result<()> {
+        let mut blocks = VecDeque::from(store.take_pending_parent_blocks(parent_root));
+
+        while let Some(signed_block) = blocks.pop_front() {
+            let outcome = on_block(
+                store,
+                &signed_block,
+                &self.execution_engine,
+                signed_block.message.slot >= beacon_network_spec().slot_n_days_ago(17),
+            )
+            .await?;
+
+            match outcome {
+                OnBlockOutcome::Imported => {
+                    let block_root = signed_block.message.tree_hash_root();
+                    self.emit_block_event(store, &signed_block)?;
+                    blocks.extend(store.take_pending_parent_blocks(block_root));
+                }
+                OnBlockOutcome::PendingAvailability => {
+                    debug!(
+                        "Pending parent block is now pending data availability: root={}",
+                        signed_block.message.tree_hash_root()
+                    );
+                }
+                OnBlockOutcome::PendingParent => {
+                    store.insert_pending_parent_block(
+                        signed_block.message.parent_root,
+                        signed_block,
+                    );
+                }
+            }
         }
 
         Ok(())

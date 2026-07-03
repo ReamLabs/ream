@@ -1,5 +1,5 @@
 use alloy_primitives::{B256, map::HashSet};
-use anyhow::{anyhow, ensure};
+use anyhow::{anyhow, bail, ensure};
 use ream_consensus_beacon::{
     attestation::Attestation, attester_slashing::AttesterSlashing,
     electra::beacon_block::SignedBeaconBlock, electra::beacon_state::BeaconState,
@@ -26,6 +26,7 @@ use crate::store::Store;
 pub enum OnBlockOutcome {
     Imported,
     PendingAvailability,
+    PendingParent,
 }
 
 /// Run ``on_block`` upon receiving a new block.
@@ -40,11 +41,13 @@ pub async fn on_block(
     let block_slot = block.slot;
     let block_root = block.tree_hash_root();
 
-    // Parent block must be known
-    ensure!(
-        store.db.state_provider().get(parent_root)?.is_some(),
-        "Missing parent block state for parent_root: {parent_root:x}",
-    );
+    // Parent block must be known unless it is already queued locally.
+    if store.db.state_provider().get(parent_root)?.is_none() {
+        if store.is_pending_block(parent_root) {
+            return Ok(OnBlockOutcome::PendingParent);
+        }
+        bail!("Missing parent block state for parent_root: {parent_root:x}");
+    }
 
     // Blocks cannot be in the future. If they are, their consideration must be delayed until they
     // are in the past.
@@ -92,11 +95,17 @@ pub async fn on_block(
         return Ok(OnBlockOutcome::Imported);
     }
 
-    match store.data_availability_checker.insert_pending(
+    let available = store.data_availability_checker.insert_pending(
         block_root,
         pending.signed_block,
         pending.post_state,
-    ) {
+    );
+    let available = match available {
+        Some(available) => Some(available),
+        None => store.backfill_data_availability_columns(block_root)?,
+    };
+
+    match available {
         Some(available) => {
             process_available_block(store, available)?;
             Ok(OnBlockOutcome::Imported)
