@@ -928,10 +928,7 @@ mod tests {
         fs,
         path::{Path, PathBuf},
         process::{Command, Stdio},
-        sync::{
-            Once,
-            atomic::{AtomicU16, Ordering},
-        },
+        sync::Once,
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
@@ -995,7 +992,6 @@ mod tests {
     // network or genesis root would silently reuse the first test's values instead of failing.
     static BEACON_E2E_NETWORK_SPEC_INIT: Once = Once::new();
     static BEACON_E2E_GENESIS_ROOT_INIT: Once = Once::new();
-    static BEACON_E2E_PORT_OFFSET: AtomicU16 = AtomicU16::new(0);
 
     fn init_test_tracing() {
         if let Err(err) = tracing_subscriber::fmt()
@@ -1256,7 +1252,8 @@ mod tests {
             }
 
             if start.elapsed() >= timeout_duration {
-                return Err(peer_counts);
+                let err = peer_counts;
+                return Err(err);
             }
             sleep(Duration::from_millis(500)).await;
         }
@@ -1688,7 +1685,11 @@ mod tests {
     }
 
     fn beacon_port_offset() -> u16 {
-        BEACON_E2E_PORT_OFFSET.fetch_add(10, Ordering::SeqCst)
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("System time is before UNIX epoch")
+            .subsec_nanos() as u16
+            % 1000
     }
 
     #[test]
