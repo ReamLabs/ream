@@ -92,12 +92,14 @@ impl BeaconChain {
         &self,
         block_root: B256,
         column_index: u64,
+        slot: u64,
     ) -> anyhow::Result<()> {
         let mut store = self.store.lock().await;
 
-        if let Some(pending) = store
-            .data_availability_checker
-            .add_column(block_root, column_index)
+        if let Some(pending) =
+            store
+                .data_availability_checker
+                .add_column(block_root, column_index, slot)
         {
             self.import_available_block_and_process_children(&mut store, pending)
                 .await?;

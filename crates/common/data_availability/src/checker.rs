@@ -47,7 +47,9 @@ impl<State> DataAvailabilityChecker<State> {
         signed_block: SignedBeaconBlock,
         post_state: State,
     ) -> Option<PendingBlock<State>> {
-        self.entries.entry(block_root).or_default().pending_block = Some(PendingBlock {
+        let entry = self.entries.entry(block_root).or_default();
+        entry.slot = signed_block.message.slot;
+        entry.pending_block = Some(PendingBlock {
             signed_block,
             post_state,
         });
@@ -58,17 +60,24 @@ impl<State> DataAvailabilityChecker<State> {
         &mut self,
         block_root: B256,
         column_index: u64,
+        slot: u64,
     ) -> Option<PendingBlock<State>> {
         if !self.required_columns.contains(&column_index) {
             return None;
         }
 
-        self.entries
-            .entry(block_root)
-            .or_default()
-            .received_columns
-            .insert(column_index);
+        let entry = self.entries.entry(block_root).or_default();
+        if entry.pending_block.is_none() && entry.received_columns.is_empty() {
+            entry.slot = slot;
+        }
+        entry.received_columns.insert(column_index);
         self.take_if_complete(block_root)
+    }
+
+    pub fn prune(&mut self, cutoff_slot: u64) -> usize {
+        let original_len = self.entries.len();
+        self.entries.retain(|_, entry| entry.slot >= cutoff_slot);
+        original_len - self.entries.len()
     }
 
     pub fn remove(&mut self, block_root: &B256) -> Option<PendingAvailability<State>> {
@@ -169,10 +178,10 @@ mod tests {
                 .insert_pending(root, block_with_blobs(1), ())
                 .is_none()
         );
-        assert!(checker.add_column(root, 0).is_none());
-        assert!(checker.add_column(root, 1).is_none());
+        assert!(checker.add_column(root, 0, 10).is_none());
+        assert!(checker.add_column(root, 1, 10).is_none());
 
-        let available = checker.add_column(root, 2);
+        let available = checker.add_column(root, 2, 10);
         assert!(available.is_some());
         assert!(!checker.contains(&root));
     }
@@ -182,8 +191,8 @@ mod tests {
         let mut checker = checker(&[0, 1]);
         let root = B256::repeat_byte(3);
 
-        assert!(checker.add_column(root, 0).is_none());
-        assert!(checker.add_column(root, 1).is_none());
+        assert!(checker.add_column(root, 0, 10).is_none());
+        assert!(checker.add_column(root, 1, 10).is_none());
 
         let available = checker.insert_pending(root, block_with_blobs(1), ());
         assert!(available.is_some());
@@ -196,9 +205,9 @@ mod tests {
         let root = B256::repeat_byte(4);
 
         checker.insert_pending(root, block_with_blobs(1), ());
-        assert!(checker.add_column(root, 0).is_none());
-        assert!(checker.add_column(root, 0).is_none());
-        assert!(checker.add_column(root, 1).is_some());
+        assert!(checker.add_column(root, 0, 10).is_none());
+        assert!(checker.add_column(root, 0, 10).is_none());
+        assert!(checker.add_column(root, 1, 10).is_some());
     }
 
     #[test]
@@ -206,7 +215,7 @@ mod tests {
         let mut checker = checker(&[0]);
         let root = B256::repeat_byte(5);
 
-        assert!(checker.add_column(root, 0).is_none());
+        assert!(checker.add_column(root, 0, 10).is_none());
         assert!(checker.contains(&root));
     }
 
@@ -216,8 +225,8 @@ mod tests {
         let root = B256::repeat_byte(6);
 
         checker.insert_pending(root, block_with_blobs(1), ());
-        assert!(checker.add_column(root, 5).is_none());
-        assert!(checker.add_column(root, 0).is_some());
+        assert!(checker.add_column(root, 5, 10).is_none());
+        assert!(checker.add_column(root, 0, 10).is_some());
     }
 
     #[test]
@@ -225,7 +234,7 @@ mod tests {
         let mut checker = checker(&[0]);
         let root = B256::repeat_byte(7);
 
-        assert!(checker.add_column(root, 5).is_none());
+        assert!(checker.add_column(root, 5, 10).is_none());
         assert!(checker.is_empty());
     }
 
@@ -236,9 +245,72 @@ mod tests {
 
         checker.insert_pending(root, block_with_blobs(1), ());
         for index in 0..NUMBER_OF_COLUMNS - 1 {
-            assert!(checker.add_column(root, index).is_none());
+            assert!(checker.add_column(root, index, 10).is_none());
         }
-        assert!(checker.add_column(root, NUMBER_OF_COLUMNS - 1).is_some());
+        assert!(
+            checker
+                .add_column(root, NUMBER_OF_COLUMNS - 1, 10)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn prune_removes_old_block_entries() {
+        let mut checker = checker(&[0]);
+        let old_root = B256::repeat_byte(9);
+        let new_root = B256::repeat_byte(10);
+        let mut old_block = block_with_blobs(1);
+        old_block.message.slot = 9;
+        let mut new_block = block_with_blobs(1);
+        new_block.message.slot = 10;
+
+        checker.insert_pending(old_root, old_block, ());
+        checker.insert_pending(new_root, new_block, ());
+
+        assert_eq!(checker.prune(10), 1);
+        assert!(!checker.contains(&old_root));
+        assert!(checker.contains(&new_root));
+    }
+
+    #[test]
+    fn prune_removes_old_orphan_column_entries() {
+        let mut checker = checker(&[0]);
+        let old_root = B256::repeat_byte(11);
+        let new_root = B256::repeat_byte(12);
+
+        checker.add_column(old_root, 0, 9);
+        checker.add_column(new_root, 0, 10);
+
+        assert_eq!(checker.prune(10), 1);
+        assert!(!checker.contains(&old_root));
+        assert!(checker.contains(&new_root));
+    }
+
+    #[test]
+    fn prune_keeps_entries_at_and_after_cutoff() {
+        let mut checker = checker(&[0]);
+        let cutoff_root = B256::repeat_byte(13);
+        let after_root = B256::repeat_byte(14);
+
+        checker.add_column(cutoff_root, 0, 10);
+        checker.add_column(after_root, 0, 11);
+
+        assert_eq!(checker.prune(10), 0);
+        assert!(checker.contains(&cutoff_root));
+        assert!(checker.contains(&after_root));
+    }
+
+    #[test]
+    fn add_column_after_prune_creates_a_new_entry() {
+        let mut checker = checker(&[0]);
+        let root = B256::repeat_byte(15);
+
+        checker.add_column(root, 0, 9);
+        assert_eq!(checker.prune(10), 1);
+        assert!(!checker.contains(&root));
+
+        checker.add_column(root, 0, 11);
+        assert!(checker.contains(&root));
     }
 
     #[test]

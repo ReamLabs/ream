@@ -12,6 +12,7 @@ pub struct PendingBlock<State = BeaconState> {
 pub struct PendingAvailability<State = BeaconState> {
     pub pending_block: Option<PendingBlock<State>>,
     pub received_columns: HashSet<u64>,
+    pub slot: u64,
 }
 
 impl<State> Default for PendingAvailability<State> {
@@ -19,6 +20,7 @@ impl<State> Default for PendingAvailability<State> {
         Self {
             pending_block: None,
             received_columns: HashSet::new(),
+            slot: 0,
         }
     }
 }

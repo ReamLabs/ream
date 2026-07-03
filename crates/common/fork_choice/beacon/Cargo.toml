@@ -47,5 +47,8 @@ ream-polynomial-commitments.workspace = true
 ream-storage.workspace = true
 ream-sync-committee-pool.workspace = true
 
+[dev-dependencies]
+tempdir.workspace = true
+
 [lints]
 workspace = true

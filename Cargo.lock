@@ -6413,6 +6413,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "ssz_types",
+ "tempdir",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

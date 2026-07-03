@@ -490,6 +490,7 @@ pub async fn handle_gossipsub_message(
                             .message
                             .tree_hash_root();
                         let column_index = data_column_sidecar.index;
+                        let slot = data_column_sidecar.signed_block_header.message.slot;
                         let data_column_sidecar_bytes = data_column_sidecar.as_ssz_bytes();
                         let insert_result = beacon_chain
                             .store
@@ -505,7 +506,7 @@ pub async fn handle_gossipsub_message(
                         match insert_result {
                             Ok(()) => {
                                 if let Err(err) = beacon_chain
-                                    .process_data_column_sidecar(block_root, column_index)
+                                    .process_data_column_sidecar(block_root, column_index, slot)
                                     .await
                                 {
                                     error!("Failed to process data_column_sidecar: {err}");

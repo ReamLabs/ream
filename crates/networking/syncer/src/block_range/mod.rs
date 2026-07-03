@@ -258,6 +258,7 @@ impl BlockRangeSyncer {
                 for (column_identifier, data_column_sidecar) in data_columns {
                     let block_root = column_identifier.block_root;
                     let column_index = column_identifier.index;
+                    let slot = data_column_sidecar.signed_block_header.message.slot;
                     if let Err(err) = self
                         .beacon_chain
                         .store
@@ -272,7 +273,7 @@ impl BlockRangeSyncer {
                     }
 
                     self.beacon_chain
-                        .process_data_column_sidecar(block_root, column_index)
+                        .process_data_column_sidecar(block_root, column_index, slot)
                         .await?;
                 }
 

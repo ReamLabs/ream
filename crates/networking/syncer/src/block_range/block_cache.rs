@@ -7,7 +7,7 @@ use ream_consensus_beacon::{
     data_column_sidecar::{ColumnIdentifier, DataColumnSidecar, NUMBER_OF_COLUMNS},
     electra::beacon_block::SignedBeaconBlock,
 };
-use ream_consensus_misc::{constants::beacon::FULU_FORK_EPOCH, misc::compute_start_slot_at_epoch};
+use ream_consensus_misc::misc::compute_start_slot_at_epoch;
 use ream_network_spec::networks::beacon_network_spec;
 use ssz::Encode;
 use tree_hash::TreeHash;
@@ -347,7 +347,7 @@ impl BlockCache {
 }
 
 fn is_fulu_slot(slot: u64) -> bool {
-    slot >= compute_start_slot_at_epoch(FULU_FORK_EPOCH)
+    slot >= compute_start_slot_at_epoch(beacon_network_spec().fulu_fork_epoch)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

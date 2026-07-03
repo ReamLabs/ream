@@ -16,10 +16,13 @@ use ream_consensus_beacon::{
 };
 use ream_consensus_misc::{
     checkpoint::Checkpoint,
-    constants::beacon::{GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT, SLOTS_PER_EPOCH},
+    constants::beacon::{
+        GENESIS_EPOCH, GENESIS_SLOT, INTERVALS_PER_SLOT,
+        MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS, SLOTS_PER_EPOCH,
+    },
     misc::{compute_epoch_at_slot, compute_start_slot_at_epoch, is_shuffling_stable},
 };
-use ream_data_availability::DataAvailabilityChecker;
+use ream_data_availability::{DataAvailabilityChecker, PendingBlock};
 use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_storage::{
@@ -31,6 +34,7 @@ use ream_storage::{
     },
 };
 use ream_sync_committee_pool::SyncCommitteePool;
+use tracing::debug;
 use tree_hash::TreeHash;
 
 use crate::constants::{
@@ -105,33 +109,35 @@ impl Store {
         blocks
     }
 
-    pub fn backfill_data_availability_columns(
-        &mut self,
-        block_root: B256,
-    ) -> anyhow::Result<Option<ream_data_availability::PendingBlock>> {
-        let required_columns = self
-            .data_availability_checker
-            .required_columns()
-            .iter()
-            .copied()
-            .collect::<Vec<_>>();
+    fn prune_pending_parent_blocks(&mut self, cutoff_slot: u64) -> usize {
+        let mut pruned = 0;
+        self.pending_parent_blocks.retain(|_, blocks| {
+            let original_len = blocks.len();
+            blocks.retain(|block| block.message.slot >= cutoff_slot);
+            pruned += original_len - blocks.len();
+            !blocks.is_empty()
+        });
 
-        for column_index in required_columns {
-            let column_identifier = ColumnIdentifier::new(block_root, column_index);
-            if self
-                .db
-                .column_sidecars_provider()
-                .get(column_identifier)?
-                .is_some()
-                && let Some(available) = self
-                    .data_availability_checker
-                    .add_column(block_root, column_index)
-            {
-                return Ok(Some(available));
+        self.pending_parent_block_roots.clear();
+        for blocks in self.pending_parent_blocks.values() {
+            for block in blocks {
+                self.pending_parent_block_roots
+                    .insert(block.message.tree_hash_root());
             }
         }
 
-        Ok(None)
+        pruned
+    }
+
+    pub fn backfill_data_availability_columns(
+        &mut self,
+        block_root: B256,
+    ) -> anyhow::Result<Option<PendingBlock>> {
+        backfill_data_availability_columns_from_db(
+            &self.db,
+            &mut self.data_availability_checker,
+            block_root,
+        )
     }
 
     pub fn is_previous_epoch_justified(&self) -> anyhow::Result<bool> {
@@ -687,6 +693,21 @@ impl Store {
                 .clean_sync_committee_messages(current_slot);
             self.sync_committee_pool
                 .clean_sync_committee_contributions(current_slot);
+
+            let cutoff_epoch = std::cmp::max(
+                self.db.finalized_checkpoint_provider().get()?.epoch + 1,
+                self.get_current_store_epoch()?
+                    .saturating_sub(MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS),
+            );
+            let cutoff_slot = compute_start_slot_at_epoch(cutoff_epoch);
+            let pruned_availability = self.data_availability_checker.prune(cutoff_slot);
+            let pruned_parent_blocks = self.prune_pending_parent_blocks(cutoff_slot);
+            if pruned_availability > 0 {
+                debug!("Pruned {pruned_availability} stale pending availability entries");
+            }
+            if pruned_parent_blocks > 0 {
+                debug!("Pruned {pruned_parent_blocks} stale pending parent blocks");
+            }
         }
 
         // If a new epoch, pull-up justification and finalization from previous epoch
@@ -908,4 +929,182 @@ pub fn get_forkchoice_store(
 
 pub fn compute_slots_since_epoch_start(slot: u64) -> u64 {
     slot - compute_start_slot_at_epoch(compute_epoch_at_slot(slot))
+}
+
+fn backfill_data_availability_columns_from_db<State>(
+    db: &BeaconDB,
+    data_availability_checker: &mut DataAvailabilityChecker<State>,
+    block_root: B256,
+) -> anyhow::Result<Option<PendingBlock<State>>> {
+    let required_columns = data_availability_checker
+        .required_columns()
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
+
+    for column_index in required_columns {
+        let column_identifier = ColumnIdentifier::new(block_root, column_index);
+        if let Some(sidecar) = db.column_sidecars_provider().get(column_identifier)?
+            && let Some(available) = data_availability_checker.add_column(
+                block_root,
+                column_index,
+                sidecar.signed_block_header.message.slot,
+            )
+        {
+            return Ok(Some(available));
+        }
+    }
+
+    Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use ream_consensus_beacon::{
+        data_column_sidecar::DataColumnSidecar,
+        electra::{
+            beacon_block::{BeaconBlock, SignedBeaconBlock},
+            beacon_block_body::BeaconBlockBody,
+        },
+    };
+    use ream_consensus_misc::{
+        beacon_block_header::SignedBeaconBlockHeader, constants::beacon::BYTES_PER_COMMITMENT,
+        polynomial_commitments::kzg_commitment::KZGCommitment,
+    };
+    use ream_storage::db::ReamDB;
+    use ssz_types::{FixedVector, VariableList};
+    use tempdir::TempDir;
+
+    use super::*;
+
+    fn test_db() -> (BeaconDB, TempDir) {
+        let temp_dir = TempDir::new("ream_fork_choice_beacon_store").unwrap();
+        let db = ReamDB::new(temp_dir.path().to_path_buf())
+            .unwrap()
+            .init_beacon_db()
+            .unwrap();
+        (db, temp_dir)
+    }
+
+    fn store() -> (Store, TempDir) {
+        let (db, temp_dir) = test_db();
+        (
+            Store::new(db, Arc::new(OperationPool::default()), None),
+            temp_dir,
+        )
+    }
+
+    fn signed_block(slot: u64) -> SignedBeaconBlock {
+        SignedBeaconBlock {
+            message: BeaconBlock {
+                slot,
+                body: BeaconBlockBody {
+                    blob_kzg_commitments: VariableList::new(vec![KZGCommitment(
+                        [0; BYTES_PER_COMMITMENT],
+                    )])
+                    .unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            signature: Default::default(),
+        }
+    }
+
+    fn data_column_sidecar(index: u64, block: &SignedBeaconBlock) -> DataColumnSidecar {
+        let mut signed_block_header = SignedBeaconBlockHeader::default();
+        signed_block_header.message.slot = block.message.slot;
+        signed_block_header.message.proposer_index = block.message.proposer_index;
+        signed_block_header.message.parent_root = block.message.parent_root;
+        signed_block_header.message.state_root = block.message.state_root;
+        signed_block_header.message.body_root = block.message.body.tree_hash_root();
+        signed_block_header.signature = block.signature.clone();
+
+        DataColumnSidecar {
+            index,
+            column: VariableList::empty(),
+            kzg_commitments: VariableList::empty(),
+            kzg_proofs: VariableList::empty(),
+            signed_block_header,
+            kzg_commitments_inclusion_proof: FixedVector::default(),
+        }
+    }
+
+    #[test]
+    fn insert_pending_parent_block_deduplicates_by_block_root() {
+        let (mut store, _temp_dir) = store();
+        let parent_root = B256::repeat_byte(1);
+        let block = signed_block(3);
+        let block_root = block.message.tree_hash_root();
+
+        store.insert_pending_parent_block(parent_root, block.clone());
+        store.insert_pending_parent_block(parent_root, block);
+
+        assert!(store.is_pending_block(block_root));
+
+        let blocks = store.take_pending_parent_blocks(parent_root);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].message.tree_hash_root(), block_root);
+        assert!(!store.is_pending_block(block_root));
+    }
+
+    #[test]
+    fn take_pending_parent_blocks_returns_blocks_sorted_by_slot() {
+        let (mut store, _temp_dir) = store();
+        let parent_root = B256::repeat_byte(2);
+
+        store.insert_pending_parent_block(parent_root, signed_block(5));
+        store.insert_pending_parent_block(parent_root, signed_block(3));
+        store.insert_pending_parent_block(parent_root, signed_block(4));
+
+        let slots = store
+            .take_pending_parent_blocks(parent_root)
+            .into_iter()
+            .map(|block| block.message.slot)
+            .collect::<Vec<_>>();
+
+        assert_eq!(slots, vec![3, 4, 5]);
+    }
+
+    #[test]
+    fn prune_pending_parent_blocks_removes_old_blocks_and_rebuilds_root_set() {
+        let (mut store, _temp_dir) = store();
+        let parent_root = B256::repeat_byte(3);
+        let old_block = signed_block(9);
+        let kept_block = signed_block(10);
+        let old_root = old_block.message.tree_hash_root();
+        let kept_root = kept_block.message.tree_hash_root();
+
+        store.insert_pending_parent_block(parent_root, old_block);
+        store.insert_pending_parent_block(parent_root, kept_block);
+
+        assert_eq!(store.prune_pending_parent_blocks(10), 1);
+        assert!(!store.is_pending_block(old_root));
+        assert!(store.is_pending_block(kept_root));
+
+        let blocks = store.take_pending_parent_blocks(parent_root);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].message.tree_hash_root(), kept_root);
+    }
+
+    #[test]
+    fn backfill_data_availability_columns_completes_pending_block_from_db() {
+        let (db, _temp_dir) = test_db();
+        let block = signed_block(11);
+        let block_root = block.message.tree_hash_root();
+        let sidecar = data_column_sidecar(0, &block);
+        let mut checker: DataAvailabilityChecker<()> =
+            DataAvailabilityChecker::new(std::collections::HashSet::from([0]));
+
+        db.column_sidecars_provider()
+            .insert(ColumnIdentifier::new(block_root, 0), sidecar)
+            .unwrap();
+        assert!(checker.insert_pending(block_root, block, ()).is_none());
+
+        let pending =
+            backfill_data_availability_columns_from_db(&db, &mut checker, block_root).unwrap();
+
+        assert!(pending.is_some());
+        assert!(!checker.contains(&block_root));
+    }
 }
