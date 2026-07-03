@@ -500,10 +500,11 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 /// 1. The HTTP server that serves Beacon API, Engine API.
 /// 2. The P2P network that handles peer discovery (discv5), gossiping (gossipsub) and Req/Resp API.
 pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, ream_db: ReamDB) {
-    run_beacon_node_with_global_init(config, executor, ream_db, true).await;
+    run_beacon_node_inner(config, executor, ream_db, true).await;
 }
 
-async fn run_beacon_node_with_global_init(
+// `initialize_globals` is `false` only in tests, which set the globals themselves beforehand.
+async fn run_beacon_node_inner(
     config: BeaconNodeConfig,
     executor: ReamExecutor,
     ream_db: ReamDB,
@@ -651,7 +652,7 @@ async fn run_beacon_node_for_test(
     executor: ReamExecutor,
     ream_db: ReamDB,
 ) {
-    run_beacon_node_with_global_init(config, executor, ream_db, false).await;
+    run_beacon_node_inner(config, executor, ream_db, false).await;
 }
 
 /// Runs the validator node.
@@ -1078,16 +1079,10 @@ mod tests {
     }
 
     fn beacon_fixture_assets_directory() -> PathBuf {
-        [
-            PathBuf::from("testing/gossip-validation/tests/assets/sepolia"),
-            PathBuf::from("../testing/gossip-validation/tests/assets/sepolia"),
-            PathBuf::from("../../testing/gossip-validation/tests/assets/sepolia"),
-        ]
-        .into_iter()
-        .find(|p| p.exists())
-        .expect("Could not find beacon fixture assets directory.")
-        .canonicalize()
-        .expect("Failed to canonicalize beacon fixture assets path")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testing/gossip-validation/tests/assets/sepolia")
+            .canonicalize()
+            .expect("Failed to canonicalize beacon fixture assets path")
     }
 
     fn read_ssz_snappy_file<T: Decode>(path: &Path) -> T {
