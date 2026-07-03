@@ -500,9 +500,20 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 /// 1. The HTTP server that serves Beacon API, Engine API.
 /// 2. The P2P network that handles peer discovery (discv5), gossiping (gossipsub) and Req/Resp API.
 pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, ream_db: ReamDB) {
+    run_beacon_node_with_global_init(config, executor, ream_db, true).await;
+}
+
+async fn run_beacon_node_with_global_init(
+    config: BeaconNodeConfig,
+    executor: ReamExecutor,
+    ream_db: ReamDB,
+    initialize_globals: bool,
+) {
     info!("starting up beacon node...");
 
-    set_beacon_network_spec(config.network.clone());
+    if initialize_globals {
+        set_beacon_network_spec(config.network.clone());
+    }
 
     // Initialize the beacon database
     let cache = Arc::new(BeaconCacheDB::new());
@@ -528,14 +539,15 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
         .get_oldest_root()
         .expect("Failed to access slot index provider")
         .expect("No oldest root found");
-    set_genesis_validator_root(
-        beacon_db
-            .state_provider()
-            .get(oldest_root)
-            .expect("Failed to access beacon state provider")
-            .expect("No beacon state found")
-            .genesis_validators_root,
-    );
+    let genesis_validators_root = beacon_db
+        .state_provider()
+        .get(oldest_root)
+        .expect("Failed to access beacon state provider")
+        .expect("No beacon state found")
+        .genesis_validators_root;
+    if initialize_globals {
+        set_genesis_validator_root(genesis_validators_root);
+    }
 
     let operation_pool = Arc::new(OperationPool::default());
     let sync_committee_pool = Arc::new(SyncCommitteePool::default());
@@ -631,6 +643,15 @@ pub async fn run_beacon_node(config: BeaconNodeConfig, executor: ReamExecutor, r
             info!("Network future completed!");
         },
     }
+}
+
+#[cfg(test)]
+async fn run_beacon_node_for_test(
+    config: BeaconNodeConfig,
+    executor: ReamExecutor,
+    ream_db: ReamDB,
+) {
+    run_beacon_node_with_global_init(config, executor, ream_db, false).await;
 }
 
 /// Runs the validator node.
@@ -907,25 +928,40 @@ mod tests {
         fs,
         path::{Path, PathBuf},
         process::{Command, Stdio},
+        sync::{
+            Once,
+            atomic::{AtomicU16, Ordering},
+        },
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
-    use alloy_primitives::hex;
+    use alloy_primitives::{B256, hex};
     use clap::Parser;
     use libp2p_identity::{Keypair, secp256k1};
-    use ream::cli::{Cli, Commands, lean_node::LeanNodeConfig, verbosity::Verbosity};
+    use ream::cli::{
+        Cli, Commands, beacon_node::BeaconNodeConfig, lean_node::LeanNodeConfig,
+        verbosity::Verbosity,
+    };
+    use ream_consensus_beacon::electra::{
+        beacon_block::SignedBeaconBlock, beacon_state::BeaconState,
+    };
     use ream_consensus_lean::state::LeanState;
+    use ream_consensus_misc::constants::beacon::set_genesis_validator_root;
     use ream_executor::ReamExecutor;
+    use ream_fork_choice_beacon::store::get_forkchoice_store;
+    use ream_network_spec::networks::set_beacon_network_spec;
     use ream_storage::{
         db::ReamDB,
         dir::setup_data_dir,
         tables::{field::REDBField, table::REDBTable},
     };
     use serial_test::serial;
+    use snap::raw::Decoder;
+    use ssz::Decode;
     use tokio::time::{sleep, timeout};
     use tracing::{info, warn};
 
-    use crate::{APP_NAME, run_lean_node};
+    use crate::{APP_NAME, run_beacon_node_for_test, run_lean_node};
 
     const VALIDATOR_KEYS: [(&str, &str); 3] = [
         (
@@ -949,6 +985,17 @@ mod tests {
         restart_delay_after_node_3_start: Option<u64>,
         preseed_node_3_before_checkpoint_sync: bool,
     }
+
+    // Production's `BEACON_NETWORK_SPEC`/`GENESIS_VALIDATORS_ROOT` OnceLocks only allow one
+    // set per process, so `run_beacon_node_for_test` skips them and these `Once` guards set
+    // them once per test binary instead, shared by every beacon e2e test below.
+    //
+    // Only safe because all beacon e2e tests here use Sepolia and the same Sepolia fixture.
+    // `call_once` silently no-ops after the first call, so a future test needing a different
+    // network or genesis root would silently reuse the first test's values instead of failing.
+    static BEACON_E2E_NETWORK_SPEC_INIT: Once = Once::new();
+    static BEACON_E2E_GENESIS_ROOT_INIT: Once = Once::new();
+    static BEACON_E2E_PORT_OFFSET: AtomicU16 = AtomicU16::new(0);
 
     fn init_test_tracing() {
         if let Err(err) = tracing_subscriber::fmt()
@@ -1011,6 +1058,223 @@ mod tests {
             }
             .instrument(span),
         )
+    }
+
+    fn spawn_beacon_test_node(
+        config: BeaconNodeConfig,
+        db: ReamDB,
+        executor: ReamExecutor,
+    ) -> tokio::task::JoinHandle<()> {
+        use tracing::{Instrument, info_span};
+
+        let span = info_span!(
+            "beacon_node",
+            http_port = config.http_port,
+            socket_port = config.socket_port,
+            discovery_port = config.discovery_port,
+        );
+        tokio::spawn(
+            async move {
+                run_beacon_node_for_test(config, executor, db).await;
+            }
+            .instrument(span),
+        )
+    }
+
+    fn beacon_fixture_assets_directory() -> PathBuf {
+        [
+            PathBuf::from("testing/gossip-validation/tests/assets/sepolia"),
+            PathBuf::from("../testing/gossip-validation/tests/assets/sepolia"),
+            PathBuf::from("../../testing/gossip-validation/tests/assets/sepolia"),
+        ]
+        .into_iter()
+        .find(|p| p.exists())
+        .expect("Could not find beacon fixture assets directory.")
+        .canonicalize()
+        .expect("Failed to canonicalize beacon fixture assets path")
+    }
+
+    fn read_ssz_snappy_file<T: Decode>(path: &Path) -> T {
+        let bytes = fs::read(path).expect("Failed to read SSZ snappy fixture");
+        let decoded = Decoder::new()
+            .decompress_vec(&bytes)
+            .expect("Failed to decompress SSZ snappy fixture");
+        T::from_ssz_bytes(&decoded).expect("Failed to decode SSZ fixture")
+    }
+
+    fn initialize_beacon_e2e_network_spec(config: &BeaconNodeConfig) {
+        let network_spec = config.network.clone();
+        BEACON_E2E_NETWORK_SPEC_INIT.call_once(|| {
+            set_beacon_network_spec(network_spec);
+        });
+    }
+
+    fn initialize_beacon_e2e_genesis_root(genesis_validators_root: B256) {
+        BEACON_E2E_GENESIS_ROOT_INIT.call_once(|| {
+            set_genesis_validator_root(genesis_validators_root);
+        });
+    }
+
+    fn seed_beacon_test_db(db: &ReamDB) -> B256 {
+        let assets_directory = beacon_fixture_assets_directory();
+        let parent_state = read_ssz_snappy_file::<BeaconState>(
+            &assets_directory.join("states/parent_state_9552075.ssz_snappy"),
+        );
+        let parent_block = read_ssz_snappy_file::<SignedBeaconBlock>(
+            &assets_directory.join("blocks/parent_9552075.ssz_snappy"),
+        );
+        let genesis_validators_root = parent_state.genesis_validators_root;
+        let beacon_db = db
+            .init_beacon_db()
+            .expect("unable to init Ream Beacon Database");
+
+        let _store = get_forkchoice_store(parent_state, parent_block.message, beacon_db)
+            .expect("Failed to seed Beacon DB from fixture");
+
+        genesis_validators_root
+    }
+
+    fn beacon_node_config_from_args(
+        data_port_offset: u16,
+        bootnodes: Option<String>,
+    ) -> BeaconNodeConfig {
+        let http_port = 26652 + data_port_offset;
+        let socket_port = 30600 + data_port_offset;
+        let discovery_port = 31600 + data_port_offset;
+        let args = vec![
+            "ream".to_string(),
+            "beacon_node".to_string(),
+            "--network".to_string(),
+            "sepolia".to_string(),
+            "--http-address".to_string(),
+            "127.0.0.1".to_string(),
+            "--http-port".to_string(),
+            http_port.to_string(),
+            "--socket-address".to_string(),
+            "127.0.0.1".to_string(),
+            "--socket-port".to_string(),
+            socket_port.to_string(),
+            "--discovery-port".to_string(),
+            discovery_port.to_string(),
+            "--bootnodes".to_string(),
+            bootnodes.unwrap_or_else(|| "none".to_string()),
+        ];
+
+        let cli = Cli::parse_from(args);
+        let Commands::BeaconNode(config) = cli.command else {
+            panic!("Expected beacon_node command");
+        };
+        *config
+    }
+
+    async fn wait_for_beacon_json(http_port: u16, path: &str) -> serde_json::Value {
+        let client = reqwest::Client::new();
+        let url = format!("http://127.0.0.1:{http_port}{path}");
+        let start = Instant::now();
+        let timeout_duration = Duration::from_secs(20);
+
+        loop {
+            match client.get(&url).send().await {
+                Ok(response) if response.status().is_success() => {
+                    return response
+                        .json::<serde_json::Value>()
+                        .await
+                        .expect("Failed to decode Beacon API response");
+                }
+                Ok(response) => {
+                    info!(status = %response.status(), url, "Beacon API endpoint not ready");
+                }
+                Err(err) => {
+                    info!(%err, url, "Beacon API endpoint not ready");
+                }
+            }
+
+            assert!(
+                start.elapsed() < timeout_duration,
+                "Timed out waiting for Beacon API endpoint {url}"
+            );
+            sleep(Duration::from_millis(250)).await;
+        }
+    }
+
+    async fn wait_for_beacon_identity(http_port: u16) -> serde_json::Value {
+        let identity = wait_for_beacon_json(http_port, "/eth/v1/node/identity").await;
+        assert!(
+            identity["data"]["peer_id"]
+                .as_str()
+                .is_some_and(|peer_id| !peer_id.is_empty()),
+            "Beacon node identity response did not include a peer_id: {identity:?}"
+        );
+        assert!(
+            identity["data"]["enr"]
+                .as_str()
+                .is_some_and(|enr| !enr.is_empty()),
+            "Beacon node identity response did not include an ENR: {identity:?}"
+        );
+        identity
+    }
+
+    fn peer_count_value(peer_count: &serde_json::Value, field: &str) -> u64 {
+        let value = &peer_count["data"][field];
+        value
+            .as_u64()
+            .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+            .unwrap_or_else(|| {
+                panic!("Beacon peer_count response did not include {field} count: {peer_count:?}")
+            })
+    }
+
+    fn peer_count_connected(peer_count: &serde_json::Value) -> u64 {
+        peer_count_value(peer_count, "connected")
+    }
+
+    fn peer_count_total(peer_count: &serde_json::Value) -> u64 {
+        peer_count_value(peer_count, "connected")
+            + peer_count_value(peer_count, "connecting")
+            + peer_count_value(peer_count, "disconnected")
+            + peer_count_value(peer_count, "disconnecting")
+    }
+
+    async fn wait_for_connected_beacon_peer(
+        http_ports: &[u16],
+    ) -> Result<Vec<serde_json::Value>, Vec<serde_json::Value>> {
+        let start = Instant::now();
+        let timeout_duration = Duration::from_secs(60);
+        loop {
+            let mut peer_counts = Vec::new();
+            for http_port in http_ports {
+                peer_counts.push(wait_for_beacon_json(*http_port, "/eth/v1/node/peer_count").await);
+            }
+
+            let every_node_knows_a_peer =
+                peer_counts.iter().all(|count| peer_count_total(count) > 0);
+            let any_node_connected = peer_counts
+                .iter()
+                .any(|count| peer_count_connected(count) > 0);
+            if every_node_knows_a_peer && any_node_connected {
+                return Ok(peer_counts);
+            }
+
+            if start.elapsed() >= timeout_duration {
+                return Err(peer_counts);
+            }
+            sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    async fn shutdown_beacon_test_node(
+        executor: &ReamExecutor,
+        handle: tokio::task::JoinHandle<()>,
+    ) {
+        executor.shutdown_signal();
+        let mut handle = handle;
+        tokio::select! {
+            _ = &mut handle => {},
+            _ = sleep(Duration::from_secs(5)) => {
+                warn!("Timed out waiting for beacon node test task to shut down");
+                handle.abort();
+            }
+        }
     }
 
     fn read_head_state(db: &ReamDB) -> Option<LeanState> {
@@ -1403,6 +1667,125 @@ mod tests {
         );
         fs::write(&network_config_path, network_yaml).expect("Failed to write temp network config");
         network_config_path
+    }
+
+    fn create_beacon_test_node_db(test_name: &str, node_index: usize) -> ReamDB {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("System time is before UNIX epoch")
+            .as_nanos();
+        let ream_directory = temp_dir().join(format!(
+            "{APP_NAME}_{test_name}_{unique_suffix}_node_{node_index}"
+        ));
+
+        if ream_directory.exists()
+            && let Err(err) = fs::remove_dir_all(&ream_directory)
+        {
+            warn!("Failed to remove ream directory: {err}");
+        }
+        fs::create_dir_all(&ream_directory).expect("Failed to create beacon node data directory");
+        ReamDB::new(ream_directory).expect("unable to init Ream Database")
+    }
+
+    fn beacon_port_offset() -> u16 {
+        BEACON_E2E_PORT_OFFSET.fetch_add(10, Ordering::SeqCst)
+    }
+
+    #[test]
+    #[serial]
+    fn test_beacon_node_runs_without_panicking() {
+        init_test_tracing();
+
+        let config = beacon_node_config_from_args(beacon_port_offset(), None);
+        initialize_beacon_e2e_network_spec(&config);
+
+        let db = create_beacon_test_node_db("beacon_node_smoke", 1);
+        let genesis_validators_root = seed_beacon_test_db(&db);
+        initialize_beacon_e2e_genesis_root(genesis_validators_root);
+
+        let http_port = config.http_port;
+        let control_executor = ReamExecutor::new().unwrap();
+        let node_executor = ReamExecutor::new().unwrap();
+        let node_executor_handle = node_executor.clone();
+        control_executor.clone().runtime().block_on(async move {
+            let handle = spawn_beacon_test_node(config, db, node_executor_handle.clone());
+
+            let _identity = wait_for_beacon_identity(http_port).await;
+
+            assert!(
+                !handle.is_finished(),
+                "beacon node task exited early after identity endpoint became reachable"
+            );
+
+            shutdown_beacon_test_node(&node_executor_handle, handle).await;
+        });
+        node_executor.shutdown_runtime();
+    }
+
+    #[test]
+    #[serial]
+    fn test_beacon_nodes_connect_with_bootnode() {
+        init_test_tracing();
+
+        let port_offset = beacon_port_offset();
+        let node_1_config = beacon_node_config_from_args(port_offset, None);
+        initialize_beacon_e2e_network_spec(&node_1_config);
+
+        let node_1_db = create_beacon_test_node_db("beacon_node_bootnode", 1);
+        let node_2_db = create_beacon_test_node_db("beacon_node_bootnode", 2);
+        let genesis_validators_root = seed_beacon_test_db(&node_1_db);
+        let node_2_genesis_validators_root = seed_beacon_test_db(&node_2_db);
+        assert_eq!(
+            genesis_validators_root, node_2_genesis_validators_root,
+            "beacon e2e nodes must be seeded from the same genesis"
+        );
+        initialize_beacon_e2e_genesis_root(genesis_validators_root);
+
+        let control_executor = ReamExecutor::new().unwrap();
+        let node_1_http_port = node_1_config.http_port;
+        let node_1_executor = ReamExecutor::new().unwrap();
+        let node_2_executor = ReamExecutor::new().unwrap();
+        let node_1_executor_handle = node_1_executor.clone();
+        let node_2_executor_handle = node_2_executor.clone();
+        let peer_counts_result = control_executor.clone().runtime().block_on(async move {
+            let node_1_handle =
+                spawn_beacon_test_node(node_1_config, node_1_db, node_1_executor_handle.clone());
+
+            let node_1_identity = wait_for_beacon_identity(node_1_http_port).await;
+            let node_1_enr = node_1_identity["data"]["enr"]
+                .as_str()
+                .expect("identity response should contain ENR")
+                .to_string();
+
+            let node_2_config = beacon_node_config_from_args(port_offset + 1, Some(node_1_enr));
+            let node_2_http_port = node_2_config.http_port;
+            let node_2_handle =
+                spawn_beacon_test_node(node_2_config, node_2_db, node_2_executor_handle.clone());
+
+            let peer_counts =
+                wait_for_connected_beacon_peer(&[node_1_http_port, node_2_http_port]).await;
+            let node_1_finished = node_1_handle.is_finished();
+            let node_2_finished = node_2_handle.is_finished();
+
+            shutdown_beacon_test_node(&node_2_executor_handle, node_2_handle).await;
+            shutdown_beacon_test_node(&node_1_executor_handle, node_1_handle).await;
+            (peer_counts, node_1_finished, node_2_finished)
+        });
+        node_2_executor.shutdown_runtime();
+        node_1_executor.shutdown_runtime();
+
+        let (peer_counts, node_1_finished, node_2_finished) = peer_counts_result;
+        let peer_counts = peer_counts.unwrap_or_else(|peer_counts| {
+            panic!("Timed out waiting for beacon nodes to connect: {peer_counts:?}")
+        });
+        assert!(!node_1_finished, "node 1 task exited early");
+        assert!(!node_2_finished, "node 2 task exited early");
+        assert!(
+            peer_counts
+                .iter()
+                .any(|count| peer_count_connected(count) > 0),
+            "beacon nodes did not report a connected peer: {peer_counts:?}"
+        );
     }
 
     #[test]
