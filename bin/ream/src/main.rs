@@ -435,7 +435,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     )
     .await;
 
-    let validator_service = LeanValidatorService::new(keystores, chain_sender).await;
+    let arc_keystores: Vec<Arc<_>> = keystores.into_iter().map(Arc::new).collect();
+
+    let validator_service = LeanValidatorService::new(arc_keystores, chain_sender).await;
 
     let server_config = RpcServerConfig::new(
         config.http_address,
