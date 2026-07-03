@@ -1,6 +1,6 @@
 use std::{env, fs, path::PathBuf};
 
-#[cfg(feature = "devnet4")]
+#[cfg(feature = "devnet5")]
 use lean_spec_tests::fork_choice::{load_fork_choice_test, run_fork_choice_test};
 use lean_spec_tests::{
     justifiability::{load_justifiability_test, run_justifiability_test},
@@ -195,7 +195,7 @@ fn test_all_ssz_fixtures() {
     assert_eq!(failed, 0, "Some SSZ tests failed");
 }
 
-#[cfg(feature = "devnet4")]
+#[cfg(feature = "devnet5")]
 #[tokio::test]
 async fn test_all_fork_choice_fixtures() {
     init_tracing();

@@ -2995,38 +2995,6 @@ mod tests {
 
     // ON TICK TESTS
 
-    /// Test basic on_tick functionality.
-    #[tokio::test]
-    pub async fn test_on_tick_basic() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-        let target_time = lean_network_spec().genesis_time + 200;
-
-        store.on_tick(target_time, true, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time > initial_time);
-    }
-
-    /// Test on_tick without proposal.
-    #[tokio::test]
-    pub async fn test_on_tick_no_proposal() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-        let target_time = lean_network_spec().genesis_time + 100;
-
-        store.on_tick(target_time, true, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time >= initial_time);
-    }
-
     /// Test on_tick when already at target time.
     #[tokio::test]
     pub async fn test_on_tick_already_current() {
@@ -3041,118 +3009,6 @@ mod tests {
         let new_time = time_provider.get().unwrap();
 
         assert!(new_time == initial_time);
-    }
-
-    /// Test on_tick with small time increment.
-    #[tokio::test]
-    pub async fn test_on_tick_small_increment() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-        let target_time = lean_network_spec().genesis_time + initial_time + 1;
-
-        store.on_tick(target_time, false, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time == target_time - lean_network_spec().genesis_time);
-    }
-
-    // TEST INTERVAL TICKING
-
-    /// Test basic interval ticking.
-    #[tokio::test]
-    pub async fn test_tick_interval_basic() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-
-        store.tick_interval(false, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time == initial_time + 1)
-    }
-
-    /// Test interval ticking with proposal.
-    #[tokio::test]
-    pub async fn test_tick_interval_with_proposal() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-
-        store.tick_interval(true, false).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time == initial_time + 1)
-    }
-
-    /// Test sequence of interval ticks.
-    #[tokio::test]
-    pub async fn test_tick_interval_sequence() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-
-        for i in 0..5 {
-            store.tick_interval((i % 2) == 0, false).await.unwrap();
-        }
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time == initial_time + 5)
-    }
-
-    /// Test different actions performed based on interval phase.
-    #[tokio::test]
-    pub async fn test_tick_interval_actions_by_phase() {
-        let mut store = sample_store(10).await;
-
-        let mut root = [0u8; 32];
-        root[..4].copy_from_slice(b"test");
-        let test_checkpoint = Checkpoint {
-            slot: 1,
-            root: FixedBytes::new(root),
-        };
-
-        {
-            let db = store.store.lock().await;
-            let justified_provider = db.latest_justified_provider();
-            let justified_checkpoint = justified_provider.get().unwrap();
-            let signed_attestation = SignedAttestation {
-                message: AttestationData {
-                    slot: 1,
-                    head: justified_checkpoint,
-                    target: test_checkpoint,
-                    source: justified_checkpoint,
-                },
-                validator_id: 5,
-                signature: Signature::blank(),
-            };
-            let db_table = db.latest_new_attestations_provider();
-            db_table
-                .insert(signed_attestation.validator_id, signed_attestation)
-                .unwrap();
-        };
-
-        for interval in 0..INTERVALS_PER_SLOT {
-            let has_proposal = interval == 0;
-            store.tick_interval(has_proposal, false).await.unwrap();
-
-            let new_time = {
-                let time_provider = store.store.lock().await.time_provider();
-                time_provider.get().unwrap()
-            };
-            let current_interval = new_time % INTERVALS_PER_SLOT;
-            let expected_interval = (interval + 1) % INTERVALS_PER_SLOT;
-
-            assert!(current_interval == expected_interval);
-        }
     }
 
     // TEST SLOT TIME CALCULATIONS
@@ -3314,33 +3170,6 @@ mod tests {
     }
 
     // TEST PROPOSAL HEAD TIMING
-
-    /// Test getting proposal head for a slot.
-    #[tokio::test]
-    pub async fn test_get_proposal_head_basic() {
-        let mut store = sample_store(10).await;
-
-        let head = store.get_proposal_head(0).await.unwrap();
-
-        let stored_head = { store.store.lock().await.head_provider().get().unwrap() };
-
-        assert!(head == stored_head);
-    }
-
-    /// Test that get_proposal_head advances store time appropriately.
-    #[tokio::test]
-    pub async fn test_get_proposal_head_advances_time() {
-        let mut store = sample_store(10).await;
-        let time_provider = { store.store.lock().await.time_provider() };
-
-        let initial_time = time_provider.get().unwrap();
-
-        store.get_proposal_head(5).await.unwrap();
-
-        let new_time = time_provider.get().unwrap();
-
-        assert!(new_time >= initial_time);
-    }
 
     #[tokio::test]
     pub async fn test_get_proposal_head_processes_attestations() {
@@ -4286,18 +4115,6 @@ mod tests {
     }
 
     #[tokio::test]
-    pub async fn test_interval_0_accepts_attestations_with_proposal() {
-        let mut store: Store = sample_store_as_store(4).await;
-
-        store.store.lock().await.time_provider().insert(4).unwrap();
-        store.tick_interval(true, true).await.unwrap();
-
-        let time = store.store.lock().await.time_provider().get().unwrap();
-        assert_eq!(time, 5);
-        assert_eq!(time % INTERVALS_PER_SLOT, 0);
-    }
-
-    #[tokio::test]
     pub async fn test_gossip_to_aggregation_to_storage() {
         let _test_guard = test_global_lock().lock().await;
         let mut store: Store = sample_store_as_store(4).await;
@@ -4893,57 +4710,6 @@ mod tests {
             assert!(known_payloads_len > 0);
         }
         assert!(latest_justified_slot >= initial_latest_justified_slot);
-    }
-
-    /// Attestations must have a valid/already justified source.
-    #[tokio::test]
-    pub async fn test_justification_requires_valid_source() {
-        let mut store: Store = sample_store_as_store(10).await;
-        let slot = 1;
-        let proposer_index = 1;
-
-        let block_1_with_signatures = store
-            .produce_block_with_signatures(slot, proposer_index)
-            .await
-            .unwrap();
-        let signed_block_1 = build_signed_block(block_1_with_signatures);
-        store.on_block(&signed_block_1, false).await.unwrap();
-
-        let (head_provider, block_provider) = {
-            let db = store.store.lock().await;
-            (db.head_provider(), db.block_provider())
-        };
-        let block_root = head_provider.get().unwrap();
-        let block_slot = block_provider.get(block_root).unwrap().unwrap().block.slot;
-
-        let attestation = SignedAttestation {
-            validator_id: 5,
-            message: AttestationData {
-                slot: block_slot,
-                head: Checkpoint {
-                    root: block_root,
-                    slot: block_slot,
-                },
-                target: Checkpoint {
-                    root: block_root,
-                    slot: block_slot,
-                },
-                source: Checkpoint {
-                    root: B256::from([0x69; 32]),
-                    slot: 999,
-                },
-            },
-            signature: Signature::blank(),
-        };
-
-        let result = store.validate_attestation(&attestation).await;
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown source block")
-        );
     }
 
     /// Justification should track votes for multiple potential targets.

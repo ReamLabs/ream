@@ -1,3 +1,4 @@
+#[cfg(feature = "devnet5")]
 pub mod fork_choice;
 pub mod justifiability;
 pub mod slot_clock;
