@@ -111,6 +111,7 @@ impl<State> DataAvailabilityChecker<State> {
             return false;
         };
 
+        // This means block has no blobs, so it is complete immediately
         if pending_block
             .signed_block
             .message

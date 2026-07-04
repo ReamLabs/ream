@@ -1,5 +1,4 @@
 use alloy_primitives::B256;
-use ream_consensus_beacon::data_column_sidecar::ColumnIdentifier;
 use ssz_derive::{Decode, Encode};
 use ssz_types::{VariableList, typenum::U128};
 
@@ -31,28 +30,5 @@ impl DataColumnSidecarsByRootV1Request {
             inner: VariableList::new(identifiers)
                 .expect("Too many data column identifiers were requested"),
         }
-    }
-
-    pub fn from_column_identifiers(column_identifiers: Vec<ColumnIdentifier>) -> Self {
-        let mut identifiers = Vec::<DataColumnsByRootIdentifier>::new();
-
-        for column_identifier in column_identifiers {
-            match identifiers
-                .iter_mut()
-                .find(|identifier| identifier.block_root == column_identifier.block_root)
-            {
-                Some(identifier) => identifier
-                    .columns
-                    .push(column_identifier.index)
-                    .expect("Too many data columns were requested for one block"),
-                None => identifiers.push(DataColumnsByRootIdentifier {
-                    block_root: column_identifier.block_root,
-                    columns: VariableList::new(vec![column_identifier.index])
-                        .expect("Too many data columns were requested for one block"),
-                }),
-            }
-        }
-
-        Self::new(identifiers)
     }
 }
