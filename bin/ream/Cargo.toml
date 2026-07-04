@@ -27,6 +27,8 @@ devnet5 = [
     "ream-storage/devnet5",
     "ream-validator-lean/devnet5",
 ]
+jemalloc = ["dep:tikv-jemallocator"]
+shadow-integration = ["ream-executor/shadow-integration"]
 
 [dependencies]
 alloy-primitives.workspace = true
@@ -45,7 +47,7 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 ssz_types.workspace = true
-tikv-jemallocator = { workspace = true, features = [
+tikv-jemallocator = { workspace = true, optional = true, features = [
     "unprefixed_malloc_on_supported_platforms",
 ] }
 tokio.workspace = true

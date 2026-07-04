@@ -104,6 +104,10 @@ use tokio::{
 use tracing::{Instrument, error, info};
 use tracing_subscriber::EnvFilter;
 
+#[cfg(all(feature = "jemalloc", feature = "shadow-integration"))]
+compile_error!("the `jemalloc` feature is incompatible with `shadow-integration`;");
+
+#[cfg(feature = "jemalloc")]
 #[global_allocator]
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
