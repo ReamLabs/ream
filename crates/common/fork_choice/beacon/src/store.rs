@@ -2,7 +2,7 @@ use std::{cmp::Ordering, sync::Arc};
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, bail, ensure};
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use ream_bls::BLSSignature;
 use ream_consensus_beacon::{
     attestation::Attestation,
@@ -53,8 +53,6 @@ pub struct BlockWithEpochInfo {
 pub struct Store {
     pub db: BeaconDB,
     pub data_availability_checker: DataAvailabilityChecker,
-    pending_parent_blocks: HashMap<B256, Vec<SignedBeaconBlock>>,
-    pending_parent_block_roots: HashSet<B256>,
     pub operation_pool: Arc<OperationPool>,
     pub sync_committee_pool: Arc<SyncCommitteePool>,
 }
@@ -70,63 +68,9 @@ impl Store {
         Self {
             db,
             data_availability_checker: DataAvailabilityChecker::supernode(),
-            pending_parent_blocks: HashMap::new(),
-            pending_parent_block_roots: HashSet::new(),
             operation_pool,
             sync_committee_pool,
         }
-    }
-
-    pub fn is_pending_block(&self, block_root: B256) -> bool {
-        self.data_availability_checker.contains(&block_root)
-            || self.pending_parent_block_roots.contains(&block_root)
-    }
-
-    pub fn insert_pending_parent_block(&mut self, parent_root: B256, block: SignedBeaconBlock) {
-        let block_root = block.message.tree_hash_root();
-        if !self.pending_parent_block_roots.insert(block_root) {
-            return;
-        }
-
-        self.pending_parent_blocks
-            .entry(parent_root)
-            .or_default()
-            .push(block);
-    }
-
-    pub fn take_pending_parent_blocks(&mut self, parent_root: B256) -> Vec<SignedBeaconBlock> {
-        let mut blocks = self
-            .pending_parent_blocks
-            .remove(&parent_root)
-            .unwrap_or_default();
-        blocks.sort_by_key(|block| block.message.slot);
-
-        for block in &blocks {
-            self.pending_parent_block_roots
-                .remove(&block.message.tree_hash_root());
-        }
-
-        blocks
-    }
-
-    fn prune_pending_parent_blocks(&mut self, cutoff_slot: u64) -> usize {
-        let mut pruned = 0;
-        self.pending_parent_blocks.retain(|_, blocks| {
-            let original_len = blocks.len();
-            blocks.retain(|block| block.message.slot >= cutoff_slot);
-            pruned += original_len - blocks.len();
-            !blocks.is_empty()
-        });
-
-        self.pending_parent_block_roots.clear();
-        for blocks in self.pending_parent_blocks.values() {
-            for block in blocks {
-                self.pending_parent_block_roots
-                    .insert(block.message.tree_hash_root());
-            }
-        }
-
-        pruned
     }
 
     pub fn backfill_data_availability_columns(
@@ -701,12 +645,8 @@ impl Store {
             );
             let cutoff_slot = compute_start_slot_at_epoch(cutoff_epoch);
             let pruned_availability = self.data_availability_checker.prune(cutoff_slot);
-            let pruned_parent_blocks = self.prune_pending_parent_blocks(cutoff_slot);
             if pruned_availability > 0 {
                 debug!("Pruned {pruned_availability} stale pending availability entries");
-            }
-            if pruned_parent_blocks > 0 {
-                debug!("Pruned {pruned_parent_blocks} stale pending parent blocks");
             }
         }
 
@@ -1028,63 +968,6 @@ mod tests {
             signed_block_header,
             kzg_commitments_inclusion_proof: FixedVector::default(),
         }
-    }
-
-    #[test]
-    fn insert_pending_parent_block_deduplicates_by_block_root() {
-        let (mut store, _temp_dir) = store();
-        let parent_root = B256::repeat_byte(1);
-        let block = signed_block(3);
-        let block_root = block.message.tree_hash_root();
-
-        store.insert_pending_parent_block(parent_root, block.clone());
-        store.insert_pending_parent_block(parent_root, block);
-
-        assert!(store.is_pending_block(block_root));
-
-        let blocks = store.take_pending_parent_blocks(parent_root);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].message.tree_hash_root(), block_root);
-        assert!(!store.is_pending_block(block_root));
-    }
-
-    #[test]
-    fn take_pending_parent_blocks_returns_blocks_sorted_by_slot() {
-        let (mut store, _temp_dir) = store();
-        let parent_root = B256::repeat_byte(2);
-
-        store.insert_pending_parent_block(parent_root, signed_block(5));
-        store.insert_pending_parent_block(parent_root, signed_block(3));
-        store.insert_pending_parent_block(parent_root, signed_block(4));
-
-        let slots = store
-            .take_pending_parent_blocks(parent_root)
-            .into_iter()
-            .map(|block| block.message.slot)
-            .collect::<Vec<_>>();
-
-        assert_eq!(slots, vec![3, 4, 5]);
-    }
-
-    #[test]
-    fn prune_pending_parent_blocks_removes_old_blocks_and_rebuilds_root_set() {
-        let (mut store, _temp_dir) = store();
-        let parent_root = B256::repeat_byte(3);
-        let old_block = signed_block(9);
-        let kept_block = signed_block(10);
-        let old_root = old_block.message.tree_hash_root();
-        let kept_root = kept_block.message.tree_hash_root();
-
-        store.insert_pending_parent_block(parent_root, old_block);
-        store.insert_pending_parent_block(parent_root, kept_block);
-
-        assert_eq!(store.prune_pending_parent_blocks(10), 1);
-        assert!(!store.is_pending_block(old_root));
-        assert!(store.is_pending_block(kept_root));
-
-        let blocks = store.take_pending_parent_blocks(parent_root);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].message.tree_hash_root(), kept_root);
     }
 
     #[test]

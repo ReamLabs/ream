@@ -1,8 +1,9 @@
 use alloy_primitives::{B256, map::HashSet};
-use anyhow::{anyhow, bail, ensure};
+use anyhow::{anyhow, ensure};
 use ream_consensus_beacon::{
-    attestation::Attestation, attester_slashing::AttesterSlashing,
-    electra::beacon_block::SignedBeaconBlock, electra::beacon_state::BeaconState,
+    attestation::Attestation,
+    attester_slashing::AttesterSlashing,
+    electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState},
     predicates::is_slashable_attestation_data,
 };
 use ream_consensus_misc::{
@@ -26,7 +27,6 @@ use crate::store::Store;
 pub enum OnBlockOutcome {
     Imported,
     PendingAvailability,
-    PendingParent,
 }
 
 /// Run ``on_block`` upon receiving a new block.
@@ -41,13 +41,11 @@ pub async fn on_block(
     let block_slot = block.slot;
     let block_root = block.tree_hash_root();
 
-    // Parent block must be known unless it is already queued locally.
-    if store.db.state_provider().get(parent_root)?.is_none() {
-        if store.is_pending_block(parent_root) {
-            return Ok(OnBlockOutcome::PendingParent);
-        }
-        bail!("Missing parent block state for parent_root: {parent_root:x}");
-    }
+    // Parent block must be known.
+    ensure!(
+        store.db.state_provider().get(parent_root)?.is_some(),
+        "Missing parent block state for parent_root: {parent_root:x}",
+    );
 
     // Blocks cannot be in the future. If they are, their consideration must be delayed until they
     // are in the past.
@@ -90,6 +88,7 @@ pub async fn on_block(
         post_state: state,
     };
 
+    // if no need to verify blob availability, process the block immediately
     if !verify_blob_availability {
         process_available_block(store, pending)?;
         return Ok(OnBlockOutcome::Imported);
@@ -100,6 +99,9 @@ pub async fn on_block(
         pending.signed_block,
         pending.post_state,
     );
+    // The backfill here is the case when data columns come before the arrival of this block.
+    // Then we have to backfill the availability columns for this block.
+    // This is a rare case - but can still happen.
     let available = match available {
         Some(available) => Some(available),
         None => store.backfill_data_availability_columns(block_root)?,
