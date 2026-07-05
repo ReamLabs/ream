@@ -685,7 +685,7 @@ impl Store {
                 .block
                 .slot,
             head_finalized_slot,
-        )? {
+        ) {
             target_block_root = block_provider
                 .get(target_block_root)?
                 .ok_or(anyhow!("Block not found for target block root"))?
@@ -1140,7 +1140,7 @@ impl Store {
                 }
 
                 if !is_genesis_self_vote
-                    && !is_justifiable_after(data.target.slot, current_finalized_slot)?
+                    && !is_justifiable_after(data.target.slot, current_finalized_slot)
                 {
                     continue;
                 }
@@ -1343,7 +1343,7 @@ impl Store {
                         continue;
                     }
 
-                    if !is_justifiable_after(candidate_data.target.slot, finalized_slot)? {
+                    if !is_justifiable_after(candidate_data.target.slot, finalized_slot) {
                         continue;
                     }
                 }
@@ -1368,16 +1368,14 @@ impl Store {
                 let total_voters = prior_voters.len() + new_voters.len();
                 let crosses_two_thirds = 3 * total_voters >= 2 * validator_count;
                 // finalizes_source: source finalizes only if no slot strictly between
-                // source and target is still justifiable (3SF-mini). We loop instead of
-                // .any() so an is_justifiable_after error propagates (?) instead of being
-                // swallowed -- same as the target check above.
+                // source and target is still justifiable (3SF-mini).
                 let finalizes_source =
                     if crosses_two_thirds && candidate_data.source.slot > finalized_slot {
                         let mut no_intermediate_justifiable = true;
                         for intermediate_slot in
                             candidate_data.source.slot + 1..candidate_data.target.slot
                         {
-                            if is_justifiable_after(intermediate_slot, finalized_slot)? {
+                            if is_justifiable_after(intermediate_slot, finalized_slot) {
                                 no_intermediate_justifiable = false;
                                 break;
                             }
