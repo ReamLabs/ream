@@ -57,7 +57,7 @@ pub async fn get_headers(
                 get_header_from_slot(Some(parent_block.message.slot + 1), &db).await?;
 
             if child_header.message.parent_root != parent_root {
-                return Err(ApiError::NotFound(format!(
+                Err(ApiError::NotFound(format!(
                     "Header with parent root :{parent_root:?}"
                 )))?;
             }

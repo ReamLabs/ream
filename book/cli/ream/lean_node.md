@@ -43,6 +43,8 @@ Options:
           Additional attestation subnet ids to subscribe to and aggregate from (comma-separated, e.g. '0,3,7'). Requires --is-aggregator.
       --attestation-committee-count <ATTESTATION_COMMITTEE_COUNT>
           Number of attestation committees (subnets). Each validator's subnet is `validator_id % count`. [default: 1]
+      --block-production <BLOCK_PRODUCTION>
+          Attestation selection strategy for block production: round-based or tiered. [default: round-based]
   -h, --help
           Print help
 ```
