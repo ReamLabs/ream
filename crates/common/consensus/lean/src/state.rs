@@ -618,6 +618,34 @@ mod test {
     };
 
     #[test]
+    fn test_justification_votes_length_mismatch_rejects_attestations() -> anyhow::Result<()> {
+        let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(4)));
+
+        state.justifications_roots.push(B256::repeat_byte(0x11))?;
+        state.justifications_validators =
+            BitList::with_capacity(2).map_err(|err| anyhow!("{err:?}"))?;
+
+        let result = state.process_attestations(&[]);
+
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_zero_hash_justification_root_rejects_attestations() -> anyhow::Result<()> {
+        let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(4)));
+
+        state.justifications_roots.push(B256::ZERO)?;
+        state.justifications_validators =
+            BitList::with_capacity(4).map_err(|err| anyhow!("{err:?}"))?;
+
+        let result = state.process_attestations(&[]);
+
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
     fn test_justified_slots_rebases_when_finalization_advances() -> anyhow::Result<()> {
         let mut state = LeanState::generate_genesis(0, Some(generate_default_validators(3)));
 

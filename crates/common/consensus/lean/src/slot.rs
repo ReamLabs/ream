@@ -24,12 +24,12 @@ mod tests {
     use super::is_justifiable_after;
 
     #[test]
-    fn test_below_finalized_slot_returns_false() {
+    fn test_slot_one_before_finalized_not_justifiable() {
         assert!(!is_justifiable_after(9, 10));
     }
 
     #[test]
-    fn test_far_below_finalized_slot_returns_false() {
+    fn test_slot_far_before_finalized_not_justifiable() {
         assert!(!is_justifiable_after(90, 100));
     }
 }
