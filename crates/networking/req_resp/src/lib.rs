@@ -145,7 +145,6 @@ impl NetworkBehaviour for ReqResp {
             peer_id,
             connection_id,
             cause,
-            remaining_established: _,
             ..
         }) = event
         {

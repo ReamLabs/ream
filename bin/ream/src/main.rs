@@ -333,7 +333,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             None,
             keystores.first().map(|keystore| keystore.index),
         )
-        .expect("Could not get forkchoice store"),
+        .expect("Could not get forkchoice store")
+        .with_block_production_strategy(config.block_production),
     );
 
     let test_driver_enabled = test_driver_enabled();

@@ -428,7 +428,7 @@ impl LeanState {
                     BitList::with_capacity(self.validators.len()).map_err(|err| {
                         anyhow!(
                             "Failed to initialize justification for root {:?}: {err:?}",
-                            &attestation.target().root
+                            attestation.target().root
                         )
                     })?,
                 );
