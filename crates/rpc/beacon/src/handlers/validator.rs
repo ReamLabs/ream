@@ -4,7 +4,7 @@ use actix_web::{
     HttpResponse, Responder, get, post,
     web::{Data, Json, Path, Query},
 };
-use alloy_primitives::{Address, B256, U256, aliases::B32};
+use alloy_primitives::{Address, B256, aliases::B32};
 use ream_api_types_beacon::{
     block::{FullBlockData, ProduceBlockData, ProduceBlockResponse},
     committee::{BeaconCommitteeSubscription, SyncCommitteeSubscription},
@@ -1315,7 +1315,8 @@ async fn get_local_execution_payload(
         .await
         .map_err(|err| ApiError::InternalError(format!("Failed to get payload: {err}")))?;
 
-    let execution_value: u64 = U256::from_be_bytes(payload_v4.block_value.0)
+    let execution_value: u64 = payload_v4
+        .block_value
         .try_into()
         .map_err(|err| ApiError::InternalError(format!("Block value too large: {err}")))?;
 

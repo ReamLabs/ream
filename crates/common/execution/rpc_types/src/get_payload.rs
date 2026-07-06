@@ -1,4 +1,4 @@
-use alloy_primitives::{B256, Bytes};
+use alloy_primitives::{Bytes, U256};
 use ream_consensus_misc::polynomial_commitments::kzg_commitment::KZGCommitment;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -25,8 +25,14 @@ pub struct BlobsBundleV1 {
 #[serde(rename_all = "camelCase")]
 pub struct PayloadV4 {
     pub execution_payload: ExecutionPayloadV3,
-    pub block_value: B256,
+    // EL `blockValue` is a QUANTITY (minimal hex like "0x0"), not a 32-byte hash. It was typed
+    // B256, which fails to deserialize any spec-compliant getPayloadV4 response.
+    #[serde(with = "serde_utils::u256_hex_be")]
+    pub block_value: U256,
     pub blobs_bundle: BlobsBundleV1,
+    // Wire field is `shouldOverrideBuilder`; the Rust field name is misspelled ("overide"),
+    // so the derived camelCase name (`shouldOverideBuilder`) did not match the EL response.
+    #[serde(rename = "shouldOverrideBuilder")]
     pub should_overide_builder: bool,
     pub execution_requests: Vec<Bytes>,
 }
