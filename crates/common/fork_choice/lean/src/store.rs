@@ -1764,9 +1764,13 @@ impl Store {
         let timer = start_timer(&ATTESTATION_VALIDATION_TIME, &[]);
         let data = &signed_attestation.message;
 
-        let (block_provider, time_provider) = {
+        let (block_provider, time_provider, latest_finalized_provider) = {
             let db = self.store.lock().await;
-            (db.block_provider(), db.time_provider())
+            (
+                db.block_provider(),
+                db.time_provider(),
+                db.latest_finalized_provider(),
+            )
         };
 
         // Validate attestation targets exist in store
@@ -1834,6 +1838,13 @@ impl Store {
                 "Target checkpoint must be ancestor of head"
             );
         }
+
+        // Fork choice only ever descends from the finalized block.
+        ensure!(
+            self.checkpoint_is_ancestor(&latest_finalized_provider.get()?, &data.head)
+                .await?,
+            "Head checkpoint must descend from the finalized block"
+        );
 
         ensure!(
             data.slot >= head_block.block.slot,
@@ -2463,6 +2474,9 @@ impl Store {
         })
     }
 
+    /// Fork choice only ever descends from the latest finalized block. This is sound only
+    /// because the finalized checkpoint is re-derived from the head each update; pruning
+    /// against a finalized checkpoint that drifted off the head chain would be unsound.
     pub async fn prune_stale_attestation_data(&mut self) -> anyhow::Result<()> {
         let (
             latest_finalized_provider,
