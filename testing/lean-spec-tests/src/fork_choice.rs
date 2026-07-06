@@ -7,7 +7,7 @@ use alloy_primitives::hex;
 use anyhow::{anyhow, bail, ensure};
 use ream_consensus_lean::{
     attestation::{
-        MultiMessageAggregate, SignatureKey, SignedAggregatedAttestation, SignedAttestation,
+        MultiMessageAggregate, SignedAggregatedAttestation, SignedAttestation,
         SingleMessageAggregate,
     },
     block::{Block, SignedBlock},
@@ -285,15 +285,6 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     );
                 }
 
-                // A blank block proof carries no votes, so `on_block` gives the
-                // block's own body attestations zero fork-choice weight. Mirror the
-                // node's post-import reaggregation: rebuild each attestation's
-                // participant set from `aggregation_bits`, fold it into the known
-                // pool, and recompute the head so block-borne votes count.
-                if import_ok {
-                    attribute_block_attestations(&store, block).await?;
-                }
-
                 // Validate checks if present
                 if let Some(checks) = checks {
                     validate_checks(&store, checks).await?;
@@ -426,55 +417,6 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
 fn decode_hex_bytes(value: &str) -> anyhow::Result<Vec<u8>> {
     hex::decode(value.trim_start_matches("0x"))
         .map_err(|err| anyhow!("Failed to decode hex bytes: {err}"))
-}
-
-/// Fold a freshly imported block's body attestations into the known-vote pool.
-///
-/// Fixture blocks carry a blank proof, so `on_block` gives their body
-/// attestations no fork-choice weight. Mirror the node's post-import
-/// reaggregation: rebuild each attestation's participant set from its
-/// `aggregation_bits` (fork choice reads only the participants, not the proof
-/// bytes), record it in the known pool per validator, then recompute the head
-/// so block-borne votes are reflected.
-async fn attribute_block_attestations(
-    store: &Store,
-    block: &crate::types::Block,
-) -> anyhow::Result<()> {
-    let ream_block =
-        Block::try_from(block).map_err(|err| anyhow!("Failed to convert block: {err}"))?;
-
-    {
-        let db = store.store.lock().await;
-        let attestation_data_by_root_provider = db.attestation_data_by_root_provider();
-        let latest_known_aggregated_payloads_provider =
-            db.latest_known_aggregated_payloads_provider();
-
-        for attestation in ream_block.body.attestations.iter() {
-            let data_root = attestation.message.tree_hash_root();
-            attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
-
-            // Empty proof bytes: only the participant set drives fork-choice weight.
-            let payload = SingleMessageAggregate::new(
-                attestation.aggregation_bits.clone(),
-                VariableList::empty(),
-            );
-
-            for (validator_id, participated) in attestation.aggregation_bits.iter().enumerate() {
-                if !participated {
-                    continue;
-                }
-                let key = SignatureKey::from_parts(validator_id as u64, data_root);
-                let mut existing_proofs = latest_known_aggregated_payloads_provider
-                    .get(key.clone())?
-                    .unwrap_or_default();
-                existing_proofs.push(payload.clone());
-                latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
-            }
-        }
-    }
-
-    store.update_head().await?;
-    Ok(())
 }
 
 /// Validate an aggregated attestation whose cryptographic proof is mocked.

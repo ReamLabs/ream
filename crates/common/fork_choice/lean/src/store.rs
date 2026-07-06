@@ -1580,7 +1580,6 @@ impl Store {
         let block_provider = db.block_provider();
         let latest_justified_provider = db.latest_justified_provider();
         let attestation_data_by_root_provider = db.attestation_data_by_root_provider();
-        #[cfg(feature = "devnet4")]
         let latest_known_aggregated_payloads_provider =
             db.latest_known_aggregated_payloads_provider();
         drop(db);
@@ -1663,6 +1662,22 @@ impl Store {
             for attestation in aggregated_attestations.iter() {
                 let data_root = attestation.message.tree_hash_root();
                 attestation_data_by_root_provider.insert(data_root, attestation.message.clone())?;
+
+                let payload =
+                    PayloadProof::new(attestation.aggregation_bits.clone(), VariableList::empty());
+
+                for (validator_id, participated) in attestation.aggregation_bits.iter().enumerate()
+                {
+                    if !participated {
+                        continue;
+                    }
+                    let key = SignatureKey::from_parts(validator_id as u64, data_root);
+                    let mut existing_proofs = latest_known_aggregated_payloads_provider
+                        .get(key.clone())?
+                        .unwrap_or_default();
+                    existing_proofs.push(payload.clone());
+                    latest_known_aggregated_payloads_provider.insert(key, existing_proofs)?;
+                }
             }
         }
 
