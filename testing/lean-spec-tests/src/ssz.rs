@@ -2,12 +2,8 @@ use std::path::Path;
 
 use alloy_primitives::hex;
 use anyhow::{Context, bail};
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AttestationData, SignedAttestation,
@@ -22,8 +18,6 @@ use ream_post_quantum_crypto::leansig::{public_key::PublicKey, signature::Signat
 use ssz::Encode;
 use tracing::{debug, info, warn};
 
-#[cfg(feature = "devnet4")]
-use crate::types::ssz::ProofOnlySignedBlock;
 use crate::types::{
     TestFixture,
     ssz::{
@@ -72,27 +66,7 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
         "SignedAttestation" => {
             run_test::<SignedAttestationJSON, SignedAttestation>(&test.value, &expected_ssz)
         }
-        #[cfg(feature = "devnet4")]
-        "BlockSignatures" => run_test::<crate::types::ssz::BlockSignaturesJSON, BlockSignatures>(
-            &test.value,
-            &expected_ssz,
-        ),
-        "SignedBlock" => {
-            #[cfg(feature = "devnet4")]
-            {
-                let signed_block: SignedBlockJSON = serde_json::from_value(test.value.clone())
-                    .context("Failed to deserialize JSON")?;
-                if signed_block.is_proof_only() {
-                    run_test::<SignedBlockJSON, ProofOnlySignedBlock>(&test.value, &expected_ssz)
-                } else {
-                    run_test::<SignedBlockJSON, SignedBlock>(&test.value, &expected_ssz)
-                }
-            }
-            #[cfg(feature = "devnet5")]
-            {
-                run_test::<SignedBlockJSON, SignedBlock>(&test.value, &expected_ssz)
-            }
-        }
+        "SignedBlock" => run_test::<SignedBlockJSON, SignedBlock>(&test.value, &expected_ssz),
         // Networking containers
         "Status" => run_test::<StatusJSON, StatusJSON>(&test.value, &expected_ssz),
         "BlocksByRootRequest" => {
@@ -102,12 +76,6 @@ pub fn run_ssz_test(test_name: &str, test: &SSZTest) -> anyhow::Result<bool> {
         // XMSS containers
         "Signature" => run_test::<SignatureJSON, Signature>(&test.value, &expected_ssz),
         "PublicKey" => run_test::<PublicKeyJSON, PublicKey>(&test.value, &expected_ssz),
-        #[cfg(feature = "devnet4")]
-        "AggregatedSignatureProof" => run_test::<
-            AggregatedSignatureProofJSON,
-            AggregatedSignatureProof,
-        >(&test.value, &expected_ssz),
-
         #[cfg(feature = "devnet5")]
         "SingleMessageAggregate" => {
             run_test::<AggregatedSignatureProofJSON, SingleMessageAggregate>(

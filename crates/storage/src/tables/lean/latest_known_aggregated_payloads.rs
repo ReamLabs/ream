@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AggregatedSignatureProof as PayloadProof;
 use ream_consensus_lean::attestation::SignatureKey;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::SingleMessageAggregate as PayloadProof;
@@ -19,8 +17,7 @@ pub struct LeanLatestKnownAggregatedPayloadsTable {
 /// Table definition for the Lean Latest Known Aggregated Payloads table
 ///
 /// Key: SignatureKey
-/// Value: [PayloadProof] (Maps to AggregatedSignatureProof on devnet4, SingleMessageAggregate on
-/// devnet5)
+/// Value: [PayloadProof] (a SingleMessageAggregate on devnet5)
 impl REDBTable for LeanLatestKnownAggregatedPayloadsTable {
     const TABLE_DEFINITION: TableDefinition<
         'static,

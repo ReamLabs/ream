@@ -10,22 +10,13 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet4"]
-devnet4 = [
-    "ream-consensus-lean/devnet4",
-    "ream-consensus-misc/devnet4",
-    "ream-network-state-lean/devnet4",
-    "ream-network-spec/devnet4",
-    "ream-storage/devnet4",
-    "ream-test-utils/devnet4",
-]
+default = ["devnet5"]
 devnet5 = [
     "ream-consensus-lean/devnet5",
     "ream-consensus-misc/devnet5",
     "ream-network-state-lean/devnet5",
     "ream-network-spec/devnet5",
     "ream-storage/devnet5",
-    "ream-test-utils/devnet5",
 ]
 
 [dependencies]
@@ -64,7 +55,6 @@ ream-sync.workspace = true
 
 [dev-dependencies]
 rand.workspace = true
-ream-test-utils.workspace = true
 
 [lints]
 workspace = true

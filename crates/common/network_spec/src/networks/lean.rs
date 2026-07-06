@@ -53,7 +53,7 @@ fn default_seconds_per_slot() -> u64 {
     4
 }
 
-/// A single validator's public keys in the genesis configuration (devnet4).
+/// A single validator's public keys in the genesis configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Default)]
 pub struct GenesisValidatorEntry {
     #[serde(alias = "attestation_pubkey")]

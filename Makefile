@@ -40,11 +40,7 @@ install: # Build and install the Ream binary under `~/.cargo/bin`.
 ##@ Testing and Linting
 
 .PHONY: test
-test: test-devnet4 test-devnet5
-
-.PHONY: test-devnet4
-test-devnet4:
-	cargo test --workspace -- --nocapture
+test: test-devnet5
 
 .PHONY: test-devnet5
 test-devnet5:
@@ -118,11 +114,6 @@ build-%:
 
 .PHONY: docker-build-push
 docker-build-push:
-	$(MAKE) docker-build-push-default
-	$(MAKE) docker-build-push-devnet5
-
-.PHONY: docker-build-push-default
-docker-build-push-default:
 	$(MAKE) build-x86_64-unknown-linux-gnu
 	mkdir -p $(BIN_DIR)/amd64
 	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
@@ -134,25 +125,6 @@ docker-build-push-default:
 	docker buildx build --file ./Dockerfile.cross . \
 		--platform linux/amd64,linux/arm64 \
 		--tag ghcr.io/reamlabs/ream:latest \
-		--tag ghcr.io/reamlabs/ream:latest-devnet4 \
-		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
-		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		--provenance=false \
-		--push
-
-.PHONY: docker-build-push-devnet5
-docker-build-push-devnet5:
-	$(MAKE) build-x86_64-unknown-linux-gnu FEATURES="devnet5" EXTRA_FLAGS="--no-default-features"
-	mkdir -p $(BIN_DIR)/amd64
-	cp $(CARGO_TARGET_DIR)/x86_64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/amd64/ream
-
-	$(MAKE) build-aarch64-unknown-linux-gnu FEATURES="devnet5" EXTRA_FLAGS="--no-default-features"
-	mkdir -p $(BIN_DIR)/arm64
-	cp $(CARGO_TARGET_DIR)/aarch64-unknown-linux-gnu/$(PROFILE)/ream $(BIN_DIR)/arm64/ream
-
-	docker buildx build --file ./Dockerfile.cross . \
-		--platform linux/amd64,linux/arm64 \
 		--tag ghcr.io/reamlabs/ream:latest-devnet5 \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \

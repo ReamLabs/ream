@@ -20,8 +20,6 @@ use tracing::info;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-#[cfg(feature = "devnet4")]
-use crate::attestation::{AggregatedAttestation, AggregatedSignatureProof, AttestationData};
 #[cfg(feature = "devnet5")]
 use crate::attestation::{AggregatedAttestation, AttestationData, SingleMessageAggregate};
 use crate::{
@@ -145,8 +143,6 @@ impl LeanState {
 
     pub fn extend_proofs_greedily(
         &self,
-        #[cfg(feature = "devnet4")] proofs: Option<&HashSet<AggregatedSignatureProof>>,
-        #[cfg(feature = "devnet4")] selected_proofs: &mut Vec<AggregatedSignatureProof>,
         #[cfg(feature = "devnet5")] proofs: Option<&HashSet<SingleMessageAggregate>>,
         #[cfg(feature = "devnet5")] selected_proofs: &mut Vec<SingleMessageAggregate>,
         covered_validators: &mut HashSet<u64>,

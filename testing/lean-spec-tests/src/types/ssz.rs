@@ -8,12 +8,8 @@
 
 use alloy_primitives::B256;
 use anyhow::{anyhow, ensure};
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
     attestation::{
         AggregatedAttestation, AggregatedAttestations, AttestationData, SignedAttestation,
@@ -29,8 +25,6 @@ use ream_post_quantum_crypto::leansig::{
     signature::{SIGNATURE_SIZE, Signature},
 };
 use serde::Deserialize;
-#[cfg(feature = "devnet4")]
-use ssz_types::typenum::U524288;
 use ssz_types::{
     BitList, VariableList,
     typenum::{U1024, U262144, U1073741824},
@@ -370,95 +364,10 @@ impl TryFrom<&SignedAttestationJSON> for SignedAttestation {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct BlockSignaturesJSON {
-    pub attestation_signatures: DataListJSON<AggregatedSignatureProofJSON>,
-    pub proposer_signature: String,
-}
-
-#[cfg(feature = "devnet4")]
-impl TryFrom<&BlockSignaturesJSON> for BlockSignatures {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &BlockSignaturesJSON) -> anyhow::Result<Self> {
-        Ok(Self {
-            attestation_signatures: VariableList::try_from(
-                value
-                    .attestation_signatures
-                    .data
-                    .iter()
-                    .map(TryInto::try_into)
-                    .collect::<Result<Vec<_>, _>>()?,
-            )
-            .map_err(|err| anyhow!("Failed to convert attestation_signatures: {err}"))?,
-            proposer_signature: decode_signature(&value.proposer_signature)?,
-        })
-    }
-}
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct SignedBlockJSON {
     pub block: BlockJSON,
     #[serde(default)]
-    pub signature: Option<BlockSignaturesJSON>,
-    #[serde(default)]
     pub proof: Option<ProofDataJSON>,
-}
-
-impl SignedBlockJSON {
-    pub fn is_proof_only(&self) -> bool {
-        self.signature.is_none() && self.proof.is_some()
-    }
-}
-
-#[cfg(feature = "devnet4")]
-impl TryFrom<&SignedBlockJSON> for SignedBlock {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &SignedBlockJSON) -> anyhow::Result<Self> {
-        Ok(Self {
-            block: (&value.block).try_into()?,
-            signature: value
-                .signature
-                .as_ref()
-                .ok_or_else(|| anyhow!("missing devnet4 block signature"))?
-                .try_into()?,
-        })
-    }
-}
-
-#[cfg(feature = "devnet4")]
-#[derive(Debug, PartialEq, Eq, Clone, ssz_derive::Encode)]
-pub struct ProofOnlyMultiMessageAggregate {
-    pub proof: VariableList<u8, U524288>,
-}
-
-#[cfg(feature = "devnet4")]
-#[derive(Debug, PartialEq, Eq, Clone, ssz_derive::Encode)]
-pub struct ProofOnlySignedBlock {
-    pub block: Block,
-    pub proof: ProofOnlyMultiMessageAggregate,
-}
-
-#[cfg(feature = "devnet4")]
-impl TryFrom<&SignedBlockJSON> for ProofOnlySignedBlock {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &SignedBlockJSON) -> anyhow::Result<Self> {
-        Ok(Self {
-            block: (&value.block).try_into()?,
-            proof: ProofOnlyMultiMessageAggregate {
-                proof: VariableList::try_from(decode_hex(
-                    value
-                        .proof
-                        .as_ref()
-                        .ok_or_else(|| anyhow!("missing proof-only block proof"))?
-                        .data(),
-                )?)
-                .map_err(|err| anyhow!("Failed to convert proof: {err}"))?,
-            },
-        })
-    }
 }
 
 #[cfg(feature = "devnet5")]
@@ -489,19 +398,6 @@ pub struct AggregatedSignatureProofJSON {
     pub participants: DataListJSON<bool>,
     #[serde(alias = "proof")]
     pub proof_data: ProofDataJSON,
-}
-
-#[cfg(feature = "devnet4")]
-impl TryFrom<&AggregatedSignatureProofJSON> for AggregatedSignatureProof {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &AggregatedSignatureProofJSON) -> anyhow::Result<Self> {
-        Ok(Self {
-            participants: bools_to_bitlist(&value.participants.data)?,
-            proof_data: VariableList::try_from(decode_hex(value.proof_data.data())?)
-                .map_err(|err| anyhow!("Failed to convert proof_data: {err}"))?,
-        })
-    }
 }
 
 #[cfg(feature = "devnet5")]

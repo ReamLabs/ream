@@ -8,7 +8,7 @@ use lean_spec_tests::{
     state_transition::{load_state_transition_test, run_state_transition_test},
     sync::{load_sync_test, run_sync_test},
 };
-#[cfg(any(feature = "devnet4", feature = "devnet5"))]
+#[cfg(feature = "devnet5")]
 use lean_spec_tests::{
     ssz::{load_ssz_test, run_ssz_test},
     verify_signatures::{load_verify_signatures_test, run_verify_signatures_test},
@@ -47,10 +47,7 @@ fn find_json_files(dir: &str) -> Vec<PathBuf> {
 }
 
 fn find_fixture_files(suite: &str) -> Vec<PathBuf> {
-    #[cfg(feature = "devnet5")]
     let network = "devnet5";
-    #[cfg(not(feature = "devnet5"))]
-    let network = "devnet4";
     find_json_files(&format!(
         "fixtures/{network}/consensus/{suite}/{FIXTURE_PROFILE}"
     ))
@@ -137,7 +134,7 @@ fn test_all_state_transition_fixtures() {
     assert_eq!(failed, 0, "Some state transition tests failed");
 }
 
-#[cfg(any(feature = "devnet4", feature = "devnet5"))]
+#[cfg(feature = "devnet5")]
 #[test]
 fn test_all_ssz_fixtures() {
     init_tracing();
@@ -349,7 +346,7 @@ fn test_all_slot_clock_fixtures() {
     assert_eq!(failed, 0, "Some slot_clock tests failed");
 }
 
-#[cfg(any(feature = "devnet4", feature = "devnet5"))]
+#[cfg(feature = "devnet5")]
 #[test]
 fn test_all_verify_signatures_fixtures() {
     init_tracing();

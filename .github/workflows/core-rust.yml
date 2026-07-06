@@ -79,13 +79,6 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-  test-devnet4:
-    name: test devnet4
-    needs: [format, cargo-clippy]
-    uses: ./.github/workflows/tests-matrix.yml
-    with:
-      network: devnet4
-
   test-devnet5:
     name: test devnet5
     needs: [format, cargo-clippy]

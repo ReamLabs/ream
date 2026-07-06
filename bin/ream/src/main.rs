@@ -37,8 +37,6 @@ use ream_checkpoint_sync_beacon::initialize_db_from_checkpoint;
 use ream_checkpoint_sync_lean::{LeanCheckpointClient, verify_checkpoint_state};
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::MultiMessageAggregate;
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{block::SignedBlock, validator::Validator};
 use ream_consensus_misc::{
     constants::{
@@ -72,14 +70,8 @@ use ream_p2p::{
     },
     network::lean::{LeanNetworkConfig, LeanNetworkService},
 };
-#[cfg(feature = "devnet4")]
-use ream_post_quantum_crypto::lean_multisig::aggregate::{
-    aggregation_setup_prover, aggregation_setup_verifier,
-};
 #[cfg(feature = "devnet5")]
 use ream_post_quantum_crypto::lean_multisig::type_2::{type_2_setup, type_2_setup_verifier};
-#[cfg(feature = "devnet4")]
-use ream_post_quantum_crypto::leansig::signature::Signature;
 use ream_post_quantum_crypto::leansig::{
     private_key::PrivateKey as LeanSigPrivateKey, public_key::PublicKey,
 };
@@ -255,8 +247,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // Initialize aggregation verifier bytecode — all nodes need this to verify
     // aggregate signatures when processing blocks during sync.
     info!("Initializing aggregation verifier bytecode...");
-    #[cfg(feature = "devnet4")]
-    aggregation_setup_verifier();
     #[cfg(feature = "devnet5")]
     type_2_setup_verifier();
     info!("Aggregation verifier bytecode initialized");
@@ -264,8 +254,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     // Initialize aggregation prover bytecode only if this node is an aggregator.
     if config.is_aggregator {
         info!("Initializing aggregation prover bytecode for aggregator mode...");
-        #[cfg(feature = "devnet4")]
-        aggregation_setup_prover();
         #[cfg(feature = "devnet5")]
         type_2_setup();
         info!("Aggregation prover bytecode initialized");
@@ -313,11 +301,6 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
             setup_genesis(lean_network_spec().genesis_time, validators);
         let signed_genesis = SignedBlock {
             block: genesis_block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: VariableList::default(),
-                proposer_signature: Signature::blank(),
-            },
             #[cfg(feature = "devnet5")]
             proof: MultiMessageAggregate {
                 proof: VariableList::default(),

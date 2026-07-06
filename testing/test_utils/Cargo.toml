@@ -10,12 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet4"]
-devnet4 = [
-    "ream-consensus-lean/devnet4",
-    "ream-fork-choice-lean/devnet4",
-    "ream-storage/devnet4",
-]
+default = ["devnet5"]
 devnet5 = [
     "ream-consensus-lean/devnet5",
     "ream-fork-choice-lean/devnet5",
