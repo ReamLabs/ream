@@ -16,6 +16,7 @@ members = [
     "crates/common/data_availability",
     "crates/common/data_availability_adapters/kzg_verifier",
     "crates/common/data_availability_node",
+    "crates/common/data_availability_adapters/tool",
     "crates/common/events/beacon",
     "crates/common/execution/engine",
     "crates/common/execution/rpc_types",

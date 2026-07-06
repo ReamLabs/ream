@@ -6684,6 +6684,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ream-data-availability-tool"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "clap",
+ "ethereum_ssz",
+ "ream-consensus-beacon",
+ "ream-consensus-misc",
+ "reqwest",
+ "rust_eth_kzg",
+ "serde",
+ "serde_json",
+ "ssz_types",
+ "tokio",
+ "tree_hash",
+]
+
+[[package]]
 name = "ream-data-availability-verifier-kzg"
 version = "0.1.0"
 dependencies = [

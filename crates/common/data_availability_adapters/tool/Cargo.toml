@@ -1,0 +1,34 @@
+[package]
+name = "ream-data-availability-tool"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "ream-data-availability-tool"
+path = "src/main.rs"
+
+[dependencies]
+alloy-primitives.workspace = true
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive"] }
+ethereum_ssz.workspace = true
+reqwest.workspace = true
+rust_eth_kzg.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ssz_types.workspace = true
+tokio.workspace = true
+tree_hash.workspace = true
+
+# ream dependencies
+ream-consensus-beacon.workspace = true
+ream-consensus-misc.workspace = true
+
+[lints]
+workspace = true
