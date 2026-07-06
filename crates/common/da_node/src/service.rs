@@ -7,7 +7,7 @@ use ream_da::{
 };
 use ream_executor::ReamExecutor;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::ingest::{DaWorkItem, RetentionHint};
 
@@ -80,6 +80,23 @@ impl DaVerificationService {
         let id = candidate.id;
         let verifier = self.verifier.clone();
 
+        // Skip columns we already hold, before paying for verification. The
+        // availability bitmap answers presence from memory — no payload read.
+        // A failed pre-check must not drop the candidate: fall through and let
+        // verify + put decide.
+        match self.store.availability(id.block_root()) {
+            Ok(availability) if availability.holds(id.index()) => {
+                debug!(
+                    "skipping already-held column: block root {root}, column {index}",
+                    root = id.block_root(),
+                    index = id.index()
+                );
+                return;
+            }
+            Ok(_) => {}
+            Err(err) => debug!("presence pre-check failed, verifying anyway: {err}"),
+        }
+
         // Verify
         let verified = match self
             .executor
@@ -118,7 +135,7 @@ impl DaVerificationService {
                         );
                     }
                     Ok(InsertOutcome::Duplicated) => {
-                        debug!(
+                        warn!(
                             "duplicated column: block root {root}, column {index}, kept existing verified column",
                             root = id.block_root(),
                             index = id.index()

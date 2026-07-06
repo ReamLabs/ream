@@ -110,7 +110,7 @@ use tracing_subscriber::EnvFilter;
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 pub const APP_NAME: &str = "ream";
-const DA_VERIFICATION_QUEUE_CAPACITY: usize = 100;
+const DA_VERIFICATION_QUEUE_CAPACITY: usize = 256;
 const DEFAULT_QUIET_LOG_TARGETS: &str = "libp2p_gossipsub::behaviour=error";
 
 struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
@@ -646,11 +646,12 @@ async fn run_beacon_node_for_test(
 }
 
 /// Runs the da node.
-pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, data_dir: PathBuf) {
+pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, ream_directory: PathBuf) {
     info!(
         "starting up da node on {}:{}",
         config.http_address, config.http_port
     );
+    let data_dir = ream_directory.join("da");
 
     set_beacon_network_spec(config.network.clone());
 
@@ -679,6 +680,14 @@ pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, data_dir:
             .expect("network spec max_blobs_per_block must be nonzero");
     let verifier = Arc::new(KzgVerifier::new(max_blobs_per_block));
 
+    let (ingest_handle, rx) = ingest_channel(DA_VERIFICATION_QUEUE_CAPACITY);
+    let service = DaVerificationService::new(rx, verifier.clone(), store.clone(), executor.clone());
+    let mut service_task = AbortOnDrop(executor.spawn(service.run()));
+
+    let mut http_task = AbortOnDrop(executor.spawn(async move {
+        ream_rpc_da::server::start(server_config, ingest_handle, store).await
+    }));
+
     // The KZG trusted setup is lazily loaded and expensive (seconds). Warm it up
     // now, off the async workers, so the first column to arrive doesn't pay that
     // cost mid-verification.
@@ -689,14 +698,6 @@ pub async fn run_da_node(config: DaNodeConfig, executor: ReamExecutor, data_dir:
         error!("failed to warm up KZG trusted setup: {err}");
         return;
     }
-
-    let (ingest_handle, rx) = ingest_channel(DA_VERIFICATION_QUEUE_CAPACITY);
-    let service = DaVerificationService::new(rx, verifier.clone(), store.clone(), executor.clone());
-    let mut service_task = AbortOnDrop(executor.spawn(service.run()));
-
-    let mut http_task = AbortOnDrop(executor.spawn(async move {
-        ream_rpc_da::server::start(server_config, ingest_handle, store).await
-    }));
 
     tokio::select! {
         _ = &mut http_task.0 => info!("DA HTTP server stopped"),

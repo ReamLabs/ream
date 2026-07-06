@@ -1,4 +1,4 @@
-use crate::id::column_indices;
+use crate::id::{NUMBER_OF_COLUMNS, column_indices};
 
 /// Which of a block's columns this node holds, against the set it is responsible
 /// for.
@@ -29,6 +29,15 @@ impl DaAvailability {
         u64::from(self.held.count_ones())
     }
 
+    /// Whether column `index` is physically held, regardless of custody.
+    ///
+    /// A pure bitmap probe — this is the cheap presence check for callers that
+    /// would otherwise fetch a whole column just to see if it exists. An
+    /// out-of-range index is never held.
+    pub fn holds(&self, index: u64) -> bool {
+        index < NUMBER_OF_COLUMNS && self.held & (1u128 << index) != 0
+    }
+
     /// Column indices this node is responsible for but does not yet hold, in
     /// ascending order.
     ///
@@ -52,6 +61,18 @@ mod tests {
     /// A small custody set — columns {0, 1, 2, 3} — keeps the expectations
     /// readable while still exercising partial/complete logic.
     const EXPECTED_FOUR: u128 = 0b1111;
+
+    #[test]
+    fn holds_probes_single_columns() {
+        // Held {0, 2}: bit probes answer per column, and an out-of-range index
+        // (>= NUMBER_OF_COLUMNS) is never held.
+        let availability = DaAvailability::new(0b0101, EXPECTED_FOUR);
+        assert!(availability.holds(0));
+        assert!(!availability.holds(1));
+        assert!(availability.holds(2));
+        assert!(!availability.holds(127));
+        assert!(!availability.holds(128));
+    }
 
     #[test]
     fn complete_when_every_expected_column_is_held() {

@@ -87,6 +87,15 @@ impl DaVerifier for KzgVerifier {
                 ),
             });
         }
+
+        // Slot consistency
+        if candidate.context.slot != sidecar.signed_block_header.message.slot {
+            return Err(ValidationError::SlotMismatch {
+                expected: sidecar.signed_block_header.message.slot,
+                actual: candidate.context.slot,
+            });
+        }
+
         // Structural well-formedness (counts, blob limit) before the costly proofs.
         self.check_shape(&sidecar)?;
 
@@ -281,6 +290,24 @@ mod tests {
         assert!(matches!(
             verifier().verify(forged),
             Err(ValidationError::IdMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_slot_mismatch() {
+        let sidecar = sidecar(3, 1);
+        let honest = candidate_of(&sidecar);
+        // Same payload, but the envelope claims a different slot than the
+        // sidecar's own header — which would mis-bucket it for retention.
+        let forged = CandidateColumn {
+            context: DaContext {
+                slot: honest.context.slot + 1,
+            },
+            ..honest
+        };
+        assert!(matches!(
+            verifier().verify(forged),
+            Err(ValidationError::SlotMismatch { .. })
         ));
     }
 

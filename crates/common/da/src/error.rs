@@ -16,6 +16,9 @@ pub enum ValidationError {
     #[error("column id mismatch: expected {expected}, got {actual}")]
     IdMismatch { expected: String, actual: String },
 
+    #[error("slot mismatch: expected {expected}, got {actual}")]
+    SlotMismatch { expected: u64, actual: u64 },
+
     #[error("column sidecar carries no commitments")]
     EmptyCommitments,
 
