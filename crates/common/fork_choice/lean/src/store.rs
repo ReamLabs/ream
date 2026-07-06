@@ -1275,14 +1275,6 @@ impl Store {
                         continue;
                     }
 
-                    if is_projected_slot_justified(
-                        &justified_slots,
-                        finalized_slot,
-                        candidate_data.target.slot,
-                    ) {
-                        continue;
-                    }
-
                     if !is_justifiable_after(candidate_data.target.slot, finalized_slot)? {
                         continue;
                     }
