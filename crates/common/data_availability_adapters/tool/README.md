@@ -61,3 +61,10 @@ cargo build -p ream -p ream-data-availability-tool
 # 3. ask again any time
 ./target/debug/ream-data-availability-tool availability 0xe4bb...a2d5
 ```
+
+The DA node's verifier follows the network's **BPO blob schedule** (EIP-7892):
+each column is checked against the blob limit in force at its own epoch, so
+post-Fulu blocks with raised blob counts verify fine.
+
+Startup note: the DA node warms up the KZG trusted setup **before** opening its
+HTTP port (several seconds) — wait for `/health` to respond before feeding.
