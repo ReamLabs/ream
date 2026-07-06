@@ -1280,7 +1280,9 @@ impl Store {
                         finalized_slot,
                         candidate_data.target.slot,
                     ) {
-                        continue;
+                        if processed_data_roots.contains(data_root) {
+                            continue;
+                        }
                     }
 
                     if !is_justifiable_after(candidate_data.target.slot, finalized_slot)? {
