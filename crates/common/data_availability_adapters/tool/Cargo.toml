@@ -29,6 +29,8 @@ tree_hash.workspace = true
 # ream dependencies
 ream-consensus-beacon.workspace = true
 ream-consensus-misc.workspace = true
+ream-execution-rpc-types.workspace = true
+ream-merkle.workspace = true
 
 [lints]
 workspace = true

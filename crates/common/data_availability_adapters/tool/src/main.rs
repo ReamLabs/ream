@@ -4,22 +4,32 @@
 //! future beacon-side feeder will: submit data columns for verification, query
 //! availability, and — the main event — pull a real block's blobs from a live
 //! beacon node, derive its data column sidecars locally (real KZG cells and
-//! proofs), and feed them through the ingest → verify → store pipeline.
+//! proofs), and feed them through the ingest → verify → store pipeline. For
+//! working offline, `generate` synthesizes KZG-valid sidecars from thin air
+//! instead of fetching a real block.
 //!
 //! Usage:
 //!   ream-data-availability-tool health
 //!   ream-data-availability-tool availability <block_root>
 //!   ream-data-availability-tool feed --beacon-url <url> [block_id] [--columns 0,1,2] [--wait 30]
+//!   ream-data-availability-tool generate [--slot 1] [--blobs 1] [--out dir]
 
 mod beacon;
 mod data_availability;
+mod generate;
+
+use std::path::{Path, PathBuf};
 
 use alloy_primitives::B256;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use ream_consensus_beacon::data_column_sidecar::DataColumnSidecar;
 use ssz::Encode;
 
-use crate::{beacon::build_column_sidecars, data_availability::DataAvailabilityClient};
+use crate::{
+    beacon::build_column_sidecars, data_availability::DataAvailabilityClient,
+    generate::build_synthetic_sidecars,
+};
 
 #[derive(Parser)]
 #[command(
@@ -62,6 +72,27 @@ enum Command {
         #[arg(long, default_value_t = 30)]
         wait: u64,
     },
+    /// Synthesize a block's worth of KZG-valid sidecars offline — no beacon
+    /// node needed — and submit them, or write them as ingest-ready vectors.
+    Generate {
+        /// Header slot of the synthetic block (the block root varies with it).
+        #[arg(long, default_value_t = 1)]
+        slot: u64,
+        /// All-zero blobs in the synthetic block. Must stay within the blob
+        /// limit at `slot`'s epoch or the data node will reject the columns.
+        #[arg(long, default_value_t = 1)]
+        blobs: usize,
+        /// Write ingest-ready JSON request bodies to this directory instead of
+        /// submitting them.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Submit only these column indices (comma-separated). Default: all.
+        #[arg(long, value_delimiter = ',')]
+        columns: Option<Vec<u64>>,
+        /// Seconds to wait for the data node to verify the submitted columns.
+        #[arg(long, default_value_t = 30)]
+        wait: u64,
+    },
 }
 
 #[tokio::main]
@@ -83,44 +114,64 @@ async fn main() -> Result<()> {
             block_id,
             columns,
             wait,
-        } => feed(&client, &beacon_url, &block_id, columns, wait).await?,
+        } => {
+            let blob_sidecars = beacon::fetch_blob_sidecars(&beacon_url, &block_id)
+                .await
+                .with_context(|| format!("fetching blob sidecars for block {block_id}"))?;
+            if blob_sidecars.is_empty() {
+                bail!("block {block_id} has no blobs — nothing to feed");
+            }
+            println!(
+                "fetched {} blob(s) for block {block_id}, slot {}",
+                blob_sidecars.len(),
+                blob_sidecars[0].signed_block_header.message.slot
+            );
+
+            // KZG cell computation is CPU-bound and takes a while (trusted
+            // setup load plus per-blob proving); keep it off the async runtime.
+            let (block_root, slot, sidecars) =
+                tokio::task::spawn_blocking(move || build_column_sidecars(blob_sidecars)).await??;
+            println!(
+                "derived {} column sidecars (block root {block_root})",
+                sidecars.len()
+            );
+
+            let selected = select_columns(sidecars, columns.as_deref())?;
+            submit_and_wait(&client, block_root, slot, &selected, wait).await?;
+        }
+        Command::Generate {
+            slot,
+            blobs,
+            out,
+            columns,
+            wait,
+        } => {
+            let (block_root, slot, sidecars) =
+                tokio::task::spawn_blocking(move || build_synthetic_sidecars(slot, blobs))
+                    .await??;
+            println!(
+                "generated {} column sidecars from {blobs} synthetic blob(s) \
+                 (block root {block_root})",
+                sidecars.len()
+            );
+
+            let selected = select_columns(sidecars, columns.as_deref())?;
+            match out {
+                Some(dir) => write_vectors(&dir, block_root, slot, &selected)?,
+                None => submit_and_wait(&client, block_root, slot, &selected, wait).await?,
+            }
+        }
     }
 
     Ok(())
 }
 
-/// The full pipeline: beacon blobs → local sidecar derivation → ingest →
-/// availability confirmation.
-async fn feed(
-    client: &DataAvailabilityClient,
-    beacon_url: &str,
-    block_id: &str,
-    columns: Option<Vec<u64>>,
-    wait_secs: u64,
-) -> Result<()> {
-    let blob_sidecars = beacon::fetch_blob_sidecars(beacon_url, block_id)
-        .await
-        .with_context(|| format!("fetching blob sidecars for block {block_id}"))?;
-    if blob_sidecars.is_empty() {
-        bail!("block {block_id} has no blobs — nothing to feed");
-    }
-    println!(
-        "fetched {} blob(s) for block {block_id}, slot {}",
-        blob_sidecars.len(),
-        blob_sidecars[0].signed_block_header.message.slot
-    );
-
-    // KZG cell computation is CPU-bound and takes a while (trusted setup load
-    // plus per-blob proving); keep it off the async runtime.
-    let (block_root, slot, sidecars) =
-        tokio::task::spawn_blocking(move || build_column_sidecars(blob_sidecars)).await??;
-    println!(
-        "derived {} column sidecars (block root {block_root})",
-        sidecars.len()
-    );
-
-    // Submit the requested columns (default: all of them).
-    let selected: Vec<_> = match &columns {
+/// Keep only the requested column indices (or everything when none given).
+fn select_columns(
+    sidecars: Vec<DataColumnSidecar>,
+    columns: Option<&[u64]>,
+) -> Result<Vec<DataColumnSidecar>> {
+    let selected: Vec<_> = match columns {
         Some(indices) => sidecars
             .into_iter()
             .filter(|sidecar| indices.contains(&sidecar.index))
@@ -130,23 +181,36 @@ async fn feed(
     if selected.is_empty() {
         bail!("no sidecars match the requested column indices");
     }
+    Ok(selected)
+}
 
-    let mut submitted = Vec::with_capacity(selected.len());
-    for sidecar in &selected {
-        let payload = format!(
-            "0x{}",
-            alloy_primitives::hex::encode(sidecar.as_ssz_bytes())
-        );
+/// The hex-encoded SSZ payload the ingest endpoint expects.
+fn payload_hex(sidecar: &DataColumnSidecar) -> String {
+    format!(
+        "0x{}",
+        alloy_primitives::hex::encode(sidecar.as_ssz_bytes())
+    )
+}
+
+/// Submit the sidecars, then poll availability until every submitted index is
+/// held (verification runs asynchronously behind the ingest queue).
+async fn submit_and_wait(
+    client: &DataAvailabilityClient,
+    block_root: B256,
+    slot: u64,
+    sidecars: &[DataColumnSidecar],
+    wait_secs: u64,
+) -> Result<()> {
+    let mut submitted = Vec::with_capacity(sidecars.len());
+    for sidecar in sidecars {
         client
-            .ingest(block_root, sidecar.index, slot, &payload)
+            .ingest(block_root, sidecar.index, slot, &payload_hex(sidecar))
             .await
             .with_context(|| format!("submitting column {}", sidecar.index))?;
         submitted.push(sidecar.index);
     }
     println!("submitted {} column(s) to the data node", submitted.len());
 
-    // Verification is asynchronous behind the ingest queue: poll availability
-    // until every submitted index is held (no longer listed as missing).
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(wait_secs);
     let availability = loop {
         let availability = client.availability(block_root).await?;
@@ -172,5 +236,39 @@ async fn feed(
 
     println!("all submitted columns verified and held:");
     println!("{}", serde_json::to_string_pretty(&availability)?);
+    Ok(())
+}
+
+/// Write one ingest-ready JSON request body per column, for driving the data
+/// node with nothing but `curl`.
+fn write_vectors(
+    dir: &Path,
+    block_root: B256,
+    slot: u64,
+    sidecars: &[DataColumnSidecar],
+) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
+    for sidecar in sidecars {
+        let body = serde_json::json!({
+            "block_root": block_root,
+            "index": sidecar.index,
+            "slot": slot,
+            "payload": payload_hex(sidecar),
+        });
+        std::fs::write(
+            dir.join(format!("column_{}.json", sidecar.index)),
+            serde_json::to_string(&body)?,
+        )?;
+    }
+    println!(
+        "wrote {} ingest-ready vector(s) to {} (block root: {block_root})",
+        sidecars.len(),
+        dir.display()
+    );
+    println!(
+        "submit one with: curl -X POST <da-url>/data/v0/ingest \
+         -H 'content-type: application/json' -d @{}/column_0.json",
+        dir.display()
+    );
     Ok(())
 }

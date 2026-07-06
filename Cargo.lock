@@ -6693,6 +6693,8 @@ dependencies = [
  "ethereum_ssz",
  "ream-consensus-beacon",
  "ream-consensus-misc",
+ "ream-execution-rpc-types",
+ "ream-merkle",
  "reqwest",
  "rust_eth_kzg",
  "serde",
