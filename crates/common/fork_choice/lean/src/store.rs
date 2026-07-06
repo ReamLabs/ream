@@ -24,7 +24,7 @@ use ream_consensus_lean::{
 };
 use ream_consensus_misc::constants::lean::{
     GOSSIP_DISPARITY_INTERVALS, INTERVALS_PER_SLOT, MAX_ATTESTATIONS_DATA,
-    attestation_committee_count,
+    MAX_HISTORICAL_BLOCK_HASHES, attestation_committee_count,
 };
 use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL,
@@ -1667,6 +1667,7 @@ impl Store {
         let block_provider = db.block_provider();
         let latest_justified_provider = db.latest_justified_provider();
         let attestation_data_by_root_provider = db.attestation_data_by_root_provider();
+        let time_provider = db.time_provider();
         let latest_known_aggregated_payloads_provider =
             db.latest_known_aggregated_payloads_provider();
         drop(db);
@@ -1683,6 +1684,16 @@ impl Store {
         let mut parent_state = state_provider
             .get(block.parent_root)?
             .ok_or(anyhow!("State not found for parent root"))?;
+
+        // A block far in the future, would unboundly spin the empty-slot loop that
+        // is present in the state_transition -> process_slots. These checks reject
+        // such blocks before they are processed.
+        ensure!(
+            block.slot.saturating_sub(parent_state.slot) <= MAX_HISTORICAL_BLOCK_HASHES,
+            "Block slot is too far beyond its parent"
+        );
+        let current_slot = time_provider.get()? / INTERVALS_PER_SLOT;
+        ensure!(block.slot <= current_slot + 1, "Block too far in future");
 
         signed_block.verify_signatures(&parent_state, verify_signatures)?;
         parent_state.state_transition(block, true)?;
@@ -6060,5 +6071,52 @@ mod tests {
 
         assert!(block_provider.contains_key(target.root));
         assert!(is_justifiable_after(target.slot, finalized_slot).unwrap());
+    }
+
+    // TEST ON BLOCK SLOT BOUNDS
+
+    /// A block past the store clock is rejected as too far in the future.
+    #[tokio::test]
+    pub async fn test_on_block_rejects_block_too_far_in_future() {
+        let mut store: Store = sample_store_as_store(10).await;
+
+        let block_with_signatures = store.produce_block_with_signatures(2, 2).await.unwrap();
+        let signed_block = build_signed_block(block_with_signatures);
+        let block_root = signed_block.block.tree_hash_root();
+
+        // Pin clock to slot 0, which beyond the future-horizon edge for a block at slot 2.
+        store.store.lock().await.time_provider().insert(0).unwrap();
+
+        let error = store.on_block(&signed_block, false).await.unwrap_err();
+        assert!(
+            error.to_string().contains("Block too far in future"),
+            "unexpected error: {error}"
+        );
+
+        let block_provider = store.store.lock().await.block_provider();
+        assert!(!block_provider.contains_key(block_root));
+    }
+
+    /// A block exactly one slot past the clock imports at the future-horizon edge.
+    #[tokio::test]
+    pub async fn test_on_block_accepts_block_at_future_horizon_edge() {
+        let mut store: Store = sample_store_as_store(10).await;
+
+        let block_with_signatures = store.produce_block_with_signatures(2, 2).await.unwrap();
+        let signed_block = build_signed_block(block_with_signatures);
+        let block_root = signed_block.block.tree_hash_root();
+
+        // Pin the clock to slot 1 so the horizon (current slot plus one) is exactly the block slot.
+        store
+            .store
+            .lock()
+            .await
+            .time_provider()
+            .insert(INTERVALS_PER_SLOT)
+            .unwrap();
+        store.on_block(&signed_block, false).await.unwrap();
+
+        let block_provider = store.store.lock().await.block_provider();
+        assert!(block_provider.contains_key(block_root));
     }
 }
