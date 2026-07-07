@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use ream_consensus_beacon::data_column_sidecar::DataColumnSidecar;
 use ream_consensus_misc::{blob_parameters::BlobParameters, misc::compute_epoch_at_slot};
 use ream_data_availability::{
-    column::{CandidateColumn, VerifiedColumn},
+    column::{CandidateBlock, CandidateColumn, VerifiedColumn},
     error::ValidationError,
     id::ColumnId,
     verifier::ColumnVerifier,
@@ -137,6 +137,16 @@ impl ColumnVerifier for KzgVerifier {
             candidate.context,
             candidate.payload,
         ))
+    }
+
+    fn verify_block(
+        &self,
+        block: CandidateBlock,
+    ) -> Vec<(u64, Result<VerifiedColumn, ValidationError>)> {
+        block
+            .into_columns()
+            .map(|candidate| (candidate.id.index(), self.verify(candidate)))
+            .collect()
     }
 }
 
