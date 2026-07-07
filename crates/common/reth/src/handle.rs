@@ -143,9 +143,7 @@ pub fn custom_chain() -> Arc<ChainSpec> {
         "terminalTotalDifficulty": 0,
         "terminalTotalDifficultyPassed": true,
         "shanghaiTime": 0,
-        "cancunTime": 0,
-        "pragueTime": 0,
-        "amsterdamTime": 0
+        "cancunTime": 0
     }
 }
 "#;

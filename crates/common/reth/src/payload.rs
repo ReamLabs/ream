@@ -1,4 +1,4 @@
-use alloy_rpc_types_engine::{ExecutionData, PayloadStatus};
+use alloy_rpc_types_engine::{ExecutionData, ExecutionPayload, PayloadStatus};
 use eyre::{OptionExt, eyre};
 use ream_consensus_misc::withdrawal::Withdrawal;
 use ream_execution_rpc_types::electra::execution_payload::ExecutionPayload as ReamExecutionPayload;
@@ -34,12 +34,13 @@ pub async fn import(
     Ok(status)
 }
 
-/// Convert reth's alloy `ExecutionData` into ream's `ExecutionPayload`.
+/// Convert reth's alloy `ExecutionData` into ream's `ExecutionPayload` (V3 shaped for now).
 pub fn to_ream_execution_payload(data: &ExecutionData) -> eyre::Result<ReamExecutionPayload> {
-    let v3 = data
-        .payload
-        .as_v3()
-        .ok_or_eyre("expected a V3 execution payload (Cancun active in the EL genesis)")?;
+    let ExecutionPayload::V3(v3) = &data.payload else {
+        return Err(eyre!(
+            "expected a V3 (Cancun) execution payload; the EL genesis must not enable Prague/Amsterdam"
+        ));
+    };
     let v1 = &v3.payload_inner.payload_inner;
 
     let transactions = v1
