@@ -81,6 +81,18 @@ impl LeanChildrenIndexTable {
         Ok(children_map)
     }
 
+    pub fn get_index_map(&self) -> Result<HashMap<B256, (B256, u64)>, StoreError> {
+        let mut index_map = HashMap::<B256, (B256, u64)>::new();
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
+        for entry in table.iter()? {
+            let (root_entry, value_entry) = entry?;
+            let value = value_entry.value();
+            index_map.insert(root_entry.value(), (value.parent_root, value.slot));
+        }
+        Ok(index_map)
+    }
+
     /// Remove index entries for blocks below `finalized_slot`.
     pub fn prune_finalized(&self, finalized_slot: u64) -> Result<usize, StoreError> {
         let stale_roots: Vec<B256> = {

@@ -165,6 +165,13 @@ impl LeanBlockTable {
         children_index_table.get_children_map(min_score, attestation_weights)
     }
 
+    pub fn get_index_map(&self) -> Result<HashMap<B256, (B256, u64)>, StoreError> {
+        let children_index_table = LeanChildrenIndexTable {
+            db: self.db.clone(),
+        };
+        children_index_table.get_index_map()
+    }
+
     pub fn get_all_blocks(&self, min_slot: u64) -> Result<Vec<SignedBlock>, StoreError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(Self::TABLE_DEFINITION)?;
