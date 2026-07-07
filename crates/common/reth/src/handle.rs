@@ -3,6 +3,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use alloy_genesis::Genesis;
+use alloy_primitives::B256;
 use alloy_rpc_types_engine::{ExecutionData, ForkchoiceState, ForkchoiceUpdated, PayloadStatus};
 use reth_ethereum::{
     chainspec::ChainSpec,
@@ -31,6 +32,9 @@ pub type RethNode = NodeHandleFor<EthereumNode, DatabaseEnv>;
 pub struct RethHandle {
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     engine: ConsensusEngineHandle<EthEngineTypes>,
+    /// EL genesis block hash, captured at boot. The CL uses this to resolve a "build on genesis"
+    /// request (the lean genesis carries a zero EL payload hash) to the EL's real genesis head.
+    genesis_hash: B256,
 }
 
 impl RethHandle {
@@ -68,9 +72,16 @@ impl RethHandle {
         let handle = RethHandle {
             payload_builder: node.node.payload_builder_handle.clone(),
             engine: node.node.consensus_engine_handle().clone(),
+            genesis_hash: node.node.chain_spec().genesis_hash(),
         };
 
         Ok((handle, node))
+    }
+
+    /// EL genesis block hash. Callers resolve a zero parent hash (the lean genesis placeholder)
+    /// to this before asking the EL to build on genesis.
+    pub fn genesis_hash(&self) -> B256 {
+        self.genesis_hash
     }
 
     /// Sends a fork choice update to the execution layer.

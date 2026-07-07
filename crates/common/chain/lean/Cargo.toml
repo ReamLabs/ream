@@ -35,6 +35,12 @@ devnet5 = [
     "ream-sync/devnet5",
     "ream-post-quantum-crypto/devnet5",
 ]
+reth = [
+    "dep:ream-reth-engine",
+    "dep:ream-execution-rpc-types",
+    "ream-consensus-lean/reth",
+    "ream-fork-choice-lean/reth",
+]
 
 [dependencies]
 alloy-primitives.workspace = true
@@ -52,12 +58,14 @@ tree_hash.workspace = true
 # ream dependencies
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
+ream-execution-rpc-types = { workspace = true, optional = true }
 ream-fork-choice-lean.workspace = true
 ream-metrics.workspace = true
 ream-network-spec.workspace = true
 ream-network-state-lean.workspace = true
 ream-post-quantum-crypto.workspace = true
 ream-req-resp.workspace = true
+ream-reth-engine = { workspace = true, optional = true }
 ream-storage.workspace = true
 ream-sync.workspace = true
 

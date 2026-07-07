@@ -429,7 +429,8 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
     .await
     .expect("Failed to create network service");
 
-    let chain_service = LeanChainService::new(
+    #[cfg_attr(not(feature = "reth"), allow(unused_mut))]
+    let mut chain_service = LeanChainService::new(
         lean_chain_writer,
         chain_receiver,
         outbound_p2p_sender,
@@ -463,6 +464,9 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         (handle, node)
     };
+
+    #[cfg(feature = "reth")]
+    chain_service.set_reth_handle(reth_handle);
 
     #[cfg(feature = "reth")]
     let reth_exit = &mut reth_node.node_exit_future;

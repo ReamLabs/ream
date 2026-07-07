@@ -42,6 +42,12 @@ use ream_req_resp::{
         messages::{LeanRequestMessage, LeanResponseMessage},
     },
 };
+#[cfg(feature = "reth")]
+use ream_reth_engine::{
+    fork_choice::{create_fork_choice_state, create_ream_payload_attributes},
+    handle::RethHandle,
+    payload::to_ream_execution_payload,
+};
 use ream_storage::tables::{field::REDBField, table::REDBTable};
 #[cfg(feature = "devnet5")]
 use ssz_types::VariableList;
@@ -258,6 +264,8 @@ pub struct LeanChainService {
     telemetry: SyncTelemetry,
     #[cfg(feature = "devnet5")]
     pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
+    #[cfg(feature = "reth")]
+    reth_handle: Option<RethHandle>,
 }
 
 impl LeanChainService {
@@ -287,7 +295,14 @@ impl LeanChainService {
             telemetry: SyncTelemetry::from_env(),
             #[cfg(feature = "devnet5")]
             pending_block_aggregates: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(feature = "reth")]
+            reth_handle: None,
         }
+    }
+
+    #[cfg(feature = "reth")]
+    pub fn set_reth_handle(&mut self, reth_handle: RethHandle) {
+        self.reth_handle = Some(reth_handle);
     }
 
     pub async fn start(mut self) -> anyhow::Result<()> {
@@ -2870,13 +2885,34 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
-        let block_with_signatures = match self
-            .store
-            .write()
-            .await
-            .produce_block_with_signatures(slot, slot % lean_network_spec().num_validators)
-            .await
-        {
+        #[cfg(feature = "reth")]
+        let execution_payload = match self.build_el_payload(slot).await {
+            Ok(payload) => payload,
+            Err(err) => {
+                warn!("Failed to build EL payload for slot {slot}: {err}");
+                inc_int_counter_vec(&BLOCK_BUILDING_FAILURES_TOTAL, &[]);
+                if let Err(err) = response.send(ServiceResponse::Err(err)) {
+                    warn!("Failed to send error response for ProduceBlock: {err:?}");
+                }
+                return Ok(());
+            }
+        };
+
+        let produced_block = {
+            let proposer_index = slot % lean_network_spec().num_validators;
+            let mut store = self.store.write().await;
+            #[cfg(feature = "reth")]
+            let out = store
+                .produce_block_with_signatures_with_payload(slot, proposer_index, execution_payload)
+                .await;
+            #[cfg(not(feature = "reth"))]
+            let out = store
+                .produce_block_with_signatures(slot, proposer_index)
+                .await;
+            out
+        };
+
+        let block_with_signatures = match produced_block {
             Ok(block) => block,
             Err(err) => {
                 warn!("Failed to produce block for slot {slot}: {err}");
@@ -2968,6 +3004,60 @@ impl LeanChainService {
         });
 
         self.pending_callbacks.push(future);
+    }
+
+    #[cfg(feature = "reth")]
+    async fn build_el_payload(
+        &self,
+        slot: u64,
+    ) -> anyhow::Result<ream_execution_rpc_types::electra::execution_payload::ExecutionPayload>
+    {
+        let reth_handle = self.reth_handle.clone().ok_or_else(|| {
+            anyhow!("EL handle not wired; cannot build a payload for slot {slot}")
+        })?;
+
+        let parent_lean_root = self.store.write().await.get_proposal_head(slot).await?;
+
+        let head_el_block_hash = {
+            let fork_choice = self.store.read().await;
+            let store = fork_choice.store.lock().await;
+            store
+                .block_provider()
+                .get(parent_lean_root)?
+                .map(|signed_block| signed_block.block.body.execution_payload.block_hash)
+                .unwrap_or_default()
+        };
+
+        let parent_el_block_hash = if head_el_block_hash.is_zero() {
+            reth_handle.genesis_hash()
+        } else {
+            head_el_block_hash
+        };
+
+        let spec = lean_network_spec();
+        let fork_choice_state =
+            create_fork_choice_state(parent_el_block_hash, B256::ZERO, B256::ZERO);
+        let payload_attributes = create_ream_payload_attributes(
+            slot,
+            parent_lean_root,
+            spec.genesis_time,
+            spec.seconds_per_slot,
+        );
+
+        let forkchoice_updated = reth_handle
+            .update_forkchoice(fork_choice_state, Some(payload_attributes))
+            .await
+            .map_err(|err| anyhow!("EL forkchoiceUpdated (build) failed: {err}"))?;
+        let payload_id = forkchoice_updated
+            .payload_id
+            .ok_or_else(|| anyhow!("EL returned no payload_id for the slot {slot} proposal"))?;
+        let execution_data = reth_handle
+            .build_payload(payload_id)
+            .await
+            .map_err(|err| anyhow!("EL getPayload failed: {err}"))?;
+
+        to_ream_execution_payload(&execution_data)
+            .map_err(|err| anyhow!("EL payload conversion failed: {err}"))
     }
 }
 

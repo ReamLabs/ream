@@ -40,6 +40,7 @@ devnet5 = [
 ]
 reth = [
     "dep:ream-reth-engine",
+    "ream-chain-lean/reth",
     "ream-checkpoint-sync-lean/reth",
     "ream-consensus-lean/reth",
     "ream-fork-choice-lean/reth",

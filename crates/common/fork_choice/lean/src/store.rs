@@ -25,6 +25,8 @@ use ream_consensus_misc::constants::lean::{
     GOSSIP_DISPARITY_INTERVALS, INTERVALS_PER_SLOT, MAX_ATTESTATIONS_DATA,
     attestation_committee_count,
 };
+#[cfg(feature = "reth")]
+use ream_execution_rpc_types::electra::execution_payload::ExecutionPayload;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_SUBNET, ATTESTATION_VALIDATION_TIME, ATTESTATIONS_INVALID_TOTAL,
     ATTESTATIONS_VALID_TOTAL, BLOCK_AGGREGATED_PAYLOADS, BLOCK_BUILDING_PAYLOAD_AGGREGATION_TIME,
@@ -832,6 +834,7 @@ impl Store {
         proposer_index: u64,
         parent_root: B256,
         attestations: Option<VariableList<AggregatedAttestations, U4096>>,
+        #[cfg(feature = "reth")] execution_payload: ExecutionPayload,
     ) -> anyhow::Result<(Block, Vec<PayloadProof>, LeanState)> {
         let (
             state_provider,
@@ -1016,9 +1019,8 @@ impl Store {
                 state_root: B256::ZERO,
                 body: BlockBody {
                     attestations: attestations_list,
-                    // TODO: EL built execution payload
                     #[cfg(feature = "reth")]
-                    execution_payload: Default::default(),
+                    execution_payload: execution_payload.clone(),
                 },
             };
 
@@ -1070,9 +1072,8 @@ impl Store {
             state_root: B256::ZERO,
             body: BlockBody {
                 attestations: attestations_list,
-                // TODO: EL built execution payload
                 #[cfg(feature = "reth")]
-                execution_payload: Default::default(),
+                execution_payload,
             },
         };
 
@@ -1104,6 +1105,32 @@ impl Store {
         &mut self,
         slot: u64,
         validator_index: u64,
+    ) -> anyhow::Result<BlockWithSignatures> {
+        self.produce_block_with_signatures_inner(
+            slot,
+            validator_index,
+            #[cfg(feature = "reth")]
+            ExecutionPayload::default(),
+        )
+        .await
+    }
+
+    #[cfg(feature = "reth")]
+    pub async fn produce_block_with_signatures_with_payload(
+        &mut self,
+        slot: u64,
+        validator_index: u64,
+        execution_payload: ExecutionPayload,
+    ) -> anyhow::Result<BlockWithSignatures> {
+        self.produce_block_with_signatures_inner(slot, validator_index, execution_payload)
+            .await
+    }
+
+    async fn produce_block_with_signatures_inner(
+        &mut self,
+        slot: u64,
+        validator_index: u64,
+        #[cfg(feature = "reth")] execution_payload: ExecutionPayload,
     ) -> anyhow::Result<BlockWithSignatures> {
         let (state_provider, latest_known_aggregated_payloads_provider) = {
             let db = self.store.lock().await;
@@ -1155,7 +1182,14 @@ impl Store {
             .map_err(|err| anyhow!("Failed to create VariableList: {err:?}"))?;
 
         let (mut candidate_block, proofs, post_state) = self
-            .build_block(slot, validator_index, head_root, Some(attestation_list))
+            .build_block(
+                slot,
+                validator_index,
+                head_root,
+                Some(attestation_list),
+                #[cfg(feature = "reth")]
+                execution_payload,
+            )
             .await?;
 
         stop_timer(add_attestations_timer);

@@ -27,7 +27,7 @@ devnet5 = [
     "ream-storage/devnet5",
     "ream-test-utils/devnet5",
 ]
-reth = ["ream-consensus-lean/reth"]
+reth = ["ream-consensus-lean/reth", "dep:ream-execution-rpc-types"]
 
 [dependencies]
 alloy-consensus.workspace = true
@@ -56,6 +56,7 @@ ream-bls.workspace = true
 ream-consensus-beacon.workspace = true
 ream-consensus-lean.workspace = true
 ream-consensus-misc.workspace = true
+ream-execution-rpc-types = { workspace = true, optional = true }
 ream-metrics.workspace = true
 ream-network-spec.workspace = true
 ream-network-state-lean.workspace = true
