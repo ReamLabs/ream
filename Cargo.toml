@@ -133,6 +133,7 @@ parking_lot = "0.12.5"
 prometheus_exporter = { git = "https://github.com/AlexanderThaller/prometheus_exporter", rev = "c49efe614486f998b20eb410ae0caf3e904cf540" }
 rand = "0.9"
 rand_chacha = "0.9"
+rayon = "1.11"
 redb = "3.1.0"
 reqwest = { version = "0.12.24", default-features = false, features = [
     "rustls-tls",
