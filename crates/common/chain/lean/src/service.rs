@@ -1,3 +1,5 @@
+#[cfg(feature = "devnet5")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     pin::Pin,
@@ -24,6 +26,8 @@ use ream_consensus_lean::{
 };
 use ream_consensus_misc::constants::lean::{INTERVALS_PER_SLOT, attestation_committee_count};
 use ream_fork_choice_lean::store::LeanStoreWriter;
+#[cfg(feature = "devnet5")]
+use ream_fork_choice_lean::store::prove_aggregation_jobs;
 use ream_metrics::{
     ATTESTATION_COMMITTEE_COUNT as ATTESTATION_COMMITTEE_COUNT_METRIC,
     BLOCK_BUILDING_FAILURES_TOTAL, CURRENT_SLOT, IS_AGGREGATOR, LEAN_AGGREGATOR_SKIPPED_TOTAL,
@@ -258,6 +262,8 @@ pub struct LeanChainService {
     telemetry: SyncTelemetry,
     #[cfg(feature = "devnet5")]
     pending_block_aggregates: Arc<Mutex<Vec<SignedAggregatedAttestation>>>,
+    #[cfg(feature = "devnet5")]
+    aggregation_in_flight: Arc<AtomicBool>,
 }
 
 impl LeanChainService {
@@ -287,6 +293,8 @@ impl LeanChainService {
             telemetry: SyncTelemetry::from_env(),
             #[cfg(feature = "devnet5")]
             pending_block_aggregates: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(feature = "devnet5")]
+            aggregation_in_flight: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -344,6 +352,59 @@ impl LeanChainService {
                     if self.sync_status == SyncStatus::Synced {
                         self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), self.is_aggregator()).await?;
                         self.step_head_sync(tick_count).await?;
+
+                        #[cfg(feature = "devnet5")]
+                        if self.is_aggregator()
+                            && tick_count % INTERVALS_PER_SLOT == 2
+                            && !self.aggregation_in_flight.swap(true, Ordering::AcqRel)
+                        {
+                            let store = self.store.clone();
+                            let in_flight = self.aggregation_in_flight.clone();
+                            let outbound = self.outbound_p2p.clone();
+                            let agg_start = Instant::now();
+                            const AGG_DEADLINE: Duration = Duration::from_millis(750);
+                            let deadline = agg_start + AGG_DEADLINE;
+                            tokio::spawn(async move {
+                                let result = async {
+                                    let jobs = store.write().await.aggregate_prepare().await?;
+                                    let total = jobs.len();
+                                    let mut produced = 0usize;
+                                    for job in jobs {
+                                        if produced > 0 && Instant::now() >= deadline {
+                                            break;
+                                        }
+                                        let signed = tokio::task::spawn_blocking(move || {
+                                            prove_aggregation_jobs(vec![job])
+                                        })
+                                        .await
+                                        .map_err(|err| anyhow!("aggregation join error: {err:?}"))??;
+                                        store.write().await.aggregate_apply(&signed).await?;
+                                        for aggregate in signed {
+                                            produced += 1;
+                                            if let Err(err) = outbound.send(
+                                                LeanP2PRequest::GossipAggregatedAttestation(Box::new(
+                                                    aggregate,
+                                                )),
+                                            ) {
+                                                warn!("Failed to gossip aggregated attestation: {err:?}");
+                                            }
+                                        }
+                                    }
+                                    let elapsed_ms = agg_start.elapsed().as_millis() as u64;
+                                    if produced < total {
+                                        warn!(elapsed_ms, produced, total, "AGG_TIMING partial batch (deadline)");
+                                    } else {
+                                        info!(elapsed_ms, produced, "AGG_TIMING aggregation complete");
+                                    }
+                                    anyhow::Ok(())
+                                }
+                                .await;
+                                if let Err(err) = result {
+                                    warn!("Off-loop committee aggregation failed: {err:?}");
+                                }
+                                in_flight.store(false, Ordering::Release);
+                            });
+                        }
                     }
 
                     tick_count += 1;
@@ -2846,20 +2907,31 @@ impl LeanChainService {
 
         if head_slot > STATE_RETENTION_SLOTS {
             let prune_target_slot = head_slot - STATE_RETENTION_SLOTS;
-            let block_root = slot_index_provider
-                .get(prune_target_slot)?
-                .ok_or_else(|| anyhow!("Block root not found for slot: {prune_target_slot}"))?;
+            let mut scan = prune_target_slot;
+            let mut prune_root = None;
+            loop {
+                if let Some(root) = slot_index_provider.get(scan)? {
+                    prune_root = Some((scan, root));
+                    break;
+                }
+                if scan == 0 {
+                    break;
+                }
+                scan -= 1;
+            }
 
-            info!(
-                slot = get_current_slot(),
-                tick = tick_count,
-                prune_slot = prune_target_slot,
-                prune_block_root = ?block_root,
-                "Pruning old lean state"
-            );
+            if let Some((prune_slot, block_root)) = prune_root {
+                info!(
+                    slot = get_current_slot(),
+                    tick = tick_count,
+                    prune_slot,
+                    prune_block_root = ?block_root,
+                    "Pruning old lean state"
+                );
 
-            if let Err(err) = state_provider.remove(block_root) {
-                warn!("Failed to prune old lean state: {err:?}");
+                if let Err(err) = state_provider.remove(block_root) {
+                    warn!("Failed to prune old lean state: {err:?}");
+                }
             }
         }
         Ok(())
@@ -2924,20 +2996,38 @@ impl LeanChainService {
     }
     async fn handle_process_block(&mut self, signed_block: &SignedBlock) -> anyhow::Result<()> {
         let parent_root = signed_block.block.parent_root;
-        let has_parent_state = {
+        let parent_state = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
-            store.state_provider().get(parent_root)?.is_some()
+            store.state_provider().get(parent_root)?
         };
-        if !has_parent_state {
+        let Some(_parent_state) = parent_state else {
             warn!(
                 root = ?signed_block.block.tree_hash_root(),
                 parent_root = ?parent_root,
                 "Missing parent state while processing synced block; routing block to backfill path"
             );
             return self.handle_syncing_process_block(signed_block).await;
-        }
+        };
 
+        #[cfg(feature = "devnet5")]
+        {
+            let block_for_verify = signed_block.clone();
+            let verified = tokio::task::spawn_blocking(move || {
+                block_for_verify.verify_signatures(&_parent_state, true)
+            })
+            .await
+            .map_err(|err| anyhow!("block verify join error: {err:?}"))??;
+            if !verified {
+                return Err(anyhow!("Block signature verification failed"));
+            }
+            self.store
+                .write()
+                .await
+                .on_block(signed_block, false)
+                .await?;
+        }
+        #[cfg(feature = "devnet4")]
         self.store
             .write()
             .await

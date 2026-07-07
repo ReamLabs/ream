@@ -130,6 +130,54 @@ struct BuildContext {
     latest_known_aggregated_payloads_provider: LeanLatestKnownAggregatedPayloadsTable,
 }
 
+#[cfg(feature = "devnet5")]
+pub struct AggregationJob {
+    data: AttestationData,
+    data_root: B256,
+    child_wires: Vec<(Vec<u8>, Vec<PublicKey>)>,
+    raw_xmss: Vec<(PublicKey, Signature)>,
+    bits: BitList<U4096>,
+    raw_count: u64,
+}
+
+#[cfg(feature = "devnet5")]
+pub fn prove_aggregation_jobs(
+    jobs: Vec<AggregationJob>,
+) -> anyhow::Result<Vec<SignedAggregatedAttestation>> {
+    let mut results = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        let building_timer = start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_BUILDING_TIME, &[]);
+        let children = job
+            .child_wires
+            .iter()
+            .map(|(wire, public_keys)| type_1_from_wire(wire, public_keys))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let type_one = type_1_aggregate(
+            &children,
+            &job.raw_xmss,
+            &job.data_root.0,
+            job.data.slot as u32,
+        )?;
+        let proof = PayloadProof {
+            participants: job.bits.clone(),
+            proof: VariableList::new(type_1_to_wire(&type_one))
+                .map_err(|err| anyhow!("Failed to create proof_data: {err:?}"))?,
+        };
+        stop_timer(building_timer);
+        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_TOTAL, &[]);
+        inc_int_counter_vec_by(
+            &PQ_SIG_ATTESTATIONS_IN_AGGREGATED_SIGNATURES_TOTAL,
+            job.raw_count,
+            &[],
+        );
+        results.push(SignedAggregatedAttestation {
+            data: job.data.clone(),
+            proof,
+        });
+    }
+    Ok(results)
+}
+
 /// [Store] represents the state that the Lean node should maintain.
 #[derive(Debug, Clone)]
 pub struct Store {
@@ -370,11 +418,16 @@ impl Store {
     }
 
     pub async fn accept_new_attestations(&mut self) -> anyhow::Result<()> {
-        let (latest_new_aggregated_payloads_provider, latest_known_aggregated_payloads_provider) = {
+        let (
+            latest_new_aggregated_payloads_provider,
+            latest_known_aggregated_payloads_provider,
+            attestation_data_by_root_provider,
+        ) = {
             let db = self.store.lock().await;
             (
                 db.latest_new_aggregated_payloads_provider(),
                 db.latest_known_aggregated_payloads_provider(),
+                db.attestation_data_by_root_provider(),
             )
         };
 
@@ -389,6 +442,29 @@ impl Store {
             existing_proofs.append(&mut new_proofs);
 
             latest_known_aggregated_payloads_provider.insert(signature_key, existing_proofs)?;
+        }
+
+        let known = latest_known_aggregated_payloads_provider.iter()?;
+        let mut validator_max_slot: HashMap<u64, u64> = HashMap::new();
+        let mut key_slots: Vec<(SignatureKey, u64)> = Vec::with_capacity(known.len());
+        for (key, _) in &known {
+            let slot = attestation_data_by_root_provider
+                .get(key.data_root)?
+                .map(|data| data.slot)
+                .unwrap_or(0);
+            key_slots.push((key.clone(), slot));
+            validator_max_slot
+                .entry(key.validator_id)
+                .and_modify(|max| *max = (*max).max(slot))
+                .or_insert(slot);
+        }
+        let superseded: HashSet<SignatureKey> = key_slots
+            .into_iter()
+            .filter(|(key, slot)| *slot < validator_max_slot[&key.validator_id])
+            .map(|(key, _)| key)
+            .collect();
+        if !superseded.is_empty() {
+            latest_known_aggregated_payloads_provider.retain(|key, _| !superseded.contains(key))?;
         }
 
         set_int_gauge_vec(
@@ -419,10 +495,12 @@ impl Store {
                 self.accept_new_attestations().await?;
             }
         } else if current_interval == 2 {
-            // Interval 2: Only aggregate signatures if aggregator
+            #[cfg(feature = "devnet4")]
             if is_aggregator {
                 self.aggregate().await?;
             }
+            #[cfg(feature = "devnet5")]
+            let _ = is_aggregator;
         } else if current_interval == 3 {
             // Interval 3: Update safe target
             self.update_safe_target().await?;
@@ -2066,6 +2144,211 @@ impl Store {
             .retain(|key| !aggregated_data_roots.contains(&key.data_root))?;
 
         Ok(signed_attestations)
+    }
+
+    #[cfg(feature = "devnet5")]
+    pub async fn aggregate_prepare(&self) -> anyhow::Result<Vec<AggregationJob>> {
+        let (
+            state_provider,
+            attestation_signatures_provider,
+            head_root,
+            latest_new_aggregated_payloads_provider,
+            latest_known_aggregated_payloads_provider,
+            attestation_data_by_root_provider,
+        ) = {
+            let db = self.store.lock().await;
+            (
+                db.state_provider(),
+                db.attestation_signatures_provider(),
+                db.head_provider().get()?,
+                db.latest_new_aggregated_payloads_provider(),
+                db.latest_known_aggregated_payloads_provider(),
+                db.attestation_data_by_root_provider(),
+            )
+        };
+
+        let head_state = state_provider
+            .get(head_root)?
+            .ok_or_else(|| anyhow!("Head state not found"))?;
+
+        let signature_keys = attestation_signatures_provider.get_keys()?;
+        set_int_gauge_vec(&GOSSIP_SIGNATURES, signature_keys.len() as i64, &[]);
+
+        let mut groups: HashMap<AttestationData, Vec<u64>> = HashMap::new();
+        for signature_key in &signature_keys {
+            if let Some(attestation_data) =
+                attestation_data_by_root_provider.get(signature_key.data_root)?
+            {
+                groups
+                    .entry(attestation_data)
+                    .or_default()
+                    .push(signature_key.validator_id);
+            }
+        }
+
+        let mut new_payloads: HashMap<AttestationData, HashSet<PayloadProof>> = HashMap::new();
+        for (signature_key, proofs) in latest_new_aggregated_payloads_provider.iter()? {
+            if let Some(attestation_data) =
+                attestation_data_by_root_provider.get(signature_key.data_root)?
+            {
+                new_payloads
+                    .entry(attestation_data)
+                    .or_default()
+                    .extend(proofs);
+            }
+        }
+
+        let mut known_payloads: HashMap<AttestationData, HashSet<PayloadProof>> = HashMap::new();
+        for (signature_key, proofs) in latest_known_aggregated_payloads_provider.iter()? {
+            if let Some(attestation_data) =
+                attestation_data_by_root_provider.get(signature_key.data_root)?
+            {
+                known_payloads
+                    .entry(attestation_data)
+                    .or_default()
+                    .extend(proofs);
+            }
+        }
+
+        let mut keys: HashSet<AttestationData> = groups.keys().cloned().collect();
+        keys.extend(new_payloads.keys().cloned());
+
+        const AGG_RECENT_SLOTS: u64 = 16;
+        let head_slot = head_state.slot;
+        keys.retain(|data| data.slot + AGG_RECENT_SLOTS >= head_slot);
+
+        let mut jobs = Vec::new();
+        for data in keys {
+            let data_root = data.tree_hash_root();
+            let mut child_proofs = Vec::new();
+            let mut covered_validators = HashSet::new();
+
+            head_state.extend_proofs_greedily(
+                new_payloads.get(&data),
+                &mut child_proofs,
+                &mut covered_validators,
+            );
+            head_state.extend_proofs_greedily(
+                known_payloads.get(&data),
+                &mut child_proofs,
+                &mut covered_validators,
+            );
+
+            let mut raw_entries = Vec::new();
+            if let Some(validator_ids) = groups.get(&data) {
+                let mut sorted_ids = validator_ids.clone();
+                sorted_ids.sort();
+                for &validator_id in &sorted_ids {
+                    if covered_validators.contains(&validator_id) {
+                        continue;
+                    }
+                    if let Ok(Some(signature)) = attestation_signatures_provider
+                        .get(SignatureKey::from_parts(validator_id, data_root))
+                        && let Some(validator) = head_state.validators.get(validator_id as usize)
+                    {
+                        raw_entries.push((
+                            validator_id,
+                            validator.attestation_public_key,
+                            signature,
+                        ));
+                        covered_validators.insert(validator_id);
+                    }
+                }
+            }
+
+            if raw_entries.is_empty() && child_proofs.len() < 2 {
+                continue;
+            }
+            raw_entries.sort_by_key(|entry| entry.0);
+
+            let mut bits = BitList::<U4096>::with_capacity(head_state.validators.len())
+                .map_err(|err| anyhow!("BitList error: {err:?}"))?;
+            for id in &covered_validators {
+                bits.set(*id as usize, true)
+                    .map_err(|err| anyhow!("Failed to set bits: {err:?}"))?;
+            }
+
+            let mut child_wires = Vec::with_capacity(child_proofs.len());
+            for child in &child_proofs {
+                let public_keys = child
+                    .to_validator_indices()
+                    .into_iter()
+                    .map(|validator_id| {
+                        head_state
+                            .validators
+                            .get(validator_id as usize)
+                            .map(|validator| validator.attestation_public_key)
+                            .ok_or_else(|| {
+                                anyhow!(
+                                    "Validator index {validator_id} out of range during aggregation"
+                                )
+                            })
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                child_wires.push((child.proof.to_vec(), public_keys));
+            }
+
+            let raw_xmss = raw_entries
+                .iter()
+                .map(|(_, public_key, signature)| (*public_key, *signature))
+                .collect();
+            let raw_count = raw_entries.len() as u64;
+
+            jobs.push(AggregationJob {
+                data,
+                data_root,
+                child_wires,
+                raw_xmss,
+                bits,
+                raw_count,
+            });
+        }
+        jobs.sort_by(|a, b| b.data.slot.cmp(&a.data.slot));
+        Ok(jobs)
+    }
+
+    #[cfg(feature = "devnet5")]
+    pub async fn aggregate_apply(
+        &self,
+        signed_attestations: &[SignedAggregatedAttestation],
+    ) -> anyhow::Result<()> {
+        let (latest_new_aggregated_payloads_provider, attestation_signatures_provider) = {
+            let db = self.store.lock().await;
+            (
+                db.latest_new_aggregated_payloads_provider(),
+                db.attestation_signatures_provider(),
+            )
+        };
+
+        let mut aggregated_data_roots = HashSet::new();
+        let mut next_new_payloads: HashMap<SignatureKey, Vec<PayloadProof>> = HashMap::new();
+        for signed_attestation in signed_attestations {
+            let data_root = signed_attestation.data.tree_hash_root();
+            aggregated_data_roots.insert(data_root);
+            for validator_id in signed_attestation.proof.to_validator_indices() {
+                next_new_payloads
+                    .entry(SignatureKey::from_parts(validator_id, data_root))
+                    .or_default()
+                    .push(signed_attestation.proof.clone());
+            }
+        }
+
+        for (key, proofs) in next_new_payloads {
+            let mut existing = latest_new_aggregated_payloads_provider
+                .get(key.clone())?
+                .unwrap_or_default();
+            for proof in proofs {
+                if !existing.contains(&proof) {
+                    existing.push(proof);
+                }
+            }
+            latest_new_aggregated_payloads_provider.insert(key, existing)?;
+        }
+
+        attestation_signatures_provider
+            .retain(|key| !aggregated_data_roots.contains(&key.data_root))?;
+
+        Ok(())
     }
 
     pub async fn compute_block_weights(&self) -> anyhow::Result<HashMap<B256, u64>> {
