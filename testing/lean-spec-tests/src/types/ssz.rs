@@ -265,6 +265,9 @@ impl TryFrom<&BlockBodyJSON> for BlockBody {
                     .collect::<Result<Vec<_>, _>>()?,
             )
             .map_err(|err| anyhow!("Failed to convert attestations: {err}"))?,
+            // EL payload is not in LeanSpec
+            #[cfg(feature = "reth")]
+            execution_payload: Default::default(),
         })
     }
 }

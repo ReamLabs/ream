@@ -63,6 +63,8 @@ impl LeanState {
                 state_root: B256::ZERO,
                 body_root: BlockBody {
                     attestations: Default::default(),
+                    #[cfg(feature = "reth")]
+                    execution_payload: Default::default(),
                 }
                 .tree_hash_root(),
             },
@@ -622,6 +624,8 @@ mod test {
             state_root: B256::ZERO,
             body: BlockBody {
                 attestations: VariableList::empty(),
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         })?;
 
@@ -657,6 +661,8 @@ mod test {
                     },
                 }])
                 .map_err(|err| anyhow!("Failed to get aggregated attestation {err:?}"))?,
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         })?;
 
@@ -692,6 +698,8 @@ mod test {
                     },
                 }])
                 .map_err(|err| anyhow!("Failed to get aggregated attestation {err:?}"))?,
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         })?;
 
@@ -717,6 +725,8 @@ mod test {
             state_root: B256::ZERO,
             body: BlockBody {
                 attestations: VariableList::empty(),
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         })?;
         assert_eq!(state.justified_slots.len(), 0);
@@ -729,6 +739,8 @@ mod test {
             state_root: B256::ZERO,
             body: BlockBody {
                 attestations: VariableList::empty(),
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         })?;
         assert_eq!(state.justified_slots.len(), 1);
@@ -749,6 +761,8 @@ mod test {
             state_root: B256::ZERO,
             body: BlockBody {
                 attestations: VariableList::empty(),
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         })?;
 
@@ -785,6 +799,8 @@ mod test {
             state_root: B256::ZERO,
             body: BlockBody {
                 attestations: VariableList::new(vec![attestation_0_to_1]).unwrap(),
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         })?;
 
@@ -801,6 +817,8 @@ mod test {
                 state_root: B256::ZERO,
                 body: BlockBody {
                     attestations: VariableList::empty(),
+                    #[cfg(feature = "reth")]
+                    execution_payload: Default::default(),
                 },
             })?;
         }
@@ -873,6 +891,8 @@ mod test {
                 state_root: B256::ZERO,
                 body: BlockBody {
                     attestations: VariableList::empty(),
+                    #[cfg(feature = "reth")]
+                    execution_payload: Default::default(),
                 },
             })?;
         }
@@ -921,7 +941,11 @@ mod test {
             proposer_index: 10 % 4,
             parent_root: block_9_root,
             state_root: B256::ZERO,
-            body: BlockBody { attestations },
+            body: BlockBody {
+                attestations,
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
+            },
         })?;
 
         // latest_justified must be slot 9 — the highest justified target,
@@ -1000,7 +1024,9 @@ mod test {
         assert_eq!(
             state.latest_block_header.body_root,
             BlockBody {
-                attestations: Default::default()
+                attestations: Default::default(),
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             }
             .tree_hash_root()
         );
@@ -1053,6 +1079,8 @@ mod test {
             state_root: B256::ZERO,
             body: BlockBody {
                 attestations: VariableList::empty(),
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         };
 

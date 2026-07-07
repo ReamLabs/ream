@@ -8846,6 +8846,7 @@ dependencies = [
  "ethereum_ssz_derive",
  "itertools 0.14.0",
  "ream-consensus-misc",
+ "ream-execution-rpc-types",
  "ream-metrics",
  "ream-post-quantum-crypto",
  "serde",

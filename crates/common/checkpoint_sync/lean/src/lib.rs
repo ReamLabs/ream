@@ -504,6 +504,8 @@ mod tests {
             state_root: state.tree_hash_root(),
             body: BlockBody {
                 attestations: Default::default(),
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         };
         SignedBlock {

@@ -38,7 +38,13 @@ devnet5 = [
     "ream-storage/devnet5",
     "ream-validator-lean/devnet5",
 ]
-reth = ["dep:ream-reth-engine"]
+reth = [
+    "dep:ream-reth-engine",
+    "ream-checkpoint-sync-lean/reth",
+    "ream-consensus-lean/reth",
+    "ream-fork-choice-lean/reth",
+    "ream-rpc-lean/reth",
+]
 
 [dependencies]
 alloy-primitives.workspace = true

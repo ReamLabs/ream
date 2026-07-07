@@ -27,6 +27,7 @@ devnet5 = [
     "ream-storage/devnet5",
     "ream-test-utils/devnet5",
 ]
+reth = ["ream-consensus-lean/reth"]
 
 [dependencies]
 alloy-consensus.workspace = true

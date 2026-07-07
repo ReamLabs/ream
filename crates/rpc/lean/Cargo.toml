@@ -27,6 +27,7 @@ devnet5 = [
     "ream-storage/devnet5",
     "ream-test-utils/devnet5",
 ]
+reth = ["lean-spec-tests/reth", "ream-consensus-lean/reth", "ream-fork-choice-lean/reth"]
 
 [dependencies]
 actix-web.workspace = true

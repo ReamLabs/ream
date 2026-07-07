@@ -1016,6 +1016,9 @@ impl Store {
                 state_root: B256::ZERO,
                 body: BlockBody {
                     attestations: attestations_list,
+                    // TODO: EL built execution payload
+                    #[cfg(feature = "reth")]
+                    execution_payload: Default::default(),
                 },
             };
 
@@ -1067,6 +1070,9 @@ impl Store {
             state_root: B256::ZERO,
             body: BlockBody {
                 attestations: attestations_list,
+                // TODO: EL built execution payload
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         };
 

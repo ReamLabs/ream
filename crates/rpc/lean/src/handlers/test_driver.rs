@@ -335,6 +335,9 @@ async fn build_genesis_store(params: Option<&GenesisParams>) -> Result<Store, Ap
             state_root: B256::ZERO,
             body: BlockBody {
                 attestations: VariableList::empty(),
+                // EL payload is not in LeanSpec
+                #[cfg(feature = "reth")]
+                execution_payload: Default::default(),
             },
         };
         post_state

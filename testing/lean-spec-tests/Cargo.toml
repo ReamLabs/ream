@@ -25,6 +25,7 @@ devnet5 = [
     "ream-fork-choice-lean/devnet5",
     "ream-storage/devnet5",
 ]
+reth = ["ream-consensus-lean/reth", "ream-fork-choice-lean/reth"]
 
 [dependencies]
 alloy-primitives.workspace = true

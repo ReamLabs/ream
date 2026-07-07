@@ -277,6 +277,8 @@ impl From<Block> for BlockHeader {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, TreeHash)]
 pub struct BlockBody {
     pub attestations: VariableList<AggregatedAttestation, U4096>,
+    #[cfg(feature = "reth")]
+    pub execution_payload: ream_execution_rpc_types::electra::execution_payload::ExecutionPayload,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode)]
