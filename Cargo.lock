@@ -6436,6 +6436,7 @@ dependencies = [
  "ream-post-quantum-crypto",
  "ream-storage",
  "ream-sync",
+ "ream-test-utils",
  "serde",
  "serde_json",
  "serde_yaml",

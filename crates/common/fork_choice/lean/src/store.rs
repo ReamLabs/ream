@@ -2770,3 +2770,165 @@ fn compact_aggregated_proofs(
 
     Ok((out_attestations, out_proofs))
 }
+
+#[cfg(test)]
+#[cfg(feature = "devnet5")]
+mod tests {
+    use alloy_primitives::B256;
+    use ream_consensus_lean::{
+        attestation::{AttestationData, MultiMessageAggregate, SignedAttestation},
+        block::{Block, BlockBody, SignedBlock},
+        checkpoint::Checkpoint,
+    };
+    use ream_post_quantum_crypto::leansig::signature::Signature;
+    use ream_storage::tables::{field::REDBField, table::REDBTable};
+    use ream_test_utils::store::sample_store;
+    use ssz_types::VariableList;
+    use tree_hash::TreeHash;
+
+    use super::{BlockProductionStrategy, Store};
+
+    async fn sample_store_as_store(no_of_validators: usize) -> Store {
+        let test_store = sample_store(no_of_validators).await;
+        Store {
+            store: test_store.store,
+            network_state: test_store.network_state,
+            tick_interval_duration: None,
+            block_production_strategy: BlockProductionStrategy::default(),
+        }
+    }
+
+    fn fake_signed_block(slot: u64, proposer_index: u64, parent_root: B256) -> SignedBlock {
+        SignedBlock {
+            block: Block {
+                slot,
+                proposer_index,
+                parent_root,
+                state_root: B256::ZERO,
+                body: BlockBody {
+                    attestations: VariableList::empty(),
+                },
+            },
+            proof: MultiMessageAggregate {
+                proof: VariableList::default(),
+            },
+        }
+    }
+
+    async fn store_with_finalized_orphaned_branch() -> (Store, B256, B256, B256, B256) {
+        let store = sample_store_as_store(10).await;
+
+        let genesis_root = { store.store.lock().await.head_provider().get().unwrap() };
+
+        let canonical_1 = fake_signed_block(1, 0, genesis_root);
+        let canonical_1_root = canonical_1.block.tree_hash_root();
+        let canonical_2 = fake_signed_block(2, 0, canonical_1_root);
+        let canonical_2_root = canonical_2.block.tree_hash_root();
+
+        let orphan_1 = fake_signed_block(1, 1, genesis_root);
+        let orphan_1_root = orphan_1.block.tree_hash_root();
+        let orphan_2 = fake_signed_block(2, 1, orphan_1_root);
+        let orphan_2_root = orphan_2.block.tree_hash_root();
+
+        {
+            let db = store.store.lock().await;
+            let block_provider = db.block_provider();
+            block_provider
+                .insert(canonical_1_root, canonical_1)
+                .unwrap();
+            block_provider
+                .insert(canonical_2_root, canonical_2)
+                .unwrap();
+            block_provider.insert(orphan_1_root, orphan_1).unwrap();
+            block_provider.insert(orphan_2_root, orphan_2).unwrap();
+
+            db.latest_finalized_provider()
+                .insert(Checkpoint {
+                    root: canonical_2_root,
+                    slot: 2,
+                })
+                .unwrap();
+            db.time_provider().insert(1_000).unwrap();
+        }
+
+        (
+            store,
+            canonical_1_root,
+            canonical_2_root,
+            orphan_1_root,
+            orphan_2_root,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_validate_attestation_rejects_head_on_finalized_orphaned_branch() {
+        let (store, _, _, orphan_1_root, orphan_2_root) =
+            store_with_finalized_orphaned_branch().await;
+
+        let genesis_root = { store.store.lock().await.head_provider().get().unwrap() };
+
+        let attestation_data = AttestationData {
+            slot: 2,
+            head: Checkpoint {
+                root: orphan_2_root,
+                slot: 2,
+            },
+            target: Checkpoint {
+                root: orphan_1_root,
+                slot: 1,
+            },
+            source: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
+        };
+
+        let err = store
+            .validate_attestation(&SignedAttestation {
+                validator_id: 0,
+                message: attestation_data,
+                signature: Signature::blank(),
+            })
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("Head checkpoint must descend from the finalized block"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_attestation_accepts_head_descending_from_finalized() {
+        let (store, canonical_1_root, canonical_2_root, _, _) =
+            store_with_finalized_orphaned_branch().await;
+
+        let genesis_root = { store.store.lock().await.head_provider().get().unwrap() };
+
+        let attestation_data = AttestationData {
+            slot: 2,
+            head: Checkpoint {
+                root: canonical_2_root,
+                slot: 2,
+            },
+            target: Checkpoint {
+                root: canonical_1_root,
+                slot: 1,
+            },
+            source: Checkpoint {
+                root: genesis_root,
+                slot: 0,
+            },
+        };
+
+        store
+            .validate_attestation(&SignedAttestation {
+                validator_id: 0,
+                message: attestation_data,
+                signature: Signature::blank(),
+            })
+            .await
+            .unwrap();
+    }
+}
