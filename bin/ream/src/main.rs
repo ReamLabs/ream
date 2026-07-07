@@ -445,11 +445,11 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
         config.http_allow_origin,
     );
 
-    // Start the reth EL embedded in the same process. `reth_handle` owns the node, so it must
-    // live at function scope for the whole run; the block returns the owned handle.
+    // Start the reth EL embedded in the same process. `start` returns the cloneable
+    // `RethHandle` (given to the lean chain service) and also the owned node.
     #[cfg(feature = "reth")]
-    let mut reth_handle = {
-        let handle = RethHandle::start(
+    let (reth_handle, mut reth_node) = {
+        let (handle, node) = RethHandle::start(
             Some(executor.runtime().handle().clone()),
             config.reth_datadir.clone(),
         )
@@ -458,14 +458,14 @@ pub async fn run_lean_node(config: LeanNodeConfig, executor: ReamExecutor, ream_
 
         info!(
             "Embedded reth is started with genesis hash: {:?}",
-            handle.reth.node.chain_spec().genesis_hash()
+            node.node.chain_spec().genesis_hash()
         );
 
-        handle
+        (handle, node)
     };
 
     #[cfg(feature = "reth")]
-    let reth_exit = &mut reth_handle.reth.node_exit_future;
+    let reth_exit = &mut reth_node.node_exit_future;
 
     #[cfg(not(feature = "reth"))]
     let reth_exit = std::future::pending::<()>();
