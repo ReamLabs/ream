@@ -53,6 +53,7 @@ use ream_consensus_misc::{
     deposit_request::DepositRequest,
     eth_1_data::Eth1Data,
     fork::Fork,
+    fork_name::ForkName,
     indexed_attestation::IndexedAttestation,
     misc::{
         bytes_to_int64, compute_activation_exit_epoch, compute_committee, compute_domain,
@@ -3095,4 +3096,34 @@ pub fn is_valid_deposit_signature(
     signature
         .verify(public_key, signing_root.as_ref())
         .map_err(|err| anyhow!("Invalid deposit signature: {err:?}"))
+}
+
+pub fn fork_name_at_epoch(epoch: u64) -> ForkName {
+    if epoch >= beacon_network_spec().fulu_fork_epoch {
+        ForkName::Fulu
+    } else if epoch >= beacon_network_spec().electra_fork_epoch {
+        ForkName::Electra
+    } else if epoch >= beacon_network_spec().deneb_fork_epoch {
+        ForkName::Deneb
+    } else if epoch >= beacon_network_spec().capella_fork_epoch {
+        ForkName::Capella
+    } else if epoch >= beacon_network_spec().bellatrix_fork_epoch {
+        ForkName::Bellatrix
+    } else if epoch >= beacon_network_spec().altair_fork_epoch {
+        ForkName::Altair
+    } else {
+        ForkName::Base
+    }
+}
+
+pub fn fork_name_from_version(version: [u8; 4]) -> ForkName {
+    match version {
+        _ if version == beacon_network_spec().electra_fork_version => ForkName::Electra,
+        _ if version == beacon_network_spec().fulu_fork_version => ForkName::Fulu,
+        _ if version == beacon_network_spec().deneb_fork_version => ForkName::Deneb,
+        _ if version == beacon_network_spec().capella_fork_version => ForkName::Capella,
+        _ if version == beacon_network_spec().bellatrix_fork_version => ForkName::Bellatrix,
+        _ if version == beacon_network_spec().altair_fork_version => ForkName::Altair,
+        _ => ForkName::Base,
+    }
 }

@@ -22,7 +22,9 @@ use ream_consensus_beacon::{
     beacon_committee_selection::BeaconCommitteeSelection,
     bls_to_execution_change::SignedBLSToExecutionChange,
     electra::{
-        beacon_block::BeaconBlock, beacon_block_body::BeaconBlockBody, beacon_state::BeaconState,
+        beacon_block::BeaconBlock,
+        beacon_block_body::BeaconBlockBody,
+        beacon_state::{BeaconState, fork_name_at_epoch},
         blinded_beacon_block::BlindedBeaconBlock,
         blinded_beacon_block_body::BlindedBeaconBlockBody,
     },
@@ -39,6 +41,7 @@ use ream_consensus_misc::{
         SYNC_COMMITTEE_PROPOSER_REWARD_QUOTIENT, WHISTLEBLOWER_REWARD_QUOTIENT,
     },
     deposit::Deposit,
+    fork_name::ForkName,
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     validator::Validator,
@@ -49,9 +52,8 @@ use ream_events_beacon::{
 };
 use ream_execution_engine::{ExecutionEngine, engine_trait::ExecutionApi};
 use ream_execution_rpc_types::{
-    electra::execution_payload::ExecutionPayload,
     forkchoice_update::{ForkchoiceStateV1, PayloadAttributesV3},
-    get_payload::PayloadV4,
+    get_payload::Payload,
 };
 use ream_fork_choice_beacon::store::Store;
 use ream_network_manager::gossipsub::validate::sync_committee_contribution_and_proof::get_sync_subcommittee_pubkeys;
@@ -1285,9 +1287,10 @@ fn calculate_consensus_block_value(
 
 async fn get_local_execution_payload(
     execution_engine: &ExecutionEngine,
+    fork_name: ForkName,
     forkchoice_state: ForkchoiceStateV1,
     payload_attribute: PayloadAttributesV3,
-) -> Result<(PayloadV4, u64), ApiError> {
+) -> Result<(Payload, u64), ApiError> {
     let result = execution_engine
         .engine_forkchoice_updated_v3(
             ForkchoiceStateV1 {
@@ -1310,16 +1313,16 @@ async fn get_local_execution_payload(
         ApiError::InternalError("No payload id returned from forkchoice update".into())
     })?;
 
-    let payload_v4 = execution_engine
-        .engine_get_payload_v4(payload_id)
+    let payload = execution_engine
+        .engine_get_payload(&fork_name, payload_id)
         .await
         .map_err(|err| ApiError::InternalError(format!("Failed to get payload: {err}")))?;
 
-    let execution_value: u64 = U256::from_be_bytes(payload_v4.block_value.0)
+    let execution_value: u64 = U256::from_be_bytes(payload.block_value().0)
         .try_into()
         .map_err(|err| ApiError::InternalError(format!("Block value too large: {err}")))?;
 
-    Ok((payload_v4, execution_value))
+    Ok((payload, execution_value))
 }
 
 async fn compare_builder_vs_local(
@@ -1405,6 +1408,7 @@ pub async fn get_blocks_v3(
 
     let proposer_public_key = proposer.public_key.clone();
     let epoch = compute_epoch_at_slot(slot);
+    let fork_name = fork_name_at_epoch(epoch);
 
     verify_randao_reveal(
         &state,
@@ -1451,8 +1455,13 @@ pub async fn get_blocks_v3(
         ));
     };
 
-    let (local_payload_v4, local_execution_value) =
-        get_local_execution_payload(&execution_engine, forkchoice_state, payload_attribute).await?;
+    let (local_payload, local_execution_value) = get_local_execution_payload(
+        &execution_engine,
+        fork_name,
+        forkchoice_state,
+        payload_attribute,
+    )
+    .await?;
 
     let builder_client_ref = builder_client.as_ref().map(|bc| bc.as_ref());
     let (use_builder, builder_bid, builder_value) = compare_builder_vs_local(
@@ -1545,7 +1554,7 @@ pub async fn get_blocks_v3(
         };
 
         let response = ProduceBlockResponse {
-            version: "electra".to_string(),
+            version: fork_name.to_string(),
             execution_payload_blinded: true,
             execution_payload_value: builder_value,
             consensus_block_value,
@@ -1553,7 +1562,7 @@ pub async fn get_blocks_v3(
         };
 
         return Ok(HttpResponse::Ok()
-            .insert_header(("Eth-Consensus-Version", "electra"))
+            .insert_header(("Eth-Consensus-Version", fork_name.to_string()))
             .insert_header(("Eth-Execution-Payload-Blinded", "true"))
             .insert_header((
                 "Eth-Execution-Payload-Value",
@@ -1566,61 +1575,11 @@ pub async fn get_blocks_v3(
             .json(response));
     }
 
-    let execution_payload = ExecutionPayload {
-        parent_hash: local_payload_v4.execution_payload.parent_hash,
-        fee_recipient: local_payload_v4.execution_payload.fee_recipient,
-        state_root: local_payload_v4.execution_payload.state_root,
-        receipts_root: local_payload_v4.execution_payload.receipts_root,
-        logs_bloom: local_payload_v4.execution_payload.logs_bloom,
-        prev_randao: local_payload_v4.execution_payload.prev_randao,
-        block_number: local_payload_v4.execution_payload.block_number,
-        gas_limit: local_payload_v4.execution_payload.gas_limit,
-        gas_used: local_payload_v4.execution_payload.gas_used,
-        timestamp: local_payload_v4.execution_payload.timestamp,
-        extra_data: local_payload_v4.execution_payload.extra_data,
-        base_fee_per_gas: local_payload_v4.execution_payload.base_fee_per_gas,
-        block_hash: local_payload_v4.execution_payload.block_hash,
-        transactions: local_payload_v4.execution_payload.transactions,
-        withdrawals: local_payload_v4.execution_payload.withdrawals,
-        blob_gas_used: local_payload_v4.execution_payload.blob_gas_used,
-        excess_blob_gas: local_payload_v4.execution_payload.excess_blob_gas,
-    };
+    let execution_payload = local_payload.to_execution_payload();
 
-    let blob_kzg_commitments: Vec<KZGCommitment> = local_payload_v4
-        .blobs_bundle
-        .commitments
-        .iter()
-        .map(|c| {
-            let vec = c.clone().to_vec();
-            if vec.len() == 48 {
-                let mut bytes = [0u8; 48];
-                bytes.copy_from_slice(&vec);
-                Ok(KZGCommitment(bytes))
-            } else {
-                Err(ApiError::InternalError(
-                    "Invalid KZG commitment length (expected 48 bytes)".into(),
-                ))
-            }
-        })
-        .collect::<Result<_, _>>()?;
+    let blob_kzg_commitments: Vec<KZGCommitment> = local_payload.blobs_bundle().get_commitments();
 
-    let kzg_proofs: Vec<KZGProof> = local_payload_v4
-        .blobs_bundle
-        .proofs
-        .iter()
-        .map(|p| {
-            let vec = p.clone().to_vec();
-            if vec.len() == 48 {
-                let mut bytes = [0u8; 48];
-                bytes.copy_from_slice(&vec);
-                Ok(KZGProof { 0: bytes })
-            } else {
-                Err(ApiError::InternalError(
-                    "Invalid KZG proof length (expected 48 bytes)".into(),
-                ))
-            }
-        })
-        .collect::<Result<_, _>>()?;
+    let kzg_proofs: Vec<KZGProof> = local_payload.blobs_bundle().get_proofs();
 
     if blob_kzg_commitments.len() != kzg_proofs.len() {
         return Err(ApiError::InternalError(
@@ -1629,7 +1588,7 @@ pub async fn get_blocks_v3(
     }
 
     let execution_requests =
-        get_execution_requests(local_payload_v4.execution_requests.clone()).unwrap_or_default();
+        get_execution_requests(local_payload.execution_requests().clone()).unwrap_or_default();
 
     let block_body = BeaconBlockBody {
         randao_reveal: common_block_body_fields.0,
@@ -1687,7 +1646,7 @@ pub async fn get_blocks_v3(
         .collect();
 
     let response = ProduceBlockResponse {
-        version: "electra".to_string(),
+        version: fork_name.to_string(),
         execution_payload_blinded: false,
         execution_payload_value: local_execution_value,
         consensus_block_value,
@@ -1699,7 +1658,7 @@ pub async fn get_blocks_v3(
     };
 
     Ok(HttpResponse::Ok()
-        .insert_header(("Eth-Consensus-Version", "electra"))
+        .insert_header(("Eth-Consensus-Version", fork_name.to_string()))
         .insert_header(("Eth-Execution-Payload-Blinded", "false"))
         .insert_header((
             "Eth-Execution-Payload-Value",
