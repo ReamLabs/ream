@@ -15,11 +15,14 @@ default = []
 [dependencies]
 actix-web.workspace = true
 alloy-primitives.workspace = true
+ethereum_ssz.workspace = true
+ethereum_ssz_derive.workspace = true
 ream-api-types-common.workspace = true
 ream-data-availability.workspace = true
 ream-data-availability-node.workspace = true
 ream-rpc-common.workspace = true
 serde.workspace = true
+ssz_types.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
