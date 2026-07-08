@@ -1,4 +1,8 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::HashSet,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::anyhow;
 use ream_chain_lean::{
@@ -31,15 +35,10 @@ use ream_post_quantum_crypto::lean_multisig::type_2::{
 use ssz_types::VariableList;
 use tokio::{
     sync::{mpsc, oneshot},
-    task::JoinHandle,
+    time::{Duration, sleep},
 };
 use tracing::{Level, debug, enabled, info, warn};
 use tree_hash::TreeHash;
-
-pub enum BlockAction {
-    Continue,
-    Success(Box<SignedBlock>),
-}
 
 /// ValidatorService is responsible for managing validator operations
 /// such as proposing blocks and submitting attestations on them. This service also holds the
@@ -50,7 +49,7 @@ pub enum BlockAction {
 pub struct ValidatorService {
     keystores: Vec<Arc<ValidatorKeystore>>,
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
-    block: Option<JoinHandle<anyhow::Result<BlockAction>>>,
+    prebuilding_slot: Option<u64>,
 }
 
 impl ValidatorService {
@@ -61,7 +60,7 @@ impl ValidatorService {
         ValidatorService {
             keystores,
             chain_sender,
-            block: None,
+            prebuilding_slot: None,
         }
     }
 
@@ -86,35 +85,25 @@ impl ValidatorService {
                     let slot = tick_count / INTERVALS_PER_SLOT;
                     match tick_count % INTERVALS_PER_SLOT {
                         4 => {
-                            let slot = slot + 1;
-                            // First tick (t=0): Propose a block.
-                            if slot > 0 && let Some(keystore) = self.is_proposer(slot) {
-                                info!(slot, tick = tick_count, "Building block by Validator {}", keystore.index);
+                            let next_slot = slot + 1;
+                            if let Some(keystore) = self.is_proposer(next_slot) {
+                                info!(slot = next_slot, tick = tick_count, "Pre-building block by Validator {}", keystore.index);
+                                self.prebuilding_slot = Some(next_slot);
                                 let chain_sender = self.chain_sender.clone();
-                                let keystore = keystore.clone();
-                                self.block = Some(tokio::spawn(async move {build_block(chain_sender, slot, keystore).await}));
+                                tokio::spawn(async move {
+                                    build_block(chain_sender, next_slot, keystore).await;
+                                });
                             }
                         }
                         0 => {
-                            // First tick (t=0): Propose a block.
-                            if slot > 0 && let Some(keystore) = self.is_proposer(slot) {
+                            if self.prebuilding_slot == Some(slot) {
+                                self.prebuilding_slot = None;
+                            } else if slot > 0 && let Some(keystore) = self.is_proposer(slot) {
                                 info!(slot, tick = tick_count, "Proposing block by Validator {}", keystore.index);
-
-                                let signed_block = match self.block.take() {
-                                    Some(block) => match block.await?? {
-                                        BlockAction::Continue => continue,
-                                        BlockAction::Success(block) => block,
-                                    },
-                                    None => match  build_block(self.chain_sender.clone(), slot, keystore.clone()).await? {
-                                        BlockAction::Continue => continue,
-                                        BlockAction::Success(block) => block,
-                                    }
-                                };
-
-                                // Send block to the LeanChainService.
-                                self.chain_sender
-                                    .send(LeanChainServiceMessage::ProcessBlock { signed_block: Box::new(*signed_block), need_gossip: true })
-                                    .map_err(|err| anyhow!("Failed to send block to LeanChainService: {err:?}"))?;
+                                let chain_sender = self.chain_sender.clone();
+                                tokio::spawn(async move {
+                                    build_block(chain_sender, slot, keystore).await;
+                                });
                             } else {
                                 let proposer_index = slot % lean_network_spec().num_validators;
                                 info!("Not proposer for slot {slot} (proposer is validator {proposer_index}), skipping");
@@ -237,46 +226,64 @@ pub async fn build_block(
     chain_sender: mpsc::UnboundedSender<LeanChainServiceMessage>,
     slot: u64,
     keystore: Arc<ValidatorKeystore>,
-) -> anyhow::Result<BlockAction> {
+) {
     let (tx, rx) = oneshot::channel();
 
-    chain_sender
+    if chain_sender
         .send(LeanChainServiceMessage::ProduceBlock { slot, sender: tx })
-        .expect("Failed to send produce block to LeanChainService");
+        .is_err()
+    {
+        warn!("Failed to send produce block to LeanChainService for slot {slot}");
+        return;
+    }
 
     // Wait for the block to be produced.
     let block_with_signatures = match rx.await {
         Ok(ServiceResponse::Ok(block_with_signatures)) => block_with_signatures,
         Ok(ServiceResponse::Syncing) => {
             warn!("LeanChainService is syncing, cannot produce block for slot {slot}");
-            return Ok(BlockAction::Continue);
+            return;
         }
         Ok(ServiceResponse::Err(err)) => {
             warn!("Failed to produce block for slot {slot}: {err}");
-            return Ok(BlockAction::Continue);
+            return;
         }
         Err(err) => {
-            return Err(anyhow!(
-                "Failed to receive block from LeanChainService: {err:?}"
-            ));
+            warn!("Failed to receive block from LeanChainService for slot {slot}: {err:?}");
+            return;
         }
     };
 
-    let block = block_with_signatures.block.clone();
-
     info!(
-        slot = block.slot,
-        block_root = ?block.tree_hash_root(),
+        slot = block_with_signatures.block.slot,
+        block_root = ?block_with_signatures.block.tree_hash_root(),
         "Building block finished by Validator {}",
         keystore.index,
     );
 
-    match sign_block(keystore, block_with_signatures, slot) {
-        Ok(signed_block) => Ok(BlockAction::Success(Box::new(signed_block))),
+    let signed_block = match sign_block(keystore, block_with_signatures, slot) {
+        Ok(signed_block) => signed_block,
         Err(err) => {
             warn!("Failed to sign block for slot {slot}: {err}");
-            Ok(BlockAction::Continue)
+            return;
         }
+    };
+
+    let spec = lean_network_spec();
+    let slot_start_ms = (spec.genesis_time + slot * spec.seconds_per_slot) * 1000;
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(slot_start_ms);
+    if now_ms < slot_start_ms {
+        sleep(Duration::from_millis(slot_start_ms - now_ms)).await;
+    }
+
+    if let Err(err) = chain_sender.send(LeanChainServiceMessage::ProcessBlock {
+        signed_block: Box::new(signed_block),
+        need_gossip: true,
+    }) {
+        warn!("Failed to send block to LeanChainService for slot {slot}: {err:?}");
     }
 }
 

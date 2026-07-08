@@ -245,6 +245,7 @@ type CallbackFuture = Pin<
 /// LeanChainService is responsible for updating the [LeanChain] state
 pub struct LeanChainService {
     store: Arc<LeanStoreWriter>,
+    clock_prebuilt_for: Option<u64>,
     receiver: mpsc::UnboundedReceiver<LeanChainServiceMessage>,
     outbound_p2p: mpsc::UnboundedSender<LeanP2PRequest>,
     network_state: Arc<NetworkState>,
@@ -275,6 +276,7 @@ impl LeanChainService {
     ) -> Self {
         let network_state = store.read().await.network_state.clone();
         LeanChainService {
+            clock_prebuilt_for: None,
             network_state,
             store: Arc::new(store),
             receiver,
@@ -350,7 +352,13 @@ impl LeanChainService {
                         self.sync_status = self.update_sync_status().await?;
                     }
                     if self.sync_status == SyncStatus::Synced {
-                        self.store.write().await.tick_interval(tick_count.is_multiple_of(INTERVALS_PER_SLOT), self.is_aggregator()).await?;
+                        let is_slot_start = tick_count.is_multiple_of(INTERVALS_PER_SLOT);
+                        let wall_slot = tick_count / INTERVALS_PER_SLOT;
+                        if is_slot_start && self.clock_prebuilt_for == Some(wall_slot) {
+                            self.clock_prebuilt_for = None;
+                        } else {
+                            self.store.write().await.tick_interval(is_slot_start, self.is_aggregator()).await?;
+                        }
                         self.step_head_sync(tick_count).await?;
 
                         #[cfg(feature = "devnet5")]
@@ -2942,6 +2950,13 @@ impl LeanChainService {
         slot: u64,
         response: oneshot::Sender<ServiceResponse<BlockWithSignatures>>,
     ) -> anyhow::Result<()> {
+        let wall_slot = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or_default()
+            .saturating_sub(lean_network_spec().genesis_time)
+            / lean_network_spec().seconds_per_slot;
+
         let block_with_signatures = match self
             .store
             .write()
@@ -2959,6 +2974,10 @@ impl LeanChainService {
                 return Ok(());
             }
         };
+
+        if slot > wall_slot {
+            self.clock_prebuilt_for = Some(slot);
+        }
 
         response
             .send(ServiceResponse::Ok(block_with_signatures))
