@@ -77,8 +77,12 @@ pub struct GenesisParams {
 pub struct StateTransitionRunRequest {
     pre: FixtureState,
     blocks: Vec<FixtureBlock>,
+    /// devnet4 fixtures name it `expectException`
     #[serde(default)]
     expect_exception: Option<String>,
+    /// devnet5 fixtures name it `rejectionReason`
+    #[serde(default)]
+    rejection_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -614,7 +618,9 @@ pub async fn run_state_transition(
         .map_err(|err| driver_error("failed to convert pre-state", err))?;
 
     let result = apply_state_transition_blocks(&mut state, &request.blocks).and_then(|()| {
-        if request.blocks.is_empty() && request.expect_exception.is_some() {
+        if request.blocks.is_empty()
+            && (request.expect_exception.is_some() || request.rejection_reason.is_some())
+        {
             let target_slot = state.slot;
             state
                 .process_slots(target_slot)
