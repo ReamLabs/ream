@@ -100,7 +100,9 @@ ream-validator-beacon.workspace = true
 ream-validator-lean.workspace = true
 
 [dev-dependencies]
+reqwest.workspace = true
 serial_test = "3.4.0"
+snap.workspace = true
 
 [lints]
 workspace = true
