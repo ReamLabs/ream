@@ -1003,7 +1003,29 @@ impl LeanChainService {
             );
         }
 
-        self.choose_weighted_peer(&fallback_candidates)
+        if let Some(peer_id) = self.choose_weighted_peer(&fallback_candidates) {
+            return Some(peer_id);
+        }
+
+        // Last resort: reuse the avoided peer only when it is genuinely the sole peer we are
+        // connected to. A `Reset` job avoids the peer that just failed it, but if that peer
+        // is now the only connected candidate (e.g. after a pause collapses every other
+        // connection during recovery), refusing it here deadlocks backfill forever. 
+        if avoid_peer_id.is_some()
+            && self.network_state.connected_peer_count() <= 1
+            && candidates
+                .iter()
+                .any(|(peer_id, _)| Some(*peer_id) == avoid_peer_id)
+        {
+            debug!(
+                connected = candidates.len(),
+                avoid_peer_id = ?avoid_peer_id,
+                "Only the avoided peer is connected; reusing it to avoid stalling backfill"
+            );
+            return self.choose_weighted_peer(candidates);
+        }
+
+        None
     }
 
     async fn assignable_peer_id(&self, avoid_peer_id: Option<PeerId>) -> Option<PeerId> {
@@ -2791,6 +2813,7 @@ impl LeanChainService {
     }
 
     async fn queue_pending_job_requests(&mut self) -> anyhow::Result<()> {
+        let mut deferred: Vec<PendingJobRequest> = Vec::new();
         while let Some(pending_job_request) = self.pending_job_requests.pop_front() {
             let avoid_peer_id = match &pending_job_request {
                 PendingJobRequest::Reset { peer_id } => Some(*peer_id),
@@ -2827,8 +2850,11 @@ impl LeanChainService {
                         peers_in_use = self.peers_in_use.len(),
                         "No assignable peer available for pending backfill job request",
                     );
-                    self.pending_job_requests.push_back(pending_job_request);
-                    return Ok(());
+                    // Defer instead of returning: draining the rest of the queue keeps a
+                    // single unplaceable request (e.g. a `Reset` avoiding a peer) from
+                    // head-of-line blocking other placeable requests behind it in the FIFO.
+                    deferred.push(pending_job_request);
+                    continue;
                 }
             };
             match pending_job_request {
@@ -2885,6 +2911,11 @@ impl LeanChainService {
                 }
             }
             self.peers_in_use.insert(non_queued_peer_id);
+        }
+        // Restore requests that could not be placed this tick, preserving their order, so
+        // they are retried next tick without starving the requests we just drained past.
+        for request in deferred {
+            self.pending_job_requests.push_back(request);
         }
         Ok(())
     }
