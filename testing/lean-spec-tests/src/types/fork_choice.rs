@@ -34,7 +34,7 @@ pub enum ForkChoiceStep {
         time: Option<u64>,
         #[serde(default)]
         interval: Option<u64>,
-        #[serde(default)]
+        #[serde(default, rename = "hasProposal")]
         has_proposal: Option<bool>,
     },
     Block {

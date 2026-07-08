@@ -1010,7 +1010,7 @@ impl LeanChainService {
         // Last resort: reuse the avoided peer only when it is genuinely the sole peer we are
         // connected to. A `Reset` job avoids the peer that just failed it, but if that peer
         // is now the only connected candidate (e.g. after a pause collapses every other
-        // connection during recovery), refusing it here deadlocks backfill forever. 
+        // connection during recovery), refusing it here deadlocks backfill forever.
         if avoid_peer_id.is_some()
             && self.network_state.connected_peer_count() <= 1
             && candidates

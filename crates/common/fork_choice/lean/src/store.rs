@@ -1856,6 +1856,28 @@ impl Store {
         &mut self,
         signed_attestation: SignedAggregatedAttestation,
     ) -> anyhow::Result<()> {
+        self.on_gossip_aggregated_attestation_core(signed_attestation, true)
+            .await
+    }
+
+    /// Process a gossiped aggregated attestation WITHOUT verifying its
+    /// cryptographic proof.
+    ///
+    /// Only for spec-test fixtures whose proofs are mocked placeholders
+    /// (`proofSetting == 0`, carrying leanSpec's `MOCK_PROOF_PREFIX`);
+    pub async fn on_gossip_aggregated_attestation_without_verification(
+        &mut self,
+        signed_attestation: SignedAggregatedAttestation,
+    ) -> anyhow::Result<()> {
+        self.on_gossip_aggregated_attestation_core(signed_attestation, false)
+            .await
+    }
+
+    async fn on_gossip_aggregated_attestation_core(
+        &mut self,
+        signed_attestation: SignedAggregatedAttestation,
+        verify: bool,
+    ) -> anyhow::Result<()> {
         match self
             .validate_attestation(&SignedAttestation {
                 validator_id: 0,
@@ -1891,6 +1913,11 @@ impl Store {
             let data_root = data.tree_hash_root();
             let validator_ids = proof.to_validator_indices();
 
+            ensure!(
+                !validator_ids.is_empty(),
+                "Aggregated attestation has no participants"
+            );
+
             let state = self
                 .store
                 .lock()
@@ -1910,28 +1937,31 @@ impl Store {
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
-            let verification_timer =
-                start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
+            // Mocked spec-test proofs (`verify == false`) cannot be checked
+            if verify {
+                let verification_timer =
+                    start_timer(&PQ_SIG_AGGREGATED_SIGNATURES_VERIFICATION_TIME, &[]);
 
-            #[cfg(feature = "devnet5")]
-            let verification_result = type_1_from_wire(proof.proof.as_ref(), &public_keys)
-                .and_then(|type_one| type_1_verify(&type_one));
+                #[cfg(feature = "devnet5")]
+                let verification_result = type_1_from_wire(proof.proof.as_ref(), &public_keys)
+                    .and_then(|type_one| type_1_verify(&type_one));
 
-            match verification_result {
-                Ok(()) => {
-                    stop_timer(verification_timer);
-                    inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
-                    for _ in &validator_ids {
-                        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, &[]);
+                match verification_result {
+                    Ok(()) => {
+                        stop_timer(verification_timer);
+                        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_VALID_TOTAL, &[]);
+                        for _ in &validator_ids {
+                            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_VALID_TOTAL, &[]);
+                        }
                     }
-                }
-                Err(err) => {
-                    stop_timer(verification_timer);
-                    inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, &[]);
-                    for _ in &validator_ids {
-                        inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, &[]);
+                    Err(err) => {
+                        stop_timer(verification_timer);
+                        inc_int_counter_vec(&PQ_SIG_AGGREGATED_SIGNATURES_INVALID_TOTAL, &[]);
+                        for _ in &validator_ids {
+                            inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_INVALID_TOTAL, &[]);
+                        }
+                        return Err(anyhow!("Aggregated signature verification failed: {err}"));
                     }
-                    return Err(anyhow!("Aggregated signature verification failed: {err}"));
                 }
             }
 

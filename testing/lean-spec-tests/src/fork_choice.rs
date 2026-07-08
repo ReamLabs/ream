@@ -214,7 +214,11 @@ pub async fn run_fork_choice_test(test_name: &str, test: ForkChoiceTest) -> anyh
                     type_2_setup_verifier();
                     store.on_gossip_aggregated_attestation(signed).await
                 } else {
-                    validate_mock_aggregated_attestation(&mut store, &signed).await
+                    // Mock proofs (proofSetting != 1) can't be verified, but the
+                    // attestation must still be applied so it can move the head
+                    store
+                        .on_gossip_aggregated_attestation_without_verification(signed)
+                        .await
                 };
 
                 match valid {
@@ -413,47 +417,6 @@ async fn validate_checks(store: &Store, checks: &StoreChecks) -> anyhow::Result<
 fn decode_hex_bytes(value: &str) -> anyhow::Result<Vec<u8>> {
     hex::decode(value.trim_start_matches("0x"))
         .map_err(|err| anyhow!("Failed to decode hex bytes: {err}"))
-}
-
-/// Validate an aggregated attestation whose cryptographic proof is mocked.
-///
-/// Runs the attestation-data validation that the spec's
-/// `on_gossip_aggregated_attestation` performs, plus the structural participant
-/// checks, while skipping the cryptographic proof verification.
-async fn validate_mock_aggregated_attestation(
-    store: &mut Store,
-    signed: &SignedAggregatedAttestation,
-) -> anyhow::Result<()> {
-    store
-        .validate_attestation(&SignedAttestation {
-            validator_id: 0,
-            message: signed.data.clone(),
-            signature: Signature::blank(),
-        })
-        .await?;
-
-    let validator_ids = signed.proof.to_validator_indices();
-    ensure!(
-        !validator_ids.is_empty(),
-        "Aggregated attestation has no participants"
-    );
-
-    let validator_count = {
-        let db = store.store.lock().await;
-        db.state_provider()
-            .get(signed.data.target.root)?
-            .ok_or_else(|| anyhow!("No state available for target {}", signed.data.target.root))?
-            .validators
-            .len()
-    };
-    for validator in validator_ids {
-        ensure!(
-            (validator as usize) < validator_count,
-            "Participant {validator} outside validator registry of size {validator_count}"
-        );
-    }
-
-    Ok(())
 }
 
 /// Run the validation portion of `on_gossip_attestation` so the runner can
