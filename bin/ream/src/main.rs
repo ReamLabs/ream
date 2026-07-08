@@ -984,13 +984,6 @@ mod tests {
         preseed_node_3_before_checkpoint_sync: bool,
     }
 
-    // Production's `BEACON_NETWORK_SPEC`/`GENESIS_VALIDATORS_ROOT` OnceLocks only allow one
-    // set per process, so `run_beacon_node_for_test` skips them and these `Once` guards set
-    // them once per test binary instead, shared by every beacon e2e test below.
-    //
-    // Only safe because all beacon e2e tests here use Sepolia and the same Sepolia fixture.
-    // `call_once` silently no-ops after the first call, so a future test needing a different
-    // network or genesis root would silently reuse the first test's values instead of failing.
     static BEACON_E2E_NETWORK_SPEC_INIT: Once = Once::new();
     static BEACON_E2E_GENESIS_ROOT_INIT: Once = Once::new();
 
