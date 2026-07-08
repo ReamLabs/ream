@@ -85,7 +85,7 @@ impl ValidatorService {
                 _ = interval.tick() => {
                     let slot = tick_count / INTERVALS_PER_SLOT;
                     match tick_count % INTERVALS_PER_SLOT {
-                        3 => {
+                        4 => {
                             let slot = slot + 1;
                             // First tick (t=0): Propose a block.
                             if slot > 0 && let Some(keystore) = self.is_proposer(slot) {
