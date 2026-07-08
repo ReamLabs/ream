@@ -2,15 +2,31 @@
 //! surface the beacon-side feeder will speak.
 
 use alloy_primitives::B256;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
+use ssz::Encode;
+use ssz_derive::{Decode as SszDecode, Encode as SszEncode};
+use ssz_types::{VariableList, typenum};
 
-/// How long to keep retrying a `503 Service Unavailable` from `/ingest` (the
-/// data node sheds load when its verification queue is full; that is a
-/// retry-shortly signal, not a failure).
+/// How long to keep retrying a `503 Service Unavailable` from the ingest
+/// endpoints (the data node sheds load when its verification queue is full; that
+/// is a retry-shortly signal, not a failure).
 const OVERLOAD_RETRIES: u32 = 50;
 const OVERLOAD_BACKOFF_MS: u64 = 200;
+
+/// One `(column index, payload)` entry of the SSZ batch-ingest body.
+///
+/// Mirror of `WireIndexedPayload` in `ream-rpc-data-availability` — keep the two in sync (a
+/// shared wire crate is the production answer once the surface settles).
+#[derive(SszEncode, SszDecode)]
+struct WireIndexedPayload {
+    index: u64,
+    payload: VariableList<u8, typenum::U16777216>,
+}
+
+/// SSZ body of `POST /data/v0/ingest/block/{block_root}`.
+type WireBlockBatch = VariableList<WireIndexedPayload, typenum::U128>;
 
 pub struct DataAvailabilityClient {
     http: reqwest::Client,
@@ -71,6 +87,58 @@ impl DataAvailabilityClient {
                 status => {
                     let body = response.text().await.unwrap_or_default();
                     bail!("data node rejected column {index}: {status}: {body}");
+                }
+            }
+        }
+        bail!("data node still overloaded after {OVERLOAD_RETRIES} retries");
+    }
+
+    /// `POST /data/v0/ingest/block/{block_root}?slot={slot}` — submit a whole
+    /// block's columns as one SSZ batch: raw payload bytes, no hex, no JSON,
+    /// one HTTP round-trip. Backs off and retries while the data node reports
+    /// overload; the batch is queued or refused as one unit.
+    pub async fn ingest_block(
+        &self,
+        block_root: B256,
+        slot: u64,
+        columns: &[(u64, Vec<u8>)],
+    ) -> Result<()> {
+        let entries: Vec<WireIndexedPayload> = columns
+            .iter()
+            .map(|(index, payload)| {
+                Ok(WireIndexedPayload {
+                    index: *index,
+                    payload: VariableList::new(payload.clone())
+                        .map_err(|err| anyhow!("column payload too large: {err:?}"))?,
+                })
+            })
+            .collect::<Result<_>>()?;
+        let batch: WireBlockBatch = VariableList::new(entries)
+            .map_err(|err| anyhow!("too many columns for one block: {err:?}"))?;
+        let body = batch.as_ssz_bytes();
+
+        let url = format!(
+            "{}/data/v0/ingest/block/{block_root}?slot={slot}",
+            self.base
+        );
+        for _ in 0..OVERLOAD_RETRIES {
+            let response = self
+                .http
+                .post(&url)
+                .header("content-type", "application/octet-stream")
+                .body(body.clone())
+                .send()
+                .await
+                .with_context(|| format!("POST {url}"))?;
+
+            match response.status() {
+                StatusCode::ACCEPTED => return Ok(()),
+                StatusCode::SERVICE_UNAVAILABLE => {
+                    tokio::time::sleep(std::time::Duration::from_millis(OVERLOAD_BACKOFF_MS)).await;
+                }
+                status => {
+                    let body = response.text().await.unwrap_or_default();
+                    bail!("data node rejected the batch: {status}: {body}");
                 }
             }
         }

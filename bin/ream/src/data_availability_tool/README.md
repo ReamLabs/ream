@@ -16,9 +16,14 @@ ream-data-availability-tool health
 ream-data-availability-tool availability <0x-block-root>
 
 # The main event: fetch a block's blobs from a live beacon node, derive its
-# 128 data column sidecars locally (real KZG cells + proofs), submit them all,
-# and wait until the data node has verified and stored every one.
+# 128 data column sidecars locally (real KZG cells + proofs), submit them all
+# as ONE SSZ batch request, and wait until the data node has verified and
+# stored every one.
 ream-data-availability-tool feed --beacon-url <beacon-api-url> [block_id]
+
+# The legacy path — 128 JSON requests, one per column — kept for comparing
+# the two submission modes end to end (both print wall-clock timings).
+ream-data-availability-tool feed --beacon-url <beacon-api-url> [block_id] --per-column
 
 # The same pipeline fully offline: synthesize a KZG-valid block from all-zero
 # blobs (no beacon node anywhere) and submit it…
@@ -33,7 +38,10 @@ curl -X POST http://127.0.0.1:5062/data/v0/ingest \
 `--da-url` overrides the data node address (default `http://127.0.0.1:5062`).
 `block_id` is a slot number, `head`, `finalized`, or a `0x` block root
 (default `head`). `--columns 0,5,17` submits a subset; `--wait` bounds the
-verification wait in seconds.
+verification wait in seconds. `--per-column` switches `feed`/`generate` from
+the default single SSZ batch (`POST /ingest/block/{root}`) back to one JSON
+request per column (`POST /ingest`) — on the node side that also means 128
+separate KZG checks instead of one cross-column batched check.
 
 `generate` builds a synthetic block: real KZG cells and proofs over all-zero blobs,
 and a self-built commitments inclusion proof — valid because the data node
@@ -70,8 +78,8 @@ cargo build -p ream   # builds both the `ream` node and `ream-data-availability-
     --beacon-url https://ethereum-beacon-api.publicnode.com finalized
 # fetched 7 blob(s) for block finalized, slot 14706334
 # derived 128 column sidecars (block root 0xe4bb...a2d5)
-# submitted 128 column(s) to the data node
-# all submitted columns verified and held:
+# submitted 128 column(s) in one SSZ batch request — 89.31ms
+# all submitted columns verified and held — 412.79ms end to end (±100ms poll granularity):
 # { "complete": true, "held_count": 128, "missing": [] }
 
 # 3. ask again any time

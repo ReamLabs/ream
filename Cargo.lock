@@ -6357,6 +6357,7 @@ dependencies = [
  "clap",
  "discv5",
  "ethereum_ssz",
+ "ethereum_ssz_derive",
  "hashbrown 0.17.1",
  "leansig",
  "libp2p-identity",
