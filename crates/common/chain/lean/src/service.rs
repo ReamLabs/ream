@@ -2899,7 +2899,7 @@ impl LeanChainService {
         };
 
         if latest_finalized_slot > STATE_RETENTION_SLOTS {
-            let prune_target_slot = latest_finalized_slot - STATE_RETENTION_SLOTS;
+            let prune_target_slot = latest_finalized_slot - 1;
             let mut scan = prune_target_slot;
             let mut prune_root = None;
             loop {
