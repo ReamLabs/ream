@@ -11,15 +11,13 @@ pub struct StateTransitionTest {
     pub pre: State,
     pub blocks: Vec<Block>,
     pub post: Option<StateExpectation>,
-    /// devnet4 field name for expected failure
-    pub expect_exception: Option<String>,
-    /// devnet5 field name for expected failure
+    /// Reason a block is expected to be rejected, if any.
     pub rejection_reason: Option<String>,
 }
 
 impl StateTransitionTest {
     pub fn expects_failure(&self) -> bool {
-        self.expect_exception.is_some() || self.rejection_reason.is_some()
+        self.rejection_reason.is_some()
     }
 }
 

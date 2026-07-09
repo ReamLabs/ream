@@ -60,12 +60,8 @@ pub fn load_fork_choice_test(
 
 /// Load test private keys from fixtures/{network}/keys/prod_scheme/{i}.json
 fn load_test_keys() -> anyhow::Result<HashMap<u64, PrivateKey>> {
-    #[cfg(feature = "devnet5")]
     let keys_dir =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/devnet5/keys/prod_scheme");
-    #[cfg(not(feature = "devnet5"))]
-    let keys_dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/devnet4/keys/prod_scheme");
     let mut keys = HashMap::new();
 
     for i in 0..12u64 {

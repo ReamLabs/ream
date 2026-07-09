@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AggregatedSignatureProof;
 use ream_consensus_lean::attestation::SignatureKey;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::SingleMessageAggregate;
@@ -16,27 +14,6 @@ use crate::{
 
 /// Wrapper for a list of aggregated signature proofs.
 /// Uses VariableList for SSZ compatibility.
-#[cfg(feature = "devnet4")]
-#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
-pub struct AggregatedPayloadList {
-    pub proofs: VariableList<AggregatedSignatureProof, U4096>,
-}
-
-#[cfg(feature = "devnet4")]
-impl AggregatedPayloadList {
-    pub fn new() -> Self {
-        Self {
-            proofs: VariableList::empty(),
-        }
-    }
-    pub fn push(&mut self, proof: AggregatedSignatureProof) -> Result<(), ssz_types::Error> {
-        self.proofs.push(proof)
-    }
-    pub fn iter(&self) -> impl Iterator<Item = &AggregatedSignatureProof> {
-        self.proofs.iter()
-    }
-}
-
 #[cfg(feature = "devnet5")]
 #[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
 pub struct AggregatedPayloadList {
@@ -97,19 +74,6 @@ impl REDBTable for AggregatedPayloadsTable {
 }
 
 impl AggregatedPayloadsTable {
-    /// Append a proof to the list for the given key.
-    #[cfg(feature = "devnet4")]
-    pub fn append_proof(
-        &self,
-        key: SignatureKey,
-        proof: AggregatedSignatureProof,
-    ) -> Result<(), StoreError> {
-        let mut list = self.get(key.clone())?.unwrap_or_default();
-        list.push(proof)
-            .map_err(|err| StoreError::DecodeError(format!("VariableList error: {err:?}")))?;
-        self.insert(key, list)
-    }
-
     /// Append a proof to the list for the given key.
     #[cfg(feature = "devnet5")]
     pub fn append_proof(

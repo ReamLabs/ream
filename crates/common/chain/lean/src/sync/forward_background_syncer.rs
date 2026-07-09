@@ -164,13 +164,9 @@ mod tests {
     use libp2p_identity::PeerId;
     #[cfg(feature = "devnet5")]
     use ream_consensus_lean::attestation::MultiMessageAggregate;
-    #[cfg(feature = "devnet4")]
-    use ream_consensus_lean::block::BlockSignatures;
     use ream_consensus_lean::block::SignedBlock;
     use ream_fork_choice_lean::store::Store;
     use ream_peer::{ConnectionState, Direction};
-    #[cfg(feature = "devnet4")]
-    use ream_post_quantum_crypto::leansig::signature::Signature;
     use ream_sync::rwlock::Writer;
     use ream_test_utils::store::sample_store;
 
@@ -185,11 +181,6 @@ mod tests {
                 .unwrap();
             let signed_block = SignedBlock {
                 block: block.block,
-                #[cfg(feature = "devnet4")]
-                signature: BlockSignatures {
-                    attestation_signatures: block.signatures,
-                    proposer_signature: Signature::blank(),
-                },
                 #[cfg(feature = "devnet5")]
                 proof: MultiMessageAggregate {
                     proof: ssz_types::VariableList::default(),
@@ -204,11 +195,6 @@ mod tests {
         let block = store.produce_block_with_signatures(1, 1).await.unwrap();
         let pending_block = SignedBlock {
             block: block.block,
-            #[cfg(feature = "devnet4")]
-            signature: BlockSignatures {
-                attestation_signatures: block.signatures,
-                proposer_signature: Signature::mock(),
-            },
             #[cfg(feature = "devnet5")]
             proof: MultiMessageAggregate {
                 proof: ssz_types::VariableList::default(),

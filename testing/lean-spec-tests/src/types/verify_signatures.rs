@@ -7,8 +7,6 @@ use crate::types::ssz::{SignedBlockJSON, StateJSON};
 pub struct VerifySignaturesTest {
     pub network: String,
     #[serde(default)]
-    pub expect_exception: Option<String>,
-    #[serde(default)]
     pub rejection_reason: Option<String>,
     pub anchor_state: StateJSON,
     pub signed_block: SignedBlockJSON,
@@ -16,8 +14,6 @@ pub struct VerifySignaturesTest {
 
 impl VerifySignaturesTest {
     pub fn expected_rejection(&self) -> Option<&str> {
-        self.expect_exception
-            .as_deref()
-            .or(self.rejection_reason.as_deref())
+        self.rejection_reason.as_deref()
     }
 }

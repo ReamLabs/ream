@@ -12,12 +12,8 @@ use lean_spec_tests::types::{
     ssz::{SignedBlockJSON, StateJSON},
 };
 use ream_api_types_common::error::ApiError;
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::attestation::AggregatedSignatureProof;
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::{MultiMessageAggregate, SingleMessageAggregate};
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
     attestation::{SignedAggregatedAttestation, SignedAttestation},
     block::{Block as ReamBlock, BlockBody, SignedBlock},
@@ -38,8 +34,6 @@ use ream_storage::{
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "devnet5")]
 use ssz_types::typenum::U524288;
-#[cfg(feature = "devnet4")]
-use ssz_types::typenum::U1048576;
 use ssz_types::{BitList, VariableList, typenum::U4096};
 use tree_hash::TreeHash;
 
@@ -204,29 +198,6 @@ fn new_test_db() -> Result<ream_storage::db::lean::LeanDB, ApiError> {
 }
 
 fn blank_signed_block(block: ReamBlock) -> anyhow::Result<SignedBlock> {
-    #[cfg(feature = "devnet4")]
-    let proofs = block
-        .body
-        .attestations
-        .iter()
-        .map(|attestation| {
-            Ok(AggregatedSignatureProof::new(
-                attestation.aggregation_bits.clone(),
-                VariableList::<u8, U1048576>::new(vec![])
-                    .map_err(|err| anyhow!("failed to build empty proof data: {err:?}"))?,
-            ))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    #[cfg(feature = "devnet4")]
-    return Ok(SignedBlock {
-        block,
-        signature: BlockSignatures {
-            attestation_signatures: VariableList::try_from(proofs)
-                .map_err(|err| anyhow!("failed to build attestation signatures list: {err}"))?,
-            proposer_signature: Signature::blank(),
-        },
-    });
-
     #[cfg(feature = "devnet5")]
     Ok(SignedBlock {
         block,
@@ -369,17 +340,12 @@ fn convert_gossip_aggregate(
 
     let proof_bytes = hex::decode(fixture.proof.proof_data.data.trim_start_matches("0x"))
         .map_err(|err| anyhow!("failed to decode aggregate proof bytes: {err}"))?;
-    #[cfg(feature = "devnet4")]
-    let proof_data = VariableList::<u8, U1048576>::new(proof_bytes)
-        .map_err(|err| anyhow!("failed to build proof data list: {err:?}"))?;
     #[cfg(feature = "devnet5")]
     let proof = VariableList::<u8, U524288>::new(proof_bytes)
         .map_err(|err| anyhow!("failed to build proof data list: {err:?}"))?;
 
     Ok(SignedAggregatedAttestation {
         data: fixture.data.clone(),
-        #[cfg(feature = "devnet4")]
-        proof: AggregatedSignatureProof::new(participants, proof_data),
         #[cfg(feature = "devnet5")]
         proof: SingleMessageAggregate::new(participants, proof),
     })

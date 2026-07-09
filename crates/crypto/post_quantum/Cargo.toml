@@ -10,7 +10,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-devnet4 = []
 devnet5 = ["dep:lean-multisig-type2"]
 
 [dependencies]

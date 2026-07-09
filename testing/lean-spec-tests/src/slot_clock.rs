@@ -23,21 +23,16 @@ fn json_u64(v: &serde_json::Value, field: &str) -> anyhow::Result<u64> {
 
 /// Run a single slot_clock test case
 pub fn run_slot_clock_test(test_name: &str, test: &SlotClockTest) -> anyhow::Result<()> {
-    // Config lives at top-level in devnet5, inside output in devnet4.
+    // Config lives at the top level.
     let cfg = test
         .config
         .as_ref()
-        .or(test.output.config.as_ref())
         .ok_or_else(|| anyhow!("Missing config"))?;
 
-    // Operation kind: plain string in devnet4, object with `kind` field in devnet5.
-    let kind: &str = if let Some(s) = test.operation.as_str() {
-        s
-    } else {
-        test.operation["kind"]
-            .as_str()
-            .ok_or_else(|| anyhow!("Missing operation.kind"))?
-    };
+    // Operation kind lives in the `kind` field of the `operation` object.
+    let kind: &str = test.operation["kind"]
+        .as_str()
+        .ok_or_else(|| anyhow!("Missing operation.kind"))?;
 
     info!("Running slot_clock test: {test_name} (operation={kind})");
 
@@ -49,27 +44,21 @@ pub fn run_slot_clock_test(test_name: &str, test: &SlotClockTest) -> anyhow::Res
     let ms_per_slot = cfg.seconds_per_slot * 1000;
     let ms_per_interval = cfg.milliseconds_per_interval;
 
-    // In devnet4 params are in `input`; in devnet5 they are in the `operation` object.
-    let params: &serde_json::Value = if let Some(inp) = test.input.as_ref() {
-        inp
-    } else {
-        &test.operation
-    };
+    // Params live in the `operation` object.
+    let params: &serde_json::Value = &test.operation;
 
-    // Look up a u64 param, falling back to an alternate key name if the first is missing.
-    let param_u64 = |key: &str, alt: Option<&str>| -> anyhow::Result<u64> {
+    // Look up a u64 param.
+    let param_u64 = |key: &str| -> anyhow::Result<u64> {
         let v = params
             .get(key)
-            .or_else(|| alt.and_then(|k| params.get(k)))
             .ok_or_else(|| anyhow!("Missing param: {key}"))?;
         json_u64(v, key)
     };
 
     match kind {
         "current_slot" => {
-            let genesis_time = param_u64("genesisTime", None)?;
-            // devnet4: currentTimeMs (integer), devnet5: currentTimeMilliseconds (float)
-            let current_time_ms = param_u64("currentTimeMs", Some("currentTimeMilliseconds"))?;
+            let genesis_time = param_u64("genesisTime")?;
+            let current_time_ms = param_u64("currentTimeMilliseconds")?;
             let expected = test
                 .output
                 .slot
@@ -86,8 +75,8 @@ pub fn run_slot_clock_test(test_name: &str, test: &SlotClockTest) -> anyhow::Res
             );
         }
         "current_interval" => {
-            let genesis_time = param_u64("genesisTime", None)?;
-            let current_time_ms = param_u64("currentTimeMs", Some("currentTimeMilliseconds"))?;
+            let genesis_time = param_u64("genesisTime")?;
+            let current_time_ms = param_u64("currentTimeMilliseconds")?;
             let expected = test
                 .output
                 .interval
@@ -105,8 +94,8 @@ pub fn run_slot_clock_test(test_name: &str, test: &SlotClockTest) -> anyhow::Res
             );
         }
         "total_intervals" => {
-            let genesis_time = param_u64("genesisTime", None)?;
-            let current_time_ms = param_u64("currentTimeMs", Some("currentTimeMilliseconds"))?;
+            let genesis_time = param_u64("genesisTime")?;
+            let current_time_ms = param_u64("currentTimeMilliseconds")?;
             let expected = test
                 .output
                 .total_intervals
@@ -123,7 +112,7 @@ pub fn run_slot_clock_test(test_name: &str, test: &SlotClockTest) -> anyhow::Res
             );
         }
         "from_slot" => {
-            let slot = param_u64("slot", None)?;
+            let slot = param_u64("slot")?;
             let expected = test
                 .output
                 .interval
@@ -135,8 +124,8 @@ pub fn run_slot_clock_test(test_name: &str, test: &SlotClockTest) -> anyhow::Res
             );
         }
         "from_unix_time" => {
-            let genesis_time = param_u64("genesisTime", None)?;
-            let unix_seconds = param_u64("unixSeconds", None)?;
+            let genesis_time = param_u64("genesisTime")?;
+            let unix_seconds = param_u64("unixSeconds")?;
             let expected = test
                 .output
                 .interval

@@ -11,8 +11,6 @@ use ream_chain_lean::{
 };
 #[cfg(feature = "devnet5")]
 use ream_consensus_lean::attestation::MultiMessageAggregate;
-#[cfg(feature = "devnet4")]
-use ream_consensus_lean::block::BlockSignatures;
 use ream_consensus_lean::{
     attestation::SignedAttestation,
     block::{BlockWithSignatures, SignedBlock},
@@ -285,30 +283,6 @@ pub async fn build_block(
     }) {
         warn!("Failed to send block to LeanChainService for slot {slot}: {err:?}");
     }
-}
-
-#[cfg(feature = "devnet4")]
-fn sign_block(
-    keystore: Arc<ValidatorKeystore>,
-    block_with_signatures: BlockWithSignatures,
-    slot: u64,
-) -> anyhow::Result<SignedBlock> {
-    let BlockWithSignatures { block, signatures } = block_with_signatures;
-
-    let timer = start_timer(&PQ_SIG_ATTESTATION_SIGNING_TIME, &[]);
-    let proposer_signature = keystore
-        .proposal_private_key
-        .sign(&block.tree_hash_root(), slot as u32)?;
-    stop_timer(timer);
-    inc_int_counter_vec(&PQ_SIG_ATTESTATION_SIGNATURES_TOTAL, &[]);
-
-    Ok(SignedBlock {
-        block,
-        signature: BlockSignatures {
-            attestation_signatures: signatures,
-            proposer_signature,
-        },
-    })
 }
 
 #[cfg(feature = "devnet5")]

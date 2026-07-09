@@ -10,8 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
-default = ["devnet4"]
-devnet4 = ["ream-post-quantum-crypto/devnet4"]
+default = ["devnet5"]
 devnet5 = ["ream-post-quantum-crypto/devnet5"]
 
 [dependencies]
@@ -20,7 +19,6 @@ anyhow.workspace = true
 ethereum_ssz.workspace = true
 ethereum_ssz_derive.workspace = true
 itertools.workspace = true
-rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ssz_types.workspace = true

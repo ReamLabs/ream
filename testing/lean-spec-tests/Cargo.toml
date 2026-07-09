@@ -11,14 +11,7 @@ version.workspace = true
 
 [features]
 lean-spec-tests = []
-default = ["devnet4"]
-devnet4 = [
-    "ream-consensus-lean/devnet4",
-    "ream-consensus-misc/devnet4",
-    "ream-fork-choice-lean/devnet4",
-    "ream-post-quantum-crypto/devnet5",
-    "ream-storage/devnet4",
-]
+default = ["devnet5"]
 devnet5 = [
     "ream-consensus-lean/devnet5",
     "ream-consensus-misc/devnet5",
