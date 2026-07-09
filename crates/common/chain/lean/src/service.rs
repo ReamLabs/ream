@@ -2890,7 +2890,7 @@ impl LeanChainService {
     }
 
     async fn prune_old_state(&self, tick_count: u64) -> anyhow::Result<()> {
-        let (head, block_provider, slot_index_provider, state_provider) = {
+        let (slot_index_provider, state_provider, latest_finalized_slot) = {
             let fork_choice = self.store.read().await;
             let store = fork_choice.store.lock().await;
 
@@ -2900,21 +2900,14 @@ impl LeanChainService {
                 warn!("Failed to report storage metrics: {err:?}");
             }
             (
-                store.head_provider().get()?,
-                store.block_provider(),
                 store.slot_index_provider(),
                 store.state_provider(),
+                store.latest_finalized_provider().get()?.slot,
             )
         };
 
-        let head_slot = block_provider
-            .get(head)?
-            .ok_or_else(|| anyhow!("State not found for head: {head}"))?
-            .block
-            .slot;
-
-        if head_slot > STATE_RETENTION_SLOTS {
-            let prune_target_slot = head_slot - STATE_RETENTION_SLOTS;
+        if latest_finalized_slot > STATE_RETENTION_SLOTS {
+            let prune_target_slot = latest_finalized_slot - 1;
             let mut scan = prune_target_slot;
             let mut prune_root = None;
             loop {
