@@ -25,21 +25,14 @@ pub fn run_justifiability_test(test_name: &str, test: &JustifiabilityTest) -> an
         test.slot, test.finalized_slot, test.output.delta, test.output.is_justifiable,
     );
 
+    let actual_delta = i128::from(test.slot) - i128::from(test.finalized_slot);
     ensure!(
-        test.slot >= test.finalized_slot,
-        "Fixture has slot ({}) < finalized_slot ({})",
-        test.slot,
-        test.finalized_slot,
-    );
-
-    let actual_delta = test.slot - test.finalized_slot;
-    ensure!(
-        actual_delta == test.output.delta,
+        actual_delta == i128::from(test.output.delta),
         "Delta mismatch: expected {}, got {actual_delta}",
         test.output.delta,
     );
 
-    let actual = is_justifiable_after(test.slot, test.finalized_slot)?;
+    let actual = is_justifiable_after(test.slot, test.finalized_slot);
     ensure!(
         actual == test.output.is_justifiable,
         "is_justifiable mismatch: expected {}, got {actual}",
