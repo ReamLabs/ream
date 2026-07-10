@@ -17,6 +17,7 @@ devnet5 = [
     "ream-network-state-lean/devnet5",
     "ream-network-spec/devnet5",
     "ream-storage/devnet5",
+    "ream-test-utils/devnet5",
 ]
 
 [dependencies]
@@ -55,6 +56,7 @@ ream-sync.workspace = true
 
 [dev-dependencies]
 rand.workspace = true
+ream-test-utils.workspace = true
 
 [lints]
 workspace = true

@@ -15,6 +15,8 @@ pub struct LatestJustifiedField {
 ///
 /// NOTE: This table enables O(1) access to the latest justified checkpoint, deviates from
 /// the original spec which derives it from state dictionary each time it is needed.
+///
+/// Highest-slot justified checkpoint observed so far; the head walk starts here.
 impl REDBField for LatestJustifiedField {
     const FIELD_DEFINITION: TableDefinition<'_, &str, SSZEncoding<Checkpoint>> =
         TableDefinition::new("lean_latest_justified");

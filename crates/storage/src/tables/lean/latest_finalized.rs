@@ -12,6 +12,11 @@ pub struct LatestFinalizedField {
 /// Table definition for the Latest Finalized table
 ///
 /// Value: [Checkpoint]
+///
+/// Finalization as seen from the canonical head, not irreversible economic finality.
+///
+/// Re-derived from the head each update, so it is reorg-mutable and can lower on a reorg.
+/// Always an ancestor of the head, never monotone, never a safety guarantee.
 impl REDBField for LatestFinalizedField {
     const FIELD_DEFINITION: TableDefinition<'_, &str, SSZEncoding<Checkpoint>> =
         TableDefinition::new("lean_latest_finalized");
