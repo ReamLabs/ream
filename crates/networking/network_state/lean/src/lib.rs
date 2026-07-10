@@ -205,30 +205,30 @@ impl NetworkState {
             .collect();
         slots.sort_unstable();
 
-        let median_slot_x2 = Self::median_slot_x2(&slots);
-        let mut deviations_x2: Vec<_> = slots
+        let median_slot = Self::median_slot(&slots);
+        let mut deviations: Vec<_> = slots
             .iter()
-            .map(|slot| Self::slot_deviation_x2(*slot, median_slot_x2))
+            .map(|slot| Self::slot_deviation(*slot, median_slot))
             .collect();
-        deviations_x2.sort_unstable();
-        let median_deviation_x2 = Self::median_u128(&deviations_x2);
+        deviations.sort_unstable();
+        let median_deviation = Self::median(&deviations);
 
         Self::highest_slot_checkpoint(head_candidates.iter().copied().filter(|(_, checkpoint)| {
-            Self::slot_is_cluster_member(checkpoint.slot, median_slot_x2, median_deviation_x2)
+            Self::slot_is_cluster_member(checkpoint.slot, median_slot, median_deviation)
         }))
     }
 
-    fn slot_is_cluster_member(slot: u64, median_slot_x2: u128, median_deviation_x2: u128) -> bool {
-        let deviation_x2 = Self::slot_deviation_x2(slot, median_slot_x2);
-        if median_deviation_x2 == 0 {
-            return deviation_x2 == 0;
+    fn slot_is_cluster_member(slot: u64, median_slot: u128, median_deviation: u128) -> bool {
+        let deviation = Self::slot_deviation(slot, median_slot);
+        if median_deviation == 0 {
+            return deviation == 0;
         }
 
-        deviation_x2 * MODIFIED_Z_SCORE_NUMERATOR
-            <= median_deviation_x2 * MODIFIED_Z_SCORE_OUTLIER_THRESHOLD
+        deviation * MODIFIED_Z_SCORE_NUMERATOR
+            <= median_deviation * MODIFIED_Z_SCORE_OUTLIER_THRESHOLD
     }
 
-    fn median_slot_x2(sorted_slots: &[u64]) -> u128 {
+    fn median_slot(sorted_slots: &[u64]) -> u128 {
         let mid = sorted_slots.len() / 2;
         if sorted_slots.len().is_multiple_of(2) {
             u128::from(sorted_slots[mid - 1]) + u128::from(sorted_slots[mid])
@@ -237,7 +237,7 @@ impl NetworkState {
         }
     }
 
-    fn median_u128(sorted_values: &[u128]) -> u128 {
+    fn median(sorted_values: &[u128]) -> u128 {
         let mid = sorted_values.len() / 2;
         if sorted_values.len().is_multiple_of(2) {
             (sorted_values[mid - 1] + sorted_values[mid]) / 2
@@ -246,8 +246,8 @@ impl NetworkState {
         }
     }
 
-    fn slot_deviation_x2(slot: u64, median_slot_x2: u128) -> u128 {
-        (u128::from(slot) * 2).abs_diff(median_slot_x2)
+    fn slot_deviation(slot: u64, median_slot: u128) -> u128 {
+        (u128::from(slot) * 2).abs_diff(median_slot)
     }
 
     pub fn common_finalized_checkpoint(&self) -> Option<Checkpoint> {
