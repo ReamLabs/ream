@@ -73,6 +73,18 @@ impl DataAvailabilityVerificationService {
         let id = candidate.id;
         let verifier = self.verifier.clone();
 
+        // `put` is the correctness gate; skipping here only avoids paying
+        // verification for a column that is already doomed.
+        if self.store.is_below_retention(candidate.context.slot) {
+            debug!(
+                "refusing column below the retention floor: block root {root}, column {index}, floor {floor}",
+                root = id.block_root(),
+                index = id.index(),
+                floor = self.store.get_retention_floor()
+            );
+            return;
+        }
+
         // Skip already-held columns before paying for verification. A failed
         // pre-check must not drop the candidate: fall through and let
         // verify + put decide.
@@ -131,6 +143,14 @@ impl DataAvailabilityVerificationService {
                             index = id.index()
                         );
                     }
+                    Ok(InsertOutcome::BelowRetention) => {
+                        debug!(
+                            "refused column below the retention floor: block root {root}, column {index}, floor {floor}",
+                            root = id.block_root(),
+                            index = id.index(),
+                            floor = self.store.get_retention_floor()
+                        );
+                    }
                     Err(err) => {
                         error!("failed to persist verified column: {err}");
                     }
@@ -150,6 +170,16 @@ impl DataAvailabilityVerificationService {
     async fn process_candidate_block(&self, candidate: CandidateBlock) {
         let block_root = candidate.block_root();
         let submitted = candidate.columns_len();
+
+        // Same floor pre-check as the single-column path; one slot covers the
+        // whole block, so this skips up to a block's worth of verification.
+        if self.store.is_below_retention(candidate.context().slot) {
+            debug!(
+                "refusing block below the retention floor: block root {block_root}, floor {floor}",
+                floor = self.store.get_retention_floor()
+            );
+            return;
+        }
 
         // One bitmap lookup covers the pre-check for the whole batch. As in
         // the single-column path, a failed pre-check falls through to
@@ -228,6 +258,12 @@ impl DataAvailabilityVerificationService {
                         Ok(InsertOutcome::Inserted) => stored += 1,
                         Ok(InsertOutcome::Duplicated) => {
                             warn!("duplicated column in batch: block root {block_root}")
+                        }
+                        Ok(InsertOutcome::BelowRetention) => {
+                            debug!(
+                                "refused column below the retention floor: block root {block_root}, floor {floor}",
+                                floor = store.get_retention_floor()
+                            )
                         }
                         Err(err) => error!("failed to persist verified column: {err}"),
                     }
@@ -553,6 +589,45 @@ mod tests {
             }
             let rejected = ColumnId::new(block_root, 3).expect("valid index");
             assert_eq!(store.get(&rejected).expect("get"), None);
+        });
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A candidate below the retention floor is dropped before verification.
+    /// The floor gate in `put` is the correctness backstop; the service's
+    /// early skip is the economics — it must not pay for verifying a column
+    /// it already knows the store will refuse.
+    #[test]
+    fn below_floor_candidate_is_skipped_before_verification() {
+        let executor = ReamExecutor::new().expect("create executor");
+        let root = temp_root();
+        let store = Arc::new(FileColumnStore::new(root.clone()).expect("open store"));
+        let verifier = Arc::new(CountingVerifier::accepting_all());
+        let (handle, rx) = ingest_channel(8);
+        let service = DataAvailabilityVerificationService::new(
+            rx,
+            verifier.clone(),
+            store.clone(),
+            executor.clone(),
+        );
+
+        // The floor is already at 100 when the candidate arrives.
+        store.prune_below_slot(100).expect("raise the floor");
+        let stale = sample_candidate(B256::repeat_byte(4), 2, 10, b"stale");
+
+        executor.runtime().block_on(async move {
+            let service_task = tokio::spawn(service.run());
+            handle.submit(stale.clone()).await.expect("submit");
+            drop(handle);
+            service_task.await.expect("service task joined");
+
+            assert_eq!(store.get(&stale.id).expect("get"), None, "not stored");
+            assert_eq!(
+                verifier.calls(),
+                0,
+                "a below-floor candidate must be skipped before verification"
+            );
         });
 
         std::fs::remove_dir_all(&root).ok();

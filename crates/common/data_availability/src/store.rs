@@ -22,7 +22,12 @@ pub trait ColumnReadStore: Send + Sync {
     fn get(&self, id: &ColumnId) -> Result<Option<VerifiedColumn>, ColumnStoreError>;
     fn availability(&self, block_root: B256) -> Result<ColumnAvailability, ColumnStoreError>;
 
+    /// The current retention floor, as a slot; `0` means no floor yet.
     fn get_retention_floor(&self) -> u64;
+
+    /// Whether a column at `slot` is strictly older than the retention floor
+    /// — the exact predicate [`DaWriteStore::put`] refuses on. A column
+    /// exactly at the floor is kept.
     fn is_below_retention(&self, slot: u64) -> bool;
 }
 
