@@ -1076,7 +1076,12 @@ impl Store {
         let mut processed_attestation_data: HashSet<AttestationData> = HashSet::new();
 
         let mut sorted_candidates: Vec<_> = ctx.available_signed_attestations.values().collect();
-        sorted_candidates.sort_by_key(|signed_attestation| signed_attestation.message.target.slot);
+        sorted_candidates.sort_by_cached_key(|signed_attestation| {
+            (
+                signed_attestation.message.target.slot,
+                signed_attestation.message.tree_hash_root(),
+            )
+        });
 
         let select_start = Instant::now();
         let mut child_payloads_consumed = 0;
@@ -2018,29 +2023,30 @@ impl Store {
         &self,
         aggregated_payloads: &HashMap<SignatureKey, Vec<PayloadProof>>,
     ) -> anyhow::Result<HashMap<u64, AttestationData>> {
-        let mut attestations: HashMap<u64, AttestationData> = HashMap::new();
         let attestation_data_by_root_provider =
             self.store.lock().await.attestation_data_by_root_provider();
+        let mut resolved_attestations = Vec::with_capacity(aggregated_payloads.len());
 
         for (signature_key, proofs) in aggregated_payloads {
-            let data_root = signature_key.data_root;
-            let attestation_data = match attestation_data_by_root_provider.get(data_root)? {
-                Some(data) => data,
-                None => continue,
-            };
-
             if proofs.is_empty() {
                 continue;
             }
 
-            let validator = signature_key.validator_id;
-            let is_newer = attestations
-                .get(&validator)
-                .is_none_or(|existing| existing.slot < attestation_data.slot);
+            let data_root = signature_key.data_root;
+            let Some(attestation_data) = attestation_data_by_root_provider.get(data_root)? else {
+                continue;
+            };
 
-            if is_newer {
-                attestations.insert(validator, attestation_data.clone());
-            }
+            resolved_attestations.push((signature_key.validator_id, data_root, attestation_data));
+        }
+
+        resolved_attestations.sort_by_key(|(_validator_id, data_root, data)| {
+            std::cmp::Reverse((data.slot, *data_root))
+        });
+
+        let mut attestations: HashMap<u64, AttestationData> = HashMap::new();
+        for (validator_id, _data_root, attestation_data) in resolved_attestations {
+            attestations.entry(validator_id).or_insert(attestation_data);
         }
         Ok(attestations)
     }
