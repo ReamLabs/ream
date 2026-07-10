@@ -2,9 +2,12 @@ use std::{
     collections::HashMap,
     fs,
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{
+        RwLock, RwLockReadGuard, RwLockWriteGuard,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use alloy_primitives::B256;
@@ -19,6 +22,10 @@ use tracing::{debug, info, trace, warn};
 
 /// Committed column files; in-progress writes use `.tmp` instead.
 const COLUMN_FILE_EXTENSION: &str = "ssz";
+
+/// Kept in `root` next to the column files. The name never matches the
+/// column-file scheme, so the startup scan skips it.
+const RETENTION_FLOOR_FILE: &str = "retention_floor";
 
 /// A block's slot plus a 128-bit bitmap of its stored column indices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +48,8 @@ pub struct FileColumnStore {
     root: PathBuf,
     index: RwLock<HashMap<B256, BlockEntry>>,
     // TODO: add a payload cache to avoid reading from files every time.
+    /// Beacon-issued retention floor, as a slot; `0` means no floor yet.
+    retention_floor: AtomicU64,
 }
 
 impl FileColumnStore {
@@ -48,12 +57,57 @@ impl FileColumnStore {
     /// on disk. A missing directory yields an empty store; leftover `*.tmp`
     /// files from an interrupted write are removed.
     pub fn new(root: PathBuf) -> Result<Self, ColumnStoreError> {
+        // The floor must be known before the directory scan, so the scan can
+        // apply it to the column files it finds.
+        let retention_floor = Self::load_retention_floor(&root);
         let store = Self {
             root,
             index: RwLock::new(HashMap::new()),
+            retention_floor: AtomicU64::new(retention_floor),
         };
         store.rebuild_index()?;
         Ok(store)
+    }
+
+    /// Read the persisted retention floor; `0` (no floor) when the file does
+    /// not exist yet.
+    fn load_retention_floor(root: &Path) -> u64 {
+        let path = root.join(RETENTION_FLOOR_FILE);
+        let contents = match fs::read_to_string(&path) {
+            Ok(contents) => contents,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return 0,
+            Err(err) => {
+                warn!(
+                    "failed to read the retention floor file {}: {err}; starting with no floor",
+                    path.display()
+                );
+                return 0;
+            }
+        };
+        match contents.trim().parse() {
+            Ok(floor) => floor,
+            Err(err) => {
+                warn!(
+                    "malformed retention floor file {}: {err}; starting with no floor",
+                    path.display()
+                );
+                0
+            }
+        }
+    }
+
+    /// Durably record `floor`: temp file + `sync_all` + atomic rename, the same
+    /// discipline as a column write.
+    fn persist_retention_floor(&self, floor: u64) -> Result<(), ColumnStoreError> {
+        // The first retention hint may arrive before any column was written.
+        fs::create_dir_all(&self.root)?;
+        let path = self.root.join(RETENTION_FLOOR_FILE);
+        let tmp_path = path.with_extension("tmp");
+        let mut file = fs::File::create(&tmp_path)?;
+        file.write_all(floor.to_string().as_bytes())?;
+        file.sync_all()?;
+        fs::rename(&tmp_path, &path)?;
+        Ok(())
     }
 
     /// `{slot:08}_{index:03}_{block_root:x}.ssz` under `root`.
@@ -66,6 +120,9 @@ impl FileColumnStore {
     }
 
     fn rebuild_index(&self) -> Result<(), ColumnStoreError> {
+        // make sure that old data will be deleted and won't be loaded
+        self.prune_below_slot(self.get_retention_floor());
+
         let root = self.root.display();
         let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
@@ -106,8 +163,9 @@ impl FileColumnStore {
         }
 
         info!(
-            "loaded column store index from {root}: {column_files} column files across {} blocks",
-            index.len()
+            "loaded DA store index from {root}: {column_files} column files across {} blocks, retention floor at slot {}",
+            index.len(),
+            self.retention_floor.load(Ordering::Relaxed)
         );
         Ok(())
     }
@@ -223,6 +281,17 @@ impl ColumnReadStore for FileColumnStore {
         // pass the node's actual custody set here instead.
         Ok(ColumnAvailability::new(held, ALL_COLUMNS_MASK))
     }
+
+    fn get_retention_floor(&self) -> u64 {
+        // Relaxed is enough: the floor is a monotonic scalar and carries no
+        // ordering relationship with other memory; durability comes from the
+        // persisted file, not the atomic.
+        self.retention_floor.load(Ordering::Relaxed)
+    }
+
+    fn is_below_retention(&self, slot: u64) -> bool {
+        slot < self.get_retention_floor()
+    }
 }
 
 impl ColumnWriteStore for FileColumnStore {
@@ -234,6 +303,10 @@ impl ColumnWriteStore for FileColumnStore {
         let slot = column.context().slot;
         let block_root = id.block_root();
         let column_index = id.index();
+
+        if self.is_below_retention(slot) {
+            return Ok(InsertOutcome::BelowRetention);
+        }
 
         let already_stored = self
             .index_read()
@@ -262,6 +335,17 @@ impl ColumnWriteStore for FileColumnStore {
     }
 
     fn prune_below_slot(&self, slot: u64) -> Result<usize, ColumnStoreError> {
+        if self.is_below_retention(slot) {
+            info!(
+                "ignoring retention hint below the current floor: hint slot {slot}, floor {floor}",
+                floor = self.get_retention_floor()
+            );
+            return Ok(0);
+        }
+
+        self.persist_retention_floor(slot)?;
+        self.retention_floor.fetch_max(slot, Ordering::Relaxed);
+
         let entries = self
             .index_read()
             .iter()
@@ -287,7 +371,7 @@ mod tests {
         store::{ColumnReadStore, ColumnWriteStore, InsertOutcome},
     };
 
-    use super::{BlockEntry, FileColumnStore};
+    use super::{BlockEntry, FileColumnStore, RETENTION_FLOOR_FILE};
 
     fn temp_root() -> PathBuf {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -433,6 +517,35 @@ mod tests {
 
         assert!(!tmp.exists(), "leftover temp file should be cleaned up");
         assert!(store.index_read().is_empty());
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn retention_floor_survives_reopen() {
+        let root = temp_root();
+        let store = FileColumnStore::new(root.clone()).expect("open store");
+        // A fresh store starts with no floor.
+        assert_eq!(store.retention_floor.load(Ordering::Relaxed), 0);
+
+        store.persist_retention_floor(42).expect("persist floor");
+        drop(store);
+
+        let reopened = FileColumnStore::new(root.clone()).expect("reopen store");
+        assert_eq!(reopened.retention_floor.load(Ordering::Relaxed), 42);
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn malformed_retention_floor_file_degrades_to_no_floor() {
+        let root = temp_root();
+        fs::create_dir_all(&root).expect("create root");
+        fs::write(root.join(RETENTION_FLOOR_FILE), b"not-a-slot").expect("write junk");
+
+        // Fail-open: a corrupt floor file must not brick the store.
+        let store = FileColumnStore::new(root.clone()).expect("open store");
+        assert_eq!(store.retention_floor.load(Ordering::Relaxed), 0);
 
         fs::remove_dir_all(&root).ok();
     }
