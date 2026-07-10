@@ -2,7 +2,11 @@ use alloy_primitives::{B256, aliases::B32};
 use alloy_rlp::{BufMut, Decodable, Encodable, bytes::Bytes};
 use anyhow::{anyhow, ensure};
 use discv5::{Enr, enr::NodeId};
-use ream_consensus_misc::misc::compute_shuffled_index;
+use ream_consensus_misc::{
+    constants::beacon::{FAR_FUTURE_EPOCH, genesis_validators_root},
+    misc::compute_shuffled_index,
+};
+use ream_network_spec::networks::beacon_network_spec;
 use sha2::{Digest, Sha256};
 use ssz::{Decode, Encode};
 use ssz_types::{
@@ -10,6 +14,8 @@ use ssz_types::{
     typenum::{U4, U64},
 };
 use tracing::{error, trace};
+
+use crate::eth2::EnrForkId;
 
 pub const ATTESTATION_BITFIELD_ENR_KEY: &str = "attnets";
 pub const ATTESTATION_SUBNET_COUNT: usize = 64;
@@ -203,6 +209,18 @@ impl Decodable for NextForkDigest {
             ))
         })?;
         Ok(Self(digest))
+    }
+}
+
+pub fn next_fork_digest(current_epoch: u64) -> NextForkDigest {
+    let fork_id = EnrForkId::current(genesis_validators_root(), current_epoch);
+
+    if fork_id.next_fork_epoch == FAR_FUTURE_EPOCH {
+        NextForkDigest::default()
+    } else {
+        let digest =
+            beacon_network_spec().fork_digest(fork_id.next_fork_epoch, genesis_validators_root());
+        NextForkDigest(digest)
     }
 }
 

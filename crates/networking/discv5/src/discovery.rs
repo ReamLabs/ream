@@ -33,8 +33,8 @@ use crate::{
     eth2::{ENR_ETH2_KEY, EnrForkId},
     subnet::{
         ATTESTATION_BITFIELD_ENR_KEY, AttestationSubnets, CUSTODY_GROUP_COUNT_ENR_KEY,
-        EPOCHS_PER_SUBNET_SUBSCRIPTION, NEXT_FORK_DIGEST_ENR_KEY, NextForkDigest,
-        SYNC_COMMITTEE_BITFIELD_ENR_KEY, attestation_subnet_predicate, compute_subscribed_subnets,
+        EPOCHS_PER_SUBNET_SUBSCRIPTION, NEXT_FORK_DIGEST_ENR_KEY, SYNC_COMMITTEE_BITFIELD_ENR_KEY,
+        attestation_subnet_predicate, compute_subscribed_subnets, next_fork_digest,
         sync_committee_subnet_predicate,
     },
 };
@@ -91,6 +91,7 @@ impl Discovery {
     ) -> anyhow::Result<Self> {
         let enr_local =
             convert_to_enr(local_key).map_err(|err| anyhow!("Failed to convert key: {err:?}"))?;
+        let current_epoch = compute_epoch_at_slot(current_slot);
 
         let mut enr_builder = Enr::builder();
         enr_builder.ip(config.socket_address);
@@ -98,14 +99,17 @@ impl Discovery {
         enr_builder.udp4(config.discovery_port);
 
         let enr = enr_builder
-            .add_value(ENR_ETH2_KEY, &EnrForkId::electra(genesis_validators_root()))
+            .add_value(
+                ENR_ETH2_KEY,
+                &EnrForkId::current(genesis_validators_root(), current_epoch),
+            )
             .add_value(ATTESTATION_BITFIELD_ENR_KEY, &config.attestation_subnets)
             .add_value(
                 SYNC_COMMITTEE_BITFIELD_ENR_KEY,
                 &config.sync_committee_subnets,
             )
             .add_value(CUSTODY_GROUP_COUNT_ENR_KEY, &config.custody_group_count)
-            .add_value(NEXT_FORK_DIGEST_ENR_KEY, &NextForkDigest::default())
+            .add_value(NEXT_FORK_DIGEST_ENR_KEY, &next_fork_digest(current_epoch))
             .build(&enr_local)
             .map_err(|err| anyhow!("Failed to build ENR: {err}"))?;
 
@@ -126,8 +130,7 @@ impl Discovery {
         }
 
         // Compute and set attestation subnets
-        let subnets =
-            compute_subscribed_subnets(enr.node_id(), compute_epoch_at_slot(current_slot))?;
+        let subnets = compute_subscribed_subnets(enr.node_id(), current_epoch)?;
         let mut config = config.clone();
         config.attestation_subnets = AttestationSubnets::new();
         for subnet_id in subnets {
@@ -136,7 +139,7 @@ impl Discovery {
                 .enable_attestation_subnet(subnet_id)?;
         }
 
-        let subscription_epoch = compute_epoch_at_slot(current_slot);
+        let subscription_epoch = current_epoch;
 
         let event_stream = if !config.disable_discovery {
             discv5

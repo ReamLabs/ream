@@ -208,10 +208,20 @@ pub struct BeaconNetworkSpec {
 impl BeaconNetworkSpec {
     pub fn fork_digest(&self, epoch: u64, genesis_validators_root: B256) -> B32 {
         let fork_data = ForkData {
-            current_version: self.fulu_fork_version,
+            current_version: self.current_fork_version(epoch),
             genesis_validators_root,
         };
         compute_fork_digest(fork_data, epoch)
+    }
+
+    pub fn current_fork_version(&self, epoch: u64) -> B32 {
+        self.fork_schedule()
+            .0
+            .iter()
+            .rev()
+            .find(|fork| fork.epoch <= epoch)
+            .map(|fork| fork.current_version)
+            .unwrap_or(self.genesis_fork_version)
     }
 
     pub fn fork_schedule(&self) -> ForkSchedule {
