@@ -1483,7 +1483,7 @@ pub async fn get_blocks_v3(
         .try_into()
         .unwrap_or_default();
     let attestations: VariableList<Attestation, U8> = operation_pool
-        .get_all_attestations()
+        .get_attestations_for_block(&state)
         .try_into()
         .unwrap_or_default();
     let deposits: VariableList<Deposit, U16> = operation_pool
