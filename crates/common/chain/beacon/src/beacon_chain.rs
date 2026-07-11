@@ -57,6 +57,12 @@ impl BeaconChain {
         )
         .await?;
 
+        for attestation in signed_block.message.body.attestations.iter() {
+            if let Err(err) = on_attestation(&mut store, attestation.clone(), true) {
+                warn!("Failed to process block attestation through fork choice: {err:?}");
+            }
+        }
+
         // Build and Emit Block event
         let finalized_checkpoint = store.db.finalized_checkpoint_provider().get().ok();
         let block_event =
