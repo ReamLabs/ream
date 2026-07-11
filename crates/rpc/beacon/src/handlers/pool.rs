@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use actix_web::{
     HttpResponse, Responder, get, post,
@@ -6,42 +6,45 @@ use actix_web::{
 };
 use ream_api_types_beacon::{
     query::AttestationQuery,
+    request::SyncCommitteeRequestItem,
     responses::{DataResponse, DataVersionedResponse},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_bls::traits::Verifiable;
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
-    attestation::Attestation, attester_slashing::AttesterSlashing,
-    bls_to_execution_change::SignedBLSToExecutionChange, electra::beacon_state::BeaconState,
-    proposer_slashing::ProposerSlashing, single_attestation::SingleAttestation,
-    voluntary_exit::SignedVoluntaryExit,
+    attester_slashing::AttesterSlashing, bls_to_execution_change::SignedBLSToExecutionChange,
+    electra::beacon_state::BeaconState, proposer_slashing::ProposerSlashing,
+    single_attestation::SingleAttestation, voluntary_exit::SignedVoluntaryExit,
 };
 use ream_consensus_misc::{
-    constants::beacon::DOMAIN_SYNC_COMMITTEE,
+    constants::beacon::{DOMAIN_SYNC_COMMITTEE, SYNC_COMMITTEE_SIZE},
     misc::{compute_epoch_at_slot, compute_signing_root},
 };
 use ream_network_manager::{
     gossipsub::validate::{
         beacon_attestation::validate_beacon_attestation, result::ValidationResult,
     },
+    p2p_sender::P2PSender,
     service::NetworkManagerService,
 };
+use ream_network_spec::networks::beacon_network_spec;
 use ream_operation_pool::OperationPool;
 use ream_p2p::{
     gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
     network::beacon::channel::GossipMessage,
 };
-use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
+use ream_storage::{cache::BeaconCacheDB, db::beacon::BeaconDB, tables::table::REDBTable};
+use ream_sync_committee_pool::SyncCommitteePool;
 use ream_validator_beacon::{
-    attestation::compute_subnet_for_attestation,
-    sync_committee::{SyncCommitteeMessage, is_assigned_to_sync_committee},
+    attestation::{compute_subnet_for_attestation, single_attestation_to_attestation},
+    constants::SYNC_COMMITTEE_SUBNET_COUNT,
+    sync_committee::{
+        SyncCommitteeMessage, compute_sync_committee_period, is_assigned_to_sync_committee,
+    },
 };
 use ssz::Encode;
-use ssz_types::{
-    BitList, BitVector,
-    typenum::{U64, U131072},
-};
+use tracing::warn;
 
 use crate::handlers::state::get_state_from_id;
 
@@ -260,13 +263,20 @@ pub async fn post_proposer_slashings(
 #[post("/beacon/pool/attestations")]
 pub async fn post_attestations(
     operation_pool: Data<Arc<OperationPool>>,
-    network_manager: Data<Arc<NetworkManagerService>>,
+    p2p_sender: Data<Arc<P2PSender>>,
+    cached_db: Data<Arc<BeaconCacheDB>>,
     beacon_chain: Data<Arc<BeaconChain>>,
     attestations: Json<Vec<SingleAttestation>>,
 ) -> Result<impl Responder, ApiError> {
     let attestations = attestations.into_inner();
 
-    let beacon_state = get_head_state(beacon_chain.get_ref().as_ref()).await?;
+    let beacon_state = match get_head_state(beacon_chain.get_ref().as_ref()).await {
+        Ok(beacon_state) => beacon_state,
+        Err(err) => {
+            warn!("Failed to get head state for attestation pool: {err:?}");
+            return Err(err);
+        }
+    };
 
     for single_attestation in attestations {
         let committees_per_slot =
@@ -282,7 +292,7 @@ pub async fn post_attestations(
             &single_attestation,
             beacon_chain.get_ref().as_ref(),
             subnet_id,
-            &network_manager.cached_db,
+            cached_db.get_ref().as_ref(),
         )
         .await
         {
@@ -296,25 +306,38 @@ pub async fn post_attestations(
                 )));
             }
             Err(err) => {
+                warn!("Failed to validate beacon attestation: {err:?}");
                 return Err(ApiError::InternalError(format!(
                     "Failed to validate attestation: {err:?}"
                 )));
             }
         }
 
-        let attestation = convert_single_to_attestation(&single_attestation, &beacon_state)
-            .map_err(|err| ApiError::BadRequest(format!("Invalid attestation: {err:?}")))?;
+        let attestation = single_attestation_to_attestation(&single_attestation, &beacon_state)
+            .map_err(|err| {
+                warn!("Failed to convert single attestation: {err:?}");
+                ApiError::BadRequest(format!("Invalid attestation: {err:?}"))
+            })?;
 
         operation_pool.insert_attestation(attestation.clone(), single_attestation.committee_index);
 
-        beacon_chain
-            .process_attestation(attestation.clone(), false)
-            .await
-            .map_err(|err| {
-                ApiError::BadRequest(format!("Attestation failed processing: {err:?}"))
-            })?;
+        let current_slot = {
+            let store = beacon_chain.store.lock().await;
+            store.get_current_slot().map_err(|err| {
+                ApiError::InternalError(format!("Failed to get current slot: {err:?}"))
+            })?
+        };
+        if current_slot > attestation.data.slot {
+            beacon_chain
+                .process_attestation(attestation.clone(), false)
+                .await
+                .map_err(|err| {
+                    warn!("Failed to process attestation through fork choice: {err:?}");
+                    ApiError::BadRequest(format!("Attestation failed processing: {err:?}"))
+                })?;
+        }
 
-        network_manager.p2p_sender.send_gossip(GossipMessage {
+        p2p_sender.send_gossip(GossipMessage {
             topic: GossipTopic {
                 fork: beacon_state.fork.current_version,
                 kind: GossipTopicKind::BeaconAttestation(subnet_id),
@@ -342,38 +365,6 @@ pub async fn get_attestations(
     Ok(HttpResponse::Ok().json(DataVersionedResponse::new(all_attestations)))
 }
 
-fn convert_single_to_attestation(
-    single: &SingleAttestation,
-    state: &ream_consensus_beacon::electra::beacon_state::BeaconState,
-) -> Result<Attestation, String> {
-    let committee = state
-        .get_beacon_committee(single.data.slot, single.committee_index)
-        .map_err(|err| format!("Failed to get committee: {err:?}"))?;
-
-    let validator_index_in_committee = committee
-        .iter()
-        .position(|&idx| idx == single.attester_index)
-        .ok_or_else(|| format!("Validator {} not found in committee", single.attester_index))?;
-
-    let mut aggregation_bits = BitList::<U131072>::with_capacity(committee.len())
-        .map_err(|err| format!("Failed to create aggregation_bits: {err:?}"))?;
-    aggregation_bits
-        .set(validator_index_in_committee, true)
-        .map_err(|err| format!("Failed to set aggregation bit: {err:?}"))?;
-
-    let mut committee_bits = BitVector::<U64>::new();
-    committee_bits
-        .set(single.committee_index as usize, true)
-        .map_err(|err| format!("Failed to set committee bit: {err:?}"))?;
-
-    Ok(Attestation {
-        aggregation_bits,
-        data: single.data.clone(),
-        signature: single.signature.clone(),
-        committee_bits,
-    })
-}
-
 async fn get_head_state(beacon_chain: &BeaconChain) -> Result<BeaconState, ApiError> {
     let store = beacon_chain.store.lock().await;
 
@@ -394,11 +385,24 @@ async fn get_head_state(beacon_chain: &BeaconChain) -> Result<BeaconState, ApiEr
 /// POST /eth/v1/beacon/pool/sync_committees
 #[post("/beacon/pool/sync_committees")]
 pub async fn post_sync_committees(
-    messages: Json<Vec<SyncCommitteeMessage>>,
+    messages: Json<Vec<SyncCommitteeRequestItem>>,
     db: Data<BeaconDB>,
+    sync_committee_pool: Data<Arc<SyncCommitteePool>>,
+    p2p_sender: Data<Arc<P2PSender>>,
 ) -> Result<impl Responder, ApiError> {
+    let mut seen_messages = HashSet::new();
+
     for message in messages.into_inner() {
         let slot = message.slot;
+        if !seen_messages.insert((
+            slot,
+            message.beacon_block_root,
+            message.validator_index,
+            message.signature.clone(),
+        )) {
+            continue;
+        }
+
         let state = get_state_from_id(ID::Slot(slot), &db).await?;
 
         let validator_index = message.validator_index;
@@ -428,7 +432,8 @@ pub async fn post_sync_committees(
 
         let validator_domain = state.get_domain(DOMAIN_SYNC_COMMITTEE, Some(epoch));
 
-        let validator_signing_root = compute_signing_root(message.slot, validator_domain);
+        let validator_signing_root =
+            compute_signing_root(message.beacon_block_root, validator_domain);
 
         if !message
             .signature
@@ -440,6 +445,55 @@ pub async fn post_sync_committees(
             return Err(ApiError::BadRequest(
                 "Sync committee message signature verification failed".into(),
             ));
+        }
+
+        let sync_committee = if compute_sync_committee_period(epoch)
+            == compute_sync_committee_period(state.get_current_epoch())
+        {
+            &state.current_sync_committee
+        } else {
+            &state.next_sync_committee
+        };
+        let sync_subcommittee_size = (SYNC_COMMITTEE_SIZE / SYNC_COMMITTEE_SUBNET_COUNT) as usize;
+        let sync_message = SyncCommitteeMessage {
+            slot,
+            beacon_block_root: message.beacon_block_root,
+            validator_index,
+            signature: message.signature,
+        };
+        let mut subcommittee_indices = HashSet::new();
+
+        for position in
+            sync_committee
+                .public_keys
+                .iter()
+                .enumerate()
+                .filter_map(|(position, public_key)| {
+                    (public_key == &validator.public_key).then_some(position)
+                })
+        {
+            let subcommittee_index = (position / sync_subcommittee_size) as u64;
+            let index_in_subcommittee = position % sync_subcommittee_size;
+
+            sync_committee_pool.aggregate_messages(
+                slot,
+                sync_message.beacon_block_root,
+                subcommittee_index,
+                [(sync_message.clone(), index_in_subcommittee)],
+            );
+            subcommittee_indices.insert(subcommittee_index);
+        }
+
+        for subcommittee_index in subcommittee_indices {
+            sync_committee_pool
+                .insert_sync_committee_message(sync_message.clone(), subcommittee_index);
+            p2p_sender.send_gossip(GossipMessage {
+                topic: GossipTopic {
+                    fork: beacon_network_spec().fork_digest(epoch, state.genesis_validators_root),
+                    kind: GossipTopicKind::SyncCommittee(subcommittee_index),
+                },
+                data: sync_message.as_ssz_bytes(),
+            });
         }
     }
 

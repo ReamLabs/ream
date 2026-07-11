@@ -143,9 +143,12 @@ impl NetworkManagerService {
             beacon_network_spec().seconds_per_slot(),
         ));
         let mut syncer_handle = block_range_syncer.start();
+        // Avoid polling a completed JoinHandle after the syncer has caught up.
+        let mut syncer_active = true;
         loop {
             tokio::select! {
-                result = &mut syncer_handle => {
+                result = &mut syncer_handle, if syncer_active => {
+                    syncer_active = false;
                     let joined_result = match result {
                         Ok(joined_result) => joined_result,
                         Err(err) => {
@@ -172,6 +175,7 @@ impl NetworkManagerService {
 
                     if !block_range_syncer.is_synced_to_finalized_slot().await {
                         syncer_handle = block_range_syncer.start();
+                        syncer_active = true;
                     }
                 }
                 _ = interval.tick() => {
@@ -188,7 +192,12 @@ impl NetworkManagerService {
                     match event {
                         // Handles Gossipsub messages from other peers.
                         ReamNetworkEvent::GossipsubMessage { message } =>
-                            handle_gossipsub_message(message, &beacon_chain, &cached_db, &p2p_sender).await,
+                            handle_gossipsub_message(
+                                message,
+                                &beacon_chain,
+                                &cached_db,
+                                &p2p_sender,
+                            ).await,
                         // Handles Req/Resp messages from other peers.
                         ReamNetworkEvent::RequestMessage { peer_id, stream_id, connection_id, message } =>
                             handle_req_resp_message(peer_id, stream_id, connection_id, message, &p2p_sender, &ream_db, network_state.clone()).await,

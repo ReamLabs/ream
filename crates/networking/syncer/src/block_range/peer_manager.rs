@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    sync::Arc,
+    time::Instant,
+};
 
 use libp2p::PeerId;
 use ream_consensus_misc::constants::beacon::SLOTS_PER_EPOCH;
@@ -41,10 +45,17 @@ impl PeerManager {
                 continue;
             }
 
-            self.peers.entry(peer.peer_id).or_insert_with(|| PeerInfo {
-                peer: peer.clone(),
-                peer_status: PeerStatus::Idle,
-            });
+            match self.peers.entry(peer.peer_id) {
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().peer = peer.clone();
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(PeerInfo {
+                        peer: peer.clone(),
+                        peer_status: PeerStatus::Idle,
+                    });
+                }
+            }
         }
 
         // Remove disconnected peers
