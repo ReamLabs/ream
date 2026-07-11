@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use actix_web::{
     HttpRequest, HttpResponse, Responder, get, post,
@@ -369,6 +372,12 @@ async fn validate_gossip_level(
     block: &SignedBeaconBlock,
     cached_db: &BeaconCacheDB,
 ) -> Result<(), String> {
+    // Catch the fork-choice store up to wall-clock time before checking whether the block is from
+    // the future. Do not tick to the block slot itself; future blocks must remain future.
+    process_tick_now(beacon_chain)
+        .await
+        .map_err(|err| format!("Failed to process current slot tick: {err}"))?;
+
     let store = beacon_chain.store.lock().await;
 
     // Check slot not in future
@@ -524,6 +533,12 @@ async fn publish_and_process_block(
     beacon_chain: Data<Arc<BeaconChain>>,
     p2p_sender: Data<Arc<P2PSender>>,
 ) -> Result<HttpResponse, ApiError> {
+    process_tick_now(beacon_chain.as_ref())
+        .await
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to process current slot tick: {err}"))
+        })?;
+
     // Broadcast via P2P
     let fork_digest = beacon_network_spec().fork_digest(FULU_FORK_EPOCH, genesis_validators_root());
     let topic = GossipTopic {
@@ -556,6 +571,21 @@ async fn publish_and_process_block(
     } else {
         Ok(HttpResponse::Accepted().finish())
     }
+}
+
+async fn process_tick_now(beacon_chain: &BeaconChain) -> Result<(), String> {
+    let now = current_unix_time_ceil_secs()?;
+    beacon_chain
+        .process_tick(now)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+fn current_unix_time_ceil_secs() -> Result<u64, String> {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| err.to_string())?;
+    Ok(duration.as_secs() + u64::from(duration.subsec_nanos() > 0))
 }
 
 /// POST /eth/v2/beacon/blocks
@@ -599,7 +629,7 @@ pub async fn post_blinded_beacon_block(
     beacon_chain: Data<Arc<BeaconChain>>,
     p2p_sender: Data<Arc<P2PSender>>,
     cached_db: Data<Arc<BeaconCacheDB>>,
-    builder_client: Option<Data<Arc<BuilderClient>>>,
+    builder_client: Data<Option<Arc<BuilderClient>>>,
 ) -> Result<impl Responder, ApiError> {
     validate_consensus_version_header(&http_request)?;
 
@@ -612,7 +642,7 @@ pub async fn post_blinded_beacon_block(
     let slot = signed_blinded_block.message.slot;
     let block_root = signed_blinded_block.message.tree_hash_root();
 
-    let builder = builder_client.as_ref().ok_or_else(|| {
+    let builder = builder_client.get_ref().as_ref().ok_or_else(|| {
         ApiError::InternalError("Builder client not available for unblinding blocks".into())
     })?;
 

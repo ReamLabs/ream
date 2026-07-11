@@ -288,7 +288,6 @@ pub async fn post_validators_from_state(
     db: Data<BeaconDB>,
     state_id: Path<ID>,
     request: Json<ValidatorsPostRequest>,
-    _status_query: Json<StatusQuery>,
 ) -> Result<impl Responder, ApiError> {
     let ValidatorsPostRequest { ids, statuses, .. } = request.into_inner();
     let status_query = StatusQuery { status: statuses };
@@ -954,8 +953,8 @@ fn verify_validator_registration_signature(
 #[post("/validator/register_validator")]
 pub async fn post_register_validator(
     db: Data<BeaconDB>,
-    builder_client: Option<
-        Data<Arc<ream_validator_beacon::builder::builder_client::BuilderClient>>,
+    builder_client: Data<
+        Option<Arc<ream_validator_beacon::builder::builder_client::BuilderClient>>,
     >,
     registrations: Json<Vec<SignedValidatorRegistrationV1>>,
 ) -> Result<impl Responder, ApiError> {
@@ -1002,7 +1001,7 @@ pub async fn post_register_validator(
         }
 
         // Forward immediately to builder if available
-        if let Some(ref client) = builder_client {
+        if let Some(client) = builder_client.get_ref().as_ref() {
             client
                 .register_validator(registration)
                 .await
@@ -1374,8 +1373,8 @@ pub async fn get_blocks_v3(
     query: Query<BlockQuery>,
     db: Data<BeaconDB>,
     operation_pool: Data<Arc<OperationPool>>,
-    execution_engine: Option<Data<ExecutionEngine>>,
-    builder_client: Option<Data<Arc<BuilderClient>>>,
+    execution_engine: Data<Option<ExecutionEngine>>,
+    builder_client: Data<Option<Arc<BuilderClient>>>,
 ) -> Result<impl Responder, ApiError> {
     let slot = path.into_inner();
     let query_params = query.into_inner();
@@ -1449,21 +1448,21 @@ pub async fn get_blocks_v3(
         parent_beacon_block_root: state.latest_block_header.tree_hash_root(),
     };
 
-    let Some(execution_engine) = execution_engine else {
+    let Some(execution_engine) = execution_engine.get_ref().as_ref() else {
         return Err(ApiError::InternalError(
             "Execution engine not available".into(),
         ));
     };
 
     let (local_payload, local_execution_value) = get_local_execution_payload(
-        &execution_engine,
+        execution_engine,
         fork_name,
         forkchoice_state,
         payload_attribute,
     )
     .await?;
 
-    let builder_client_ref = builder_client.as_ref().map(|bc| bc.as_ref());
+    let builder_client_ref = builder_client.get_ref().as_ref();
     let (use_builder, builder_bid, builder_value) = compare_builder_vs_local(
         builder_client_ref,
         state.latest_execution_payload_header.block_hash,
@@ -1494,12 +1493,15 @@ pub async fn get_blocks_v3(
         .get_signed_voluntary_exits()
         .try_into()
         .unwrap_or_default();
-    let sync_aggregate = operation_pool
+    let mut sync_aggregate = operation_pool
         .get_sync_aggregate(
             slot.saturating_sub(1),
             state.latest_block_header.tree_hash_root(),
         )
         .unwrap_or_default();
+    if sync_aggregate.sync_committee_bits.num_set_bits() == 0 {
+        sync_aggregate.sync_committee_signature = BLSSignature::infinity();
+    }
     let bls_to_execution_changes: VariableList<SignedBLSToExecutionChange, U16> = operation_pool
         .get_signed_bls_to_execution_changes()
         .try_into()
@@ -1606,13 +1608,21 @@ pub async fn get_blocks_v3(
         execution_requests,
     };
 
-    let block = BeaconBlock {
+    let mut block = BeaconBlock {
         slot,
         proposer_index,
         parent_root: state.latest_block_header.tree_hash_root(),
-        state_root: state.tree_hash_root(),
+        state_root: B256::default(),
         body: block_body,
     };
+    let mut post_state = state.clone();
+    post_state
+        .process_block(&block, &Option::<ExecutionEngine>::None)
+        .await
+        .map_err(|err| {
+            ApiError::InternalError(format!("Failed to compute post-state root: {err}"))
+        })?;
+    block.state_root = post_state.tree_hash_root();
 
     let blob_versioned_hashes: Vec<B256> = blob_kzg_commitments
         .iter()
