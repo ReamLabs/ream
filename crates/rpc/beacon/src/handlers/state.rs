@@ -5,7 +5,7 @@ use actix_web::{
 use alloy_primitives::B256;
 use ream_api_types_beacon::{
     query::EpochQuery,
-    responses::{BeaconResponse, BeaconVersionedResponse},
+    responses::{BeaconResponse, BeaconVersionedResponse, RootResponse},
 };
 use ream_api_types_common::{error::ApiError, id::ID};
 use ream_consensus_beacon::electra::beacon_state::BeaconState;
@@ -85,7 +85,8 @@ pub async fn get_state_from_id(state_id: ID, db: &BeaconDB) -> Result<BeaconStat
 
             Ok(Some(justified_checkpoint.root))
         }
-        ID::Head | ID::Genesis => {
+        ID::Head => db.slot_index_provider().get_highest_root(),
+        ID::Genesis => {
             return Err(ApiError::NotFound(format!(
                 "This ID type is currently not supported: {state_id:?}"
             )));
@@ -113,7 +114,7 @@ pub async fn get_state_root(
 
     let state_root = state.tree_hash_root();
 
-    Ok(HttpResponse::Ok().json(BeaconResponse::new(state_root)))
+    Ok(HttpResponse::Ok().json(BeaconResponse::new(RootResponse::new(state_root))))
 }
 
 /// Called by `/eth/v1/beacon/states/{state_id}/fork` to get fork of state.
