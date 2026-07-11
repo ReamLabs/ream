@@ -13,6 +13,7 @@ use ream_consensus_beacon::{
 use ream_consensus_misc::{
     constants::beacon::{
         DOMAIN_SYNC_COMMITTEE, EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SYNC_COMMITTEE_SIZE,
+        genesis_validators_root,
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
 };
@@ -24,7 +25,10 @@ use ssz_types::{BitVector, typenum::U512};
 use tree_hash_derive::TreeHash;
 
 use crate::{
-    constants::{SYNC_COMMITTEE_SUBNET_COUNT, TARGET_AGGREGATORS_PER_COMMITTEE},
+    constants::{
+        DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF, SYNC_COMMITTEE_SUBNET_COUNT,
+        TARGET_AGGREGATORS_PER_COMMITTEE,
+    },
     hash_signature_prefix_to_u64,
 };
 
@@ -145,9 +149,9 @@ pub fn get_sync_committee_selection_proof(
     private_key: &PrivateKey,
 ) -> anyhow::Result<BLSSignature> {
     let domain = compute_domain(
-        DOMAIN_SYNC_COMMITTEE,
+        DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF,
         Some(beacon_network_spec().electra_fork_version),
-        None,
+        Some(genesis_validators_root()),
     );
     let signing_root = compute_signing_root(
         SyncAggregatorSelectionData {
