@@ -49,6 +49,7 @@ members = [
     "testing/ef-tests",
     "testing/gossip-validation",
     "testing/lean-spec-tests",
+    "testing/mock-execution-engine",
     "testing/test_utils",
 ]
 resolver = "2"
@@ -196,6 +197,7 @@ ream-keystore = { path = "crates/crypto/keystore", default-features = false }
 ream-light-client = { path = "crates/common/light_client" }
 ream-merkle = { path = "crates/crypto/merkle" }
 ream-metrics = { path = "crates/common/metrics", default-features = false }
+ream-mock-execution-engine = { path = "testing/mock-execution-engine" }
 ream-network-manager = { path = "crates/networking/manager", default-features = false }
 ream-network-spec = { path = "crates/common/network_spec", default-features = false }
 ream-network-state-lean = { path = "crates/networking/network_state/lean", default-features = false }
