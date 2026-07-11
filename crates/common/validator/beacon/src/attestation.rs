@@ -11,7 +11,7 @@ use ream_consensus_misc::{
     attestation_data::AttestationData,
     constants::beacon::{
         DOMAIN_BEACON_ATTESTER, MAX_COMMITTEES_PER_SLOT, MAX_VALIDATORS_PER_COMMITTEE,
-        SLOTS_PER_EPOCH,
+        SLOTS_PER_EPOCH, genesis_validators_root,
     },
     misc::{compute_domain, compute_epoch_at_slot, compute_signing_root, get_committee_indices},
 };
@@ -132,7 +132,7 @@ pub fn sign_attestation_data(
     let domain = compute_domain(
         DOMAIN_BEACON_ATTESTER,
         Some(beacon_network_spec().electra_fork_version),
-        None,
+        Some(genesis_validators_root()),
     );
     let signing_root = compute_signing_root(attestation_data, domain);
     Ok(private_key.sign(signing_root.as_ref())?)
@@ -142,7 +142,7 @@ pub fn get_selection_proof(slot: u64, private_key: &PrivateKey) -> anyhow::Resul
     let domain = compute_domain(
         DOMAIN_SELECTION_PROOF,
         Some(beacon_network_spec().electra_fork_version),
-        None,
+        Some(genesis_validators_root()),
     );
     let signing_root = compute_signing_root(slot, domain);
     Ok(private_key.sign(signing_root.as_ref())?)
