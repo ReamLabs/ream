@@ -35,6 +35,7 @@ use ream_consensus_beacon::{
 };
 use ream_consensus_misc::{
     attestation_data::AttestationData,
+    checkpoint::Checkpoint,
     constants::beacon::{
         DOMAIN_AGGREGATE_AND_PROOF, DOMAIN_BEACON_ATTESTER, DOMAIN_RANDAO, DOMAIN_SYNC_COMMITTEE,
         MAX_COMMITTEES_PER_SLOT, PROPOSER_REWARD_QUOTIENT, SLOTS_PER_EPOCH,
@@ -42,7 +43,9 @@ use ream_consensus_misc::{
     },
     deposit::Deposit,
     fork_name::ForkName,
-    misc::{compute_domain, compute_epoch_at_slot, compute_signing_root},
+    misc::{
+        compute_domain, compute_epoch_at_slot, compute_signing_root, compute_start_slot_at_epoch,
+    },
     polynomial_commitments::{kzg_commitment::KZGCommitment, kzg_proof::KZGProof},
     validator::Validator,
 };
@@ -62,10 +65,7 @@ use ream_p2p::{
     gossipsub::beacon::topics::{GossipTopic, GossipTopicKind},
     network::beacon::Network,
 };
-use ream_storage::{
-    db::beacon::BeaconDB,
-    tables::{field::REDBField, table::REDBTable},
-};
+use ream_storage::{db::beacon::BeaconDB, tables::table::REDBTable};
 use ream_sync_committee_pool::SyncCommitteePool;
 use ream_validator_beacon::{
     aggregate_and_proof::SignedAggregateAndProof,
@@ -503,6 +503,7 @@ fn check_validator_participation(
         Ok(validator.is_active_validator(epoch))
     }
 }
+
 #[get("/validator/attestation_data")]
 pub async fn get_attestation_data(
     db: Data<BeaconDB>,
@@ -515,7 +516,7 @@ pub async fn get_attestation_data(
         None,
     );
 
-    if store.is_syncing().map_err(|err| {
+    if store.is_syncing_for_validator_api().map_err(|err| {
         ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
     })? {
         return Err(ApiError::UnderSyncing);
@@ -523,9 +524,9 @@ pub async fn get_attestation_data(
 
     let slot = query.slot;
 
-    let current_slot = store
-        .get_current_slot()
-        .map_err(|err| ApiError::InternalError(format!("Failed to slot_index, error: {err:?}")))?;
+    let current_slot = store.get_current_slot().map_err(|err| {
+        ApiError::InternalError(format!("Failed to get current slot, err: {err:?}"))
+    })?;
 
     if slot > current_slot + 1 {
         return Err(ApiError::InvalidParameter(format!(
@@ -533,24 +534,52 @@ pub async fn get_attestation_data(
         )));
     }
 
-    let beacon_block_root = db
-        .slot_index_provider()
-        .get_highest_root()
-        .map_err(|err| ApiError::InternalError(format!("Failed to slot_index, error: {err:?}")))?
-        .ok_or(ApiError::NotFound(
-            "Failed to find highest block root".to_string(),
-        ))?;
+    let head_root = store
+        .get_head()
+        .map_err(|err| ApiError::InternalError(format!("Failed to get head root: {err:?}")))?;
 
-    let source_checkpoint = db.justified_checkpoint_provider().get().map_err(|err| {
-        ApiError::InternalError(format!("Failed to get source checkpoint, error: {err:?}"))
-    })?;
+    let state = db
+        .state_provider()
+        .get(head_root)
+        .map_err(|err| ApiError::InternalError(format!("Failed to get state, error: {err:?}")))?
+        .ok_or_else(|| ApiError::NotFound(format!("Failed to find state for root {head_root}")))?;
 
-    let target_checkpoint = db
-        .unrealized_justified_checkpoint_provider()
-        .get()
-        .map_err(|err| {
-            ApiError::InternalError(format!("Failed to target checkpoint, error: {err:?}"))
-        })?;
+    let beacon_block_root = if slot >= state.slot {
+        head_root
+    } else {
+        state
+            .get_block_root_at_slot(slot)
+            .or_else(|_| store.get_ancestor(head_root, slot))
+            .map_err(|err| {
+                ApiError::InternalError(format!(
+                    "Failed to get attestation beacon block root, error: {err:?}"
+                ))
+            })?
+    };
+
+    let target_epoch = compute_epoch_at_slot(slot);
+    let source_checkpoint = if target_epoch == state.get_previous_epoch() {
+        state.previous_justified_checkpoint
+    } else {
+        state.current_justified_checkpoint
+    };
+    let target_slot = compute_start_slot_at_epoch(target_epoch);
+    let target_root = if state.slot <= target_slot {
+        beacon_block_root
+    } else {
+        state
+            .get_block_root(target_epoch)
+            .or_else(|_| store.get_checkpoint_block(beacon_block_root, target_epoch))
+            .map_err(|err| {
+                ApiError::InternalError(format!(
+                    "Failed to get target checkpoint block, error: {err:?}"
+                ))
+            })?
+    };
+    let target_checkpoint = Checkpoint {
+        epoch: target_epoch,
+        root: target_root,
+    };
 
     Ok(HttpResponse::Ok().json(DataResponse::new(AttestationData {
         slot,
@@ -586,7 +615,7 @@ pub async fn get_sync_committee_contribution(
 ) -> Result<impl Responder, ApiError> {
     let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
 
-    if store.is_syncing().map_err(|err| {
+    if store.is_syncing_for_validator_api().map_err(|err| {
         ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
     })? {
         return Err(ApiError::UnderSyncing);
@@ -1122,8 +1151,8 @@ pub async fn post_contribution_and_proofs(
 ) -> Result<impl Responder, ApiError> {
     let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
 
-    if store.is_syncing().map_err(|err| {
-        ApiError::InternalError(format!("Failed to check syncing status: {err:?}"))
+    if store.is_syncing_for_validator_api().map_err(|err| {
+        ApiError::InternalError(format!("Failed to check syncing status, err: {err:?}"))
     })? {
         return Err(ApiError::UnderSyncing);
     }

@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, sync::Arc};
 
-use alloy_primitives::B256;
+use alloy_primitives::{B256, map::HashSet};
 use anyhow::{anyhow, bail, ensure};
 use hashbrown::HashMap;
 use ream_bls::BLSSignature;
@@ -37,6 +37,8 @@ use crate::constants::{
     PROPOSER_SCORE_BOOST, REORG_HEAD_WEIGHT_THRESHOLD, REORG_MAX_EPOCHS_SINCE_FINALIZATION,
     REORG_PARENT_WEIGHT_THRESHOLD,
 };
+
+const VALIDATOR_API_SYNC_TOLERANCE_EPOCHS: u64 = 2;
 
 #[derive(Debug)]
 pub struct BlockWithEpochInfo {
@@ -620,6 +622,11 @@ impl Store {
                 .clean_sync_committee_messages(current_slot);
             self.sync_committee_pool
                 .clean_sync_committee_contributions(current_slot);
+
+            // Drop attestations that have aged out of the inclusion window (nothing else prunes
+            // them, and they can never be included again).
+            self.operation_pool
+                .clean_attestations(compute_epoch_at_slot(current_slot));
         }
 
         // If a new epoch, pull-up justification and finalization from previous epoch
@@ -809,7 +816,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn is_syncing(&self) -> anyhow::Result<bool> {
+    pub fn is_syncing_for_validator_api(&self) -> anyhow::Result<bool> {
         let head = self.get_head()?;
 
         let head_slot = match self.db.block_provider().get(head) {
@@ -819,10 +826,10 @@ impl Store {
             }
         };
 
-        // calculate sync_distance
         let sync_distance = self.get_current_slot()?.saturating_sub(head_slot);
+        let sync_tolerance = VALIDATOR_API_SYNC_TOLERANCE_EPOCHS * SLOTS_PER_EPOCH;
 
-        Ok(sync_distance > 1)
+        Ok(sync_distance > sync_tolerance)
     }
 }
 
@@ -865,6 +872,11 @@ pub fn get_forkchoice_store(
         .insert(finalized_checkpoint)?;
     db.proposer_boost_root_provider()
         .insert(proposer_boost_root)?;
+    // Seed the equivocating-indices set. `get_weight` (LMD-GHOST) reads this via a strict
+    // `.get()?`, so leaving it uninitialized makes every `get_head` throw "Field not initilized"
+    // the moment any validator has a latest message (i.e. once attestations reach fork choice).
+    db.equivocating_indices_provider()
+        .insert(HashSet::default())?;
     db.block_provider()
         .insert(anchor_root, signed_anchor_block)?;
     db.state_provider()
