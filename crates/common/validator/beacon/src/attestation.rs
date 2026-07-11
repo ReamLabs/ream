@@ -6,7 +6,10 @@ use ream_bls::{
     signature::BLSSignature,
     traits::{Aggregatable, Signable},
 };
-use ream_consensus_beacon::{attestation::Attestation, electra::beacon_state::BeaconState};
+use ream_consensus_beacon::{
+    attestation::Attestation, electra::beacon_state::BeaconState,
+    single_attestation::SingleAttestation,
+};
 use ream_consensus_misc::{
     attestation_data::AttestationData,
     constants::beacon::{
@@ -52,6 +55,43 @@ pub fn compute_subnet_for_attestation(
     let slots_since_epoch_start = slot % SLOTS_PER_EPOCH;
     let committee_since_epoch_start = committees_per_slot * slots_since_epoch_start;
     (committee_since_epoch_start + committee_index) % beacon_network_spec().attestation_subnet_count
+}
+
+pub fn single_attestation_to_attestation(
+    single_attestation: &SingleAttestation,
+    state: &BeaconState,
+) -> anyhow::Result<Attestation> {
+    let committee = state.get_beacon_committee(
+        single_attestation.data.slot,
+        single_attestation.committee_index,
+    )?;
+    let validator_index_in_committee = committee
+        .iter()
+        .position(|&index| index == single_attestation.attester_index)
+        .ok_or_else(|| {
+            anyhow!(
+                "Validator {} not found in committee",
+                single_attestation.attester_index
+            )
+        })?;
+
+    let mut aggregation_bits = BitList::<U131072>::with_capacity(committee.len())
+        .map_err(|err| anyhow!("Failed to create aggregation_bits: {err:?}"))?;
+    aggregation_bits
+        .set(validator_index_in_committee, true)
+        .map_err(|err| anyhow!("Failed to set aggregation bit: {err:?}"))?;
+
+    let mut committee_bits = BitVector::<U64>::new();
+    committee_bits
+        .set(single_attestation.committee_index as usize, true)
+        .map_err(|err| anyhow!("Failed to set committee bit: {err:?}"))?;
+
+    Ok(Attestation {
+        aggregation_bits,
+        data: single_attestation.data.clone(),
+        signature: single_attestation.signature.clone(),
+        committee_bits,
+    })
 }
 
 pub fn compute_on_chain_aggregate(mut aggregates: Vec<Attestation>) -> anyhow::Result<Attestation> {
