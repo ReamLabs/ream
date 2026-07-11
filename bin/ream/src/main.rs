@@ -510,17 +510,19 @@ async fn run_beacon_node_inner(
 
     info!("ream beacon database has been initialized");
 
-    if let Some(genesis_state_path) = &config.genesis_state_path {
-        initialize_db_from_genesis_state(beacon_db.clone(), genesis_state_path)
-            .expect("Unable to initialize database from genesis state");
-    } else {
-        let _is_ws_verified = initialize_db_from_checkpoint(
-            beacon_db.clone(),
-            config.checkpoint_sync_url.clone(),
-            config.weak_subjectivity_checkpoint,
-        )
-        .await
-        .expect("Unable to initialize database from checkpoint");
+    if initialize_globals {
+        if let Some(genesis_state_path) = &config.genesis_state_path {
+            initialize_db_from_genesis_state(beacon_db.clone(), genesis_state_path)
+                .expect("Unable to initialize database from genesis state");
+        } else {
+            let _is_ws_verified = initialize_db_from_checkpoint(
+                beacon_db.clone(),
+                config.checkpoint_sync_url.clone(),
+                config.weak_subjectivity_checkpoint,
+            )
+            .await
+            .expect("Unable to initialize database from checkpoint");
+        }
     }
 
     info!("Database Initialization completed");
@@ -651,9 +653,19 @@ async fn run_beacon_node_for_test(
 /// loading the keystores, and creating a validator service.
 /// It also starts the validator service.
 pub async fn run_validator_node(config: ValidatorNodeConfig, executor: ReamExecutor) {
+    run_validator_node_inner(config, executor, true).await;
+}
+
+async fn run_validator_node_inner(
+    config: ValidatorNodeConfig,
+    executor: ReamExecutor,
+    initialize_globals: bool,
+) {
     info!("starting up validator node...");
 
-    set_beacon_network_spec(config.network.clone());
+    if initialize_globals {
+        set_beacon_network_spec(config.network.clone());
+    }
 
     let password = process_password(
         load_password_from_config(config.password_file.as_ref(), config.password)
@@ -680,6 +692,11 @@ pub async fn run_validator_node(config: ValidatorNodeConfig, executor: ReamExecu
     .expect("Failed to create validator service");
 
     validator_service.start().await;
+}
+
+#[cfg(test)]
+async fn run_validator_node_for_test(config: ValidatorNodeConfig, executor: ReamExecutor) {
+    run_validator_node_inner(config, executor, false).await;
 }
 
 /// Runs the account manager.
@@ -917,39 +934,75 @@ mod tests {
     use std::{
         env::temp_dir,
         fs,
+        ops::Range,
         path::{Path, PathBuf},
         process::{Command, Stdio},
-        sync::Once,
+        sync::{Arc, LazyLock, Once},
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
-    use alloy_primitives::{B256, hex};
+    use alloy_primitives::{B256, fixed_bytes, hex};
     use clap::Parser;
     use libp2p_identity::{Keypair, secp256k1};
     use ream::cli::{
         Cli, Commands, beacon_node::BeaconNodeConfig, lean_node::LeanNodeConfig,
-        verbosity::Verbosity,
+        validator_node::ValidatorNodeConfig, verbosity::Verbosity,
     };
-    use ream_consensus_beacon::electra::{
-        beacon_block::SignedBeaconBlock, beacon_state::BeaconState,
+    use ream_bls::{BLSSignature, PrivateKey, PublicKey};
+    use ream_consensus_beacon::{
+        electra::{
+            beacon_block::{BeaconBlock, SignedBeaconBlock},
+            beacon_block_body::BeaconBlockBody,
+            beacon_state::BeaconState,
+        },
+        historical_summary::HistoricalSummary,
+        pending_consolidation::PendingConsolidation,
+        pending_deposit::PendingDeposit,
+        pending_partial_withdrawal::PendingPartialWithdrawal,
+        sync_committee::SyncCommittee,
     };
     use ream_consensus_lean::state::LeanState;
-    use ream_consensus_misc::constants::beacon::set_genesis_validator_root;
+    use ream_consensus_misc::{
+        beacon_block_header::BeaconBlockHeader,
+        checkpoint::Checkpoint,
+        constants::beacon::{
+            FAR_FUTURE_EPOCH, MIN_ACTIVATION_BALANCE, SLOTS_PER_EPOCH,
+            UNSET_DEPOSIT_REQUESTS_START_INDEX, set_genesis_validator_root,
+        },
+        eth_1_data::Eth1Data,
+        fork::Fork,
+        validator::Validator,
+    };
     use ream_executor::ReamExecutor;
     use ream_fork_choice_beacon::store::get_forkchoice_store;
-    use ream_network_spec::networks::set_beacon_network_spec;
+    use ream_keystore::{
+        decrypt::aes128_ctr,
+        keystore::{
+            ChecksumParams, CipherParams, CryptoV4, EncryptedKeystore, FunctionBlock, KdfParams,
+            Prf,
+        },
+    };
+    use ream_mock_execution_engine::{
+        MockExecutionServer, block_generator::genesis_execution_payload,
+    };
+    use ream_network_spec::networks::{BeaconNetworkSpec, DEV, set_beacon_network_spec};
     use ream_storage::{
         db::ReamDB,
         dir::setup_data_dir,
         tables::{field::REDBField, table::REDBTable},
     };
+    use serde_json::Value;
     use serial_test::serial;
-    use snap::raw::Decoder;
-    use ssz::Decode;
+    use sha2::{Digest, Sha256};
+    use ssz_types::{
+        BitVector, FixedVector, VariableList,
+        typenum::{U4, U64, U512, U8192, U65536},
+    };
     use tokio::time::{sleep, timeout};
     use tracing::{info, warn};
+    use tree_hash::TreeHash;
 
-    use crate::{APP_NAME, run_beacon_node_for_test, run_lean_node};
+    use crate::{APP_NAME, run_beacon_node_for_test, run_lean_node, run_validator_node_for_test};
 
     const VALIDATOR_KEYS: [(&str, &str); 3] = [
         (
@@ -974,6 +1027,31 @@ mod tests {
         preseed_node_3_before_checkpoint_sync: bool,
     }
 
+    const BEACON_E2E_VALIDATOR_COUNT: usize = 16;
+    const BEACON_E2E_VALIDATOR_NODE_COUNT: usize = 2;
+    const BEACON_E2E_SLOT_DURATION_MS: u64 = 3_000;
+    const BEACON_E2E_KEYSTORE_PASSWORD: &str = "password";
+
+    // Production's `BEACON_NETWORK_SPEC`/`GENESIS_VALIDATORS_ROOT` OnceLocks only allow one set
+    // per process. Every beacon e2e test below therefore uses this shared dev spec + genesis.
+    static BEACON_E2E_DEV_SPEC: LazyLock<Arc<BeaconNetworkSpec>> = LazyLock::new(|| {
+        let mut spec = (**DEV).clone();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("System time is before UNIX epoch")
+            .as_secs();
+        let seconds_per_slot = BEACON_E2E_SLOT_DURATION_MS / 1000;
+        spec.min_genesis_time = now - (now % seconds_per_slot) - seconds_per_slot * 2;
+        spec.genesis_delay = 0;
+        spec.altair_fork_epoch = 0;
+        spec.bellatrix_fork_epoch = 0;
+        spec.capella_fork_epoch = 0;
+        spec.deneb_fork_epoch = 0;
+        spec.electra_fork_epoch = 0;
+        spec.fulu_fork_epoch = FAR_FUTURE_EPOCH;
+        spec.slot_duration_ms = BEACON_E2E_SLOT_DURATION_MS;
+        Arc::new(spec)
+    });
     static BEACON_E2E_NETWORK_SPEC_INIT: Once = Once::new();
     static BEACON_E2E_GENESIS_ROOT_INIT: Once = Once::new();
 
@@ -1061,23 +1139,11 @@ mod tests {
         )
     }
 
-    fn beacon_fixture_assets_directory() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../testing/gossip-validation/tests/assets/sepolia")
-            .canonicalize()
-            .expect("Failed to canonicalize beacon fixture assets path")
+    fn beacon_e2e_dev_spec() -> Arc<BeaconNetworkSpec> {
+        BEACON_E2E_DEV_SPEC.clone()
     }
 
-    fn read_ssz_snappy_file<T: Decode>(path: &Path) -> T {
-        let bytes = fs::read(path).expect("Failed to read SSZ snappy fixture");
-        let decoded = Decoder::new()
-            .decompress_vec(&bytes)
-            .expect("Failed to decompress SSZ snappy fixture");
-        T::from_ssz_bytes(&decoded).expect("Failed to decode SSZ fixture")
-    }
-
-    fn initialize_beacon_e2e_network_spec(config: &BeaconNodeConfig) {
-        let network_spec = config.network.clone();
+    fn initialize_beacon_e2e_network_spec(network_spec: Arc<BeaconNetworkSpec>) {
         BEACON_E2E_NETWORK_SPEC_INIT.call_once(|| {
             set_beacon_network_spec(network_spec);
         });
@@ -1089,23 +1155,233 @@ mod tests {
         });
     }
 
-    fn seed_beacon_test_db(db: &ReamDB) -> B256 {
-        let assets_directory = beacon_fixture_assets_directory();
-        let parent_state = read_ssz_snappy_file::<BeaconState>(
-            &assets_directory.join("states/parent_state_9552075.ssz_snappy"),
-        );
-        let parent_block = read_ssz_snappy_file::<SignedBeaconBlock>(
-            &assets_directory.join("blocks/parent_9552075.ssz_snappy"),
-        );
-        let genesis_validators_root = parent_state.genesis_validators_root;
+    fn indexed_private_key(index: usize) -> B256 {
+        let mut bytes = [0u8; 32];
+        bytes[24..].copy_from_slice(&(index as u64 + 1).to_be_bytes());
+        B256::from(bytes)
+    }
+
+    fn public_key_from_private_key(private_key: B256) -> PublicKey {
+        PrivateKey { inner: private_key }
+            .public_key()
+            .expect("test private key should derive a valid BLS public key")
+    }
+
+    fn beacon_e2e_public_keys() -> Vec<PublicKey> {
+        (0..BEACON_E2E_VALIDATOR_COUNT)
+            .map(|index| public_key_from_private_key(indexed_private_key(index)))
+            .collect()
+    }
+
+    fn build_dev_genesis(pubkeys: &[PublicKey]) -> (BeaconState, SignedBeaconBlock) {
+        let genesis_time = beacon_e2e_dev_spec().min_genesis_time;
+        let validators = pubkeys
+            .iter()
+            .cloned()
+            .map(|public_key| {
+                let mut withdrawal_credentials = [0u8; 32];
+                withdrawal_credentials[0] = 1;
+                Validator {
+                    public_key,
+                    withdrawal_credentials: B256::from(withdrawal_credentials),
+                    effective_balance: MIN_ACTIVATION_BALANCE,
+                    slashed: false,
+                    activation_eligibility_epoch: 0,
+                    activation_epoch: 0,
+                    exit_epoch: FAR_FUTURE_EPOCH,
+                    withdrawable_epoch: FAR_FUTURE_EPOCH,
+                }
+            })
+            .collect::<Vec<_>>();
+        let validators =
+            VariableList::new(validators).expect("test validator set should fit registry limit");
+        let genesis_validators_root = validators.tree_hash_root();
+        let balances = VariableList::new(vec![MIN_ACTIVATION_BALANCE; pubkeys.len()])
+            .expect("test balances should fit registry limit");
+        let participation = VariableList::new(vec![0u8; pubkeys.len()])
+            .expect("test participation should fit registry limit");
+        let inactivity_scores =
+            VariableList::new(vec![0u64; pubkeys.len()]).expect("test scores should fit limit");
+        let sync_public_keys = FixedVector::<PublicKey, U512>::try_from(
+            (0..512)
+                .map(|index| pubkeys[index % pubkeys.len()].clone())
+                .collect::<Vec<_>>(),
+        )
+        .expect("sync committee should have 512 pubkeys");
+        let sync_committee = Arc::new(SyncCommittee {
+            public_keys: sync_public_keys,
+            aggregate_public_key: pubkeys[0].clone(),
+        });
+        let genesis_payload = genesis_execution_payload(B256::ZERO, genesis_time);
+        let genesis_body = BeaconBlockBody {
+            execution_payload: genesis_payload.clone(),
+            ..Default::default()
+        };
+        let state = BeaconState {
+            genesis_time,
+            genesis_validators_root,
+            slot: 0,
+            fork: Fork {
+                previous_version: fixed_bytes!("0x05000000"),
+                current_version: fixed_bytes!("0x05000000"),
+                epoch: 0,
+            },
+            latest_block_header: BeaconBlockHeader {
+                body_root: genesis_body.tree_hash_root(),
+                ..Default::default()
+            },
+            block_roots: FixedVector::<B256, U8192>::from_elem(B256::ZERO),
+            state_roots: FixedVector::<B256, U8192>::from_elem(B256::ZERO),
+            historical_roots: VariableList::empty(),
+            eth1_data: Eth1Data::default(),
+            eth1_data_votes: VariableList::empty(),
+            eth1_deposit_index: 0,
+            validators,
+            balances,
+            randao_mixes: FixedVector::<B256, U65536>::from_elem(B256::ZERO),
+            slashings: FixedVector::<u64, U8192>::from_elem(0),
+            previous_epoch_participation: participation.clone(),
+            current_epoch_participation: participation,
+            justification_bits: BitVector::<U4>::default(),
+            previous_justified_checkpoint: Checkpoint::default(),
+            current_justified_checkpoint: Checkpoint::default(),
+            finalized_checkpoint: Checkpoint::default(),
+            inactivity_scores,
+            current_sync_committee: sync_committee.clone(),
+            next_sync_committee: sync_committee,
+            latest_execution_payload_header: genesis_payload.to_execution_payload_header(),
+            next_withdrawal_index: 0,
+            next_withdrawal_validator_index: 0,
+            historical_summaries: VariableList::<HistoricalSummary, _>::empty(),
+            deposit_requests_start_index: UNSET_DEPOSIT_REQUESTS_START_INDEX,
+            deposit_balance_to_consume: 0,
+            exit_balance_to_consume: 0,
+            earliest_exit_epoch: FAR_FUTURE_EPOCH,
+            consolidation_balance_to_consume: 0,
+            earliest_consolidation_epoch: FAR_FUTURE_EPOCH,
+            pending_deposits: VariableList::<PendingDeposit, _>::empty(),
+            pending_partial_withdrawals: VariableList::<PendingPartialWithdrawal, _>::empty(),
+            pending_consolidations: VariableList::<PendingConsolidation, _>::empty(),
+            proposer_lookahead: FixedVector::<u64, U64>::from_elem(0),
+        };
+
+        let mut genesis_block = SignedBeaconBlock {
+            message: BeaconBlock {
+                body: genesis_body,
+                ..Default::default()
+            },
+            signature: BLSSignature::default(),
+        };
+        genesis_block.message.state_root = state.tree_hash_root();
+        (state, genesis_block)
+    }
+
+    fn seed_beacon_test_db(
+        db: &ReamDB,
+        genesis_state: BeaconState,
+        genesis_block: &SignedBeaconBlock,
+    ) -> B256 {
+        let genesis_validators_root = genesis_state.genesis_validators_root;
         let beacon_db = db
             .init_beacon_db()
             .expect("unable to init Ream Beacon Database");
 
-        let _store = get_forkchoice_store(parent_state, parent_block.message, beacon_db)
+        let _store = get_forkchoice_store(genesis_state, genesis_block.message.clone(), beacon_db)
             .expect("Failed to seed Beacon DB from fixture");
 
         genesis_validators_root
+    }
+
+    fn validator_key_ranges(validator_node_count: usize) -> Vec<Range<usize>> {
+        assert!(
+            validator_node_count > 0 && validator_node_count <= BEACON_E2E_VALIDATOR_COUNT,
+            "validator node count must be between 1 and {BEACON_E2E_VALIDATOR_COUNT}"
+        );
+
+        let base_keys_per_node = BEACON_E2E_VALIDATOR_COUNT / validator_node_count;
+        let remainder = BEACON_E2E_VALIDATOR_COUNT % validator_node_count;
+        let mut start = 0;
+
+        (0..validator_node_count)
+            .map(|node_index| {
+                let key_count = base_keys_per_node + usize::from(node_index < remainder);
+                let end = start + key_count;
+                let range = start..end;
+                start = end;
+                range
+            })
+            .collect()
+    }
+
+    fn write_validator_keystores(
+        test_dir: &Path,
+        validator_node_index: usize,
+        validator_indices: Range<usize>,
+    ) -> (PathBuf, PathBuf) {
+        assert!(
+            !validator_indices.is_empty(),
+            "validator node {validator_node_index} must have at least one key"
+        );
+        let keystore_dir = test_dir.join(format!("validators_{validator_node_index}"));
+        fs::create_dir_all(&keystore_dir).expect("Failed to create keystore directory");
+        let password_file = test_dir.join(format!("password_{validator_node_index}.txt"));
+        fs::write(&password_file, BEACON_E2E_KEYSTORE_PASSWORD)
+            .expect("Failed to write keystore password file");
+
+        for index in validator_indices {
+            assert!(
+                index < BEACON_E2E_VALIDATOR_COUNT,
+                "validator index {index} is outside the e2e validator set"
+            );
+            let private_key = indexed_private_key(index);
+            let public_key = public_key_from_private_key(private_key);
+            let salt = B256::from_slice(&Sha256::digest(index.to_be_bytes()));
+            let iv = Sha256::digest((index as u64 + 10_000).to_be_bytes())[..16].to_vec();
+            let kdf_params = KdfParams::Pbkdf2 {
+                c: 2,
+                dklen: 32,
+                prf: Prf::HmacSha256,
+                salt: salt.to_vec(),
+            };
+            let derived_key = kdf_params
+                .derive_key(BEACON_E2E_KEYSTORE_PASSWORD.as_bytes())
+                .expect("test PBKDF2 parameters should derive a key");
+            let mut cipher_message = private_key.to_vec();
+            aes128_ctr(
+                &mut cipher_message,
+                derived_key[..16]
+                    .try_into()
+                    .expect("derived key slice should be 16 bytes"),
+                iv.as_slice().try_into().expect("iv should be 16 bytes"),
+            );
+            let checksum = Sha256::digest([&derived_key[16..32], &cipher_message].concat());
+            let keystore = EncryptedKeystore {
+                crypto: CryptoV4 {
+                    kdf: FunctionBlock {
+                        params: kdf_params,
+                        message: vec![],
+                    },
+                    checksum: FunctionBlock {
+                        params: ChecksumParams::Sha256 {},
+                        message: checksum.to_vec(),
+                    },
+                    cipher: FunctionBlock {
+                        params: CipherParams::Aes128Ctr { iv },
+                        message: cipher_message,
+                    },
+                },
+                description: format!("Ream beacon e2e validator {index}"),
+                public_key,
+                path: format!("m/12381/3600/{index}/0/0"),
+                uuid: format!("00000000-0000-0000-0000-{index:012}"),
+                version: 4,
+            };
+            keystore
+                .save_to_file(keystore_dir.join(format!("validator_{index}.json")))
+                .expect("Failed to save test keystore");
+        }
+
+        (keystore_dir, password_file)
     }
 
     fn beacon_node_config_from_args(
@@ -1138,7 +1414,9 @@ mod tests {
         let Commands::BeaconNode(config) = cli.command else {
             panic!("Expected beacon_node command");
         };
-        *config
+        let mut config = *config;
+        config.network = beacon_e2e_dev_spec();
+        config
     }
 
     async fn wait_for_beacon_json(http_port: u16, path: &str) -> serde_json::Value {
@@ -1249,6 +1527,268 @@ mod tests {
                 warn!("Timed out waiting for beacon node test task to shut down");
                 handle.abort();
             }
+        }
+    }
+
+    fn validator_node_config_from_args(
+        beacon_http_port: u16,
+        keystore_dir: &Path,
+        password_file: &Path,
+    ) -> ValidatorNodeConfig {
+        let cli = Cli::parse_from([
+            "ream",
+            "validator_node",
+            "--network",
+            "dev",
+            "--beacon-api-endpoint",
+            &format!("http://127.0.0.1:{beacon_http_port}"),
+            "--request-timeout",
+            "3",
+            "--import-keystores",
+            &keystore_dir.to_string_lossy(),
+            "--suggested-fee-recipient",
+            "0x0000000000000000000000000000000000000001",
+            "--password-file",
+            &password_file.to_string_lossy(),
+        ]);
+        let Commands::ValidatorNode(config) = cli.command else {
+            panic!("Expected validator_node command");
+        };
+        let mut config = *config;
+        config.network = beacon_e2e_dev_spec();
+        config
+    }
+
+    fn spawn_validator_test_node(
+        config: ValidatorNodeConfig,
+        executor: ReamExecutor,
+    ) -> tokio::task::JoinHandle<anyhow::Result<()>> {
+        use tracing::{Instrument, info_span};
+
+        let span = info_span!("validator_node", beacon_api_endpoint = %config.beacon_api_endpoint);
+        let executor_for_task = executor.clone();
+        executor.spawn(
+            async move {
+                run_validator_node_for_test(config, executor_for_task).await;
+            }
+            .instrument(span),
+        )
+    }
+
+    fn spawn_validator_test_nodes(
+        beacon_http_ports: &[u16],
+        test_dir: &Path,
+        executors: &[ReamExecutor],
+    ) -> Vec<tokio::task::JoinHandle<anyhow::Result<()>>> {
+        assert!(
+            !beacon_http_ports.is_empty(),
+            "at least one beacon API endpoint is required"
+        );
+        let validator_ranges = validator_key_ranges(executors.len());
+
+        executors
+            .iter()
+            .enumerate()
+            .zip(validator_ranges)
+            .map(|((validator_node_index, executor), validator_indices)| {
+                let (keystore_dir, password_file) =
+                    write_validator_keystores(test_dir, validator_node_index, validator_indices);
+                let beacon_http_port =
+                    beacon_http_ports[validator_node_index % beacon_http_ports.len()];
+                let config = validator_node_config_from_args(
+                    beacon_http_port,
+                    &keystore_dir,
+                    &password_file,
+                );
+                spawn_validator_test_node(config, executor.clone())
+            })
+            .collect()
+    }
+
+    async fn shutdown_validator_test_node(
+        executor: &ReamExecutor,
+        handle: tokio::task::JoinHandle<anyhow::Result<()>>,
+    ) {
+        executor.shutdown_signal();
+        let mut handle = handle;
+        tokio::select! {
+            _ = &mut handle => {},
+            _ = sleep(Duration::from_secs(5)) => {
+                warn!("Timed out waiting for validator node test task to shut down");
+                handle.abort();
+            }
+        }
+    }
+
+    async fn shutdown_validator_test_nodes(
+        executors: &[ReamExecutor],
+        handles: Vec<tokio::task::JoinHandle<anyhow::Result<()>>>,
+    ) {
+        assert_eq!(
+            executors.len(),
+            handles.len(),
+            "validator executors and handles must match"
+        );
+
+        for (executor, handle) in executors.iter().zip(handles) {
+            shutdown_validator_test_node(executor, handle).await;
+        }
+    }
+
+    fn head_slot_and_root(head: &Value) -> (u64, String) {
+        let slot = head["data"]["header"]["message"]["slot"]
+            .as_str()
+            .and_then(|slot| slot.parse::<u64>().ok())
+            .or_else(|| head["data"]["header"]["message"]["slot"].as_u64())
+            .unwrap_or_else(|| panic!("head response missing slot: {head:?}"));
+        let root = head["data"]["root"]
+            .as_str()
+            .unwrap_or_else(|| panic!("head response missing root: {head:?}"))
+            .to_string();
+        (slot, root)
+    }
+
+    #[derive(Debug, Clone)]
+    struct BeaconNodeStatus {
+        http_port: u16,
+        head_slot: u64,
+        head_root: String,
+        previous_justified_epoch: u64,
+        justified_epoch: u64,
+        finalized_epoch: u64,
+    }
+
+    async fn beacon_node_status(http_port: u16) -> BeaconNodeStatus {
+        let head = wait_for_beacon_json(http_port, "/eth/v1/beacon/headers").await;
+        let (head_slot, head_root) = head_slot_and_root(&head);
+        let checkpoints =
+            wait_for_beacon_json(http_port, "/eth/v1/beacon/states/head/finality_checkpoints")
+                .await;
+
+        BeaconNodeStatus {
+            http_port,
+            head_slot,
+            head_root,
+            previous_justified_epoch: checkpoint_epoch(&checkpoints, "previous_justified"),
+            justified_epoch: checkpoint_epoch(&checkpoints, "current_justified"),
+            finalized_epoch: checkpoint_epoch(&checkpoints, "finalized"),
+        }
+    }
+
+    async fn beacon_node_statuses(http_ports: &[u16]) -> Vec<BeaconNodeStatus> {
+        let mut statuses = Vec::with_capacity(http_ports.len());
+        for http_port in http_ports {
+            statuses.push(beacon_node_status(*http_port).await);
+        }
+        statuses
+    }
+
+    async fn wait_for_head_slot_at_least(http_port: u16, min_slot: u64) -> (u64, String) {
+        let start = Instant::now();
+        let timeout_duration = Duration::from_secs(300);
+        loop {
+            let head = wait_for_beacon_json(http_port, "/eth/v1/beacon/headers").await;
+            let (slot, root) = head_slot_and_root(&head);
+            if slot >= min_slot {
+                return (slot, root);
+            }
+
+            assert!(
+                start.elapsed() < timeout_duration,
+                "Timed out waiting for beacon head on port {http_port} to reach slot {min_slot}; latest slot {slot}"
+            );
+            sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    async fn wait_for_matching_heads_all(http_ports: &[u16]) -> (u64, String) {
+        assert!(
+            !http_ports.is_empty(),
+            "need at least one beacon node to compare heads"
+        );
+        let start = Instant::now();
+        let timeout_duration = Duration::from_secs(60);
+        loop {
+            let statuses = beacon_node_statuses(http_ports).await;
+            let status_heads = statuses
+                .iter()
+                .map(|status| {
+                    (
+                        status.http_port,
+                        status.head_slot,
+                        status.head_root.as_str(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            info!(?status_heads, "beacon convergence poll");
+
+            let first_status = &statuses[0];
+            if first_status.head_slot > 0
+                && statuses.iter().all(|status| {
+                    status.head_slot == first_status.head_slot
+                        && status.head_root == first_status.head_root
+                })
+            {
+                return (first_status.head_slot, first_status.head_root.clone());
+            }
+
+            assert!(
+                start.elapsed() < timeout_duration,
+                "Timed out waiting for matching beacon heads: {statuses:?}"
+            );
+            sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    fn checkpoint_epoch(checkpoints: &Value, checkpoint_kind: &str) -> u64 {
+        checkpoints["data"][checkpoint_kind]["epoch"]
+            .as_str()
+            .and_then(|epoch| epoch.parse::<u64>().ok())
+            .or_else(|| checkpoints["data"][checkpoint_kind]["epoch"].as_u64())
+            .unwrap_or_else(|| {
+                panic!(
+                    "finality checkpoint response missing {checkpoint_kind} epoch: {checkpoints:?}"
+                )
+            })
+    }
+
+    async fn wait_for_finality_checkpoints_advanced_all(
+        http_ports: &[u16],
+    ) -> Vec<BeaconNodeStatus> {
+        assert!(
+            !http_ports.is_empty(),
+            "need at least one beacon node to check finality"
+        );
+        let start = Instant::now();
+        let timeout_duration = Duration::from_secs(300);
+        loop {
+            let statuses = beacon_node_statuses(http_ports).await;
+            let checkpoint_epochs = statuses
+                .iter()
+                .map(|status| {
+                    (
+                        status.http_port,
+                        status.head_slot,
+                        status.previous_justified_epoch,
+                        status.justified_epoch,
+                        status.finalized_epoch,
+                    )
+                })
+                .collect::<Vec<_>>();
+            info!(?checkpoint_epochs, "beacon finality poll");
+
+            if statuses
+                .iter()
+                .all(|status| status.justified_epoch > 0 && status.finalized_epoch > 0)
+            {
+                return statuses;
+            }
+
+            assert!(
+                start.elapsed() < timeout_duration,
+                "Timed out waiting for beacon finality: {statuses:?}"
+            );
+            sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -1676,10 +2216,12 @@ mod tests {
         init_test_tracing();
 
         let config = beacon_node_config_from_args(beacon_port_offset(), None);
-        initialize_beacon_e2e_network_spec(&config);
+        initialize_beacon_e2e_network_spec(config.network.clone());
+        let public_keys = beacon_e2e_public_keys();
+        let (genesis_state, genesis_block) = build_dev_genesis(&public_keys);
 
         let db = create_beacon_test_node_db("beacon_node_smoke", 1);
-        let genesis_validators_root = seed_beacon_test_db(&db);
+        let genesis_validators_root = seed_beacon_test_db(&db, genesis_state, &genesis_block);
         initialize_beacon_e2e_genesis_root(genesis_validators_root);
 
         let http_port = config.http_port;
@@ -1708,12 +2250,16 @@ mod tests {
 
         let port_offset = beacon_port_offset();
         let node_1_config = beacon_node_config_from_args(port_offset, None);
-        initialize_beacon_e2e_network_spec(&node_1_config);
+        initialize_beacon_e2e_network_spec(node_1_config.network.clone());
+        let public_keys = beacon_e2e_public_keys();
+        let (genesis_state, genesis_block) = build_dev_genesis(&public_keys);
 
         let node_1_db = create_beacon_test_node_db("beacon_node_bootnode", 1);
         let node_2_db = create_beacon_test_node_db("beacon_node_bootnode", 2);
-        let genesis_validators_root = seed_beacon_test_db(&node_1_db);
-        let node_2_genesis_validators_root = seed_beacon_test_db(&node_2_db);
+        let genesis_validators_root =
+            seed_beacon_test_db(&node_1_db, genesis_state.clone(), &genesis_block);
+        let node_2_genesis_validators_root =
+            seed_beacon_test_db(&node_2_db, genesis_state, &genesis_block);
         assert_eq!(
             genesis_validators_root, node_2_genesis_validators_root,
             "beacon e2e nodes must be seeded from the same genesis"
@@ -1764,6 +2310,265 @@ mod tests {
                 .iter()
                 .any(|count| peer_count_connected(count) > 0),
             "beacon nodes did not report a connected peer: {peer_counts:?}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_beacon_nodes_produce_blocks_and_converge() {
+        init_test_tracing();
+
+        let port_offset = beacon_port_offset();
+        let mut node_1_config = beacon_node_config_from_args(port_offset, None);
+        initialize_beacon_e2e_network_spec(node_1_config.network.clone());
+        let public_keys = beacon_e2e_public_keys();
+        let (genesis_state, genesis_block) = build_dev_genesis(&public_keys);
+
+        let node_1_db = create_beacon_test_node_db("beacon_node_produce_blocks", 1);
+        let node_2_db = create_beacon_test_node_db("beacon_node_produce_blocks", 2);
+        let node_3_db = create_beacon_test_node_db("beacon_node_produce_blocks", 3);
+        let node_4_db = create_beacon_test_node_db("beacon_node_produce_blocks", 4);
+        let genesis_execution_block_hash = genesis_state.latest_execution_payload_header.block_hash;
+        let genesis_validators_root =
+            seed_beacon_test_db(&node_1_db, genesis_state.clone(), &genesis_block);
+        let node_2_genesis_validators_root =
+            seed_beacon_test_db(&node_2_db, genesis_state.clone(), &genesis_block);
+        let node_3_genesis_validators_root =
+            seed_beacon_test_db(&node_3_db, genesis_state.clone(), &genesis_block);
+        let node_4_genesis_validators_root =
+            seed_beacon_test_db(&node_4_db, genesis_state, &genesis_block);
+        assert_eq!(
+            genesis_validators_root, node_2_genesis_validators_root,
+            "beacon e2e node 2 must be seeded from the same genesis"
+        );
+        assert_eq!(
+            genesis_validators_root, node_3_genesis_validators_root,
+            "beacon e2e node 3 must be seeded from the same genesis"
+        );
+        assert_eq!(
+            genesis_validators_root, node_4_genesis_validators_root,
+            "beacon e2e node 4 must be seeded from the same genesis"
+        );
+        initialize_beacon_e2e_genesis_root(genesis_validators_root);
+
+        let control_executor = ReamExecutor::new().unwrap();
+        let node_1_executor = ReamExecutor::new().unwrap();
+        let node_2_executor = ReamExecutor::new().unwrap();
+        let node_3_executor = ReamExecutor::new().unwrap();
+        let node_4_executor = ReamExecutor::new().unwrap();
+        let validator_executors: Vec<_> = (0..BEACON_E2E_VALIDATOR_NODE_COUNT)
+            .map(|_| ReamExecutor::new().unwrap())
+            .collect();
+        let node_1_executor_handle = node_1_executor.clone();
+        let node_2_executor_handle = node_2_executor.clone();
+        let node_3_executor_handle = node_3_executor.clone();
+        let node_4_executor_handle = node_4_executor.clone();
+        let validator_executor_handles = validator_executors.to_vec();
+        let node_1_http_port = node_1_config.http_port;
+
+        let result = control_executor.clone().runtime().block_on(async move {
+            let test_dir = temp_dir().join(format!(
+                "{APP_NAME}_beacon_produce_blocks_{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("System time is before UNIX epoch")
+                    .as_nanos()
+            ));
+            fs::create_dir_all(&test_dir).expect("Failed to create beacon e2e test dir");
+            let jwt_secret_path = test_dir.join("jwt.hex");
+            fs::write(
+                &jwt_secret_path,
+                "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+            )
+            .expect("Failed to write mock EL JWT secret");
+
+            let mock_execution_server = MockExecutionServer::start(genesis_execution_block_hash);
+            let execution_endpoint = mock_execution_server.url();
+            node_1_config.execution_endpoint = Some(execution_endpoint.clone());
+            node_1_config.execution_jwt_secret = Some(jwt_secret_path.clone());
+
+            let node_1_handle =
+                spawn_beacon_test_node(node_1_config, node_1_db, node_1_executor_handle.clone());
+            let node_1_identity = wait_for_beacon_identity(node_1_http_port).await;
+            let node_1_enr = node_1_identity["data"]["enr"]
+                .as_str()
+                .expect("identity response should contain ENR")
+                .to_string();
+
+            let mut node_2_config =
+                beacon_node_config_from_args(port_offset + 1, Some(node_1_enr.clone()));
+            node_2_config.execution_endpoint = Some(execution_endpoint);
+            node_2_config.execution_jwt_secret = Some(jwt_secret_path);
+            let node_2_http_port = node_2_config.http_port;
+            let node_2_handle =
+                spawn_beacon_test_node(node_2_config, node_2_db, node_2_executor_handle.clone());
+            let node_3_config =
+                beacon_node_config_from_args(port_offset + 2, Some(node_1_enr.clone()));
+            let node_3_http_port = node_3_config.http_port;
+            let node_3_handle =
+                spawn_beacon_test_node(node_3_config, node_3_db, node_3_executor_handle.clone());
+            let node_4_config = beacon_node_config_from_args(port_offset + 3, Some(node_1_enr));
+            let node_4_http_port = node_4_config.http_port;
+            let node_4_handle =
+                spawn_beacon_test_node(node_4_config, node_4_db, node_4_executor_handle.clone());
+            let peer_counts =
+                wait_for_connected_beacon_peer(&[
+                    node_1_http_port,
+                    node_2_http_port,
+                    node_3_http_port,
+                    node_4_http_port,
+                ])
+                .await;
+
+            let validator_handles = spawn_validator_test_nodes(
+                &[node_1_http_port, node_2_http_port],
+                &test_dir,
+                &validator_executor_handles,
+            );
+
+            let finality_target_slot = SLOTS_PER_EPOCH * 2 + 4;
+            let first_head = wait_for_head_slot_at_least(node_1_http_port, 4).await;
+            let second_head = wait_for_head_slot_at_least(node_1_http_port, first_head.0 + 1).await;
+            assert!(
+                second_head.0 > first_head.0,
+                "beacon node head did not keep advancing: first={first_head:?}, second={second_head:?}"
+            );
+            let head_at_finality_target =
+                wait_for_head_slot_at_least(node_1_http_port, finality_target_slot).await;
+
+            let finality_statuses = wait_for_finality_checkpoints_advanced_all(&[
+                node_1_http_port,
+                node_2_http_port,
+                node_3_http_port,
+                node_4_http_port,
+            ])
+            .await;
+            let node_1_finality = (
+                finality_statuses[0].justified_epoch,
+                finality_statuses[0].finalized_epoch,
+            );
+            let node_2_finality = (
+                finality_statuses[1].justified_epoch,
+                finality_statuses[1].finalized_epoch,
+            );
+            let node_3_finality = (
+                finality_statuses[2].justified_epoch,
+                finality_statuses[2].finalized_epoch,
+            );
+            let node_4_finality = (
+                finality_statuses[3].justified_epoch,
+                finality_statuses[3].finalized_epoch,
+            );
+
+            // Wait until all beacon nodes converge on the same non-genesis head.
+            let matching_head = wait_for_matching_heads_all(&[
+                node_1_http_port,
+                node_2_http_port,
+                node_3_http_port,
+                node_4_http_port,
+            ])
+            .await;
+            for peer_http_port in [node_2_http_port, node_3_http_port, node_4_http_port] {
+                let block_on_peer = wait_for_beacon_json(
+                    peer_http_port,
+                    &format!("/eth/v2/beacon/blocks/{}", matching_head.0),
+                )
+                .await;
+                assert!(
+                    block_on_peer["data"]["message"]["slot"].is_string()
+                        || block_on_peer["data"]["message"]["slot"].is_u64(),
+                    "peer {peer_http_port} did not return imported block by root: {block_on_peer:?}"
+                );
+            }
+
+            let node_1_finished = node_1_handle.is_finished();
+            let node_2_finished = node_2_handle.is_finished();
+            let node_3_finished = node_3_handle.is_finished();
+            let node_4_finished = node_4_handle.is_finished();
+            let validator_finished = validator_handles
+                .iter()
+                .map(tokio::task::JoinHandle::is_finished)
+                .collect::<Vec<_>>();
+
+            shutdown_validator_test_nodes(&validator_executor_handles, validator_handles).await;
+            shutdown_beacon_test_node(&node_4_executor_handle, node_4_handle).await;
+            shutdown_beacon_test_node(&node_3_executor_handle, node_3_handle).await;
+            shutdown_beacon_test_node(&node_2_executor_handle, node_2_handle).await;
+            shutdown_beacon_test_node(&node_1_executor_handle, node_1_handle).await;
+            mock_execution_server.stop().await;
+
+            (
+                peer_counts,
+                node_1_finished,
+                node_2_finished,
+                node_3_finished,
+                node_4_finished,
+                validator_finished,
+                first_head,
+                second_head,
+                head_at_finality_target,
+                matching_head,
+                node_1_finality,
+                node_2_finality,
+                node_3_finality,
+                node_4_finality,
+            )
+        });
+
+        for validator_executor in validator_executors {
+            validator_executor.shutdown_runtime();
+        }
+        node_4_executor.shutdown_runtime();
+        node_3_executor.shutdown_runtime();
+        node_2_executor.shutdown_runtime();
+        node_1_executor.shutdown_runtime();
+
+        let (
+            peer_counts,
+            node_1_finished,
+            node_2_finished,
+            node_3_finished,
+            node_4_finished,
+            validators_finished,
+            first_head,
+            second_head,
+            head_at_finality_target,
+            matching_head,
+            node_1_finality,
+            node_2_finality,
+            node_3_finality,
+            node_4_finality,
+        ) = result;
+        let peer_counts = peer_counts.unwrap_or_else(|peer_counts| {
+            panic!("Timed out waiting for beacon nodes to connect: {peer_counts:?}")
+        });
+        assert!(!node_1_finished, "node 1 task exited early");
+        assert!(!node_2_finished, "node 2 task exited early");
+        assert!(!node_3_finished, "node 3 task exited early");
+        assert!(!node_4_finished, "node 4 task exited early");
+        assert!(
+            validators_finished
+                .iter()
+                .all(|validator_finished| !validator_finished),
+            "validator node task exited early: {validators_finished:?}"
+        );
+        assert!(
+            peer_counts
+                .iter()
+                .any(|count| peer_count_connected(count) > 0),
+            "beacon nodes did not report a connected peer: {peer_counts:?}"
+        );
+        info!(
+            ?first_head,
+            ?second_head,
+            ?head_at_finality_target,
+            ?matching_head,
+            ?node_1_finality,
+            ?node_2_finality,
+            ?node_3_finality,
+            ?node_4_finality,
+            ?validators_finished,
+            "Beacon block production e2e test completed"
         );
     }
 
