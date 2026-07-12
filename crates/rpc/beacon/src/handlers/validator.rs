@@ -1412,9 +1412,15 @@ pub async fn get_blocks_v3(
     let skip_randao_verification = query_params.skip_randao_verification.unwrap_or(false);
     let builder_boost_factor = query_params.builder_boost_factor.unwrap_or(100);
 
-    let mut state = db.get_latest_state().map_err(|err| {
-        ApiError::InternalError(format!("Unable to fetch the latest state: {err}"))
-    })?;
+    let store = Store::new(db.get_ref().clone(), operation_pool.get_ref().clone(), None);
+    let head_root = store
+        .get_head()
+        .map_err(|err| ApiError::InternalError(format!("Failed to get head root: {err:?}")))?;
+    let mut state = db
+        .state_provider()
+        .get(head_root)
+        .map_err(|err| ApiError::InternalError(format!("Failed to get state, error: {err:?}")))?
+        .ok_or_else(|| ApiError::NotFound(format!("Failed to find state for root {head_root}")))?;
 
     let current_slot = state.slot;
 
@@ -1423,6 +1429,11 @@ pub async fn get_blocks_v3(
             "Current slot is greater than requested slot".into(),
         ));
     }
+
+    // Process slots to get state at the requested slot.
+    state
+        .process_slots(slot)
+        .map_err(|err| ApiError::InternalError(format!("Failed to process slots: {err}")))?;
 
     let proposer_index = state.get_beacon_proposer_index(Some(slot)).map_err(|err| {
         ApiError::InternalError(format!(
@@ -1445,11 +1456,6 @@ pub async fn get_blocks_v3(
         skip_randao_verification,
         &proposer_public_key,
     )?;
-
-    // Process slots to get state at the requested slot
-    state
-        .process_slots(slot)
-        .map_err(|err| ApiError::InternalError(format!("Failed to process slots: {err}")))?;
 
     let fee_recipient = operation_pool
         .get_proposer_preparation(proposer_index)
