@@ -20,7 +20,9 @@ use libp2p::{
     connection_limits::{self, ConnectionLimits},
     core::ConnectedPoint,
     futures::StreamExt,
-    gossipsub::{Event as GossipsubEvent, IdentTopic as Topic, Message, MessageAuthenticity},
+    gossipsub::{
+        Event as GossipsubEvent, IdentTopic as Topic, Message, MessageAuthenticity, MessageId,
+    },
     identify,
     multiaddr::Protocol,
     swarm::{self, ConnectionId, NetworkBehaviour, SwarmEvent},
@@ -92,6 +94,8 @@ pub enum ReamNetworkEvent {
         message: BeaconRequestMessage,
     },
     GossipsubMessage {
+        propagation_source: PeerId,
+        message_id: MessageId,
         message: Message,
     },
 }
@@ -358,6 +362,20 @@ impl Network {
                         P2PMessage::Gossip(message) => {
                             if let Err(err) = self.swarm.behaviour_mut().gossipsub.publish(message.topic, message.data) {
                                 warn!("Failed to publish gossip message: {err}");
+                            }
+                        }
+                        P2PMessage::ReportGossipValidation { message_id, propagation_source, acceptance } => {
+                            if !self
+                                .swarm
+                                .behaviour_mut()
+                                .gossipsub
+                                .report_message_validation_result(
+                                    &message_id,
+                                    &propagation_source,
+                                    acceptance,
+                                )
+                            {
+                                trace!("Gossipsub message was not in validation cache: {message_id}");
                             }
                         }
                     }
@@ -837,10 +855,14 @@ impl Network {
     fn handle_gossipsub_event(&mut self, event: GossipsubEvent) -> Option<ReamNetworkEvent> {
         match event {
             GossipsubEvent::Message {
-                propagation_source: _,
-                message_id: _,
+                propagation_source,
+                message_id,
                 message,
-            } => Some(ReamNetworkEvent::GossipsubMessage { message }),
+            } => Some(ReamNetworkEvent::GossipsubMessage {
+                propagation_source,
+                message_id,
+                message,
+            }),
             GossipsubEvent::Subscribed { peer_id, topic } => {
                 trace!("Peer {peer_id} subscribed to topic: {topic:?}");
                 None

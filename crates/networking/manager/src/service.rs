@@ -191,13 +191,19 @@ impl NetworkManagerService {
                 Some(event) = manager_receiver.recv() => {
                     match event {
                         // Handles Gossipsub messages from other peers.
-                        ReamNetworkEvent::GossipsubMessage { message } =>
-                            handle_gossipsub_message(
+                        ReamNetworkEvent::GossipsubMessage { propagation_source, message_id, message } => {
+                            let acceptance = handle_gossipsub_message(
                                 message,
                                 &beacon_chain,
                                 &cached_db,
                                 &p2p_sender,
-                            ).await,
+                            ).await;
+                            p2p_sender.report_gossip_validation(
+                                message_id,
+                                propagation_source,
+                                acceptance,
+                            );
+                        }
                         // Handles Req/Resp messages from other peers.
                         ReamNetworkEvent::RequestMessage { peer_id, stream_id, connection_id, message } =>
                             handle_req_resp_message(peer_id, stream_id, connection_id, message, &p2p_sender, &ream_db, network_state.clone()).await,

@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-use libp2p::{PeerId, swarm::ConnectionId};
+use libp2p::{
+    PeerId,
+    gossipsub::{MessageAcceptance, MessageId},
+    swarm::ConnectionId,
+};
 use ream_consensus_beacon::blob_sidecar::BlobIdentifier;
 use ream_req_resp::{
     beacon::messages::{BeaconResponseMessage, status::Status},
@@ -22,6 +26,11 @@ pub enum P2PMessage {
     Request(P2PRequest),
     Response(P2PResponse),
     Gossip(GossipMessage),
+    ReportGossipValidation {
+        message_id: MessageId,
+        propagation_source: PeerId,
+        acceptance: MessageAcceptance,
+    },
 }
 
 pub enum P2PRequest {
