@@ -557,11 +557,11 @@ async fn run_beacon_node_inner(
 
     let (event_sender, _) = broadcast::channel::<BeaconEvent>(1024);
 
-    let server_config = RpcServerConfig::new(
-        config.http_address,
-        config.http_port,
-        config.http_allow_origin,
-    );
+    let http_port = config.http_port;
+    let socket_port = config.socket_port;
+    let discovery_port = config.discovery_port;
+    let server_config =
+        RpcServerConfig::new(config.http_address, http_port, config.http_allow_origin);
 
     // Initialize builder client if enabled
     let builder_client = config.enable_builder.then(|| {
@@ -617,9 +617,16 @@ async fn run_beacon_node_inner(
     let network_state = network_manager.network_state.clone();
     let p2p_sender = Arc::new(network_manager.p2p_sender.clone());
 
-    let mut network_task = AbortOnDrop(executor.spawn(async move {
-        network_manager.start().await;
-    }));
+    let network_span =
+        tracing::info_span!("beacon_network", http_port, socket_port, discovery_port);
+    let mut network_task = AbortOnDrop(
+        executor.spawn(
+            async move {
+                network_manager.start().await;
+            }
+            .instrument(network_span),
+        ),
+    );
 
     let mut http_task = AbortOnDrop(executor.spawn(async move {
         ream_rpc_beacon::server::start(

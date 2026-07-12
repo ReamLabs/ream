@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::electra::{beacon_block::SignedBeaconBlock, beacon_state::BeaconState};
 use ream_consensus_misc::{
@@ -18,10 +17,42 @@ pub async fn validate_gossip_beacon_block(
     cached_db: &BeaconCacheDB,
     block: &SignedBeaconBlock,
 ) -> anyhow::Result<ValidationResult> {
-    let latest_state = beacon_chain.store.lock().await.db.get_latest_state()?;
+    let (parent_block, parent_state) = {
+        let store = beacon_chain.store.lock().await;
+        let Some(parent_block) = store.db.block_provider().get(block.message.parent_root)? else {
+            let local_highest_slot = store
+                .db
+                .slot_index_provider()
+                .get_highest_slot()?
+                .unwrap_or_default();
+            let slot = block.message.slot;
+            let root = block.message.block_root();
+            let parent_root = block.message.parent_root;
+            return Ok(ValidationResult::Ignore(format!(
+                "Parent block not found: slot={slot}, root={root}, parent_root={parent_root}, local_highest_slot={local_highest_slot}"
+            )));
+        };
 
-    // Validate incoming block
-    match validate_beacon_block(beacon_chain, cached_db, block, &latest_state, false).await? {
+        let Some(parent_state) = store.db.state_provider().get(block.message.parent_root)? else {
+            return Ok(ValidationResult::Ignore(
+                "Parent block state not found".to_string(),
+            ));
+        };
+
+        (parent_block, parent_state)
+    };
+
+    if block.message.slot <= parent_block.message.slot {
+        return Ok(ValidationResult::Reject(
+            "Block is not from a higher slot".to_string(),
+        ));
+    }
+
+    let mut block_state = parent_state.clone();
+    block_state.process_slots(block.message.slot)?;
+
+    // Validate incoming block against the state on its parent chain.
+    match validate_beacon_block(beacon_chain, cached_db, block, &block_state, false).await? {
         ValidationResult::Accept => {}
         ValidationResult::Ignore(reason) => {
             return Ok(ValidationResult::Ignore(reason));
@@ -30,19 +61,6 @@ pub async fn validate_gossip_beacon_block(
             return Ok(ValidationResult::Reject(reason));
         }
     }
-
-    let (parent_block, parent_state) = {
-        let store = beacon_chain.store.lock().await;
-        let Some(parent_block) = store.db.block_provider().get(block.message.parent_root)? else {
-            return Err(anyhow!("failed to get parent block"));
-        };
-
-        let Some(parent_state) = store.db.state_provider().get(block.message.parent_root)? else {
-            return Err(anyhow!("failed to get parent state"));
-        };
-
-        (parent_block, parent_state)
-    };
 
     // Validate parent block [block.message.parent_root]
     match validate_beacon_block(beacon_chain, cached_db, &parent_block, &parent_state, true).await?
@@ -56,7 +74,7 @@ pub async fn validate_gossip_beacon_block(
         }
     };
 
-    let Some(validator) = latest_state
+    let Some(validator) = block_state
         .validators
         .get(block.message.proposer_index as usize)
     else {
@@ -73,7 +91,7 @@ pub async fn validate_gossip_beacon_block(
 
     for signed_bls_execution_change in block.message.body.bls_to_execution_changes.iter() {
         let validator =
-            &latest_state.validators[signed_bls_execution_change.message.validator_index as usize];
+            &block_state.validators[signed_bls_execution_change.message.validator_index as usize];
 
         cached_db.seen_bls_to_execution_signature.write().await.put(
             AddressSlotIdentifier {
