@@ -1,6 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use libp2p::gossipsub::Message;
+use libp2p::{
+    PeerId,
+    gossipsub::{Message, MessageAcceptance, MessageId},
+};
 use ream_chain_beacon::beacon_chain::BeaconChain;
 use ream_consensus_beacon::{
     blob_sidecar::BlobIdentifier,
@@ -12,13 +15,10 @@ use ream_consensus_misc::constants::beacon::{
 };
 use ream_execution_rpc_types::get_blobs::BlobAndProofV1;
 use ream_network_spec::networks::beacon_network_spec;
-use ream_p2p::{
-    gossipsub::beacon::{
-        configurations::GossipsubConfig,
-        message::GossipsubMessage,
-        topics::{GossipTopic, GossipTopicKind},
-    },
-    network::beacon::channel::GossipMessage,
+use ream_p2p::gossipsub::beacon::{
+    configurations::GossipsubConfig,
+    message::GossipsubMessage,
+    topics::{GossipTopic, GossipTopicKind},
 };
 use ream_storage::{
     cache::BeaconCacheDB,
@@ -28,7 +28,6 @@ use ream_validator_beacon::{
     attestation::single_attestation_to_attestation, blob_sidecars::compute_subnet_for_blob_sidecar,
     constants::SYNC_COMMITTEE_SUBNET_COUNT,
 };
-use ssz::Encode;
 use tracing::{error, info, trace, warn};
 use tree_hash::TreeHash;
 
@@ -175,15 +174,37 @@ async fn import_gossip_attestation(
     Ok(())
 }
 
-fn forward_gossip_message(message: &Message, p2p_sender: &P2PSender, data: Vec<u8>) {
-    p2p_sender.send_gossip(GossipMessage {
-        topic: GossipTopic::from_topic_hash(&message.topic).expect("invalid topic hash"),
-        data,
-    });
+fn report_gossip_validation_result(
+    p2p_sender: &P2PSender,
+    message_id: &MessageId,
+    propagation_source: &PeerId,
+    validation_result: &ValidationResult,
+) {
+    let acceptance = match validation_result {
+        ValidationResult::Accept => MessageAcceptance::Accept,
+        ValidationResult::Ignore(_) => MessageAcceptance::Ignore,
+        ValidationResult::Reject(_) => MessageAcceptance::Reject,
+    };
+
+    p2p_sender.report_gossip_validation(message_id.clone(), *propagation_source, acceptance);
+}
+
+fn accept_gossip_message(
+    p2p_sender: &P2PSender,
+    message_id: &MessageId,
+    propagation_source: &PeerId,
+) {
+    p2p_sender.report_gossip_validation(
+        message_id.clone(),
+        *propagation_source,
+        MessageAcceptance::Accept,
+    );
 }
 
 /// Dispatches a gossipsub message to its appropriate handler.
 pub async fn handle_gossipsub_message(
+    propagation_source: PeerId,
+    message_id: MessageId,
     message: Message,
     beacon_chain: &BeaconChain,
     cached_db: &BeaconCacheDB,
@@ -233,6 +254,7 @@ pub async fn handle_gossipsub_message(
 
                 match validation_result {
                     ValidationResult::Accept => {
+                        accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                         info!(
                             slot,
                             %root,
@@ -241,7 +263,6 @@ pub async fn handle_gossipsub_message(
                             attestation_count,
                             "beacon_e2e_trace: gossip block accepted"
                         );
-                        let signed_block_bytes = signed_block.as_ssz_bytes();
                         if let Err(err) = beacon_chain.process_block(*signed_block).await {
                             error!(
                                 slot,
@@ -257,15 +278,14 @@ pub async fn handle_gossipsub_message(
                                 "beacon_e2e_trace: gossip block imported"
                             );
                         }
-                        forward_gossip_message(&message, p2p_sender, signed_block_bytes);
-                        info!(
-                            slot,
-                            %root,
-                            %parent_root,
-                            "beacon_e2e_trace: gossip block forwarded"
-                        );
                     }
                     ValidationResult::Ignore(reason) => {
+                        report_gossip_validation_result(
+                            p2p_sender,
+                            &message_id,
+                            &propagation_source,
+                            &ValidationResult::Ignore(reason.clone()),
+                        );
                         warn!(
                             slot,
                             %root,
@@ -275,6 +295,12 @@ pub async fn handle_gossipsub_message(
                         );
                     }
                     ValidationResult::Reject(reason) => {
+                        report_gossip_validation_result(
+                            p2p_sender,
+                            &message_id,
+                            &propagation_source,
+                            &ValidationResult::Reject(reason.clone()),
+                        );
                         warn!(
                             slot,
                             %root,
@@ -301,21 +327,29 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                             if let Err(err) =
                                 import_gossip_attestation(beacon_chain, &single_attestation).await
                             {
                                 warn!("Failed to import gossipsub beacon attestation: {err}");
                             }
-                            forward_gossip_message(
-                                &message,
-                                p2p_sender,
-                                single_attestation.as_ssz_bytes(),
-                            );
                         }
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("Attestation rejected: {reason}");
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             info!("Attestation ignored: {reason}");
                         }
                     },
@@ -339,16 +373,24 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
-                            forward_gossip_message(
-                                &message,
-                                p2p_sender,
-                                signed_bls_to_execution_change.as_ssz_bytes(),
-                            );
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                         }
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("BLS to Execution Change rejected: {reason}");
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             info!("BLS to Execution Change ignored: {reason}");
                         }
                     },
@@ -368,16 +410,24 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
-                            forward_gossip_message(
-                                &message,
-                                p2p_sender,
-                                aggregate_and_proof.as_ssz_bytes(),
-                            );
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                         }
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("Aggregate and proof rejected: {reason}");
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             info!("Aggregate and proof ignored: {reason}");
                         }
                     },
@@ -397,16 +447,24 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
-                            forward_gossip_message(
-                                &message,
-                                p2p_sender,
-                                sync_committee.as_ssz_bytes(),
-                            );
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                         }
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("Sync committee message rejected: {reason}");
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             trace!("Sync committee message ignored: {reason}");
                         }
                     },
@@ -430,17 +488,25 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
-                            forward_gossip_message(
-                                &message,
-                                p2p_sender,
-                                signed_contribution_and_proof.as_ssz_bytes(),
-                            );
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                         }
 
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("Sync committee contribution and proof rejected: {reason}");
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             info!("Sync committee contribution and proof ignored: {reason}");
                         }
                     },
@@ -459,8 +525,7 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
-                            let attester_slashing_bytes = attester_slashing.as_ssz_bytes();
-                            forward_gossip_message(&message, p2p_sender, attester_slashing_bytes);
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                             if let Err(err) = beacon_chain
                                 .process_attester_slashing(*attester_slashing)
                                 .await
@@ -469,9 +534,21 @@ pub async fn handle_gossipsub_message(
                             }
                         }
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("Attester slashing rejected: {reason}");
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             info!("Attester slashing ignored: {reason}");
                         }
                     },
@@ -490,16 +567,24 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
-                            forward_gossip_message(
-                                &message,
-                                p2p_sender,
-                                proposer_slashing.as_ssz_bytes(),
-                            );
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                         }
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("Proposer slashing rejected: {reason}");
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             info!("Proposer slashing ignored: {reason}");
                         }
                     },
@@ -523,7 +608,7 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
-                            let blob_sidecar_bytes = blob_sidecar.as_ssz_bytes();
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                             if let Err(err) = beacon_chain
                                 .store
                                 .lock()
@@ -543,13 +628,23 @@ pub async fn handle_gossipsub_message(
                             {
                                 error!("Failed to insert blob_sidecar: {err}");
                             }
-
-                            forward_gossip_message(&message, p2p_sender, blob_sidecar_bytes);
                         }
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("Blob_sidecar rejected: {reason}");
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             info!("Blob_sidecar ignored: {reason}");
                         }
                     },
@@ -600,7 +695,7 @@ pub async fn handle_gossipsub_message(
 
                 match validation_result {
                     ValidationResult::Accept => {
-                        let data_column_sidecar_bytes = data_column_sidecar.as_ssz_bytes();
+                        accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                         if let Err(err) = beacon_chain
                             .store
                             .lock()
@@ -620,13 +715,23 @@ pub async fn handle_gossipsub_message(
                         {
                             error!("Failed to insert data_column_sidecar: {err}");
                         }
-
-                        forward_gossip_message(&message, p2p_sender, data_column_sidecar_bytes);
                     }
                     ValidationResult::Reject(reason) => {
+                        report_gossip_validation_result(
+                            p2p_sender,
+                            &message_id,
+                            &propagation_source,
+                            &ValidationResult::Reject(reason.clone()),
+                        );
                         info!("Data column sidecar rejected: {reason}");
                     }
                     ValidationResult::Ignore(reason) => {
+                        report_gossip_validation_result(
+                            p2p_sender,
+                            &message_id,
+                            &propagation_source,
+                            &ValidationResult::Ignore(reason.clone()),
+                        );
                         info!("Data column sidecar ignored: {reason}");
                     }
                 }
@@ -645,16 +750,24 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
-                            forward_gossip_message(
-                                &message,
-                                p2p_sender,
-                                light_client_finality_update.as_ssz_bytes(),
-                            );
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                         }
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("Light client finality update rejected: {reason}");
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             info!("Light client finality update ignored: {reason}");
                         }
                     },
@@ -678,19 +791,27 @@ pub async fn handle_gossipsub_message(
                 {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
-                            forward_gossip_message(
-                                &message,
-                                p2p_sender,
-                                light_client_optimistic_update.as_ssz_bytes(),
-                            );
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
 
                             *cached_db.forwarded_optimistic_update_slot.write().await =
                                 Some(light_client_optimistic_update.attested_header.beacon.slot);
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             info!("Light client optimistic update ignored: {reason}");
                         }
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("Light client optimistic update rejected: {reason}");
                         }
                     },
@@ -708,16 +829,24 @@ pub async fn handle_gossipsub_message(
                 match validate_voluntary_exit(&voluntary_exit, beacon_chain, cached_db).await {
                     Ok(validation_result) => match validation_result {
                         ValidationResult::Accept => {
-                            forward_gossip_message(
-                                &message,
-                                p2p_sender,
-                                voluntary_exit.as_ssz_bytes(),
-                            );
+                            accept_gossip_message(p2p_sender, &message_id, &propagation_source);
                         }
                         ValidationResult::Reject(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Reject(reason.clone()),
+                            );
                             info!("voluntary_exit rejected: {reason}");
                         }
                         ValidationResult::Ignore(reason) => {
+                            report_gossip_validation_result(
+                                p2p_sender,
+                                &message_id,
+                                &propagation_source,
+                                &ValidationResult::Ignore(reason.clone()),
+                            );
                             info!("voluntary_exit ignored: {reason}");
                         }
                     },
