@@ -2473,13 +2473,13 @@ mod tests {
             .await
             {
                 Ok(peer_counts) => peer_counts,
-                Err(peer_counts) => {
+                Err(err) => {
                     shutdown_beacon_test_node(&node_4_executor_handle, node_4_handle).await;
                     shutdown_beacon_test_node(&node_3_executor_handle, node_3_handle).await;
                     shutdown_beacon_test_node(&node_2_executor_handle, node_2_handle).await;
                     shutdown_beacon_test_node(&node_1_executor_handle, node_1_handle).await;
                     mock_execution_server.stop().await;
-                    panic!("Timed out waiting for beacon nodes to connect: {peer_counts:?}");
+                    panic!("Timed out waiting for beacon nodes to connect: {err:?}");
                 }
             };
 
