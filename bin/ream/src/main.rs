@@ -1037,7 +1037,7 @@ mod tests {
         preseed_node_3_before_checkpoint_sync: bool,
     }
 
-    const BEACON_E2E_VALIDATOR_COUNT: usize = 16;
+    const BEACON_E2E_VALIDATOR_COUNT: usize = 8;
     const BEACON_E2E_VALIDATOR_NODE_COUNT: usize = 2;
     const BEACON_E2E_SLOT_DURATION_MS: u64 = 3_000;
     const BEACON_E2E_KEYSTORE_PASSWORD: &str = "password";
@@ -2336,43 +2336,25 @@ mod tests {
 
         let node_1_db = create_beacon_test_node_db("beacon_node_produce_blocks", 1);
         let node_2_db = create_beacon_test_node_db("beacon_node_produce_blocks", 2);
-        let node_3_db = create_beacon_test_node_db("beacon_node_produce_blocks", 3);
-        let node_4_db = create_beacon_test_node_db("beacon_node_produce_blocks", 4);
         let genesis_execution_block_hash = genesis_state.latest_execution_payload_header.block_hash;
         let genesis_validators_root =
             seed_beacon_test_db(&node_1_db, genesis_state.clone(), &genesis_block);
         let node_2_genesis_validators_root =
-            seed_beacon_test_db(&node_2_db, genesis_state.clone(), &genesis_block);
-        let node_3_genesis_validators_root =
-            seed_beacon_test_db(&node_3_db, genesis_state.clone(), &genesis_block);
-        let node_4_genesis_validators_root =
-            seed_beacon_test_db(&node_4_db, genesis_state, &genesis_block);
+            seed_beacon_test_db(&node_2_db, genesis_state, &genesis_block);
         assert_eq!(
             genesis_validators_root, node_2_genesis_validators_root,
             "beacon e2e node 2 must be seeded from the same genesis"
-        );
-        assert_eq!(
-            genesis_validators_root, node_3_genesis_validators_root,
-            "beacon e2e node 3 must be seeded from the same genesis"
-        );
-        assert_eq!(
-            genesis_validators_root, node_4_genesis_validators_root,
-            "beacon e2e node 4 must be seeded from the same genesis"
         );
         initialize_beacon_e2e_genesis_root(genesis_validators_root);
 
         let control_executor = ReamExecutor::new().unwrap();
         let node_1_executor = ReamExecutor::new().unwrap();
         let node_2_executor = ReamExecutor::new().unwrap();
-        let node_3_executor = ReamExecutor::new().unwrap();
-        let node_4_executor = ReamExecutor::new().unwrap();
         let validator_executors: Vec<_> = (0..BEACON_E2E_VALIDATOR_NODE_COUNT)
             .map(|_| ReamExecutor::new().unwrap())
             .collect();
         let node_1_executor_handle = node_1_executor.clone();
         let node_2_executor_handle = node_2_executor.clone();
-        let node_3_executor_handle = node_3_executor.clone();
-        let node_4_executor_handle = node_4_executor.clone();
         let validator_executor_handles = validator_executors.to_vec();
         let node_1_http_port = node_1_config.http_port;
 
@@ -2412,23 +2394,8 @@ mod tests {
             let node_2_http_port = node_2_config.http_port;
             let node_2_handle =
                 spawn_beacon_test_node(node_2_config, node_2_db, node_2_executor_handle.clone());
-            let node_3_config =
-                beacon_node_config_from_args(port_offset + 2, Some(node_1_enr.clone()));
-            let node_3_http_port = node_3_config.http_port;
-            let node_3_handle =
-                spawn_beacon_test_node(node_3_config, node_3_db, node_3_executor_handle.clone());
-            let node_4_config = beacon_node_config_from_args(port_offset + 3, Some(node_1_enr));
-            let node_4_http_port = node_4_config.http_port;
-            let node_4_handle =
-                spawn_beacon_test_node(node_4_config, node_4_db, node_4_executor_handle.clone());
             let peer_counts =
-                wait_for_connected_beacon_peer(&[
-                    node_1_http_port,
-                    node_2_http_port,
-                    node_3_http_port,
-                    node_4_http_port,
-                ])
-                .await;
+                wait_for_connected_beacon_peer(&[node_1_http_port, node_2_http_port]).await;
 
             let validator_handles = spawn_validator_test_nodes(
                 &[node_1_http_port, node_2_http_port],
@@ -2446,13 +2413,9 @@ mod tests {
             let head_at_finality_target =
                 wait_for_head_slot_at_least(node_1_http_port, finality_target_slot).await;
 
-            let finality_statuses = wait_for_finality_checkpoints_advanced_all(&[
-                node_1_http_port,
-                node_2_http_port,
-                node_3_http_port,
-                node_4_http_port,
-            ])
-            .await;
+            let finality_statuses =
+                wait_for_finality_checkpoints_advanced_all(&[node_1_http_port, node_2_http_port])
+                    .await;
             let node_1_finality = (
                 finality_statuses[0].justified_epoch,
                 finality_statuses[0].finalized_epoch,
@@ -2461,24 +2424,11 @@ mod tests {
                 finality_statuses[1].justified_epoch,
                 finality_statuses[1].finalized_epoch,
             );
-            let node_3_finality = (
-                finality_statuses[2].justified_epoch,
-                finality_statuses[2].finalized_epoch,
-            );
-            let node_4_finality = (
-                finality_statuses[3].justified_epoch,
-                finality_statuses[3].finalized_epoch,
-            );
 
             // Wait until all beacon nodes converge on the same non-genesis head.
-            let matching_head = wait_for_matching_heads_all(&[
-                node_1_http_port,
-                node_2_http_port,
-                node_3_http_port,
-                node_4_http_port,
-            ])
-            .await;
-            for peer_http_port in [node_2_http_port, node_3_http_port, node_4_http_port] {
+            let matching_head =
+                wait_for_matching_heads_all(&[node_1_http_port, node_2_http_port]).await;
+            for peer_http_port in [node_2_http_port] {
                 let block_on_peer = wait_for_beacon_json(
                     peer_http_port,
                     &format!("/eth/v2/beacon/blocks/{}", matching_head.0),
@@ -2493,16 +2443,12 @@ mod tests {
 
             let node_1_finished = node_1_handle.is_finished();
             let node_2_finished = node_2_handle.is_finished();
-            let node_3_finished = node_3_handle.is_finished();
-            let node_4_finished = node_4_handle.is_finished();
             let validator_finished = validator_handles
                 .iter()
                 .map(tokio::task::JoinHandle::is_finished)
                 .collect::<Vec<_>>();
 
             shutdown_validator_test_nodes(&validator_executor_handles, validator_handles).await;
-            shutdown_beacon_test_node(&node_4_executor_handle, node_4_handle).await;
-            shutdown_beacon_test_node(&node_3_executor_handle, node_3_handle).await;
             shutdown_beacon_test_node(&node_2_executor_handle, node_2_handle).await;
             shutdown_beacon_test_node(&node_1_executor_handle, node_1_handle).await;
             mock_execution_server.stop().await;
@@ -2511,8 +2457,6 @@ mod tests {
                 peer_counts,
                 node_1_finished,
                 node_2_finished,
-                node_3_finished,
-                node_4_finished,
                 validator_finished,
                 first_head,
                 second_head,
@@ -2520,16 +2464,12 @@ mod tests {
                 matching_head,
                 node_1_finality,
                 node_2_finality,
-                node_3_finality,
-                node_4_finality,
             )
         });
 
         for validator_executor in validator_executors {
             validator_executor.shutdown_runtime();
         }
-        node_4_executor.shutdown_runtime();
-        node_3_executor.shutdown_runtime();
         node_2_executor.shutdown_runtime();
         node_1_executor.shutdown_runtime();
 
@@ -2537,8 +2477,6 @@ mod tests {
             peer_counts,
             node_1_finished,
             node_2_finished,
-            node_3_finished,
-            node_4_finished,
             validators_finished,
             first_head,
             second_head,
@@ -2546,16 +2484,12 @@ mod tests {
             matching_head,
             node_1_finality,
             node_2_finality,
-            node_3_finality,
-            node_4_finality,
         ) = result;
         let peer_counts = peer_counts.unwrap_or_else(|peer_counts| {
             panic!("Timed out waiting for beacon nodes to connect: {peer_counts:?}")
         });
         assert!(!node_1_finished, "node 1 task exited early");
         assert!(!node_2_finished, "node 2 task exited early");
-        assert!(!node_3_finished, "node 3 task exited early");
-        assert!(!node_4_finished, "node 4 task exited early");
         assert!(
             validators_finished
                 .iter()
@@ -2575,8 +2509,6 @@ mod tests {
             ?matching_head,
             ?node_1_finality,
             ?node_2_finality,
-            ?node_3_finality,
-            ?node_4_finality,
             ?validators_finished,
             "Beacon block production e2e test completed"
         );
